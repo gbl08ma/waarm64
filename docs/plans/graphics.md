@@ -10,8 +10,10 @@ browser has one, and Vulkan (Venus, Zink) deferred. §1 and §7 are the plan as 
 is kept as the deferred Vulkan design. **G2 is done (2026-10-09, §19): virgl's guest side measured on a null
 renderer, and the gate passed** (a sway frame costs the guest ~1/12 of llvmpipe's, at 60 frames a second). **G3 is done
 (2026-10-09, §20): the WebGL2 renderer**, glcomp and sway on GLES drawing on the page (60 frames a second on a real
-GPU), and 3D the page's default where WebGL2 is. G4 (breadth and correctness) waits for its kickoff: a proposal and
-questions in `M8-GRAPHICS-HANDOVER.md`.
+GPU), and 3D the page's default where WebGL2 is. **G4 is done (2026-10-10, §21)**: Firefox and GTK4 on 3D, dEQP's whole
+GLES2 and GLES3 lists passing on SwiftShader. Of G5, snapshots while 3D is in use (§22) and dEQP on the Mac's GPU
+(§23) are done; what remains is open items in docs/backlog.md (dEQP on more platforms, GtkGLArea's offload) and
+breadth if the user wants it (below, §7).
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
@@ -223,8 +225,7 @@ Map what maps, emulate what's cheap, don't advertise the rest:
 ## 7. Steps
 
 Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`). G0 and G1 are done;
-G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in detail is in
-`M8-GRAPHICS-HANDOVER.md`.
+G2 onward is the 2026-10-09 proposal, settled by its kickoffs.
 
 - **G0 — WebGPU environment spike, measured (done: §10).**
 - **G1 — virtio-gpu 2D (done: §9, §11 to §17).**
@@ -243,8 +244,11 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
   (measured, then made faster), the page's menu choosing 2D or 3D, a dEQP-GLES2/GLES3 subset (VK-GL-CTS,
   Apache-2.0, a guest workload) as the correctness gate and its failures, then GTK4 on the Arch image; the
   shader compile cost. Chromium's GPU process and a full desktop are written down if seen, not targets.
-- **G5 — The product (proposed in `M8-GRAPHICS-HANDOVER.md`, §21 "G4's exit"):** snapshots while 3D is in use
-  (built ahead of the kickoff and done, 2026-10-19: §22), dEQP on a real GPU, the guest-side leftovers measured first; a desktop's compositor if wanted. (The finer instrument
+- **G5 — The product (proposed at §21 "G4's exit"; no kickoff):** snapshots while 3D is in use (done, 2026-10-19:
+  §22), dEQP on a real GPU (the Mac's, done 2026-10-19: §23; other platforms are docs/backlog.md's "dEQP on more
+  platforms"), the guest-side leftovers measured first (docs/backlog.md: GtkGLArea's offload). **Breadth, if the user
+  wants it:** KWin or Mutter, Chromium's GPU process in the guest, Xorg; beyond GLES 3.0 is the WebGPU backend
+  (below). (The finer instrument
   for the guest's submit path was G4's loop 6: not a cost. Done in G3: the switch, `?gpu=2d`, and the fallback
   without WebGL2; snapshots while 3D is unused; real-GPU numbers.)
 - **Later:** the WebGPU backend for the same protocol (GLES 3.1); Vulkan through Venus on it (§4).
@@ -1364,5 +1368,128 @@ The desktop guest (`target/arch/desktop.qcow2`: sway 1.12, Mesa 26.2.4, Firefox 
   and load are tested on traces (above), the file's large RAM in `tests/snapshot-file.test.ts`, and a snapshot's
   restore on Debian in `scripts/ci-debian.sh`.
 - `scripts/ci-deqp.sh` passes with `drawZs` (the DEPTH32F_STENCIL8 upload shares its program now).
-- Not measured: the same on the Mac host's GPU (`bench/gpu/sway-mac.sh`'s route); the read-back there is a GPU's, so
-  the 3D part of the pause can only shrink.
+- **On the Mac host's GPU** (`bench/gpu/sway-mac.sh` with `SCRIPT=snapshot-3d.ts`, the same scenes; ANGLE on Metal,
+  Apple M4, Chromium 153; `bench/gpu/results/2026-10-19-snapshot-3d-mac.json`), medians of three:
+
+  | scene | the pause, Mac (SwiftShader) | the devices' state, Mac (SwiftShader) | the file |
+  |---|---|---|---|
+  | idle | 2.0 s (2.4 s) | 15 ms (13) | 374 MB |
+  | sway and foot | 2.4 s (3.1 s) | 19 ms (25) | 452 MB, 13.5 MB of 3D state stored as 0.1 MB |
+  | desktop | 5.2 s (8.2 s) | 195 ms (233) | 823 MB, 125–127 MB of 3D state stored as 6.2 MB |
+
+  The 3D read-back barely shrinks on a GPU (195 against 233 ms for ~125 MB: the copies and the transfer to the device
+  worker, not the drawing); the rest of the pause (the guest's RAM) is shorter on the Mac itself than in the dev VM,
+  where SwiftShader also draws on the CPUs. The desktop ran at 60 frames a second before the save (Firefox's
+  WebGL page; 25–28 on SwiftShader), the load ran 6.7 s after the choice (14.2 s), and the restored session went on at
+  60 (Firefox and the compositor), with no renderer error; `es2gears_wayland` started after the load mapped its window
+  and drew.
+
+## 23. G5: dEQP on a real GPU (2026-10-19, done)
+
+Every G4 run was on SwiftShader. Here the same harness ran on the Mac host's GPU (the handover's item; the handover is
+retired with it): `bench/gpu/sway-mac.sh` with `SCRIPT=deqp-run.ts` (it copies the dEQP disk, `tests/deqp/` and a
+`CASES` file; `STRIDE`, `OFFSET`, `CASES`, `LIMIT_S`, `DETAIL` passed on), Playwright's Chromium 153.0.8010.12
+headless with a temporary profile, **"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"**, macOS
+26.6.2, an Apple M4 with 10 GPU cores and Metal 4 (`system_profiler`). The same guest (`target/deqp/guest.qcow2`, Mesa
+26.2.4) and the same slices as G4's exit. JSON in `bench/gpu/results/g5-deqp-metal/`. dEQP runs ~2.4 times as fast as
+on the dev VM (GLES3's pass list 118 s against ~280; a GLES3 slice ~7 min against ~17).
+
+| whole list | SwiftShader (G4's exit) | Metal, first run | Metal, after the fixes below |
+|---|---|---|---|
+| GLES2 (17,165) | 17,027 pass, 0 fail | 16,921 pass, 104 fail | **16,939 pass, 85 fail**, 136 n/s, 2 quality, 3 compatibility |
+| GLES3 (44,768) | 44,398 pass, 0 fail | 44,268 pass, 137 fail (with the stream output fix) | **44,276 pass, 129 fail**, 358 n/s, 5 quality |
+
+(GLES3's pass list, before any fix, failed 9 of 1,214, 5 of them stream output on lines: the first fix. The whole
+GLES3 list ran with it; its isnan and invariance groups ran again after the last.)
+
+**Ours, fixed** (each with a test in `tests/virgl.test.ts` that fails with the fix taken out; SwiftShader passed
+these cases before and after):
+- **One program with transform feedback on and off** (220 of the 440 `transform_feedback.*lines*` cases failed, 0
+  after; `checks/tf-lines-*.json`): the renderer linked the vertex shader's program with the captured varyings only
+  while targets were bound, so a shader drew through two programs, and dEQP compares the two drawings exactly. Metal's
+  compiler computed the position differently in each (lines moved by a pixel). A shader with stream outputs now
+  captures all of them, bound or not (`soOutputs`), as GL's one program does.
+- **Invariance** (14 of GLES2's 15 `shaders.invariance` failures): Mesa marks an invariant position by the
+  instructions that compute it (`_PRECISE`; GLES 3.0 has no `precise` to say it with), and the translator dropped the
+  mark. A vertex shader with a precise instruction or an invariant declaration now says `invariant gl_Position;`
+  (ANGLE then has Metal preserve invariance). The parser also read `MUL_SAT_PRECISE` as an unknown `MUL_SAT`.
+- **Integer constants that are NaNs** (the 4 `argument_eval_order` cases and `shaders.random.all_features.vertex.39`):
+  an integer immediate whose bits aren't a normal float went out as `uintBitsToFloat(4294967295u)`, which ANGLE folds
+  into a float constant and its Metal backend writes as a canonical NaN: -1 came back as 0x7fc00000. Such immediates
+  now read `uintBitsToFloat(K ^ u_zero)` (`u_zero` a uniform never set: 0, and not a constant). Likely beyond dEQP:
+  any guest shader that selects a negative integer constant.
+- **isnan** (8 `common.isnan` cases, GLES3): Mesa writes `isnan(x)` as `x != x`, which Metal's fast math folds to
+  false; `FSNE` and `FSEQ` of an operand with itself are now `isnan` and `!isnan`, which ANGLE keeps.
+
+**What stays different, and why** (none ours to fix; what a user on a Mac sees):
+- **Mixed filters near the switch between magnification and minification** (84 GLES2 and 128 GLES3 failures,
+  `texture.filtering.*` and `texture.vertex.*.filtering` with `nearest_linear` or `linear_nearest`): Apple's GPU keeps
+  the magnifying filter up to a level of detail between 0.01 and 0.02, where GLES switches above 0. Shown without the
+  emulator by `bench/gpu/filter-probe.ts` (a 2×1 texture sampled at explicit levels; `filter-probe-*.json`):
+  SwiftShader switches as GLES does, Metal still magnifies at 0.004 and 0.01. A few pixels a case, and only where the
+  two filters differ.
+- **One invariance case** (`shaders.invariance.lowp.loop_2`, in both lists): both programs are invariant, and Metal
+  still computes the loop's position differently in each (highp and mediump pass).
+- **Quality warnings on lines** (`rasterization.*interpolation.*lines`): Metal's line rasterization. `flush_finish`'s
+  compatibility warnings are timing, as on SwiftShader; SwiftShader's highp `floor` precision warnings pass on Metal.
+
+No cap we advertise is beyond Metal: no `NotSupported` count moved and no case failed for a limit. The pass lists of
+`scripts/ci-deqp.sh` stay as they are (CI runs SwiftShader). Still open: the other WebGL2 stacks users have
+(docs/backlog.md "dEQP on more platforms").
+
+## 24. Working notes for 3D (carried from the graphics handover, 2026-10-19)
+
+The tools, what the guests do and what was learned, kept from `M8-GRAPHICS-HANDOVER.md` when it was retired (G5's
+items done or in docs/backlog.md).
+
+### Tools
+
+- `bench/gpu/guest-session.ts` (a page session on a guest image: serial root shell, sway, load phases, the PC
+  sampler `PROFILE=1`, the whole serial log on a timeout), `firefox-load.ts`, `gtk4-load.ts`, `sway-load.ts`,
+  `sway-mac.sh` (the Mac host's GPU; `HEADED=1` allowed when the user isn't using the Mac; `SCRIPT=deqp-run.ts` runs dEQP there, §23), `filter-probe.ts` (which filter a browser's WebGL2 applies at a level of detail), `snapshot-3d.ts`
+  (snapshots of the desktop guest with 3D in use, and the load in a fresh profile; graphics.md §22).
+- dEQP: `images/deqp/build.sh` (`target/deqp/deqp.ext4` and the guest `target/deqp/guest.qcow2`),
+  `bench/gpu/deqp-run.ts` (`STRIDE`/`OFFSET` slices, `CASES=` lists and patterns, `DETAIL=`, `VIRGL_GPU=virgl,debug`,
+  `CAPTURE=`; `stoppedAt`), `tools/virgl-oracle/deqp.sh` (vtest), `bench/gpu/virgl-pairs.ts` (a capture's read-back
+  pairs on Chromium), `scripts/ci-deqp.sh` (the pass lists, `tests/deqp/`). A whole GLES3 list is ten slices of ~17
+  min (`STRIDE=10 OFFSET=$k LIMIT_S=1800` under `timeout 2100`); validation, so other work may run beside it.
+- The method that found G4's bugs: a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
+  `VIRGL_GPU=virgl,debug`; compare with vrend (`target/virgl-oracle/src/src/vrend/`) and Mesa's encoder
+  (`~/Development/src/mesa/src/gallium/drivers/virgl/`). Most bugs were WebGL refusing what GLES allows (silently)
+  or protocol meanings that are vrend's, not Gallium's. A hang: the hung tasks' stacks in `serial.txt`.
+- What found G5's Metal bugs (§23): the case's TGSI (log `sh.text` in `VirglRenderer.finishShader` behind the debug
+  trace, for one run), its GLSL from `generate()` in Node, and that GLSL alone in a WebGL2 page on the Mac with
+  variants (folded or not, invariant or not): a difference that shows without the emulator is the browser's.
+
+### What the guests do
+
+- Texture data travels through staging buffers (`COPY_TRANSFER3D` in the stream); glcomp and sway send no
+  `TRANSFER_*_3D`. sway: 2 submits a frame, its buffers are 3D resources flipped with `SET_SCANOUT` and
+  `RESOURCE_FLUSH`; dumb buffers (fbcon, the cursor, pixman) stay 2D. A scrolling foot uploads its whole window each
+  frame (3.7 MB at 1376×762: 200 MB/s at 55 frames a second).
+- Linux reads both capsets at probe and keeps them: the caps a guest saw at boot are its Mesa's for the session.
+- The guest's cost is its kernel: sway's sys time is ~4–5 ms of a 5.5–7.6 ms frame. Over the date loop the machine
+  takes 25,700 TLB flushes and 9,300 syscalls a second (mostly the loop's fork and exec).
+
+### Learned (don't re-discover)
+
+- **On SwiftShader the GPU worker stalls ~33 ms after every present** (the canvas commit waits for the GPU process
+  to draw; fences queue behind it: 18 ms on the way in, WebGL capped at ~34 frames a second). On the Mac's GPU none.
+  `transferToImageBitmap` moved the wait, didn't remove it. Don't judge fence latency on the dev VM.
+- Firefox: a fresh profile's first minute is busy (WebExtensions, settings sync failing offline): warm up 30 s before
+  measuring. Its WebGL runs in the parent (`CanvasRenderer`), presented through DMABUF. G2's null renderer
+  (`?gpu=virgl-null`) can't run Firefox's WebGL page (it never gets ready).
+- The guest's `pacman -Syu` rebuilds the initramfs with `autodetect`: keep `MODULES=(virtio_mmio virtio_blk ext4
+  vfat)` in its mkinitcpio.conf (images/arch/build.sh sets it in `/etc/mkinitcpio.conf.d/webpc.conf`).
+- **A worker's canvas commits a frame at the end of every task that draws**, and Chromium holds those commits to the
+  display's rate: draw in `requestAnimationFrame`, once (three draws a guest frame capped sway at 39 frames a second).
+- The PC sampler names where a vCPU's current chunk started (the PC is published at chunk ends, which exits cause):
+  it ranks exit sites (counter reads, IRQ unmasks, syscall entries), not where time goes.
+- `Gpu.save()` is also the tests' state read (`vm.deviceState`): don't throw there; mark and let `vm.snapshot` refuse.
+- Playwright's `keyboard.insertText` sends no Enter for a `\n`: paste lines and press Enter (sway-load does). The
+  tty's line is 4096 bytes.
+- The Mac host's shell is zsh (`status` is read-only) and has no `timeout` (`perl -e 'alarm shift; exec @ARGV' N`).
+  The dev VM runs on the same Mac: never measure on both at once.
+- QEMU's `virtio-gpu-gl` can't run in the dev VM (no DRM render node): vtest and our own device are the oracles.
+- Cap memory on every `node`/`cargo` run; Playwright headless only (WebGL2 there is SwiftShader, whose GL runs on
+  the guest's CPUs: real-GPU numbers come from the Mac host).

@@ -39,7 +39,11 @@ only edits docs: `.md` files or code comments):
   `tests/deqp/`, every case expected to pass, a guest boot each); it must pass too when a change touches 3D (the
   virgl renderer, the TGSI translator, the caps, the GPU worker, virtio-gpu's 3D commands), and at the end of a
   graphics track. It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are
-  dEQP's every 50th case plus groups that caught regressions the subset didn't (graphics.md §21).
+  dEQP's every 50th case plus groups that caught regressions the subset didn't (graphics.md §21). CI's Chromium is
+  SwiftShader; a real GPU differs (graphics.md §23: on the Mac's, ANGLE on Metal, 85 GLES2 and 129 GLES3 cases fail,
+  all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
+  GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2` or `gles3`, `STRIDE`/`OFFSET`/`CASES`
+  passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
   them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).

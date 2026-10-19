@@ -1,0 +1,31 @@
+{
+ "api": "gles3",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "stride": 50,
+ "offset": 0,
+ "info": "7.2.9-arch1-1mesa 1:26.2.4-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.gles2 gles2-main.txt gles3 gles3-main.txt",
+ "cases": 84,
+ "seconds": 4.467559249999998,
+ "counts": {
+  "Fail": 1,
+  "Pass": 83
+ },
+ "notPassed": [
+  "dEQP-GLES3.functional.shaders.invariance.lowp.loop_2 Fail"
+ ],
+ "slowest": [
+  "dEQP-GLES3.functional.shaders.invariance.lowp.subexpression_precision_highp Pass 1",
+  "dEQP-GLES3.functional.shaders.invariance.highp.subexpression_precision_highp Pass 1",
+  "dEQP-GLES3.functional.shaders.builtin_functions.common.isnan.vec3_highp_fragment Pass 1",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.subexpression_precision_mediump Pass 0",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.subexpression_precision_lowp Pass 0",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.subexpression_precision_highp Pass 0",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.loop_4 Pass 0",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.loop_3 Pass 0",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.loop_2 Pass 0",
+  "dEQP-GLES3.functional.shaders.invariance.mediump.loop_1 Pass 0"
+ ],
+ "last": "dEQP-GLES3.functional.shaders.invariance.lowp.loop_2 Fail 0dEQP-GLES3.functional.shaders.invariance.lowp.loop_3 Pass 0dEQP-GLES3.functional.shaders.invariance.lowp.loop_4 Pass 0",
+ "warnings": {}
+}

@@ -187,8 +187,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     on virgl; scrolling real sites at 50–60 frames a second on the Mac's GPU; its start and page loads are the guest's
     CPU, the JIT track's), GTK4's GSK GL renderer draws every gtk4-demo demo, and **dEQP-GLES2 and GLES3's whole
     mustpass lists pass with no failure** (17,027 and 44,398 pass, the rest not supported, on SwiftShader), with a pass
-    list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **Next: G5, proposed in
-    `M8-GRAPHICS-HANDOVER.md`** (dEQP on a real GPU, the guest-side leftovers; the user's kickoff to come).
+    list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **G5** (proposed at graphics.md
+    §21's exit, no kickoff): **dEQP on a real GPU is done** (2026-10-19, graphics.md §23: the whole lists on the Mac's
+    M4, ANGLE on Metal, found four bugs of ours SwiftShader hid, fixed; 85 GLES2 and 129 GLES3 failures remain, all the
+    GPU's: the filter switch near level 0, one invariance case); other platforms, GtkGLArea's offload and breadth (a
+    desktop's compositor, Chromium in the guest) are open items in docs/backlog.md and graphics.md §7, with no handover.
     **Snapshots while 3D is in use are done** (built ahead of it, 2026-10-18 to 10-19, graphics.md §22: the
     renderer's state as data, its contents read back, BLOB frames in the file; refused only while a video decodes).
     On the desktop guest with sway, Firefox on WebGL and GTK4 running: 96 resources, 119 MB of 3D state stored as

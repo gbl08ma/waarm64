@@ -26,7 +26,9 @@ export type Operand = {
   /** Destination: the components written (bits x=1, y=2, z=4, w=8). */
   mask: number;
 };
-export type Instr = { op: string; sat: boolean; dst: Operand[]; src: Operand[]; tex?: string; offsets: Operand[]; label?: number };
+export type Instr = { op: string; sat: boolean; dst: Operand[]; src: Operand[]; tex?: string; offsets: Operand[]; label?: number;
+  /** `_PRECISE`: Mesa's lowering of an invariant output (GLSL's `invariant`) marks what computes it. */
+  precise?: boolean };
 export type Decl = {
   file: RegFile; first: number; last: number; dim?: number; mask: number;
   semantic?: string; semIndex: number; interp?: string; loc?: string; arrayId?: number;
@@ -181,11 +183,12 @@ function parseInstr(s: string): Instr {
   const sp = s.indexOf(' ');
   let op = sp < 0 ? s : s.slice(0, sp);
   const rest = sp < 0 ? '' : s.slice(sp + 1);
-  let sat = false;
+  // tgsi_dump writes `_SAT` before `_PRECISE` (MUL_SAT_PRECISE).
+  let sat = false, precise = false;
+  if (op.endsWith('_PRECISE')) { precise = true; op = op.slice(0, -8); }
   if (op.endsWith('_SAT')) { sat = true; op = op.slice(0, -4); }
-  if (op.endsWith('_PRECISE')) op = op.slice(0, -8);
   const parts = rest.length ? rest.split(',').map((p) => p.trim()) : [];
-  const ins: Instr = { op, sat, dst: [], src: [], offsets: [], label };
+  const ins: Instr = { op, sat, dst: [], src: [], offsets: [], label, ...(precise ? { precise } : {}) };
   let k = 0;
   if (!NO_DST.has(op) && parts.length) ins.dst.push(parseOperand(parts[k++], true));
   for (; k < parts.length; k++) {
@@ -318,10 +321,15 @@ function cast(e: string, from: Ty, to: Ty) {
   return `${VEC[to]}(${e})`;
 }
 
+/** An instruction's two sources are the same value (register, swizzle, modifiers). */
+const same = (ins: Instr) => ins.src.length === 2 && JSON.stringify(ins.src[0]) === JSON.stringify(ins.src[1]);
+
 function floatLiteral(bits: number) {
   const f = floatOf(bits);
-  // Not a normal float (an integer's bits, most often): kept as bits, so they survive into an integer cast.
-  if (!Number.isFinite(f) || (f !== 0 && Math.abs(f) < 1.1754943508222875e-38)) return `uintBitsToFloat(${bits >>> 0}u)`;
+  // Not a normal float (an integer's bits, most often): kept as bits, so they survive into an integer cast. Not a
+  // constant expression either (`u_zero`, a uniform never set: 0): ANGLE folds one into a float constant, which its
+  // Metal backend writes as a canonical NaN (-1's bits came back 0x7fc00000: dEQP-GLES2 argument_eval_order on Metal).
+  if (!Number.isFinite(f) || (f !== 0 && Math.abs(f) < 1.1754943508222875e-38)) return `uintBitsToFloat(${bits >>> 0}u ^ u_zero)`;
   if (Object.is(f, -0)) return '-0.0';
   let s = String(f);
   for (let p = 1; p <= 9; p++) {
@@ -709,8 +717,10 @@ class Gen {
       case 'SNE': return f(`vec4(notEqual(${s(0)}, ${s(1)}))`);
       case 'FSLT': return u(bmask(`lessThan(${s(0)}, ${s(1)})`));
       case 'FSGE': return u(bmask(`greaterThanEqual(${s(0)}, ${s(1)})`));
-      case 'FSEQ': return u(bmask(`equal(${s(0)}, ${s(1)})`));
-      case 'FSNE': return u(bmask(`notEqual(${s(0)}, ${s(1)})`));
+      // x != x is how Mesa writes isnan(x) (x == x, !isnan): said as isnan, which ANGLE keeps where a compiler with
+      // fast math folds x != x to false (Metal: dEQP-GLES3 common.isnan).
+      case 'FSEQ': return u(bmask(same(ins) ? `not(isnan(${s(0)}))` : `equal(${s(0)}, ${s(1)})`));
+      case 'FSNE': return u(bmask(same(ins) ? `isnan(${s(0)})` : `notEqual(${s(0)}, ${s(1)})`));
       case 'ISLT': return u(bmask(`lessThan(${s(0, 'i')}, ${s(1, 'i')})`));
       case 'ISGE': return u(bmask(`greaterThanEqual(${s(0, 'i')}, ${s(1, 'i')})`));
       case 'USLT': return u(bmask(`lessThan(${s(0, 'u')}, ${s(1, 'u')})`));
@@ -951,6 +961,8 @@ class Gen {
     const h: string[] = ['#version 300 es', 'precision highp float;', 'precision highp int;'];
     for (const p of ['sampler3D', 'sampler2DArray', 'sampler2DShadow', 'samplerCubeShadow', 'sampler2DArrayShadow', 'isampler2D', 'isampler3D', 'isamplerCube', 'isampler2DArray', 'usampler2D', 'usampler3D', 'usamplerCube', 'usampler2DArray']) h.push(`precision highp ${p};`);
     const st = this.stage[0];
+    // An integer's bits as a float, unfolded (`floatLiteral`): uniforms start as 0.
+    if (body.some((l) => l.includes('u_zero'))) h.push('uniform uint u_zero;');
     // System values (the renderer sets them by name: SYS_UNIFORMS).
     if (this.stage === 'vs') { this.needSys.add('u_adjy'); this.needSys.add('u_adjz'); }
     if (this.stage === 'vs' && this.key.points && !this.writesPointSize()) this.needSys.add('u_psize');
@@ -975,6 +987,11 @@ class Gen {
       const written = new Set<string>();
       for (const [k, d] of [...this.outputs].sort((a, b) => a[0] - b[0])) {
         const name = this.vsOutput(k);
+        // An invariant position (GLSL's `invariant gl_Position`, or `invariant(all)`): the same in every program that
+        // computes it the same way (Metal's fast math otherwise varies it between programs: dEQP's invariance group).
+        // Mesa marks it by the instructions that compute it (`_PRECISE`; GLES 3.0 has no `precise` to say it with) or
+        // on the declaration. Only the position: varyings stay as they are (dEQP checks the position's invariance).
+        if (name === 'gl_Position' && (d.invariant || this.t.instrs.some((i) => i.precise))) h.push('invariant gl_Position;');
         // The point size is declared below, once (with GL's default).
         if (name === 'gl_Position' || name === 'o_psize') continue;
         if (name.startsWith('v_')) {
@@ -982,7 +999,6 @@ class Gen {
           h.push(...declareVarying(vy, 'out'));
           written.add(name);
         } else h.push(`vec4 ${name} = vec4(0.0);`);
-        void d;
       }
       // Varyings the fragment shader reads and this one doesn't write: zero.
       for (const vy of this.varyings.values()) {

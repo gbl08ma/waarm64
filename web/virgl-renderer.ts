@@ -1655,7 +1655,7 @@ void main() {
       flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple, blendSrc: foldedBlend(blend),
       points: mode === 0, pointSizePerVertex: rs?.pointSizePerVertex,
       spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined, spriteUpperLeft: rs?.spriteUpperLeft,
-      ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) } : {}),
+      ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) } : vs.so ? this.soKey(vs.so) : {}),
     };
     const prog = this.program(vs, fs, key);
     if (!prog) return;
@@ -1955,13 +1955,32 @@ void main() {
     }
   }
 
+  /**
+   * The outputs a shader's program captures: all it declares, whatever targets are bound (with none bound too), so a
+   * shader draws through one program with transform feedback on and off, as GL's one program does. Two programs
+   * computed the position differently on ANGLE's Metal (its compiler's fast math), and dEQP compares the two
+   * drawings exactly (lines moved by a pixel). Only past WebGL2's 64 words are the bound targets' outputs alone kept.
+   */
+  private soOutputs(so: NonNullable<Shader['so']>, targets?: (SoTarget | undefined)[]) {
+    const all = so.outputs.slice().sort((a, b) => a.buffer - b.buffer || a.offset - b.offset);
+    if (all.reduce((n, o) => n + o.comps, 0) <= 64 || !targets) return all;
+    return all.filter((o) => targets[o.buffer]);
+  }
+
+  /** A draw's program key's stream output when nothing is captured (`soOutputs`). */
+  private soKey(so: NonNullable<Shader['so']>): { so?: ProgramKey['so'] } {
+    const all = this.soOutputs(so);
+    return all.length && all.reduce((n, o) => n + o.comps, 0) <= 64 ? { so: all.map(({ reg, start, comps }) => ({ reg, start, comps })) } : {};
+  }
+
   /** How a vertex shader's stream outputs (to the targets bound) are captured (`SoPlan`). */
   private soPlan(so: NonNullable<Shader['so']>, targets: (SoTarget | undefined)[]): { plan: SoPlan; outputs: SoOutput[] } | undefined {
-    const outputs = so.outputs.filter((o) => targets[o.buffer]).sort((a, b) => a.buffer - b.buffer || a.offset - b.offset);
+    if (!so.outputs.some((o) => targets[o.buffer])) return undefined;
+    const outputs = this.soOutputs(so, targets);
     if (!outputs.length) return undefined;
     const plan: SoPlan = { outputs, total: outputs.reduce((n, o) => n + o.comps, 0), targets: [] };
     if (plan.total > 64) { this.error(`stream output of ${plan.total} words a vertex (WebGL2 captures 64)`); return undefined; }
-    for (const buffer of new Set(outputs.map((o) => o.buffer))) {
+    for (const buffer of new Set(outputs.map((o) => o.buffer).filter((b) => targets[b]))) {
       const t = targets[buffer]!, r = this.resources.get(t.res);
       if (!r?.buf || !r.shadow) { this.error(`stream output to resource ${t.res}, not a buffer`); return undefined; }
       if ((t.offset & 3) !== 0) { this.error(`stream output at offset ${t.offset} (not a multiple of 4)`); return undefined; }

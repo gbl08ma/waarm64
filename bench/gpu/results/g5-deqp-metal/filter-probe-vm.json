@@ -1,0 +1,205 @@
+{
+ "chromium": "153.0.8010.52",
+ "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "rows": [
+  {
+   "shader": "vs texture",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "vs texture",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": -0.5,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": -0.01,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0.01,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0.5,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": -0.5,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": -0.01,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0.01,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "vs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0.5,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": -0.5,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": -0.01,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0.01,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "NEAREST",
+   "mag": "LINEAR",
+   "lod": 0.5,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": -0.5,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": -0.01,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0,
+   "value": 255,
+   "filter": "NEAREST",
+   "expected": "NEAREST"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0.01,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  },
+  {
+   "shader": "fs textureLod",
+   "min": "LINEAR",
+   "mag": "NEAREST",
+   "lod": 0.5,
+   "value": 128,
+   "filter": "LINEAR",
+   "expected": "LINEAR"
+  }
+ ],
+ "wrong": 0
+}

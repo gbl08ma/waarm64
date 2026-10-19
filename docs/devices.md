@@ -388,14 +388,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   destination attached (sampling a texture still attached from the last draw is a feedback loop WebGL refuses); flat
   varyings travel as integers. A fence waits for the occlusion queries ended before it (WebGL's results come only
   after the task that ended them; GL's are ready at a fence, so a guest's `glFinish` sees them: `FenceGate`); a query destroyed before its result stops counting (a deleted WebGL query never has one). `gl_FragCoord` is upper-left whatever the
-  shader's `FS_COORD_ORIGIN` says: the caps offer no lower-left origin, so Mesa flips y itself. Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
+  shader's `FS_COORD_ORIGIN` says: the caps offer no lower-left origin, so Mesa flips y itself. What a real GPU's
+  compiler may take liberties with is said explicitly (graphics.md §23, ANGLE on Metal): a position computed by
+  precise instructions (Mesa's mark of `invariant`) is `invariant gl_Position`, `x != x` is `isnan(x)`, and an integer
+  immediate that isn't a normal float is no constant expression (`^ u_zero`: folded, a NaN's bits came back canonical). Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
   keeps depth in a word's low 24 bits, GL in its high 24); Z32_FLOAT_S8X24_UINT uploads are drawn (WebGL2 takes no data
   for its type: the depth through `gl_FragDepth`, the stencil a bit a pass). Clears,
   `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both
   formats' swizzles otherwise), copies between resources, occlusion queries as "any samples passed" (exact, or
   conservative for virgl's conservative type; a counter reads 0 or 1, written to the query's buffer when WebGL has it), stream output (transform feedback, graphics.md
   §20: interleaved into one buffer or one output a buffer, unindexed lists, cut at a full buffer, read back into the
-  buffer's copy; PRIMITIVES_GENERATED and PRIMITIVES_EMITTED counted by the draws). Multisampled resources are renderbuffers
+  buffer's copy; PRIMITIVES_GENERATED and PRIMITIVES_EMITTED counted by the draws; a shader's program captures all its
+  outputs whether targets are bound or not, so it draws through one program, as in GL). Multisampled resources are renderbuffers
   (`texture_multisample` is advertised where the browser multisamples: Mesa makes no multisampled renderbuffer
   without it); a multisampled source is resolved into a texture of its format before a blit that converts layouts or
   flips, a multisampled texture sampled is resolved at the draw (one value a pixel, whatever the sample index), and

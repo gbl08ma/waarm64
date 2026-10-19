@@ -118,7 +118,7 @@ IMM[0] UINT32 {3, 7, 0, 0}
   assert.ok(fv.fs.includes('flat in highp ivec4 vf_GENERIC0;') && fv.fs.includes('v_GENERIC0 = intBitsToFloat(vf_GENERIC0);'), fv.fs);
   // Small integers as float immediates stay bits (a float literal would be a denormal, flushed on some GPUs).
   const mv = parseTgsi('VERT\nDCL OUT[0], POSITION\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 1065353216}\n  0: MOV TEMP[0], IMM[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
-  assert.match(generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs, /uintBitsToFloat\(1u\)/);
+  assert.match(generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs, /uintBitsToFloat\(1u \^ u_zero\)/);
 });
 
 test('virgl tgsi: a vertex shader that writes the point size declares it once (dEQP-GLES2 points)', () => {
@@ -128,6 +128,37 @@ test('virgl tgsi: a vertex shader that writes the point size declares it once (d
     const p = generate(vs, fs, { ...KEY, attribs: ['f'], points });
     assert.equal(p.vs.match(/vec4 o_psize\b/g)?.length, 1, p.vs);
     if (points) assert.match(p.vs, /gl_PointSize = o_psize.x;/);
+  }
+});
+
+test('virgl tgsi: an integer immediate that isn\'t a normal float is no constant expression (dEQP-GLES2 argument_eval_order on Metal: -1 came back a canonical NaN)', () => {
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END');
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\nIMM[0] UINT32 {4294967295, 1, 1065353216, 2139095040}\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IMM[0]\n  2: END');
+  const p = generate(vs, fs, { ...KEY, attribs: ['f'] });
+  // -1 (a NaN's bits), 1 (a denormal's) and +inf go through the uniform; 1.0 stays a literal.
+  assert.match(p.vs, /vec4\(uintBitsToFloat\(4294967295u \^ u_zero\), uintBitsToFloat\(1u \^ u_zero\), 1\.0, uintBitsToFloat\(2139095040u \^ u_zero\)\)/, p.vs);
+  assert.match(p.vs, /^uniform uint u_zero;$/m);
+  assert.doesNotMatch(p.fs, /u_zero/);
+});
+
+test('virgl tgsi: x != x is isnan(x), x == x its negation (dEQP-GLES3 common.isnan on Metal, whose fast math folds x != x)', () => {
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\nDCL TEMP[0..1]\n  0: FSNE TEMP[0], IN[0], IN[0]\n  1: FSEQ TEMP[1], IN[0].xyzw, IN[0].xyzw\n  2: FSNE TEMP[0].y, IN[0].xxxx, IN[0].yyyy\n  3: OR OUT[0], TEMP[0], TEMP[1]\n  4: END');
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
+  const p = generate(vs, fs, { ...KEY, attribs: ['f'] });
+  assert.match(p.fs, /uvec4\(-ivec4\(isnan\(v_GENERIC0\)\)\)/, p.fs);
+  assert.match(p.fs, /not\(isnan\(v_GENERIC0\)\)/);
+  assert.match(p.fs, /notEqual\(v_GENERIC0\.xxxx, v_GENERIC0\.yyyy\)/);
+});
+
+test('virgl tgsi: an invariant position stays invariant (dEQP-GLES2 shaders.invariance on Metal)', () => {
+  const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END');
+  // Declared, or (Mesa's way) the instructions that compute it marked precise; `_SAT` comes before `_PRECISE`.
+  for (const [decl, op, invariant] of [['', 'MUL', false], [', INVARIANT', 'MUL', true], ['', 'MUL_PRECISE', true], ['', 'MUL_SAT_PRECISE', true]] as const) {
+    const vs = parseTgsi(`VERT\nDCL IN[0]\nDCL OUT[0], POSITION${decl}\n  0: ${op} OUT[0], IN[0], IN[0]\n  1: END`);
+    assert.equal(vs.instrs[0].op, 'MUL');
+    assert.equal(vs.instrs[0].sat, op.includes('SAT'));
+    const p = generate(vs, fs, { ...KEY, attribs: ['f'] });
+    assert.equal(/^invariant gl_Position;$/m.test(p.vs), invariant, p.vs);
   }
 });
 
@@ -449,6 +480,45 @@ test('virgl renderer: indices start at the index buffer\'s offset, and the large
     [[4, 5, 255, 6], E.UNSIGNED_BYTE, 8],
     [[4, 0xffff, 255, 6], E.UNSIGNED_SHORT, 0],
   ]);
+});
+
+test('virgl renderer: a shader with stream outputs draws through one program, captured or not (dEQP-GLES3 transform_feedback lines on Metal)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const buffer = (id: number, width: number, bind: number) => { r.createResource({ id, target: 0, format: 64, bind, width, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 }); r.attach(1, id); };
+  buffer(1, 256, 0x10); // vertices
+  buffer(2, 256, 0x800); // the capture's target
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  // The vertex shader captures OUT[1] (4 components) into buffer 0, stride 4 words.
+  const [vlen, ...vt] = text('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END\n');
+  cmd(1, 4, 10, 0, vlen, 0, 1, 4, 0, 0, 0, 1 | 4 << 10, 0, ...vt);
+  const [flen, ...ft] = text('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  cmd(1, 4, 11, 1, flen, 0, 0, ...ft);
+  cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+  cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 21);
+  r.createResource({ id: 3, target: 2, format: 2, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 3);
+  cmd(1, 8, 22, 3, 2, 0, 0);
+  cmd(5, 0, 1, 0, 22);
+  cmd(6, 0, 16, 0, 1);
+  cmd(1, 10, 30, 2, 0, 256); // a stream output target on buffer 2
+  const draw = () => cmd(8, 0, 0, 2, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0); // a line
+  draw(); // not captured
+  cmd(25, 0, 0, 30); draw(); // captured
+  cmd(25, 0, 0); draw(); // not captured again
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  const programs = gl.log.filter(([n]) => n === 'useProgram').map(([, a]) => a[0]);
+  assert.equal(gl.log.filter(([n]) => n === 'drawArrays').length, 3);
+  assert.equal(new Set(programs).size, 1, 'one program, transform feedback on or off');
+  assert.equal(gl.log.filter(([n]) => n === 'beginTransformFeedback').length, 1);
+  assert.deepEqual(gl.log.filter(([n]) => n === 'transformFeedbackVaryings').map(([, a]) => a[1]), [['tf_0']]);
 });
 
 test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GLES3 occlusion_query: results after glFinish)', () => {

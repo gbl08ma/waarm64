@@ -378,8 +378,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload` avoids it. Ways out: Mesa reallocating a
   staging-backed texture when it is exported (upstream), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every
   texture then has a guest backing and read-backs go through it: measure Firefox and GTK before choosing).
-- **dEQP hasn't run on a real GPU** (graphics.md §21): every whole-list run was on SwiftShader (the dev VM); the
-  Mac's GPU (ANGLE on Metal) is what users have, and its precision, formats and limits differ. G5's proposal.
+- **dEQP on more platforms** (graphics.md §21, §23): the whole GLES2 and GLES3 lists have run on SwiftShader (the
+  dev VM, CI) and on ANGLE on Metal (the Mac's M4). Each WebGL2 stack behaves differently within the spec (precision,
+  optional extensions, limits, undefined behavior, ANGLE's workarounds), and whatever differs is what users hit.
+  Metal found four bugs of ours that SwiftShader hid, all where our GLSL leaned on what the spec leaves open: two
+  programs where GL has one, an invariance mark dropped, NaN-pattern integer constants folded, `x != x` for isnan;
+  the rest was the GPU's (the filter switch near level 0, one invariance loop, line rasterization). Worth a run, in
+  order:
+  1. **Windows, ANGLE on D3D11**: most users.
+  2. **Linux with an NVIDIA GPU** (ANGLE on GL or Vulkan): the user's desktop, run by the user when convenient, never
+     by us.
+  3. **An Android or ChromeOS phone** (Mali or Adreno): the strictest precision and limits.
+  4. **Intel or AMD integrated GPUs.**
+  The cheap way (proposed, not scheduled): a dEQP runner page (`?deqp` on the page, or on vm.tny.im) that anyone opens
+  in their own browser: it boots the dEQP guest, runs the lists and downloads a results file with the renderer string
+  and the limits; and a tool that compares result files across platforms (as G5 compared Metal with SwiftShader).
+  Until then, `bench/gpu/sway-mac.sh`'s route (`SCRIPT=deqp-run.ts`) is the way for a host we can reach.
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
