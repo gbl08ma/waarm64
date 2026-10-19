@@ -138,12 +138,15 @@ the interpreter's own code.
 - **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
   (`Config::max_bytes`: 160 MiB of wasm for a VM, whose vCPUs share it: [Sharing](#sharing)). When
   either is reached, everything is flushed (slots freed, the host's table lets go of the old
-  functions, [Memory](#memory)). Alpine's boot compiles ~30 MiB and Debian's ~73 MiB, so neither
+  functions, [Memory](#memory)); with `Config::replay` the regions in use before it are compiled
+  again at once ([Replay after a flush](#replay-after-a-flush)). Alpine's boot compiles ~30 MiB and Debian's ~73 MiB, so neither
   flushes; a 4-vCPU `go build` loop flushed once in 5 minutes. Per-module eviction is backlog:
   coldest first. FIFO was tried, and it collapsed a Go build; keeping the flushed hot set warm
   (compiling a block that was compiled before on first sight after a flush) made a too-small cache
   worse (more flushes; `bench/boot/REPORT.md` "M8: one code cache for all vCPUs").
-- **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
+- **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 5 = the default replaying its
+  hot set after a flush, 6 = **JIT-replay**, that in a 16 KiB cache of four-block modules, tier-up at
+  the second entry, with the stale-code checker (the tests); 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
   the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks
   before they're entered again, so JIT-stress's checker misses stale code that lives longer, e.g.
@@ -350,6 +353,54 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   went from 3.55 GB to 1.2 GB at once (`mem-run6-crash` in the summary).
 - **The page's memory estimate** (`hostMemoryGiB`, `web/app/machine.ts`: RAM + 1 + 0.3 per vCPU,
   3.2 GiB for the default) matches the capped median; the peaks above it are the GC's lag.
+
+## Replay after a flush
+
+With `Config::replay` (`VmConfig.jit` 5, the page's `?jit=replay`) a flush for room keeps the regions
+that were in use and compiles them again at once, instead of waiting for each to be counted to the
+threshold again (whose floor the flush has doubled). Per-module eviction couldn't free a full cache:
+about half its regions were idle at Firefox's flushes, but nearly every module held one in use, and V8
+frees a module only whole (`bench/boot/results/m8-evict/` README, "Rechecked"). Replay works at a
+region's granularity instead, and is the first half of compacting (forming the regions in use again
+in new modules, then dropping the old ones), which would do it before the flush.
+
+- **The use signal:** the dispatcher stores the cache's sweep number into its table's word for each
+  slot it enters (`Table::used`, a relaxed store per dispatch; one word per slot per table, read by
+  the cache at a flush). A sweep starts at each epoch and at the probe, so "entered since" is a
+  comparison. The marks live in each table's `Seen` and survive `drop_all` (which rebuilds the rest
+  of `Seen`: what lost `measure.patch`'s marks).
+- **The probe:** at `PROBE_AT` (7) eighths of the budget the cache starts a sweep and clears every
+  table's jump cache and its vCPUs' transfer caches, so a region still in use that is reached through
+  them is entered from the dispatcher again within the window and marked. Code reached only through
+  direct links (imports, a module's own calls) never comes back to the dispatcher.
+- **The hot set** (`Cache::hot_set`, at a flush from `alloc`): the regions entered since the probe
+  (since the epoch began, without one), the regions they link to directly, transitively (each
+  region's recipe keeps its `links`), and a tier-up's loop region in place of its head compiled alone;
+  not a region whose key was invalidated or compiled again since. In slot order, so a region's direct
+  links are compiled again before it (imports, as before the flush, not jump-cache tails), and capped
+  at `REPLAY_MAX` (4) eighths of the budget and of the slots.
+- **Recipes:** each region installed with replay on keeps its blocks' (key, VA), how it was formed
+  (forward, a loop region, a loop head alone) and its links (`Recipe`, in its module's `Logged`;
+  ~100 bytes of the core's heap a region, ~15 MB at a full 160 MiB cache). `Cache::rebuild` forms the region again from the code as it is now, with
+  `block::forward` or `block::region` taking exactly the recipe's blocks, so it gets the same members,
+  predicted returns and tier word; a head with no words any more is left out. An `IC` between the
+  flush and the replay is no hazard: the replay reads the code then, as any compile does.
+- **Paced:** `Cache::emit_if_due` (at the dispatcher's misses, which a flush makes constant) compiles
+  the queue a module of `batch` regions at a time, while the compile worker has at most `REPLAY_AHEAD`
+  (4) modules still to compile: a table that waits [`OVERDUE_NS`] for the worker compiles the module
+  itself, the stall the worker exists to avoid. A region whose head was compiled again meanwhile (or
+  waits in the pending batch) is left out. A flush for a changed guest (`jit_flush`, `IC IALLU`)
+  replays nothing; a flush during a replay replaces its queue.
+- **Counters:** `jit::Stats::replays`, `replayed`, `replayed_bytes` (counter words 108-110).
+- **Not measured yet** (the dev VM's, `M8-JIT-HANDOVER.md`): what a flush's slow phase costs in
+  frames with and without it, how much of the cache the hot set is (the recheck's dispatcher marks
+  saw about half the regions per table over a 16-50 s window), and whether the earlier flush it brings
+  (the replayed code fills part of the new epoch) costs more than it saves. Keeping a flushed hot set
+  warm by "compiled before" (any block compiled before, on first sight after the flush) made a
+  too-small cache worse before ([Compile policy](#compile-policy)); this one takes only what was
+  entered near the flush, under a cap.
+- **Tests:** JIT-replay (docs/testing.md), the unit tests in `jit/mod.rs` (a recipe forms its region
+  again; the hot set, the probe, the marks across a flush).
 
 ## Invalidation and the stale-code checker
 

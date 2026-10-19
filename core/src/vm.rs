@@ -93,7 +93,9 @@ pub struct VmConfig {
     pub fb_height: u64,
     /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10);
     /// 3 JIT-check (`jit::Config::CHECK`) (ABI 24); 4 the JIT's dispatcher
-    /// without compiling, so the block interpreter (`jit::Config::INTERP`, ABI 33).
+    /// without compiling, so the block interpreter (`jit::Config::INTERP`, ABI 33);
+    /// 5 the JIT replaying the hot set after a flush (`jit::Config::REPLAY`),
+    /// 6 that in a small cache (`jit::Config::REPLAY_STRESS`) (ABI 41).
     pub jit: u64,
     /// Optional CPU features (`cpu::FEATURE_*`; ABI 19); 0, the default, is none.
     pub features: u64,
@@ -302,6 +304,9 @@ pub struct Counters {
     /// the host didn't have the worker's compiled module yet, and the runs
     /// that ended early for it to arrive.
     pub cw: [AtomicU64; 4],
+    /// Replay (ABI 41, `jit::Stats`): flushes that replayed a hot set, the
+    /// regions compiled again, and those modules' wasm bytes.
+    pub rp: [AtomicU64; 3],
 }
 
 /// Indexes into [`Counters::par`].
@@ -332,6 +337,7 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
+            rp: [const { AtomicU64::new(0) }; 3],
         }
     }
 }
@@ -694,6 +700,8 @@ impl Vm {
             1 => Some(jit::Config::DEFAULT),
             3 => Some(jit::Config::CHECK),
             4 => Some(jit::Config::INTERP),
+            5 => Some(jit::Config::REPLAY),
+            6 => Some(jit::Config::REPLAY_STRESS),
             _ => Some(jit::Config::STRESS),
         }
         .map(|c| jit::Config {
@@ -1440,6 +1448,9 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         c.cw.iter()
             .zip([s.worker_installs, s.overdue, s.parks, s.park_exits])
     {
+        a.store(v, Ordering::Relaxed);
+    }
+    for (a, v) in c.rp.iter().zip([s.replays, s.replayed, s.replayed_bytes]) {
         a.store(v, Ordering::Relaxed);
     }
 }

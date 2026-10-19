@@ -8,35 +8,49 @@ docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (t
 arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
 their lessons are below.
 
-**Next (2026-10-18, the user's call): per-module eviction, measured first, then built.** The user finds budget flushes
-the main cause of stutters with heavy guest software (a browser's video, music and WebGL stutter at each, sometimes two
-flushes in a row), and wants them gone at minimal steady-state cost, with a bigger or growing budget only as a last
-resort. A cloud session's research (the project's `jit-eviction/proposal.md`) found what decides any design: a
-module reaches compiled successors as imports, an import keeps its target's instance alive, and imports point from
-newer modules to older ones, so a module's memory goes only with every module importing it, transitively (FIFO by
-install order cascaded into the hottest, oldest code for this reason: docs/backlog.md). The proposal: evict
-coldest-first in importer-closed sets, the use signal a byte store per dispatch plus soft faults (clearing a
-cold-looking module's jump-cache and transfer-cache entries, so a use comes back to the dispatcher), in batches down
-to 6/8 of the budget, a flush when not enough is cold; optionally link a target that is cold at compile time through
-the jump cache instead of importing it. Rebindable links (`return_call_ref` through a cell) were judged slower than
-imports (V8's code: ~8 loads against 3). The fallback is two live epochs (a flush that keeps running the old code).
-A first look in the cloud (Debian's boot at a 24 MiB budget, `bench/boot/results/m8-evict/` README) already showed
-the problem: ~78% of the cache cold for 15 s at its flushes, 3% freeable with every import pinning; a few recent
-modules pin nearly everything, transitively. Two ways out to measure: the cold-target rule (it freed nearly all of the
-idle machine's cold code, nothing of the boot's) and imports only within a generation (76-78% freeable, but half the
-imports become jump-cache tails).
-**Step 1 was wrong, and step 2 was built on it (2026-10-19; `bench/boot/results/m8-evict/` README "Rechecked").**
-`measure.patch` lost every table's marks at the first flush or `IC IALLU` (`Cache::drop_all` rebuilds `Seen`), so its
-"cold" was install age. Eviction on generations was built anyway (branch `evict-generations`, ABI 39 there:
-`env.jit_release`, `VmConfig.jit` 5 and 6, JIT-evict in the boot tests, planted bugs caught) and never evicted in
-Firefox's pages session: with real marks 0-12 MiB of the full 160 MiB cache is unused for 5-60 s, since nearly every
-module holds a region in use, and V8 frees a module only whole. **Next: the user's choice** among compacting (recompile
-the regions in use out of mostly idle modules, then drop those), two live epochs, recompiling the previous epoch's hot
-set right after a flush (where `Cache::flush` now doubles the threshold's floor), or a bigger budget (docs/backlog.md
-"Per-module eviction"). Measure first how long a flush's slow phase lasts and what it costs in frames (the pages
-session's per-second `fps`, `maxms`), so the choice rests on the stutter itself. One of the six evict sessions (the clean
-build's second) had a page time out with the guest nearly idle (`bench/results/local/evict/ff-evict-2`, local); the
-other five didn't, nor any flush session: not looked into.
+**Next (2026-10-19, the user's call): replay the hot set after a flush, built in a cloud session; the dev VM
+measures it.** The user finds budget flushes the main cause of stutters with heavy guest software (a browser's
+video, music and WebGL stutter at each, sometimes two flushes in a row) and wants them gone at minimal
+steady-state cost, a bigger budget only as a last resort. Per-module eviction couldn't do it (docs/backlog.md
+"Per-module eviction"; branch `evict-generations`, not merged; `bench/boot/results/m8-evict/` README "Rechecked"):
+about half the regions are idle at Firefox's flushes, but nearly every module holds one in use and V8 frees a
+module only whole. So the cache now relocates regions instead, first at the flush itself: with `?jit=replay`
+(`VmConfig.jit` 5, ABI 41) a flush for room compiles the regions that were in use before it again at once
+(docs/jit.md "Replay after a flush"). The signal is the evict branch's mark per dispatch (which the user judged
+cheap enough to keep: the branch's sessions were even on busy MIPS) and its probe at 7/8 (jump and transfer
+caches cleared, so code reached through them comes back to the dispatcher); each region keeps a recipe (its
+blocks' key and VA, how it was formed, its direct links) that forms it again from the code as it is now; the hot
+set is the regions marked since the probe plus what they link to directly, in slot order (links become imports
+again), capped at half the budget, compiled a module at a time while the compile worker has at most 4 left to
+compile (a table waiting a second for it compiles itself). Off by default until measured.
+- **What the cloud checked** (counts, no timings): `scripts/ci.sh` (below), JIT-replay (a 16 KiB cache with the
+  checker) on the bare-metal tests, round-robin and parallel; the unit tests, with three planted bugs caught (the
+  marks not carried across `drop_all`, a forward and a loop recipe swapped, the closure over links dropped).
+  Buildroot's JIT-replay tests (1, 2, 4 vCPUs and parallel on 4) were added but need the images: **run them first**
+  (`node --test --test-name-pattern=JIT-replay tests/boot-node-linux.test.ts tests/boot-node-parallel.test.ts`).
+  Debian on the page with the budget cut to 24 MiB (a local edit, not committed; 4 vCPUs, to the login prompt):
+  both builds flushed twice in the boot; with replay each flush compiled ~9,200 regions (~12.3 MiB, the cap: the
+  boot's hot set is larger than half the budget) in ~18 modules of 512, `overdue` 0, 2,164 modules in all against
+  2,453, the interpreted steps the same (0.40G: a boot's code mostly runs once, not the case replay is for).
+- **The dev VM's measurement, the user's question being the stutter:** Firefox's pages session (the "How to
+  measure" below) with `QUERY=jit=replay` against the default, two each, alternating (`QUERY`, which
+  `bench/gpu/firefox-load.ts` adds to the page's query). Read
+  per flush: how long the slow phase lasts and what it costs in frames (the per-second `fps`, `maxms` around each
+  flush), busy MIPS over the session, flushes per session (replayed code fills part of the new epoch: does the next
+  flush come sooner?), `results.json`'s `jit` (`replays`, `replayed`, `replayedBytes` are new; the modules too, for the backlog's "Fewer, larger
+  modules": replay emits 512 regions a module and its loop regions with no tier-up module), vCPU stalls ≥ 20 ms
+  (the replay's compile burst goes to the worker: `overdue` must stay 0). Then the gates (`tools/tpw.sh`) only to
+  confirm nothing moved (they never flush). The 4-vCPU `go build` loop of `bench/stress` is the second workload.
+- **Knobs if it helps but not enough:** `REPLAY_MAX` (4 eighths; at Debian's boot flushes the hot set filled it),
+  `PROBE_AT` (7), the window (since the probe, 16-50 s in Firefox: a sweep every few seconds with the jump caches
+  cleared again would make "in use" more recent, at the cost of more dispatcher trips), the flush's doubling of
+  the threshold's floor (`Cache::flush`; replay may make it unnecessary), `REPLAY_AHEAD`.
+- **If it doesn't help enough, the next step is compacting before the flush**, which this is built to grow into:
+  at the probe's end, compile the hot set from the recipes into a second slot range while the old epoch keeps
+  running, and let each table switch to it at its dispatcher (the flush becomes a switch: no interpreted phase,
+  no V8 compile on the critical path). What it needs beyond replay: slots for two epochs (capacity, the hot words,
+  the marks), tables installing the next epoch's modules before switching, the log and `Seen` per epoch, and the
+  host's `env.jit_release` (the evict branch's) to null the old epoch's slots once every table has switched.
 
 **Before that (2026-10-18, a cloud session): the integer NEON, structures and CRC32 compiled** (docs/jit.md "NEON →
 SIMD128", "NEON lane by lane", "Structures"; branch `claude/project-thread-fcaq73`). A profile of image decoding in

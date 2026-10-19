@@ -171,6 +171,9 @@ pub struct Region {
     /// that call. When X30 holds it, the return is an edge to the member
     /// there instead of an indirect branch.
     pub returns: Vec<(u64, u64)>,
+    /// Formed by [`forward`] (else by [`region`], or a block alone): how the
+    /// cache forms it again from its blocks (`jit::Recipe`).
+    pub forward: bool,
 }
 
 impl From<Block> for Region {
@@ -179,6 +182,7 @@ impl From<Block> for Region {
             blocks: vec![b],
             tier: None,
             returns: vec![],
+            forward: false,
         }
     }
 }
@@ -189,6 +193,7 @@ impl Region {
             blocks,
             tier: None,
             returns: vec![],
+            forward: false,
         }
     }
 
@@ -418,6 +423,7 @@ pub fn forward(
         blocks: w.post,
         tier: None,
         returns: w.returns,
+        forward: true,
     }
 }
 
@@ -1712,6 +1718,7 @@ mod tests {
                 .into(),
             tier: None,
             returns: vec![],
+            forward: false,
         };
         // 0x7000 at PA 0x3000, 0x8000 at PA 0x9000, and back in the head's page.
         let r = mmu([0x3000, 0x9000, 0x3100]);
@@ -1797,6 +1804,7 @@ mod tests {
             }],
             tier: Some(0x2000),
             returns: vec![],
+            forward: false,
         };
         let e = module(
             &[r],

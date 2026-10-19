@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 40;
+export const ABI = 41;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -384,7 +384,9 @@ export const Counter = {
   JIT_WORKER_INSTALLS: 104, JIT_OVERDUE: 105,
   // ABI 37: times the worker's compiled module hadn't reached the vCPU yet, and runs ended early for it to arrive.
   JIT_PARKS: 106, JIT_PARK_EXITS: 107,
-  LEN: 108,
+  // ABI 41: flushes that replayed the hot set, regions compiled again for them, those modules' wasm bytes.
+  JIT_REPLAYS: 108, JIT_REPLAYED: 109, JIT_REPLAYED_BYTES: 110,
+  LEN: 111,
 } as const;
 
 /**
@@ -407,8 +409,8 @@ export type BootOptions = {
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
   kernelOffset?: number;
-  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33). */
-  jit?: 0 | 1 | 2 | 3 | 4;
+  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33), 5 the JIT replaying the hot set after a flush, 6 that in a small cache (ABI 41). */
+  jit?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
@@ -1035,6 +1037,7 @@ function stats(n: (i: number) => number) {
       regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
+      replays: n(Counter.JIT_REPLAYS), replayed: n(Counter.JIT_REPLAYED), replayedBytes: n(Counter.JIT_REPLAYED_BYTES),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

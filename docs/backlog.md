@@ -78,7 +78,8 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   (`bench/boot/REPORT.md` "M8: the compile worker's modules, posted") a module costs a vCPU ~0.06 ms to install, so
   the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS and those stops,
   then try tier-ups that wait a little for company (the head runs alone meanwhile); Alpine paid +20% for 16M-step
-  batches.
+  batches. Replay after a flush (docs/jit.md, `?jit=replay`) already re-emits the hot set in modules of 512 regions,
+  its loop regions compiled whole with no tier-up module: count its sessions' modules when measuring it.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
@@ -142,6 +143,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     regions in use out of mostly idle modules, then drop those); two live epochs (the old code keeps running while
     the new epoch compiles the hot set); recompiling the previous epoch's hot set at once after a flush (the marks
     give it) where `Cache::flush` now doubles the threshold's floor; a bigger budget.
+  - **Replay is built** (2026-10-19, the user's choice: the precursor of compacting; docs/jit.md "Replay after a
+    flush", `?jit=replay`, off by default): the evict branch's mark per dispatch and probe, a recipe per region, the
+    hot set compiled again right after a flush. Unmeasured on the dev VM (`M8-JIT-HANDOVER.md`); compacting before
+    the flush (a second epoch's slots, tables switching at their dispatcher) is the next step if it isn't enough.
 - **Smaller slow arms of loads and stores** (2026-10-13; memory of the code cache, not speed).
   Measured on Alpine's userspace benchmark (968 modules, 34 MB of wasm; 49 of them, 2,122
   functions, compiled eagerly in Node 26 with `--print-wasm-code`, one tier at a time; the

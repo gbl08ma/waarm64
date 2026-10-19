@@ -85,6 +85,11 @@ pub struct Config {
     /// blocks only), so the edge into it stays in the function instead of a
     /// jump-cache probe and an indirect call (docs/jit.md "Compile policy").
     pub warm: u32,
+    /// After a flush for room, compile the regions in use before it again
+    /// at once (docs/jit.md "Replay after a flush"): the dispatcher marks
+    /// the slots it enters, and a probe from [`PROBE_AT`] eighths on makes
+    /// code reached through the jump and transfer caches come back to it.
+    pub replay: bool,
 }
 
 impl Config {
@@ -101,6 +106,7 @@ impl Config {
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
         warm: WARM,
+        replay: false,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -115,6 +121,7 @@ impl Config {
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
+        replay: false,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -138,6 +145,23 @@ impl Config {
         threshold_max: u32::MAX,
         ..Config::DEFAULT
     };
+    /// The default policy, replaying the hot set after a flush
+    /// (`VmConfig.jit` 5).
+    pub const REPLAY: Config = Config {
+        replay: true,
+        ..Config::DEFAULT
+    };
+    /// Replaying in a cache this small that it flushes every few modules (of
+    /// four blocks), loop heads tiering up at their second entry, with the
+    /// stale-code checker (`VmConfig.jit` 6: the tests).
+    pub const REPLAY_STRESS: Config = Config {
+        max_bytes: 16 << 10,
+        batch: 4,
+        check: true,
+        region_after: 1,
+        replay: true,
+        ..Config::DEFAULT
+    };
 }
 
 /// [`Config::DEFAULT`]'s `max_bytes`: the wasm bytes V8 may hold for a whole VM
@@ -150,6 +174,19 @@ pub const PRESSURE_KNEE: u64 = 2;
 
 /// [`Config::DEFAULT`]'s `region_after`.
 pub const REGION_AFTER: u32 = 1000;
+
+/// Replay (`Config::replay`), in eighths of `Config::max_bytes` (and of
+/// `Config::capacity`): the live bytes at which the cache starts a probe
+/// (every table's jump and transfer caches cleared, so code still in use is
+/// entered from the dispatcher again, which marks it), and at most how much
+/// of the hot set a flush compiles again.
+pub const PROBE_AT: u64 = 7;
+pub const REPLAY_MAX: u64 = 4;
+
+/// Replayed modules the compile worker may have still to compile before the
+/// cache emits another: a table that waits [`OVERDUE_NS`] for one compiles it
+/// itself, the stall the worker exists to avoid.
+pub const REPLAY_AHEAD: u32 = 4;
 
 /// What the JIT did (`vm::Counters` publishes them).
 #[repr(C)]
@@ -203,6 +240,11 @@ pub struct Stats {
     /// so that it arrives (ABI 37, [`Table::parked`]).
     pub parks: u64,
     pub park_exits: u64,
+    /// Flushes that replayed a hot set, the regions compiled again for them
+    /// and the wasm bytes of those modules (ABI 41, `Config::replay`).
+    pub replays: u64,
+    pub replayed: u64,
+    pub replayed_bytes: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -368,6 +410,58 @@ pub struct Cache {
     /// EL1's follows), once a table has installed it: the same in every
     /// table, as is every slot's.
     xmiss: Option<u32>,
+    rp: Replay,
+}
+
+/// Replay's state (`Config::replay`, docs/jit.md "Replay after a flush").
+#[derive(Default)]
+struct Replay {
+    /// The mark the dispatcher stores for each slot it enters (`Table::used`):
+    /// a new one at each epoch and at the probe, so the slots entered since
+    /// either are those marked with it or later.
+    sweep: Arc<AtomicU32>,
+    /// The sweep this epoch started at, and the probe's (none yet).
+    start: u32,
+    probe: Option<u32>,
+    /// The regions of the last epoch to compile again, in slot order (the
+    /// targets of a region's imports come before it).
+    queue: VecDeque<Recipe>,
+}
+
+/// How to form a compiled region again ([`Cache::rebuild`]): its blocks'
+/// (key, VA), head first, how it was formed, the keys it links to directly
+/// (the emitter's `links`), and its share of its module's bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Recipe {
+    blocks: Box<[(u64, u64)]>,
+    kind: Kind,
+    links: Box<[u64]>,
+    bytes: u32,
+}
+
+impl Recipe {
+    fn of(r: &block::Region, links: &[u64], bytes: u32) -> Recipe {
+        Recipe {
+            blocks: r.blocks.iter().map(|b| (b.key, b.va)).collect(),
+            kind: match (r.tier, r.forward) {
+                (Some(_), _) => Kind::Alone,
+                (None, true) => Kind::Forward,
+                (None, false) => Kind::Loop,
+            },
+            links: links.into(),
+            bytes,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// A loop head compiled alone, with its hot word.
+    Alone,
+    /// A loop region (`block::region`), or a block alone without a hot word.
+    Loop,
+    /// A forward region (`block::forward`).
+    Forward,
 }
 
 /// A module installed since the last flush.
@@ -380,6 +474,8 @@ struct Logged {
     bytes: Vec<u8>,
     /// The hot words of its loop heads compiled alone (their slots).
     tiers: Vec<u32>,
+    /// Its regions' recipes, by slot (`Config::replay`; else none).
+    recipes: Vec<Recipe>,
 }
 
 /// A table's progress, as the cache records it.
@@ -393,6 +489,8 @@ struct Seen {
     all: bool,
     /// The entries of `Cache::ival_log` it has seen (an absolute index).
     ival: u64,
+    /// Its slots' marks (`Table::used`, `Config::replay`).
+    used: Option<Arc<[AtomicU32]>>,
 }
 
 /// A loop region compiled for a head compiled alone: its table index, the
@@ -435,17 +533,182 @@ impl Cache {
             ready: Arc::new(AtomicU32::new(0)),
             tables: Vec::new(),
             xmiss: None,
+            rp: Replay {
+                sweep: Arc::new(AtomicU32::new(1)),
+                start: 1,
+                ..Replay::default()
+            },
         }
     }
 
     /// `n` consecutive slots for a module; flushes the cache first if they
     /// don't fit (counted in `s`).
+    /// With `Config::replay` the flush keeps the regions in use for
+    /// [`Cache::replay`] to compile again, and a probe for them starts at
+    /// [`PROBE_AT`] eighths of the budget.
     fn alloc(&mut self, n: u32, s: &mut Stats) -> u32 {
+        let eighth = self.cfg.max_bytes / 8;
+        if self.cfg.replay && self.rp.probe.is_none() && self.live_bytes >= eighth * PROBE_AT {
+            self.probe();
+        }
         if self.next + n > self.cfg.capacity || self.live_bytes >= self.cfg.max_bytes {
+            let hot = self.hot_set();
             self.flush(s);
+            if !hot.is_empty() {
+                s.replays += 1;
+                self.rp.queue = hot;
+            }
         }
         self.next += n;
         self.next - n
+    }
+
+    /// Starts a probe for the code in use: a new sweep, and every table's
+    /// jump cache and its vCPUs' transfer caches cleared, so a region still
+    /// in use is entered from the dispatcher again, which marks it.
+    fn probe(&mut self) {
+        let sweep = self.rp.sweep.fetch_add(1, Ordering::Relaxed) + 1;
+        self.rp.probe = Some(sweep);
+        for t in &mut self.tables {
+            (t.all, t.dropped) = (true, Vec::new());
+        }
+        self.drops.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The regions in use, to compile again after a flush (`Config::replay`):
+    /// those a table's dispatcher entered since the probe began (or since
+    /// the epoch did, without one), and the regions they link to directly,
+    /// transitively (entered without the dispatcher); a tier-up's loop region
+    /// in place of its head alone. In slot order, so a region's direct links
+    /// are compiled before it again (as imports, not jump-cache tails), up
+    /// to [`REPLAY_MAX`] eighths of the budget.
+    fn hot_set(&self) -> VecDeque<Recipe> {
+        let Some(xmiss) = self.xmiss.filter(|_| self.cfg.replay) else {
+            return VecDeque::new();
+        };
+        let since = self.rp.probe.unwrap_or(self.rp.start);
+        let n = self.next as usize;
+        let mut hot = vec![false; n];
+        for u in self.tables.iter().filter_map(|t| t.used.as_ref()) {
+            for (h, w) in hot.iter_mut().zip(u.iter()) {
+                *h |= w.load(Ordering::Relaxed) >= since;
+            }
+        }
+        // Each slot's recipe, and whether it's still what its key runs (not
+        // invalidated, nor superseded).
+        let mut recipes: Vec<Option<&Recipe>> = vec![None; n];
+        for l in &self.log {
+            for (k, r) in l.recipes.iter().enumerate() {
+                let (slot, key) = (l.slot + k as u32, r.blocks[0].0);
+                let idx = xmiss + slot;
+                let live = self.map.get(&key).is_some_and(|i| i.idx == idx)
+                    || self.tiers.get(&key).is_some_and(|t| t.idx == idx);
+                if live && (slot as usize) < n {
+                    recipes[slot as usize] = Some(r);
+                }
+            }
+        }
+        let mut stack: Vec<usize> = (0..n).filter(|&i| hot[i]).collect();
+        while let Some(i) = stack.pop() {
+            let Some(r) = recipes[i] else {
+                continue;
+            };
+            let key = r.blocks[0].0;
+            // A head compiled alone that tiered up runs its loop region (its
+            // hot word redirects there).
+            let region = self.tiers.get(&key).filter(|_| r.kind == Kind::Alone);
+            let to = r
+                .links
+                .iter()
+                .filter_map(|k| self.map.get(k).map(|i| i.idx));
+            for idx in to.chain(region.map(|t| t.idx)) {
+                let t = idx.wrapping_sub(xmiss) as usize;
+                if idx != 0 && t < n && !hot[t] {
+                    hot[t] = true;
+                    stack.push(t);
+                }
+            }
+        }
+        // A tier-up's region replaces its head compiled alone.
+        let looped: Map<()> = self
+            .tiers
+            .iter()
+            .filter(|(_, t)| hot.get((t.idx - xmiss) as usize) == Some(&true))
+            .map(|(&k, _)| (k, ()))
+            .collect();
+        let (max_bytes, max_n) = (
+            self.cfg.max_bytes / 8 * REPLAY_MAX,
+            self.cfg.capacity as u64 / 8 * REPLAY_MAX,
+        );
+        let (mut bytes, mut out) = (0, VecDeque::new());
+        for r in (0..n).filter(|&i| hot[i]).filter_map(|i| recipes[i]) {
+            if r.kind == Kind::Alone && looped.contains_key(&r.blocks[0].0) {
+                continue;
+            }
+            bytes += r.bytes as u64;
+            if bytes > max_bytes || out.len() as u64 >= max_n {
+                break;
+            }
+            out.push_back(r.clone());
+        }
+        out
+    }
+
+    /// Recipe `r`'s region formed again from the code as it is now (none if
+    /// its head has no words any more).
+    fn rebuild(&self, r: &Recipe, mem: &Mem) -> Option<block::Region> {
+        let (key, va) = r.blocks[0];
+        let has = |k: u64| r.blocks.iter().any(|b| b.0 == k);
+        let mut region = match r.kind {
+            Kind::Forward => block::forward(mem, key, va, &|va, near| match near {
+                Some(k) => has(k).then_some(k),
+                None => r
+                    .blocks
+                    .iter()
+                    .find(|b| b.1 == va && b.0 & 3 == key & 3)
+                    .map(|b| b.0),
+            }),
+            Kind::Loop => block::region(mem, key, va, &has),
+            Kind::Alone => {
+                let mut region = block::region(mem, key, va, &|_| false);
+                region.blocks.truncate(1);
+                region.tier = Some(0); // its word once it has a slot
+                region
+            }
+        };
+        if r.kind != Kind::Alone {
+            region.tier = None;
+        }
+        (!region.blocks.is_empty()).then_some(region)
+    }
+
+    /// Compiles the next regions of the hot set the last flush kept (into
+    /// `t`), a module at a time, while the compile worker keeps up with them
+    /// ([`REPLAY_AHEAD`]). A region whose head is compiled again already
+    /// (or waits in the batch) is left out.
+    fn replay(&mut self, t: &mut Table, mem: &Mem) {
+        let behind = self
+            .seq
+            .wrapping_sub(1)
+            .wrapping_sub(self.ready.load(Ordering::Acquire));
+        if self.seq != 1 && (behind as i32) >= REPLAY_AHEAD as i32 {
+            return;
+        }
+        let mut regions = Vec::new();
+        while regions.len() < self.cfg.batch as usize
+            && let Some(r) = self.rp.queue.pop_front()
+        {
+            let key = r.blocks[0].0;
+            if self.map.get(&key).is_some_and(|i| i.idx != 0 || i.queued) {
+                continue;
+            }
+            regions.extend(self.rebuild(&r, mem));
+        }
+        let (n, before) = (regions.len() as u64, t.stats.bytes);
+        if self.install(t, regions, mem).is_some() {
+            t.stats.replayed += n;
+            t.stats.replayed_bytes += t.stats.bytes - before;
+        }
     }
 
     /// Drops every block (their slots are reused; the modules are left to the
@@ -477,6 +740,9 @@ impl Cache {
 
     fn drop_all(&mut self) {
         self.drops.fetch_add(1, Ordering::Relaxed);
+        self.rp.start = self.rp.sweep.fetch_add(1, Ordering::Relaxed) + 1;
+        self.rp.probe = None;
+        self.rp.queue.clear();
         self.map.clear();
         self.pages.clear();
         self.linkers.clear();
@@ -492,8 +758,10 @@ impl Cache {
         self.log.clear();
         self.freed = 0;
         for t in &mut self.tables {
+            // (The marks are kept: the new sweep tells them apart.)
             *t = Seen {
                 ival: t.ival,
+                used: t.used.take(),
                 ..Seen::default()
             };
         }
@@ -614,6 +882,9 @@ impl Cache {
     /// [`BATCH_STEPS`] interpreted, or it has waited [`BATCH_TIMEOUT`] (by
     /// table `t`'s clock), into `t`.
     fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
+        if !self.rp.queue.is_empty() {
+            self.replay(t, mem);
+        }
         if self.pending.is_empty() {
             return;
         }
@@ -833,12 +1104,23 @@ impl Cache {
         } else {
             0
         };
+        let recipes = if self.cfg.replay {
+            let share = (len / n as u64) as u32;
+            regions
+                .iter()
+                .zip(&links)
+                .map(|(r, links)| Recipe::of(r, links, share))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.log.push(Logged {
             slot,
             n,
             seq,
             bytes,
             tiers,
+            recipes,
         });
         let idx = xmiss + slot;
         self.live_bytes += len;
@@ -908,6 +1190,11 @@ pub struct Table {
     jc_used: Vec<u32>,
     /// One hot word per slot ([`emit::tier_up`]).
     hot: Box<[u32]>,
+    /// Replay (`Config::replay`): the sweep the dispatcher marks each slot it
+    /// enters with (read at each [`steps`]), and the marks, one per slot
+    /// (the cache reads them at a flush; none without replay).
+    sweep: u32,
+    used: Arc<[AtomicU32]>,
     /// The cache's epoch its slots hold, how many of that epoch's
     /// modules it has installed, the cache's `drops` when it last caught up,
     /// and whether it has the transfer cache's miss functions (slots 0 and 1).
@@ -955,8 +1242,11 @@ pub struct Table {
 impl Table {
     /// A new table of cache `c`, which it hasn't caught up with yet.
     fn new(c: &mut Cache) -> Table {
+        let n = if c.cfg.replay { c.cfg.capacity } else { 0 };
+        let used: Arc<[AtomicU32]> = (0..n).map(|_| AtomicU32::new(0)).collect();
         c.tables.push(Seen {
             ival: c.ival_base + c.ival_log.len() as u64,
+            used: c.cfg.replay.then(|| used.clone()),
             ..Seen::default()
         });
         Table {
@@ -969,6 +1259,8 @@ impl Table {
                 .expect("JC entries"),
             jc_used: Vec::new(),
             hot: vec![0; c.cfg.capacity as usize].into_boxed_slice(),
+            sweep: 0,
+            used,
             epoch: c.epoch,
             installed: 0,
             drops: 0,
@@ -1231,18 +1523,21 @@ impl Table {
 pub struct Jit {
     pub table: Table,
     cache: Arc<Lock<Cache>>,
-    /// The cache's `drops`, `ivals` and `ready`, read without its lock.
+    /// The cache's `drops`, `ivals`, `ready` and replay sweep, read without
+    /// its lock.
     drops: Arc<AtomicU64>,
     ivals: Arc<AtomicU64>,
     ready: Arc<AtomicU32>,
+    sweep: Arc<AtomicU32>,
 }
 
 impl Jit {
     pub fn new(cache: Cache) -> Jit {
-        let (drops, ivals, ready) = (
+        let (drops, ivals, ready, sweep) = (
             cache.drops.clone(),
             cache.ivals.clone(),
             cache.ready.clone(),
+            cache.rp.sweep.clone(),
         );
         let cache = Arc::new(Lock::new(cache));
         let table = Table::new(&mut cache.lock());
@@ -1252,6 +1547,7 @@ impl Jit {
             drops,
             ivals,
             ready,
+            sweep,
         }
     }
 
@@ -1263,6 +1559,7 @@ impl Jit {
             drops: self.drops.clone(),
             ivals: self.ivals.clone(),
             ready: self.ready.clone(),
+            sweep: self.sweep.clone(),
         }
     }
 
@@ -1456,6 +1753,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
     let vr = unsafe { &mut *v };
     let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
+    let replay = jit.table.cfg.replay;
+    if replay {
+        jit.table.sweep = jit.sweep.load(Ordering::Relaxed);
+    }
     let mut done = 0;
     while done < n {
         let left = n - done;
@@ -1481,6 +1782,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             }
             if key & block::KEY_MMU != 0 {
                 vr.tlb.xc_fill(pc, key & 3, idx, len);
+            }
+            if replay {
+                let t = &jit.table;
+                t.used[(idx - t.base) as usize].store(t.sweep, Ordering::Relaxed);
             }
             let helped = vr.jit.helper_steps;
             // SAFETY: `idx` is a compiled block (the cache drops blocks, and
@@ -1860,6 +2165,7 @@ mod tests {
             pages: 0,
             decoded: 0,
             warm: 0,
+            replay: false,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());
@@ -1973,6 +2279,167 @@ mod tests {
             );
         }
         assert!(c.pending.is_empty() && !c.map[&0x100].queued);
+    }
+
+    /// A region formed again from its recipe is the region it was: forward
+    /// regions (with a call's predicted return), loop heads alone with their
+    /// hot word, a loop of one, and a loop region (a tier-up's).
+    #[test]
+    fn a_recipe_forms_its_region_again() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        // As in `a_batch_is_planned_as_forward_regions_and_loop_heads`, and
+        // 0x140: bl 0x10c; 0x144: b 0x110 (0x10c runs on to 0x118's ret).
+        #[rustfmt::skip]
+        let words = [
+            0xb4000061u32, 0x91000442, 0x14000002, 0x91000842, 0x91000463, 0xb5000063, 0xd65f03c0, 0,
+            0xf10004a5, 0xb4000045, 0x17fffffe, 0xf10004c6, 0x54ffffe1, 0xd65f03c0,
+        ];
+        for (k, w) in words.into_iter().enumerate() {
+            mem.write(0x100 + 4 * k as u64, 4, w as u64).unwrap();
+        }
+        mem.write(0x140, 4, 0x97fffff3).unwrap(); // bl 0x10c
+        mem.write(0x144, 4, 0x17fffff3).unwrap(); // b 0x110
+        let mut c = Cache::new(Config {
+            warm: 0,
+            replay: true,
+            ..Config::DEFAULT
+        });
+        for k in [
+            0x140, 0x110, 0x100, 0x104, 0x10c, 0x118, 0x120, 0x128, 0x12c, 0x144,
+        ] {
+            let i = c.info(k, || 1);
+            (i.hits, i.queued) = (51, true);
+            c.pending.push((k, k));
+        }
+        let mut regions = c.plan(&mem);
+        regions.push(c.region(0x120, 0x120, &mem)); // the tier-up's
+        let shape = |r: &block::Region| {
+            let keys: Vec<(u64, u64)> = r.blocks.iter().map(|b| (b.key, b.va)).collect();
+            (keys, r.tier, r.returns.clone(), r.forward)
+        };
+        let kinds: Vec<Kind> = regions.iter().map(|r| Recipe::of(r, &[], 0).kind).collect();
+        use Kind::*;
+        assert_eq!(kinds, [Forward, Forward, Alone, Alone, Loop, Loop]);
+        // 0x140's call of 0x10c returns from 0x118 to 0x144, which goes on to 0x110.
+        assert_eq!(regions[0].returns, [(0x118, 0x144)]);
+        assert_eq!(regions[0].blocks.len(), 5);
+        for r in &regions {
+            let again = c.rebuild(&Recipe::of(r, &[], 0), &mem).expect("words");
+            assert_eq!(shape(&again), shape(r));
+        }
+        // No words at the head any more: no region.
+        let r = Recipe::of(&regions[0], &[], 0);
+        mem.write(0x140, 4, 0).unwrap();
+        assert!(c.rebuild(&r, &mem).is_none());
+    }
+
+    /// The hot set: the slots a table's dispatcher entered since the probe,
+    /// what they link to (transitively), a tier-up's region in place of its
+    /// head; not a region invalidated or superseded since; in slot order, up
+    /// to the cap.
+    #[test]
+    fn the_hot_set_is_what_was_entered_and_what_it_links_to() {
+        let mut c = Cache::new(Config {
+            capacity: 64,
+            batch: 4,
+            max_bytes: 8000,
+            replay: true,
+            ..Config::DEFAULT
+        });
+        let mut t = Table::new(&mut c);
+        let u = Table::new(&mut c);
+        c.xmiss = Some(100);
+        // Slots 2..10, one region each (key 0x1000 * slot), 100 bytes each.
+        // 4 links to 7 and 7 to 9; 5 is a head alone whose tier-up is 8; 6
+        // was invalidated (its key not compiled any more); 3 links to 6.
+        let link = |slot: u64| match slot {
+            4 => vec![0x7000],
+            7 => vec![0x9000],
+            3 => vec![0x6000],
+            _ => vec![],
+        };
+        let recipe = |slot: u64, kind| Recipe {
+            blocks: [(0x1000 * slot, 0)].into(),
+            kind,
+            links: link(slot).into(),
+            bytes: 100,
+        };
+        for slot in 2..10u64 {
+            let kind = match slot {
+                5 => Kind::Alone,
+                8 => Kind::Loop,
+                _ => Kind::Forward,
+            };
+            let key = if slot == 8 { 0x5000 } else { 0x1000 * slot };
+            let mut r = recipe(slot, kind);
+            r.blocks = [(key, 0)].into();
+            c.log.push(Logged {
+                slot: slot as u32,
+                n: 1,
+                seq: 0,
+                bytes: vec![],
+                tiers: vec![],
+                recipes: vec![r],
+            });
+            if slot != 6 && slot != 8 {
+                c.info(key, || 1).idx = 100 + slot as u32;
+            }
+        }
+        c.tiers.insert(
+            0x5000,
+            Tier {
+                idx: 108,
+                word: 6,
+                quiet: vec![],
+            },
+        );
+        c.next = 10;
+        c.alloc(0, &mut t.stats); // under 7/8: no probe
+        assert_eq!(c.rp.probe, None);
+        c.live_bytes = 7000;
+        c.alloc(0, &mut t.stats);
+        let probe = c.rp.probe.expect("a probe at 7/8");
+        assert!(c.tables.iter().all(|s| s.all), "every jump cache cleared");
+        // Entered before the probe: 2; since: 4 (in t), 5 and 3 (in u).
+        t.used[2].store(probe - 1, Ordering::Relaxed);
+        t.used[4].store(probe, Ordering::Relaxed);
+        u.used[5].store(probe, Ordering::Relaxed);
+        u.used[3].store(probe + 1, Ordering::Relaxed);
+        let heads = |q: &VecDeque<Recipe>| -> Vec<(u64, Kind)> {
+            q.iter().map(|r| (r.blocks[0].0, r.kind)).collect()
+        };
+        use Kind::*;
+        assert_eq!(
+            heads(&c.hot_set()),
+            [
+                (0x3000, Forward),
+                (0x4000, Forward),
+                (0x7000, Forward),
+                (0x5000, Loop),
+                (0x9000, Forward)
+            ]
+        );
+        // At most half the budget: the first four.
+        c.cfg.max_bytes = 800;
+        assert_eq!(heads(&c.hot_set()).len(), 4);
+        c.cfg.max_bytes = 8000;
+        // The flush keeps it for the replay, and the marks (the lesson of
+        // `measure.patch`: `drop_all` rebuilds each table's `Seen`).
+        c.live_bytes = 8000;
+        assert_eq!(c.alloc(1, &mut t.stats), MISS_SLOTS);
+        assert_eq!(
+            (t.stats.flushes, t.stats.replays, c.rp.queue.len()),
+            (1, 1, 5)
+        );
+        assert!(c.tables.iter().all(|s| s.used.is_some()));
+        assert_eq!(c.rp.probe, None);
+        // The new epoch's sweep: nothing marked in it yet.
+        assert!(c.hot_set().is_empty());
+        // A flush for a changed guest (`jit_flush`, `IC IALLU`) replays nothing.
+        c.flush(&mut t.stats);
+        assert!(c.rp.queue.is_empty());
     }
 
     /// A successor that has run `warm` dispatches but isn't in the batch is

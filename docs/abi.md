@@ -1,4 +1,4 @@
-# Host ABI (version 40)
+# Host ABI (version 41)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -90,7 +90,7 @@ Design notes for an ABI change go in this file before the code.
 | `ticks_per_insn` | counter ticks per step, 0 → 1 (5) |
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
-| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
+| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33), 5 the JIT replaying its hot set after a flush, 6 that in a 16 KiB cache with the checker (41) |
 | `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35); other bits reserved, and `vm_new` refuses them |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
@@ -153,6 +153,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 101–103 | the block interpreter (33, [cpu.md](cpu.md) "The block interpreter"): steps it ran, blocks it decoded, times a table's cache of them started over (full) |
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 | 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
+| 108–110 | replay (41, [jit.md](jit.md) "Replay after a flush"): flushes that kept a hot set to compile again, the regions compiled again, those modules' wasm bytes |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -513,4 +514,5 @@ implemented by this step).
 | 38 | USB: `VmConfig.xhci`, `vm_xhci` (above, "USB"); the `DEVICE` exit's slot 32 for the xHCI |
 | 39 | spill memories: `VmConfig.spill`, the `ram` imports; until S1 of the plan, devices take buffers in memory 0 only |
 | 40 | device records name the memory: virtio segments are (offset, length, memory), the xHCI's length word carries it in bits 27:24 |
+| 41 | `VmConfig.jit` 5 and 6: the JIT replaying its hot set after a flush, and that in a small cache (the tests); counters 108–110 |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |
