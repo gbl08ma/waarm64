@@ -190,7 +190,8 @@ keeps the machine from running (it failed, it waits for a disk) stays until it's
 
 docs/plans/machines.md §7. It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
 address opens it, so a reload keeps it): **Back to the machine** (or a view button) returns. The machines on the left
-(new, **from a disk image…** (what Open disk… and a drop do), import a definition) and the chosen one on the right:
+(new, **from a disk image…** (what Open disk… and a drop do), import a definition), each said running (its Web Lock
+is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
 Open on this page (for the page's own machine, **Start** while it's off, "Running on this page" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
 - **Settings:** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the

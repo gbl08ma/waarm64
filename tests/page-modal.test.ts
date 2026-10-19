@@ -178,6 +178,37 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await context.close();
 });
 
+test('the machine list says which machines are suspended (a suspended copy in OPFS), not "off"', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  await modal(page).locator('[data-action=new-machine]').click();
+  const ids = await modal(page).locator('li > button.pick[data-machine]').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.machine!));
+  assert.equal(ids.length, 2);
+  // One machine gets a suspended copy, as Suspend leaves it (`machines/<id>/suspend`, not empty).
+  await page.evaluate(async (id) => {
+    let dir = await navigator.storage.getDirectory();
+    for (const n of ['machines', id]) dir = await dir.getDirectoryHandle(n, { create: true });
+    const w = await (await dir.getFileHandle('suspend', { create: true })).createWritable();
+    await w.write(new Uint8Array(16));
+    await w.close();
+  }, ids[0]);
+  await page.reload();
+  await page.click('#machines-open');
+  const meta = (id: string) => modal(page).locator(`button.pick[data-machine="${id}"] .meta`);
+  await page.waitForFunction((id) => / · suspended$/.test(document.querySelector(`.machines button.pick[data-machine="${id}"] .meta`)?.textContent ?? ''), ids[0], { timeout: 10_000 });
+  assert.match(await meta(ids[1]).textContent() ?? '', / · off$/);
+  await meta(ids[0]).click();
+  assert.equal(await modal(page).locator('[data-machine-state]').textContent(), 'suspended');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("a machine's RAM past memory 0: the note, and the advanced section's split, checked, saved and kept over a reload", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();

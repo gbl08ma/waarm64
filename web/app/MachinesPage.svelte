@@ -14,7 +14,8 @@
   import Usb from './Usb.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
-  import type { Store, OverlayRecord } from './store.ts';
+  import { machineDir, type Store, type OverlayRecord } from './store.ts';
+  import { suspended as suspendedCopy } from '../overlay.ts';
   import type { Connection } from './connections.ts';
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
@@ -31,6 +32,8 @@
   let disks = $state<Map<string, DiskRecord>>(new Map());
   let overlays = $state<OverlayRecord[]>([]);
   let running = $state<Set<string>>(new Set());
+  /** The machines with a suspended copy (Start resumes them). */
+  let suspended = $state<Set<string>>(new Set());
   let draft = $state<MachineRecord | undefined>();
   let error = $state('');
   /** A USB attach's problems, shown under `error` while it is theirs (`text`). */
@@ -48,6 +51,7 @@
     disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
     overlays = await store.all('overlays');
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
+    suspended = new Set((await Promise.all(machines.map(async (m) => ((await suspendedCopy(machineDir(m.id)).catch(() => undefined)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
     if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);
@@ -79,6 +83,8 @@
   /** A machine as a plain object (the draft is reactive state, which IndexedDB can't clone). */
   const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
   const isOn = (id: string) => running.has(id);
+  /** Running, suspended or off. */
+  const stateText = (id: string) => (isOn(id) ? 'running' : suspended.has(id) ? 'suspended' : 'off');
 
   /** Powers machine `m` off, after asking, before an edit that needs it off; false if it can't be (or the user says no). */
   async function offFirst(m: MachineRecord) {
@@ -202,7 +208,7 @@
           <li class:chosen={m.id === ui.machinesSelected}>
             <button class="pick" onclick={() => choose(m.id)} data-machine={m.id}>
               <span class="name">{m.name}</span>
-              <span class="meta">{m.attachments.length} disk{m.attachments.length === 1 ? '' : 's'} · {isOn(m.id) ? 'running' : m.id === ui.current ? 'on this page' : 'off'}</span>
+              <span class="meta">{m.attachments.length} disk{m.attachments.length === 1 ? '' : 's'} · {isOn(m.id) || suspended.has(m.id) || m.id !== ui.current ? stateText(m.id) : 'on this page'}</span>
             </button>
           </li>
         {/each}
@@ -282,7 +288,7 @@
       <section class="machine" data-selected={m.id}>
         <div class="head">
           <span class="title"><h3>{m.name}</h3>
-          <span class="meta">{isOn(m.id) ? 'running' : 'off'}{m.id === ui.current ? ' · on this page' : ''}</span></span>
+          <span class="meta" data-machine-state>{stateText(m.id)}{m.id === ui.current ? ' · on this page' : ''}</span></span>
           <span class="grow"></span>
           {#if m.id !== ui.current}
             <button onclick={() => page.openMachine(m.id)} data-action="open"><Icon name="player-play" size={16} />Open on this page</button>
