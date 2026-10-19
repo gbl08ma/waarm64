@@ -54,6 +54,8 @@ export type GatewayOptions = {
    */
   netmask?: number[];
   leaseSeconds?: number;
+  /** When the guest renews its IPv4 lease (DHCP's T1; default half the lease). */
+  renewSeconds?: number;
   /** Send unsolicited router advertisements this often (milliseconds; realtime only: a timer). 0: only when asked, and when the lease changes. */
   advertiseMs?: number;
 };
@@ -191,6 +193,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
   const gw = opts.ip ?? GATEWAY_IP;
   const mask = opts.netmask ?? [255, 255, 255, 255];
   const leaseSeconds = opts.leaseSeconds ?? 3600;
+  const renewSeconds = opts.renewSeconds ?? leaseSeconds >> 1;
   const gw6 = linkLocal(mac);
   let guestMac: Uint8Array | null = null;
   let advertised = false;
@@ -238,7 +241,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     const opt: number[] = [53, 1, reply, 54, 4, ...gw];
     if (reply !== NAK && lease) {
       const u32 = (n: number) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
-      opt.push(51, 4, ...u32(leaseSeconds), 58, 4, ...u32(leaseSeconds >> 1), 59, 4, ...u32((leaseSeconds * 7) >> 3));
+      opt.push(51, 4, ...u32(leaseSeconds), 58, 4, ...u32(renewSeconds), 59, 4, ...u32((leaseSeconds * 7) >> 3));
       opt.push(1, 4, ...mask, ...(lease.routes ? [] : [3, 4, ...gw]));
       if (lease.dns.length) opt.push(6, lease.dns.length * 4, ...lease.dns.flat());
       const domain = lease.domains[0]?.replace(/\.$/, '');

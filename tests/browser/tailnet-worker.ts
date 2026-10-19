@@ -8,6 +8,7 @@
 // page's to send: the primary's with the default route, the others' with their network's routes only), as the page's
 // machine with several adapters has them (a two-minute lease).
 import { bootVm, Exit } from '../../web/vm.ts';
+import { SEVERAL_ADAPTERS } from '../../web/devices.ts';
 import { credentialFiles, MACHINES } from '../../web/app/machine.ts';
 import { UNATTENDED } from '../debian-unattended.ts';
 
@@ -29,7 +30,7 @@ self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[
       devices: [
         { type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay },
         ...(e.data.ports
-          ? e.data.ports.map((ip, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, leaseSeconds: 120, adapter: { ip } }))
+          ? e.data.ports.map((ip, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, ...SEVERAL_ADAPTERS, adapter: { ip } }))
           : e.data.adapters
           ? Array.from({ length: e.data.adapters }, (_, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, adapter: 'echo' as const }))
           : [{ type: 'net' as const, adapter: e.data.ip ? { ip: e.data.ip } : 'echo' as const }]),

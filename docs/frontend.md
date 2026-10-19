@@ -896,8 +896,9 @@ and the guest's default way out (below).
 - **The default way out** (docs/plans/network-adapters.md §4): the first adapter that is connected and reaches the
   internet (a tailnet with an exit node in use, tailcat through a server), else the first connected
   (`primaryOf`). Its lease has the default route; the others' have only their network's routes (DHCP option 121, a
-  router advertisement with lifetime 0 and Route Information options). A machine with several adapters has a
-  two-minute lease, so IPv4's default follows the primary at the next renewal; IPv6's moves with the advertisement.
+  router advertisement with lifetime 0 and Route Information options). A machine with several adapters has its
+  lease renewed every 10 s, so IPv4's default follows the primary within that (8–9 s measured, 10 at most; 49 s with the two-minute lease before); IPv6's moves with
+  the advertisement, at once.
 - **A tailnet** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
   `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a "Show the auth key" checkbox).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens

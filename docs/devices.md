@@ -224,8 +224,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   client's `setPrimary(false)`, `routedLease`) makes the gateway the router for those prefixes only: option 121 without
   a default and no option 3, a router advertisement with lifetime 0 and a Route Information option per IPv6 prefix
   (systemd-networkd installs them); the adapter the page picks as the primary (`primaryOf`: the first that reaches the
-  internet, else the first connected) gives the default route. A machine with several adapters has a two-minute lease
-  (`leaseSeconds`), so IPv4's default follows the primary at the next renewal; IPv6's moves with the advertisement. **Proxy ARP** answers every request except for the guest's own address
+  internet, else the first connected) gives the default route. A machine with several adapters (`SEVERAL_ADAPTERS`) has
+  its lease renewed every 10 s (`renewSeconds`, DHCP's T1; the lease lasts two minutes), so IPv4's default follows the
+  primary within that; IPv6's moves with the advertisement. **Proxy ARP** answers every request except for the guest's own address
   (probes from 0.0.0.0 ignored), so no address range is assumed. **DHCP** (DISCOVER/REQUEST
   only) hands out the backend's address with mask 255.255.255.255 (a zero mask makes current systemd-networkd drop the lease: "DHCP error: no netmask"; the routes are option 121's), router = the gateway,
   the backend's DNS, first search domain, MTU (option 26), broadcast and classless routes

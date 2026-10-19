@@ -2,7 +2,8 @@
 // with a synchronous IP backend, and the same through the device worker's `echo` adapter.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, TAILNET_ROUTES, echoBackend, gateway, routedLease, type IpBackend, type Lease } from '../web/gateway.ts';
+import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, TAILNET_ROUTES, echoBackend, gateway, routedLease, type GatewayOptions, type IpBackend, type Lease } from '../web/gateway.ts';
+import { SEVERAL_ADAPTERS } from '../web/devices.ts';
 import { ALL_DHCP_AGENTS, ALL_NODES, ALL_ROUTERS, icmp6, ip6, multicastMac, sum6, udp6 } from '../web/ip6.ts';
 import { checksum } from '../web/net.ts';
 
@@ -10,7 +11,7 @@ const GUEST_MAC = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
 const hex = (b: ArrayLike<number>) => Buffer.from(Array.from(b)).toString('hex');
 const be16 = (b: Uint8Array, at: number) => (b[at] << 8) | b[at + 1];
 
-function rig(lease: Lease | null = ECHO_LEASE, backendSend?: (p: Uint8Array) => void) {
+function rig(lease: Lease | null = ECHO_LEASE, backendSend?: (p: Uint8Array) => void, opts: GatewayOptions = {}) {
   const out: Uint8Array[] = []; // frames for the guest
   const sent: Uint8Array[] = []; // packets for the backend
   let deliver!: (p: Uint8Array) => void;
@@ -20,7 +21,7 @@ function rig(lease: Lease | null = ECHO_LEASE, backendSend?: (p: Uint8Array) => 
     changed = c;
     const inner = echoBackend(lease ?? ECHO_LEASE)(d);
     return { lease: () => lease, send: (p) => { sent.push(p); backendSend?.(p) ?? inner.send(p); } } satisfies IpBackend;
-  });
+  }, opts);
   return { g, out, sent, deliver: (p: Uint8Array) => deliver(p), setLease: (l: Lease | null) => { lease = l; changed(); } };
 }
 
@@ -115,8 +116,16 @@ test('DHCP: discover, offer, request, ack with the backend\'s address and the op
   assert.equal(Buffer.from(o.get(15)!).toString(), 'test.webpc');
   assert.equal(be16(o.get(26)!, 0), 1280, 'mtu');
   assert.equal(hex(o.get(51)!), '00000e10');
+  assert.deepEqual([hex(o.get(58)!), hex(o.get(59)!)], ['00000708', '00000c4e'], 'renewal (T1) at half the lease, rebinding (T2) at 7/8');
   assert.equal(hex(o.get(121)!), hex([32, ...GATEWAY_IP, 0, 0, 0, 0, 0, ...GATEWAY_IP]), 'classless routes');
   assert.deepEqual(Array.from(o.get(54)!), GATEWAY_IP);
+});
+
+test('DHCP on a machine with several adapters: renewed every 10 s, so the default route follows the primary (a two-minute lease)', () => {
+  const { g, out } = rig(ECHO_LEASE, undefined, SEVERAL_ADAPTERS);
+  g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));
+  const o = dhcpReply(out.pop()!).opts;
+  assert.deepEqual([o.get(51), o.get(58), o.get(59)].map((v) => Buffer.from(v!).readUInt32BE(0)), [120, 10, 105]);
 });
 
 test('DHCP follows the backend: no lease, no offer; a request for another address or without a lease is refused', () => {

@@ -13,7 +13,7 @@ import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
-import type { DeviceSpec } from '../devices.ts';
+import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
@@ -132,8 +132,6 @@ let isSuspended = false;
 let restoring = false;
 
 type StartMessage = Extract<ToWorker, { type: 'start' }>;
-/** The DHCP lease on a machine with several adapters (seconds; renewed at half of it). */
-const MULTI_LEASE = 120;
 /** A transport of the machine: its kind, and the disk it is for a `blk`, the adapter for a `net`. */
 type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 
@@ -161,8 +159,8 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     }
     case 'net': {
       const n = m.nets![slot.adapter!];
-      // Several adapters: a short lease, so the default route follows the primary at the next renewal (network-adapters.md §4).
-      return { type: 'net', mac: n.mac, gateway: slot.adapter, ...(m.nets!.length > 1 ? { leaseSeconds: MULTI_LEASE } : {}), adapter: { ip: n.ip } };
+      // Several adapters: frequent renewals, so the default route follows the primary (network-adapters.md §4).
+      return { type: 'net', mac: n.mac, gateway: slot.adapter, ...(m.nets!.length > 1 ? SEVERAL_ADAPTERS : {}), adapter: { ip: n.ip } };
     }
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
     // With the page's sound, its volume and mute are the device's controls (the guest's Master).

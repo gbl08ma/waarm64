@@ -63,10 +63,17 @@ export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
  * backend, such as Tailscale, behind a MessagePort). `mac` defaults to
  * 52:54:00:12:34:56; the link is always up. `gateway`: the machine's adapter this is (0 by default), whose gateway has
  * its own MAC and address (web/gateway.ts `gatewayOf`), and whose echo backend leases its own addresses (`echoLease`).
- * `leaseSeconds`: the DHCP lease's (default an hour): shorter on a machine with several adapters, so that the default
- * route moves from one to another at the next renewal.
+ * `leaseSeconds`: the DHCP lease's (default an hour), `renewSeconds` when the guest renews it (default half of it): a
+ * machine with several adapters has `SEVERAL_ADAPTERS`, so that the IPv4 default route moves from one to another at the
+ * next renewal.
  */
-export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSeconds?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
+export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSeconds?: number; renewSeconds?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
+/**
+ * The DHCP timers of a machine with several adapters (docs/plans/network-adapters.md §4): the guest renews every 10 s,
+ * so the IPv4 default route follows the primary within that (IPv6's moves with the router advertisement), and the lease
+ * itself lasts two minutes, so a gateway that stops answering for a while (its client reconnecting) costs no address.
+ */
+export const SEVERAL_ADAPTERS = { leaseSeconds: 120, renewSeconds: 10 };
 /** virtio-9p (web/9p.ts): an in-memory tree, mounted by the guest by `tag`, starting with `files` (path → contents). */
 export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
 /**
@@ -401,9 +408,9 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
   const a = d.adapter;
   const adapter: NetAdapter =
     a === 'loopback' ? loopback(receiveFrame)
-    : a === 'echo' ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), { ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds })
+    : a === 'echo' ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), { ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds })
     : a instanceof MessagePort ? portAdapter(a, receiveFrame)
-    : gateway(receiveFrame, portBackend(a.ip), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds });
+    : gateway(receiveFrame, portBackend(a.ip), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds });
   return {
     request(r) {
       if (r.queue === 0) {

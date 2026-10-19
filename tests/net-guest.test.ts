@@ -131,8 +131,8 @@ test('three adapters, each on its own gateway and lease', { skip, timeout: 600_0
 
 // Routes over several adapters (docs/plans/network-adapters.md §4, L2): the primary's gateway is the default router; the
 // other's gives only its network's routes (option 121 without a default, a router advertisement with lifetime 0 and a
-// Route Information option). Made the other the primary, IPv6 moves at once and IPv4 at the next renewal (a
-// two-minute lease, so within a minute; the times are printed, not judged here: a cloud machine's aren't numbers).
+// Route Information option). Made the other the primary, IPv6 moves at once and IPv4 at the next renewal (every 10 s:
+// `SEVERAL_ADAPTERS`; the times are printed, and IPv4's bounded at 45 s, for a loaded machine).
 test('two adapters: the default route through the primary only, the other for its network; it moves when the primary does', { skip, timeout: 600_000 }, async () => {
   await withDebianLock(async () => {
     const page = await (await browser.newContext()).newPage();
@@ -168,7 +168,7 @@ test('two adapters: the default route through the primary only, the other for it
       // The other becomes the primary (the first lost its way out).
       await page.evaluate(() => (window as never as { harness: { primary(k: number): void } }).harness.primary(1));
       const t6 = await until('IPv6 default moved', 'ip -6 route', (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s) && !/default .*fe62:7063/.test(s), 60_000);
-      const t4 = await until('IPv4 default moved', 'ip -4 route', (s) => new RegExp(`default via 169\\.254\\.0\\.2 dev ${b}`).test(s) && !/default via 169\.254\.0\.1 /.test(s), 150_000);
+      const t4 = await until('IPv4 default moved', 'ip -4 route', (s) => new RegExp(`default via 169\\.254\\.0\\.2 dev ${b}`).test(s) && !/default via 169\.254\.0\.1 /.test(s), 45_000);
       console.log(`# the default route moved: IPv6 in ${t6.toFixed(0)} s, IPv4 in ${t4.toFixed(0)} s (at the lease's renewal)`);
       assert.match(await v4(), new RegExp(`100\\.64\\.0\\.0/10 via 169\\.254\\.0\\.1 dev ${a}`), 'the first now gives its network only');
     } finally {
