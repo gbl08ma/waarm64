@@ -650,13 +650,15 @@ impl Cache {
         self.drops.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// The regions in use, to compile again after a flush (`Config::replay`):
-    /// those a table's dispatcher entered since the probe began (or since
-    /// the epoch did, without one), and the regions they link to directly,
-    /// transitively (entered without the dispatcher); a tier-up's loop region
-    /// in place of its head alone. In slot order, so a region's direct links
-    /// are compiled before it again (as imports, not jump-cache tails), up
-    /// to [`REPLAY_MAX`] eighths of the budget.
+    /// The regions in use at a flush (`Config::replay`): those a table's
+    /// dispatcher entered since the probe began (or since the epoch did,
+    /// without one), which are compiled again (the queue: a tier-up's loop
+    /// region in place of its head alone, in slot order, up to
+    /// [`REPLAY_MAX`] eighths of the budget); and the slots that stay until
+    /// then, those and the regions they link to directly, transitively
+    /// (entered without the dispatcher: they must stay while what links to
+    /// them runs, but they aren't compiled again; one still hot is counted
+    /// again after the release).
     fn hot_set(&self) -> (Vec<bool>, VecDeque<Recipe>) {
         let Some(xmiss) = self.xmiss.filter(|_| self.cfg.replay) else {
             return (Vec::new(), VecDeque::new());
@@ -681,6 +683,14 @@ impl Cache {
                 if live && (slot as usize) < n {
                     recipes[slot as usize] = Some(r);
                 }
+            }
+        }
+        // A marked head compiled alone that tiered up runs its loop region.
+        let mut marked = hot.clone();
+        for t in self.tiers.values() {
+            let (head, region) = ((t.word - 1) as usize, (t.idx - xmiss) as usize);
+            if hot.get(head) == Some(&true) && region < n {
+                marked[region] = true;
             }
         }
         let mut stack: Vec<usize> = (0..n).filter(|&i| hot[i]).collect();
@@ -708,7 +718,7 @@ impl Cache {
         let looped: Map<()> = self
             .tiers
             .iter()
-            .filter(|(_, t)| hot.get((t.idx - xmiss) as usize) == Some(&true))
+            .filter(|(_, t)| marked.get((t.idx - xmiss) as usize) == Some(&true))
             .map(|(&k, _)| (k, ()))
             .collect();
         let (max_bytes, max_n) = (
@@ -716,7 +726,7 @@ impl Cache {
             self.cfg.capacity as u64 / 8 * REPLAY_MAX,
         );
         let (mut bytes, mut out) = (0, VecDeque::new());
-        for r in (0..n).filter(|&i| hot[i]).filter_map(|i| recipes[i]) {
+        for r in (0..n).filter(|&i| marked[i]).filter_map(|i| recipes[i]) {
             if r.kind == Kind::Alone && looped.contains_key(&r.blocks[0].0) {
                 continue;
             }
@@ -2744,19 +2754,15 @@ mod tests {
             q.iter().map(|r| (r.blocks[0].0, r.kind)).collect()
         };
         use Kind::*;
+        // Compiled again: what was marked (5's tier-up region for it), not
+        // what it links to (7 and 9 stay carried).
         assert_eq!(
             heads(&c.hot_set().1),
-            [
-                (0x3000, Forward),
-                (0x4000, Forward),
-                (0x7000, Forward),
-                (0x5000, Loop),
-                (0x9000, Forward)
-            ]
+            [(0x3000, Forward), (0x4000, Forward), (0x5000, Loop)]
         );
-        // At most half the budget: the first four.
-        c.cfg.max_bytes = 800;
-        assert_eq!(heads(&c.hot_set().1).len(), 4);
+        // At most half the budget: the first two.
+        c.cfg.max_bytes = 400;
+        assert_eq!(heads(&c.hot_set().1).len(), 2);
         c.cfg.max_bytes = 8000;
         // The flush carries it (into the other half of the slots), keeps it
         // for the replay, and the marks (the lesson of `measure.patch`:
@@ -2765,11 +2771,12 @@ mod tests {
         assert_eq!(c.alloc(1, &mut t.stats), 64);
         assert_eq!(
             (t.stats.flushes, t.stats.replays, c.rp.queue.len()),
-            (1, 1, 5)
+            (1, 1, 3)
         );
         assert!(c.tables.iter().all(|s| s.used.is_some()));
         assert_eq!(c.rp.probe, None);
-        // What stays compiled: the hot set's heads, nothing else, no tier-ups.
+        // What stays compiled: the hot set's heads and what they link to,
+        // nothing else, no tier-ups.
         let mut kept: Vec<u64> = c.map.keys().copied().collect();
         kept.sort();
         assert_eq!(kept, [0x3000, 0x4000, 0x5000, 0x7000, 0x9000]);
