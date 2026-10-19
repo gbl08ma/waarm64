@@ -63,6 +63,29 @@ export function withoutAdapter(m: MachineRecord, id: string): MachineRecord {
   return { ...m, network: undefined, adapters: adaptersOf(m).filter((a) => a.id !== id) };
 }
 
+/**
+ * Machine `id` with connection `connection` (undefined: none) attached to its adapter `index` (docs/plans/network-adapters.md
+ * §3.1): saved now, also while it runs (a connection isn't in the shape). A machine made before adapters gets its card as
+ * an adapter (the same MAC: the shape stays).
+ */
+export async function setAdapterConnection(store: Store, id: string, index: number, connection: string | undefined) {
+  const m = await store.get('machines', id);
+  if (!m) throw new Error('that machine is gone');
+  const adapters = adaptersOf(m).map((a) => ({ ...a }));
+  if (!adapters[index]) throw new Error(`${m.name} has no adapter ${index + 1}`);
+  if (connection) adapters[index].connection = connection;
+  else delete adapters[index].connection;
+  await store.put('machines', { ...m, network: undefined, adapters });
+}
+
+/** Takes connection `connection` off every machine that has it attached (it was deleted). */
+export async function detachEverywhere(store: Store, connection: string) {
+  for (const m of await store.all('machines')) {
+    if (!m.adapters?.some((a) => a.connection === connection)) continue;
+    await store.put('machines', { ...m, adapters: m.adapters.map(({ connection: c, ...a }) => (c && c !== connection ? { ...a, connection: c } : a)) });
+  }
+}
+
 /** Deletes machine `id` (its variable store, suspended copy and snapshots); its disks and their overlays stay. */
 export async function deleteMachine(store: Store, id: string) {
   await needsOff(id, 'Deleting a machine');
@@ -77,6 +100,12 @@ export async function updateMachine(store: Store, m: MachineRecord) {
   if (shape(was) !== shape(m)) await needsOff(m.id, 'Changing its processors, memory or devices');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;
+  // So are the adapters' connections (the Network tab attaches them while the machine runs, web/app/net-live.ts).
+  const attached = new Map(adaptersOf(was).map((a) => [a.id, a.connection]));
+  if (m.adapters || was.adapters) {
+    m.adapters = adaptersOf(m).map(({ connection: _, ...a }) => (attached.get(a.id) ? { ...a, connection: attached.get(a.id) } : a));
+    m.network = undefined;
+  }
   if (m.name !== was.name) m.name = uniqueName(m.name.trim() || was.name, (await store.all('machines')).filter((x) => x.id !== m.id).map((x) => x.name));
   m.modified = Date.now();
   await store.put('machines', m);

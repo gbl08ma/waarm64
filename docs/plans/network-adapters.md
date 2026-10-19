@@ -1,4 +1,4 @@
-# Several network adapters, and connections kept by the browser (2026-10-18; L0, L1 and L2 done)
+# Several network adapters, and connections kept by the browser (2026-10-18; L0–L3 done)
 
 A machine today has one network card or none (`network: boolean` in its shape, web/app/shape.ts), and the page has one
 connection: one set of settings per browser (`webpc.settings` `net`, web/app/network.ts), one kept Tailscale node per
@@ -205,8 +205,12 @@ One slice, one commit, a short report each. `scripts/ci.sh` runs at each loop, `
   - the primary dropped: the default route moves, and the time that takes is measured;
   - with headscale: a tailnet without an exit node next to tailcat through a server, where the guest reaches the
     tailnet's peer and the internet at once.
-- **L3, the page:** the Network tab, Connections, the wizard with New connection… and Keep, the menu's sections and
-  the holder's offer. Page tests:
+- **L3, the page (done, in a cloud session: `web/app/net-live.ts`, `NetWizard.svelte`, the menu's sections, the
+  Network tab and Connections; docs/frontend.md "Network"):** the Network tab, Connections, the wizard with New
+  connection… and Keep, the menu's sections and the holder's offer. A kept tailnet connection's node is kept whether
+  it enrolled with a login or an auth key (the node is ephemeral only with an ephemeral connection), and a kept tailcat
+  connection keeps its server's address. Page tests (tests/page-connections.test.ts on two machines with the
+  firmware alone, tests/page-network.test.ts on Debian with tailcat's test relay; tests/net-live.test.ts below them):
   - a new machine connected in one wizard;
   - a connection moved between two machines;
   - one held by another tab;
@@ -220,9 +224,10 @@ the exit's network suite are the dev VM's (cloud.md).
 
 ## 8. Open points
 
-- **Ephemeral connections are the page's that made them.** The user put it as "until the browser closes"; sharing one
-  across tabs would mean storing it somewhere, which is what ephemeral rules out. If two tabs should share one, it has
-  to be in `sessionStorage`, and that is per tab too.
+- **Ephemeral connections are the page's that made them** (as built in L3: a reload ends one too, and its adapter
+  comes back detached, saying so). The user put it as "until the browser closes"; sharing one across tabs would mean
+  storing it somewhere, which is what ephemeral rules out. If two tabs should share one, it has to be in
+  `sessionStorage`, and that is per tab too.
 - **The takeover's IPv4 delay** depends on the lease time and networkd's renewal. If L2 finds it too slow, the
   gateway can force a renew (DHCP FORCERENEW, which networkd ignores without authentication) or flap the link (the
   device's link is always up today: devices.md "net"). Measure first.

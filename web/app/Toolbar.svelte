@@ -9,12 +9,12 @@
   import Sound from './Sound.svelte';
   import UsbMenu from './UsbMenu.svelte';
   import type { PageAudio } from '../audio.ts';
-  import type { Network as Net } from './network.ts';
+  import type { PageNetwork } from './net-live.ts';
   import type { Store, SnapshotRecord } from './store.ts';
   import { remember, settings } from './settings.ts';
   import { page, ui, type View } from './ui.svelte.ts';
 
-  let { store, audio, network }: { store: Store; audio: PageAudio; network: Net } = $props();
+  let { store, audio, net }: { store: Store; audio: PageAudio; net: PageNetwork } = $props();
 
   const running = $derived(ui.state === 'running' || ui.state === 'booting');
   const startLabel = $derived(ui.state === 'off' || ui.state === 'idle' || ui.state === 'suspended' ? 'Start' : ui.state === 'failed' ? 'Retry' : 'Restart');
@@ -120,7 +120,7 @@
   <button id="fullscreen" class="tool" aria-label="Full screen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave" onclick={() => page.fullscreen()}><Icon name="maximize" /></button>
   <span class="sep"></span>
   <Sound {audio} />
-  {#if ui.hasNetwork}<Network {network} />{/if}
+  {#if ui.hasNetwork}<Network {net} />{/if}
   {#if ui.usb.on}<UsbMenu />{/if}
   {#if !ui.current}
     <Menu id="machine-menu" icon="cpu" title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart" bind:open={sizeOpen} panel>

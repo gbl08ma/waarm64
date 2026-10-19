@@ -24,7 +24,10 @@ import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-fi
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, RAM_CHOICES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
-import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
+import { HeldError, PageNetwork } from './net-live.ts';
+import { connectionLock, migrateLegacy, type Connection, type NewConnection } from './connections.ts';
+import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../tailcat.ts';
+import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
 import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
@@ -36,7 +39,7 @@ import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { diskDir, overlayDir, machineDir, snapshotPath, Store } from './store.ts';
 import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay, refreshStored, switchOverlay } from './disks.ts';
 import { bytesText } from './bytes.ts';
-import { askPersist, attach, createDisk, createMachine, isRunning, knownDisk, machineLock, updateMachine } from './machines.ts';
+import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunning, knownDisk, machineLock, setAdapterConnection, updateMachine } from './machines.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -243,15 +246,26 @@ let ramMiB = Number(params.get('ram')) || stored?.record.ramMiB || (RAM_CHOICES.
 
 // The page's components (web/app/App.svelte), drawn now: the canvas and the terminal below are theirs. The network and the
 // sound are made first (their menus show them).
-const network = createNetwork(() => { ui.net++; });
-/** The page's ends of the running machine's adapters that have no connection (all but the first, until L3). */
-const unplugged: MessagePort[] = [];
+const net = new PageNetwork({
+  store,
+  state: { forgetTailnet: forgetProfile, forgetTailcat: forgetTailcatIdentity },
+  me: () => machineTitle(),
+  onChange: () => { ui.net++; },
+  save: async (i, id) => {
+    const s = stored;
+    if (!s) return remember({ transientNet: id });
+    await setAdapterConnection(store, s.record.id, i, id);
+    s.record = (await store.get('machines', s.record.id)) ?? s.record;
+  },
+});
+await migrateNetwork().catch((e) => console.warn('the network settings could not be made into connections:', e));
+void net.refresh();
 const audio = new PageAudio();
 ui.current = stored?.record.id;
 ui.firmware = !!spec.firmware;
 ui.hasNetwork = !!spec.network;
-store.onChange(() => { ui.records++; });
-mount(App, { target: document.body, props: { store, audio, network } });
+store.onChange(() => { ui.records++; void net.refresh(); });
+mount(App, { target: document.body, props: { store, audio, net } });
 flushSync();
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
@@ -516,16 +530,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   };
   const worker = new Worker(new URL(`./worker.ts${location.search}`, import.meta.url), { type: 'module' });
   // A machine's network adapters are there from the start (one can't be added later without a restart): their ends of
-  // the IP ports. The first is the page's network's (web/app/network.ts); the others have no connection yet, so the page
-  // keeps their other ends unused (docs/plans/network-adapters.md: connections per adapter are its L3).
-  const macs = !spec.network ? [] : stored ? adaptersOf(stored.record).map((a) => a.mac) : [DEFAULT_MAC];
-  for (const p of unplugged.splice(0)) p.close();
-  const nets = macs.map((mac, i) => {
-    if (i === 0) return { mac, ip: network.port() };
-    const c = new MessageChannel();
-    unplugged.push(c.port1);
-    return { mac, ip: c.port2 };
-  });
+  // the IP ports, whose other ends the page's network has (web/app/net-live.ts: the clients of their connections).
+  const nets = net.ports(netKey(), pageAdapters());
   ui.hasNetwork = nets.length > 0;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const sound = audio.attach();
@@ -669,7 +675,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       setState('crashed', `The GPU worker failed: ${e.message}`, ACTIONS.emulator);
     };
   } else void begin();
-  if (nets.length) autoconnect();
+  if (nets.length) void net.autoconnect();
   ui.net++;
 }
 
@@ -1282,21 +1288,102 @@ document.addEventListener('drop', (e) => {
 let replaying = false;
 term.onData((d) => { if (!replaying) run?.serial.postMessage(d); });
 
-// The network (docs/frontend.md "Network"; its menu and wizard are web/app/Network.svelte): the client starts by itself for
-// the settings the machine started under (a login's node is kept, so is a served machine's address).
-const netSettings = (): NetworkSettings => ({ ...DEFAULT_SETTINGS, ...settings().net });
-function autoconnect() {
-  const s = netSettings();
-  if (!s.autoconnect || network.active()) return;
-  if (s.kind === 'tailcat') {
-    // Only a machine that lets clients in without a server: the server's address isn't kept.
-    if (s.tailcatServe && !s.tailcatExit) network.connect({ controlURL: '', hostname: '', tailcatServe: { relay: s.tailcatRelay } });
+// The network (docs/frontend.md "Network", docs/plans/network-adapters.md): the machine's adapters, each with a connection
+// of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Machines page's
+// Network tab and Connections act through these.
+/** The page's machine as the network knows it: a stored machine's id, or the transient machine. */
+const netKey = () => stored?.record.id ?? 'transient';
+/** The page's machine's adapters: a stored machine's, or a transient one's card (its connection kept in the settings). */
+function pageAdapters() {
+  if (!spec.network) return [];
+  if (stored) return adaptersOf(stored.record);
+  const id = settings().transientNet;
+  return [{ id: 'transient', mac: DEFAULT_MAC, ...(id ? { connection: id } : {}) }];
+}
+
+/**
+ * The network as it was kept before connections (`webpc.settings` `net`, a kept node, the served tailcat identity) made
+ * into connections (docs/plans/network-adapters.md §2.2), once: the transient machine's adapter and every stored
+ * machine's first one get the one the settings were on.
+ */
+async function migrateNetwork() {
+  if (!settings().net) return;
+  const run = async () => {
+    const legacy = settings().net;
+    if (!legacy) return; // another tab did it
+    const [first] = await migrateLegacy(net.conns, { settings: legacy, profiles: await keptProfiles().catch(() => []), served: await hasTailcatIdentity() });
+    if (first) {
+      if (!settings().transientNet) remember({ transientNet: first.id });
+      for (const m of await store.all('machines')) {
+        const a = adaptersOf(m);
+        if (a.length && !a[0].connection) await setAdapterConnection(store, m.id, 0, first.id);
+      }
+      if (stored) stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
+    }
+    remember({ net: undefined });
+  };
+  if (navigator.locks) await navigator.locks.request('webpc-net-migrate', run);
+  else await run();
+}
+
+/** Whether `machine` (an id, or undefined for a transient one) is the page's and its adapters are live here. */
+const netLive = (machine: string | undefined, i: number) => (machine ?? 'transient') === netKey() && net.machineKey() === netKey() && i < net.views().length;
+
+/**
+ * Attaches connection `c` to adapter `i` of `machine` (undefined: the page's transient one). The page's machine connects
+ * it now (`authKey`: a tailnet's first login); one another tab's machine has is taken from it after asking. Another
+ * machine keeps it in its record, and connects it when it starts.
+ */
+async function netAttach(machine: string | undefined, i: number, c: Connection, authKey?: string) {
+  if (netLive(machine, i)) {
+    try {
+      await net.attach(i, c, authKey);
+    } catch (e) {
+      if (!(e instanceof HeldError)) throw e;
+      if (!(await ask.confirm(`${e.message} Use it here instead? That machine disconnects from it.`, { title: 'The connection is in use', ok: 'Use it here' }))) return;
+      await net.takeFrom(i, c, authKey);
+    }
     return;
   }
-  const url = parseControlURL(s.controlURL);
-  if ('error' in url) return;
-  const host = parseHostname(s.hostname);
-  network.connect({ controlURL: url.url, hostname: 'hostname' in host ? host.hostname : 'webpc', exitNode: s.exitNode });
+  if (machine) await setAdapterConnection(store, machine, i, c.id);
+  else remember({ transientNet: c.id });
+  await net.conns.put({ ...c, connectAtStart: true });
+  if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
+  await net.refresh();
+}
+
+async function netDetach(machine: string | undefined, i: number) {
+  if (netLive(machine, i)) return net.detach(i);
+  if (machine) await setAdapterConnection(store, machine, i, undefined);
+  else remember({ transientNet: undefined });
+  if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
+  await net.refresh();
+}
+
+/** Deletes connection `c` after asking (naming the machines it is attached to): it is detached from them, and its state forgotten. */
+async function netDelete(c: Connection) {
+  const on = (await store.all('machines')).filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name);
+  if (settings().transientNet === c.id) on.push(spec.label);
+  const what = c.kind === 'tailnet' ? (c.ephemeral ? 'Its node leaves the tailnet when it is next seen offline.' : "Its node's keys are deleted here: connecting again is a new node, with a login (log it out first to take it off the tailnet now).") : c.tailcat?.serve ? 'Its tailcat address stops working.' : '';
+  if (!(await ask.confirm(`Delete the connection ${c.name}?${on.length ? ` It is detached from ${on.join(', ')}.` : ''} ${what}`.trim(), { title: 'Delete the connection', ok: 'Delete', danger: true }))) return;
+  await net.remove(c);
+  await detachEverywhere(store, c.id);
+  if (settings().transientNet === c.id) remember({ transientNet: undefined });
+  if (stored) stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
+  await net.refresh();
+}
+
+/** Forgets tailcat connection `c`'s served identity, after asking: whoever has its address can't come in any more. */
+async function netNewAddress(c: Connection) {
+  const t = c.tailcat;
+  if (!t) return false;
+  if (!(await ask.confirm(`Forget ${c.name}'s tailcat address? Whoever has it can't come in any more, and the machine gets a new one when it next lets clients in.`, { ok: 'Forget it', danger: true }))) return false;
+  // An ephemeral connection's identity is in the page's memory: a new one; a stored one's is made again at its next serve.
+  if (c.ephemeral) await net.conns.put({ ...c, tailcat: { ...t, identity: newTailcatIdentity() } });
+  else await forgetTailcatIdentity(t.identityKey);
+  const at = net.runs(c.id);
+  if (at >= 0) await net.edit((await net.conns.get(c.id))!);
+  return true;
 }
 
 // Full screen, with the Keyboard Lock API (Chromium) so that Ctrl+W, Ctrl+T, Esc and the like reach
@@ -1753,6 +1840,28 @@ Object.assign(page, {
   closeMachines,
   dismiss: () => { clearTimeout(messageTimer); note = ''; showMessage('', [], 'warn'); },
   ...usbPage,
+  netWizard: (o: NonNullable<typeof ui.netWizard>) => { ui.netWizard = { ...o, tick: (ui.netWizard?.tick ?? 0) + 1 }; },
+  netCreate: (n: NewConnection) => net.conns.create(n).then(async (c) => { await net.refresh(); return c; }),
+  netAttach,
+  netDetach,
+  netConnect: async (i: number) => {
+    const c = net.views()[i]?.connection;
+    if (!c) return;
+    try {
+      await net.connect(i, c);
+    } catch (e) {
+      if (!(e instanceof HeldError)) throw e;
+      if (await ask.confirm(`${e.message} Use it here instead? That machine disconnects from it.`, { title: 'The connection is in use', ok: 'Use it here' })) await net.takeFrom(i, c);
+    }
+  },
+  netDisconnect: (i: number) => net.disconnect(i),
+  netLogout: (i: number) => net.logout(i),
+  netExit: (i: number, peer: string) => net.setExitNode(i, peer),
+  netEdit: (c: Connection) => net.edit(c),
+  netRename: async (c: Connection, name: string) => { await net.conns.put({ ...c, name: name.trim() || c.name }); await net.refresh(); },
+  netDelete,
+  netNewAddress,
+  netHolder: (id: string) => net.locks.holder(connectionLock(id)),
 } satisfies typeof page);
 
 // Before starting: what the page can tell won't work.

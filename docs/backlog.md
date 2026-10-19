@@ -627,6 +627,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
+- **Several adapters' loose ends** ([plans/network-adapters.md](plans/network-adapters.md)): L2's headscale test (a
+  tailnet without an exit node beside tailcat through a server, both reached at once) and the takeover's time are the
+  dev VM's; adapters can't be reordered (remove and add); a connection attached on the Machines page to a machine
+  running in another tab connects at that machine's next start, not at once; a machine powered off with a client
+  running keeps its connection (and its lock) until Disconnect, as the one card did; Log out is offered only where the
+  connection runs on this page, and deleting a kept tailnet connection forgets the node without logging it out (it
+  stays on the tailnet until it expires or an admin removes it).
 - **tailcat, IPv6 where the exit node's machine has none out** ([tailnet.md](tailnet.md) "tailcat"): the guest gets
   the tunnel's IPv6 address and a default route, the exit node's netstack accepts each IPv6 TCP connection and then
   closes it empty when its machine can't dial out over IPv6, so a client that tries IPv6 first (curl, browsers) fails

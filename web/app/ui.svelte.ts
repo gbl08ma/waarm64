@@ -1,5 +1,6 @@
 // The page's state as its components show it (docs/frontend.md "The page's code"): web/app/main.ts runs the machine and
 // writes here; App.svelte and the components under it read it, and call `page`'s actions, which main.ts provides.
+import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
 import type { PowerState } from './protocol.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
@@ -46,8 +47,17 @@ export const ui = $state({
   hasNetwork: false,
   /** The page can't run here (no cross-origin isolation): no Start. */
   cantRun: false,
-  /** Bumped when the network's state changes (the Network menu redraws). */
+  /** Bumped when the network's state changes (the Network menu, the wizard and the Network tab redraw). */
   net: 0,
+  /**
+   * The Network wizard, open (web/app/NetWizard.svelte, docs/plans/network-adapters.md §3.2): `attach` a connection to
+   * `machine`'s adapter `adapter` (machine undefined: the page's transient one), a `new` connection on its own, or `edit`
+   * connection `connection`. `here`: the machine is the page's (it connects now, so an auth key is asked for). `tick`
+   * opens it again.
+   */
+  /** Bumped to open the Network menu (a connection was just attached here: it shows how it goes). */
+  netMenu: 0,
+  netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
   status: { text: '', data: '' },
   /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
@@ -125,5 +135,26 @@ export type Page = {
   usbStates(m: MachineRecord): Promise<EntryView[]>;
   /** `?usbzero=1`: attaches Gadget Zero on a free connector, or detaches it. */
   usbZero(): Promise<void>;
+  /**
+   * The network (docs/plans/network-adapters.md §3). `machine`: a stored machine's id, or undefined for the page's
+   * transient one; `adapter`: its index. The page's machine connects what is attached to it at once (one another tab's
+   * machine has is taken after asking); another machine connects it when it starts.
+   */
+  netWizard(o: NonNullable<typeof ui.netWizard>): void;
+  netCreate(n: NewConnection): Promise<Connection>;
+  netAttach(machine: string | undefined, adapter: number, c: Connection, authKey?: string): Promise<void>;
+  netDetach(machine: string | undefined, adapter: number): Promise<void>;
+  /** The page's machine's adapter `adapter`: connect its attached connection, disconnect, log its node out, its exit node. */
+  netConnect(adapter: number): Promise<void>;
+  netDisconnect(adapter: number): Promise<void>;
+  netLogout(adapter: number): Promise<void>;
+  netExit(adapter: number, peer: string): Promise<void>;
+  /** A connection's edit (what changes without a new node), name, deletion (after asking), and tailcat's New address (after asking: false if not). */
+  netEdit(c: Connection): Promise<void>;
+  netRename(c: Connection, name: string): Promise<void>;
+  netDelete(c: Connection): Promise<void>;
+  netNewAddress(c: Connection): Promise<boolean>;
+  /** The name of the machine (in another tab) that has connection `id`. */
+  netHolder(id: string): Promise<string | undefined>;
 };
 export const page = {} as Page;

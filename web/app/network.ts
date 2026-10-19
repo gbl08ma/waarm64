@@ -9,7 +9,7 @@
 // a disconnected client hands it back (`detach`), so a machine can be connected, disconnected and
 // connected again without a restart.
 import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
-import { forgetTailcatIdentity, hasTailcatIdentity, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig } from '../tailcat.ts';
+import { forgetTailcatIdentity, hasTailcatIdentity, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig, type TailcatServe } from '../tailcat.ts';
 
 export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr, parseRelay, forgetTailcatIdentity, hasTailcatIdentity };
 
@@ -142,8 +142,12 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   }
 }
 
-/** A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with `tailcatServe`. */
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; tailcat?: string; tailcatServe?: { relay: string } };
+/**
+ * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
+ * `tailcatServe`. `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
+ * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts).
+ */
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; persist?: string; tailcat?: string; tailcatServe?: TailcatServe };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -209,10 +213,9 @@ export function createNetwork(
         onChange();
       };
       tailcat = !!(c.tailcat || c.tailcatServe);
-      // An auth key's node is ephemeral and not kept; the login's node is (under its control server's name).
       const t = tailcat
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, ip }, onEvent)
-        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.authKey ? undefined : c.controlURL }, onEvent);
+        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.persist }, onEvent);
       client = t;
       if (!primary) t.setPrimary(false);
       t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });

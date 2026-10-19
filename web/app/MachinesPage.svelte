@@ -2,7 +2,8 @@
   The Machines page (docs/plans/machines.md §7): it takes the machine's place on the page (which runs on behind it).
   The machines kept in this browser (new, from a disk image, import a definition), and one machine: open it here,
   duplicate, export its definition, delete; its Settings, Disks and Snapshots as tabs. A transient machine (a test's
-  `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's storage at the bottom.
+  `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's network connections
+  (docs/plans/network-adapters.md §3.1) under Connections, and the browser's storage at the bottom.
   Logic is in web/app/machines.ts, disks.ts and main.ts (`page`); every action that loses data asks first.
 -->
 <script lang="ts">
@@ -14,6 +15,8 @@
   import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, OverlayRecord } from './store.ts';
+  import type { Connection } from './connections.ts';
+  import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
@@ -22,7 +25,7 @@
   import { errorView, type ErrorView } from './usb-ports.ts';
   import { MAX_RAM_MIB, RAM_CHOICES } from './machine.ts';
 
-  let { store }: { store: Store } = $props();
+  let { store, net }: { store: Store; net: PageNetwork } = $props();
 
   let machines = $state<MachineRecord[]>([]);
   let disks = $state<Map<string, DiskRecord>>(new Map());
@@ -34,8 +37,9 @@
   let usbError = $state<ErrorView>();
   let busy = $state('');
   let storage = $state<Awaited<ReturnType<typeof storageReport>> | undefined>();
-  /** The page's own machine (transient) is chosen: `ui.machinesSelected` is `page`. */
+  /** The page's own machine (transient) is chosen: `ui.machinesSelected` is `page`; the connections: `connections`. */
   const PAGE = 'page';
+  const CONNECTIONS = 'connections';
 
   const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
 
@@ -45,7 +49,7 @@
     overlays = await store.all('overlays');
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
-    if (ui.machinesSelected !== PAGE && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
+    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);
     // The draft follows the record, unless the user is editing its settings.
     if (!m || !draft || draft.id !== m.id || !dirty) draft = m ? structuredClone($state.snapshot(m)) as MachineRecord : undefined;
@@ -126,6 +130,22 @@
     if (await ask.confirm(`Delete ${m.name}? Its snapshots and firmware settings are deleted; its disks and their overlays stay.`, { ok: 'Delete', danger: true })) await act('Deleting', () => deleteMachine(store, m.id));
   }
 
+  // The network: each adapter's connection (the record's: attached while the machine runs too), and the browser's connections.
+  const conns = $derived((void ui.net, net.connections));
+  const live = $derived((void ui.net, net.views()));
+  const kindText = (c: Connection) => `${c.kind === 'tailnet' ? `a tailnet (${new URL(c.tailnet!.controlURL).host})` : c.tailcat?.exit ? 'tailcat through a server' : 'tailcat, letting clients in'}${c.ephemeral ? ', ephemeral (not kept)' : ''}`;
+  /** Who has connection `c` now: an adapter here, a machine in another tab, or no one. */
+  const stateOf = (c: Connection) => (net.runs(c.id) >= 0 ? 'connected on this page' : net.held.has(c.id) ? 'in use in another tab' : 'not in use');
+  const usedBy = (c: Connection) => [...machines.filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name), ...(settings().transientNet === c.id && ui.transient ? [ui.transient.label] : [])];
+  async function setAtStart(c: Connection, on: boolean) {
+    await net.conns.put({ ...c, connectAtStart: on });
+    await net.refresh();
+  }
+  async function logoutConnection(c: Connection) {
+    if (!(await ask.confirm(`Log ${c.name} out? Its node is removed from the tailnet and its keys are forgotten here; connecting again logs in as a new node.`, { ok: 'Log out', danger: true }))) return;
+    await act('Logging out', () => page.netLogout(net.runs(c.id)));
+  }
+
   // The page's own disk (a transient machine): its export's options.
   let compress = $state(settings().compress ?? true);
   let pageExportOpen = $state(false);
@@ -177,9 +197,40 @@
         <button onclick={() => defInput.click()} title="A machine definition (.webpc-machine.json): its settings and disks, without their contents"><Icon name="file-import" size={16} />Import a definition…</button>
         <input type="file" accept=".json,application/json" hidden bind:this={defInput} onchange={importDef} data-field="import-definition">
       </div>
+      <div class="new">
+        <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title="The network connections this browser keeps (tailnets, tailcat), for any machine's adapters"><Icon name="network" size={16} />Connections ({conns.length})</button>
+      </div>
     </nav>
 
-    {#if ui.machinesSelected === PAGE && ui.transient}
+    {#if ui.machinesSelected === CONNECTIONS}
+      <section class="machine" data-selected={CONNECTIONS}>
+        <div class="head">
+          <h3>Connections</h3>
+          <span class="meta">Kept by this browser for any machine's adapters; one running machine has a connection at a time.</span>
+          <span class="grow"></span>
+          <button onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"><Icon name="plus" size={16} />New connection…</button>
+        </div>
+        <div class="tab">
+          <ul class="adapters connections">
+            {#each conns as c (c.id)}
+              <li data-connection={c.id}>
+                <Icon name="network" size={18} />
+                <div class="what">
+                  <input class="conn-name" value={c.name} aria-label="Name" data-field="connection-name" onchange={(e) => { const name = e.currentTarget.value; void act('Renaming', () => page.netRename(c, name)); }}>
+                  <span class="meta">{kindText(c)} · {stateOf(c)} · {usedBy(c).length ? `attached to ${usedBy(c).join(', ')}` : 'attached to no machine'}</span>
+                </div>
+                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? 'Its hostname (another control server is another connection)' : 'Its server and relay'}>Edit…</button>
+                {#if c.tailcat?.serve}<button onclick={() => act('Forgetting the address', () => page.netNewAddress(c))} data-action="new-address" title="Forget the connection's tailcat address: whoever has it can't come in any more">New address</button>{/if}
+                {#if c.kind === 'tailnet' && net.runs(c.id) >= 0}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title="Remove the node from the tailnet and forget its keys">Log out</button>{/if}
+                <button onclick={() => act('Deleting', () => page.netDelete(c))} data-action="delete-connection" title="Delete the connection and what this browser keeps of it (its machines lose it)"><Icon name="trash" size={16} />Delete</button>
+              </li>
+            {:else}
+              <li class="none">No connections yet: make one here, or from a machine's adapter (its Network tab, or the toolbar's Network menu).</li>
+            {/each}
+          </ul>
+        </div>
+      </section>
+    {:else if ui.machinesSelected === PAGE && ui.transient}
       <section class="machine" data-selected={PAGE}>
         <div class="head"><h3>{ui.transient.label}</h3><span class="meta">This page's machine, from its address: its size is in the toolbar's Machine menu.</span></div>
         <div class="tabs" role="tablist">
@@ -250,9 +301,24 @@
             <div class="network">
               <ul class="adapters">
                 {#each adaptersOf(draft) as a, i (a.id)}
+                  {@const rec = machines.find((x) => x.id === m.id)}
+                  {@const at = rec ? adaptersOf(rec).findIndex((x) => x.id === a.id) : -1}
+                  {@const c = at >= 0 ? conns.find((x) => x.id === adaptersOf(rec!)[at].connection) : undefined}
+                  {@const here = m.id === ui.current && at >= 0 ? live[at] : undefined}
                   <li data-adapter={i}>
                     <Icon name="network" size={18} />
-                    <div class="what"><strong>Adapter {i + 1}</strong><span class="meta">virtio-net, MAC {a.mac}{i === 0 ? ': connected through the toolbar\'s Network menu (a tailnet, or tailcat) while the machine runs' : ': no connection yet (attaching one comes later)'}</span></div>
+                    <div class="what"><strong>Adapter {i + 1}</strong><span class="meta">virtio-net, MAC {a.mac}</span>
+                      <span class="meta" data-connection-name>{c ? `${c.name}: ${kindText(c)}` : 'No connection: the cable is out'}{here?.active ? ` · ${here.view.text}` : ''}{here?.primary ? ' · the default way out' : ''}</span>
+                      {#if here?.note}<span class="meta warn">{here.note}</span>{/if}</div>
+                    {#if at >= 0}
+                      {#if c}<label class="check" title="Connect it when the machine starts (Disconnect turns it off)"><input type="checkbox" checked={c.connectAtStart} onchange={(e) => { const on = e.currentTarget.checked; void act('Saving', () => setAtStart(c, on)); }} data-field="connect-at-start"> Connect at start</label>{/if}
+                      <button onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: m.id === ui.current })} data-action="attach-connection" title="A connection of this browser's, or a new one">{c ? 'Change connection…' : 'Attach…'}</button>
+                      {#if c}<button onclick={() => act('Detaching', () => page.netDetach(m.id, at))} data-action="detach-connection" title="Take the connection off the adapter (its client stops)">Detach</button>{/if}
+                      {#if here && c}
+                        {#if here.active}<button onclick={() => act('Disconnecting', () => page.netDisconnect(at))} data-action="disconnect">Disconnect</button>
+                        {:else}<button onclick={() => act('Connecting', () => page.netConnect(at))} data-action="connect">Connect</button>{/if}
+                      {/if}
+                    {:else}<span class="meta">Save to attach a connection</span>{/if}
                     <button onclick={() => { draft = withoutAdapter(draft!, a.id); dirty = true; }} title="Take the adapter out (the machine restarts without it)" data-action="remove-adapter"><Icon name="trash" size={16} />Remove</button>
                   </li>
                 {:else}
@@ -261,7 +327,7 @@
               </ul>
               {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network adapter</button></div>{/if}
               {@render saveRow()}
-              <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding or removing one changes the machine's shape: snapshots taken before are orphaned.</p>
+              <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding or removing one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.</p>
             </div>
           {:else if ui.machinesTab === 'usb'}
             <div class="settings usb-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
@@ -334,6 +400,11 @@
   .adapters li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .adapters li.none { color: var(--dim); }
   .adapters .what { flex: 1; display: flex; flex-direction: column; }
+  .adapters .warn { color: #ffb36b; }
+  .adapters .check { font-size: 13px; }
+  .conn-name { font: inherit; font-weight: 600; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 4px; margin-left: -5px; }
+  .conn-name:hover, .conn-name:focus { border-color: var(--line); }
+  .new .chosen { background: var(--pressed); }
   .adapters button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
   .storage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 6px 16px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--dim); }
   .storage details ul { margin: 4px 0; }

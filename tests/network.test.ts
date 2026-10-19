@@ -82,9 +82,9 @@ test('connecting: the client gets the machine\'s port; a restarted machine\'s ne
   assert.throws(() => net.connect({ controlURL: 'https://c', hostname: 'h' }), /hasn't started/);
 
   const dev1 = net.port(); // the machine's end
-  net.connect({ controlURL: 'https://c', hostname: 'h' });
+  net.connect({ controlURL: 'https://c', hostname: 'h', persist: 'https://c' });
   assert.equal(net.active(), true);
-  assert.deepEqual(f.log, ['start https://c h - https://c']); // a login's node is kept, under its server's name
+  assert.deepEqual(f.log, ['start https://c h - https://c']); // a kept node, under the profile given
   // Packets from the machine reach the client's end of the channel.
   const got = new Promise<unknown>((resolve) => { f.clients[0].config.ip!.onmessage = (e) => resolve(e.data); });
   dev1.postMessage('hello');
@@ -103,7 +103,7 @@ test('connecting: the client gets the machine\'s port; a restarted machine\'s ne
 
   // The port came back: the same machine connects again without a restart.
   net.connect({ controlURL: 'https://c', hostname: 'h', authKey: 'tskey-x' });
-  assert.equal(f.log.at(-1), 'start https://c h tskey-x -'); // a key's node isn't kept
+  assert.equal(f.log.at(-1), 'start https://c h tskey-x -'); // no profile: an ephemeral node
   await net.disconnect();
   dev1.close();
   dev2.close();

@@ -158,8 +158,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     CI. Its loose ends: [docs/backlog.md](docs/backlog.md) "Network". Proposed (2026-10-18):
     peer-to-peer rooms over WebRTC, with DERP as the fallback
     ([docs/plans/networking-p2p.md](docs/plans/networking-p2p.md)), and several network adapters per machine on
-    connections kept by the browser ([docs/plans/network-adapters.md](docs/plans/network-adapters.md); L0–L2
-    done 2026-10-18: the connections' model and migration, adapters in the shape, the default route through one).
+    connections kept by the browser ([docs/plans/network-adapters.md](docs/plans/network-adapters.md); L0–L3
+    done 2026-10-18: the connections' model and migration, adapters in the shape, the default route through one,
+    the page's connections per adapter).
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device

@@ -25,7 +25,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/plans/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts`, `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
+| `web/app/network.ts`, `web/app/net-live.ts`, `Network.svelte`, `NetWizard.svelte` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -210,8 +210,10 @@ Duplicate, Export the definition, Delete; then tabs:
   a URL's path, size and validator), so its overlays come back with it.
 - **Network:** the machine's network adapters (docs/plans/network-adapters.md): up to four, each with its MAC (a new
   machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added and removed with the machine
-  off. The first is the toolbar's Network menu's; the others have no connection yet (connections per adapter come with
-  the plan's L3). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
+  off, and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
+  **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
+  once, running or not (a connection isn't in the shape). **Connections** (in the list of machines) is the
+  browser's connections. A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **USB** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
@@ -848,16 +850,30 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 
 ## Network
 
-The toolbar's **Network** menu (machines with a `network` entry in machine.ts: Debian) shows the
-machine's connection and what can be done with it; its **Connect…** (or, while connected,
-**Change…**) opens the **Network wizard**, a dialog: first the choice, **A tailnet** (a Tailscale
-network, docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker) or
-**tailcat** (below), then that kind's settings, with Back, Cancel (or Esc) and Connect. Form errors
-show in the wizard; Connect closes it (stopping a running client first) and opens the menu, which
-then says how the connection goes. The menu holds only what applies to the current connection:
-the status, **Log in…**, **Internet through** (a tailnet's exit nodes), **This machine's tailcat
-address** (when it lets clients in), **Disconnect**, **Log out**; the wizard has room for options
-to come (a custom relay is the first, under tailcat's **Advanced**).
+A machine has up to four **network adapters** (machines with a `network` entry in machine.ts; a stored machine's
+are on its Network tab, above), and each adapter has a **connection** attached, or none (the cable out). A
+connection is the browser's, not the machine's (docs/plans/network-adapters.md): a tailnet (a Tailscale network,
+docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker) or tailcat (below), with its
+state (a tailnet's node, tailcat's served address), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
+unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
+comes back detached, saying so. Any machine can use a kept connection; one running machine has it at a time (its Web
+Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after **Use it here**, takes it
+(the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
+
+The toolbar's **Network** menu has a section per adapter of the page's machine (headed "Adapter n" when there are
+several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
+**Log in…**, **Internet through** (a tailnet's exit nodes), **This machine's tailcat address** (when it lets clients
+in), **Connect** (the attached connection, when it isn't running), **Disconnect**, **Log out**, and **Connect…** or
+**Change connection…**, which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
+the most recently used free one chosen and those in use marked with their machine, after **New connection…**
+(without connections it starts at the next step); then the kind, **A tailnet** or **tailcat**, then that kind's
+settings and **Keep this connection in this browser** (on; off makes it ephemeral), with Back, Cancel (or Esc) and
+Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
+the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
+the page (its Network tab: it connects when that machine starts), makes one on its own and edits one (the Machines
+page's **Connections**: rename, Edit, New address, Log out, Delete, which names the machines that lose it). The live
+side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
+and the guest's default way out (below).
 
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
@@ -874,31 +890,37 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   and the guest has its DHCPv6 address ~2 s later. The guest is dual-stack: the tailnet's `fd7a:` address
   as a /128, the default route from the advertisement. MagicDNS answers AAAA for peers only when the
   control server sends the `magicdns-aaaa` node attribute (headscale doesn't by default; Tailscale's
-  admin console has the setting): reach peers' IPv6 addresses by address, or turn it on. The machine worker gets `ip`, the gateway's end of an IP port, and adds
-  `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
-  (web/app/network.ts) for as long as no client holds it.
+  admin console has the setting): reach peers' IPv6 addresses by address, or turn it on. The machine worker gets `nets`,
+  each adapter's MAC and the gateway's end of its IP port, and adds a `{type: 'net', mac, gateway, adapter: {ip}}` per
+  adapter (docs/devices.md "net"); the page keeps the other ends (web/app/network.ts) for as long as no client holds them.
+- **The default way out** (docs/plans/network-adapters.md §4): the first adapter that is connected and reaches the
+  internet (a tailnet with an exit node in use, tailcat through a server), else the first connected
+  (`primaryOf`). Its lease has the default route; the others' have only their network's routes (DHCP option 121, a
+  router advertisement with lifetime 0 and Route Information options). A machine with several adapters has a
+  two-minute lease, so IPv4's default follows the primary at the next renewal; IPv6's moves with the advertisement.
 - **A tailnet** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
   `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a "Show the auth key" checkbox).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
   with a **Log in…** link (a new tab; only `http(s)` URLs are ever offered); the client comes up
-  when the login completes. An admin-approval wait is shown as such. With an auth key there's no
-  login; the key is never saved and its node is ephemeral (the control server drops it once it's
-  been away).
+  when the login completes. An admin-approval wait is shown as such. With an auth key (asked for only when the
+  wizard connects the page's machine) there's no login; the key is never saved. A kept connection's node is kept
+  either way; an ephemeral connection's node is an ephemeral node (the control server drops it once it's been away).
 - **The client** is our tailnet client (`net/ts`, `web/tailnet-worker.ts`; docs/tailnet.md),
   the page's since 2026-10-16 (until then Tailscale's Go client built to wasm). It keeps the node in
   the Go client's store format, so a node kept by the Go client is still the same node.
-- **The node is kept:** a login's node (its keys, a secret) lives in this origin's IndexedDB
-  (`webpc-tailscale`, one profile per control server, in the Go client's own format: `web/tailscale-state.ts`), so a reload is the same node with the same
-  address and no new login: **Connect on load is automatic** (`autoconnect`) until Disconnect. An
-  auth key's node isn't kept: the menu says to enter it again.
+- **The node is kept:** a kept connection's node (its keys, a secret) lives in this origin's IndexedDB
+  (`webpc-tailscale`, a profile per connection, its id: `stateKey`; the node kept before connections stays under its
+  control server's URL; in the Go client's own format: `web/tailscale-state.ts`), so a reload is the same node with the same
+  address and no new login: **a connection connects at start** (`connectAtStart`, the Network tab's Connect at start)
+  until Disconnect.
 - **Disconnect** withdraws the lease and stops the client (the guest keeps its address until the
-  lease runs out; the card stays); **Log out** removes the node from the tailnet and deletes its
+  lease runs out; the adapter and its connection stay); **Log out** removes the node from the tailnet and deletes its
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
 - **tailcat** (docs/tailnet.md "tailcat") has two choices, either or both:
   - **Go online through a computer of mine** (the default): a **tailcat address** (a password
-    field; a secret, never saved) and a line on what to run: `tailcat serve exit-node` on a
+    field; a secret, kept only in a kept connection) and a line on what to run: `tailcat serve exit-node` on a
     computer of the user's. The Rust tailnet client (web/tailcat.ts, web/tailcat-worker.ts,
     net/ts) connects through the address's DERP relay; the status goes Loading the client,
     Connecting to the relay, Waiting for the tailcat server, Opening the tunnel, then **Connected
@@ -913,21 +935,21 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
     with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
     port the guest listens on. Clients reach the guest at its tunnel IPv6 address, untranslated,
     from their own (the client drops anything else); there's no filter beyond the guest's own.
-    The address is **kept**: the node key and the address's pre-shared key live in this origin's
-    IndexedDB (`webpc-tailcat`, `identity`/`served`), so it's the same after a reload, and a
-    machine that serves without a server to go online through **reconnects by itself** on load
-    (`autoconnect`). **Advanced**: the **relay for clients** when not going online through a
+    The address is **kept** with a kept connection: the node key and the address's pre-shared key live in this
+    origin's IndexedDB (`webpc-tailcat`, `identity`, under the connection's `identityKey`, its id; `served` for the
+    one kept before connections), so it's the same after a reload, and the machine **reconnects by itself** on load
+    (`connectAtStart`); an ephemeral connection's is in the page's memory. **Advanced**: the **relay for clients** when not going online through a
     computer (that computer's relay serves otherwise): empty for tailcat's public relays, the
     region with the fastest `/derp/probe` (`nearestRegion`, as tailcat's own server picks; the
-    map's first if none answers), or one's own derper's `host[:port]`; and **New address**, which
-    forgets the kept identity (after a confirmation), so the old address stops working at the
-    next Connect. Serving alone, the guest gets the same lease without resolvers: it reaches only
+    map's first if none answers), or one's own derper's `host[:port]`; and, editing a connection, **New address**, which
+    forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
+    connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says **Letting tailcat clients in** (or adds it to the exit node's).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
-  status line says "internet through <name>". The choice is remembered (`exitNode`) and given to the
-  client at the next Connect. The guest's address, router and
+  status line says "internet through <name>". The choice is kept with the connection (`tailnet.exitNode`) and given
+  to the client at the next Connect; using one makes the adapter the default way out (above). The guest's address, router and
   DHCP lease don't change: its default route is the gateway, which hands every packet to the client,
   and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
   node**: MagicDNS (100.100.100.100, which the lease gives first) answers the tailnet's names and
@@ -943,15 +965,18 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   (Firefox and `curl -4` alike; IPv6 worked; the user's finding, 2026-10-17). networkd leaves it out by default, and without it resolved
   sends short names only to LLMNR and a `.local` MagicDNS domain only to mDNS ("Temporary failure in
   name resolution").
-- Settings (`webpc.settings` `net`): `kind` (`tailscale` or `tailcat`), `controlURL`, `hostname`, `autoconnect`,
-  `keyed`, `exitNode`, `tailcatExit`, `tailcatServe`, `tailcatRelay`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
+- **Before connections** the page kept one connection in `webpc.settings` `net`; the first load with connections makes
+  it (and its kept node, and the served tailcat identity) into kept connections, attaches the one in use to the
+  transient machine's adapter (`webpc.settings` `transientNet`) and every stored machine's first, and drops `net`
+  (`migrateLegacy`, under the Web Lock `webpc-net-migrate`). The state dot (the default way out's, else adapter 1's;
+  each section's heading has its own): grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` call `tools/tailscale.ts`'s `prepareTailnetClient` first: it builds `net/ts` with `net/ts/build.sh` into `target/net/ts.wasm` when it's missing or a hash of `net/ts` and `Cargo.lock` (stamp `ts.wasm.inputs`) changed (cargo only, as the core). It never stops the server: if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `scripts/ci-net.sh` runs `tools/tailscale.ts` as a step (it also builds the Go client, the hand-over test's fixture).
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 

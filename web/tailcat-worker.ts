@@ -53,10 +53,12 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
     return;
   }
   try {
+    // The port is this worker's from now: a detach while the module loads hands it back.
+    attach(m.ip);
     const t0 = performance.now();
     const mod = await TsModule.load(m.wasm);
     post({ type: 'loaded', ms: performance.now() - t0 });
-    attach(m.ip);
+    if (!ip) return; // detached meanwhile
     exit = !!m.addr;
     const config: TailcatConfig = { addr: m.addr, derpMapURL: m.derpMapURL };
     if (m.serve) {
@@ -64,6 +66,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
       const region = m.addr || m.serve.relay ? 0 : await nearestRegion(m.derpMapURL ?? 'https://tailcat.dev/derpmap.json').catch(() => 0);
       Object.assign(config, { key: id.key, serve: { psk: id.psk, relay: m.addr ? '' : m.serve.relay, region } });
     }
+    if (!ip) return; // detached meanwhile
     client = new TsClient(mod, config, {
       packet: (p) => send?.(p),
       event(ev) {

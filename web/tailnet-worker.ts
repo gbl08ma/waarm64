@@ -56,11 +56,13 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     return client.logout();
   }
   try {
+    // The port is this worker's from now: a detach while the module loads hands it back.
+    attach(m.ip);
     const t0 = performance.now();
     const mod = await TsModule.load(m.wasm);
     post({ type: 'loaded', ms: performance.now() - t0 });
     if (m.persist) state = await openState(m.persist);
-    attach(m.ip);
+    if (!ip) return; // detached meanwhile
     client = new TsClient(mod, {
       control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'webpc', ephemeral: !m.persist },
       state: state?.entries() ?? {},

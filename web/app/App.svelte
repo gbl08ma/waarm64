@@ -7,13 +7,14 @@
   import Ask from './Ask.svelte';
   import Icon from './Icon.svelte';
   import MachinesPage from './MachinesPage.svelte';
+  import NetWizard from './NetWizard.svelte';
   import Toolbar from './Toolbar.svelte';
   import type { PageAudio } from '../audio.ts';
-  import type { Network } from './network.ts';
+  import type { PageNetwork } from './net-live.ts';
   import type { Store } from './store.ts';
   import { page, ui } from './ui.svelte.ts';
 
-  let { store, audio, network }: { store: Store; audio: PageAudio; network: Network } = $props();
+  let { store, audio, net }: { store: Store; audio: PageAudio; net: PageNetwork } = $props();
 
   $effect(() => { document.body.dataset.page = ui.machinesOpen ? 'machines' : 'machine'; });
 
@@ -26,7 +27,7 @@
   };
 </script>
 
-<Toolbar {store} {audio} {network} />
+<Toolbar {store} {audio} {net} />
 <div id="message" role="alert" hidden={!ui.message} data-kind={ui.messageKind} data-snapshot={ui.snapshotResult || undefined}>
   <pre id="message-text">{ui.message}</pre>
   <div id="message-actions">{#each ui.actions as a (a)}<button onclick={(e) => a.run(e.currentTarget)}>{a.label}</button>{/each}</div>
@@ -46,11 +47,12 @@
   </div>
   <div id="terminal-view"><div id="terminal"></div></div>
 </main>
-{#if ui.machinesOpen}<MachinesPage {store} />{/if}
+{#if ui.machinesOpen}<MachinesPage {store} {net} />{/if}
 <footer>
   <span id="state" data-state={ui.state}>{ui.stateText}</span>
   <span id="status" data-status={ui.status.data || undefined}>{ui.status.text}</span>
 </footer>
+<NetWizard {net} />
 <Ask />
 <input type="file" id="load-snapshot-input" hidden onchange={take((f) => page.loadSnapshot(f))}>
 <input type="file" id="open-disk-input" hidden onchange={take((f) => page.openDiskFile(f))}>
