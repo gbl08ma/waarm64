@@ -318,12 +318,10 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   modules").
 - **The byte budget** bounds it: ~10 × 160 MiB + the guest and the core's heap (~1.3 GB) + the browser
   (~0.2 GB) = ~3.2 GB for the 4-vCPU page, flat (the uncapped run kept climbing).
-- **Why a whole-cache flush, not aging or LRU:** compiled code has no per-block use counts (a block
-  runs inside V8 without telling the core), so aging would need a counter update per block entry, the
-  cost the design avoids everywhere; and links between blocks (`linkers`, direct calls by table index)
-  make dropping a subset need the unlink walk that invalidation does. FIFO by module is the cheaper
-  precise option (backlog); until then a flush is one clear of the maps, and the guest's hot set is
-  recompiled in ~1–2 s of one vCPU's time.
+- **A whole-cache flush** is one clear of the maps, and the guest's hot set is recompiled in ~1–2 s
+  of one vCPU's time; [Eviction](#eviction) keeps the code in use instead (a mark per dispatch, a
+  probe, imports only within a generation). FIFO by module was built and dropped: the oldest code is
+  the hottest (docs/backlog.md).
 - **What the budget was sized against** (before [Sharing](#sharing), 40 MiB per vCPU on 4): the
   live set of a Debian boot on 4 vCPUs (~31 MiB per vCPU), so booting didn't flush; a mixed load
   then flushed about every 3–4 minutes per vCPU, and a Go build about every 30 s (~6% of CPU in
@@ -350,6 +348,49 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   went from 3.55 GB to 1.2 GB at once (`mem-run6-crash` in the summary).
 - **The page's memory estimate** (`hostMemoryGiB`, `web/app/machine.ts`: RAM + 1 + 0.3 per vCPU,
   3.2 GiB for the default) matches the capped median; the peaks above it are the GC's lag.
+
+## Eviction
+
+With `Config::evict` (`VmConfig.jit` 5, the page's `?jit=evict`) a full cache evicts its coldest
+modules instead of flushing. What decides the design (`bench/boot/results/m8-evict/`): a module
+reaches compiled successors as imports, an import keeps its target's instance alive in V8, and
+imports point from newer modules to older ones, so a module's memory goes only with every module
+that imports it, transitively. With every import pinning, only 3-7% of a full cache was freeable at
+Firefox's flushes and a `go build` loop's while ~90% was cold; with imports only within an eighth
+of the budget, 88-90%, at no measurable cost (busy MIPS −1%, the gates within 1%).
+
+- **Generations:** a module's generation is the eighth of `max_bytes` (`GENERATION`) its first byte
+  falls in, by install order this epoch. It imports only blocks of its own generation; an older
+  successor it reaches through the jump cache, as one not compiled yet. Its imports are recorded
+  (`Mod::imports`, from the `compiled` lookups emission makes).
+- **The use signal:** the dispatcher stores the cache's sweep number into its table's word for each
+  slot it enters (`Table::used`, a relaxed store per dispatch; the cache reads every table's). JIT
+  code entered otherwise doesn't mark: a module reached through imports stays with its importer
+  (below), and one reached through the jump cache or the transfer cache is caught by the probe.
+- **The probe:** at `PROBE_AT` (7) eighths the cache starts a new sweep and clears every table's
+  jump cache and its vCPUs' transfer caches (`Cache::forget`), so a module still in use is entered
+  from the dispatcher again within the probe and marked. A new sweep also starts every 5 s at an
+  install, so the coldest go first.
+- **Evicting** (at the full budget, `Cache::evict`): the modules entered since the probe began are
+  kept, with everything they import (transitively); of the rest, coldest first (oldest on ties),
+  each goes with its importers, down to `EVICT_TO` (6) eighths. If the cold ones wouldn't take the
+  cache under 7/8 it flushes as before. An evicted key isn't compiled any more (its `Info`
+  cleared, its `linkers` and spans dropped); a tier-up's redirect isn't an import: an evicted loop
+  region gives its key back to its head (the head's `Info` and spans kept in `Tier`), whose hot word
+  (and the members the region quieted) counts again in each table; an evicted head takes its
+  tier-up's record along (its hot word names a released slot).
+- **Slots:** an eviction's slots are held (`Evict::held`) until every table has let go of them, at
+  its dispatcher (`Table::sync` with `dispatcher`): its jump cache clear, `env.jit_release` nulling
+  its table's entries (so V8 can free the code), the hot words reset, its queued installs and
+  redirects of evicted modules dropped. Its vCPUs' transfer caches go before any block runs
+  (`drops`). A table in `jit_hot` (JIT code running) doesn't let go, and doesn't count as caught up
+  until it does. Then the ranges join a free list (merged, first fit before the slots never used);
+  a module whose slots don't fit flushes. A table installs modules only in order, so whether it has
+  one is its number against the first one queued (`Table::has`, in place of a table index limit).
+- **The log** keeps the modules of an epoch until every table has taken them, and drops entries in
+  batches of 4,096 (`LOG_KEEP`); a module evicted before a table took it isn't installed there.
+- **Tests:** JIT-evict (docs/testing.md), the unit tests in `jit/mod.rs` (which modules go, the
+  slots held until every table has let go, the region giving its key back).
 
 ## Invalidation and the stale-code checker
 

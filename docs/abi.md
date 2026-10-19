@@ -13,7 +13,7 @@ Design notes for an ABI change go in this file before the code.
   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
   RAM, which the host places after the heap ([architecture.md](architecture.md)).
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
-  slot) -> i32` (below). `web/vm.ts` `coreImports(memory)` returns `{env, jit}`; after
+  slot, seq) -> i32`, `env.jit_release(slot, n)` (below). `web/vm.ts` `coreImports(memory)` returns `{env, jit}`; after
   instantiating, the host calls `jit.bind(instance)`.
 - **More instances on the same memory** (one per worker, ABI 20): the core exports
   `__stack_pointer`, `__tls_size`, `__tls_align`, `__wasm_init_tls` and `thread_alloc(size,
@@ -85,7 +85,7 @@ Design notes for an ABI change go in this file before the code.
 | `ticks_per_insn` | counter ticks per step, 0 → 1 (5) |
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
-| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
+| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33), 5 the JIT evicting its coldest modules instead of flushing, 6 that in a 64 KiB cache with the stale-code checker (39; [jit.md](jit.md) "Eviction") |
 | `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35); other bits reserved, and `vm_new` refuses them |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
@@ -147,6 +147,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 101–103 | the block interpreter (33, [cpu.md](cpu.md) "The block interpreter"): steps it ran, blocks it decoded, times a table's cache of them started over (full) |
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 | 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
+| 108–110 | eviction (39): evictions, and the modules and wasm bytes they evicted |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -206,6 +207,10 @@ puts its functions into the core's table.
   run early with `BUDGET` (fewer steps than the budget): the host's vCPU worker then goes through
   its event loop before it runs the vCPU again. Past a second it passes `seq` 0. A module that
   doesn't compile is a JIT bug: the exception propagates and the run fails.
+- **`env.jit_release(slot, n)`** (ABI 39): the blocks at JIT slots `slot..slot + n` are dead (a flush, or evicted:
+  [jit.md](jit.md) "Eviction"), and no block calls them any more: the host nulls their table entries, so V8 can free
+  their instances and code, and past 4,096 released slots asks V8 to collect (`web/vm.ts` `collect`). A table calls it
+  from the dispatcher only. Before it the host found flushes by slot numbers starting over, which reused slots break.
 - **`env.jit_compile(ptr, len, seq, epoch, ready) -> i32`** (ABI 36): the core hands each module it
   emits to the host's compile worker first (`web/jit-compile-worker.ts`, parallel SMP), as number
   `seq` (from 1, by the cache) of code-cache epoch `epoch`. The host posts a copy and returns 1, or
@@ -503,4 +508,5 @@ implemented by this step).
 | 35 | FEAT_RNG and FEAT_E0PD: `VmConfig.features` bits 1 and 2, `VmConfig.rng_seed`; a snapshot of a VM with FEAT_RNG keeps each vCPU's stream position |
 | 36 | `env.jit_compile`: the JIT's modules compiled in a worker of their own before the vCPUs install them |
 | 38 | USB: `VmConfig.xhci`, `vm_xhci` (above, "USB"); the `DEVICE` exit's slot 32 for the xHCI |
+| 39 | `env.jit_release`; `VmConfig.jit` 5 and 6 (eviction); counters 108–110 |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

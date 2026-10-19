@@ -17,7 +17,7 @@ import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 
-export const ABI = 38;
+export const ABI = 39;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -67,7 +67,7 @@ export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8
 
 /**
  * The core's imports: the shared memory, the host clock for realtime mode,
- * `jit_install` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
+ * `jit_install`, `jit_release` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
  * instance; until then `jit_install` fails and the core only interprets. `compile`: this vCPU's
  * port to the compile worker (web/jit-compile-worker.ts; parallel SMP).
  */
@@ -75,7 +75,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
   const jit = jitHost(memory, compile);
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, jit };
+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_release: jit.release, jit_compile: jit.compile }, jit };
 }
 
 /**
@@ -242,7 +242,7 @@ const NUDGE_SLOTS = 4096;
 const SLOW_INSTALL_MS = 20;
 
 /**
- * Asks V8 to collect now. The flushed blocks' instances are garbage, and V8 frees their code only when a
+ * Asks V8 to collect now. The released blocks' instances are garbage, and V8 frees their code only when a
  * major GC collects them; a worker's JS heap stays small, so that GC can come minutes late and the dead
  * code piles up (a Go build on 4 vCPUs: the tab peaked at 9.6 GB with the code cache capped). Allocating a large
  * ArrayBuffer (untouched, so no memory) reports external-memory pressure, which makes V8 collect.
@@ -270,9 +270,8 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
   let imports: WebAssembly.Imports = {};
   // The bytes are copied out of the shared memory (V8 compiles only unshared ones) into one buffer, reused.
   let scratch = new ArrayBuffer(0);
-  // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
-  let lastEnd = 0;
-  let hi = 0;
+  // Slots released since the last nudge of V8's GC.
+  let released = 0;
   // The compile worker's compiled modules by number, as they arrive through the event loop (ABI 37): installing one
   // skips V8's decoding and validating the bytes again, which `new WebAssembly.Module` does before it finds them in
   // its cache (four fifths of an install: bench/boot/REPORT.md "M8: the compile worker's modules, posted").
@@ -317,29 +316,30 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
       const n = Object.keys(f).length;
       const at = base + slot;
       const t2 = performance.now();
-      let gc = 0;
-      const restart = slot < lastEnd;
-      // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
-      // the ones this module doesn't overwrite, and V8 can free their instances and code.
-      if (restart) {
-        for (let k = slot + n; k < hi; k++) table.set(base + k, null);
-        // Only for a big cache (JIT-stress flushes every few blocks).
-        if (hi > NUDGE_SLOTS) {
-          gc = performance.now();
-          collect();
-          gc = performance.now() - gc;
-        }
-        hi = 0;
-      }
-      lastEnd = slot + n;
-      hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
       // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
       const ms = performance.now() - t0;
-      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
+      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} bytes ${len} functions ${n}`);
       return at;
+    },
+    /**
+     * `env.jit_release` (ABI 39): the core's blocks at JIT slots `slot..slot + n` are dead (a flush, or evicted), so the
+     * table lets go of them and V8 can free their instances and code; past a cache's worth of slots, V8 is asked to.
+     */
+    release(slot: number, n: number) {
+      if (!table) return;
+      const end = Math.min(base + slot + n, table.length);
+      for (let k = base + slot; k < end; k++) table.set(k, null);
+      released += n;
+      if (released > NUDGE_SLOTS) {
+        const t0 = performance.now();
+        collect();
+        const ms = performance.now() - t0;
+        if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow release ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: ${released} slots`);
+        released = 0;
+      }
     },
     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
     compile(ptr: number, len: number, seq: number, epoch: number, ready: number): number {
@@ -380,7 +380,9 @@ export const Counter = {
   JIT_WORKER_INSTALLS: 104, JIT_OVERDUE: 105,
   // ABI 37: times the worker's compiled module hadn't reached the vCPU yet, and runs ended early for it to arrive.
   JIT_PARKS: 106, JIT_PARK_EXITS: 107,
-  LEN: 108,
+  // ABI 39: evictions (`jit::Config::evict`), and the modules and wasm bytes they evicted.
+  JIT_EVICTIONS: 108, JIT_EVICTED: 109, JIT_EVICTED_BYTES: 110,
+  LEN: 111,
 } as const;
 
 /**
@@ -397,8 +399,12 @@ export type BootOptions = {
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
   kernelOffset?: number;
-  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33). */
-  jit?: 0 | 1 | 2 | 3 | 4;
+  /**
+   * `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter
+   * (the dispatcher without compiling, ABI 33), 5 the JIT evicting cold modules instead of flushing, 6 that in a small
+   * cache (ABI 39).
+   */
+  jit?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
@@ -993,6 +999,7 @@ function stats(n: (i: number) => number) {
       regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
+      evictions: n(Counter.JIT_EVICTIONS), evicted: n(Counter.JIT_EVICTED), evictedBytes: n(Counter.JIT_EVICTED_BYTES),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

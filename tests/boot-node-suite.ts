@@ -46,28 +46,30 @@ const longSkip = process.env.WEBPC_LONG_TESTS !== '1' && 'SKIPPED: scripts/ci.sh
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
-const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9, input?: ConsoleInput) => runToPowerOff(WASM, { ...o, jit }, max, undefined, input);
+const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3 | 6, max = 20e9, input?: ConsoleInput) => runToPowerOff(WASM, { ...o, jit }, max, undefined, input);
 const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc, gpu: r.gpu, snd: r.snd });
 
 /**
- * Boots `o` on the interpreter, checks it with `check`, then under the JIT and
- * JIT-stress (unless `stress` is false) and requires the same run. A long guest
+ * Boots `o` on the interpreter, checks it with `check`, then under the JIT,
+ * JIT-stress (unless `stress` is false) and JIT-evict (a 16 KiB cache evicting
+ * instead of flushing; as `stress` unless `evict` says) and requires the same run. A long guest
  * (`interp: false`) skips the interpreter unless WEBPC_INTERP=1: its JIT runs
  * are checked with `check` and against `steps` alone.
  */
-function guest(name: string, o: () => BootOptions, check: (r: Run) => void, { skip = false as string | false, stress = true, max = 20e9, steps = 0, interp = true, input = undefined as ConsoleInput | undefined } = {}) {
+function guest(name: string, o: () => BootOptions, check: (r: Run) => void, { skip = false as string | false, stress = true, evict = undefined as boolean | undefined, max = 20e9, steps = 0, interp = true, input = undefined as ConsoleInput | undefined } = {}) {
   let want: Run | undefined;
   test(`${name}: interpreter`, { skip: skip || (!interp && !INTERP && 'SKIPPED: set WEBPC_INTERP=1') }, async () => {
     want = await boot(o(), 0, max, input);
     check(want);
     if (steps) assert.equal(want.steps, steps);
   });
-  for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2]] as const) {
-    const off = skip || (jit === 2 && !stress && 'SKIPPED: set WEBPC_JIT_STRESS=1');
+  for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-evict', 6]] as const) {
+    const off = skip || (jit !== 1 && !(jit === 6 ? evict ?? stress : stress) && 'SKIPPED: set WEBPC_JIT_STRESS=1');
     test(`${name}: ${mode}`, { skip: off }, async () => {
       const r = await boot(o(), jit, max, input);
       const ref = want ? ` (interpreter ${(want.ms / 1000).toFixed(1)} s)` : '';
-      console.log(`# ${name} ${mode}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s${ref}`);
+      const ev = jit === 6 ? `, ${r.stats.jit.evictions} evictions, ${r.stats.jit.flushes} flushes` : '';
+      console.log(`# ${name} ${mode}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s${ref}${ev}`);
       if (want) assert.deepEqual(summary(r), summary(want));
       else {
         assert.ok(!interp && !INTERP, 'the interpreter run failed');
@@ -108,7 +110,7 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
 // (whose checker tolerates the legal cross-modification window here: a stale
 // block is dropped and counted, not a trap).
 const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
-const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void, input?: ConsoleInput) => {
+const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3 | 6, check: (r: Run) => void, input?: ConsoleInput) => {
   for (let i = 0; i < RUNS; i++) {
     const r = await boot({ ...o, parallel: true, idleLimitMs: 30_000 }, jit, 1e12, input);
     try {
@@ -119,7 +121,7 @@ const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => v
   }
 };
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
-  for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3]] as const) {
+  for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3], ['JIT-evict', 6]] as const) {
     test(`parallel: bare-metal ${f} (${mode})`, () => parallel(bareMetal(f), jit, (r) => {
       poweredOff(r);
       assert.equal(r.x[1], 0n, r.console);
@@ -249,14 +251,14 @@ const disk = () => new URL('buildroot/rootfs.ext4', IMAGES).href;
 guest('Buildroot', () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()) }), (r) => {
   poweredOff(r);
   assert.match(r.console, /webpc: test ok/);
-}, { skip: linux, stress: STRESS, steps: STEPS.buildroot });
+}, { skip: linux, stress: STRESS, evict: true, steps: STEPS.buildroot });
 
 // On 2 and 4 vCPUs, deterministic round-robin (M7): the same steps interpreted and under the JIT.
 for (const n of [2, 4]) {
   guest(`Buildroot on ${n} vCPUs`, () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: n }), (r) => {
     poweredOff(r);
     assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
-  }, { skip: linux, stress: STRESS, steps: STEPS[`buildroot-${n}cpu`] });
+  }, { skip: linux, stress: STRESS, evict: true, steps: STEPS[`buildroot-${n}cpu`] });
 }
 
 // Console input (M8 loop 1): a shell on the console reads what the host sends
@@ -314,6 +316,12 @@ for (const n of [2, 4]) {
     assert.ok(workerInstalls >= modules && overdue === 0, `${workerInstalls} installs from the worker, ${overdue} overdue, ${modules} modules`);
   }));
 }
+// Evicting (a 16 KiB cache): every table lets go of the evicted slots before the cache reuses them.
+test('parallel: Buildroot on 4 vCPUs (JIT-evict)', { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: 4 }, 6, (r) => {
+  poweredOff(r);
+  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/);
+  assert.ok(r.stats.jit.evictions > 0, `${r.stats.jit.evictions} evictions, ${r.stats.jit.flushes} flushes`);
+}));
 // The vCPU workers returning to their event loop at every exit 1 ms apart (web/vcpu-worker.ts `yieldMs`; 100 by
 // default): idle sleeps through Atomics.waitAsync, busy chunks through a wait that times out, thousands a boot.
 test('parallel: Buildroot on 4 vCPUs, the workers yielding every 1 ms (JIT)', { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: 4, vcpuYieldMs: 1 }, 1, (r) => {

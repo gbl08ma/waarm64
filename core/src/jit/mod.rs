@@ -85,6 +85,10 @@ pub struct Config {
     /// blocks only), so the edge into it stays in the function instead of a
     /// jump-cache probe and an indirect call (docs/jit.md "Compile policy").
     pub warm: u32,
+    /// A full cache evicts its coldest modules instead of flushing
+    /// (docs/jit.md "Eviction"): modules import only blocks of their own
+    /// generation, so a cold one goes with its few importers.
+    pub evict: bool,
 }
 
 impl Config {
@@ -101,6 +105,7 @@ impl Config {
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
         warm: WARM,
+        evict: false,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -115,6 +120,7 @@ impl Config {
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
+        evict: false,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -138,6 +144,22 @@ impl Config {
         threshold_max: u32::MAX,
         ..Config::DEFAULT
     };
+    /// The default policy, evicting instead of flushing (`VmConfig.jit` 5).
+    pub const EVICT: Config = Config {
+        evict: true,
+        ..Config::DEFAULT
+    };
+    /// Evicting in a cache this small that it evicts or flushes every few
+    /// modules (of four blocks), loop heads tiering up at their second entry,
+    /// with the stale-code checker (`VmConfig.jit` 6: the tests).
+    pub const EVICT_STRESS: Config = Config {
+        max_bytes: 64 << 10,
+        batch: 4,
+        check: true,
+        region_after: 1,
+        evict: true,
+        ..Config::DEFAULT
+    };
 }
 
 /// [`Config::DEFAULT`]'s `max_bytes`: the wasm bytes V8 may hold for a whole VM
@@ -150,6 +172,19 @@ pub const PRESSURE_KNEE: u64 = 2;
 
 /// [`Config::DEFAULT`]'s `region_after`.
 pub const REGION_AFTER: u32 = 1000;
+
+/// Eviction (`Config::evict`), in eighths of `Config::max_bytes`: a
+/// generation's bytes; the live bytes at which the cache starts a probe (every
+/// table's jump and transfer caches cleared, so a module still in use is
+/// entered from the dispatcher again, which marks it); and those it evicts
+/// down to once full. With less than an eighth cold it flushes.
+pub const GENERATION: u64 = 1;
+pub const PROBE_AT: u64 = 7;
+pub const EVICT_TO: u64 = 6;
+
+/// A new sweep (the value the dispatcher marks entered slots with) at least
+/// this often, so the coldest of the cold go first.
+const SWEEP_NS: u64 = 5_000_000_000;
 
 /// What the JIT did (`vm::Counters` publishes them).
 #[repr(C)]
@@ -203,6 +238,11 @@ pub struct Stats {
     /// so that it arrives (ABI 37, [`Table::parked`]).
     pub parks: u64,
     pub park_exits: u64,
+    /// Evictions (ABI 39, `Config::evict`), and the modules and wasm bytes
+    /// they evicted.
+    pub evictions: u64,
+    pub evicted: u64,
+    pub evicted_bytes: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -240,6 +280,8 @@ struct Info {
     hash: u64,
     /// A loop head compiled alone: its hot word's index + 1 (step 8.3).
     word: u32,
+    /// Its module (`Logged::id`), once compiled.
+    m: u32,
 }
 
 /// A jump cache entry: the compiled block for a key. Blocks read it too
@@ -354,7 +396,7 @@ pub struct Cache {
     /// The modules installed since then, in order; and how many of them
     /// every table has (their bytes are dropped).
     log: Vec<Logged>,
-    freed: usize,
+    freed: u32,
     /// The next module's number for the host's compile worker (from 1; 0:
     /// the host took none, so a table installs it at once), and the word
     /// the worker sets to the number up to which it has compiled them all
@@ -368,10 +410,64 @@ pub struct Cache {
     /// EL1's follows), once a table has installed it: the same in every
     /// table, as is every slot's.
     xmiss: Option<u32>,
+    /// The `id` of `log[0]` (the log drops what every table has taken).
+    log_base: u32,
+    ev: Evict,
+}
+
+/// Per-module eviction's state (`Config::evict`, docs/jit.md "Eviction").
+#[derive(Default)]
+struct Evict {
+    /// The live modules of this epoch, by id.
+    mods: Map<Mod>,
+    /// The bytes installed this epoch: a module's generation is its first
+    /// byte's eighth (`GENERATION`).
+    gen_bytes: u64,
+    /// Slot ranges free for new modules (start, length), by start; and ranges
+    /// evicted that some table may still call into, until each has let go of
+    /// them at its dispatcher ([`Table::sync`]).
+    free: Vec<(u32, u32)>,
+    held: VecDeque<Held>,
+    /// Evictions so far (tables let go of them in order).
+    serial: u64,
+    /// The mark the dispatcher stores for each slot it enters (`Table::used`),
+    /// when it last moved, and the one the current probe started at.
+    sweep: Arc<AtomicU32>,
+    sweep_ns: u64,
+    probe: Option<u32>,
+}
+
+/// A live module (eviction's view).
+struct Mod {
+    slot: u32,
+    n: u32,
+    bytes: u64,
+    generation: u64,
+    /// The sweep it was installed in.
+    born: u32,
+    /// Its regions' head keys, by slot.
+    keys: Vec<u64>,
+    /// The modules whose blocks it imports (its generation's).
+    imports: Vec<u32>,
+}
+
+/// An eviction some table hasn't let go of yet.
+struct Held {
+    serial: u64,
+    /// The slots it evicted, by start.
+    ranges: Vec<(u32, u32)>,
+    /// The modules it evicted, sorted.
+    ids: Vec<u32>,
+    /// Hot words (index + 1) that count again if they still hold this value:
+    /// a head whose loop region went (its redirect) and the members that
+    /// region had quieted (0).
+    rewords: Vec<(u32, u32)>,
 }
 
 /// A module installed since the last flush.
 struct Logged {
+    /// Its number in the epoch (from 0, in order).
+    id: u32,
     slot: u32,
     /// Its functions, and its number for the compile worker (0: none).
     n: u32,
@@ -385,22 +481,29 @@ struct Logged {
 /// A table's progress, as the cache records it.
 #[derive(Default)]
 struct Seen {
-    /// The modules of `Cache::log` it has installed.
-    installed: usize,
+    /// The modules of `Cache::log` it has taken (`Logged::id` of the next).
+    installed: u32,
     /// Keys dropped since it last caught up, for its jump cache (`all`: too
     /// many to list, the whole jump cache).
     dropped: Vec<u64>,
     all: bool,
     /// The entries of `Cache::ival_log` it has seen (an absolute index).
     ival: u64,
+    /// The evictions it has let go of, and its slots' marks (`Table::used`).
+    evicted: u64,
+    used: Option<Arc<[AtomicU32]>>,
 }
 
 /// A loop region compiled for a head compiled alone: its table index, the
-/// head's hot word, and the hot words of members that stop counting.
+/// head's hot word, the hot words of members that stop counting, and the
+/// head's entry and spans before (the key's again if only the region is
+/// evicted).
 struct Tier {
     idx: u32,
     word: u32,
     quiet: Vec<u32>,
+    head: Info,
+    spans: Option<Vec<(u64, u32)>>,
 }
 
 impl Cache {
@@ -435,17 +538,223 @@ impl Cache {
             ready: Arc::new(AtomicU32::new(0)),
             tables: Vec::new(),
             xmiss: None,
+            log_base: 0,
+            ev: Evict::default(),
         }
     }
 
-    /// `n` consecutive slots for a module; flushes the cache first if they
+    /// `n` consecutive slots for a module. Past the byte budget the cache
+    /// evicts its coldest modules first (`Config::evict`, which probes for
+    /// them from [`PROBE_AT`] eighths on) or flushes; it flushes if the slots
     /// don't fit (counted in `s`).
     fn alloc(&mut self, n: u32, s: &mut Stats) -> u32 {
-        if self.next + n > self.cfg.capacity || self.live_bytes >= self.cfg.max_bytes {
+        let eighth = self.cfg.max_bytes / 8;
+        if self.cfg.evict && self.ev.probe.is_none() && self.live_bytes >= eighth * PROBE_AT {
+            self.probe();
+        }
+        if !self.fits(n) || self.live_bytes >= self.cfg.max_bytes && !self.evict(s) {
             self.flush(s);
+        }
+        self.take(n)
+    }
+
+    /// Whether `n` consecutive slots are free.
+    fn fits(&self, n: u32) -> bool {
+        self.next + n <= self.cfg.capacity || self.ev.free.iter().any(|r| r.1 >= n)
+    }
+
+    /// `n` consecutive free slots: the first evicted range they fit in, or
+    /// the next ones never used this epoch.
+    fn take(&mut self, n: u32) -> u32 {
+        let free = &mut self.ev.free;
+        if let Some(i) = free.iter().position(|r| r.1 >= n) {
+            let at = free[i].0;
+            (free[i].0, free[i].1) = (at + n, free[i].1 - n);
+            if free[i].1 == 0 {
+                free.remove(i);
+            }
+            return at;
         }
         self.next += n;
         self.next - n
+    }
+
+    /// Starts a probe for the cold modules: a new sweep, and every table's
+    /// jump cache and its vCPUs' transfer caches cleared, so a module still in
+    /// use is entered from the dispatcher again, which marks it with the sweep.
+    fn probe(&mut self) {
+        let sweep = self.ev.sweep.fetch_add(1, Ordering::Relaxed) + 1;
+        (self.ev.probe, self.ev.sweep_ns) = (Some(sweep), now_ns());
+        self.forget();
+    }
+
+    /// Every table clears its jump cache when it catches up, and its vCPUs
+    /// their transfer caches (`drops`).
+    fn forget(&mut self) {
+        for t in &mut self.tables {
+            (t.all, t.dropped) = (true, Vec::new());
+        }
+        self.drops.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// When a table last entered any of `m`'s regions, or its install.
+    fn last_use(&self, m: &Mod) -> u32 {
+        let slots = m.slot as usize..(m.slot + m.n) as usize;
+        self.tables
+            .iter()
+            .filter_map(|t| t.used.as_ref())
+            .flat_map(|u| u[slots.clone()].iter().map(|w| w.load(Ordering::Relaxed)))
+            .fold(m.born, u32::max)
+    }
+
+    /// Evicts the coldest modules, down to [`EVICT_TO`] eighths of the budget:
+    /// those not entered since the probe began, nor imported by one that was
+    /// (transitively), coldest first, each with its importers (counted in
+    /// `s`). False, evicting nothing, without a probe or if
+    /// the cold ones wouldn't take the cache under [`PROBE_AT`] eighths: it
+    /// flushes then.
+    fn evict(&mut self, s: &mut Stats) -> bool {
+        let Some(probe) = self.ev.probe.filter(|_| self.cfg.evict) else {
+            return false;
+        };
+        let mods = &self.ev.mods;
+        let last: Map<u32> = mods.iter().map(|(&id, m)| (id, self.last_use(m))).collect();
+        // What stays: the modules in use, and what they import.
+        let mut keep: Map<()> = Map::default();
+        let mut stack: Vec<u64> = last
+            .iter()
+            .filter(|e| *e.1 >= probe)
+            .map(|e| *e.0)
+            .collect();
+        keep.extend(stack.iter().map(|&id| (id, ())));
+        while let Some(x) = stack.pop() {
+            let m = &mods[&x];
+            for &y in &m.imports {
+                debug_assert!(
+                    mods.contains_key(&(y as u64)),
+                    "a live module's links are live"
+                );
+                if keep.insert(y as u64, ()).is_none() {
+                    stack.push(y as u64);
+                }
+            }
+        }
+        // The rest is cold, and so is everything that imports it.
+        let mut importers: Map<Vec<u64>> = Map::default();
+        for (&id, m) in mods.iter().filter(|e| !keep.contains_key(e.0)) {
+            for &y in &m.imports {
+                importers.entry(y as u64).or_default().push(id);
+            }
+        }
+        let mut cold: Vec<(u32, u64)> = last
+            .iter()
+            .filter(|e| !keep.contains_key(e.0))
+            .map(|(&id, &l)| (l, id))
+            .collect();
+        let freeable: u64 = cold.iter().map(|c| mods[&c.1].bytes).sum();
+        let eighth = self.cfg.max_bytes / 8;
+        if self.live_bytes.saturating_sub(freeable) > eighth * PROBE_AT {
+            return false;
+        }
+        cold.sort_unstable();
+        let mut out: Map<()> = Map::default();
+        let mut freed = 0;
+        for &(_, id) in &cold {
+            if self.live_bytes - freed <= eighth * EVICT_TO {
+                break;
+            }
+            if out.insert(id, ()).is_some() {
+                continue;
+            }
+            let mut stack = vec![id];
+            while let Some(x) = stack.pop() {
+                let m = &mods[&x];
+                freed += m.bytes;
+                for &y in importers.get(&x).into_iter().flatten() {
+                    if out.insert(y, ()).is_none() {
+                        stack.push(y);
+                    }
+                }
+            }
+        }
+        let ids: Vec<u32> = out.keys().map(|&id| id as u32).collect();
+        self.drop_mods(ids, s);
+        true
+    }
+
+    /// Drops modules `ids` (closed under importers): their blocks aren't
+    /// compiled any more, and their slots are held until every table has let
+    /// go of them ([`Table::sync`]). A tier-up's redirect isn't an import: an
+    /// evicted region gives its key back to its head, whose hot word counts
+    /// again in each table; an evicted head takes its tier-up's record along.
+    fn drop_mods(&mut self, mut ids: Vec<u32>, s: &mut Stats) {
+        ids.sort_unstable();
+        let xmiss = self.xmiss.unwrap_or(0);
+        let mods: Vec<Mod> = ids
+            .iter()
+            .map(|&id| self.ev.mods.remove(&(id as u64)).expect("a live module"))
+            .collect();
+        let mut ranges: Vec<(u32, u32)> = mods.iter().map(|m| (m.slot, m.n)).collect();
+        ranges.sort_unstable();
+        let gone = |slot: u32| in_ranges(&ranges, slot);
+        let mut bytes = 0;
+        for m in &mods {
+            for (k, &key) in m.keys.iter().enumerate() {
+                let idx = xmiss + m.slot + k as u32;
+                // (A key invalidated since may be compiled again elsewhere.)
+                let Some(i) = self.map.get_mut(&key).filter(|i| i.idx == idx) else {
+                    continue;
+                };
+                match self.tiers.get_mut(&key) {
+                    Some(t) if t.idx == idx && !gone(t.head.idx - xmiss) => {
+                        *i = t.head;
+                        if let Some(spans) = t.spans.take() {
+                            self.spans.insert(key, spans);
+                        }
+                    }
+                    _ => {
+                        (i.idx, i.hits, i.word, i.hash, i.m) = (0, 0, 0, 0, 0);
+                        self.spans.remove(&key);
+                        self.linkers.remove(&key);
+                    }
+                }
+            }
+            bytes += m.bytes;
+        }
+        let mut rewords = Vec::new();
+        self.tiers.retain(|_, t| {
+            let (region, head) = (gone(t.idx - xmiss), gone(t.word - 1));
+            if region && !head {
+                rewords.push((t.word, emit::REDIRECT | t.idx));
+                rewords.extend(t.quiet.iter().filter(|&&q| !gone(q - 1)).map(|&q| (q, 0)));
+            }
+            t.quiet.retain(|&q| !gone(q - 1));
+            !region && !head
+        });
+        self.live_bytes -= bytes;
+        self.retune();
+        (s.evictions, s.evicted) = (s.evictions + 1, s.evicted + ids.len() as u64);
+        s.evicted_bytes += bytes;
+        self.ev.serial += 1;
+        self.ev.held.push_back(Held {
+            serial: self.ev.serial,
+            ranges,
+            ids,
+            rewords,
+        });
+        self.ev.probe = None;
+        self.forget();
+    }
+
+    /// The evicted slots every table has let go of are free again.
+    fn reclaim(&mut self) {
+        let oldest = self.tables.iter().map(|t| t.evicted).min().unwrap_or(0);
+        while self.ev.held.front().is_some_and(|h| h.serial <= oldest) {
+            let h = self.ev.held.pop_front().expect("a held eviction");
+            for r in h.ranges {
+                free_range(&mut self.ev.free, r);
+            }
+        }
     }
 
     /// Drops every block (their slots are reused; the modules are left to the
@@ -490,10 +799,18 @@ impl Cache {
         self.retune();
         self.epoch += 1;
         self.log.clear();
-        self.freed = 0;
+        (self.log_base, self.freed) = (0, 0);
+        let ev = &mut self.ev;
+        ev.mods.clear();
+        ev.gen_bytes = 0;
+        ev.free.clear();
+        ev.held.clear();
+        ev.probe = None;
         for t in &mut self.tables {
             *t = Seen {
                 ival: t.ival,
+                evicted: ev.serial,
+                used: t.used.take(),
                 ..Seen::default()
             };
         }
@@ -583,7 +900,7 @@ impl Cache {
         mem: &Mem,
         n: u32,
         len: Option<u32>,
-    ) -> (Result<(u32, u32), u32>, u32) {
+    ) -> (Result<(u32, u32, u32), u32>, u32) {
         let info = info(&mut self.map, &mut self.pages, key, || {
             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
         });
@@ -600,7 +917,7 @@ impl Cache {
         let report = interp::block::REPORT;
         match self.map.get(&key) {
             // The jump cache gets it once the table has installed it ([`Jit::miss`]).
-            Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len)), report),
+            Some(&Info { idx, len, m, .. }) if idx != 0 => (Ok((idx, len, m)), report),
             Some(i) if !i.queued && !self.off => (
                 Err(i.len.max(1)),
                 report.min(self.threshold.saturating_sub(i.hits)),
@@ -736,7 +1053,7 @@ impl Cache {
     fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
         if let Some(r) = self.tiers.get(&key) {
             r.quiet.iter().for_each(|&w| t.quiet(w));
-            t.redirect(r.word, r.idx, key);
+            t.redirect(r.word, r.idx, key, self.map[&key].m);
             return;
         }
         let Some(word) = self.map.get(&key).map(|i| i.word).filter(|&w| w != 0) else {
@@ -746,10 +1063,7 @@ impl Cache {
         // what it goes on to call must stay in the cache. Without room, the
         // head stays alone until the next flush drops it.
         let r = self.region(key, va, mem);
-        if r.blocks.len() < 2
-            || self.next >= self.cfg.capacity
-            || self.live_bytes >= self.cfg.max_bytes
-        {
+        if r.blocks.len() < 2 || !self.fits(1) || self.live_bytes >= self.cfg.max_bytes {
             return;
         }
         // Members that are loop heads compiled alone stop counting: this
@@ -763,18 +1077,24 @@ impl Cache {
         quiet.iter().for_each(|&w| t.quiet(w));
         // The pending batch goes along (a module fewer, V8's per-module cost:
         // docs/jit.md "Memory"), the region first so `idx` is its index.
+        let (head, spans) = (self.map[&key], self.spans.get(&key).cloned());
         let mut regions = vec![r];
-        if !self.pending.is_empty()
-            && self.next + 1 + self.pending.len() as u32 <= self.cfg.capacity
-        {
+        if !self.pending.is_empty() && self.fits(1 + self.pending.len() as u32) {
             regions.extend(self.plan(mem));
             self.batch += 1;
         }
         let Some(idx) = self.install(t, regions, mem) else {
             return;
         };
-        t.redirect(word, idx, key);
-        self.tiers.insert(key, Tier { idx, word, quiet });
+        t.redirect(word, idx, key, self.map[&key].m);
+        let tier = Tier {
+            idx,
+            word,
+            quiet,
+            head,
+            spans,
+        };
+        self.tiers.insert(key, tier);
         t.stats.tier_ups += 1;
     }
 
@@ -809,8 +1129,20 @@ impl Cache {
                 tiers.push(w);
             }
         }
-        let map = &self.map;
-        let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
+        // Evicting, a module imports only its generation's blocks (older
+        // ones it reaches through the jump cache), and they're recorded.
+        let generation = self.ev.gen_bytes / (self.cfg.max_bytes / 8 * GENERATION).max(1);
+        let (map, mods, evict) = (&self.map, &self.ev.mods, self.cfg.evict);
+        let imports = core::cell::RefCell::new(Vec::new());
+        let compiled = |k| {
+            let i = map.get(&k).filter(|i| i.idx != 0)?;
+            if evict {
+                mods.get(&(i.m as u64))
+                    .filter(|m| m.generation == generation)?;
+                imports.borrow_mut().push(i.m);
+            }
+            Some((i.idx, i.len))
+        };
         let block::Emitted {
             bytes,
             inl,
@@ -826,6 +1158,10 @@ impl Cache {
             Some(xmiss),
         );
         let len = bytes.len() as u64;
+        let mut imports = imports.into_inner();
+        imports.sort_unstable();
+        imports.dedup();
+        let id = self.log_base + self.log.len() as u32;
         let seq = self.seq;
         let seq = if compile(&bytes, seq, self.epoch as u32, &self.ready) {
             self.seq = seq.wrapping_add(1).max(1);
@@ -834,12 +1170,31 @@ impl Cache {
             0
         };
         self.log.push(Logged {
+            id,
             slot,
             n,
             seq,
             bytes,
             tiers,
         });
+        if evict {
+            let ns = now_ns();
+            if ns.saturating_sub(self.ev.sweep_ns) >= SWEEP_NS {
+                self.ev.sweep.fetch_add(1, Ordering::Relaxed);
+                self.ev.sweep_ns = ns;
+            }
+            let mod_ = Mod {
+                slot,
+                n,
+                bytes: len,
+                generation,
+                born: self.ev.sweep.load(Ordering::Relaxed),
+                keys: regions.iter().map(|r| r.blocks[0].key).collect(),
+                imports,
+            };
+            self.ev.mods.insert(id as u64, mod_);
+            self.ev.gen_bytes += len;
+        }
         let idx = xmiss + slot;
         self.live_bytes += len;
         self.retune();
@@ -869,6 +1224,7 @@ impl Cache {
             };
             let i = self.info(key, || 0);
             (i.idx, i.len, i.hash, i.word) = (idx + k as u32, len, block::hash(&words), word);
+            i.m = id;
             if self.cfg.check {
                 let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
                 self.spans.insert(key, spans.collect());
@@ -912,20 +1268,26 @@ pub struct Table {
     /// modules it has installed, the cache's `drops` when it last caught up,
     /// and whether it has the transfer cache's miss functions (slots 0 and 1).
     epoch: u64,
-    installed: usize,
+    installed: u32,
     drops: u64,
     xmiss: bool,
     /// The miss functions' table index (slot 0's), once it has them.
     base: u32,
     /// Modules taken from the log under the lock and not installed yet
-    /// ([`Jit::install`]), in order.
+    /// ([`Jit::install`]), in order: a block of one is interpreted here
+    /// until it is ([`Table::has`]).
     todo: Vec<Todo>,
-    /// The table index up to which this epoch's modules are installed: a
-    /// block at or past it is interpreted here until it is ([`Jit::miss`]).
-    limit: u32,
-    /// Tier-up redirects (hot word, region, head) waiting for their region
-    /// to be installed ([`Table::redirect`]).
-    redirects: Vec<(u32, u32, u64)>,
+    /// The end of the highest slots it has installed this epoch.
+    hi: u32,
+    /// Tier-up redirects (hot word, region, head, the region's module)
+    /// waiting for their region to be installed ([`Table::redirect`]).
+    redirects: Vec<(u32, u32, u64, u32)>,
+    /// Eviction (`Config::evict`): the sweep the dispatcher marks each slot
+    /// it enters with, the marks (shared with the cache, which reads every
+    /// table's), and the evictions it has let go of.
+    sweep: u32,
+    used: Arc<[AtomicU32]>,
+    evicted: u64,
     /// When the first module of `todo` was found not compiled yet, or not
     /// yet in the host (ns; 0: it wasn't).
     waiting: u64,
@@ -955,8 +1317,12 @@ pub struct Table {
 impl Table {
     /// A new table of cache `c`, which it hasn't caught up with yet.
     fn new(c: &mut Cache) -> Table {
+        let n = if c.cfg.evict { c.cfg.capacity } else { 0 };
+        let used: Arc<[AtomicU32]> = (0..n).map(|_| AtomicU32::new(0)).collect();
         c.tables.push(Seen {
             ival: c.ival_base + c.ival_log.len() as u64,
+            evicted: c.ev.serial,
+            used: c.cfg.evict.then(|| used.clone()),
             ..Seen::default()
         });
         Table {
@@ -977,8 +1343,11 @@ impl Table {
             todo: Vec::new(),
             parked: 0,
             park_exit: false,
-            limit: 0,
+            hi: MISS_SLOTS,
             redirects: Vec::new(),
+            sweep: 0,
+            used,
+            evicted: c.ev.serial,
             waiting: 0,
             helper_ops: vec![0; crate::decode::Op::ALL.len()],
             report: String::new(),
@@ -1012,17 +1381,23 @@ impl Table {
     /// since, copied into `todo` for [`Jit::install`] to install in order
     /// once the lock is released (each may import the ones before it). Within
     /// an epoch this only adds functions in free slots, so JIT code may be
-    /// running (`jit_hot`); across one it replaces them, so only the
-    /// dispatcher calls it then.
-    fn sync(&mut self, c: &mut Cache, mem: &Mem) {
+    /// running (`jit_hot`, not `dispatcher`); across one it replaces them, so
+    /// only the dispatcher calls it then. The slots of evicted modules it lets
+    /// go of only from the dispatcher too (`steps` drops its vCPUs' transfer
+    /// caches before any block runs), and until then it doesn't count as
+    /// caught up (`drops`).
+    fn sync(&mut self, c: &mut Cache, mem: &Mem, dispatcher: bool) {
         self.miss_functions(c, mem);
         let seen = &mut c.tables[self.id];
         if self.epoch != c.epoch || seen.all {
             if self.epoch != c.epoch {
                 (self.epoch, self.installed) = (c.epoch, 0);
-                (self.limit, self.waiting) = (0, 0);
+                self.waiting = 0;
                 self.todo.clear();
                 self.redirects.clear();
+                // The host lets go of the old epoch's functions (V8 frees them).
+                release(MISS_SLOTS, self.hi - MISS_SLOTS);
+                (self.hi, self.evicted) = (MISS_SLOTS, c.ev.serial);
             }
             self.clear_jc();
         } else {
@@ -1055,9 +1430,38 @@ impl Table {
             c.ival_log.pop_front();
             c.ival_base += 1;
         }
+        // The evicted slots, which nothing here calls any more: the jump
+        // cache is clear (`Cache::forget`), and so are its vCPUs' transfer
+        // caches before a block runs.
+        if dispatcher && self.evicted < c.ev.serial {
+            for h in c.ev.held.iter().filter(|h| h.serial > self.evicted) {
+                for &(slot, n) in &h.ranges {
+                    release(slot, n);
+                }
+                for &(w, was) in &h.rewords {
+                    let x = &mut self.hot[w as usize - 1];
+                    if *x == was {
+                        *x = self.cfg.region_after;
+                    }
+                }
+                // (Not a redirect of a head that went.)
+                self.todo.retain(|m| h.ids.binary_search(&m.id).is_err());
+                self.redirects.retain(|r| {
+                    h.ids.binary_search(&r.3).is_err() && !in_ranges(&h.ranges, r.0 - 1)
+                });
+            }
+            self.evicted = c.ev.serial;
+        }
+        c.tables[self.id].evicted = self.evicted;
+        c.reclaim();
         if self.xmiss {
-            for l in &c.log[self.installed..] {
+            for l in &c.log[(self.installed - c.log_base) as usize..] {
+                // (Not one evicted before this table took it.)
+                if c.cfg.evict && !c.ev.mods.contains_key(&(l.id as u64)) {
+                    continue;
+                }
                 self.todo.push(Todo {
+                    id: l.id,
                     slot: l.slot,
                     n: l.n,
                     seq: l.seq,
@@ -1065,16 +1469,34 @@ impl Table {
                     tiers: l.tiers.clone(),
                 });
             }
-            self.installed = c.log.len();
+            self.installed = c.log_base + c.log.len() as u32;
         }
         c.tables[self.id].installed = self.installed;
-        // The modules every table has taken: their bytes aren't needed again.
+        // The modules every table has taken: their bytes aren't needed again,
+        // and (a few thousand on) nor are their entries.
         let all = c.tables.iter().map(|t| t.installed).min().unwrap_or(0);
-        for l in c.log.get_mut(c.freed..all).into_iter().flatten() {
+        let from = c.freed.max(c.log_base);
+        for l in c
+            .log
+            .get_mut((from - c.log_base) as usize..(all.max(from) - c.log_base) as usize)
+            .into_iter()
+            .flatten()
+        {
             l.bytes = Vec::new();
         }
         c.freed = c.freed.max(all);
-        self.drops = c.drops.load(Ordering::Relaxed);
+        if all - c.log_base >= LOG_KEEP {
+            c.log.drain(..(all - c.log_base) as usize);
+            c.log_base = all;
+        }
+        if dispatcher || self.evicted == c.ev.serial {
+            self.drops = c.drops.load(Ordering::Relaxed);
+        }
+    }
+
+    /// Whether it has installed module `m` (modules install in order).
+    fn has(&self, m: u32) -> bool {
+        m < self.todo.first().map_or(self.installed, |t| t.id)
     }
 
     /// Installs the modules of `todo` that the compile worker has compiled
@@ -1128,7 +1550,7 @@ impl Table {
             for &w in &m.tiers {
                 self.hot[w as usize] = self.cfg.region_after;
             }
-            self.limit = self.base + m.slot + m.n;
+            self.hi = self.hi.max(m.slot + m.n);
             done += 1;
         }
         self.todo.drain(..done);
@@ -1143,26 +1565,27 @@ impl Table {
 
     /// Applies the waiting redirects whose regions are installed now.
     fn redirected(&mut self) {
-        let (limit, mut redirects) = (self.limit, core::mem::take(&mut self.redirects));
-        redirects.retain(|&(word, idx, key)| {
-            if idx < limit {
+        let mut redirects = core::mem::take(&mut self.redirects);
+        redirects.retain(|&(word, idx, key, m)| {
+            let has = self.has(m);
+            if has {
                 self.hot[word as usize - 1] = emit::REDIRECT | idx;
                 self.repoint(key, idx);
             }
-            idx >= limit
+            !has
         });
         self.redirects = redirects;
     }
 
     /// Hot word `word - 1` redirects to the region at `idx` (a tier-up of
-    /// head `key`), and the jump cache's entry for the head with it, once
-    /// this table has installed the region.
-    fn redirect(&mut self, word: u32, idx: u32, key: u64) {
-        if idx < self.limit {
+    /// head `key`, in module `m`), and the jump cache's entry for the head
+    /// with it, once this table has installed the region.
+    fn redirect(&mut self, word: u32, idx: u32, key: u64, m: u32) {
+        if self.has(m) {
             self.hot[word as usize - 1] = emit::REDIRECT | idx;
             self.repoint(key, idx);
         } else {
-            self.redirects.push((word, idx, key));
+            self.redirects.push((word, idx, key, m));
         }
     }
 
@@ -1231,18 +1654,21 @@ impl Table {
 pub struct Jit {
     pub table: Table,
     cache: Arc<Lock<Cache>>,
-    /// The cache's `drops`, `ivals` and `ready`, read without its lock.
+    /// The cache's `drops`, `ivals`, `ready` and eviction sweep, read
+    /// without its lock.
     drops: Arc<AtomicU64>,
     ivals: Arc<AtomicU64>,
     ready: Arc<AtomicU32>,
+    sweep: Arc<AtomicU32>,
 }
 
 impl Jit {
     pub fn new(cache: Cache) -> Jit {
-        let (drops, ivals, ready) = (
+        let (drops, ivals, ready, sweep) = (
             cache.drops.clone(),
             cache.ivals.clone(),
             cache.ready.clone(),
+            cache.ev.sweep.clone(),
         );
         let cache = Arc::new(Lock::new(cache));
         let table = Table::new(&mut cache.lock());
@@ -1252,6 +1678,7 @@ impl Jit {
             drops,
             ivals,
             ready,
+            sweep,
         }
     }
 
@@ -1263,6 +1690,7 @@ impl Jit {
             drops: self.drops.clone(),
             ivals: self.ivals.clone(),
             ready: self.ready.clone(),
+            sweep: self.sweep.clone(),
         }
     }
 
@@ -1295,16 +1723,16 @@ impl Jit {
         let n = self.table.dec.counted(key) + 1;
         let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
         self.table.dec.quota(key, quota);
-        self.table.sync(&mut c, mem);
+        self.table.sync(&mut c, mem, true);
         drop(c);
         self.install();
         match r {
-            Ok((idx, len)) if idx < self.table.limit => {
+            Ok((idx, len, m)) if self.table.has(m) => {
                 self.table.fill(key, idx, len);
                 Ok((idx, len))
             }
             // Compiled, and not installed here yet: interpreted meanwhile.
-            Ok((_, len)) => Err(len.max(1)),
+            Ok((_, len, _)) => Err(len.max(1)),
             Err(n) => Err(n),
         }
     }
@@ -1351,7 +1779,7 @@ impl Jit {
     #[inline(never)]
     fn sync(&mut self, mem: &Mem) {
         let mut c = self.cache.lock();
-        self.table.sync(&mut c, mem);
+        self.table.sync(&mut c, mem, true);
         drop(c);
         self.install();
     }
@@ -1383,7 +1811,7 @@ impl Jit {
         // The hot words it sets are read only when this returns, by then
         // with their region installed.
         c.tier_up(&mut self.table, key, va, mem);
-        self.table.sync(&mut c, mem);
+        self.table.sync(&mut c, mem, false);
         drop(c);
         self.install();
     }
@@ -1456,6 +1884,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
     let vr = unsafe { &mut *v };
     let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
+    let evict = jit.table.cfg.evict;
+    if evict {
+        jit.table.sweep = jit.sweep.load(Ordering::Relaxed);
+    }
     let mut done = 0;
     while done < n {
         let left = n - done;
@@ -1481,6 +1913,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             }
             if key & block::KEY_MMU != 0 {
                 vr.tlb.xc_fill(pc, key & 3, idx, len);
+            }
+            if evict {
+                let t = &jit.table;
+                t.used[(idx - t.base) as usize].store(t.sweep, Ordering::Relaxed);
             }
             let helped = vr.jit.helper_steps;
             // SAFETY: `idx` is a compiled block (the cache drops blocks, and
@@ -1735,6 +2171,8 @@ unsafe extern "C" {
     /// exports `f0`, `f1`, … into the core's table from JIT slot `slot` on.
     /// Returns the table index of `f0`, or -1 if the host has no JIT.
     fn jit_install(ptr: *const u8, len: usize, slot: u32, seq: u32) -> i32;
+    /// Nulls the table entries of JIT slots `slot..slot + n` (ABI 39).
+    fn jit_release(slot: u32, n: u32);
     /// Hands the module at `ptr..ptr + len` to the host's compile worker as
     /// number `seq` of epoch `epoch`; the worker stores into the u32 at
     /// `ready` the number up to which it has compiled every module. Returns
@@ -1769,6 +2207,7 @@ fn reached(ready: u32, seq: u32) -> bool {
 
 /// A module of the log that a table takes ([`Table::sync`]) and installs.
 struct Todo {
+    id: u32,
     slot: u32,
     n: u32,
     seq: u32,
@@ -1780,6 +2219,44 @@ struct Todo {
 /// How long a table waits for the compile worker before it compiles a
 /// module itself (a backstop: the worker takes milliseconds).
 pub const OVERDUE_NS: u64 = 1_000_000_000;
+
+/// Log entries every table has taken that the cache keeps before it drops
+/// them (an epoch without flushes logs tens of thousands of modules).
+const LOG_KEEP: u32 = 4096;
+
+/// Whether `slot` is in one of `ranges` (by start, not overlapping).
+fn in_ranges(ranges: &[(u32, u32)], slot: u32) -> bool {
+    let i = ranges.partition_point(|r| r.0 <= slot);
+    i > 0 && slot < ranges[i - 1].0 + ranges[i - 1].1
+}
+
+/// Adds slot range `r` to the free ranges (by start), merged with its
+/// neighbours.
+fn free_range(free: &mut Vec<(u32, u32)>, r: (u32, u32)) {
+    let i = free.partition_point(|f| f.0 < r.0);
+    free.insert(i, r);
+    if i + 1 < free.len() && free[i].0 + free[i].1 == free[i + 1].0 {
+        free[i].1 += free[i + 1].1;
+        free.remove(i + 1);
+    }
+    if i > 0 && free[i - 1].0 + free[i - 1].1 == free[i].0 {
+        free[i - 1].1 += free[i].1;
+        free.remove(i);
+    }
+}
+
+/// The host lets go of the functions at JIT slots `slot..slot + n` (it
+/// nulls their table entries, so V8 can free their instances and code).
+fn release(slot: u32, n: u32) {
+    #[cfg(target_arch = "wasm32")]
+    if n > 0 {
+        // SAFETY: the host touches only its own table; no block calls these
+        // slots any more (the caller's guarantee).
+        unsafe { jit_release(slot, n) };
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = (slot, n);
+}
 
 /// Installs `module`'s functions at JIT table slots `slot..`; returns
 /// function `f0`'s table index, or `None` without a JIT host.
@@ -1860,6 +2337,7 @@ mod tests {
             pages: 0,
             decoded: 0,
             warm: 0,
+            evict: false,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());
@@ -2080,7 +2558,7 @@ mod tests {
         // A table drops the keys when it catches up.
         let jc = |t: &Table, k: u64| t.jc[jc_index(k)].key;
         assert_eq!(jc(&t, 0x1000), 0x1000);
-        t.sync(&mut c, &mem);
+        t.sync(&mut c, &mem, true);
         assert!(
             jc(&t, 0x1000) == u64::MAX && jc(&t, 0x4000) == u64::MAX && jc(&t, 0x2000) == 0x2000
         );
@@ -2090,7 +2568,7 @@ mod tests {
         c.invalidate(u64::MAX, s); // IC IALLU: a new epoch
         assert!(c.map.is_empty() && c.pages.is_empty());
         assert_eq!((s.invalidations, s.flushes), (2, 0));
-        u.sync(&mut c, &mem);
+        u.sync(&mut c, &mem, true);
         assert!(jc(&u, 0x1000) == u64::MAX && jc(&u, 0x2000) == u64::MAX && u.epoch == c.epoch);
     }
 
@@ -2121,14 +2599,14 @@ mod tests {
         c.linkers.insert(0x1000, vec![0x2000]);
         c.invalidate(0x1040, s);
         assert!(c.map.is_empty());
-        t.sync(&mut c, &mem);
+        t.sync(&mut c, &mem, true);
         assert!(!t.dec.has(0x1000) && t.dec.has(0x2000));
         assert!(u.dec.has(0x1000), "until it catches up");
         // After a flush the cache knows no keys on page 2; the IC still reaches the tables.
         c.flush(s);
         c.invalidate(0x2000, s);
         for x in [&mut t, &mut u] {
-            x.sync(&mut c, &mem);
+            x.sync(&mut c, &mem, true);
             assert!(!x.dec.has(0x1000) && !x.dec.has(0x2000));
         }
         assert!(c.ival_log.is_empty(), "both tables have seen it all");
@@ -2137,7 +2615,7 @@ mod tests {
         for _ in 0..=IVAL_LOG {
             c.invalidate(0x3000, s);
         }
-        t.sync(&mut c, &mem);
+        t.sync(&mut c, &mem, true);
         assert!(!t.dec.has(0x1000));
         assert_eq!(t.dec.clears, 1);
     }
@@ -2199,22 +2677,217 @@ mod tests {
         let mut t = Table::new(&mut c);
         let key = 0x1000;
         t.fill(key, 5, 2);
-        t.limit = 10;
-        t.redirect(4, 12, key);
+        // Modules 0 and 1 installed, 2 taken and not yet.
+        t.installed = 3;
+        t.todo.push(Todo {
+            id: 2,
+            slot: 12,
+            n: 1,
+            seq: 0,
+            bytes: vec![],
+            tiers: vec![],
+        });
+        t.redirect(4, 12, key, 2);
         assert_eq!(
             (t.hot[3], t.jc[jc_index(key)].idx),
             (0, 5),
             "not installed yet"
         );
-        t.redirect(6, 8, 0x2000);
+        t.redirect(6, 8, 0x2000, 1);
         assert_eq!(t.hot[5], emit::REDIRECT | 8, "installed: at once");
-        t.limit = 13;
+        t.todo.clear();
         t.redirected();
         assert_eq!(
             (t.hot[3], t.jc[jc_index(key)].idx),
             (emit::REDIRECT | 12, 12)
         );
         assert!(t.redirects.is_empty());
+    }
+
+    /// Freed slot ranges merge with their neighbours, and the first that
+    /// fits is taken before the slots never used.
+    #[test]
+    fn free_slot_ranges_merge() {
+        let mut f = Vec::new();
+        for r in [(10, 2), (5, 3), (20, 4), (8, 2)] {
+            free_range(&mut f, r);
+        }
+        assert_eq!(f, [(5, 7), (20, 4)]);
+        let mut c = Cache::new(Config {
+            capacity: 40,
+            batch: 4,
+            ..Config::EVICT
+        });
+        (c.next, c.ev.free) = (30, f);
+        // 4 from the first range; 7 fit in none: from the never used.
+        assert_eq!((c.take(4), c.take(7), c.take(1)), (5, 30, 9));
+        assert_eq!(c.ev.free, [(10, 2), (20, 4)]);
+        assert!(c.fits(4) && !c.fits(5));
+    }
+
+    /// A cache of modules for the eviction tests: (id, slot, slots, bytes,
+    /// imports), each region's key `0x1000 * slot`.
+    fn evicting(mods: &[(u32, u32, u32, u64, &[u32])]) -> Cache {
+        let mut c = Cache::new(Config {
+            capacity: 64,
+            batch: 4,
+            max_bytes: 1000,
+            ..Config::EVICT
+        });
+        for &(id, slot, n, bytes, imports) in mods {
+            let keys: Vec<u64> = (0..n).map(|k| 0x1000 * (slot + k) as u64).collect();
+            for (k, &key) in keys.iter().enumerate() {
+                let i = c.info(key, || 1);
+                (i.idx, i.m) = (slot + k as u32, id);
+            }
+            let m = Mod {
+                slot,
+                n,
+                bytes,
+                generation: 0,
+                born: 0,
+                keys,
+                imports: imports.to_vec(),
+            };
+            c.ev.mods.insert(id as u64, m);
+            c.live_bytes += bytes;
+        }
+        c.next = 20;
+        c
+    }
+
+    /// Eviction takes the cold modules no module in use imports, coldest
+    /// first, each with its importers, down to 6/8 of the
+    /// budget; the tables let go of their slots, which are free once every
+    /// table has.
+    #[test]
+    fn eviction_takes_cold_importer_closed_sets() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        // 0 ← 1 ← 2 (in use) stays; 4 is cold but 5 (in use) imports it; 3
+        // is cold, and 6 imports it; 7 is cold, but warmer than 3.
+        #[rustfmt::skip]
+        let mut c = evicting(&[
+            (0, 2, 1, 100, &[]), (1, 3, 1, 100, &[0]), (2, 4, 1, 100, &[1]),
+            (3, 5, 3, 250, &[]), (4, 8, 1, 100, &[]), (5, 9, 1, 50, &[4]),
+            (6, 10, 2, 200, &[3]), (7, 12, 1, 100, &[]),
+        ]);
+        let (mut t, mut u) = (Table::new(&mut c), Table::new(&mut c));
+        // Key 0x6000 was invalidated and compiled again elsewhere.
+        c.map.get_mut(&0x6000).unwrap().idx = 30;
+        c.ev.sweep.store(10, Ordering::Relaxed);
+        c.probe();
+        let probe = c.ev.probe.unwrap();
+        u.used[4].store(probe, Ordering::Relaxed); // 2, in u
+        t.used[9].store(probe, Ordering::Relaxed); // 5, in t
+        (
+            t.used[5].store(1, Ordering::Relaxed),
+            u.used[12].store(2, Ordering::Relaxed),
+        );
+        let s = &mut Stats::default();
+        assert!(c.evict(s));
+        // 6 (the coldest), then 3 with 6, which imports it: 1000 - 450 is under 750.
+        assert_eq!(c.ev.held[0].ids, [3, 6]);
+        assert_eq!(c.ev.held[0].ranges, [(5, 3), (10, 2)]);
+        assert_eq!(
+            (c.live_bytes, s.evictions, s.evicted, s.evicted_bytes),
+            (550, 1, 2, 450)
+        );
+        assert!(c.ev.mods.contains_key(&7) && !c.ev.mods.contains_key(&3));
+        assert_eq!(
+            (c.map[&0x5000].idx, c.map[&0x6000].idx, c.map[&0xa000].idx),
+            (0, 30, 0)
+        );
+        assert_eq!(c.map[&0x2000].idx, 2);
+        assert!(c.ev.probe.is_none());
+        // Not let go of from inside JIT code, and not caught up then.
+        let drops = c.drops.load(Ordering::Relaxed);
+        t.sync(&mut c, &mem, false);
+        assert!(t.evicted == 0 && t.drops != drops);
+        t.sync(&mut c, &mem, true);
+        assert!(t.evicted == 1 && t.drops == drops);
+        assert!(c.ev.free.is_empty(), "u may still call into them");
+        u.sync(&mut c, &mem, true);
+        assert!(c.ev.held.is_empty());
+        assert_eq!(c.ev.free, [(5, 3), (10, 2)]);
+    }
+
+    /// With too little cold (it wouldn't take the cache under 7/8), or no
+    /// probe, eviction leaves it to a flush.
+    #[test]
+    fn eviction_needs_an_eighth_cold() {
+        #[rustfmt::skip]
+        let mut c = evicting(&[(0, 2, 1, 900, &[]), (1, 3, 1, 100, &[])]);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        assert!(!c.evict(s), "no probe");
+        c.probe();
+        t.used[2].store(c.ev.probe.unwrap(), Ordering::Relaxed);
+        assert!(!c.evict(s));
+        assert!(c.ev.held.is_empty() && c.live_bytes == 1000);
+        // A full cache flushes then.
+        let n = c.alloc(1, s);
+        assert_eq!((n, s.flushes, s.evictions), (MISS_SLOTS, 1, 0));
+    }
+
+    /// A loop region evicted while its head stays gives the key back to the
+    /// head, whose hot word counts again in each table (and the members it
+    /// had quieted); an evicted head takes its tier-up's record along.
+    #[test]
+    fn an_evicted_region_gives_its_key_back() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        // Head 0x2000 (module 0, slot 2) tiered up into the region in slot 4
+        // (module 2), which quieted the member in slot 3 (module 1); head
+        // 0x5000 (module 3, slot 5) into slot 6 (module 4).
+        #[rustfmt::skip]
+        let mut c = evicting(&[
+            (0, 2, 1, 100, &[]), (1, 3, 1, 100, &[]), (2, 4, 1, 300, &[]),
+            (3, 5, 1, 300, &[]), (4, 6, 1, 200, &[]),
+        ]);
+        let mut t = Table::new(&mut c);
+        for (key, h, r, rm, quiet) in [(0x2000, 2, 4, 2, vec![4]), (0x5000, 5, 6, 4, vec![])] {
+            let head = Info {
+                word: h + 1,
+                ..c.map[&key]
+            };
+            c.tiers.insert(
+                key,
+                Tier {
+                    idx: r,
+                    word: h + 1,
+                    quiet,
+                    head,
+                    spans: None,
+                },
+            );
+            let i = c.map.get_mut(&key).unwrap();
+            (i.idx, i.m) = (r, rm);
+            c.map.remove(&(0x1000 * r as u64));
+            t.hot[h as usize] = emit::REDIRECT | r;
+        }
+        c.ev.mods.get_mut(&2).unwrap().keys = vec![0x2000];
+        c.ev.mods.get_mut(&4).unwrap().keys = vec![0x5000];
+        t.hot[3] = 0;
+        let s = &mut Stats::default();
+        c.drop_mods(vec![2, 3], s);
+        // 0x2000's region went: the key is its head's again. 0x5000's head went:
+        // its region keeps the key, without the record.
+        assert_eq!(
+            (c.map[&0x2000].idx, c.map[&0x2000].m, c.map[&0x2000].word),
+            (2, 0, 3)
+        );
+        assert_eq!(c.map[&0x5000].idx, 6);
+        assert!(c.tiers.is_empty());
+        t.sync(&mut c, &mem, true);
+        assert_eq!((t.hot[2], t.hot[3]), (REGION_AFTER, REGION_AFTER));
+        assert_eq!(
+            t.hot[5],
+            emit::REDIRECT | 6,
+            "a released slot's word, unread"
+        );
     }
 
     /// Module numbers wrap (u32), and 0 is a module the worker didn't take.
