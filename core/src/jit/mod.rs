@@ -3578,8 +3578,9 @@ mod tests {
         let mut s = jit.table.stats;
         s.add(&c.owed);
         assert!(s.emits_worker >= 40, "{s:?}");
-        let discards = s.discard_epoch + s.discard_page + s.discard_import;
-        assert!(discards > 0 && s.replayed > 0, "{s:?}");
+        // (Whether a commit is discarded depends on the threads' timing:
+        // the rules are the test above's.)
+        assert!(s.replayed > 0, "{s:?}");
     }
 
     /// A region compiled while an epoch is carried links to a carried
