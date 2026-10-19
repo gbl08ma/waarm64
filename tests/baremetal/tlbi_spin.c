@@ -3,7 +3,11 @@
 // still end it at the step budget. CPU 0 takes a lock, runs TLBI VMALLE1IS + DSB
 // ISH under it and releases it, over and over; CPUs 1-3 spin without WFE in
 // three ways: a plain load loop on the lock, a LDAXR/STXR acquire-release loop
-// on it, and a YIELD loop on the stop flag. Every DSB must complete.
+// on it, and a YIELD loop on the stop flag. Every DSB must complete, and CPU 2
+// must win the lock between two of CPU 0's: if it won none in the rounds, CPU 0
+// waits for its turn after the last. The architecture promises CPU 2 no turn,
+// and a host that deschedules its thread (a loaded machine) left it none in 100
+// rounds once (docs/testing.md "Bare-metal tests").
 // smp: 4
 #include "lib.h"
 
@@ -22,6 +26,8 @@ static table l0, l1;
 void secondary_start(void);
 static char stacks[NCPU][4096] __attribute__((aligned(16)));
 static volatile u64 lock, stop, ack[NCPU], seen[NCPU];
+// CPU 2's wins, written under the lock.
+static volatile u64 won;
 
 void on_exception(struct frame *f, u64 vec) {
   (void)f;
@@ -69,7 +75,7 @@ void secondary_main(void) {
   case 2: // acquire and release the lock in a LDAXR/STXR loop
     while (!stop)
       if (try_lock()) {
-        n++;
+        won = ++n;
         unlock();
       }
     break;
@@ -94,14 +100,19 @@ int main(void) {
   for (u64 c = 1; c < NCPU; c++)
     check(psci(PSCI_CPU_ON, c, (u64)secondary_start, (u64)(stacks[c] + sizeof stacks[c])) == 0, 2);
   for (u64 c = 1; c < NCPU; c++) WAIT(__atomic_load_n(&ack[c], __ATOMIC_ACQUIRE) == 1, 10 + c);
+  u64 w = 0;
   for (u64 r = 0; r < ROUNDS; r++) {
     WAIT(try_lock(), 20);
+    if (r == 0)
+      w = won;
     __asm__ volatile("dsb ishst; tlbi vmalle1is; dsb ish; isb" ::: "memory");
     unlock();
     // Room for the contender of CPU 2 to win the lock now and then.
     for (volatile int i = 0; i < 50; i++)
       ;
   }
+  // Its turn, if the rounds left it none (it usually wins nearly every one).
+  WAIT(__atomic_load_n(&won, __ATOMIC_ACQUIRE) != w, 50);
   __atomic_store_n(&stop, 1, __ATOMIC_RELEASE);
   for (u64 c = 1; c < NCPU; c++) WAIT(__atomic_load_n(&ack[c], __ATOMIC_ACQUIRE) == 2, 30 + c);
   for (u64 c = 1; c < NCPU; c++) check(seen[c] > 0, 40 + c);

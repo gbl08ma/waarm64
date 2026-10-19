@@ -278,6 +278,26 @@ window). Under the load that broke it (both Debian page tests at once beside the
 see bench/boot/REPORT.md "M8 loop 8". Bare-metal tests have no entry in `tests/steps.txt` (the
 deterministic runners compare the JIT's steps with the interpreter's), so nothing moved there.
 
+**A turn for the contender (`tlbi_spin.c`):** CPU 0 holds the lock through each TLBI IS + DSB,
+asleep in the DSB wait until CPUs 1–3 end their chunks, then frees it for ~50 loop iterations
+before taking it again, so CPU 2's LDAXR/STXR loop wins a round only when the host has its
+thread on a core in that window of ~1 µs. In one `scripts/ci.sh` run (2026-10-19) it won none of
+the 100 and exited 42. An instrumented copy of the guest (CPU 2's attempts, those that found the
+lock taken, failed STXRs, rounds won, gaps in its loop) showed why: on an otherwise idle VM it won
+99–100 rounds, but with 4 VMs at once pinned to 3 cores (`taskset -c 0-2`) it won 0–2 in 9 runs of
+60, and on one core none. The window before round 0 saved it then, but it misses that too in
+about 1 run in 8 even when idle: the first compile of its loop stalls it ~150 µs right after its
+`ack`. No STXR ever failed with the lock free (each failure was CPU 0 taking the lock between
+CPU 2's LDAXR and STXR), and the monitor is cleared only by exclusive stores, CLREX, exceptions and
+ERET, never by a drain or TLBI. So the emulator was right: the architecture promises CPU 2 no
+turn, and a host may deschedule a vCPU. With CPU 2 held back until round 0 had begun (a planted
+delay standing in for that stall), the old binary failed 23 of 300 runs on 3 cores and 9 of 12 on
+one. Now CPU 0 notes CPU 2's wins (`won`, written under the lock) in round 0 and, after the last
+round, waits until CPU 2 has won once more (exit 50 if it never does): the same variant passed 200
+of 200 runs on 3 cores and 30 of 30 on one, and an idle run takes as long as before (~110 ms).
+To stress it by hand, crowd its parallel runs onto a few cores:
+`WEBPC_PARALLEL_RUNS=30 taskset -c 0-1 node --test --test-name-pattern='tlbi_spin' tests/boot-node-parallel.test.ts`.
+
 ## kvm-unit-tests
 
 Commit `5a221342a025`, booted with one CPU and 256 MiB; `EXIT: STATUS=` from the UART. Every

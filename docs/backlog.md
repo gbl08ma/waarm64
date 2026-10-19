@@ -471,11 +471,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   vCPU, from one host's RSS) against `navigator.deviceMemory`, which Chromium caps at 8 GB and
   rounds down; it can't see what else the host is running. Revisit with RAM settings (phase D) or
   if a user's tab gets killed.
-- **`tlbi_spin`'s parallel JIT run failed once** in `scripts/ci.sh` (2026-10-19, `tests/boot-node-parallel.test.ts`:
-  exit 42, so CPU 2's LDAXR/STXR loop never won the lock in CPU 0's 100 rounds), with the core at origin/main's. It
-  passed 8 times alone and 54 times six at a time. The check is a fairness one that a scheduler can starve; if it
-  comes back, give the contender more room (more rounds, or a longer pause after `unlock`) or look at whether the
-  JIT's exclusive pairs can starve another vCPU's.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.
