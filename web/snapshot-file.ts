@@ -124,7 +124,7 @@ export const deflateCodec: Codec = {
 
 /** Whether the 4 KiB page at byte `off` of `w` (a Uint32Array over a 4-aligned view) is all zeros. */
 function zeroPage(w: Uint32Array, off: number) {
-  for (let i = off >> 2, end = i + 1024; i < end; i += 8) {
+  for (let i = off >>> 2, end = i + 1024; i < end; i += 8) {
     if ((w[i] | w[i + 1] | w[i + 2] | w[i + 3] | w[i + 4] | w[i + 5] | w[i + 6] | w[i + 7]) !== 0) return false;
   }
   return true;

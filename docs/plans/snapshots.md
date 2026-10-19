@@ -94,6 +94,14 @@ A user-facing format, streamed both ways (RAM is up to GiBs):
   in the JSON and blob n's 1 MiB chunk k is a frame, `index` = n × 2^24 + k; graphics.md §22), `END ` (the frame
   count). A file without its `END ` is truncated. A file with BLOB frames is format version 2 (an older page refuses
   it as newer); without, version 1.
+- A page is zero when all of its words are (`zeroPage`, on a Uint32Array over the RAM): its word index is the byte
+  offset shifted **unsigned** (`>>> 2`). Until 2026-10-19 a signed shift turned offsets past 2^31 negative, so every
+  machine with more than 2 GiB of RAM saved without its top, and came back from the file with its vCPUs spinning and
+  no interrupts (found on the desktop guest's 2.5 GiB, graphics.md §22; `tests/snapshot-file.test.ts` "RAM past
+  2 GiB"). Snapshots saved before then of such machines are damaged in a way no check sees.
+- The Blob download fallback holds the whole file in the page until its URL is revoked (60 s after): an 800 MB
+  snapshot taken every few seconds piles up in the browser's blob storage (the tools space them out:
+  `bench/gpu/snapshot-3d.ts`).
 - Each frame is compressed on its own, so frames can be produced and consumed by several workers
   on the shared memory. **The codec is the core's LZ** (codec 2: `core/src/lz.rs`, the LZ4 block
   format), on one worker, settled by measurement in loop 4 (`bench/boot/REPORT.md` "M8 phase C
