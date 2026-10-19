@@ -88,7 +88,8 @@ A user-facing format, streamed both ways (RAM is up to GiBs):
 - `WEBPCSNP`, a format version, a JSON header with its CRC-32.
 - Frames: `{tag, index, codec, raw length, stored length, CRC-32 of the stored bytes}` then the
   bytes. Tags: `CORE` (the core's state), `DEVS` (backend state, JSON), `RAM ` (one per non-zero
-  1 MiB chunk, `index` = the chunk: a bitmap of its non-zero 4 KiB pages, then those pages),
+  1 MiB chunk, `index` = the chunk: a bitmap of its non-zero 4 KiB pages, then those pages; spill memories' chunks
+  follow memory 0's, docs/spill-memories.md),
   `DISK` (runs of overlay blocks, `index` = the device slot × 2^40 + the first block), `BLOB` (the binary parts of
   DEVS, after it: each Uint8Array in the backends' state, the display's 3D contents, is `{"$blob": n, "length": …}`
   in the JSON and blob n's 1 MiB chunk k is a frame, `index` = n × 2^24 + k; graphics.md §22), `END ` (the frame

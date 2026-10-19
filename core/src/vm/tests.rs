@@ -1047,7 +1047,7 @@ fn spill_memory_end_to_end() {
         };
         assert_eq!(cfg.spill_layout(), [(SPILL, 1 << 16)]);
         let mut ram = vec![0u128; 1 << 16];
-        let mut spill = vec![0u128; 1 << 12];
+        let mut spill = vec![0u128; 1 << 13]; // 128 KiB: the larger layout below
         let regions = [crate::mem::Spill {
             phys: SPILL,
             size: 1 << 16,
@@ -1077,6 +1077,37 @@ fn spill_memory_end_to_end() {
         assert_eq!(spill[0] >> 64, 0x2468); // the bytes are in the spill memory's buffer
         for k in 0..8 {
             assert_eq!(vm.mem.read(SPILL + 0x40 + 8 * k, 8), Ok(0));
+        }
+        // A snapshot is tied to the spill memories' sizes, as it is to the RAM's.
+        assert_ne!(vm.snapshot_size(), 0);
+        let state = vm.snapshot_save().unwrap();
+        for (other, want) in [
+            (cfg.spill, Ok(())),
+            ([1 << 17, 0, 0, 0, 0, 0, 0, 0], Err(Error::Config)),
+            ([0; 8], Err(Error::Config)),
+        ] {
+            let cfg = VmConfig {
+                spill: other,
+                ..cfg
+            };
+            let regions: Vec<_> = cfg
+                .spill_layout()
+                .into_iter()
+                .map(|(phys, size)| crate::mem::Spill {
+                    phys,
+                    size,
+                    base: spill.as_mut_ptr() as *mut u8,
+                })
+                .collect();
+            let mut ram = vec![0u128; 1 << 16];
+            // SAFETY: as above; the spill buffer holds the larger layout (128 KiB).
+            let mem =
+                unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20).with_spill(&regions) };
+            assert_eq!(
+                Vm::new(mem, cfg).snapshot_restore(&state),
+                want,
+                "{other:?}"
+            );
         }
     }
 }

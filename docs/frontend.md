@@ -390,7 +390,7 @@ cursor-position query in it while parsing, and the page doesn't send those answe
 isn't asking now: bash printed them as `;1R;80R`).
 
 **The header's fields** (beside `web/snapshot-file.ts`'s own: `format`, `coreVersion`, `abi`,
-`created`, `ramSize`, `disks`):
+`created`, `ramSize`, `disks`, and `spill`, the spill memories' sizes, only on a machine with RAM past memory 0):
 
 | Field | What |
 |---|---|

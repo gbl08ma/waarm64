@@ -12,7 +12,8 @@
 //
 // Tags: CORE and DEVS (chunked in 1 MiB frames, joined in index order), "RAM " (guest RAM in 1 MiB
 // chunks: a 32-byte bitmap of the present 4 KiB pages, then those pages; a zero page is absent, a
-// chunk without pages has no frame), DISK (a run of 1 to 256 consecutive overlay blocks, index =
+// chunk without pages has no frame; a machine with spill memories numbers their chunks on from memory
+// 0's, each memory starting at a whole chunk: web/snapshot.ts `ramStarts`), DISK (a run of 1 to 256 consecutive overlay blocks, index =
 // the first block), BLOB (binary parts of DEVS: blob n's 1 MiB chunk k, index = n × 2^24 + k; a
 // file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 1 is deflate-raw; each frame is compressed alone, and
 // stored when compressing doesn't shrink it. Codecs plug in by id.
@@ -30,7 +31,7 @@ const VERSION = 2;
 export const BLOB_CHUNKS = 2 ** 24;
 const FRAME_HEADER = 32;
 const MAX_HEADER = 1 << 20;
-const CHUNK = 1 << 20; // raw bytes of a CORE or DEVS frame, and of the guest RAM in a RAM frame
+export const CHUNK = 1 << 20; // raw bytes of a CORE or DEVS frame, and of the guest RAM in a RAM frame
 const PAGE = 4096;
 const BITMAP = 32;
 const MAX_RAW = CHUNK + BITMAP;
@@ -261,9 +262,10 @@ export class SnapshotWriter {
 
   /**
    * Guest RAM, a 1 MiB chunk at a time (all-zero pages left out, all-zero chunks skipped). `ram` may
-   * be a view of shared memory. Its length is a multiple of 4096.
+   * be a view of shared memory. Its length is a multiple of 4096. `first`: its first chunk's index (a
+   * spill memory's, after memory 0's chunks).
    */
-  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void): Promise<{ pages: number; frames: number }> {
+  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void, first = 0): Promise<{ pages: number; frames: number }> {
     if (ram.length % PAGE !== 0) throw new RangeError('RAM is a whole number of 4 KiB pages');
     // Scanned where it lies when 4-aligned (the usual case); otherwise a chunk is copied first.
     const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2) : null;
@@ -295,7 +297,7 @@ export class SnapshotWriter {
         }
         pages += present;
         frames++;
-        await this.#frame('RAM ', base / CHUNK, raw);
+        await this.#frame('RAM ', first + base / CHUNK, raw);
       }
       progress?.(base + len, ram.length);
     }

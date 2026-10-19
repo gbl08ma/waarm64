@@ -86,3 +86,38 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   assert.equal(await byteAt(name, 1), 0x11, 'replaced');
   assert.equal((await overlayMeta(name)).generation, 3, 'a replaced overlay goes on from its generation (2), never back to one a snapshot pinned');
 });
+
+// Spill memories (docs/plans/spill-memories.md): their RAM is in the file after memory 0's, each from a whole chunk
+// (the first spill memory here ends mid-chunk), and comes back into the same layout; another layout is refused.
+test("a snapshot carries the spill memories' RAM, and restores only onto the same ones", async () => {
+  const { ramStarts } = await import('../web/snapshot.ts');
+  const { SnapshotError } = await import('../web/snapshot-file.ts');
+  assert.deepEqual(ramStarts([16 << 20, 0x18_0000, 2 << 20]), [0, 16, 18]);
+  const module = await WebAssembly.compile(WASM);
+  const codec = await lzCodec(module);
+  const spill = [0x18_0000, 2 << 20];
+  const o: BootOptions = { ramSize: 16 << 20, spill, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };
+  const vm = await bootVm(module, o);
+  await vm.runAsync(10_000);
+  await vm.settle();
+  /** The pages written: [memory, offset, byte]; the last page of each spill memory too. */
+  const marks: [number, number, number][] = [[0, 15 << 20, 0x11], [1, 0, 0x22], [1, 0x17_f000, 0x33], [2, 0x10_0000, 0x44], [2, (2 << 20) - 4096, 0x55]];
+  const views = (v: typeof vm) => [new Uint8Array(v.memory.buffer, v.ram, v.ramSize), ...v.spill.map((m) => new Uint8Array(m.buffer))];
+  for (const [m, at, b] of marks) views(vm)[m].fill(b, at, at + 4096);
+  const parts: Uint8Array[] = [];
+  await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+  const before = views(vm).map((v) => v.slice());
+  await vm.close();
+  const file = new Blob(parts as BlobPart[]);
+  const { header, restore } = await readSnapshot(file, codec, codec.snapshotVersion);
+  assert.deepEqual(header.spill, spill);
+  const back = await bootVm(module, { ...o, restore });
+  const after = views(back);
+  for (let m = 0; m < 3; m++) assert.equal(Buffer.compare(after[m], before[m]), 0, `memory ${m} came back as it was`);
+  assert.equal(after[2][(2 << 20) - 1], 0x55);
+  await back.close();
+  for (const other of [[0x18_0000], [2 << 20, 0x18_0000], undefined]) {
+    const { restore } = await readSnapshot(file, codec, codec.snapshotVersion);
+    await assert.rejects(bootVm(module, { ...o, spill: other, restore }), (e: unknown) => e instanceof SnapshotError && /NUMA nodes of 1\.5 MiB \+ 2 MiB/.test((e as Error).message), JSON.stringify(other));
+  }
+});
