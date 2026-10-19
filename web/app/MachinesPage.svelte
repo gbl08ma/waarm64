@@ -221,8 +221,8 @@
     {#if ui.machinesSelected === CONNECTIONS}
       <section class="machine" data-selected={CONNECTIONS}>
         <div class="head">
-          <h3>Connections</h3>
-          <span class="meta">Kept by this browser for any machine's adapters; one running machine has a connection at a time.</span>
+          <span class="title"><h3>Connections</h3>
+          <span class="meta">Kept by this browser for any machine's adapters; one running machine has a connection at a time.</span></span>
           <span class="grow"></span>
           <button onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"><Icon name="plus" size={16} />New connection…</button>
         </div>
@@ -248,7 +248,7 @@
       </section>
     {:else if ui.machinesSelected === PAGE && ui.transient}
       <section class="machine" data-selected={PAGE}>
-        <div class="head"><h3>{ui.transient.label}</h3><span class="meta">This page's machine, from its address: its size is in the toolbar's Machine menu.</span></div>
+        <div class="head"><span class="title"><h3>{ui.transient.label}</h3><span class="meta">This page's machine, from its address: its size is in the toolbar's Machine menu.</span></span></div>
         <div class="tabs" role="tablist">
           <button role="tab" aria-selected={ui.machinesTab !== 'snapshots'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks</button>
           <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="camera" size={16} />Snapshots</button>
@@ -281,8 +281,8 @@
       {@const m = draft}
       <section class="machine" data-selected={m.id}>
         <div class="head">
-          <h3>{m.name}</h3>
-          <span class="meta">{isOn(m.id) ? 'running' : 'off'}{m.id === ui.current ? ' · on this page' : ''}</span>
+          <span class="title"><h3>{m.name}</h3>
+          <span class="meta">{isOn(m.id) ? 'running' : 'off'}{m.id === ui.current ? ' · on this page' : ''}</span></span>
           <span class="grow"></span>
           {#if m.id !== ui.current}
             <button onclick={() => page.openMachine(m.id)} data-action="open"><Icon name="player-play" size={16} />Open on this page</button>
@@ -406,10 +406,11 @@
   section.machine { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
   section.empty { align-items: center; justify-content: center; color: var(--dim); }
   .head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 12px 16px 8px; }
+  .head .title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
   .head .grow { flex: 1; }
   .head button, .row button, .settings button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--line); }
-  .tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: 0; margin-bottom: -1px; color: var(--dim); }
+  .tabs { display: flex; gap: 2px; padding: 0 16px; box-shadow: inset 0 -1px var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tabs button { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: 0; color: var(--dim); }
   .tabs button[aria-selected=true] { color: var(--text); background: var(--bg); border-color: var(--line); border-bottom: 1px solid var(--bg); }
   .tab { padding: 16px; }
   .settings { display: grid; grid-template-columns: max-content minmax(0, 320px); gap: 10px 16px; align-items: center; }
@@ -428,17 +429,17 @@
   .advanced .split label { display: contents; color: var(--dim); }
   .usb-switch { margin-bottom: 12px; }
   .disk { display: flex; flex-direction: column; gap: 8px; }
-  .network { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+  .network { display: flex; flex-direction: column; gap: 12px; }
   .adapters { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .adapters li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .adapters li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .adapters li.none { color: var(--dim); }
-  .adapters .what { flex: 1; display: flex; flex-direction: column; }
+  .adapters .what { flex: 1; min-width: 200px; display: flex; flex-direction: column; }
   .adapters .warn { color: #ffb36b; }
-  .adapters .check { font-size: 13px; }
+  .adapters .check { font-size: 13px; white-space: nowrap; }
   .conn-name { font: inherit; font-weight: 600; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 4px; margin-left: -5px; }
   .conn-name:hover, .conn-name:focus { border-color: var(--line); }
   .new .chosen { background: var(--pressed); }
-  .adapters button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
+  .adapters button { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
   .storage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 6px 16px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--dim); }
   .storage details ul { margin: 4px 0; }
   @media (max-width: 720px) { .panes { grid-template-columns: 1fr; } nav { border-right: 0; border-bottom: 1px solid var(--line); } }

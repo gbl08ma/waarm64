@@ -96,7 +96,7 @@
 {#if adding}<AddUsb machine={machine.id} name={machine.name} close={() => (adding = false)} />{/if}
 
 <style>
-  .usb { display: flex; flex-direction: column; gap: 12px; max-width: 820px; }
+  .usb { display: flex; flex-direction: column; gap: 12px; }
   .entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .entries li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .entries li.none { color: var(--dim); }
