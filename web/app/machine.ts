@@ -4,6 +4,7 @@
 // benchmarks' guest on it; `buildroot` is the small test guest, for the page's
 // smoke test (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
 // nothing here depends on the dev server's layout beyond where target/ is.
+import { MAX_MEMORY0_RAM, splitError, splitRam } from '../ram.ts';
 
 export type Machine = {
   /** Its name on the page. */
@@ -142,13 +143,34 @@ export type MachineName = keyof typeof MACHINES;
 export const defaultCpus = (cores: number) => Math.max(1, Math.min(4, cores - 2));
 
 /**
- * The RAM the page offers, MiB: up to what leaves room in wasm32's 4 GiB for the core's 1 GiB heap reserve beside the
- * scratch page and fw_cfg's files (web/vm.ts `HEAP_RESERVE`). More still boots, on a growable memory, which costs
- * ~6–7% on Linux arm64 (bench/boot/REPORT.md "M8: a fixed-size memory").
+ * The RAM the page offers, MiB (a transient machine's Machine menu, a stored one's Settings). Up to
+ * `MEMORY0_MIB` it all lives in memory 0, beside the core; past it the rest goes to spill memories, which the guest
+ * sees as NUMA nodes (docs/plans/spill-memories.md). 3 GiB isn't offered: it would spill 1 MiB.
  */
-export const MAX_RAM_MIB = 2560;
-/** The sizes the page offers (a transient machine's Machine menu, a stored one's Settings). */
-export const RAM_CHOICES = [512, 1024, 1536, 2048, MAX_RAM_MIB];
+export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 4096, 6144, 8192, 12288, 16384];
+/** The most RAM memory 0 holds, MiB (web/ram.ts `MAX_MEMORY0_RAM`). */
+export const MEMORY0_MIB = MAX_MEMORY0_RAM / 2 ** 20;
+/**
+ * A machine's split, MiB: memory 0 first, then each spill memory. `split` is the user's own (a stored machine's
+ * `ramSplit`, `?split=`); without it, memory 0 as large as it goes and spill memories of up to 4 GiB.
+ */
+export function ramSplitMiB(ramMiB: number, split?: number[]): number[] {
+  if (split) return split;
+  const s = splitRam(ramMiB * 2 ** 20);
+  return [s.ramSize, ...s.spill].map((n) => n / 2 ** 20);
+}
+/** Why `split` (MiB, memory 0 first) isn't one a machine can have, for the user; undefined when it is. */
+export function ramSplitError(split: number[]): string | undefined {
+  if (!split.length || split.some((n) => !Number.isInteger(n))) return 'sizes are whole MiB';
+  return splitError(split[0] * 2 ** 20, split.slice(1).map((n) => n * 2 ** 20));
+}
+/** The note for a machine whose RAM goes past memory 0: undefined when it all fits there. */
+export function numaNote(ramMiB: number, split?: number[]): string | undefined {
+  const [m0, ...spill] = ramSplitMiB(ramMiB, split);
+  if (!spill.length) return undefined;
+  const nodes = spill.length === 1 ? 'a second NUMA node' : `${spill.length} more NUMA nodes`;
+  return `${m0} MiB of it is the machine's fast memory; the guest gets the other ${ramMiB - m0} MiB as ${nodes}, slower to reach (each access goes through the emulator's slow path), which Linux uses once the first node is full.`;
+}
 /**
  * The host memory a machine needs, GiB: its RAM, ~1 GiB for the browser and the first vCPU's
  * worker, ~0.3 GiB per vCPU (bench/boot/REPORT.md "M8 loop 0": 2.3 GiB of RSS on 1 vCPU, 3.1 on

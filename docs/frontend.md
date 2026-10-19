@@ -192,9 +192,12 @@ address opens it, so a reload keeps it): **Back to the machine** (or a view butt
 (new, **from a disk image…** (what Open disk… and a drop do), import a definition) and the chosen one on the right:
 Open on this page (for the page's own machine, **Start** while it's off, "Running on this page" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
-- **Settings:** name, vCPUs, RAM (512 MiB to 2.5 GiB, `machine.ts` `RAM_CHOICES`: more leaves no room for the 1 GiB
-  heap reserve in wasm32's 4 GiB, so the machine runs on a growable memory, ~6–7% slower on Linux arm64; a machine
-  or definition with more is shown as it is), display. Save; on the machine running on this page it reads **Save and restart**
+- **Settings:** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the
+  rest goes to spill memories that the guest sees as NUMA nodes, slower to reach, and a note under the choice says
+  so: [plans/spill-memories.md](plans/spill-memories.md); a machine or definition with another size is shown as it
+  is), **Memory split (advanced)**, closed unless the machine has one: *Set the split myself* starts from the
+  automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
+  (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display. Save; on the machine running on this page it reads **Save and restart**
   (asked first), and the USB controller. A change of shape asks first when it orphans snapshots.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
@@ -696,11 +699,11 @@ The view chosen last is remembered per browser (`localStorage` `webpc.settings`,
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
 it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs); a transient
 machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
-(512 MiB to 2.5 GiB: the wasm memory is the RAM plus the 1 GiB heap reserve and must fit 4 GiB) and
+(512 MiB to 16 GiB; past 3071 MiB the note under it says how much becomes NUMA nodes) and
 applies them with a confirmed restart; both are remembered per browser too (`ncpus`, `ramMiB`),
-with `?ncpus=` and `?ram=` over them. Defaults: `min(4, cores − 2)` vCPUs and the machine's RAM
+with `?ncpus=` and `?ram=` over them (and `?split=2560,1024`, a split set by hand, MiB, memory 0 first, its sum the RAM). Defaults: `min(4, cores − 2)` vCPUs and the machine's RAM
 (1 GiB). The page's memory check (`hostMemoryGiB`) warns in the confirmation when the device
-reports less than the choice needs. A suspended machine resumes with its own size.
+reports less than the choice needs (Chromium reports at most 8 GB, so past that it says the device may well have more). A suspended machine resumes with its own size.
 
 Restart and Power off ask for a confirmation while the machine is booting or running (they're a power cut); after
 a power off the button reads Start. One restart or disk reset at a time (`exclusively` in

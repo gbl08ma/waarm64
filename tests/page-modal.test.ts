@@ -178,6 +178,52 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await context.close();
 });
 
+test("a machine's RAM past memory 0: the note, and the advanced section's split, checked, saved and kept over a reload", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.locator('[data-field=ram]').selectOption('2048');
+  assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 2 GiB');
+  await m.locator('[data-field=ram]').selectOption('4096');
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', /^3071 MiB of it .* other 1025 MiB as a second NUMA node/);
+  // The advanced section, closed: set by hand, it starts from the automatic split; the RAM is then its sum.
+  assert.equal(await m.locator('[data-ram-split]').getAttribute('open'), null);
+  await m.locator('[data-ram-split] summary').click();
+  await m.locator('[data-field=custom-split]').check();
+  assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue()], ['3071', '1025']);
+  assert.equal(await m.locator('[data-field=ram]').isDisabled(), true);
+  await m.locator('[data-field=ram0]').fill('2048');
+  await m.locator('[data-field=ram0]').dispatchEvent('change');
+  await m.locator('[data-field=ram-nodes]').fill('1024, 5000');
+  await m.locator('[data-field=ram-nodes]').dispatchEvent('change');
+  assert.match(await m.locator('[data-split-problem]').textContent() ?? '', /1 to 4096 MiB/);
+  assert.equal(await m.locator('[data-action=save]').isDisabled(), true);
+  await m.locator('[data-field=ram-nodes]').fill('1024, 512');
+  await m.locator('[data-field=ram-nodes]').dispatchEvent('change');
+  assert.equal(await m.locator('[data-split-problem]').count(), 0);
+  assert.equal(await m.locator('[data-field=ram]').inputValue(), '3584');
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', /^2048 MiB of it .* other 1536 MiB as 2 more NUMA nodes/);
+  await m.locator('[data-action=save]').click();
+  await m.locator('[data-action=save]').and(page.locator(':disabled')).waitFor();
+  // Kept: after a reload the section is open with the split, and turning it off is the automatic split again.
+  await page.reload();
+  await page.click('#machines-open');
+  await modal(page).locator('.pick').first().click();
+  await m.locator('[data-ram-split][open]').waitFor();
+  assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue(), await m.locator('[data-field=ram]').inputValue()], ['2048', '1024, 512', '3584']);
+  await m.locator('[data-field=custom-split]').uncheck();
+  assert.equal(await m.locator('[data-field=ram]').isDisabled(), false);
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', /^3071 MiB of it .* other 513 MiB as a second NUMA node/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('a detached disk keeps its overlays: attached again from the browser\'s disks, the same URL is the same disk, deleted when no machine has it', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();

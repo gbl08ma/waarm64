@@ -1,4 +1,4 @@
-# More guest RAM: spill memories as NUMA nodes (proposed 2026-10-18; S0 and S1 done)
+# More guest RAM: spill memories as NUMA nodes (proposed 2026-10-18; S0 to S2 done)
 
 Guest RAM lives in memory 0 beside the core (layout A, docs/architecture.md), which caps it at what 4 GiB leaves
 after the core's heap reserve: the page offers up to 2560 MiB (`MAX_RAM_MIB`, web/app/machine.ts). This plan adds
@@ -55,7 +55,7 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
 - **S1, wasm and the host:** the generated accessor module; `bootVm` makes the spill memories and hands them to the
   vCPU, device, compile and GPU workers; the virtio and xHCI records carry the memory; every backend uses a view per
   memory. Tests: the JIT and interpreter on spill pages in Node (`tests/jit.test.ts`-style), a Chromium boot with
-  spill RAM. **Done:** `bootVm`'s `spill` (sizes; `splitRam` makes the page's split at `maxMemory0Ram`, where the heap
+  spill RAM. **Done:** `bootVm`'s `spill` (sizes; `splitRam` makes the page's split at `MAX_MEMORY0_RAM`, where the heap
   rule of docs/backlog.md "The core's heap in a fixed memory" puts it), the vCPU and device workers get the memories
   (the compile worker reads no guest RAM), web/ram.ts holds the backends' views and `locate`; ABI 40. The page
   splits `?ram=` already; snapshots of such a machine are refused until S3. `tests/page-spill.test.ts` (Debian,
@@ -64,7 +64,11 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
   when it is past what memory 0 holds (the rest goes to NUMA nodes, slower to reach); the split is automatic
   (memory 0 as large as it goes, then spill memories of up to 4 GiB). An **advanced section, hidden by default**,
   lets a user set the split: memory 0's size, how many spill memories and each one's size. Also the host memory
-  check and docs/frontend.md.
+  check and docs/frontend.md. **Done:** memory 0 holds at most `MAX_MEMORY0_RAM`, 3 GiB less 1 MiB, fixed (not what
+  fw_cfg's files leave) so a machine's layout never moves between boots; the choices go to 16 GiB (3 GiB isn't
+  offered: it would spill 1 MiB); the note in the Machine menu and in Settings; the advanced section in a stored
+  machine's Settings (`ramSplit`, part of its shape and definition) and `?split=` for a transient machine (its menu
+  has no advanced section); the host memory check counts all of it.
 - **S3, snapshots:** spill RAM in the snapshot file (web/snapshot-file.ts), a round trip in the page tests.
 - **S4, on the dev VM** (a handover): Debian with spill RAM: the nodes (`numactl -H`), `numa_balancing` read as 0
   and the credential listed, where the kernel puts hot pages (`numastat` during a desktop workload), and what spill

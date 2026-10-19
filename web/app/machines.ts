@@ -73,7 +73,7 @@ export async function deleteMachine(store: Store, id: string) {
 export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw new Error('that machine is gone');
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb]);
+  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'Changing its processors, memory or devices');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;

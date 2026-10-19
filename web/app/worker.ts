@@ -7,7 +7,7 @@
 // port straight to the VM, and the keyboard and tablet ports go to the device
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
-import { bootVm, Exit, FLASH_SIZE, fwCfgBuffer, PSCI_SYSTEM_OFF, splitRam, type Restore, type Vm } from '../vm.ts';
+import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, splitRam, type Restore, type Vm } from '../vm.ts';
 import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
@@ -386,7 +386,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const devices = liveSpecs = specs ?? layout(m, machine).map((s) => device(s, m, machine));
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/plans/spill-memories.md).
-  const { ramSize, spill } = splitRam(ramMiB * 2 ** 20, firmware?.fwCfg.length ? fwCfgBuffer(firmware.fwCfg).length : 0);
+  const { ramSize, spill } = m.ramSplit && !restore ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20);
   booting = bootVm(core, {
     ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices, usb: m.usb ? { port: m.usb } : undefined,

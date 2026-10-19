@@ -20,7 +20,7 @@
   import { remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
   import { errorView, type ErrorView } from './usb-ports.ts';
-  import { MAX_RAM_MIB, RAM_CHOICES } from './machine.ts';
+  import { MEMORY0_MIB, numaNote, RAM_CHOICES, ramSplitError, ramSplitMiB } from './machine.ts';
 
   let { store }: { store: Store } = $props();
 
@@ -88,7 +88,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb;
   async function saveSettings() {
     const m = plain(draft!);
     await act('Saving', async () => {
@@ -100,6 +100,22 @@
       await updateMachine(store, m);
     });
     dirty = false;
+  }
+  // The RAM's split, set by hand (the advanced section; docs/plans/spill-memories.md): memory 0, then the NUMA nodes past it, MiB.
+  let splitProblem = $state('');
+  let ram0Input = $state<HTMLInputElement>();
+  let nodesInput = $state<HTMLInputElement>();
+  function customSplit(on: boolean) {
+    draft!.ramSplit = on ? ramSplitMiB(draft!.ramMiB) : undefined;
+    splitProblem = '';
+    dirty = true;
+  }
+  /** Takes the two fields: a valid split sets the RAM to its sum, else says what's wrong (and Save waits). */
+  function editSplit() {
+    const split = [Number(ram0Input!.value), ...nodesInput!.value.split(',').map((x) => x.trim()).filter(Boolean).map(Number)];
+    splitProblem = ramSplitError(split) ?? '';
+    if (!splitProblem) [draft!.ramSplit, draft!.ramMiB] = [split, split.reduce((a, b) => a + b, 0)];
+    dirty = true;
   }
   const restartsToSave = $derived(!!draft && draft.id === ui.current && isOn(draft.id) && (() => { const was = machines.find((x) => x.id === draft!.id); return !!was && shapeChanged(was, draft!); })());
 
@@ -140,7 +156,7 @@
 {/snippet}
 
 {#snippet saveRow()}
-  <div class="row"><button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty}>{restartsToSave ? 'Save and restart' : 'Save'}</button>
+  <div class="row"><button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty || !!splitProblem}>{restartsToSave ? 'Save and restart' : 'Save'}</button>
     {#if dirty}<button onclick={() => { dirty = false; void reread(); }}>Revert</button>{/if}</div>
 {/snippet}
 
@@ -240,7 +256,20 @@
             <div class="settings" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
               <label>Name <input bind:value={draft.name} data-field="name"></label>
               <label>vCPUs <select bind:value={draft.ncpus} data-field="ncpus">{#each CPU_CHOICES as n}<option value={n}>{n}</option>{/each}</select></label>
-              <label>RAM <select bind:value={draft.ramMiB} data-field="ram">{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}>{n} MiB{n > MAX_RAM_MIB ? ' (past the heap reserve: slower on Linux arm64)' : ''}</option>{/each}</select></label>
+              <label>RAM <select bind:value={draft.ramMiB} data-field="ram" disabled={!!draft.ramSplit} title={draft.ramSplit ? 'The sum of the split below' : ''}>{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}>{n} MiB</option>{/each}</select></label>
+              {#if numaNote(draft.ramMiB, draft.ramSplit)}<p class="note warn" data-numa>{numaNote(draft.ramMiB, draft.ramSplit)}</p>{/if}
+              <details class="advanced" data-ram-split open={!!draft.ramSplit}>
+                <summary>Memory split (advanced)</summary>
+                <label class="check"><input type="checkbox" checked={!!draft.ramSplit} onchange={(e) => customSplit(e.currentTarget.checked)} data-field="custom-split"> Set the split myself</label>
+                {#if draft.ramSplit}
+                  <div class="split">
+                    <label>Memory 0, MiB <input bind:this={ram0Input} type="number" min="64" step="1" value={draft.ramSplit[0]} onchange={editSplit} data-field="ram0"></label>
+                    <label>NUMA nodes past it, MiB each <input bind:this={nodesInput} value={draft.ramSplit.slice(1).join(', ')} placeholder="none" onchange={editSplit} data-field="ram-nodes"></label>
+                  </div>
+                  {#if splitProblem}<p class="note warn" data-split-problem>{splitProblem}</p>{/if}
+                {/if}
+                <p class="note">Memory 0 is the fast memory, beside the emulator, up to {MEMORY0_MIB} MiB. Each NUMA node (up to 4096 MiB, at most 8) is a memory of its own, slower to reach. The guest's processors are all on memory 0's node, so Linux fills it first.</p>
+              </details>
               <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
               {@render usbSwitch()}
               {@render saveRow()}
@@ -327,6 +356,10 @@
   .note, .hint { color: var(--dim); font-size: 12px; margin: 0; }
   .note.warn { color: #ffb36b; }
   .settings .check, .settings .warn { grid-column: 1 / -1; }
+  .advanced { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
+  .advanced summary { color: var(--dim); cursor: pointer; }
+  .advanced .split { display: grid; grid-template-columns: max-content minmax(0, 200px); gap: 8px 16px; align-items: center; }
+  .advanced .split label { display: contents; color: var(--dim); }
   .usb-switch { margin-bottom: 12px; }
   .disk { display: flex; flex-direction: column; gap: 8px; }
   .network { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }

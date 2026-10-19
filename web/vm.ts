@@ -17,6 +17,8 @@ import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
+import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
+export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
 export const ABI = 40;
 const RAM_BASE = 0x4000_0000;
@@ -390,11 +392,11 @@ export const Counter = {
  * of RAM, which `bootVm`'s `framebuffer` locates for web/display.ts.
  */
 export type BootOptions = {
-  /** Guest RAM in memory 0 (at most {@link maxMemory0Ram} for a fixed memory). */
+  /** Guest RAM in memory 0 (at most `MAX_MEMORY0_RAM` (web/ram.ts) for a fixed memory). */
   ramSize: number;
   /**
    * The spill memories' sizes (`VmConfig.spill`, ABI 39; docs/plans/spill-memories.md): RAM past memory 0, each a
-   * shared memory of its own and a CPU-less NUMA node for the guest; {@link splitRam} makes the usual split.
+   * shared memory of its own and a CPU-less NUMA node for the guest; `splitRam` (web/ram.ts) makes the usual split.
    */
   spill?: number[];
   kernel: Uint8Array;
@@ -588,35 +590,6 @@ export type Vm = Awaited<ReturnType<typeof bootVm>>;
  * "Memory"). Running out traps the machine, so it is generous: untouched pages cost nothing.
  */
 export const HEAP_RESERVE = 1 << 30;
-
-/**
- * The least heap a fixed memory gets (docs/backlog.md "The core's heap in a fixed memory", stage 1): the
- * reserve is what 4 GiB leaves after the scratch page, RAM and fw_cfg's files, capped at `HEAP_RESERVE`
- * and never under this. 1 GiB until the heap's peak under a heavy load is measured on the dev VM, so
- * today the reserve is always 1 GiB.
- */
-export const HEAP_FLOOR = 1 << 30;
-
-/** The most RAM memory 0 holds with the heap at its floor (and fw_cfg's `fwCfgBytes`): the rest of a machine's RAM goes to spill memories. */
-export function maxMemory0Ram(fwCfgBytes = 0): number {
-  return 2 ** 32 - HEAP_FLOOR - 65536 - Math.ceil(fwCfgBytes / 65536) * 65536;
-}
-
-/** The largest spill memory (a whole wasm32 memory) and how many a machine has at most (core/src/mem.rs `MAX_SPILL`). */
-export const MAX_SPILL_BYTES = 2 ** 32;
-export const MAX_SPILL = 8;
-
-/**
- * The automatic split of `total` bytes of guest RAM (a 64 KiB multiple): memory 0 as large as it goes
- * ({@link maxMemory0Ram}), then spill memories of up to 4 GiB (docs/plans/spill-memories.md).
- */
-export function splitRam(total: number, fwCfgBytes = 0): { ramSize: number; spill: number[] } {
-  const ramSize = Math.min(total, maxMemory0Ram(fwCfgBytes));
-  const spill: number[] = [];
-  for (let left = total - ramSize; left > 0; left -= MAX_SPILL_BYTES) spill.push(Math.min(left, MAX_SPILL_BYTES));
-  if (spill.length > MAX_SPILL) throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);
-  return { ramSize, spill };
-}
 
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
