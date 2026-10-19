@@ -105,7 +105,7 @@
     });
     dirty = false;
   }
-  // The RAM's split, set by hand (the advanced section; docs/plans/spill-memories.md): memory 0, then the NUMA nodes past it, MiB.
+  // The RAM's split, set by hand (the advanced section; docs/spill-memories.md): memory 0, then the NUMA nodes past it, MiB.
   let splitProblem = $state('');
   let ram0Input = $state<HTMLInputElement>();
   let nodesInput = $state<HTMLInputElement>();

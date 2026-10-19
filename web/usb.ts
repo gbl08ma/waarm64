@@ -60,7 +60,7 @@ export type UsbInit = {
   shared: number;
   ram: number;
   ramSize: number;
-  /** The spill memories (docs/plans/spill-memories.md), memory 1 first. */
+  /** The spill memories (docs/spill-memories.md), memory 1 first. */
   spill?: WebAssembly.Memory[];
   deterministic: boolean;
   /** Sets SIGNAL_DEVICE and wakes the vCPUs (what `Devices` does after a completion). */

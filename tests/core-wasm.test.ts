@@ -151,7 +151,7 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   assert.match(String(e.stack), /core panic: .*vm_run_cpu in round-robin mode/s);
 });
 
-// Spill memories (ABI 39, docs/plans/spill-memories.md): RAM past memory 0 in another memory, which
+// Spill memories (ABI 39, docs/spill-memories.md): RAM past memory 0 in another memory, which
 // the core reaches through web/spill.ts. The program in memory 0 stores, loads, takes an exclusive
 // pair, an LSE add and a DC ZVA in the spill memory, then branches to code there; under the
 // interpreter, the block interpreter and JIT-stress (whose inline accesses miss on spill pages).

@@ -68,7 +68,7 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { display: '2d' })), h, 'a 3D machine run in 2D');
   assert.deepEqual(shapeDiff(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), ['memory: 1024 MiB then, 2048 MiB now']);
   assert.deepEqual(shapeDiff(s, s), []);
-  // A split set by hand (spill memories, docs/plans/spill-memories.md) moves it; the automatic one is no field at all.
+  // A split set by hand (spill memories, docs/spill-memories.md) moves it; the automatic one is no field at all.
   assert.equal('split' in s, false);
   const split = shapeOf(machine({ ramSplit: [512, 512] }), (id) => DISKS.get(id));
   assert.notEqual(await shapeHash(split), h, 'a split set by hand');

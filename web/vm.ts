@@ -395,7 +395,7 @@ export type BootOptions = {
   /** Guest RAM in memory 0 (at most `MAX_MEMORY0_RAM` (web/ram.ts) for a fixed memory). */
   ramSize: number;
   /**
-   * The spill memories' sizes (`VmConfig.spill`, ABI 39; docs/plans/spill-memories.md): RAM past memory 0, each a
+   * The spill memories' sizes (`VmConfig.spill`, ABI 39; docs/spill-memories.md): RAM past memory 0, each a
    * shared memory of its own and a CPU-less NUMA node for the guest; `splitRam` (web/ram.ts) makes the usual split.
    */
   spill?: number[];
@@ -586,8 +586,8 @@ export type Vm = Awaited<ReturnType<typeof bootVm>>;
 
 /**
  * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
- * buffers, the devices', a vCPU worker's stack and TLS (~150 MB under a heavy 4-vCPU load, docs/jit.md
- * "Memory"). Running out traps the machine, so it is generous: untouched pages cost nothing.
+ * buffers, the devices', a vCPU worker's stack and TLS (~540–600 MiB under a heavy 4-vCPU load, docs/spill-memories.md
+ * "The heap floor"). Running out traps the machine, so it is generous: untouched pages cost nothing.
  */
 export const HEAP_RESERVE = 1 << 30;
 
@@ -599,7 +599,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const pages = (Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest)) + rest) / 65536;
   const fixed = o.fixedMemory !== false && pages <= 65536;
   const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
-  // The spill memories (docs/plans/spill-memories.md), each at its final size.
+  // The spill memories (docs/spill-memories.md), each at its final size.
   const spillSizes = o.spill ?? [];
   if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES)) throw new RangeError(`spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`);
   const spill = spillSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
@@ -859,6 +859,29 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     flash: () => (flashAt ? bytes().slice(flashAt, flashAt + flashSize) : undefined),
     /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
     ram,
+    /**
+     * What the core's heap has touched, for benchmarks (docs/spill-memories.md "The heap floor"): the non-zero 4 KiB
+     * pages below the scratch page (the core's data, stacks and first heap), and in the reserve past RAM and fw_cfg's
+     * files, and how far into the reserve the last one is (the allocator carves it from its start, and freed memory
+     * keeps its bytes, so that is the heap's high-water mark). Scans the memory: tenths of a second for a 1 GiB reserve.
+     */
+    heapUse: () => {
+      const w = new Uint32Array(memory.buffer);
+      const nonzero = (page: number) => { for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true; return false; };
+      const reserve = (fwCfg ? fwCfgAt + Math.ceil(fwCfg.length / 65536) * 65536 : ram + o.ramSize) / 4096;
+      let below = 0, touched = 0, high = 0;
+      const buckets: number[] = []; // MiB touched in each 32 MiB of the reserve
+      for (let p = 0; p < scratch / 4096; p++) if (nonzero(p)) below++;
+      // The allocator's segment record sits at the reserve's end: the high-water mark leaves out the last 64 KiB.
+      for (let p = reserve, end = memory.buffer.byteLength / 4096; p < end; p++) {
+        if (!nonzero(p)) continue;
+        touched++;
+        if (p < end - 16) high = p - reserve + 1;
+        const b = Math.floor((p - reserve) / 8192);
+        buckets[b] = (buckets[b] ?? 0) + 1 / 256;
+      }
+      return { belowBytes: below * 4096, reserveBytes: memory.buffer.byteLength - reserve * 4096, touchedBytes: touched * 4096, highBytes: high * 4096, buckets: Array.from(buckets, (x) => Math.round(x ?? 0)) };
+    },
     cpu: ex.vm_cpu(vm, 0),
     /** Byte address of vCPU 0's `vm::Counters` in `memory` (u64s, read with Atomics.load; its PC word is vCPU 0's). */
     counters,

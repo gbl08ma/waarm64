@@ -18,7 +18,7 @@
 //! `w1` = readable count | writable count << 16, then (offset, length, memory)
 //! per segment, readable ones first: the memory is 0 for memory 0's RAM (the
 //! offset from its start) or a spill memory's index (the offset in it; ABI 40,
-//! docs/plans/spill-memories.md), and a buffer lies in one memory. Completion: `w0` as posted,
+//! docs/spill-memories.md), and a buffer lies in one memory. Completion: `w0` as posted,
 //! then the number of bytes written. `epoch` counts device resets (mod 256), so
 //! records from before a reset are skipped by the backend and dropped here.
 

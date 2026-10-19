@@ -45,13 +45,14 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 - The guest physical address map is independent of placement, because the TLB translates.
 - **Every guest RAM access in generated code goes through one lowering function**, so a later
   layout change stays inside the emitter and the core allocator.
-- **Spill memories** ("A + spill memories", [plans/spill-memories.md](plans/spill-memories.md), under way): RAM
+- **Spill memories** ("A + spill memories", [spill-memories.md](spill-memories.md)): RAM
   past memory 0 in more wasm32 memories, each a CPU-less NUMA node in the DT. TLB tag bits 11:3 hold the memory
   index (inverted, all ones for memory 0), so every inline compare misses on a spill page and memory 0's code is
   unchanged; the interpreter's miss path does the access through `ram.*` imports from a host-made module
   (`web/spill.ts`), and the JIT's miss re-runs the instruction there. A core host address (`mem::Host`) names its
   memory in its top byte. NUMA balancing must be off (its hinting faults are expensive under emulation): an SMBIOS
-  systemd credential does it.
+  systemd credential does it. A spill access costs 2–19× a memory-0 one; the guest keeps spill pages cold until its
+  active set outgrows memory 0.
 - Re-measure the gaps on new Chromium releases.
 
 ## Design principles

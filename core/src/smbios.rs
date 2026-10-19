@@ -90,7 +90,7 @@ fn tables(cfg: &VmConfig) -> Vec<u8> {
     structure(&mut t, 4, 0x0400, &b, &["CPU 0", VENDOR, "AArch64"]);
     // Type 11, OEM strings: with spill memories (NUMA nodes), a systemd
     // credential that turns NUMA balancing off (its scanner's faults are guest
-    // code; docs/plans/spill-memories.md). systemd imports SMBIOS credentials
+    // code; docs/spill-memories.md). systemd imports SMBIOS credentials
     // in a VM, which type 0's "a virtual machine" bit tells it.
     let spill = cfg.spill_layout();
     if !spill.is_empty() {

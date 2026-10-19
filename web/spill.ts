@@ -1,4 +1,4 @@
-// The spill memories' accessor (docs/plans/spill-memories.md): guest RAM past memory 0 lives in
+// The spill memories' accessor (docs/spill-memories.md): guest RAM past memory 0 lives in
 // more shared wasm32 memories, which the core (Rust on wasm32, one memory) can't address. This
 // module imports them and exports what the core imports as `ram` (core/src/mem.rs `acc`): aligned
 // single-copy-atomic loads, stores and compare-and-swaps by (memory, offset, size). The memory

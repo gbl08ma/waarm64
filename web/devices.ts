@@ -731,7 +731,7 @@ export type DevicesInit = {
   shared: number[];
   ram: number;
   ramSize: number;
-  /** The spill memories (docs/plans/spill-memories.md), memory 1 first. */
+  /** The spill memories (docs/spill-memories.md), memory 1 first. */
   spill?: WebAssembly.Memory[];
   signal: number;
   specs: DeviceSpec[];

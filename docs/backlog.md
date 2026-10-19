@@ -233,7 +233,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
-- **The core's own memory is growable**: stage 2 of "The core's heap in a fixed memory" (Platform and devices).
+- **The core's own memory is growable**: "The core's heap in a fixed memory: exact limits for the core module too" (Platform and devices).
 - Helpers still on real paths: unmasking MSRs, ISB, LSE min/max. None worth a
   loop alone. (The NEON ones, structures and CRC32 are inline since 2026-10-18: the item at this section's top.)
 - MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
@@ -272,58 +272,38 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **The core's heap in a fixed memory** (the user, 2026-10-17; [abi.md](abi.md) "A fixed-size memory"). One linear
-  memory (wasm32, 4 GiB at most) holds the core's static data, stack and heap, the scratch page, RAM and fw_cfg's
-  files. A memory at its final size is 6–7% faster on Linux arm64 than a growable one (V8 loads the size once per
-  function instead of after every call; nothing on macOS or x86_64: bench/boot/REPORT.md "M8: a fixed-size memory").
-  Today `bootVm` adds a flat 1 GiB `HEAP_RESERVE`, so the page offers up to 2.5 GiB (`web/app/machine.ts`
-  `RAM_CHOICES`) and anything larger silently runs on a growable memory; and only JIT modules import exact limits,
-  the core module still declares 18–65536 pages. The target, in two stages:
-  - **The rule:** the heap gets what's left of 4 GiB after the scratch page, RAM and fw_cfg's files, capped at
-    1 GiB and never under a floor. A RAM size that leaves less than the floor isn't offered, rather than falling back
-    to a growable memory (`fixedMemory: false` stays for A/B runs). Running out of the heap traps the machine, so the
-    floor is a hard limit, not a tuning knob.
-  - **Stage 1 (actionable): size the reserve by the rule** in `bootVm` (done 2026-10-19 with `HEAP_FLOOR` at 1 GiB,
-    so the reserve is still always 1 GiB; RAM past `MAX_MEMORY0_RAM` (3 GiB less 1 MiB) goes to spill memories, below), and set the page's largest RAM choice to
-    what the floor leaves (3 GiB leaves ~1 GiB of heap; up to ~3.75 GiB with a 256 MiB floor). The floor comes from a measurement: the heap peaked
-    at ~27 MB in the userspace benchmark, and ~150 MB was seen under a heavy 4-vCPU load (docs/jit.md "Memory"), but
-    that run predates the shared 160 MiB code cache and had no byte budget. So first measure the heap's peak under a
-    heavy 4-vCPU load on today's cache (a Go build loop, Firefox in the guest), pick the floor with margin (e.g.
-    256 MiB), and only then offer the larger RAM choices. Update abi.md, frontend.md "Settings" and `MAX_RAM_MIB`
-    with it.
-  - **Stage 2 (parked): exact limits for the core module too.** The host creates the memory at its final size
-    before instantiating the core, and the heap becomes an allocator of our own over the region the rule gives it
-    (the reserve block's trick in `heap_reserve` no longer applies). Stage 1 already fixes that region's size, so
-    nothing in it is wasted. Worth a few percent of a phase at most, and only where bounds checks are explicit
-    (Linux arm64): the core's code is 8 to 19% of the userspace benchmark's hot phases (`bench/boot/REPORT.md`
-    "M8: the core's share of the userspace profile"). Take it up when a real workload's core share is well above
-    that.
-- **More guest RAM than memory 0 holds** (~3.75 GiB with a 256 MiB heap floor, above): **spill memories as NUMA
-  nodes** (docs/architecture.md "Guest memory: layout A", PLAN.md §4 "Guest RAM ceiling"): extra wasm32 memories the
-  guest sees as CPU-less NUMA nodes, memory 0 keeping its fast path (TLB tag bits 3–11 are reserved for the memory
-  index). The kernels in scope build with `CONFIG_NUMA` (the user checked, 2026-10-18). A second memory for all of
-  RAM measured +12–40% (M0.5's layout B), which is why it's only for the pages past memory 0.
-  - **Why NUMA and not swap in a memory** (discussed 2026-10-18): what costs most here is guest code. A spill page is
-    reached by the same load or store as any other, so NUMA runs no extra guest code; its cost is ours, per access (the
-    slow path, or an inline second path for memory-1 pages). Swap runs the guest kernel's fault, swap-cache, block
-    and reclaim paths (and TLB shootdowns) for every page that moves, ~10k+ instructions each way natively, all of it
-    JIT-ed here: it only pays for pages that stay cold almost forever. A synchronous swap device served by the core
-    would cut the I/O's latency, not that guest code.
-  - **Marking node 1 slower doesn't help by itself:** memory tiers come from ACPI's HMAT (or dax/kmem, CXL), with no
-    DT binding; the DT `distance-map` only sets fallback order and scheduler hints. Even in a lower tier, demotion
-    (`/sys/kernel/mm/numa/demotion_enabled`) and promotion (`kernel.numa_balancing=2`) are off by default and run as
-    guest code (page migration, a 4 KiB copy through our slow path). An alternative to compare if spill pages turn out
-    hot: **tier on the host, invisibly** (the guest sees one flat RAM, we swap hot memory-1 pages with cold memory-0
-    ones and drop their TLB entries; costs a per-page physical-to-host table for `Mem` and DMA, a way to find cold
-    memory-0 pages, and a stop of every vCPU per move in parallel SMP).
-  - **NUMA balancing must be off** (its scanner makes every task's pages inaccessible and faults them back: guest
-    code, on node-0 pages too). Distro kernels usually turn it on by themselves with more than one node
-    (`CONFIG_NUMA_BALANCING_DEFAULT_ENABLED`), and under UEFI the command line is the guest's GRUB's. Plan: **systemd
-    credentials in SMBIOS type 11** (OEM strings, `core/src/smbios.rs`): `io.systemd.credential:sysctl.extra=
-    kernel.numa_balancing=0`, read by `systemd-sysctl` (systemd 252+: Debian 12 and 13, Arch). systemd imports SMBIOS
-    credentials only in a VM; our type 0 already sets the "virtual machine" bit its detection checks. Alpine
-    (OpenRC) ignores it. First check, on the dev VM: Debian with a second node reads 0 from
-    `/proc/sys/kernel/numa_balancing`, and `systemd-creds --system list` shows the credential.
+- **The core's heap in a fixed memory: exact limits for the core module too** (the user, 2026-10-17; [abi.md](abi.md)
+  "A fixed-size memory"). One linear memory holds the core's static data, stack and heap, the scratch page, RAM and
+  fw_cfg's files; the heap gets what 4 GiB leaves after the rest, capped at 1 GiB and never under `HEAP_FLOOR`
+  (1 GiB: the heap reaches ~540–600 MiB under a Go build on 4 vCPUs and the desktop guest's Firefox,
+  [spill-memories.md](spill-memories.md) "The heap floor"; what fills it isn't broken down). A memory at its final
+  size is 6–7% faster on Linux arm64 than a growable one (bench/boot/REPORT.md "M8: a fixed-size memory"), but only
+  JIT modules import exact limits: the core module still declares 18–65536 pages. **Parked:** the host would create
+  the memory at its final size before instantiating the core, and the heap would become an allocator of our own over
+  the region the rule gives it (the reserve block's trick in `heap_reserve` no longer applies). Worth a few percent of
+  a phase at most, and only where bounds checks are explicit (Linux arm64): the core's code is 8 to 19% of the
+  userspace benchmark's hot phases (`bench/boot/REPORT.md` "M8: the core's share of the userspace profile"). Take it
+  up when a real workload's core share is well above that.
+- **Spill memories** ([spill-memories.md](spill-memories.md); the numbers in `bench/boot/results/m8-spill/`):
+  - **The JIT's inline second path for spill pages, not built.** A spill access leaves JIT code for the interpreter
+    (`jit_exec_mmu`): Debian's workloads bound to node 1 ran 2.2× (`cat`) to 19× (`gzip -1`) slower than on node 0,
+    and the desktop's memory tabs 6.4× (a sweep of 384 MB: 170 vs 1083 ms). The guest fills node 0 first and keeps
+    it, and with 1.9 GB of busy tabs on node 1 the desktop's WebGL and video windows kept their rates, so it waits for
+    a workload whose user-visible part lives on node 1. The design: on a tag that differs from the entry's only in
+    the memory bits (11:3), a `br_table` on the index into a copy of the access's body whose memarg names that memory;
+    JIT modules import the spill memories (multi-memory), and the copies grow every access's code with the number of
+    spill memories (one copy for the common one-node machine, the rest through the helper). It needs the JIT's gates
+    (differential, lockstep, exact-step boots, a planted bug). The alternative is to **tier on the host, invisibly**:
+    the guest sees one flat RAM, and we swap hot memory-1 pages with cold memory-0 ones and drop their TLB entries.
+    That costs a per-page physical-to-host table for `Mem` and DMA, a way to find cold memory-0 pages, and a stop of
+    every vCPU per move in parallel SMP.
+  - **A reopened video stopped presenting under the memory tabs' load**, once in each of two runs (after ~40 s; the
+    busy-tab arms of `tools/numa-desktop.ts`). It didn't happen with the same placement and idle tabs (2.5 minutes),
+    nor without a fill. The guest's CPU was busier (the node-1 sweeps), and whether that or something in Firefox's
+    decoder stops it isn't known. Check first: the video's `waiting`/`stalled` events (the tool logs them now), and
+    the renderer's video totals over the stop.
+  - `vm.zone_reclaim_mode=1` keeps only ~200 MB more on node 0 (it reclaims only unmapped clean cache), so it isn't
+    in the SMBIOS credential.
 - **A full 8 GB ramdisk locked the machine up** (the user, 2026-10-17, by hand on the page: an ext4-formatted 8 GB
   ramdisk filled to the brim; the machine stopped responding once it was full, with nothing in the console or on the
   page). Not known whether it's the guest or us. First lead: `web/ramdisk.ts` makes a 1 MiB `SharedArrayBuffer` per
@@ -518,10 +498,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   screen's disks menu that formats it as swap and turns it on in the guest, with nothing to do inside. The host can
   write the swap header itself (`mkswap`'s format: a fixed page with `SWAPSPACE2`, a label and the size) and hand the
   guest an `fstab.extra` systemd credential through SMBIOS type 11 (`LABEL=<label> none swap sw,nofail 0 0`, read
-  by `systemd-fstab-generator`, systemd 254+: Debian 13, not 12), the same pipe as NUMA balancing's sysctl above.
+  by `systemd-fstab-generator`, systemd 254+: Debian 13, not 12), the same pipe as NUMA balancing's sysctl (spill-memories.md).
   The ramdisk is lazily backed, so swap costs host memory only as the guest fills it, and `swapon --discard` (in the
   fstab line's options) gives it back. Not a replacement for spill memories (swap runs guest code for every page;
-  "More guest RAM than memory 0 holds"), but useful where a user wants the kernel's LRU to decide.
+  [spill-memories.md](spill-memories.md)), but useful where a user wants the kernel's LRU to decide.
 - **Machines as the unit, loose ends** (docs/plans/machines.md §11):
   - **The exit's numbers weren't taken** (the user's call, 2026-10-18: low relevance for now, and they'd go stale
     beside unrelated optimizations). In Chromium 153, `bench/boot/REPORT.md` with JSON: a restore whose pins match

@@ -82,7 +82,7 @@ pub const CPL_DETACH: u32 = 2;
 /// A segment of immediate data: its length word has this bit (its offset word is 0), and two
 /// words of bytes follow.
 pub const SEG_IMMEDIATE: u32 = 1 << 31;
-/// A segment's memory (0, or a spill memory's index: docs/plans/spill-memories.md) in its length word's bits
+/// A segment's memory (0, or a spill memory's index: docs/spill-memories.md) in its length word's bits
 /// 27:24 (a TRB's length has 17 bits); the offset is in that memory, from memory 0's first RAM byte for 0.
 pub const SEG_MEM_SHIFT: u32 = 24;
 

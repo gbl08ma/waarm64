@@ -20,7 +20,7 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 | `0x0a00_0000 + 0x200·i` | virtio-mmio transport *i* (≤ 32; SPI 16+i, INTID 48+i) |
 | `0x0c00_0000` | xHCI (64 KiB, `generic-xhci`; SPI 48, INTID 80), with `VmConfig.xhci` only ([usb.md](usb.md)) |
 | `0x4000_0000` | RAM (`vm::RAM_BASE`), size from `VmConfig.ram_size` |
-| past it, from the next 1 GiB boundary | spill memories' RAM (`VmConfig.spill`), each NUMA node *k* at the 1 GiB boundary past the RAM before it ([plans/spill-memories.md](plans/spill-memories.md)) |
+| past it, from the next 1 GiB boundary | spill memories' RAM (`VmConfig.spill`), each NUMA node *k* at the 1 GiB boundary past the RAM before it ([spill-memories.md](spill-memories.md)) |
 
 - An access to a PA with no device is an **external abort** (QEMU TCG agrees; QEMU under hvf
   makes it RAZ/WI).

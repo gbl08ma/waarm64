@@ -18,7 +18,7 @@ the docs and its entry here shrinks to a summary.
 | Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, a PL031 RTC (realtime mode), PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
 | Boot | Direct kernel boot (arm64 `Image` + initrd + DTB) for the tests' guests. **M8 phase B:** boot conventional arm64 disk images unmodified, through UEFI firmware (our EDK2 build, entered as an `Image`: the firmware configuration, loop 2) and their own bootloader; the page boots Debian's published image, or a disk of the user's own, unmodified that way (loops 3–4); the disk's changes or the whole disk go out and come back (loops 5–6) |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
-| Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
+| Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 hold a memory index: RAM past memory 0 goes to spill memories, NUMA nodes for the guest ([docs/spill-memories.md](docs/spill-memories.md)) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)); what isn't compiled runs in the block interpreter, the same blocks decoded once into micro-ops ([docs/cpu.md](docs/cpu.md) "The block interpreter") |
 | Determinism | Deterministic mode (time from steps) for tests and most benchmarks: every guest takes the same steps on every host and tier. Realtime mode for guest-timed work and interactive use |
 | SMP | N vCPUs, one core, two modes: **deterministic round-robin** on one thread (tests; exact steps; virtual time = the steps of all vCPUs) and **parallel**, a worker per vCPU with its own core instance and function table, on one code cache the vCPUs share (each module compiled once; [docs/jit.md](docs/jit.md) "Sharing") (users, scaling; realtime only). `TLBI …IS` completes before the issuer's `DSB` returns; `IC` drops the code from the shared cache at once, and each vCPU's table catches up before its next block; DMB is a real fence in parallel JIT code; the core's guest-RAM accesses are atomics ([docs/platform.md](docs/platform.md), [docs/cpu.md](docs/cpu.md)) |
@@ -259,6 +259,12 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   identity), a catalog of hosted images (machine definitions) on top of phase B's disk in, and **the stable
   embedding API**, extracted from what the page ended up using (VM config to DTB and devices,
   CPU feature switches, devices, snapshots, network backends), with its docs.
+- **Guest RAM past memory 0** (the user, 2026-10-18; **done 2026-10-19**, [docs/spill-memories.md](docs/spill-memories.md)):
+  more wasm32 memories the guest sees as CPU-less NUMA nodes, NUMA balancing off through an SMBIOS credential, devices
+  and snapshots across memories, one RAM value on the page up to 16 GiB. A spill access costs 2–19× a memory-0 one;
+  the guest fills node 0 first and keeps it, and what a desktop user watched held its rate with 1.9 GB of busy tabs
+  on node 1, so the JIT's inline second path waits in the backlog; the heap floor stays 1 GiB (the heap reaches
+  ~600 MiB).
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.
 
 ### M9 — Backlog
@@ -280,7 +286,8 @@ Unscheduled loose ends, by area: [docs/backlog.md](docs/backlog.md).
   differential test catch regressions.
 - **Rust + wasm threads** needs nightly (`-Zbuild-std`, `-Zllvm-target-feature=+atomics`); the
   toolchain is pinned, and `simd128` stays off until LLVM's bitmask bug is fixed.
-- **Guest RAM ceiling:** layout A caps RAM at ~3.5 GiB; past it, spill memories as NUMA nodes.
+- **Guest RAM ceiling:** memory 0 holds at most 3 GiB less 1 MiB of RAM; past it, spill memories as NUMA nodes
+  (done, up to 16 GiB on the page), 2–19× slower to reach (docs/spill-memories.md).
   Chromium gives no catchable error when host RAM runs out (the renderer is OOM-killed), so guest
   RAM is sized against host RAM up front (the page: [docs/frontend.md](docs/frontend.md) "Errors").
 - **Linux arm64 has no V8 trap handler:** explicit bounds checks cost up to 27% there, which

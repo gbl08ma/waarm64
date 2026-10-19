@@ -1,0 +1,482 @@
+{
+ "ram": 6144,
+ "tabs": 8,
+ "mb": 384,
+ "period": 5000,
+ "sampleS": 20,
+ "reclaim": true,
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "date": "2026-10-19T12:55:57.488Z",
+ "boot": {
+  "n0.MemFree": 2252,
+  "n0.MemUsed": 645,
+  "n0.FilePages": 511,
+  "n0.AnonPages": 33,
+  "n0.Shmem": 4,
+  "n0.Slab": 38,
+  "n1.MemFree": 2985,
+  "n1.MemUsed": 23,
+  "n1.FilePages": 0,
+  "n1.AnonPages": 0,
+  "n1.Shmem": 0,
+  "n1.Slab": 5
+ },
+ "nodes": "online 0-1 distance 10 20 / 20 10 balancing 0 creds 1",
+ "reclaimSet": "vm.zone_reclaim_mode = 1",
+ "sway": "",
+ "samples": [
+  {
+   "stage": "base",
+   "nodes": {
+    "n0.MemFree": 1193,
+    "n0.MemUsed": 1705,
+    "n0.FilePages": 1107,
+    "n0.AnonPages": 485,
+    "n0.Shmem": 81,
+    "n0.Slab": 53,
+    "n1.MemFree": 2985,
+    "n1.MemUsed": 22,
+    "n1.FilePages": 0,
+    "n1.AnonPages": 0,
+    "n1.Shmem": 0,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 1031,
+    "anonN0": 367
+   },
+   "sweeps": {},
+   "webglFps": 21.1,
+   "webglMaxMs": 483,
+   "videoFps": 23.9,
+   "videoDroppedPerS": 5.44,
+   "mips": 186.1,
+   "tlbMissesPerS": 657212,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.2,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs1",
+   "nodes": {
+    "n0.MemFree": 798,
+    "n0.MemUsed": 2099,
+    "n0.FilePages": 1111,
+    "n0.AnonPages": 880,
+    "n0.Shmem": 84,
+    "n0.Slab": 53,
+    "n1.MemFree": 2985,
+    "n1.MemUsed": 22,
+    "n1.FilePages": 0,
+    "n1.AnonPages": 0,
+    "n1.Shmem": 0,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 1432,
+    "anonN0": 761
+   },
+   "sweeps": {
+    "tab1": 198
+   },
+   "webglFps": 24,
+   "webglMaxMs": 187,
+   "videoFps": 16.2,
+   "videoDroppedPerS": 2.43,
+   "mips": 260.2,
+   "tlbMissesPerS": 677490,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.2,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs2",
+   "nodes": {
+    "n0.MemFree": 383,
+    "n0.MemUsed": 2514,
+    "n0.FilePages": 1126,
+    "n0.AnonPages": 1277,
+    "n0.Shmem": 98,
+    "n0.Slab": 53,
+    "n1.MemFree": 2985,
+    "n1.MemUsed": 22,
+    "n1.FilePages": 0,
+    "n1.AnonPages": 0,
+    "n1.Shmem": 0,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 1830,
+    "anonN0": 1158
+   },
+   "sweeps": {
+    "tab2": 106,
+    "tab1": 144
+   },
+   "webglFps": 26.8,
+   "webglMaxMs": 449,
+   "videoFps": 22.4,
+   "videoDroppedPerS": 2.93,
+   "mips": 254.6,
+   "tlbMissesPerS": 765772,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.2,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs3",
+   "nodes": {
+    "n0.MemFree": 36,
+    "n0.MemUsed": 2861,
+    "n0.FilePages": 1131,
+    "n0.AnonPages": 1630,
+    "n0.Shmem": 104,
+    "n0.Slab": 53,
+    "n1.MemFree": 2933,
+    "n1.MemUsed": 74,
+    "n1.FilePages": 6,
+    "n1.AnonPages": 46,
+    "n1.Shmem": 6,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 2185,
+    "anonN0": 1512,
+    "allN1": 45,
+    "anonN1": 45
+   },
+   "sweeps": {
+    "tab2": 154,
+    "tab3": 199,
+    "tab1": 123
+   },
+   "webglFps": 26.9,
+   "webglMaxMs": 135,
+   "videoFps": 23.3,
+   "videoDroppedPerS": 3.96,
+   "mips": 277.3,
+   "tlbMissesPerS": 800967,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs4",
+   "nodes": {
+    "n0.MemFree": 23,
+    "n0.MemUsed": 2875,
+    "n0.FilePages": 1123,
+    "n0.AnonPages": 1646,
+    "n0.Shmem": 96,
+    "n0.Slab": 53,
+    "n1.MemFree": 2491,
+    "n1.MemUsed": 517,
+    "n1.FilePages": 25,
+    "n1.AnonPages": 425,
+    "n1.Shmem": 25,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 2202,
+    "anonN0": 1532,
+    "allN1": 424,
+    "anonN1": 422
+   },
+   "sweeps": {
+    "tab2": 163,
+    "tab3": 229,
+    "tab4": 1271,
+    "tab1": 306
+   },
+   "webglFps": 23.6,
+   "webglMaxMs": 139,
+   "videoFps": 24,
+   "videoDroppedPerS": 3.09,
+   "mips": 296.4,
+   "tlbMissesPerS": 769023,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.1,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs5",
+   "nodes": {
+    "n0.MemFree": 24,
+    "n0.MemUsed": 2873,
+    "n0.FilePages": 917,
+    "n0.AnonPages": 1852,
+    "n0.Shmem": 95,
+    "n0.Slab": 53,
+    "n1.MemFree": 2269,
+    "n1.MemUsed": 739,
+    "n1.FilePages": 48,
+    "n1.AnonPages": 619,
+    "n1.Shmem": 38,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 2411,
+    "anonN0": 1739,
+    "allN1": 619,
+    "anonN1": 616
+   },
+   "sweeps": {
+    "tab2": 230,
+    "tab3": 294,
+    "tab4": 791,
+    "tab5": 904,
+    "tab1": 120
+   },
+   "webglFps": 24.3,
+   "webglMaxMs": 219,
+   "videoFps": 24,
+   "videoDroppedPerS": 3.48,
+   "mips": 313.1,
+   "tlbMissesPerS": 815282,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.1,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs6",
+   "nodes": {
+    "n0.MemFree": 24,
+    "n0.MemUsed": 2873,
+    "n0.FilePages": 917,
+    "n0.AnonPages": 1850,
+    "n0.Shmem": 95,
+    "n0.Slab": 53,
+    "n1.MemFree": 1848,
+    "n1.MemUsed": 1160,
+    "n1.FilePages": 71,
+    "n1.AnonPages": 1017,
+    "n1.Shmem": 48,
+    "n1.Slab": 5
+   },
+   "firefox": {
+    "allN0": 2409,
+    "anonN0": 1737,
+    "allN1": 1019,
+    "anonN1": 1014
+   },
+   "sweeps": {
+    "tab2": 139,
+    "tab3": 174,
+    "tab4": 1616,
+    "tab5": 946,
+    "tab6": 1092,
+    "tab1": 144
+   },
+   "webglFps": 21.9,
+   "webglMaxMs": 489,
+   "videoFps": 24,
+   "videoDroppedPerS": 3.64,
+   "mips": 341,
+   "tlbMissesPerS": 809447,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.2,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs7",
+   "nodes": {
+    "n0.MemFree": 27,
+    "n0.MemUsed": 2871,
+    "n0.FilePages": 918,
+    "n0.AnonPages": 1850,
+    "n0.Shmem": 96,
+    "n0.Slab": 53,
+    "n1.MemFree": 1436,
+    "n1.MemUsed": 1572,
+    "n1.FilePages": 81,
+    "n1.AnonPages": 1418,
+    "n1.Shmem": 58,
+    "n1.Slab": 6
+   },
+   "firefox": {
+    "allN0": 2409,
+    "anonN0": 1737,
+    "allN1": 1421,
+    "anonN1": 1414
+   },
+   "sweeps": {
+    "tab2": 122,
+    "tab3": 194,
+    "tab4": 1176,
+    "tab5": 678,
+    "tab6": 992,
+    "tab7": 1084,
+    "tab1": 163
+   },
+   "webglFps": 23.4,
+   "webglMaxMs": 169,
+   "videoFps": 24,
+   "videoDroppedPerS": 3.9,
+   "mips": 364,
+   "tlbMissesPerS": 842723,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "tabs8",
+   "nodes": {
+    "n0.MemFree": 27,
+    "n0.MemUsed": 2871,
+    "n0.FilePages": 916,
+    "n0.AnonPages": 1850,
+    "n0.Shmem": 94,
+    "n0.Slab": 53,
+    "n1.MemFree": 1021,
+    "n1.MemUsed": 1986,
+    "n1.FilePages": 97,
+    "n1.AnonPages": 1818,
+    "n1.Shmem": 72,
+    "n1.Slab": 6
+   },
+   "firefox": {
+    "allN0": 2409,
+    "anonN0": 1737,
+    "allN1": 1823,
+    "anonN1": 1814
+   },
+   "sweeps": {
+    "tab2": 182,
+    "tab3": 122,
+    "tab4": 1032,
+    "tab5": 577,
+    "tab6": 1204,
+    "tab7": 804,
+    "tab8": 839,
+    "tab1": 248
+   },
+   "webglFps": 22.9,
+   "webglMaxMs": 87,
+   "videoFps": 24,
+   "videoDroppedPerS": 2.99,
+   "mips": 389.6,
+   "tlbMissesPerS": 878729,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.1,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "reopened",
+   "nodes": {
+    "n0.MemFree": 23,
+    "n0.MemUsed": 2875,
+    "n0.FilePages": 901,
+    "n0.AnonPages": 1864,
+    "n0.Shmem": 81,
+    "n0.Slab": 53,
+    "n1.MemFree": 1033,
+    "n1.MemUsed": 1975,
+    "n1.FilePages": 122,
+    "n1.AnonPages": 1817,
+    "n1.Shmem": 89,
+    "n1.Slab": 6
+   },
+   "firefox": {
+    "allN0": 2424,
+    "anonN0": 1748,
+    "allN1": 1824,
+    "anonN1": 1814
+   },
+   "sweeps": {
+    "tab2": 213,
+    "tab3": 646,
+    "tab4": 1906,
+    "tab5": 971,
+    "tab6": 1485,
+    "tab7": 1744,
+    "tab8": 1065,
+    "tab1": 510
+   },
+   "webglFps": 16.4,
+   "webglMaxMs": 415,
+   "videoFps": 24.5,
+   "videoDroppedPerS": 9.73,
+   "mips": 353.1,
+   "tlbMissesPerS": 736700,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.2,
+    "highMiB": 1021.9
+   }
+  },
+  {
+   "stage": "reopened2",
+   "nodes": {
+    "n0.MemFree": 27,
+    "n0.MemUsed": 2871,
+    "n0.FilePages": 897,
+    "n0.AnonPages": 1861,
+    "n0.Shmem": 78,
+    "n0.Slab": 53,
+    "n1.MemFree": 1006,
+    "n1.MemUsed": 2001,
+    "n1.FilePages": 126,
+    "n1.AnonPages": 1818,
+    "n1.Shmem": 93,
+    "n1.Slab": 6
+   },
+   "firefox": {
+    "allN0": 2424,
+    "anonN0": 1748,
+    "allN1": 1824,
+    "anonN1": 1814
+   },
+   "sweeps": {
+    "tab2": 127,
+    "tab3": 364,
+    "tab4": 932,
+    "tab5": 882,
+    "tab6": 856,
+    "tab7": 727,
+    "tab8": 1065,
+    "tab1": 266
+   },
+   "webglFps": 29.6,
+   "webglMaxMs": 81,
+   "videoFps": 0,
+   "videoDroppedPerS": 0,
+   "mips": 358.5,
+   "tlbMissesPerS": 685421,
+   "heap": {
+    "belowMiB": 0.1,
+    "reserveMiB": 1022,
+    "touchedMiB": 534.1,
+    "highMiB": 1021.9
+   }
+  }
+ ]
+}

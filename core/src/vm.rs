@@ -129,7 +129,7 @@ pub struct VmConfig {
     /// `xhci::CONFIG` (4 and 4) or 0, none.
     pub xhci: u64,
     /// The spill memories' sizes in bytes, memory 1 first (ABI 39,
-    /// docs/plans/spill-memories.md): RAM past memory 0, each in its own
+    /// docs/spill-memories.md): RAM past memory 0, each in its own
     /// memory and a CPU-less NUMA node to the guest; the first 0 ends the
     /// list. Each a multiple of 64 KiB, at most 4 GiB; placed by [`VmConfig::spill_layout`].
     pub spill: [u64; crate::mem::MAX_SPILL],

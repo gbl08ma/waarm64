@@ -269,7 +269,7 @@ The kinds are:
   - the length
   - the setup packet's 8 bytes (two words), for a control transfer
   - per segment, (RAM offset, length | memory << `SEG_MEM_SHIFT`): the memory is 0, or a spill memory
-    (docs/plans/spill-memories.md) whose offsets start at its own start. Immediate data is
+    (docs/spill-memories.md) whose offsets start at its own start. Immediate data is
     (0, length | `SEG_IMMEDIATE`) and two words of bytes.
 
   The direction is the setup's for a control transfer, the DCI's otherwise (odd is IN). Linux's

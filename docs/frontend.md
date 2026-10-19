@@ -194,7 +194,7 @@ Open on this page (for the page's own machine, **Start** while it's off, "Runnin
 Duplicate, Export the definition, Delete; then tabs:
 - **Settings:** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the
   rest goes to spill memories that the guest sees as NUMA nodes, slower to reach, and a note under the choice says
-  so: [plans/spill-memories.md](plans/spill-memories.md); a machine or definition with another size is shown as it
+  so: [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
   is), **Memory split (advanced)**, closed unless the machine has one: *Set the split myself* starts from the
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display. Save; on the machine running on this page it reads **Save and restart**

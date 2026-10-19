@@ -1,4 +1,4 @@
-// Guest RAM past memory 0 (docs/plans/spill-memories.md): Debian on the page with its RAM split by hand
+// Guest RAM past memory 0 (docs/spill-memories.md): Debian on the page with its RAM split by hand
 // (`?split=2560,1024,512`): memory 0, then two spill memories, CPU-less NUMA nodes. The Machine menu's note for a size
 // past memory 0 first; then one boot: the guest sees three nodes at the distances the DT gives, NUMA balancing is off through the SMBIOS credential, a tmpfs bound to node 1 keeps its data, and
 // direct disk reads into node 1 and writes out of it are intact (the virtio records name the spill memory). Opt-in with

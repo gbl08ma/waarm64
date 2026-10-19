@@ -5,7 +5,7 @@
 //!
 //! RAM is one block at guest physical `phys..phys + size`, which on wasm32 sits
 //! in the shared linear memory after the core state (layout A), and optionally
-//! **spill memories** past it (docs/plans/spill-memories.md): more RAM, each in
+//! **spill memories** past it (docs/spill-memories.md): more RAM, each in
 //! its own memory, which the core reaches through an accessor ([`Spill`]). A
 //! host address ([`Host`]) names its memory in its top byte: 0 is a plain
 //! pointer into memory 0, the only kind the fast paths ever hold.

@@ -13,7 +13,7 @@ import { clockOffset, Exit, instantiateThread, stallHook, unsigned, withPanic, t
 export type VcpuJob = {
   module: WebAssembly.Module;
   memory: WebAssembly.Memory;
-  /** The spill memories (docs/plans/spill-memories.md), memory 1 first. */
+  /** The spill memories (docs/spill-memories.md), memory 1 first. */
   spill: WebAssembly.Memory[];
   block: ThreadBlock;
   vm: number;

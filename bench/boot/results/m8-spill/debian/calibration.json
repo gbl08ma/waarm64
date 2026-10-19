@@ -1,0 +1,184 @@
+{
+ "ram": 6144,
+ "ncpus": 2,
+ "rounds": 1,
+ "mb": 64,
+ "chromium": "153.0.8010.52",
+ "date": "2026-10-19T12:07:00.633Z",
+ "boot": {
+  "n0.MemTotal": 2985656,
+  "n0.MemFree": 2797816,
+  "n0.MemUsed": 187840,
+  "n0.FilePages": 89824,
+  "n0.AnonPages": 32568,
+  "n0.Shmem": 2764,
+  "n0.KernelStack": 1700,
+  "n0.PageTables": 2852,
+  "n0.SecPageTables": 0,
+  "n0.Slab": 29100,
+  "n1.MemTotal": 3082360,
+  "n1.MemFree": 3053548,
+  "n1.MemUsed": 28812,
+  "n1.FilePages": 0,
+  "n1.AnonPages": 0,
+  "n1.Shmem": 0,
+  "n1.KernelStack": 8,
+  "n1.PageTables": 24,
+  "n1.SecPageTables": 0,
+  "n1.Slab": 4664
+ },
+ "nodes": "online 0-1 cpus0 0-1 cpus1  distance 10 20 / 20 10 balancing 0 creds 1",
+ "dmesg": [
+  "[    0.000000] OF: NUMA: parsing numa-distance-map-v1",
+  "[    0.000000] NUMA: Initialized distance table, cnt=2",
+  "[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x00000000ffcfffff]",
+  "[    0.000000] Initmem setup node 1 [mem 0x0000000100000000-0x00000001c00fffff]",
+  "[    0.000000] On node 1, zone Normal: 768 pages in unavailable ranges",
+  "[    0.000000] On node 1, zone Normal: 32512 pages in unavailable ranges",
+  "[    0.000000] Fallback order for Node 0: 0 1",
+  "[    0.000000] Fallback order for Node 1: 1 0",
+  "[    0.010090] mempolicy: Enabling automatic NUMA balancing. Configure with numa_balancing= or the kernel.numa_balancing sysctl",
+  "[    0.136189] node 0 deferred pages initialised in 24ms",
+  "[    0.582675] node 1 deferred pages initialised in 372ms",
+  "[    2.002870] Demotion targets for Node 0: null",
+  "[    2.003110] Demotion targets for Node 1: null"
+ ],
+ "data": {
+  "n0.MemTotal": 2985656,
+  "n0.MemFree": 2678704,
+  "n0.MemUsed": 306952,
+  "n0.FilePages": 173356,
+  "n0.AnonPages": 28052,
+  "n0.Shmem": 85340,
+  "n0.KernelStack": 1412,
+  "n0.PageTables": 1228,
+  "n0.SecPageTables": 0,
+  "n0.Slab": 29044,
+  "n1.MemTotal": 3082360,
+  "n1.MemFree": 2966860,
+  "n1.MemUsed": 115500,
+  "n1.FilePages": 82576,
+  "n1.AnonPages": 0,
+  "n1.Shmem": 82576,
+  "n1.KernelStack": 8,
+  "n1.PageTables": 24,
+  "n1.SecPageTables": 0,
+  "n1.Slab": 4664
+ },
+ "samples": {
+  "zero": {
+   "n0": [
+    399
+   ],
+   "n1": [
+    2513
+   ]
+  },
+  "copy": {
+   "n0": [
+    219
+   ],
+   "n1": [
+    842
+   ]
+  },
+  "sha256": {
+   "n0": [
+    448
+   ],
+   "n1": [
+    2578
+   ]
+  },
+  "gzip": {
+   "n0": [
+    6973
+   ],
+   "n1": [
+    128214
+   ]
+  },
+  "sort": {
+   "n0": [
+    778
+   ],
+   "n1": [
+    5636
+   ]
+  },
+  "perl": {
+   "n0": [
+    1195
+   ],
+   "n1": [
+    12363
+   ]
+  }
+ },
+ "summary": {
+  "zero": {
+   "n0": 399,
+   "n0Iqr": 0,
+   "n1": 2513,
+   "n1Iqr": 0,
+   "ratio": 6.3
+  },
+  "copy": {
+   "n0": 219,
+   "n0Iqr": 0,
+   "n1": 842,
+   "n1Iqr": 0,
+   "ratio": 3.84
+  },
+  "sha256": {
+   "n0": 448,
+   "n0Iqr": 0,
+   "n1": 2578,
+   "n1Iqr": 0,
+   "ratio": 5.75
+  },
+  "gzip": {
+   "n0": 6973,
+   "n0Iqr": 0,
+   "n1": 128214,
+   "n1Iqr": 0,
+   "ratio": 18.39
+  },
+  "sort": {
+   "n0": 778,
+   "n0Iqr": 0,
+   "n1": 5636,
+   "n1Iqr": 0,
+   "ratio": 7.24
+  },
+  "perl": {
+   "n0": 1195,
+   "n0Iqr": 0,
+   "n1": 12363,
+   "n1Iqr": 0,
+   "ratio": 10.35
+  }
+ },
+ "end": {
+  "n0.MemTotal": 2985656,
+  "n0.MemFree": 2707456,
+  "n0.MemUsed": 278200,
+  "n0.FilePages": 177844,
+  "n0.AnonPages": 28104,
+  "n0.Shmem": 85340,
+  "n0.KernelStack": 1380,
+  "n0.PageTables": 1212,
+  "n0.SecPageTables": 0,
+  "n0.Slab": 29060,
+  "n1.MemTotal": 3082360,
+  "n1.MemFree": 2959940,
+  "n1.MemUsed": 122420,
+  "n1.FilePages": 82576,
+  "n1.AnonPages": 0,
+  "n1.Shmem": 82576,
+  "n1.KernelStack": 8,
+  "n1.PageTables": 24,
+  "n1.SecPageTables": 0,
+  "n1.Slab": 4672
+ }
+}

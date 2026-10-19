@@ -17,7 +17,7 @@
 //! (`bench/spike/memory/REPORT.md` §4), stored inverted: all ones is memory 0.
 //! `host = va + addend`, a [`Host`] (a spill memory's index in its top byte).
 //! Every inline compare expects memory 0's all ones, so a spill memory's entry
-//! misses there; [`Mmu::miss`] recognises it (docs/plans/spill-memories.md).
+//! misses there; [`Mmu::miss`] recognises it (docs/spill-memories.md).
 //!
 //! Entries carry no ASID: the arrays only ever hold global entries and the
 //! current ASID's non-global (nG) ones. An ASID change or `TLBI ASIDE1` drops

@@ -1024,7 +1024,7 @@ fn id_aa64mmfr2_says_e0pd_with_the_feature() {
 }
 
 /// Loads, stores, exclusives, an LSE atomic, DC ZVA and instruction fetch on a
-/// spill memory (docs/plans/spill-memories.md), with the MMU off, in the
+/// spill memory (docs/spill-memories.md), with the MMU off, in the
 /// interpreter and in the block interpreter (the JIT's dispatcher).
 #[test]
 fn spill_memory_end_to_end() {

@@ -67,7 +67,7 @@ export type MachineRecord = {
   ramMiB: number;
   /**
    * The RAM's split as the user set it, MiB: memory 0 first, then each spill memory (a NUMA node for the guest;
-   * docs/plans/spill-memories.md), summing to `ramMiB`. Absent: the automatic one (web/app/machine.ts `ramSplitMiB`).
+   * docs/spill-memories.md), summing to `ramMiB`. Absent: the automatic one (web/app/machine.ts `ramSplitMiB`).
    */
   ramSplit?: number[];
   display: Display;

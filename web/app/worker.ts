@@ -50,6 +50,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     void profile(m.on);
   } else if (m.type === 'timeline') {
     void timeline(m.on);
+  } else if (m.type === 'heap') {
+    if (vm) post({ type: 'heap', heap: vm.heapUse() });
   } else if (m.type === 'stop') {
     stopping = true;
     void (async () => {
@@ -218,7 +220,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
   const ncpus = h.ncpus;
   if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', `${what}: its processor count isn't readable.\nStart boots ${machine.label} normally.`);
   const specs = here.map((s) => device(s, m, machine));
-  // Memory 0's RAM, and the spill memories' (docs/plans/spill-memories.md), as they were.
+  // Memory 0's RAM, and the spill memories' (docs/spill-memories.md), as they were.
   const ramSize = Number(h.ramSize);
   const spill = h.spill === undefined ? [] : h.spill;
   if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || !Array.isArray(spill) || splitError(ramSize, spill as number[])) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
@@ -358,7 +360,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? true);
   let restore: Restore | undefined;
   let specs: DeviceSpec[] | undefined;
-  // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/plans/spill-memories.md): the
+  // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
   // user's split, else the automatic one; a snapshot's own.
   let split = m.ramSplit ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20);
   if (snapshot) {

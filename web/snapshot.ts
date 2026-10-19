@@ -17,7 +17,7 @@ import { ABI, bootVm, Exit, type BootOptions, type ConsoleInput, type Restore, t
 
 /**
  * Each memory's first RAM chunk in the file, for memories of `sizes` bytes (memory 0's RAM, then the spill memories,
- * docs/plans/spill-memories.md): memory 0's at 0, each next one at the whole chunk after the one before ends.
+ * docs/spill-memories.md): memory 0's at 0, each next one at the whole chunk after the one before ends.
  */
 export function ramStarts(sizes: number[]): number[] {
   const starts: number[] = [];

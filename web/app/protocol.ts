@@ -135,6 +135,8 @@ export type ToWorker =
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
   | { type: 'profile'; on: boolean }
   /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline`. */
+  /** Benchmarks: what the core's heap has touched (web/vm.ts `heapUse`), answered by `heap`. */
+  | { type: 'heap' }
   | { type: 'timeline'; on: boolean };
 
 /**
@@ -198,6 +200,8 @@ export type FromWorker =
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
   | { type: 'profile'; samples: [string, number][] }
   /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
+  /** `heap`'s answer (web/vm.ts `heapUse`). */
+  | { type: 'heap'; heap: { belowBytes: number; reserveBytes: number; touchedBytes: number; highBytes: number; buckets: number[] } }
   | { type: 'timeline'; timeline: Timeline }
   | { type: 'stopped' };
 

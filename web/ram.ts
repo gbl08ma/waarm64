@@ -1,10 +1,10 @@
-// Guest RAM as the device backends see it (docs/plans/spill-memories.md): memory 0's RAM, then each spill memory,
+// Guest RAM as the device backends see it (docs/spill-memories.md): memory 0's RAM, then each spill memory,
 // and the segments the core posts into them; and how a machine's RAM splits into them. A small module of its own:
 // the GPU worker and the page's main thread import it.
 
 /** A guest buffer: `len` bytes at `off` in memory `mem` (0: memory 0's RAM, from its first byte; k: spill memory k, ABI 40). */
 export type Segment = { off: number; len: number; mem: number };
-/** Guest RAM by memory: memory 0's RAM, then each spill memory (docs/plans/spill-memories.md). */
+/** Guest RAM by memory: memory 0's RAM, then each spill memory (docs/spill-memories.md). */
 export type Ram = Uint8Array[];
 /** A segment's bytes, in place. */
 export const bytes = (ram: Ram, s: Segment) => ram[s.mem].subarray(s.off, s.off + s.len);
@@ -32,10 +32,9 @@ export function ramLayout(ramSize: number, spill: number[] = []): RamLayout {
 }
 
 /**
- * The least heap a fixed memory gets (docs/backlog.md "The core's heap in a fixed memory", stage 1): the
- * reserve is what 4 GiB leaves after the scratch page, RAM and fw_cfg's files, capped at `HEAP_RESERVE` (web/vm.ts)
- * and never under this. 1 GiB until the heap's peak under a heavy load is measured on the dev VM, so
- * today the reserve is always 1 GiB.
+ * The least heap a fixed memory gets (docs/spill-memories.md "The heap floor"): the reserve is what 4 GiB leaves
+ * after the scratch page, RAM and fw_cfg's files, capped at `HEAP_RESERVE` (web/vm.ts) and never under this. The
+ * heap reaches ~540–600 MiB under a heavy 4-vCPU load, so 1 GiB, and the reserve is always 1 GiB.
  */
 export const HEAP_FLOOR = 1 << 30;
 
@@ -52,7 +51,7 @@ export const MAX_SPILL = 8;
 
 /**
  * The automatic split of `total` bytes of guest RAM (a 64 KiB multiple): memory 0 as large as it goes
- * ({@link MAX_MEMORY0_RAM}), then spill memories of up to 4 GiB (docs/plans/spill-memories.md).
+ * ({@link MAX_MEMORY0_RAM}), then spill memories of up to 4 GiB (docs/spill-memories.md).
  */
 export function splitRam(total: number): { ramSize: number; spill: number[] } {
   const ramSize = Math.min(total, MAX_MEMORY0_RAM);

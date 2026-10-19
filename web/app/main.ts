@@ -243,7 +243,7 @@ const ramdiskMiB = () => {
 const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
 let ncpus = Number(params.get('ncpus')) || stored?.record.ncpus || (CPU_CHOICES.includes(settings().ncpus!) ? settings().ncpus! : 0) || defaultCpus(navigator.hardwareConcurrency || 4);
 let ramMiB = Number(params.get('ram')) || stored?.record.ramMiB || (RAM_CHOICES.includes(settings().ramMiB!) ? settings().ramMiB! : 0) || spec.ramMiB;
-/** The RAM's split as the user set it, MiB, memory 0 first (docs/plans/spill-memories.md): `?split=3071,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own. */
+/** The RAM's split as the user set it, MiB, memory 0 first (docs/spill-memories.md): `?split=3071,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own. */
 const splitParam = params.get('split')?.split(',').map(Number);
 let ramSplit = splitParam && !ramSplitError(splitParam) ? splitParam : params.has('ram') ? undefined : stored?.record.ramSplit;
 if (ramSplit) ramMiB = ramSplit.reduce((a, b) => a + b, 0);
@@ -386,12 +386,14 @@ type Run = { worker: Worker; input: Input; serial: MessagePort; display: Message
 /**
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
  * `window.__webpcProfile(on)` starting and stopping the guest PC sampler (the histogram lands in `window.__profile`),
- * `window.__webpcTimeline(on)` the vCPU timeline (in `window.__timeline`).
+ * `window.__webpcTimeline(on)` the vCPU timeline (in `window.__timeline`), `window.__webpcHeap()` what the core's heap
+ * touched (in `window.__heap`).
  */
 const benchHooks = params.has('displaystats') || params.has('snd'); // ?snd= (sound measurements) wants the serial log and status too
 if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __webpcTimeline?: (on: boolean) => void }).__webpcTimeline = (on) => run?.worker.postMessage({ type: 'timeline', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
+if (benchHooks) (window as unknown as { __webpcHeap?: () => void }).__webpcHeap = () => run?.worker.postMessage({ type: 'heap' } satisfies ToWorker);
 /** `?avprobe`: when the screen's centre turned bright (ms on this page's clock), for bench/audio/avsync.ts. */
 const flashed = (t: number) => ((window as unknown as { __flashes?: number[] }).__flashes ??= []).push(t - performance.timeOrigin);
 /**
@@ -596,6 +598,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       (window as unknown as { __profile?: [string, number][] }).__profile = m.samples;
     } else if (m.type === 'timeline') {
       (window as unknown as { __timeline?: unknown }).__timeline = m.timeline;
+    } else if (m.type === 'heap') {
+      (window as unknown as { __heap?: unknown }).__heap = m.heap;
     } else if (m.type === 'phase') {
       ui.boot.line = m.text;
       ui.boot.progress = undefined;

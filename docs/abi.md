@@ -15,7 +15,7 @@ Design notes for an ABI change go in this file before the code.
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
   slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
   size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
-  module `web/spill.ts` makes over the spill memories (traps with none; [plans/spill-memories.md](plans/spill-memories.md)).
+  module `web/spill.ts` makes over the spill memories (traps with none; [spill-memories.md](spill-memories.md)).
   `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
   `jit.bind(instance)`.
 - **More instances on the same memory** (one per worker, ABI 20): the core exports
@@ -34,7 +34,7 @@ Design notes for an ABI change go in this file before the code.
   accesses are bounds-checked explicitly: [v8.md](v8.md) "Bounds checks"). The memory is created
   with `maximum` = the scratch page + RAM + fw_cfg's files + the heap reserve (which holds the core's
   static data and stack too): what 4 GiB leaves after the rest, capped at `HEAP_RESERVE` (1 GiB) and never
-  under `HEAP_FLOOR` (1 GiB until it is measured: docs/backlog.md "The core's heap in a fixed memory"), so
+  under `HEAP_FLOOR` (1 GiB: the heap reaches ~600 MiB, [spill-memories.md](spill-memories.md) "The heap floor"), so
   memory 0 holds at most `MAX_MEMORY0_RAM` (3 GiB less 1 MiB) of RAM and `splitRam()` puts the rest in spill memories; after the host has grown its parts, `heap_reserve(pages) ->
   pages` allocates and frees one block that grows the memory to within two pages of `pages`. The
   allocator keeps what is freed (it can't shrink a wasm memory), so the core's later allocations
@@ -102,7 +102,7 @@ Design notes for an ABI change go in this file before the code.
 | `mem_pages` | the memory's size in 64 KiB pages when the host made it fixed (above, "A fixed-size memory"): JIT modules import it with exact limits; 0: growable; over 65536 is refused (32) |
 | `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
 | `xhci` | an xHCI ([usb.md](usb.md)): its USB 2 ports \| USB 3 ports << 8, `0x404` (4 and 4, the only counts built; `vm_new` refuses others) or 0, none (38) |
-| `spill` (8 words) | the spill memories' sizes, memory 1 first, the first 0 ending the list: multiples of 64 KiB, at most 4 GiB each; the core places each at the 1 GiB boundary past the RAM before it (`VmConfig::spill_layout`), a NUMA node in the DT, and reaches it through the `ram` imports ([plans/spill-memories.md](plans/spill-memories.md)). Natively `vm_new` refuses them (a Rust runner passes its own `Mem`) (39) |
+| `spill` (8 words) | the spill memories' sizes, memory 1 first, the first 0 ending the list: multiples of 64 KiB, at most 4 GiB each; the core places each at the 1 GiB boundary past the RAM before it (`VmConfig::spill_layout`), a NUMA node in the DT, and reaches it through the `ram` imports ([spill-memories.md](spill-memories.md)). Natively `vm_new` refuses them (a Rust runner passes its own `Mem`) (39) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1 and 2 unless told `rng: false`, `e0pd: false` (the bare-metal tests are); the ABI's 0 means none.

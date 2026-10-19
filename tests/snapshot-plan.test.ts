@@ -87,7 +87,7 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   assert.equal((await overlayMeta(name)).generation, 3, 'a replaced overlay goes on from its generation (2), never back to one a snapshot pinned');
 });
 
-// Spill memories (docs/plans/spill-memories.md): their RAM is in the file after memory 0's, each from a whole chunk
+// Spill memories (docs/spill-memories.md): their RAM is in the file after memory 0's, each from a whole chunk
 // (the first spill memory here ends mid-chunk), and comes back into the same layout; another layout is refused.
 test("a snapshot carries the spill memories' RAM, and restores only onto the same ones", async () => {
   const { ramStarts } = await import('../web/snapshot.ts');

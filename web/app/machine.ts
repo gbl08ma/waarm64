@@ -145,7 +145,7 @@ export const defaultCpus = (cores: number) => Math.max(1, Math.min(4, cores - 2)
 /**
  * The RAM the page offers, MiB (a transient machine's Machine menu, a stored one's Settings). Up to
  * `MEMORY0_MIB` it all lives in memory 0, beside the core; past it the rest goes to spill memories, which the guest
- * sees as NUMA nodes (docs/plans/spill-memories.md). 3 GiB isn't offered: it would spill 1 MiB.
+ * sees as NUMA nodes (docs/spill-memories.md). 3 GiB isn't offered: it would spill 1 MiB.
  */
 export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 4096, 6144, 8192, 12288, 16384];
 /** The most RAM memory 0 holds, MiB (web/ram.ts `MAX_MEMORY0_RAM`). */

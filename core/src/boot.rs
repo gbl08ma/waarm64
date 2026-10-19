@@ -43,7 +43,7 @@ pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
 /// bank's size in the firmware configuration (docs/abi.md "M8 phase B"), which
 /// also adds fw_cfg and ends `/memory` below the framebuffer and the DTB space;
 /// `xhci` the `generic-xhci` node (docs/usb.md); `spill` the spill memories
-/// as (PA, size), each a CPU-less NUMA node (docs/plans/spill-memories.md).
+/// as (PA, size), each a CPU-less NUMA node (docs/spill-memories.md).
 #[allow(clippy::too_many_arguments)]
 pub fn dtb(
     ram_size: u64,
@@ -388,7 +388,7 @@ mod tests {
     /// tests/dtb/webpc.dts (two vCPUs, the RTC, the xHCI; a round trip through the reference
     /// tool) and webpc-firmware.dts (the firmware configuration: one vCPU, the
     /// flash bank, fw_cfg) and webpc-numa.dts (the firmware configuration with two
-    /// spill memories, docs/plans/spill-memories.md). Set UPDATE_DTS=1 to rewrite
+    /// spill memories, docs/spill-memories.md). Set UPDATE_DTS=1 to rewrite
     /// them after an intended change.
     #[test]
     fn dtb_round_trips_through_dtc() {
