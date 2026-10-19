@@ -17,6 +17,7 @@ import { VirglRenderer, readbackOf, toHalf } from '../web/virgl-renderer.ts';
 import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
 import { encodeRecord, encodeTrace, readTrace } from '../web/virgl-trace.ts';
+import { ramLayout } from '../web/ram.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
 const fixture = (name: string) => {
@@ -313,7 +314,7 @@ test('virgl renderer: depth textures: Z24S8 goes up with depth in the high bits,
   const gl = mockGl();
   gl.keepLog = true;
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
   for (const id of [1, 2]) {
     r.createResource({ id, target: 2, format: 19, bind: 8, width: 2, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
@@ -338,7 +339,7 @@ test('virgl renderer: an upload to DEPTH32F_STENCIL8, which WebGL2 takes no data
   const gl = mockGl();
   gl.keepLog = true;
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
   r.createResource({ id: 1, target: 2, format: 126, bind: 8, width: 2, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
   r.attach(1, 1);
@@ -367,7 +368,7 @@ test('virgl renderer: integer formats blit through GL\'s blit, and RGB10_A2UI re
   const gl = mockGl();
   gl.keepLog = true;
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
   const [a8, rg8] = [byName('R8G8B8A8_SINT'), byName('R8G8_SINT')];
   r.createResource({ id: 1, target: 2, format: a8.id, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
@@ -386,10 +387,10 @@ test('virgl renderer: a transfer\'s stride 0 is its level\'s pitch, as vrend rea
   gl.keepLog = true;
   const errors: string[] = [];
   const ram = new Uint8Array(64 * 32 * 4);
-  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m) });
   r.createContext(1);
   r.createResource({ id: 1, target: 2, format: 2, bind: 8, width: 64, height: 32, depth: 1, arraySize: 1, lastLevel: 1, samples: 0, flags: 0 });
-  r.attachBacking(1, [{ off: 0, len: ram.length }]);
+  r.attachBacking(1, [{ off: 0, len: ram.length, mem: 0 }]);
   // An 8x4 box at (16, 8) of level 0, and of level 1 (32 wide), from the backing laid out as the whole level.
   assert.ok(r.transfer(1, 1, 0, { x: 16, y: 8, z: 0, w: 8, h: 4, d: 1 }, (8 * 64 + 16) * 4, 0, 0, true));
   assert.ok(r.transfer(1, 1, 1, { x: 4, y: 2, z: 0, w: 8, h: 4, d: 1 }, (2 * 32 + 4) * 4, 0, 0, true));
@@ -402,7 +403,7 @@ test('virgl renderer: indices start at the index buffer\'s offset, and the large
   const gl = mockGl();
   gl.keepLog = true;
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
   const buffer = (id: number, width: number, bind: number) => { r.createResource({ id, target: 0, format: 64, bind, width, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 }); r.attach(1, id); };
   buffer(1, 256 * 16, 0x10);
@@ -456,11 +457,11 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
   (gl as unknown as { getQueryParameter: unknown }).getQueryParameter = (_q: unknown, p: number) => (p === E.QUERY_RESULT_AVAILABLE ? available : 1);
   const ram = new Uint8Array(64);
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m) });
   r.createContext(1);
   r.createResource({ id: 5, target: 0, format: 64, bind: 0x800, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
   r.attach(1, 5);
-  r.attachBacking(5, [{ off: 0, len: 64 }]);
+  r.attachBacking(5, [{ off: 0, len: 64, mem: 0 }]);
   const answered: string[] = [];
   const gate = new FenceGate<string>((f) => answered.push(f));
   gate.fence('before', r.queriesSettled());
@@ -486,11 +487,11 @@ test('virgl renderer: a query destroyed before its result holds no fence (dEQP-G
   (gl as unknown as { getQueryParameter: unknown }).getQueryParameter = (_q: unknown, p: number) => (p === E.QUERY_RESULT_AVAILABLE ? false : null);
   const ram = new Uint8Array(64);
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m) });
   r.createContext(1);
   r.createResource({ id: 5, target: 0, format: 64, bind: 0x800, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
   r.attach(1, 5);
-  r.attachBacking(5, [{ off: 0, len: 64 }]);
+  r.attachBacking(5, [{ off: 0, len: 64, mem: 0 }]);
   const answered: string[] = [];
   const gate = new FenceGate<string>((f) => answered.push(f));
   // An occlusion predicate begun and ended, then destroyed (DESTROY_OBJECT) with its result pending.
@@ -507,7 +508,7 @@ test('virgl renderer: a multisampled source is resolved before a conversion or a
   const gl = mockGl();
   gl.keepLog = true;
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
   const byName = (n: string) => [...FORMATS.values()].find((f) => f.name === n)!.id;
   const tex = (id: number, format: string, samples: number, bind = 2) => { r.createResource({ id, target: 2, format: byName(format), bind, width: 8, height: 8, depth: 1, arraySize: 1, lastLevel: 0, samples, flags: 0 }); r.attach(1, id); };
@@ -535,7 +536,7 @@ test('virgl renderer: the sample mask Mesa makes from glSampleCoverage maps back
   const gl = mockGl();
   gl.keepLog = true;
   const errors: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
   r.createResource({ id: 1, target: 0, format: 64, bind: 0x10, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
   r.createResource({ id: 3, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 4, flags: 0 });
@@ -584,7 +585,7 @@ test('virgl renderer: the sample mask Mesa makes from glSampleCoverage maps back
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {
   const ram = new Uint8Array(1 << 20);
   const done: number[] = [];
-  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(16), changeConfig: () => {}, untaken: () => 0, features: () => 0n };
+  const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete: (w0: number) => done.push(w0), config: () => new Uint8Array(16), changeConfig: () => {}, untaken: () => 0, features: () => 0n };
   let release!: () => void;
   const calls: HostCall[] = [];
   const host: VirglHost = { call: (c) => calls.push(c), fence: () => new Promise<void>((r) => { release = r; }) };
@@ -597,7 +598,7 @@ test('virgl device: a fenced command\'s reply waits for the host, and replies st
     v.setUint32(at + 4, flags, true);
     v.setUint32(at + 16, ctxId, true);
     fields.forEach((f, k) => v.setUint32(at + 24 + 4 * k, f, true));
-    return { queue: 0, w0: at, read: [{ off: at, len: 24 + 4 * fields.length }], write: [{ off: at + 2048, len: 64 }] };
+    return { queue: 0, w0: at, read: [{ off: at, len: 24 + 4 * fields.length, mem: 0 }], write: [{ off: at + 2048, len: 64, mem: 0 }] };
   };
   assert.equal(b.request(put(0, 0x200, 0, 5, [0, 0])), 24); // CTX_CREATE: at once
   // SUBMIT_3D with a fence (one NOP), then GET_DISPLAY_INFO: both wait.
@@ -646,7 +647,7 @@ test('virgl snapshots: contexts that never submitted are saved and made again; c
   const ram = new Uint8Array(1 << 16);
   const make = (caps?: Uint8Array) => {
     const calls: HostCall[] = [];
-    const g = new Gpu(() => ram, ram.length, { width: 640, height: 480, virgl: true, caps });
+    const g = new Gpu(() => [ram], ramLayout(ram.length), { width: 640, height: 480, virgl: true, caps });
     g.host = { call: (c) => calls.push(c), fence: () => undefined };
     return { g, calls };
   };
@@ -690,7 +691,7 @@ test('virgl snapshots: contexts that never submitted are saved and made again; c
 
 test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {
   const ram = new Uint8Array(1 << 16);
-  const g = new Gpu(() => ram, ram.length, { width: 640, height: 480, virgl: true });
+  const g = new Gpu(() => [ram], ramLayout(ram.length), { width: 640, height: 480, virgl: true });
   // The renderer holds B8G8R8A8 bytes: pixel k is (B, G, R, A) = (k, 1, 2, 200).
   const stored = new Uint8Array(64 * 64 * 4).map((_, i) => (i % 4 === 0 ? (i / 4) & 0xff : i % 4 === 3 ? 200 : i % 4));
   let release!: () => void;

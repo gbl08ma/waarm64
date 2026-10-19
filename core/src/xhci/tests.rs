@@ -2,6 +2,7 @@
 //! what a backend answers, through the shared block's rings.
 
 use super::*;
+use crate::vm::RAM_BASE;
 
 pub(super) const DCBAA: u64 = RAM_BASE + 0x1000;
 pub(super) const CMD: u64 = RAM_BASE + 0x2000;

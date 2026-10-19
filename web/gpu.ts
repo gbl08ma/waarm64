@@ -11,7 +11,7 @@
 // backing pages are guest-physical addresses inside the command's payload, which the core's chain
 // checks don't cover: every entry is checked to lie in RAM before it is kept, and a transfer
 // reads only through those entries.
-import { gather, scatter, type Ctx, type Request } from './devices.ts';
+import { bytes, gather, locate, scatter, type Ctx, type Ram, type RamLayout, type Request, type Segment } from './devices.ts';
 import { EDID_MAX, EDID_MIN, edid } from './edid.ts';
 import { VirglStats, virglCaps, walk } from './virgl.ts';
 import { FORMATS as VIRGL_FORMATS, boxBytes } from './virgl-formats.ts';
@@ -19,7 +19,6 @@ import { encodeRecord } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
 import { capsBacked } from './virgl-caps.ts';
 
-const RAM_BASE = 0x4000_0000;
 
 // Command and response types (virtio 1.2 §5.7.6).
 const GET_DISPLAY_INFO = 0x100, RESOURCE_CREATE_2D = 0x101, RESOURCE_UNREF = 0x102, SET_SCANOUT = 0x103;
@@ -76,8 +75,8 @@ type Resource = {
   pixels: Uint8Array;
   /** Made with a host or `GpuHooks.raw`: `pixels` are copied as they are, for a screen that swizzles them in its draw. */
   raw?: boolean;
-  /** The guest's pages, as RAM offsets (`addr` − RAM_BASE) and lengths; null until attached. */
-  backing: { off: number; len: number }[] | null;
+  /** The guest's pages, as segments of its RAM (memory, offset, length); null until attached. */
+  backing: Segment[] | null;
   /** Shown on the scanout: its alpha is 255 (a canvas takes the pixels as they are). */
   opaque?: boolean;
   /** A transfer changed the pixels since the whole scanout was last given to the page: a flush has something to show. */
@@ -219,15 +218,15 @@ export class Gpu {
   /** A fenced command's wait for the host (taken by the backend, which holds the reply until it resolves). */
   private wait: Promise<void> | undefined;
   private capsets: ReturnType<typeof capsets>;
-  private ram: () => Uint8Array;
-  private ramSize: number;
+  private ram: () => Ram;
+  private layout: RamLayout;
   private o: GpuOptions;
   hooks: GpuHooks = {};
   /** Raises the display event (set by the backend): the config changed. */
   raise: (() => void) | undefined;
 
-  constructor(ram: () => Uint8Array, ramSize: number, o: GpuOptions) {
-    [this.ram, this.ramSize, this.o] = [ram, ramSize, o];
+  constructor(ram: () => Ram, layout: RamLayout, o: GpuOptions) {
+    [this.ram, this.layout, this.o] = [ram, layout, o];
     this.wanted = { width: clampSize(o.width), height: clampSize(o.height) };
     [this.width, this.height] = [this.wanted.width, this.wanted.height];
     this.capsets = capsets(o.caps ?? virglCaps(2));
@@ -351,13 +350,11 @@ export class Gpu {
         if (res.backing) return this.reply(ERR_UNSPEC, cmd, room);
         if (n === 0 || n > MAX_ENTRIES || cmd.length < HDR + 8 + 16 * n) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const backing = [];
-        const end = BigInt(RAM_BASE) + BigInt(this.ramSize);
         for (let k = 0; k < n; k++) {
           const at = HDR + 8 + 16 * k;
-          const addr = v.getBigUint64(at, true);
-          const len = BigInt(v.getUint32(at + 8, true));
-          if (addr < BigInt(RAM_BASE) || addr > end || len > end - addr) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
-          backing.push({ off: Number(addr) - RAM_BASE, len: Number(len) });
+          const seg = locate(this.layout, v.getBigUint64(at, true), BigInt(v.getUint32(at + 8, true)));
+          if (!seg) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+          backing.push(seg);
         }
         res.backing = backing;
         if (res.three) this.host?.call({ t: 'backing', id, backing });
@@ -723,9 +720,9 @@ export class Gpu {
         for (let left = rowLen; left > 0;) {
           while (at >= segStart + backing[seg].len) segStart += backing[seg++].len;
           const b = backing[seg];
-          const s0 = b.off + (at - segStart);
-          const n = Math.min(left, b.len - (at - segStart));
-          px.set(ram.subarray(s0, s0 + n), d);
+          const s0 = at - segStart;
+          const n = Math.min(left, b.len - s0);
+          px.set(bytes(ram, b).subarray(s0, s0 + n), d);
           d += n;
           left -= n;
           at += n;
@@ -737,8 +734,8 @@ export class Gpu {
     // with the channels swapped in registers, ~4 times the bytewise loop (a console scrolling at full screen
     // sends hundreds of these a second, and the guest waits for each).
     const swap = res.format === 1 || res.format === 2;
-    if ((swap || res.format === 67 || res.format === 134) && ram.byteOffset % 4 === 0 && offset % 4 === 0 && backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)) {
-      const src = new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2);
+    if ((swap || res.format === 67 || res.format === 134) && ram.every((m) => m.byteOffset % 4 === 0) && offset % 4 === 0 && backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)) {
+      const srcs = ram.map((m) => new Uint32Array(m.buffer, m.byteOffset, m.length >>> 2));
       const dst = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >>> 2);
       const opaque = res.opaque ? 0xff000000 : 0;
       const words = r.w;
@@ -749,6 +746,7 @@ export class Gpu {
         let d = (r.y + y) * res.width + r.x;
         for (let left = words; left > 0;) {
           const b = backing[seg];
+          const src = srcs[b.mem];
           const s0 = (b.off + (at - segStart)) >>> 2;
           const n = Math.min(left, (b.len - (at - segStart)) >>> 2);
           if (swap) for (let k = 0; k < n; k++) {
@@ -818,7 +816,7 @@ export class Gpu {
     const c = this.cursorImage;
     return {
       width: this.width, height: this.height, flushes: this.flushes,
-      resources: [...this.resources.values()].map((r) => ({ id: r.id, format: r.format, width: r.width, height: r.height, backing: r.backing?.map((b) => [b.off, b.len]) ?? null })),
+      resources: [...this.resources.values()].map((r) => ({ id: r.id, format: r.format, width: r.width, height: r.height, backing: r.backing?.map((b) => (b.mem ? [b.off, b.len, b.mem] : [b.off, b.len])) ?? null })),
       scanout: s ? { id: s.id, ...s.rect } : null,
       screen,
       trace: this.trace,
@@ -867,7 +865,7 @@ export class Gpu {
     this.bounce = false;
     this.trace = t.trace ?? [];
     for (const r of t.resources) {
-      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null, raw: this.raw };
+      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len, mem = 0]) => ({ off, len, mem })) ?? null, raw: this.raw };
       this.total += res.pixels.length;
       this.resources.set(res.id, res);
       if (res.backing) this.transfer(res, { x: 0, y: 0, w: res.width, h: res.height }, 0);
@@ -923,7 +921,7 @@ function rgba(res: Resource, at: number, n: number) {
 }
 
 /** Reads `out.length` bytes at `offset` of the concatenated backing pages. */
-function readBacking(ram: Uint8Array, backing: { off: number; len: number }[], offset: number, out: Uint8Array) {
+function readBacking(ram: Ram, backing: Segment[], offset: number, out: Uint8Array) {
   let skip = offset, k = 0;
   for (const b of backing) {
     if (skip >= b.len) {
@@ -931,7 +929,7 @@ function readBacking(ram: Uint8Array, backing: { off: number; len: number }[], o
       continue;
     }
     const n = Math.min(b.len - skip, out.length - k);
-    out.set(ram.subarray(b.off + skip, b.off + skip + n), k);
+    out.set(bytes(ram, b).subarray(skip, skip + n), k);
     k += n;
     skip = 0;
     if (k === out.length) return;
@@ -946,7 +944,7 @@ function toBase64(b: Uint8Array) {
 
 /** The virtio-gpu backend (queue 0: controlq, 1: cursorq) around a `Gpu`. */
 export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
-  const gpu = new Gpu(() => ctx.ram(), ctx.ramSize, o);
+  const gpu = new Gpu(() => ctx.ram(), ctx.layout, o);
   gpu.hooks = hooks;
   gpu.raise = () => ctx.changeConfig((c) => {
     const v = new DataView(c.buffer, c.byteOffset, 16);

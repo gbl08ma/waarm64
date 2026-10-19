@@ -18,7 +18,7 @@ import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
 
-export const ABI = 39;
+export const ABI = 40;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -219,8 +219,8 @@ export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
  * instance gets its own stack and TLS from `block`. Its JIT is bound to it.
  * `clock`: see {@link clockOffset}.
  */
-export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number, stall?: Stall[], compile?: MessagePort) {
-  const imports = coreImports(memory, clock, stall, compile);
+export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number, stall?: Stall[], compile?: MessagePort, spill: WebAssembly.Memory[] = []) {
+  const imports = coreImports(memory, clock, stall, compile, spill);
   const instance = new WebAssembly.Instance(module, imports);
   (instance.exports.__stack_pointer as WebAssembly.Global).value = block.stack + THREAD_STACK;
   (instance.exports.__wasm_init_tls as (tls: number) => void)(block.tls);
@@ -390,7 +390,13 @@ export const Counter = {
  * of RAM, which `bootVm`'s `framebuffer` locates for web/display.ts.
  */
 export type BootOptions = {
+  /** Guest RAM in memory 0 (at most {@link maxMemory0Ram} for a fixed memory). */
   ramSize: number;
+  /**
+   * The spill memories' sizes (`VmConfig.spill`, ABI 39; docs/plans/spill-memories.md): RAM past memory 0, each a
+   * shared memory of its own and a CPU-less NUMA node for the guest; {@link splitRam} makes the usual split.
+   */
+  spill?: number[];
   kernel: Uint8Array;
   initrd?: Uint8Array;
   cmdline: string;
@@ -583,14 +589,50 @@ export type Vm = Awaited<ReturnType<typeof bootVm>>;
  */
 export const HEAP_RESERVE = 1 << 30;
 
+/**
+ * The least heap a fixed memory gets (docs/backlog.md "The core's heap in a fixed memory", stage 1): the
+ * reserve is what 4 GiB leaves after the scratch page, RAM and fw_cfg's files, capped at `HEAP_RESERVE`
+ * and never under this. 1 GiB until the heap's peak under a heavy load is measured on the dev VM, so
+ * today the reserve is always 1 GiB.
+ */
+export const HEAP_FLOOR = 1 << 30;
+
+/** The most RAM memory 0 holds with the heap at its floor (and fw_cfg's `fwCfgBytes`): the rest of a machine's RAM goes to spill memories. */
+export function maxMemory0Ram(fwCfgBytes = 0): number {
+  return 2 ** 32 - HEAP_FLOOR - 65536 - Math.ceil(fwCfgBytes / 65536) * 65536;
+}
+
+/** The largest spill memory (a whole wasm32 memory) and how many a machine has at most (core/src/mem.rs `MAX_SPILL`). */
+export const MAX_SPILL_BYTES = 2 ** 32;
+export const MAX_SPILL = 8;
+
+/**
+ * The automatic split of `total` bytes of guest RAM (a 64 KiB multiple): memory 0 as large as it goes
+ * ({@link maxMemory0Ram}), then spill memories of up to 4 GiB (docs/plans/spill-memories.md).
+ */
+export function splitRam(total: number, fwCfgBytes = 0): { ramSize: number; spill: number[] } {
+  const ramSize = Math.min(total, maxMemory0Ram(fwCfgBytes));
+  const spill: number[] = [];
+  for (let left = total - ramSize; left > 0; left -= MAX_SPILL_BYTES) spill.push(Math.min(left, MAX_SPILL_BYTES));
+  if (spill.length > MAX_SPILL) throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);
+  return { ramSize, spill };
+}
+
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
   // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
-  const pages = (HEAP_RESERVE + 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0)) / 65536;
+  // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
+  const rest = 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
+  const pages = (Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest)) + rest) / 65536;
   const fixed = o.fixedMemory !== false && pages <= 65536;
   const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
+  // The spill memories (docs/plans/spill-memories.md), each at its final size.
+  const spillSizes = o.spill ?? [];
+  if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES)) throw new RangeError(`spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`);
+  if (o.restore && spillSizes.length) throw new SnapshotError('other-machine', 'Snapshots of a machine with RAM past memory 0 aren\'t supported yet.');
+  const spill = spillSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
-  const imports = coreImports(memory);
+  const imports = coreImports(memory, undefined, undefined, undefined, spill);
   const instance = await WebAssembly.instantiate(module, imports);
   imports.jit.bind(instance);
   const ex = unsigned(instance.exports) as unknown as Exports;
@@ -646,7 +688,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n);
   new BigUint64Array(memory.buffer, scratch + S_CFG, 32).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
-    ...new BigUint64Array(8)]); // no spill memories (ABI 39)
+    ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0))]); // the spill memories' sizes (ABI 39)
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -696,7 +738,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci }, scratch + S_BELL, parallel);
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci }, scratch + S_BELL, parallel);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -767,7 +809,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
+  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -782,12 +824,15 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     usb,
     /** Bytes of guest RAM (at `ram`). */
     ramSize: o.ramSize,
+    /** The spill memories (`BootOptions.spill`), memory 1 first: the guest RAM past memory 0. */
+    spill,
     /**
      * The VM's state for a snapshot, with every vCPU out of the core: between `run` calls after
      * `settle()`, or once `pause()` resolved true. Guest RAM (`memory` at `ram`, `ramSize` bytes) is
      * the snapshot's other half: copy it before the VM runs on. The VM is unchanged but for its realtime clock, held at the saved reading until a vCPU runs again.
      */
     async snapshot(): Promise<VmState> {
+      if (spill.length) throw new Error("the machine can't be saved: snapshots of RAM past memory 0 aren't supported yet");
       for (let tries = 0; tries < 1000; tries++) {
         // Takes the completions the backends left, as the run loop would at its next boundary.
         const n = ex.vm_snapshot_size(vm);
@@ -1014,7 +1059,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number }) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -1116,7 +1161,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     return Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();
       const compile = channels[cpu]?.port1;
-      h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile, yieldMs: c.yieldMs }, compile ? [compile] : []);
+      h.post({ module: c.module, memory: c.memory, spill: c.spill, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile, yieldMs: c.yieldMs }, compile ? [compile] : []);
       return h;
     });
   };

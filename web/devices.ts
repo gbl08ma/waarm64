@@ -21,6 +21,7 @@ import { inflatePool } from './inflate-pool.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 import { Usb, type UsbAttach } from './usb.ts';
 import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndMixer, type SndWake } from './snd.ts';
+import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -206,10 +207,10 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
   }
 }
 
-export type Segment = { off: number; len: number };
+export { RAM_BASE, bytes, locate, ramLayout, type Ram, type RamLayout, type Segment } from './ram.ts';
 export type Request = { w0: number; queue: number; read: Segment[]; write: Segment[] };
 export type Ctx = {
-  ram: () => Uint8Array; ramSize: number; complete: (w0: number, len: number) => void; config: () => Uint8Array;
+  ram: () => Ram; layout: RamLayout; complete: (w0: number, len: number) => void; config: () => Uint8Array;
   /** Completions given (`complete`) that the core hasn't taken yet: it takes them when a vCPU runs. */
   untaken: () => number;
   /** Changes the config space under a running driver (docs/abi.md, ABI 31): `write` gets it, and the guest gets a config-change interrupt. */
@@ -247,7 +248,7 @@ function console_(out: (text: string) => void, ctx: Ctx): Backend {
         return undefined;
       }
       const ram = ctx.ram();
-      for (const s of r.read) out(decoder.decode(ram.slice(s.off, s.off + s.len), { stream: true })); // a copy: TextDecoder refuses shared memory
+      for (const s of r.read) out(decoder.decode(bytes(ram, s).slice(), { stream: true })); // a copy: TextDecoder refuses shared memory
       return 0;
     },
     reset() { rx.length = 0; },
@@ -263,7 +264,7 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
         const ram = ctx.ram();
         let n = 0;
         for (const s of r.write) {
-          for (let k = 0; k < s.len; k += 65536) ram.set(crypto.getRandomValues(new Uint8Array(Math.min(65536, s.len - k))), s.off + k); // not on shared memory directly
+          for (let k = 0; k < s.len; k += 65536) bytes(ram, s).set(crypto.getRandomValues(new Uint8Array(Math.min(65536, s.len - k))), k); // not on shared memory directly
           n += s.len;
         }
         return n;
@@ -295,7 +296,8 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
       const ram = ctx.ram();
       let n = 0;
       for (const s of r.write) {
-        for (let k = 0; k < s.len; k++) ram[s.off + k] = byte();
+        const b = bytes(ram, s);
+        for (let k = 0; k < s.len; k++) b[k] = byte();
         n += s.len;
       }
       return n;
@@ -311,25 +313,25 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
 }
 
 /** Bytes of the concatenated segments, `len` of them at most. */
-export function gather(ram: Uint8Array, segs: Segment[], len: number) {
+export function gather(ram: Ram, segs: Segment[], len: number) {
   const out = new Uint8Array(len);
   let k = 0;
   for (const s of segs) {
     if (k === len) break;
     const n = Math.min(s.len, len - k);
-    out.set(ram.subarray(s.off, s.off + n), k);
+    out.set(bytes(ram, s).subarray(0, n), k);
     k += n;
   }
   return out.subarray(0, k);
 }
 
 /** Writes `data` across the segments, in order. */
-export function scatter(ram: Uint8Array, segs: Segment[], data: Uint8Array) {
+export function scatter(ram: Ram, segs: Segment[], data: Uint8Array) {
   let k = 0;
   for (const s of segs) {
     if (k === data.length) break;
     const n = Math.min(s.len, data.length - k);
-    ram.set(data.subarray(k, k + n), s.off);
+    bytes(ram, s).set(data.subarray(k, k + n));
     k += n;
   }
 }
@@ -627,7 +629,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       const last = r.write.at(-1);
       if (!last || last.len === 0) return 0; // no status byte: nothing to answer with
       // Data: every writable byte but the status byte at the end.
-      const data = [...r.write.slice(0, -1), { off: last.off, len: last.len - 1 }];
+      const data = [...r.write.slice(0, -1), { ...last, len: last.len - 1 }];
       const room = data.reduce((n, s) => n + s.len, 0);
       const h = new DataView(gather(ram, r.read, 16).slice().buffer);
       const op = h.byteLength === 16 ? h.getUint32(0, true) : -1;
@@ -665,7 +667,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
           status = ok ? S_OK : S_IOERR;
         }
       }
-      ram[last.off + last.len - 1] = status;
+      bytes(ram, last)[last.len - 1] = status;
       return n + 1;
     },
     reset() {},
@@ -720,6 +722,8 @@ export type DevicesInit = {
   shared: number[];
   ram: number;
   ramSize: number;
+  /** The spill memories (docs/plans/spill-memories.md), memory 1 first. */
+  spill?: WebAssembly.Memory[];
   signal: number;
   specs: DeviceSpec[];
   deterministic: boolean;
@@ -746,12 +750,15 @@ export class Devices {
   private ioStats: Record<number, IoStats> = {};
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state, xhci }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, spill = [], signal, specs, deterministic, wakes, state, xhci }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
+    // Spill memories are made at their final size: their views never go stale.
+    const spillViews = spill.map((m) => new Uint8Array(m.buffer));
+    const layout = ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
-        ram: () => new Uint8Array(this.memory.buffer, ram),
-        ramSize,
+        ram: () => [new Uint8Array(this.memory.buffer, ram), ...spillViews],
+        layout,
         complete: (w0, len) => this.complete(i, w0, len),
         untaken: () => this.untaken(i),
         config: () => new Uint8Array(this.memory.buffer, shared[i] + CONFIG, 256),
@@ -776,8 +783,7 @@ export class Devices {
           if (d.renderer && d.virgl) {
             // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
             const host = portHost(d.renderer);
-            const ram = ctx.ram();
-            host.call({ t: 'ram', buffer: ram.buffer, offset: ram.byteOffset, length: Math.min(ram.length, ctx.ramSize) });
+            host.call({ t: 'ram', ram: ctx.ram().map((r, k) => ({ buffer: r.buffer, offset: r.byteOffset, length: ctx.layout[k].size })) });
             b.gpu.host = host;
           }
           if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
@@ -792,7 +798,7 @@ export class Devices {
       }
     });
     this.epochs = specs.map(() => 0);
-    if (xhci) this.usb = new Usb({ memory, shared: xhci.shared, ram, ramSize, deterministic, kick: () => this.kick(), port: xhci.port, attach: xhci.attach });
+    if (xhci) this.usb = new Usb({ memory, shared: xhci.shared, ram, ramSize, spill, deterministic, kick: () => this.kick(), port: xhci.port, attach: xhci.attach });
     if (state) {
       if (state.length !== specs.length) throw new Error('the snapshot is of a machine with other devices');
       // The devices are as the snapshot left them (their epoch is not a reset), with the backends' state.
@@ -878,7 +884,7 @@ export class Devices {
       while (tail !== head) {
         const w0 = word();
         const n = word();
-        const segs = (k: number) => Array.from({ length: k }, () => ({ off: word(), len: word() }));
+        const segs = (k: number) => Array.from({ length: k }, () => ({ off: word(), len: word(), mem: word() }));
         const r = { w0, queue: (w0 >>> 16) & 0xff, read: segs(n & 0xffff), write: segs(n >>> 16) };
         tail >>>= 0;
         Atomics.store(u32, ring + 1, tail);

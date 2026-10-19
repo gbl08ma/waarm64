@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use webpc_core::vm::{SIGNAL_DEVICE, Vm};
 use webpc_core::xhci::{
     CONNECTORS, CPL_ATTACH, CPL_DETACH, CPL_DONE, REQ_CANCEL, REQ_CLEAR_HALT, REQ_CONFIGURED,
-    REQ_RESET, REQ_TRANSFER, SEG_IMMEDIATE, XhciShared,
+    REQ_RESET, REQ_TRANSFER, SEG_IMMEDIATE, SEG_MEM_SHIFT, XhciShared,
 };
 
 /// A Gadget Zero's options (web/usb-device.ts `UsbVirtual`).
@@ -424,7 +424,8 @@ struct Flight {
     connector: usize,
     g: u8,
     into: bool,
-    segs: Vec<(u32, u32)>,
+    /// (guest PA, length)
+    segs: Vec<(u64, u32)>,
     length: u32,
 }
 
@@ -547,7 +548,8 @@ impl UsbHost {
                 segs.push((0, n as u32));
                 imm.push(Some(b));
             } else {
-                segs.push((off, len));
+                let m = (len >> SEG_MEM_SHIFT & 0xf) as usize;
+                segs.push((vm.mem.ram_pa(m, off as u64), len & 0xff_ffff));
                 imm.push(None);
             }
         }
@@ -610,8 +612,7 @@ impl UsbHost {
     }
 }
 
-fn read(vm: &Vm, off: u32, len: u32) -> Vec<u8> {
-    let pa = webpc_core::vm::RAM_BASE + off as u64;
+fn read(vm: &Vm, pa: u64, len: u32) -> Vec<u8> {
     let p = vm
         .mem
         .host(pa, len as u64, webpc_core::mem::Access::Read)
@@ -621,8 +622,7 @@ fn read(vm: &Vm, off: u32, len: u32) -> Vec<u8> {
     unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()
 }
 
-fn write(vm: &Vm, off: u32, b: &[u8]) {
-    let pa = webpc_core::vm::RAM_BASE + off as u64;
+fn write(vm: &Vm, pa: u64, b: &[u8]) {
     let p = vm
         .mem
         .host(pa, b.len() as u64, webpc_core::mem::Access::Write)

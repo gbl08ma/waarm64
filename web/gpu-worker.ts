@@ -22,7 +22,7 @@ export type FromGpuWorker =
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
   | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
 
-let ram: Uint8Array = new Uint8Array(0);
+let ram: Uint8Array[] = [];
 
 self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   if (e.data?.type !== 'init') return;
@@ -79,7 +79,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       return;
     }
     if (c.t === 'ram') {
-      ram = new Uint8Array(c.buffer, c.offset, c.length);
+      ram = c.ram.map((m) => new Uint8Array(m.buffer, m.offset, m.length));
       return;
     }
     const t0 = performance.now();

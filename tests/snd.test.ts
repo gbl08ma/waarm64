@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deviceEntry, type Ctx, type Request } from '../web/devices.ts';
 import { CAPACITY, QUANTA, RATE, RUN, WRITE, ringViews } from '../web/audio-ring.ts';
+import { ramLayout } from '../web/ram.ts';
 import {
   CONTROLQ, EVENTQ, FMT_FLOAT, FMT_S16, FMT_S32, RATE_BITS, RXQ, R_CHMAP_INFO, R_JACK_INFO, R_JACK_REMAP, R_PCM_INFO, R_PCM_PREPARE, R_PCM_RELEASE,
   R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, fnv1a, fromF32, micSource, pattern as wave, patternSource, sndBackend, toF32, type SndParams, type SndState,
@@ -38,7 +39,7 @@ const query = (code: number, start: number, count: number, size: number) => byte
 function rig(sink = checksumSink(1 << 20), source = patternSource(), o: { mixer?: SndMixer; features?: bigint } = {}) {
   const ram = new Uint8Array(1 << 20);
   const done: { w0: number; len: number }[] = [];
-  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0, features: () => o.features ?? 0n };
+  const ctx: Ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0, features: () => o.features ?? 0n };
   /** What the device said to the page on its port. */
   const said: SndToPage[] = [];
   const port = { postMessage: (m: SndToPage) => said.push(m) } as unknown as MessagePort;
@@ -48,7 +49,7 @@ function rig(sink = checksumSink(1 << 20), source = patternSource(), o: { mixer?
   /** Posts a chain (readable `read`, then writable buffers of `write` bytes); returns it. */
   const post = (queue: number, read: Uint8Array[], write: number[]) => {
     const seg = (len: number) => {
-      const s = { off: free, len };
+      const s = { off: free, len, mem: 0 };
       free += len;
       return s;
     };

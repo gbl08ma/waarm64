@@ -1,6 +1,7 @@
 //! The transport and split queues against hand-built rings, well formed and not.
 
 use super::*;
+use crate::vm::RAM_BASE;
 
 const DESC: u64 = RAM_BASE + 0x1000;
 const AVAIL: u64 = RAM_BASE + 0x2000;
@@ -181,8 +182,8 @@ fn request_completion_and_interrupt() {
         Request {
             w0: 3,
             queue: 0,
-            read: vec![(OFF, 16)],
-            write: vec![(OFF + 0x100, 64)],
+            read: vec![(OFF, 16, 0)],
+            write: vec![(OFF + 0x100, 64, 0)],
         }
     );
     assert!(t.sh.req.pop_request().is_none());
@@ -214,7 +215,7 @@ fn indirect_descriptors() {
     let r = t.sh.req.pop_request().unwrap();
     assert_eq!(
         (r.read, r.write),
-        (vec![(OFF, 1)], vec![(OFF + 8, 2), (OFF + 16, 3)])
+        (vec![(OFF, 1, 0)], vec![(OFF + 8, 2, 0), (OFF + 16, 3, 0)])
     );
     assert!(!t.broken());
 }
@@ -651,13 +652,14 @@ fn held_chains_past_a_request_ring_cannot_be_saved() {
         let next = if k < 39 { D_NEXT } else { 0 };
         t.desc(table, k, BUF, 4, D_WRITE | next, k + 1);
     }
-    for h in 0..50 {
+    // A chain is 2 + 40 · 3 words: 33 fit the request ring.
+    for h in 0..34 {
         t.desc(DESC, h, table, 40 * 16, D_INDIRECT, 0);
         t.mem.write(AVAIL + 4 + 2 * h, 2, h).unwrap();
         t.mem.write(AVAIL + 2, 2, h + 1).unwrap();
         assert_eq!(t.wr(0x050, 0), EV_REQUEST);
         assert_eq!(t.sh.req.pop_request().unwrap().write.len(), 40);
-        assert_eq!(t.t.repostable(&t.mem), h < 49, "{} chains held", h + 1);
+        assert_eq!(t.t.repostable(&t.mem), h < 33, "{} chains held", h + 1);
     }
     assert!(t.t.quiet(&t.sh));
     // One fewer fits: a restore posts them all.
@@ -665,7 +667,7 @@ fn held_chains_past_a_request_ring_cannot_be_saved() {
     assert!(t.t.repostable(&t.mem));
     let (mut n, sh) = (Transport::new(*t.t.entry()), Box::<DevShared>::default());
     assert_eq!(n.restore(&mut Reader(&saved(&t)), &t.mem, &sh), Ok(()));
-    assert_eq!(core::iter::from_fn(|| sh.req.pop_request()).count(), 49);
+    assert_eq!(core::iter::from_fn(|| sh.req.pop_request()).count(), 33);
 }
 
 #[test]

@@ -15,7 +15,9 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   drain's interrupt; the core writes `avail_event` after posting, then reads the available index
   again). Our own split-ring code, not rust-vmm's `virtio-queue`.
 - On a queue notify the core walks the new descriptor chains, checks each buffer lies in RAM,
-  and writes it as a flat segment list to the device's **request ring** in shared memory.
+  and writes it as a flat segment list to the device's **request ring** in shared memory: each
+  segment names its memory (0, or a spill memory: docs/plans/spill-memories.md), and the backends
+  read it through `Ctx.ram()`, a view per memory (web/ram.ts).
   **TypeScript never parses virtio rings**, only the device protocol (e.g. the virtio-blk
   header). A malformed chain, a buffer outside RAM, a readable buffer after a writable one, more
   chains than the queue holds or an available index more than a queue ahead puts the device in

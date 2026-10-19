@@ -3,6 +3,7 @@
 
 use super::tests::*;
 use super::*;
+use crate::vm::RAM_BASE;
 
 /// A ring of `n` TRBs at `base` for transfers, outside the harness's small ones.
 const BIG: u64 = RAM_BASE + 0x20000;

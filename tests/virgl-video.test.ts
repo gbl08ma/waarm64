@@ -338,7 +338,7 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   gl.keepLog = true;
   const ram = new Uint8Array(4096), errors: string[] = [];
   const { made, factory } = fakeDecoders();
-  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m), video: { decoders: factory, hardware: [] } });
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m), video: { decoders: factory, hardware: [] } });
   r.createContext(1);
   const res = (id: number, format: number, width: number, height: number, target = 2) => {
     r.createResource({ id, target, format, bind: target ? 0xa : 0x20000, width, height, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
@@ -348,8 +348,8 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   res(11, 65, 2, 1); // R8G8_UNORM chroma
   res(7, 64, 400, 1, 0); // the picture's desc
   res(8, 64, 16, 1, 0); // its data
-  r.attachBacking(7, [{ off: 0, len: 400 }]);
-  r.attachBacking(8, [{ off: 1024, len: 16 }]);
+  r.attachBacking(7, [{ off: 0, len: 400, mem: 0 }]);
+  r.attachBacking(8, [{ off: 1024, len: 16, mem: 0 }]);
   ram.set(vp9(true), 0);
   ram.set([1, 2, 3], 1024);
   const words: number[] = [];
@@ -493,7 +493,7 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   const res = (id: number): WorkerCall => ({ t: 'res', desc: { id, target: 0, format: 0, bind: 0, width: 1, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 } });
   q.push(submit(1, 8), 10);
   q.push(res(9), 10);
-  q.push({ t: 'backing', id: 9, backing: [{ off: 0, len: 4 }] }, 10);
+  q.push({ t: 'backing', id: 9, backing: [{ off: 0, len: 4, mem: 0 }] }, 10);
   q.push(attach(5, 9), 10);
   q.push({ t: 'unref', id: 9 }, 10);
   q.push(submit(5, 8), 10);

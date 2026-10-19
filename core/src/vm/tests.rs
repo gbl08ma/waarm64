@@ -534,7 +534,7 @@ fn a_restored_vm_runs_on_as_the_one_that_was_saved() {
     assert_eq!(sh.events.swap(0, Ordering::Relaxed), virtio::EV_REQUEST);
     let r = sh.req.pop_request().unwrap();
     let buf = (BUF + 0x200 - RAM_BASE) as u32;
-    assert_eq!((r.w0, r.write, r.read), (2, vec![(buf, 64)], vec![]));
+    assert_eq!((r.w0, r.write, r.read), (2, vec![(buf, 64, 0)], vec![]));
     assert!(sh.req.pop_request().is_none());
     // Saving changed nothing: the restored VM saves the same bytes.
     assert!(b.save() == state, "the restored VM's state differs");

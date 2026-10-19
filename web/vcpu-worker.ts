@@ -13,6 +13,8 @@ import { clockOffset, Exit, instantiateThread, stallHook, unsigned, withPanic, t
 export type VcpuJob = {
   module: WebAssembly.Module;
   memory: WebAssembly.Memory;
+  /** The spill memories (docs/plans/spill-memories.md), memory 1 first. */
+  spill: WebAssembly.Memory[];
   block: ThreadBlock;
   vm: number;
   cpu: number;
@@ -61,7 +63,7 @@ const NONE = 0xffff_ffff_ffff_ffffn;
 const SPIN_MS = 0.05;
 
 async function run(j: VcpuJob, clock: number): Promise<VcpuEnd> {
-  const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall, j.compile).exports;
+  const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall, j.compile, j.spill).exports;
   // The vCPUs start together: one that ran (and started a restored VM's clock, and took device completions) while
   // another was still instantiating would find a guest whose CPU 0 hadn't run for that long (on a loaded host, over
   // ALSA's 100 ms wait for a sound period: docs/audio.md "Linux driver behavior").

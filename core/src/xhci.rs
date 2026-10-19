@@ -36,7 +36,6 @@ use std::collections::{HashMap, VecDeque};
 use crate::mem::{Access, Mem};
 use crate::snapshot::{self, Reader, Writer};
 use crate::virtio::WordRing;
-use crate::vm::RAM_BASE;
 
 /// The register window (QEMU `virt`'s platform-bus window, free here).
 pub const BASE: u64 = 0x0c00_0000;
@@ -83,6 +82,9 @@ pub const CPL_DETACH: u32 = 2;
 /// A segment of immediate data: its length word has this bit (its offset word is 0), and two
 /// words of bytes follow.
 pub const SEG_IMMEDIATE: u32 = 1 << 31;
+/// A segment's memory (0, or a spill memory's index: docs/plans/spill-memories.md) in its length word's bits
+/// 27:24 (a TRB's length has 17 bits); the offset is in that memory, from memory 0's first RAM byte for 0.
+pub const SEG_MEM_SHIFT: u32 = 24;
 
 // Completion codes (xHCI 1.2 §6.4.5).
 pub const CC_SUCCESS: u32 = 1;
@@ -1471,17 +1473,12 @@ impl Xhci {
                 ]);
             } else {
                 // A zero-length TRB (Linux's zero-length packet) may point anywhere.
-                let access = if into { Access::Write } else { Access::Read };
-                let off = if t.len == 0 {
-                    0
+                let (m, off) = if t.len == 0 {
+                    (0, 0)
                 } else {
-                    // Memory 0 only until the records name a memory (spill-memories.md S1).
-                    if mem.host(t.param, t.len as u64, access).ok()?.mem() != 0 {
-                        return None;
-                    }
-                    t.param.wrapping_sub(RAM_BASE) as u32
+                    mem.ram_offset(t.param, t.len as u64)?
                 };
-                w.extend([off, t.len]);
+                w.extend([off as u32, t.len | (m as u32) << SEG_MEM_SHIFT]);
             }
             n += 1;
             total = total.checked_add(t.len)?;

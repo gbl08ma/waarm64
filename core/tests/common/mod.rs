@@ -375,11 +375,15 @@ fn blk(disk: &Disk, overlay: Option<&Overlay>, read: &[&mut [u8]], write: &mut [
     n as u32 + 1
 }
 
-/// A request's buffer: guest RAM at (RAM offset, length).
-fn seg(vm: &Vm, (off, len): (u32, u32)) -> &'static mut [u8] {
+/// A request's buffer: guest RAM at (offset, length, memory).
+fn seg(vm: &Vm, (off, len, m): (u32, u32, u32)) -> &'static mut [u8] {
     let p = vm
         .mem
-        .host(RAM_BASE + off as u64, len as u64, Access::Write)
+        .host(
+            vm.mem.ram_pa(m as usize, off as u64),
+            len as u64,
+            Access::Write,
+        )
         .map(|h| vm.mem.native_ptr(h))
         .unwrap();
     // SAFETY: the core checked the buffer is guest RAM, which outlives the

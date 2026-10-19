@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checksumValid, MAX_FRAME, NET_HDR, receive, transmit } from '../web/offload.ts';
 import { checksum } from '../web/net.ts';
+import { ramLayout } from '../web/ram.ts';
 
 const be16 = (b: Uint8Array, at: number) => (b[at] << 8) | b[at + 1];
 const be32 = (b: Uint8Array, at: number) => ((b[at] << 24) | (b[at + 1] << 16) | (b[at + 2] << 8) | b[at + 3]) >>> 0;
@@ -273,7 +274,7 @@ test('virtio-net on a port backend: a batch\'s segments reach the guest as one p
   for (const features of [F_GUEST_CSUM | F_GUEST_TSO4 | F_MRG_RXBUF, F_GUEST_CSUM]) {
     const ram = new Uint8Array(1 << 20);
     const done: { w0: number; len: number }[] = [];
-    const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number, len: number) => done.push({ w0, len }), config: () => new Uint8Array(256), untaken: () => 0, changeConfig() {}, features: () => features };
+    const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete: (w0: number, len: number) => done.push({ w0, len }), config: () => new Uint8Array(256), untaken: () => 0, changeConfig() {}, features: () => features };
     const { port1, port2 } = new MessageChannel();
     const dev = net(ctx, { type: 'net', adapter: { ip: port1 } });
     try {
@@ -283,8 +284,8 @@ test('virtio-net on a port backend: a batch\'s segments reach the guest as one p
     // The guest sends a frame first (the gateway learns its MAC), then posts 40 receive buffers of 2 KiB.
     const tx = guestPacket({ v6: false, proto: UDP, payload: 10, gso: 0, mss: 0 }).b;
     ram.set(tx, 0);
-    dev.request({ w0: 999, queue: 1, read: [{ off: 0, len: tx.length }], write: [] });
-    for (let k = 0; k < 40; k++) dev.request({ w0: k, queue: 0, read: [], write: [{ off: 0x10000 + k * 2048, len: 2048 }] });
+    dev.request({ w0: 999, queue: 1, read: [{ off: 0, len: tx.length, mem: 0 }], write: [] });
+    for (let k = 0; k < 40; k++) dev.request({ w0: k, queue: 0, read: [], write: [{ off: 0x10000 + k * 2048, len: 2048, mem: 0 }] });
     // One message from the backend: 4 segments of a stream, as IP packets.
     const segs = stream(false, 3 * 1228 + 100).map((s) => s.slice(ETH).buffer);
     port2.postMessage(segs, segs);
