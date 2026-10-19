@@ -198,7 +198,7 @@ test('virgl snapshots on WebGL2: every format\'s contents, as each kind of resou
 
 test('virgl snapshots through the GPU worker: saved across its port, loaded into another, read back there', { timeout: 60_000 }, async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { workerSnapshot(): Promise<{ read: (number[] | null)[]; want: number[][]; shape: unknown; again: unknown }> } }).virgl.workerSnapshot());
-  assert.deepEqual(r.shape, { resources: [[5, [64], [{ off: 0, len: 64 }]], [6, [64], [{ off: 64, len: 64 }]]], objects: [[[['blend'], 0]]] });
+  assert.deepEqual(r.shape, { resources: [[5, [64], [{ off: 0, len: 64, mem: 0 }]], [6, [64], [{ off: 64, len: 64, mem: 0 }]]], objects: [[[['blend'], 0]]] });
   assert.deepEqual(r.read, r.want);
   assert.equal(r.again, 1);
 });

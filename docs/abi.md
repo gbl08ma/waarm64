@@ -1,4 +1,4 @@
-# Host ABI (version 38)
+# Host ABI (version 40)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern

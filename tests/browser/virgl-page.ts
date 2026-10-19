@@ -33,7 +33,7 @@ import { FORMATS } from '../../web/virgl-formats.ts';
 import { CallQueue, localHost, portHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
 import { Gpu } from '../../web/gpu.ts';
-import { ramLayout } from '../../web/ram.ts';
+import { ramLayout, type Ram } from '../../web/ram.ts';
 import { canvasPresenter } from '../../web/gpu-present.ts';
 import { Screen } from '../../web/virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory } from '../../web/virgl-video.ts';
@@ -196,7 +196,7 @@ export function replayTrace(trace: Uint8Array, read?: number) {
 export function replaySaved64(trace: string, read: number, at: number[]) {
   const log: string[] = [];
   const saves: { bytes: number; resources: number; lost: string[]; differ: string[] }[] = [];
-  let ram!: () => Uint8Array;
+  let ram!: () => Ram;
   let r!: VirglRenderer;
   const fresh = () => new VirglRenderer(new OffscreenCanvas(16, 16).getContext('webgl2')!, { ram, log: (m) => log.push(m) });
   let submits = 0, errors = 0;
@@ -246,7 +246,7 @@ export function replaySaved64(trace: string, read: number, at: number[]) {
 export function snapshotFormats() {
   const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
   const log: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => log.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [], log: (m) => log.push(m) });
   const has = (names?: string[]) => !names || names.some((n) => gl.getSupportedExtensions()!.includes(n));
   let seed = 1;
   const rand = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8) & 0xff;
@@ -324,7 +324,7 @@ export async function workerSnapshot() {
     if (m.type !== 'ready') throw new Error(`the GPU worker: ${JSON.stringify(m)}`);
     const ram = new Uint8Array(new SharedArrayBuffer(4096));
     const host = portHost(ch.port2);
-    host.call({ t: 'ram', buffer: ram.buffer, offset: 0, length: ram.length });
+    host.call({ t: 'ram', ram: [{ buffer: ram.buffer, offset: 0, length: ram.length }] });
     return { w, host, ram };
   };
   const a = await start();
@@ -336,8 +336,8 @@ export async function workerSnapshot() {
     a.host.call({ t: 'res', desc });
     a.host.call({ t: 'ctxres', ctx: 1, res: desc.id, attach: true });
   }
-  a.host.call({ t: 'backing', id: 5, backing: [{ off: 0, len: 64 }] });
-  a.host.call({ t: 'backing', id: 6, backing: [{ off: 64, len: 64 }] });
+  a.host.call({ t: 'backing', id: 5, backing: [{ off: 0, len: 64, mem: 0 }] });
+  a.host.call({ t: 'backing', id: 6, backing: [{ off: 64, len: 64, mem: 0 }] });
   a.host.call({ t: 'transfer', ctx: 1, res: 5, level: 0, box: { x: 0, y: 0, z: 0, w: 4, h: 4, d: 1 }, offset: 0, stride: 16, layerStride: 0, toHost: true });
   a.host.call({ t: 'transfer', ctx: 1, res: 6, level: 0, box: { x: 0, y: 0, z: 0, w: 64, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: true });
   // A blend state (CREATE_OBJECT, handle 3) bound (BIND_OBJECT).
