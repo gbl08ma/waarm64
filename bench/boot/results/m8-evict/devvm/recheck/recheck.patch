@@ -1,0 +1,304 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index edb16e6..3b3a3f4 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -2,7 +2,7 @@
+ // bench/gpu/firefox-load.ts share. Headless Chromium, the page with `?displaystats`, a disk opened from a file, root
+ // on the serial terminal, keys typed on the screen, and `load()`: a phase measured over N s on both sides (the guest's
+ // /proc/stat and per-thread CPU, the display's and the renderer's stats, the emulator's counters).
+-import { writeFileSync } from 'node:fs';
++import { appendFileSync, writeFileSync } from 'node:fs';
+ import { relative, resolve } from 'node:path';
+ import { chromiumEnv } from '../../tools/nosme.ts';
+ import { chromium, type Page } from 'playwright-core';
+@@ -104,6 +104,7 @@ export async function openSession(o: SessionOptions) {
+     const t = m.text();
+     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
+     if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
++    if (t.startsWith('webpc-evict ')) return void appendFileSync(`${o.out}/evict.txt`, t.slice(12) + '\n'); // EVICT-MEASURE
+     if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
+   });
+   const t0 = performance.now();
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 8c511f6..799e7a0 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -171,6 +171,10 @@ pub struct Region {
+     /// that call. When X30 holds it, the return is an edge to the member
+     /// there instead of an indirect branch.
+     pub returns: Vec<(u64, u64)>,
++    /// EVICT-MEASURE (diagnostic, not for commit): the prologue stores the
++    /// table's tick (hot word `.1 / 4`) at hot-word offset `.0`, its slot's
++    /// last-entered time.
++    pub mark: Option<(u32, u32)>,
+ }
+ 
+ impl From<Block> for Region {
+@@ -179,6 +183,7 @@ impl From<Block> for Region {
+             blocks: vec![b],
+             tier: None,
+             returns: vec![],
++            mark: None,
+         }
+     }
+ }
+@@ -189,6 +194,7 @@ impl Region {
+             blocks,
+             tier: None,
+             returns: vec![],
++            mark: None,
+         }
+     }
+ 
+@@ -418,6 +424,7 @@ pub fn forward(
+         blocks: w.post,
+         tier: None,
+         returns: w.returns,
++        mark: None,
+     }
+ }
+ 
+@@ -767,6 +774,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+     let mut bad = false;
+     let mut inl = 0;
+     c.local_get(0).i64_load(emit::PC).local_set(1);
++    if let Some((at, tick)) = r.mark {
++        // EVICT-MEASURE: hot[at / 4] = hot[tick / 4].
++        c.local_get(0).i32_load(emit::HOT_PTR);
++        c.local_get(0).i32_load(emit::HOT_PTR).i32_load(tick);
++        c.memarg(0x36, 2, at); // i32.store
++    }
+     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+     }
+@@ -1712,6 +1725,7 @@ mod tests {
+                 .into(),
+             tier: None,
+             returns: vec![],
++            mark: None,
+         };
+         // 0x7000 at PA 0x3000, 0x8000 at PA 0x9000, and back in the head's page.
+         let r = mmu([0x3000, 0x9000, 0x3100]);
+@@ -1797,6 +1811,7 @@ mod tests {
+             }],
+             tier: Some(0x2000),
+             returns: vec![],
++            mark: None,
+         };
+         let e = module(
+             &[r],
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index a558ac2..f9d894c 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -435,6 +435,9 @@ struct Evict {
+     sweep: Arc<AtomicU32>,
+     sweep_ns: u64,
+     probe: Option<u32>,
++    dbg: String, // DEBUG
++    probe_live: u64, // DEBUG
++    probe_ms: u64, // DEBUG
+ }
+ 
+ /// A live module (eviction's view).
+@@ -492,6 +495,7 @@ struct Seen {
+     /// The evictions it has let go of, and its slots' marks (`Table::used`).
+     evicted: u64,
+     used: Option<Arc<[AtomicU32]>>,
++    hotp: usize, // DEBUG
+ }
+ 
+ /// A loop region compiled for a head compiled alone: its table index, the
+@@ -585,6 +589,9 @@ impl Cache {
+     fn probe(&mut self) {
+         let sweep = self.ev.sweep.fetch_add(1, Ordering::Relaxed) + 1;
+         (self.ev.probe, self.ev.sweep_ns) = (Some(sweep), now_ns());
++        self.ev.probe_live = self.live_bytes; // DEBUG
++        self.ev.probe_ms = now_ns() / 1_000_000;
++        self.ev.dbg.push_str(&format!("E probe sweep={sweep} live={} t={}\n", self.live_bytes >> 20, now_ns() / 1_000_000)); // DEBUG
+         self.forget();
+     }
+ 
+@@ -653,6 +660,25 @@ impl Cache {
+             .collect();
+         let freeable: u64 = cold.iter().map(|c| mods[&c.1].bytes).sum();
+         let eighth = self.cfg.max_bytes / 8;
++        { // DEBUG
++            let coldb: u64 = mods.iter().filter(|e| last[e.0] < probe).map(|e| e.1.bytes).sum();
++            let bornb: u64 = mods.values().filter(|m| m.born >= probe).map(|m| m.bytes).sum();
++            let sum: u64 = mods.values().map(|m| m.bytes).sum();
++            let keptb: u64 = keep.keys().map(|k| mods[k].bytes).sum();
++            let marked: Vec<usize> = self.tables.iter().filter_map(|t| t.used.as_ref()).map(|u| u.iter().filter(|w| w.load(Ordering::Relaxed) >= probe).count()).collect();
++            let hist: Vec<String> = (0..8u32).map(|d| { let lo = probe.saturating_sub(d * 2 + 2); let hi = probe.saturating_sub(d * 2); mods.iter().filter(|e| last[e.0] >= lo && last[e.0] < hi).map(|e| e.1.bytes >> 20).sum::<u64>().to_string() }).collect();
++            let tick = (now_ns() / 100_000_000) as u32;
++            let cap = self.cfg.capacity as usize;
++            let pro = |m: &Mod| -> u32 { self.tables.iter().filter(|t| t.hotp != 0).flat_map(|t| (m.slot..m.slot + m.n).map(move |sl| {
++                // SAFETY: debug; a table's hot words live as long as the VM, a racy read is only stale.
++                unsafe { core::ptr::read_volatile((t.hotp as *const u32).add(cap + sl as usize)) } })).max().unwrap_or(0) };
++            let pcold: Vec<String> = [50u32, 150, 300, 600].iter().map(|&d| (mods.values().filter(|m| tick.saturating_sub(pro(m)) >= d).map(|m| m.bytes).sum::<u64>() >> 20).to_string()).collect();
++            let pwin = mods.values().filter(|m| tick.saturating_sub(pro(m)) as u64 * 100 >= (now_ns() / 1_000_000).saturating_sub(self.ev.probe_ms)).map(|m| m.bytes).sum::<u64>() >> 20;
++            self.ev.dbg.push_str(&format!("E prologue cold_mib 5s,15s,30s,60s={} since_probe_cold={pwin}\n", pcold.join(",")));
++            let line = format!("E evict t={} live={} probe_live={} sum={} mods={} cold={} born={} kept={} freeable={} probe={probe} sweep={} marked={marked:?} coldhist_mib={}\n",
++                now_ns() / 1_000_000, self.live_bytes >> 20, self.ev.probe_live >> 20, sum >> 20, mods.len(), coldb >> 20, bornb >> 20, keptb >> 20, freeable >> 20, self.ev.sweep.load(Ordering::Relaxed), hist.join(","));
++            self.ev.dbg.push_str(&line);
++        }
+         if self.live_bytes.saturating_sub(freeable) > eighth * PROBE_AT {
+             return false;
+         }
+@@ -811,6 +837,7 @@ impl Cache {
+                 ival: t.ival,
+                 evicted: ev.serial,
+                 used: t.used.take(),
++                hotp: t.hotp,
+                 ..Seen::default()
+             };
+         }
+@@ -1131,6 +1158,10 @@ impl Cache {
+         }
+         // Evicting, a module imports only its generation's blocks (older
+         // ones it reaches through the jump cache), and they're recorded.
++        let cap = self.cfg.capacity; // DEBUG: prologue ticks
++        for (k, r) in regions.iter_mut().enumerate() {
++            r.mark = Some((4 * (cap + slot + k as u32), 8 * cap));
++        }
+         let generation = self.ev.gen_bytes / (self.cfg.max_bytes / 8 * GENERATION).max(1);
+         let (map, mods, evict) = (&self.map, &self.ev.mods, self.cfg.evict);
+         let imports = core::cell::RefCell::new(Vec::new());
+@@ -1288,6 +1319,7 @@ pub struct Table {
+     sweep: u32,
+     used: Arc<[AtomicU32]>,
+     evicted: u64,
++    pub ev_extra: String, // DEBUG
+     /// When the first module of `todo` was found not compiled yet, or not
+     /// yet in the host (ns; 0: it wasn't).
+     waiting: u64,
+@@ -1318,6 +1350,7 @@ impl Table {
+     /// A new table of cache `c`, which it hasn't caught up with yet.
+     fn new(c: &mut Cache) -> Table {
+         let n = if c.cfg.evict { c.cfg.capacity } else { 0 };
++        let id = c.tables.len(); // DEBUG
+         let used: Arc<[AtomicU32]> = (0..n).map(|_| AtomicU32::new(0)).collect();
+         c.tables.push(Seen {
+             ival: c.ival_base + c.ival_log.len() as u64,
+@@ -1325,7 +1358,7 @@ impl Table {
+             used: c.cfg.evict.then(|| used.clone()),
+             ..Seen::default()
+         });
+-        Table {
++        let t = Table {
+             id: c.tables.len() - 1,
+             cfg: c.cfg,
+             jc: vec![JC_EMPTY; JC]
+@@ -1334,7 +1367,7 @@ impl Table {
+                 .ok()
+                 .expect("JC entries"),
+             jc_used: Vec::new(),
+-            hot: vec![0; c.cfg.capacity as usize].into_boxed_slice(),
++            hot: vec![0; 2 * c.cfg.capacity as usize + 1].into_boxed_slice(), // DEBUG: prologue ticks after
+             epoch: c.epoch,
+             installed: 0,
+             drops: 0,
+@@ -1348,6 +1381,7 @@ impl Table {
+             sweep: 0,
+             used,
+             evicted: c.ev.serial,
++            ev_extra: String::new(),
+             waiting: 0,
+             helper_ops: vec![0; crate::decode::Op::ALL.len()],
+             report: String::new(),
+@@ -1356,7 +1390,9 @@ impl Table {
+             stats: Stats::default(),
+             dec: interp::block::Cache::new(c.cfg.decoded as usize),
+             ivals: c.ival_base + c.ival_log.len() as u64,
+-        }
++        };
++        c.tables[id].hotp = t.hot.as_ptr() as usize; // DEBUG
++        t
+     }
+ 
+     /// The transfer cache's miss functions, in slots 0 and 1 (once per table;
+@@ -1634,6 +1670,7 @@ impl Table {
+     /// The helper calls so far by instruction class, most frequent first,
+     /// one `<Op> <calls>` per line, NUL-terminated.
+     pub fn helper_report(&mut self) -> *const u8 {
++        let extra = core::mem::take(&mut self.ev_extra); // DEBUG
+         let mut ops: Vec<(u64, crate::decode::Op)> = self
+             .helper_ops
+             .iter()
+@@ -1643,6 +1680,7 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        self.report.push_str(&extra); // DEBUG
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+@@ -1784,6 +1822,12 @@ impl Jit {
+         self.install();
+     }
+ 
++    /// DEBUG: the cache's log lines to this table's next `helper_report`.
++    pub fn ev_take(&mut self) {
++        let d = core::mem::take(&mut self.cache.lock().ev.dbg);
++        self.table.ev_extra.push_str(&d);
++    }
++
+     /// [`Cache::invalidate`].
+     pub fn invalidate(&mut self, pa: u64) {
+         self.cache.lock().invalidate(pa, &mut self.table.stats);
+@@ -1888,6 +1932,8 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+     if evict {
+         jit.table.sweep = jit.sweep.load(Ordering::Relaxed);
+     }
++    let cap = jit.table.cfg.capacity as usize; // DEBUG
++    jit.table.hot[2 * cap] = (now_ns() / 100_000_000) as u32;
+     let mut done = 0;
+     while done < n {
+         let left = n - done;
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index ceff9f8..622f3c3 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -311,7 +311,10 @@ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+         .jit
+         .cache
+         .as_deref_mut()
+-        .map_or(core::ptr::null(), |j| j.table.helper_report())
++        .map_or(core::ptr::null(), |j| {
++            j.ev_take(); // EVICT-MEASURE
++            j.table.helper_report()
++        })
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument
+diff --git a/web/vcpu-worker.ts b/web/vcpu-worker.ts
+index b6652df..ceb3dbd 100644
+--- a/web/vcpu-worker.ts
++++ b/web/vcpu-worker.ts
+@@ -47,6 +47,8 @@ type Ex = {
+   vm_run_cpu(vm: number, cpu: number, budget: bigint): number;
+   vm_exit_cpu(vm: number, cpu: number): number;
+   vm_cpu_signal(vm: number, i: number): number;
++  vm_cpu(vm: number, i: number): number;
++  jit_helper_report(v: number): number;
+ };
+ 
+ /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
+@@ -97,7 +99,17 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
+     if (w.async) await w.value;
+     yielded = performance.now();
+   };
++  // EVICT-MEASURE (diagnostic, not for commit): the JIT cache's eviction report lines (`E …`, `M …`), every 5 s.
++  let evictAt = performance.now();
++  const evict = () => {
++    const p = ex.jit_helper_report(ex.vm_cpu(j.vm, j.cpu));
++    if (!p) return;
++    const b = new Uint8Array(mem.buffer, p);
++    const t = new TextDecoder().decode(b.slice(0, b.indexOf(0)));
++    for (const l of t.split('\n')) if (l.startsWith('E ') || l.startsWith('M ')) console.debug(`webpc-evict ${Date.now()} ${l}`);
++  };
+   for (;;) {
++    if (performance.now() - evictAt > 5000) { evictAt = performance.now(); evict(); }
+     live?.enter();
+     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+     live?.leave();

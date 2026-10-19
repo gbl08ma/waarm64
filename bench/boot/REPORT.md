@@ -1960,6 +1960,11 @@ under the noise threshold, and the same direction in each.
 
 ## M8: what per-module eviction could free (2026-10-18)
 
+**Invalid, rechecked 2026-10-19** (`results/m8-evict/` README, "Rechecked"): the measuring patch lost every table's
+marks at the first flush, so its "cold" was install age. With the marks kept, 0-12 MiB of the 160 MiB cache was unused
+for 5-60 s at Firefox's flushes: nearly every module holds a region in use, and eviction built on generations (branch
+`evict-generations`) never evicted. The cost of generations below stands.
+
 Before building eviction (docs/backlog.md "Per-module eviction, coldest first"): how much of a full cache is cold and
 imported by nothing warm, since a module's memory goes only with all its importers. The dev VM, Chromium
 153.0.8010.52, the core at `0778386`; the method, the tables and the data in `results/m8-evict/` (README "On the dev

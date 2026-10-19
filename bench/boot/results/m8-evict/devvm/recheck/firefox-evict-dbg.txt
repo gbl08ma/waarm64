@@ -1,0 +1,6 @@
+1792370232497 E probe sweep=65 live=140 t=1792370238107
+1792370254201 E prologue cold_mib 5s,15s,30s,60s=12,7,5,4 since_probe_cold=6
+1792370254201 E evict t=1792370259385 live=160 probe_live=140 sum=160 mods=4604 cold=7 born=19 kept=158 freeable=1 probe=65 sweep=69 marked=[57425, 57980, 54083, 57642] coldhist_mib=0,0,0,0,0,0,0,0
+1792370351033 E probe sweep=89 live=140 t=1792370358390
+1792370400372 E prologue cold_mib 5s,15s,30s,60s=8,3,1,0 since_probe_cold=0
+1792370400372 E evict t=1792370407116 live=160 probe_live=140 sum=160 mods=4770 cold=1 born=19 kept=159 freeable=0 probe=89 sweep=98 marked=[75146, 67636, 76603, 73233] coldhist_mib=0,0,0,0,0,0,0,0

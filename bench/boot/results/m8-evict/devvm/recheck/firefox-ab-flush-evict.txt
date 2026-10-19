@@ -1,0 +1,4 @@
+flush-1 exit 0 368 s, 292 MIPS (139 a busy vCPU, inside 53% of the time); vCPU stalls >=20/50/100/250/500/1000 ms: 1/0/0/0/0/0 (top 44), stalled ms/s 0.0; all-vCPU stalls: 0/0/0/0/0/0 (top )
+evict-1 exit 0 376 s, 298 MIPS (141 a busy vCPU, inside 53% of the time); vCPU stalls >=20/50/100/250/500/1000 ms: 4/0/0/0/0/0 (top 22,21,20,20), stalled ms/s 0.1; all-vCPU stalls: 0/0/0/0/0/0 (top )
+flush-2 exit 0 377 s, 296 MIPS (138 a busy vCPU, inside 54% of the time); vCPU stalls >=20/50/100/250/500/1000 ms: 1/0/0/0/0/0 (top 22), stalled ms/s 0.0; all-vCPU stalls: 0/0/0/0/0/0 (top )
+evict-2 exit 0 647 s, 156 MIPS (135 a busy vCPU, inside 29% of the time); vCPU stalls >=20/50/100/250/500/1000 ms: 2/0/0/0/0/0 (top 21,21), stalled ms/s 0.0; all-vCPU stalls: 0/0/0/0/0/0 (top )

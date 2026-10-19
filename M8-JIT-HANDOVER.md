@@ -25,18 +25,18 @@ the problem: ~78% of the cache cold for 15 s at its flushes, 3% freeable with ev
 modules pin nearly everything, transitively. Two ways out to measure: the cold-target rule (it freed nearly all of the
 idle machine's cold code, nothing of the boot's) and imports only within a generation (76-78% freeable, but half the
 imports become jump-cache tails).
-**Step 1, measured on the dev VM (2026-10-18; `bench/boot/results/m8-evict/` README "On the dev VM", data in
-`devvm/`):** at Firefox's flushes (two sessions, three each) ~90% of the cache is cold for 30 s; freeable with every
-import pinning 3-4%, with the cold-target rule 6-9% (the `go build` loop: 7% and 17%, one flush, at its boot); with
-imports only within an eighth of the budget 88-90%, a quarter 75-78%. Only generations pass the gate. Their cost
-(`cost.patch`, no eviction): Firefox's busy MIPS 139 · 136 → 137 · 135 (noise), the gates within 0.1% (boot) and −0.9%
-(userspace). **Step 2, next: build it behind a `Config` switch** (off = today's flush): modules import only blocks of
-their own generation (`cost.patch`'s rule, an eighth of `max_bytes` by install order), the use signal and soft faults
-from the proposal, coldest-first eviction of sets closed under same-generation importers down to 6/8 of the budget,
-a flush when not enough is cold; slots reused from a free list, `env.jit_release(slot, n)` to the host (backlog: what
-the `fifo-evict-attempt` branch had worth keeping). Then A/B against the flush on the Firefox session (stalls at the
-flushes, busy MIPS) and the `go build` loop, and the gates. A responsiveness measure at the flushes (the user hears and
-sees them) would make the case better than busy MIPS.
+**Step 1 was wrong, and step 2 was built on it (2026-10-19; `bench/boot/results/m8-evict/` README "Rechecked").**
+`measure.patch` lost every table's marks at the first flush or `IC IALLU` (`Cache::drop_all` rebuilds `Seen`), so its
+"cold" was install age. Eviction on generations was built anyway (branch `evict-generations`, ABI 39 there:
+`env.jit_release`, `VmConfig.jit` 5 and 6, JIT-evict in the boot tests, planted bugs caught) and never evicted in
+Firefox's pages session: with real marks 0-12 MiB of the full 160 MiB cache is unused for 5-60 s, since nearly every
+module holds a region in use, and V8 frees a module only whole. **Next: the user's choice** among compacting (recompile
+the regions in use out of mostly idle modules, then drop those), two live epochs, recompiling the previous epoch's hot
+set right after a flush (where `Cache::flush` now doubles the threshold's floor), or a bigger budget (docs/backlog.md
+"Per-module eviction"). Measure first how long a flush's slow phase lasts and what it costs in frames (the pages
+session's per-second `fps`, `maxms`), so the choice rests on the stutter itself. One of the six evict sessions (the clean
+build's second) had a page time out with the guest nearly idle (`bench/results/local/evict/ff-evict-2`, local); the
+other five didn't, nor any flush session: not looked into.
 
 **Before that (2026-10-18, a cloud session): the integer NEON, structures and CRC32 compiled** (docs/jit.md "NEON →
 SIMD128", "NEON lane by lane", "Structures"; branch `claude/project-thread-fcaq73`). A profile of image decoding in
@@ -112,6 +112,16 @@ latency during a page load) if a lever's case rests on it.
 - Counters per phase without new ABI: `Table::helper_report` lines (below, "Learned").
 
 ## Learned (this track)
+
+- **Per-table fields in `Seen` vanish at every flush and `IC IALLU`**: `Cache::drop_all` rebuilds each `Seen` from
+  `Seen::default()` keeping only `ival`. A field added there (a pointer to the table's marks, say) must be carried over
+  explicitly, or everything after the boot's first IALLU reads nothing; check a diagnostic against a case whose answer
+  you know before trusting it (step 1's "90% cold" was install age).
+- **`vm::Counters` are summed over the tables by the host**: a diagnostic value written into one table's `Stats`
+  comes back as the sum over the tables that wrote one. Log lines (`helper_report`'s extra text, as
+  `devvm/recheck/recheck.patch` does) say which table and when.
+- **A module's coldness isn't a region's**: half of Firefox's regions sat idle at a flush, but almost every module had
+  one in use. Measure at the granularity that frees memory (V8 frees a module only whole).
 
 - **Where a sample lands inside JIT code says what stalls**: a timer sample blames the oldest instruction not
   retired, so a function's first instruction collects the frontend's waits for its code (compare with the core's own

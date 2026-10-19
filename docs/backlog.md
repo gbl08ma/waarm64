@@ -128,12 +128,20 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     its target's instance alive in V8, and imports point from newer modules to older ones, so a module's memory goes
     only with every module that imports it, transitively: a set to evict must be closed under importers (FIFO's
     cascade). Rebindable links instead (`return_call_ref` through a mutable global or a typed table) take ~8-10
-    dependent loads in V8's code against an import's 3, on every transfer between modules. Measured
-    (`bench/boot/results/m8-evict/`): at Firefox's flushes ~90% of the cache is cold for 30 s, yet only 3-4% is
-    freeable with every import pinning and 6-9% with the cold-target rule (the `go build` loop: 7%, 17%), since a few
-    recent modules pin nearly everything transitively; with imports only within an eighth of the budget by install
-    order, 88-90%. That costs nothing measurable (Firefox's busy MIPS −1.1%, the gates within 1%). **Next: build it**
-    (M8-JIT-HANDOVER.md).
+    dependent loads in V8's code against an import's 3, on every transfer between modules. Imports only
+    within an eighth of the budget cost nothing measurable (Firefox's busy MIPS −1.1%, the gates within 1%).
+  - **Built and not merged** (branch `evict-generations`, 2026-10-19; `bench/boot/results/m8-evict/` README
+    "Rechecked"): generations, a mark per dispatch, a probe at 7/8 clearing the jump and transfer caches,
+    coldest-first importer-closed eviction to 6/8, slots held until every table lets go (`env.jit_release`). It never
+    evicted in Firefox: the measurement that picked it had lost its marks at the first flush (its "cold" was install
+    age), and with real marks 0-12 MiB of a full 160 MiB cache is unused for 5-60 s. About half the regions are
+    idle, but nearly every module holds one in use, and V8 frees a module only whole. Worth keeping from the branch
+    whatever comes next: `env.jit_release` in place of the host guessing flushes from slot numbers, `Table::has` in
+    place of the table-index limit, the JIT-evict boot tests.
+  - **What could reduce a flush's stutter instead** (the user's choice; unmeasured): compacting (recompile the
+    regions in use out of mostly idle modules, then drop those); two live epochs (the old code keeps running while
+    the new epoch compiles the hot set); recompiling the previous epoch's hot set at once after a flush (the marks
+    give it) where `Cache::flush` now doubles the threshold's floor; a bigger budget.
 - **Smaller slow arms of loads and stores** (2026-10-13; memory of the code cache, not speed).
   Measured on Alpine's userspace benchmark (968 modules, 34 MB of wasm; 49 of them, 2,122
   functions, compiled eagerly in Node 26 with `--print-wasm-code`, one tier at a time; the

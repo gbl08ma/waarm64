@@ -1,5 +1,10 @@
 # Per-module eviction: what the cache could free (measurement before building)
 
+**The measurement below is invalid** (found 2026-10-19, "Rechecked" at the end): `measure.patch` keeps each table's
+hot-word pointer in `Seen`, and `Cache::drop_all` (every flush, and the boot's `IC IALLU`) rebuilds `Seen` from its
+default, so after the first one no table's marks were read and each module's "last use" was its install. Every "cold"
+figure here is install age, not use. `cost.patch`'s A/B (what imports within generations cost) stands.
+
 The first step of docs/backlog.md "Per-module eviction, coldest first": before building eviction, measure how much
 of a full code cache a coldest-first design could free. A module's memory can only go together with every module
 that imports it (an import keeps its target's instance alive; imports point from newer modules to older ones), so
@@ -74,7 +79,7 @@ Not measured here, on purpose: which modules a real use signal would see as cold
 these exact entry times, and errs toward "used"); tier-up redirects (a head's hot word naming its region) aren't
 pins, since eviction would reset the word.
 
-## On the dev VM (2026-10-18): only generations free enough, and they cost nothing measurable
+## On the dev VM (2026-10-18; its "cold" is install age, see the top): generations seemed to free enough, at no measurable cost
 
 `devvm/`: the raw lines gzipped (`gunzip -c devvm/firefox-s1.evict.txt.gz > /tmp/e.txt` before `evict.ts`) and
 `evict.ts`'s output for each run. Chromium 153.0.8010.52, the core at `0778386` with `measure.patch`.
@@ -121,3 +126,29 @@ Userspace phases ±2% in both directions (compress −1.8%, Lua +1.9%, churn −
 flushes; the Alpine userspace run compiles ~38 MiB, nearly two 20 MiB eighths, so links do cross generations
 there (how many wasn't counted). **The jump-cache tails that generations add cost nothing this workload or the gates can see**: build
 coldest-first eviction with modules importing only within their generation.
+
+## Rechecked (2026-10-19): almost nothing is cold at a module's granularity
+
+Eviction was built on the numbers above (branch `evict-generations`: generations, a mark per dispatch, a probe at 7/8
+that clears the jump and transfer caches, coldest-first importer-closed eviction down to 6/8, slots held until every
+table lets go; JIT-evict passes the boot tests and its planted bugs). In Firefox's pages session (`?jit=evict`, six
+sessions: two of the clean build, four of the debug builds) it never evicted: at each full cache too little was cold and it flushed. `devvm/recheck/recheck.patch`
+(applies on that branch) logs each attempt and adds the region-prologue marks `measure.patch` meant to have, with the
+pointer kept across flushes. Firefox's pages session, the 160 MiB cache full (`firefox-evict-dbg.txt`):
+
+| at the attempt | not entered for 5 s | 15 s | 30 s | 60 s | not entered since the probe began (16-50 s) |
+|---|---|---|---|---|---|
+| 1 | 12 MiB | 7 | 5 | 4 | 6 MiB |
+| 2 | 8 MiB | 3 | 1 | 0 | 0 MiB |
+
+The dispatcher's marks (only the entries that come through it, after the probe cleared the caches) agree: 1-7 MiB cold,
+19-20 MiB installed during the probe, 157-159 MiB kept with their imports; each table entered 48,000-77,000 distinct
+slots in the window, about half of the ~120,000. So about half the regions are idle, but a module is a batch of what got
+hot at the same time, and nearly every module holds at least one region in use. V8 frees code only a module at a time,
+so per-module eviction can't free a full cache's memory in this workload, with generations or without.
+
+What could, for the user to choose (none measured): recompiling the regions in use out of cold-ish modules into new
+ones and then dropping the old (compaction: what a flush's recompile costs, spread out and without the interpreted
+phase); the two-epoch design (keep the old epoch's code running while the new one compiles its hot set, memory
+briefly double); after a flush, compiling the previous epoch's hot set at once (the marks give it) rather than raising
+the threshold (`Cache::flush` doubles its floor); a bigger budget.
