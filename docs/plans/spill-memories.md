@@ -1,4 +1,4 @@
-# More guest RAM: spill memories as NUMA nodes (proposed 2026-10-18; under way)
+# More guest RAM: spill memories as NUMA nodes (proposed 2026-10-18; S0 and S1 done)
 
 Guest RAM lives in memory 0 beside the core (layout A, docs/architecture.md), which caps it at what 4 GiB leaves
 after the core's heap reserve: the page offers up to 2560 MiB (`MAX_RAM_MIB`, web/app/machine.ts). This plan adds
@@ -55,7 +55,11 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
 - **S1, wasm and the host:** the generated accessor module; `bootVm` makes the spill memories and hands them to the
   vCPU, device, compile and GPU workers; the virtio and xHCI records carry the memory; every backend uses a view per
   memory. Tests: the JIT and interpreter on spill pages in Node (`tests/jit.test.ts`-style), a Chromium boot with
-  spill RAM.
+  spill RAM. **Done:** `bootVm`'s `spill` (sizes; `splitRam` makes the page's split at `maxMemory0Ram`, where the heap
+  rule of docs/backlog.md "The core's heap in a fixed memory" puts it), the vCPU and device workers get the memories
+  (the compile worker reads no guest RAM), web/ram.ts holds the backends' views and `locate`; ABI 40. The page
+  splits `?ram=` already; snapshots of such a machine are refused until S3. `tests/page-spill.test.ts` (Debian,
+  4 GiB): docs/testing.md.
 - **S2, the page** (the user, 2026-10-18): **one RAM value**, as today (a drop-down or slider), with a warning
   when it is past what memory 0 holds (the rest goes to NUMA nodes, slower to reach); the split is automatic
   (memory 0 as large as it goes, then spill memories of up to 4 GiB). An **advanced section, hidden by default**,
@@ -68,8 +72,8 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
 
 ## 4. Open
 
-- Whether EDK2 (ArmVirtQemuKernel) maps the second `/memory` node as system memory (its `HighMemDxe` does for
-  QEMU), and whether Debian's EFI stub keeps the nodes for `of_numa` (Linux ignores DT memory nodes under UEFI but
-  keeps them for NUMA). Checked in S1's Chromium boot.
+- ~~Whether EDK2 maps the second `/memory` node and Debian keeps the nodes for `of_numa`~~: yes (S1's boot: two
+  nodes, node 1's `MemTotal` ~1 GiB, `OF: NUMA: parsing numa-distance-map-v1`, `Fallback order for Node 1: 1 0`).
+  The kernel prints "Enabling automatic NUMA balancing" at boot; the credential turns it off before userspace runs.
 - Early memblock allocations go top-down, so some of the kernel's boot-time data lands in the top node. Measured in
   S4 before anything is done about it.

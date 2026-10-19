@@ -11,7 +11,7 @@
 // counts); the realtime one (`ringSink`) writes them into the page's ring (web/audio-ring.ts) and completes
 // them once the AudioWorklet played them. A receive message is filled by a source (`SndSource`): the
 // deterministic one with a known waveform at the end of its exit, the realtime one at the stream's rate.
-import { gather, scatter, type Ctx, type Request } from './devices.ts';
+import { bytes, gather, scatter, type Ctx, type Ram, type Request, type Segment } from './devices.ts';
 import { CAPACITY, EPOCH, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, UNTAKEN, WAKE, WRITE, newRing, ringViews } from './audio-ring.ts';
 
 /** The queues, in order. */
@@ -893,16 +893,16 @@ export class Snd {
 export type SndState = ReturnType<Snd['save']> & { sink: unknown; source?: unknown };
 
 /** Writes `bytes` over the last bytes of the segments (a status: the end of a request's writable bytes). */
-function writeTail(ram: Uint8Array, segs: { off: number; len: number }[], bytes: Uint8Array) {
-  let skip = segs.reduce((n, s) => n + s.len, 0) - bytes.length;
+function writeTail(ram: Ram, segs: Segment[], data: Uint8Array) {
+  let skip = segs.reduce((n, s) => n + s.len, 0) - data.length;
   let k = 0;
   for (const s of segs) {
     if (skip >= s.len) {
       skip -= s.len;
       continue;
     }
-    const n = Math.min(s.len - skip, bytes.length - k);
-    ram.set(bytes.subarray(k, k + n), s.off + skip);
+    const n = Math.min(s.len - skip, data.length - k);
+    bytes(ram, s).set(data.subarray(k, k + n), skip);
     k += n;
     skip = 0;
   }

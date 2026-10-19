@@ -6,6 +6,7 @@
 import { Gpu } from './gpu.ts';
 import { readTrace } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
+import { ramLayout, type Ram } from './ram.ts';
 
 const RAM_BASE = 0x4000_0000;
 const ATTACH_BACKING = 0x106, SUBMIT_3D = 0x207, RESOURCE_FLUSH = 0x104;
@@ -25,7 +26,7 @@ export type ReplayResult = {
  * `until` stops the replay after a command (`lastSubmit`: after the trace's last SUBMIT_3D, before a client's exit
  * frees what it drew).
  */
-export function replay(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, o: ReplayOptions = {}): ReplayResult {
+export function replay(trace: Uint8Array, host: (ram: () => Ram) => VirglHost | undefined, o: ReplayOptions = {}): ReplayResult {
   const steps = replaySteps(trace, host, o);
   for (let s = steps.next(); ; s = steps.next()) if (s.done) return s.value;
 }
@@ -35,7 +36,7 @@ export function replay(trace: Uint8Array, host: (ram: () => Uint8Array) => Virgl
  * a data record into a backing, `settle` waits until the calls before it have run (as the guest waits for a fence
  * before it writes a staging buffer again).
  */
-export async function replayAsync(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, settle: () => Promise<void>, o: ReplayOptions = {}): Promise<ReplayResult> {
+export async function replayAsync(trace: Uint8Array, host: (ram: () => Ram) => VirglHost | undefined, settle: () => Promise<void>, o: ReplayOptions = {}): Promise<ReplayResult> {
   const steps = replaySteps(trace, host, o);
   for (let s = steps.next(); ; s = steps.next()) {
     if (s.done) return s.value;
@@ -46,7 +47,7 @@ export async function replayAsync(trace: Uint8Array, host: (ram: () => Uint8Arra
 type ReplayOptions = { width?: number; height?: number; caps?: Uint8Array; until?: (r: { submits: number; flushes: number }) => boolean; lastSubmit?: boolean };
 
 /** The replay, pausing before each data record. */
-function* replaySteps(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, o: ReplayOptions): Generator<void, ReplayResult> {
+function* replaySteps(trace: Uint8Array, host: (ram: () => Ram) => VirglHost | undefined, o: ReplayOptions): Generator<void, ReplayResult> {
   // Pass 1: the RAM the backings need, and the submits.
   let size = 0, total = 0;
   for (const r of readTrace(trace)) {
@@ -58,8 +59,8 @@ function* replaySteps(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglH
     for (let k = 0; k < n; k++) size += v.getUint32(32 + 16 * k + 8, true);
   }
   const ram = new Uint8Array(new SharedArrayBuffer(Math.max(4096, (size + 4095) & ~4095)));
-  const gpu = new Gpu(() => ram, ram.length, { width: o.width ?? 1024, height: o.height ?? 768, virgl: true, caps: o.caps });
-  gpu.host = host(() => ram);
+  const gpu = new Gpu(() => [ram], ramLayout(ram.length), { width: o.width ?? 1024, height: o.height ?? 768, virgl: true, caps: o.caps });
+  gpu.host = host(() => [ram]);
   const regions = new Map<number, { off: number; len: number }>();
   const replies: number[] = [], notes: string[] = [];
   let next = 0, submits = 0, flushes = 0;

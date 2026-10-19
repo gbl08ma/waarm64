@@ -13,6 +13,7 @@
 import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbOpener, UsbProblem, UsbResult, UsbSpeed, UsbToWorker, UsbTransfer, UsbVirtual } from './usb-device.ts';
 import { GadgetZero } from './usb-gadget-zero.ts';
 import { UsbKeyboard } from './usb-keyboard.ts';
+import { bytes, type Ram } from './ram.ts';
 
 // xhci::XhciShared (core/src/xhci.rs): events, then two virtio::WordRings of 4096 words.
 const RING_WORDS = 4096;
@@ -27,6 +28,8 @@ const CPL_DONE = 0;
 const CPL_ATTACH = 1;
 const CPL_DETACH = 2;
 const SEG_IMMEDIATE = 0x8000_0000;
+/** A segment's memory, in its length word's bits 27:24 (core/src/xhci.rs `SEG_MEM_SHIFT`). */
+const SEG_MEM_SHIFT = 24;
 /** Root connectors (each a USB 2 and a USB 3 port). */
 export const CONNECTORS = 4;
 
@@ -57,6 +60,8 @@ export type UsbInit = {
   shared: number;
   ram: number;
   ramSize: number;
+  /** The spill memories (docs/plans/spill-memories.md), memory 1 first. */
+  spill?: WebAssembly.Memory[];
   deterministic: boolean;
   /** Sets SIGNAL_DEVICE and wakes the vCPUs (what `Devices` does after a completion). */
   kick: () => void;
@@ -67,7 +72,7 @@ export type UsbInit = {
 };
 
 type Plugged = { dev: UsbDevice; device: UsbIdentity | UsbVirtual };
-type Segment = { off: number; len: number; imm?: Uint8Array };
+type Segment = { off: number; len: number; mem: number; imm?: Uint8Array };
 type InFlight = { connector: number; gen: number; into: boolean; segs: Segment[]; length: number };
 
 export class Usb {
@@ -274,8 +279,8 @@ export class Usb {
         const bytes = new Uint8Array(8);
         new DataView(bytes.buffer).setUint32(0, w[k++], true);
         new DataView(bytes.buffer).setUint32(4, w[k++], true);
-        segs.push({ off: 0, len: len & 0xff, imm: bytes.subarray(0, len & 0xff) });
-      } else segs.push({ off, len });
+        segs.push({ off: 0, len: len & 0xff, mem: 0, imm: bytes.subarray(0, len & 0xff) });
+      } else segs.push({ off, len: len & 0xff_ffff, mem: len >>> SEG_MEM_SHIFT & 0xf });
     }
     const into = setup ? (setup.requestType & 0x80) !== 0 : (ep & 0x80) !== 0;
     const type = TYPES[eptype & 7];
@@ -286,8 +291,8 @@ export class Usb {
     p.dev.submit(t, (r) => this.done(tag, r));
   }
 
-  private ram() {
-    return new Uint8Array(this.init.memory.buffer, this.init.ram, this.init.ramSize);
+  private ram(): Ram {
+    return [new Uint8Array(this.init.memory.buffer, this.init.ram, this.init.ramSize), ...(this.init.spill ?? []).map((m) => new Uint8Array(m.buffer))];
   }
 
   private gather(segs: Segment[], length: number) {
@@ -295,7 +300,7 @@ export class Usb {
     const ram = this.ram();
     let at = 0;
     for (const s of segs) {
-      out.set(s.imm ?? ram.subarray(s.off, s.off + s.len), at);
+      out.set(s.imm ?? bytes(ram, s), at);
       at += s.len;
     }
     return out;
@@ -314,7 +319,7 @@ export class Usb {
       for (const s of f.segs) {
         if (at >= actual) break;
         const n = Math.min(s.len, actual - at);
-        ram.set(data.subarray(at, at + n), s.off);
+        bytes(ram, s).set(data.subarray(at, at + n));
         at += n;
       }
     }

@@ -172,7 +172,7 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
   const size = 64 * 4096;
   const image = new Uint8Array(size).fill(7);
   const ram = new Uint8Array(1 << 16);
-  const ctx = { ram: () => ram } as unknown as Ctx;
+  const ctx = { ram: () => [ram] } as unknown as Ctx;
   const src = { size, read: (off: number, len: number) => image.slice(off, off + len) };
   const [data, map] = [memFile(), memFile()];
   const files = { data, map, meta: memFile(), close() {} };
@@ -183,7 +183,7 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
     h.setBigUint64(8, BigInt(sector), true);
     ram.set(body, 16);
     ram[8192 + room] = 0xff;
-    const n = await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16 }, { off: 16, len: body.length }].filter((s) => s.len), write: [{ off: 8192, len: room + 1 }] });
+    const n = await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: body.length, mem: 0 }].filter((s) => s.len), write: [{ off: 8192, len: room + 1, mem: 0 }] });
     assert.equal(n, (type === 0 && ram[8192 + room] === 0 ? room : 0) + 1);
     return ram[8192 + room];
   };

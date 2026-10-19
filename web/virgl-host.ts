@@ -12,7 +12,8 @@ import { walk } from './virgl.ts';
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type HostCall =
-  | { t: 'ram'; buffer: ArrayBufferLike; offset: number; length: number }
+  /** Guest RAM by memory (memory 0, then the spill memories: web/ram.ts). */
+  | { t: 'ram'; ram: { buffer: ArrayBufferLike; offset: number; length: number }[] }
   | { t: 'ctx'; id: number; create: boolean }
   | { t: 'res'; desc: ResourceDesc }
   | { t: 'unref'; id: number }

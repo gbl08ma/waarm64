@@ -32,8 +32,10 @@ Design notes for an ABI change go in this file before the code.
 - **A fixed-size memory** (ABI 32): `bootVm` makes the memory its final size, so that V8 loads its
   size once per JIT function instead of after every call (Linux arm64 and Android, where wasm
   accesses are bounds-checked explicitly: [v8.md](v8.md) "Bounds checks"). The memory is created
-  with `maximum` = the scratch page + RAM + fw_cfg's files + `HEAP_RESERVE` (1 GiB, which holds the
-  core's static data and stack too); after the host has grown its parts, `heap_reserve(pages) ->
+  with `maximum` = the scratch page + RAM + fw_cfg's files + the heap reserve (which holds the core's
+  static data and stack too): what 4 GiB leaves after the rest, capped at `HEAP_RESERVE` (1 GiB) and never
+  under `HEAP_FLOOR` (1 GiB until it is measured: docs/backlog.md "The core's heap in a fixed memory"), so
+  memory 0 holds at most `maxMemory0Ram()` of RAM and `splitRam()` puts the rest in spill memories; after the host has grown its parts, `heap_reserve(pages) ->
   pages` allocates and frees one block that grows the memory to within two pages of `pages`. The
   allocator keeps what is freed (it can't shrink a wasm memory), so the core's later allocations
   come from that block and never grow the memory; its pages cost nothing until used. The host
@@ -167,8 +169,9 @@ Layouts in `core/src/virtio.rs` and `web/devices.ts`; the behavior is in [device
   writes land there with `EV_CONFIG`) at 24, request ring at 280, completion ring at 16672. Each
   ring is SPSC u32 words: head, tail (words written/read, wrapping), 4096 words.
 - **Request record:** `w0` = head | queue << 16 | epoch << 24; `w1` = readable count | writable
-  count << 16; then (offset from the start of guest RAM, length) per buffer, readable first.
-  Offsets are RAM-relative so the words stay u32 natively; the host adds its RAM base.
+  count << 16; then (offset, length, memory) per segment, readable first (ABI 40). Memory 0's
+  offsets are from the start of its guest RAM (so the words stay u32 natively; the host adds its RAM
+  base), a spill memory's from its start; a buffer that crosses a memory's edge is two segments.
 - **Completion record:** `w0` as posted, then bytes written.
 
 ### USB (ABI 38)
@@ -180,7 +183,8 @@ Layouts in `core/src/xhci.rs` and `web/usb.ts`; the behavior is in [usb.md](usb.
 - **Request record:** `w0` = tag (24 bits, from 1; 0 for the non-transfer kinds) | the connector's
   generation (its detaches, mod 256) << 24; `w1` = connector | DCI << 8 | kind << 16; `w2` = the words
   that follow. Kinds: 0 transfer (segment count | xHCI endpoint type << 16 | has-setup << 24, length,
-  the setup packet's two words for a control transfer, then (RAM offset, length) per segment; immediate
+  the setup packet's two words for a control transfer, then (RAM offset, length | memory << 24) per segment
+  (ABI 40; the offset as virtio's, lengths under 16 MiB, memories as `SEG_MEM_SHIFT`); immediate
   data is (0, length | 1 << 31) and two words of bytes), 1 reset, 2 cancel (count, tags), 3 configured
   (count, then (DCI | type << 8 | interval << 16, max packet) each), 4 clear-halt.
 - **Completion record**, three words, `w1 & 0xff` the kind: 0 done (`w0` as posted, `w1` = xHCI
@@ -508,4 +512,5 @@ implemented by this step).
 | 36 | `env.jit_compile`: the JIT's modules compiled in a worker of their own before the vCPUs install them |
 | 38 | USB: `VmConfig.xhci`, `vm_xhci` (above, "USB"); the `DEVICE` exit's slot 32 for the xHCI |
 | 39 | spill memories: `VmConfig.spill`, the `ram` imports; until S1 of the plan, devices take buffers in memory 0 only |
+| 40 | device records name the memory: virtio segments are (offset, length, memory), the xHCI's length word carries it in bits 27:24 |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

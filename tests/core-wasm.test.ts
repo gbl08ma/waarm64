@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports, panicMessage, withPanic } from '../web/vm.ts';
+import { coreImports, maxMemory0Ram, panicMessage, splitRam, withPanic } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 39);
+  assert.equal(ex.abi_version(), 40);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -194,3 +194,15 @@ for (const jit of [0, 4, 2]) {
     ex.vm_free(vm);
   });
 }
+
+// The page's split of a machine's RAM: memory 0 as large as the heap's floor leaves (fw_cfg's files after it), then
+// spill memories of up to 4 GiB.
+test('guest RAM splits into memory 0 and spill memories', () => {
+  const G = 2 ** 30;
+  assert.deepEqual(splitRam(2 * G), { ramSize: 2 * G, spill: [] });
+  const m0 = maxMemory0Ram(4096);
+  assert.equal(m0, 3 * G - 2 * 65536);
+  assert.deepEqual(splitRam(m0, 4096), { ramSize: m0, spill: [] });
+  assert.deepEqual(splitRam(12 * G, 4096), { ramSize: m0, spill: [4 * G, 4 * G, 12 * G - m0 - 8 * G] });
+  assert.throws(() => splitRam(40 * G), RangeError);
+});

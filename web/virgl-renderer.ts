@@ -16,9 +16,11 @@ import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
 import { VideoContext, type DecodedPicture, type DecoderFactory, type VideoStats } from './virgl-video.ts';
+import { bytes, type Ram, type Segment } from './ram.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
-export type Backing = { off: number; len: number }[];
+/** A resource's guest pages: segments of guest RAM (memory, offset, length; web/devices.ts `Segment`). */
+export type Backing = Segment[];
 
 export type ResourceDesc = {
   id: number; target: number; format: number; bind: number; width: number; height: number;
@@ -181,7 +183,7 @@ function viewFor(type: number, bytes: Uint8Array): ArrayBufferView | null {
 
 export class VirglRenderer {
   readonly gl: WebGL2RenderingContext;
-  private ram: () => Uint8Array;
+  private ram: () => Ram;
   private log: (m: string) => void;
   readonly resources = new Map<number, Res>();
   private contexts = new Map<number, Ctx>();
@@ -215,7 +217,7 @@ export class VirglRenderer {
   /** With `debug`: each resource's creation time and what passed through it, for its `life` line at its unref. */
   private life = new Map<number, { t0: number; uploads: number; bytes: number; staged: number }>();
 
-  constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void; debug?: (m: string) => void; video?: { decoders: DecoderFactory; hardware: readonly number[] } }) {
+  constructor(gl: WebGL2RenderingContext, o: { ram: () => Ram; log?: (m: string) => void; debug?: (m: string) => void; video?: { decoders: DecoderFactory; hardware: readonly number[] } }) {
     this.gl = gl;
     this.ram = o.ram;
     this.video = o.video;
@@ -400,7 +402,7 @@ export class VirglRenderer {
     const merged: Backing = [];
     for (const b of backing) {
       const last = merged[merged.length - 1];
-      if (last && last.off + last.len === b.off) last.len += b.len;
+      if (last && last.mem === b.mem && last.off + last.len === b.off) last.len += b.len;
       else merged.push({ ...b });
     }
     r.backing = merged;
@@ -449,13 +451,13 @@ export class VirglRenderer {
     for (let k = 0; k < r.backing.length; k++) {
       const b = r.backing[k];
       if (skip >= b.len) { skip -= b.len; continue; }
-      if (skip + len <= b.len) return ram.subarray(b.off + skip, b.off + skip + len);
+      if (skip + len <= b.len) return bytes(ram, b).subarray(skip, skip + len);
       const out = new Uint8Array(len);
       let at = 0;
       for (let j = k; j < r.backing.length && at < len; j++) {
         const e = r.backing[j];
         const n = Math.min(e.len - (j === k ? skip : 0), len - at);
-        out.set(ram.subarray(e.off + (j === k ? skip : 0), e.off + (j === k ? skip : 0) + n), at);
+        out.set(bytes(ram, e).subarray(j === k ? skip : 0, (j === k ? skip : 0) + n), at);
         at += n;
       }
       return at === len ? out : null;
@@ -464,19 +466,19 @@ export class VirglRenderer {
   }
 
   /** Writes `bytes` at `offset` of the resource's backing. False if it doesn't fit. */
-  private writeBacking(r: Res, offset: number, bytes: Uint8Array) {
+  private writeBacking(r: Res, offset: number, data: Uint8Array) {
     if (!r.backing) return false;
     const ram = this.ram();
     let skip = offset, at = 0;
     for (const b of r.backing) {
       if (skip >= b.len) { skip -= b.len; continue; }
-      const n = Math.min(b.len - skip, bytes.length - at);
-      ram.set(bytes.subarray(at, at + n), b.off + skip);
+      const n = Math.min(b.len - skip, data.length - at);
+      bytes(ram, b).set(data.subarray(at, at + n), skip);
       at += n;
       skip = 0;
-      if (at === bytes.length) return true;
+      if (at === data.length) return true;
     }
-    return at === bytes.length;
+    return at === data.length;
   }
 
   private backingSize(r: Res) {

@@ -15,6 +15,7 @@
 import type { Options, Sample } from '../spike/benchmarks.ts';
 import { Gpu } from '../../web/gpu.ts';
 import { canvasPresenter } from '../../web/gpu-present.ts';
+import { ramLayout } from '../../web/ram.ts';
 
 const SIZES: [string, number, number][] = [['1080p', 1920, 1080], ['1440p', 2560, 1440], ['4k', 3840, 2160]];
 const now = () => performance.now();
@@ -249,10 +250,10 @@ async function flushCost(o: Options): Promise<Sample[]> {
   for (const [label, w, h] of SIZES) {
     const ram = frame(w, h);
     const canvas = new OffscreenCanvas(w, h);
-    const gpu = new Gpu(() => ram, ram.length, { width: w, height: h });
+    const gpu = new Gpu(() => [ram], ramLayout(ram.length), { width: w, height: h });
     gpu.hooks = canvasPresenter(canvas, undefined, false, false, 'canvas2d');
     const glCanvas = new OffscreenCanvas(w, h);
-    const hosted = new Gpu(() => ram, ram.length, { width: w, height: h });
+    const hosted = new Gpu(() => [ram], ramLayout(ram.length), { width: w, height: h });
     hosted.hooks = canvasPresenter(glCanvas, undefined, false, false, 'webgl2');
     if (!hosted.hooks.raw) throw new Error('flush_cost: no WebGL2 on an OffscreenCanvas here');
     const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;

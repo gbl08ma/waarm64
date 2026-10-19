@@ -239,6 +239,24 @@ impl Mem {
         })
     }
 
+    /// Where `len` bytes at `pa` are as devices name them: (memory, offset),
+    /// memory 0's offset from its first byte or a spill memory's in it.
+    pub fn ram_offset(&self, pa: u64, len: u64) -> Option<(usize, u64)> {
+        let h = self.host(pa, len, Access::Read).ok()?;
+        Some(match h.mem() {
+            0 => (0, pa - self.phys),
+            m => (m, h.off()),
+        })
+    }
+
+    /// The guest PA of a device's (memory, offset), [`Mem::ram_offset`]'s inverse.
+    pub fn ram_pa(&self, m: usize, off: u64) -> u64 {
+        match m {
+            0 => self.phys + off,
+            m => self.spill[m - 1].phys + off,
+        }
+    }
+
     /// The guest physical address of `h`, a host address in the RAM ([`Mem::host`]'s inverse).
     #[inline]
     pub fn pa(&self, h: Host) -> u64 {

@@ -33,6 +33,7 @@ import { FORMATS } from '../../web/virgl-formats.ts';
 import { CallQueue, localHost, portHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
 import { Gpu } from '../../web/gpu.ts';
+import { ramLayout } from '../../web/ram.ts';
 import { canvasPresenter } from '../../web/gpu-present.ts';
 import { Screen } from '../../web/virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory } from '../../web/virgl-video.ts';
@@ -363,13 +364,13 @@ export function streamOut() {
   const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
   const ram = new Uint8Array(4096);
   const log: string[] = [];
-  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => log.push(m) });
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => log.push(m) });
   r.createContext(1);
   const buffer = (id: number, width: number, bind: number) => { r.createResource({ id, target: 0, format: 64, bind, width, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 }); r.attach(1, id); };
   buffer(1, 48 * 4, 0x10); // vertices: 12 vec4s
   buffer(2, 60 * 4, 0x800); // interleaved: 10 vertices of 6 floats
   buffer(3, 64, 0x800); buffer(4, 64, 0x800); // separate: 4 vec4s, 8 vec2s
-  buffer(5, 64, 0x800); r.attachBacking(5, [{ off: 0, len: 64 }]); // the query's result
+  buffer(5, 64, 0x800); r.attachBacking(5, [{ off: 0, len: 64, mem: 0 }]); // the query's result
   buffer(6, 64, 0x800); buffer(7, 80, 0x800); // mixed: 4 vec4s; 4 vertices of 5 floats (gaps at 0 and 4)
   const words: number[] = [];
   const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
@@ -430,10 +431,10 @@ export async function screen2d(format: number, px: number[]) {
   const gl = new OffscreenCanvas(4, 4).getContext('webgl2')!;
   const ram = new Uint8Array(4096);
   for (let k = 0; k < 64; k += 4) ram.set(px, k);
-  const r = new VirglRenderer(gl, { ram: () => ram });
+  const r = new VirglRenderer(gl, { ram: () => [ram] });
   const screen = new Screen(gl, r);
   const seen = new Promise<number[]>((ok) => (screen.probe = (...rgb) => ok(rgb)));
-  const gpu = new Gpu(() => ram, ram.length, { width: 4, height: 4 });
+  const gpu = new Gpu(() => [ram], ramLayout(ram.length), { width: 4, height: 4 });
   gpu.host = localHost(r, screen);
   const cmd = (type: number, ...fields: (number | bigint)[]) => {
     const b = new Uint8Array(24 + fields.reduce<number>((n, f) => n + (typeof f === 'bigint' ? 8 : 4), 0));
@@ -462,7 +463,7 @@ export async function presenter2d(format: number, px: number[], canvas2d: boolea
   const hooks = canvasPresenter(canvas, undefined, false, false, canvas2d ? 'canvas2d' : 'webgl2');
   const ram = new Uint8Array(4096);
   for (let k = 0; k < 64; k += 4) ram.set(px, k);
-  const gpu = new Gpu(() => ram, ram.length, { width: 4, height: 4 });
+  const gpu = new Gpu(() => [ram], ramLayout(ram.length), { width: 4, height: 4 });
   gpu.hooks = hooks;
   const cmd = (type: number, ...fields: (number | bigint)[]) => {
     const b = new Uint8Array(24 + fields.reduce<number>((n, f) => n + (typeof f === 'bigint' ? 8 : 4), 0));

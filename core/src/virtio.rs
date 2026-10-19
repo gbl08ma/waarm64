@@ -15,8 +15,10 @@
 //!   the device in DEVICE_NEEDS_RESET: it stops processing until reset. It never panics.
 //!
 //! Ring records are u32 words. Request: `w0` = head | queue << 16 | epoch << 24,
-//! `w1` = readable count | writable count << 16, then (offset from the start of
-//! RAM, length) per segment, readable ones first. Completion: `w0` as posted,
+//! `w1` = readable count | writable count << 16, then (offset, length, memory)
+//! per segment, readable ones first: the memory is 0 for memory 0's RAM (the
+//! offset from its start) or a spill memory's index (the offset in it; ABI 40,
+//! docs/plans/spill-memories.md), and a buffer lies in one memory. Completion: `w0` as posted,
 //! then the number of bytes written. `epoch` counts device resets (mod 256), so
 //! records from before a reset are skipped by the backend and dropped here.
 
@@ -25,7 +27,6 @@ use std::collections::VecDeque;
 
 use crate::mem::{Access, Mem};
 use crate::snapshot::{self, Reader, Writer};
-use crate::vm::RAM_BASE;
 
 /// QEMU `virt`'s window: 32 transports of 0x200 bytes, SPIs 16–47.
 pub const MMIO_BASE: u64 = 0x0a00_0000;
@@ -156,16 +157,16 @@ pub struct Request {
     /// The record's first word, echoed in the completion.
     pub w0: u32,
     pub queue: u32,
-    /// (RAM offset, length)
-    pub read: Vec<(u32, u32)>,
-    pub write: Vec<(u32, u32)>,
+    /// (offset, length, memory)
+    pub read: Vec<(u32, u32, u32)>,
+    pub write: Vec<(u32, u32, u32)>,
 }
 
 impl WordRing {
     /// Consumer: the next request record (the core posts whole records).
     pub fn pop_request(&self) -> Option<Request> {
         let [w0, n] = self.pop::<2>()?;
-        let seg = |k| (0..k).map(|_| self.pop::<2>().unwrap().into()).collect();
+        let seg = |k| (0..k).map(|_| self.pop::<3>().unwrap().into()).collect();
         let read = seg(n & 0xffff);
         let write = seg(n >> 16);
         Some(Request {
@@ -268,8 +269,8 @@ impl From<crate::mem::Fault> for Bad {
 }
 
 /// Walks the split-queue descriptor chain starting at `head` in the table of
-/// `size` descriptors at `desc`, appending each buffer as (RAM offset, length)
-/// to `out`. Returns the readable and writable counts. Everything the guest
+/// `size` descriptors at `desc`, appending each buffer as (offset, length,
+/// memory) to `out`. Returns the readable and writable counts. Everything the guest
 /// supplies is checked: the chain is at most `size` buffers (so loops end),
 /// indices stay in their table, buffers lie in RAM, readable before writable,
 /// and indirect tables (if `indirect_ok`) are well formed and not nested.
@@ -301,10 +302,7 @@ pub fn walk_chain(
         if count > size {
             return Err(Bad);
         }
-        // Memory 0 only until the records name a memory (spill-memories.md S1).
-        if mem.host(addr, len, Access::Read)?.mem() != 0 {
-            return Err(Bad);
-        }
+        let (m, off) = mem.ram_offset(addr, len).ok_or(Bad)?;
         if flags & D_WRITE != 0 {
             nw += 1;
         } else if nw > 0 {
@@ -312,7 +310,7 @@ pub fn walk_chain(
         } else {
             nr += 1;
         }
-        out.extend([(addr - RAM_BASE) as u32, len as u32]);
+        out.extend([off as u32, len as u32, m as u32]);
         if flags & D_NEXT == 0 {
             return Ok((nr, nw));
         }
