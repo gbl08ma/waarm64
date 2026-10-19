@@ -18,8 +18,8 @@ WebGL it removes the interpreted slow phase (worst second 18 frames against 8); 
 clear win in both workloads.
 
 **Next (the user's choice, 2026-10-19, in this order; the backlog's "Carrying the hot set across a flush, by
-default"):** build and unit-test in a cloud session, measure on the dev VM (a cloud session can't time anything:
-hand the measurements back here, as below).
+default"):** built in a cloud session, which also measures everything that isn't time (below, "The split of
+measurement"); the dev VM measures what is.
 
 **Why emitting blocks the vCPUs today** (read at 9058822): the compile worker (`web/jit-compile-worker.ts`) only runs
 V8's `new WebAssembly.Module(bytes)` and posts the module; it has no core instance. Everything before that runs on
@@ -59,13 +59,47 @@ M5; the compile worker (ABI 36) came later, for V8's GC stalls only.
 4. **The mark's cost**: mark only while a probe runs (the 2% on `smp_user_jit_4`).
 5. Then default on, if the gates and Firefox's busy MIPS stay within noise.
 
-**What the dev VM measures after the cloud's work** (the cloud hands this back here):
-- The steady WebGL run with `diag.patch`, and the pages session (below): the default against the carry, two each,
-  alternating, after steps 1, 3 and 5.
-- `flushes.ts`: the slow phase, the frames, wasm bytes, flushes per session.
-- vCPU stalls ≥ 20 ms, `overdue`.
-- The gates (`tools/tpw.sh`), and the 4-vCPU `go build` loop.
-- `scripts/ci.sh` and `scripts/ci-debian.sh`.
+**The split of measurement.** A cloud container's CPU is shared, so its times aren't comparable (MIPS, seconds,
+frames, stall lengths). Counts don't depend on that, and they validate and tune the design. **The cloud measures
+counts, per step of the round, and adjusts the design and its knobs on them before handing over.**
+- **Workload.** What the cloud can run:
+  - Debian on the page, with the budget cut (e.g. 24 MiB, a local edit as the first cloud round did) so a boot and
+    a userspace load flush several times.
+  - Buildroot's JIT-replay tests (a 16 KiB cache).
+  - Round-robin runs in Node, where the counts are exact and repeatable. With the emitter on they're not: run
+    several and report the spread.
+
+  It can't build the desktop guests (Arch Linux ARM, Firefox): those runs are the dev VM's.
+- **Per flush:**
+  - flushes and their kinds (carry or plain, from the guard)
+  - regions marked, carried and replayed
+  - `replayedBytes`
+  - modules and wasm bytes alive before and after (both halves while the carry lives, then after the release)
+  - modules emitted per round and their sizes (regions per module, which step 2's 512-region modules change)
+  - the compiled share of steps in fixed windows **of guest steps** after the flush (e.g. each 50M steps for the
+    next 1G), in place of the dev VM's seconds
+  - steps until the next flush
+- **Per session:**
+  - flushes and wasm bytes
+  - modules in all
+  - the replay's `overdue` and parked counts, rough (they depend on timing)
+- **For steps 2 and 3:**
+  - lock acquisitions and regions emitted per acquisition
+  - emits done inline against in the worker
+  - commits discarded per rule (epoch, page invalidated, import remapped) and the slots they wasted
+- Put these counts in `results.json`'s `jit` (new counters are an ABI change, in the round's ABI bump) and a
+  steps-based report next to `flushes.ts`.
+- Compare A/B against the default and the current carry. Commit the JSON as the dev VM would, marked as from the
+  cloud.
+
+**What the dev VM measures after the cloud hands over** (time only, and the workloads the cloud can't run):
+- The steady WebGL run with `diag.patch`, and Firefox's pages session (below): the default against the carry, two
+  each, alternating. Read the slow phase in seconds, the frames, MIPS and stall lengths (≥ 20 ms), and check the
+  cloud's counts hold on the desktop guest.
+- The gates (`tools/tpw.sh`) and the 4-vCPU `go build` loop. Step 4 (the mark's cost) is a time question; the
+  cloud can build it, but only the dev VM can judge it.
+- `scripts/ci-debian.sh` whole, and the long or image-bound tests the cloud can't run.
+- The decision to turn it on by default (step 5).
 
 Older items of the user's queue stay in the backlog: "Indirect transfers into a browser's code" and "Fewer, larger
 modules for a browser" (first: the renderer's RSS through the pages session).
