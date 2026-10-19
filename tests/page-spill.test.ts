@@ -4,13 +4,16 @@
 // direct disk reads into node 1 and writes out of it are intact (the virtio records name the spill memory). Opt-in with
 // WEBPC_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -38,12 +41,16 @@ async function run(page: Page, cmd: string, re: RegExp, ms = 120_000): Promise<s
   return (await terminal(page)).match(re)!.slice(1);
 }
 
-test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes, balancing off, data on node 1, disk reads and writes through it intact', { skip, timeout: 15 * 60_000 }, () => withDebianLock(async () => {
+test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes, balancing off, data on node 1, disk reads and writes through it intact; a snapshot of it loads in a fresh profile', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&split=2560,1024,512&${unattendedQuery()}`);
+  // Headless Chromium's save picker would wait for a dialog nobody answers: the page downloads instead.
+  await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
+  await answerAsks(page);
+  const query = `${PAGE_QUERY}ncpus=2&view=both&split=2560,1024,512&${unattendedQuery()}`;
+  await page.goto(`${base}/web/app/?${query}`);
   // The Machine menu: the running split's note, the automatic one's for another size, none for a size memory 0 holds.
   await page.locator('#machine-menu summary').click();
   assert.match(await page.locator('#machine-numa').textContent() ?? '', /^2560 MiB of it is the machine's fast memory; the guest gets the other 1536 MiB as 2 more NUMA nodes/);
@@ -85,6 +92,36 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
   const head = 'head -c 64M /n1/a | sha256sum | cut -c1-16';
   const [written, wrote] = await run(page, `${bind(2)('dd if=/n1/a of=/root/x bs=4M count=16 oflag=direct status=none')}; echo 3 >/proc/sys/vm/drop_caches; echo "R5 $(${head}) $(sha256sum </root/x | cut -c1-16)."`, /R5\s([0-9a-f]{16})\s([0-9a-f]{16})\./);
   assert.equal(wrote, written);
-  assert.deepEqual(errors, []);
-  await context.close();
+
+  // A snapshot (the spill memories' RAM after memory 0's), loaded in a fresh profile: the shell's variable and node 1's
+  // tmpfs are as they were.
+  await run(page, 'export MARK=kept-$((6*7)); echo "R6 $MARK."', /R6\skept-42\./);
+  const dir = mkdtempSync(join(tmpdir(), 'webpc-spill-'));
+  try {
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 300_000 }), page.locator('#save-snapshot').click()]);
+    const file = join(dir, 'spill.webpcsnap');
+    await download.saveAs(file);
+    await page.waitForFunction(() => /^Saved the snapshot /.test(document.getElementById('message-text')?.textContent ?? ''), null, { timeout: 120_000 });
+    assert.deepEqual(errors, []);
+    await context.close();
+    const fresh = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const p2 = await fresh.newPage();
+    const errors2: string[] = [];
+    p2.on('pageerror', (e) => errors2.push(String(e)));
+    await answerAsks(p2);
+    await p2.goto(`${base}/web/app/?${query}`);
+    await p2.setInputFiles('#load-snapshot-input', file);
+    await p2.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
+    await p2.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), undefined, { timeout: 300_000, polling: 250 })
+      .catch(async (e) => { throw new Error(`${e}; the page is ${await p2.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('status')?.textContent}`)}`); });
+    const [state2, message2] = await p2.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')?.textContent ?? '']);
+    assert.equal(state2, 'running', message2);
+    await p2.locator('.xterm').click();
+    const [mark, again] = await run(p2, `clear; echo "R7 $MARK $(sha256sum </n1/a | cut -c1-16)."`, /R7\s(\S+)\s([0-9a-f]{16})\./);
+    assert.deepEqual([mark, again], ['kept-42', a]);
+    assert.deepEqual(errors2, []);
+    await fresh.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }));

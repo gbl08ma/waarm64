@@ -12,7 +12,8 @@
 //
 // Tags: CORE and DEVS (chunked in 1 MiB frames, joined in index order), "RAM " (guest RAM in 1 MiB
 // chunks: a 32-byte bitmap of the present 4 KiB pages, then those pages; a zero page is absent, a
-// chunk without pages has no frame), DISK (a run of 1 to 256 consecutive overlay blocks, index =
+// chunk without pages has no frame; a machine with spill memories numbers their chunks on from memory
+// 0's, each memory starting at a whole chunk: web/snapshot.ts `ramStarts`), DISK (a run of 1 to 256 consecutive overlay blocks, index =
 // the first block), "END ". Codec 0 is stored, 1 is deflate-raw; each frame is compressed alone, and
 // stored when compressing doesn't shrink it. Codecs plug in by id.
 
@@ -27,7 +28,7 @@ const MAGIC = new TextEncoder().encode('WEBPCSNP');
 const VERSION = 1;
 const FRAME_HEADER = 32;
 const MAX_HEADER = 1 << 20;
-const CHUNK = 1 << 20; // raw bytes of a CORE or DEVS frame, and of the guest RAM in a RAM frame
+export const CHUNK = 1 << 20; // raw bytes of a CORE or DEVS frame, and of the guest RAM in a RAM frame
 const PAGE = 4096;
 const BITMAP = 32;
 const MAX_RAW = CHUNK + BITMAP;
@@ -121,7 +122,7 @@ export const deflateCodec: Codec = {
 
 /** Whether the 4 KiB page at byte `off` of `w` (a Uint32Array over a 4-aligned view) is all zeros. */
 function zeroPage(w: Uint32Array, off: number) {
-  for (let i = off >> 2, end = i + 1024; i < end; i += 8) {
+  for (let i = off >>> 2, end = i + 1024; i < end; i += 8) {
     if ((w[i] | w[i + 1] | w[i + 2] | w[i + 3] | w[i + 4] | w[i + 5] | w[i + 6] | w[i + 7]) !== 0) return false;
   }
   return true;
@@ -249,9 +250,10 @@ export class SnapshotWriter {
 
   /**
    * Guest RAM, a 1 MiB chunk at a time (all-zero pages left out, all-zero chunks skipped). `ram` may
-   * be a view of shared memory. Its length is a multiple of 4096.
+   * be a view of shared memory. Its length is a multiple of 4096. `first`: its first chunk's index (a
+   * spill memory's, after memory 0's chunks).
    */
-  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void): Promise<{ pages: number; frames: number }> {
+  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void, first = 0): Promise<{ pages: number; frames: number }> {
     if (ram.length % PAGE !== 0) throw new RangeError('RAM is a whole number of 4 KiB pages');
     // Scanned where it lies when 4-aligned (the usual case); otherwise a chunk is copied first.
     const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2) : null;
@@ -283,7 +285,7 @@ export class SnapshotWriter {
         }
         pages += present;
         frames++;
-        await this.#frame('RAM ', base / CHUNK, raw);
+        await this.#frame('RAM ', first + base / CHUNK, raw);
       }
       progress?.(base + len, ram.length);
     }

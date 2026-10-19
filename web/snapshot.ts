@@ -6,13 +6,23 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
+import { applyRam, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { openOverlay, overlay, overlayMeta, removeOverlay, writeMeta, type WritableDisk } from './overlay.ts';
 import { isZero } from './qcow2-write.ts';
 import { ABI, bootVm, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
+
+/**
+ * Each memory's first RAM chunk in the file, for memories of `sizes` bytes (memory 0's RAM, then the spill memories,
+ * docs/plans/spill-memories.md): memory 0's at 0, each next one at the whole chunk after the one before ends.
+ */
+export function ramStarts(sizes: number[]): number[] {
+  const starts: number[] = [];
+  sizes.reduce((at, size) => (starts.push(at), at + Math.ceil(size / CHUNK)), 0);
+  return starts;
+}
 
 /** What the caller says the machine is (the header's free fields): a restore checks what it needs of it. */
 export type SnapshotMeta = Record<string, unknown>;
@@ -53,11 +63,19 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const carried = (d: (typeof all)[number]) => d.ram || (!opts.suspend && !opts.omit?.(d.slot));
   const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: carried(d) ? d.blocks.length : 0, sha256: opts.sha256?.(d.slot), overlay: d.overlay, generation: d.generation, ...(d.ram ? { ram: true } : {}) }));
   const disks = all.filter(carried);
-  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
+  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, ...(vm.spill.length ? { spill: vm.spill.map((m) => m.buffer.byteLength) } : {}), disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1 });
   await w.bytes('CORE', state.core);
   await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify(state.host)));
-  const ram = await w.ram(new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), opts.progress);
+  // Memory 0's RAM, then each spill memory's, their chunks numbered on (`ramStarts`); the progress is over all of it.
+  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spill.map((m) => new Uint8Array(m.buffer))];
+  const total = views.reduce((n, v) => n + v.length, 0);
+  const starts = ramStarts(views.map((v) => v.length));
+  const ram = { pages: 0, frames: 0 };
+  for (let k = 0, before = 0; k < views.length; before += views[k].length, k++) {
+    const r = await w.ram(views[k], opts.progress && ((done) => opts.progress!(before + done, total)), starts[k]);
+    [ram.pages, ram.frames] = [ram.pages + r.pages, ram.frames + r.frames];
+  }
   for (const d of disks) {
     await w.disk((async function* () {
       for (let k = 0; k < d.blocks.length; k += 256) {
@@ -155,9 +173,20 @@ export async function readSnapshot(
   const restore: Restore = {
     core: join(parts.CORE),
     host,
-    async fill(ram) {
+    async fill(ram, spill = []) {
       if (ram.length !== header.ramSize) throw new SnapshotError('other-machine', `This snapshot is of a machine with ${Number(header.ramSize) / 2 ** 20} MiB of memory; this one has ${ram.length / 2 ** 20} MiB.`);
-      for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) applyRam(ram, next.value.index, next.value.data);
+      const had = header.spill === undefined ? [] : header.spill;
+      if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0)) throw corrupt('its memory sizes are not readable');
+      const mib = (sizes: number[]) => sizes.map((n) => `${n / 2 ** 20} MiB`).join(' + ');
+      if (had.join() !== spill.map((v) => v.length).join()) throw new SnapshotError('other-machine', `This snapshot is of a machine with ${had.length ? `NUMA nodes of ${mib(had)}` : 'no NUMA nodes'} past its first memory; this one has ${spill.length ? mib(spill.map((v) => v.length)) : 'none'}.`);
+      const views = [ram, ...spill];
+      const starts = ramStarts(views.map((v) => v.length));
+      for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
+        const { index, data } = next.value;
+        let k = views.length - 1;
+        while (k > 0 && index < starts[k]) k--;
+        applyRam(views[k], index - starts[k], data);
+      }
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
       const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();

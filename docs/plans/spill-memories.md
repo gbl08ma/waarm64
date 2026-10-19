@@ -58,7 +58,7 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
   spill RAM. **Done:** `bootVm`'s `spill` (sizes; `splitRam` makes the page's split at `MAX_MEMORY0_RAM`, where the heap
   rule of docs/backlog.md "The core's heap in a fixed memory" puts it), the vCPU and device workers get the memories
   (the compile worker reads no guest RAM), web/ram.ts holds the backends' views and `locate`; ABI 40. The page
-  splits `?ram=` already; snapshots of such a machine are refused until S3. `tests/page-spill.test.ts` (Debian,
+  splits `?ram=` already. `tests/page-spill.test.ts` (Debian,
   4 GiB): docs/testing.md.
 - **S2, the page** (the user, 2026-10-18): **one RAM value**, as today (a drop-down or slider), with a warning
   when it is past what memory 0 holds (the rest goes to NUMA nodes, slower to reach); the split is automatic
@@ -70,6 +70,13 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
   machine's Settings (`ramSplit`, part of its shape and definition) and `?split=` for a transient machine (its menu
   has no advanced section); the host memory check counts all of it.
 - **S3, snapshots:** spill RAM in the snapshot file (web/snapshot-file.ts), a round trip in the page tests.
+  **Done:** the spill memories' `RAM ` chunks are numbered on from memory 0's, each memory from a whole chunk
+  (web/snapshot.ts `ramStarts`); the header's `spill` has their sizes (absent without them, so other files are as
+  they were) and the core's configuration words too, so a snapshot restores only onto the same split (refused
+  as another machine's otherwise). Found on the way: the writer took every page past 2 GiB of a memory for a zero
+  page (a signed shift of the byte offset), so any machine with more than 2 GiB of RAM saved without its top;
+  `tests/snapshot-file.test.ts` covers it now. `tests/page-spill.test.ts` saves the 3-node Debian and loads it in a
+  fresh profile.
 - **S4, on the dev VM** (a handover): Debian with spill RAM: the nodes (`numactl -H`), `numa_balancing` read as 0
   and the credential listed, where the kernel puts hot pages (`numastat` during a desktop workload), and what spill
   accesses cost against memory 0 (bench/boot). Then decide the JIT's inline second path.

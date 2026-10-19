@@ -170,6 +170,17 @@ test('RAM at an unaligned view offset, and all-zero RAM, round trip', async () =
   assert.equal(zero.end.frames, 0);
 });
 
+test('RAM past 2 GiB: its pages are seen (byte offsets past 2^31)', async () => {
+  // Untouched pages of a fresh buffer cost no memory: only the two written ones do.
+  const ram = new Uint8Array(2 * 1024 * MiB + MiB);
+  ram[5] = 1;
+  ram[ram.length - 4096 + 7] = 2;
+  const { file, ram: r } = await write({ ram });
+  assert.equal(r!.pages, 2);
+  const frames = (await readAll(whole(file))).frames.filter((f) => f.tag === 'RAM ');
+  assert.deepEqual(frames.map((f) => f.index), [0, 2048]);
+});
+
 test('the reader takes any chunking: 1 byte, random sizes, a Blob', async () => {
   const core = random(300_000, 3);
   const size = 2 * MiB + 4096 * 5;

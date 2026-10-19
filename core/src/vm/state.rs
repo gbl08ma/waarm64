@@ -56,6 +56,10 @@ impl Vm {
         if c.xhci != 0 {
             w.push(c.xhci);
         }
+        // Only on a machine with spill memories (docs/plans/spill-memories.md), likewise.
+        if c.spill[0] != 0 {
+            w.extend(c.spill.iter().take_while(|&&s| s != 0));
+        }
         let virtio = &self.plat.get_mut().virtio;
         w.push(virtio.len() as u64);
         for t in virtio {

@@ -63,10 +63,10 @@ export type VmState = { version: number; core: Uint8Array; host: { devices: unkn
 
 /**
  * A snapshot to start a VM from instead of booting it (`BootOptions.restore`): its {@link VmState}
- * and `fill`, which writes the snapshot's RAM into the new VM's (zeroed) RAM before the core
+ * and `fill`, which writes the snapshot's RAM into the new VM's (zeroed) RAM, memory 0's and each spill memory's, before the core
  * restores its state.
  */
-export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8Array): void | Promise<void> };
+export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8Array, spill?: Uint8Array[]): void | Promise<void> };
 
 /**
  * The core's imports: the shared memory, the host clock for realtime mode,
@@ -602,7 +602,6 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The spill memories (docs/plans/spill-memories.md), each at its final size.
   const spillSizes = o.spill ?? [];
   if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES)) throw new RangeError(`spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`);
-  if (o.restore && spillSizes.length) throw new SnapshotError('other-machine', 'Snapshots of a machine with RAM past memory 0 aren\'t supported yet.');
   const spill = spillSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const imports = coreImports(memory, undefined, undefined, undefined, spill);
@@ -681,7 +680,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   if (o.restore) {
     // RAM first (the transports read the chains their backends held from it), then the core's
     // state: the registers, the devices, their config spaces, the flash bank.
-    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize));
+    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spill.map((m) => new Uint8Array(m.buffer)));
     const { core } = o.restore;
     const at = ex.thread_alloc(core.length, 16);
     if (!at) throw new Error('no memory for the snapshot\'s state');
@@ -805,7 +804,6 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * the snapshot's other half: copy it before the VM runs on. The VM is unchanged but for its realtime clock, held at the saved reading until a vCPU runs again.
      */
     async snapshot(): Promise<VmState> {
-      if (spill.length) throw new Error("the machine can't be saved: snapshots of RAM past memory 0 aren't supported yet");
       for (let tries = 0; tries < 1000; tries++) {
         // Takes the completions the backends left, as the run loop would at its next boundary.
         const n = ex.vm_snapshot_size(vm);

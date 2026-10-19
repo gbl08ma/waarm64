@@ -7,7 +7,7 @@
 // port straight to the VM, and the keyboard and tablet ports go to the device
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
-import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, splitRam, type Restore, type Vm } from '../vm.ts';
+import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, splitError, splitRam, type Restore, type Vm } from '../vm.ts';
 import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
@@ -217,14 +217,17 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
   const ncpus = h.ncpus;
   if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', `${what}: its processor count isn't readable.\nStart boots ${machine.label} normally.`);
   const specs = here.map((s) => device(s, m, machine));
-  const ram = Number(h.ramSize) / 2 ** 20;
-  if (!Number.isInteger(ram) || ram < 64 || ram > 3072) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
+  // Memory 0's RAM, and the spill memories' (docs/plans/spill-memories.md), as they were.
+  const ramSize = Number(h.ramSize);
+  const spill = h.spill === undefined ? [] : h.spill;
+  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || !Array.isArray(spill) || splitError(ramSize, spill as number[])) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
+  const ram = (ramSize + (spill as number[]).reduce((a, b) => a + b, 0)) / 2 ** 20;
   // A snapshot from before the header said (ABI 34 and older) had none of them.
   const cpu = h.cpu ?? [];
   if (!Array.isArray(cpu) || !cpu.every((f): f is CpuFeature => CPU_FEATURES.includes(f as CpuFeature))) {
     throw failure('snapshot', `${what}: its processor's features aren't ones this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
   }
-  return { specs, ncpus, ramMiB: ram, cpu };
+  return { specs, ncpus, ramMiB: ram, split: { ramSize, spill: spill as number[] }, cpu };
 }
 
 const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href;
@@ -354,6 +357,9 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? true);
   let restore: Restore | undefined;
   let specs: DeviceSpec[] | undefined;
+  // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/plans/spill-memories.md): the
+  // user's split, else the automatic one; a snapshot's own.
+  let split = m.ramSplit ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20);
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
     // a resume keeps it: it is as the suspended machine left it).
@@ -362,7 +368,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       const lz = await codec();
       const { header } = await openSnapshot(snapshot, { codecs: [lz] });
       const h = fromHeader(header, m, machine, snapshotName);
-      ({ ncpus, ramMiB, cpu } = h);
+      ({ ncpus, ramMiB, cpu, split } = h);
       // A suspended machine resumes only onto its overlays as it left them: the same ones, at the generations it pinned
       // (docs/plans/machines.md §5.3; a switch, a reset, a merge or a boot since moved them on).
       if (resume) {
@@ -385,8 +391,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   }
   const devices = liveSpecs = specs ?? layout(m, machine).map((s) => device(s, m, machine));
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
-  // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/plans/spill-memories.md).
-  const { ramSize, spill } = m.ramSplit && !restore ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20);
+  const { ramSize, spill } = split;
   booting = bootVm(core, {
     ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices, usb: m.usb ? { port: m.usb } : undefined,
