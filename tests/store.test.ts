@@ -68,6 +68,11 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { display: '2d' })), h, 'a 3D machine run in 2D');
   assert.deepEqual(shapeDiff(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), ['memory: 1024 MiB then, 2048 MiB now']);
   assert.deepEqual(shapeDiff(s, s), []);
+  // A split set by hand (spill memories, docs/plans/spill-memories.md) moves it; the automatic one is no field at all.
+  assert.equal('split' in s, false);
+  const split = shapeOf(machine({ ramSplit: [512, 512] }), (id) => DISKS.get(id));
+  assert.notEqual(await shapeHash(split), h, 'a split set by hand');
+  assert.deepEqual(shapeDiff(s, split), ["memory's split: automatic then, 512 + 512 MiB now"]);
   assert.throws(() => shapeOf(m, () => undefined), /isn't in this browser/);
   assert.equal(slots({ nets: 0, display: 'none', attachments: new Array(MAX_DISKS) }).length, 4 + MAX_DISKS);
 });
@@ -261,5 +266,32 @@ test('network adapters on the Machines page: added up to the limit, removed; cop
   assert.deepEqual(adaptersOf((await importDefinition(store, plain)).machine).map((a) => a.mac), [DEFAULT_MAC]);
   for (const macs of [[], ['53:54:00:00:00:01'], ['nope'], new Array(MAX_ADAPTERS + 1).fill(DEFAULT_MAC)]) {
     assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, macs } })), /damaged/, JSON.stringify(macs));
+  }
+});
+
+test("guest RAM past memory 0: the page's split, its note, and a split set by hand in a definition", async () => {
+  const { MEMORY0_MIB, numaNote, ramSplitError, ramSplitMiB } = await import('../web/app/machine.ts');
+  const { createMachine } = await import('../web/app/machines.ts');
+  const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
+  assert.equal(MEMORY0_MIB, 3071);
+  assert.deepEqual(ramSplitMiB(2560), [2560]);
+  assert.deepEqual(ramSplitMiB(16384), [3071, 4096, 4096, 4096, 1025]);
+  assert.deepEqual(ramSplitMiB(2048, [1024, 1024]), [1024, 1024]);
+  assert.equal(numaNote(2560), undefined);
+  assert.match(numaNote(4096)!, /^3071 MiB of it is the machine's fast memory; the guest gets the other 1025 MiB as a second NUMA node/);
+  assert.match(numaNote(8192)!, /as 2 more NUMA nodes/);
+  assert.match(numaNote(2048, [1024, 1024])!, /other 1024 MiB as a second NUMA node/);
+  assert.equal(ramSplitError([1024, 1024]), undefined);
+  assert.match(ramSplitError([3072])!, /at most 3071 MiB/);
+  assert.match(ramSplitError([1024.5])!, /whole MiB/);
+  const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
+  const m = { ...(await createMachine(store, { name: 'Numa', ramMiB: 3072 })), ramSplit: [2048, 1024] };
+  await store.put('machines', m);
+  const def = await exportDefinition(store, m.id);
+  assert.deepEqual(def.machine.ramSplit, [2048, 1024]);
+  assert.deepEqual((await importDefinition(store, parseDefinition(JSON.stringify(def)))).machine.ramSplit, [2048, 1024]);
+  assert.equal('ramSplit' in (await exportDefinition(store, (await createMachine(store, {})).id)).machine, false);
+  for (const ramSplit of [[2048, 512], [3072, 0], [4096], 'no']) {
+    assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, ramSplit } })), /damaged/, JSON.stringify(ramSplit));
   }
 });

@@ -35,7 +35,7 @@ Design notes for an ABI change go in this file before the code.
   with `maximum` = the scratch page + RAM + fw_cfg's files + the heap reserve (which holds the core's
   static data and stack too): what 4 GiB leaves after the rest, capped at `HEAP_RESERVE` (1 GiB) and never
   under `HEAP_FLOOR` (1 GiB until it is measured: docs/backlog.md "The core's heap in a fixed memory"), so
-  memory 0 holds at most `maxMemory0Ram()` of RAM and `splitRam()` puts the rest in spill memories; after the host has grown its parts, `heap_reserve(pages) ->
+  memory 0 holds at most `MAX_MEMORY0_RAM` (3 GiB less 1 MiB) of RAM and `splitRam()` puts the rest in spill memories; after the host has grown its parts, `heap_reserve(pages) ->
   pages` allocates and frees one block that grows the memory to within two pages of `pages`. The
   allocator keeps what is freed (it can't shrink a wasm memory), so the core's later allocations
   come from that block and never grow the memory; its pages cost nothing until used. The host

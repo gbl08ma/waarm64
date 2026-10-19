@@ -65,6 +65,11 @@ export type MachineRecord = {
   name: string;
   ncpus: number;
   ramMiB: number;
+  /**
+   * The RAM's split as the user set it, MiB: memory 0 first, then each spill memory (a NUMA node for the guest;
+   * docs/plans/spill-memories.md), summing to `ramMiB`. Absent: the automatic one (web/app/machine.ts `ramSplitMiB`).
+   */
+  ramSplit?: number[];
   display: Display;
   /**
    * The network adapters (virtio-net), in slot order (docs/network-adapters.md). Absent on machines made before
@@ -166,6 +171,8 @@ export type Shape = {
   version: number;
   ncpus: number;
   ramMiB: number;
+  /** The user's split of the RAM (`MachineRecord.ramSplit`): only when set (left out otherwise, so shapes made before it hash as they did). */
+  split?: number[];
   display: Display | 'none';
   cpu: CpuFeature[];
   devices: DeviceKind[];
@@ -190,6 +197,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
     version: SHAPE_VERSION,
     ncpus: m.ncpus,
     ramMiB: m.ramMiB,
+    ...(m.ramSplit ? { split: m.ramSplit } : {}),
     display,
     cpu: CPU_FEATURES.filter((f) => (opts.cpu ?? CPU_FEATURES).includes(f)),
     devices: list.map((s) => s.kind),
@@ -230,6 +238,10 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
   if (was.version !== now.version) return ['it was made by another version of this page'];
   if (was.ncpus !== now.ncpus) out.push(`processors: ${was.ncpus} then, ${now.ncpus} now`);
   if (was.ramMiB !== now.ramMiB) out.push(`memory: ${was.ramMiB} MiB then, ${now.ramMiB} MiB now`);
+  else if (canonical(was.split ?? []) !== canonical(now.split ?? [])) {
+    const split = (s?: number[]) => (s ? `${s.join(' + ')} MiB` : 'automatic');
+    out.push(`memory's split: ${split(was.split)} then, ${split(now.split)} now`);
+  }
   if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
   if (canonical(was.cpu) !== canonical(now.cpu)) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
   const [macsWas, macsNow] = [macsOf(was), macsOf(now)];

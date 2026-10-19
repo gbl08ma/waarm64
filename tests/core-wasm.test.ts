@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports, maxMemory0Ram, panicMessage, splitRam, withPanic } from '../web/vm.ts';
+import { coreImports, MAX_MEMORY0_RAM, panicMessage, splitError, splitRam, withPanic } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -195,14 +195,19 @@ for (const jit of [0, 4, 2]) {
   });
 }
 
-// The page's split of a machine's RAM: memory 0 as large as the heap's floor leaves (fw_cfg's files after it), then
-// spill memories of up to 4 GiB.
+// The page's split of a machine's RAM: memory 0 as large as the heap's floor leaves (1 MiB kept for the scratch page and
+// fw_cfg's files), then spill memories of up to 4 GiB; and the checks on a split a user sets.
 test('guest RAM splits into memory 0 and spill memories', () => {
-  const G = 2 ** 30;
+  const [M, G] = [2 ** 20, 2 ** 30];
+  assert.equal(MAX_MEMORY0_RAM, 3 * G - M);
   assert.deepEqual(splitRam(2 * G), { ramSize: 2 * G, spill: [] });
-  const m0 = maxMemory0Ram(4096);
-  assert.equal(m0, 3 * G - 2 * 65536);
-  assert.deepEqual(splitRam(m0, 4096), { ramSize: m0, spill: [] });
-  assert.deepEqual(splitRam(12 * G, 4096), { ramSize: m0, spill: [4 * G, 4 * G, 12 * G - m0 - 8 * G] });
+  assert.deepEqual(splitRam(3 * G - M), { ramSize: 3 * G - M, spill: [] });
+  assert.deepEqual(splitRam(4 * G), { ramSize: 3 * G - M, spill: [G + M] });
+  assert.deepEqual(splitRam(12 * G), { ramSize: 3 * G - M, spill: [4 * G, 4 * G, G + M] });
   assert.throws(() => splitRam(40 * G), RangeError);
+  assert.equal(splitError(2 * G, [G, 4 * G]), undefined);
+  assert.match(splitError(3 * G, [])!, /at most 3071 MiB/);
+  assert.match(splitError(32 * M, [])!, /at least 64 MiB/);
+  assert.match(splitError(G, [5 * G])!, /1 to 4096 MiB/);
+  assert.match(splitError(G, Array(9).fill(G))!, /at most 8/);
 });

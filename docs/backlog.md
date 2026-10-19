@@ -284,7 +284,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     to a growable memory (`fixedMemory: false` stays for A/B runs). Running out of the heap traps the machine, so the
     floor is a hard limit, not a tuning knob.
   - **Stage 1 (actionable): size the reserve by the rule** in `bootVm` (done 2026-10-19 with `HEAP_FLOOR` at 1 GiB,
-    so the reserve is still always 1 GiB; RAM past `maxMemory0Ram()` goes to spill memories, below), and set the page's largest RAM choice to
+    so the reserve is still always 1 GiB; RAM past `MAX_MEMORY0_RAM` (3 GiB less 1 MiB) goes to spill memories, below), and set the page's largest RAM choice to
     what the floor leaves (3 GiB leaves ~1 GiB of heap; up to ~3.75 GiB with a 256 MiB floor). The floor comes from a measurement: the heap peaked
     at ~27 MB in the userspace benchmark, and ~150 MB was seen under a heavy 4-vCPU load (docs/jit.md "Memory"), but
     that run predates the shared 160 MiB code cache and had no byte budget. So first measure the heap's peak under a

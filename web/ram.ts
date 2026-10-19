@@ -1,5 +1,6 @@
 // Guest RAM as the device backends see it (docs/plans/spill-memories.md): memory 0's RAM, then each spill memory,
-// and the segments the core posts into them. A small module of its own: the GPU worker imports it.
+// and the segments the core posts into them; and how a machine's RAM splits into them. A small module of its own:
+// the GPU worker and the page's main thread import it.
 
 /** A guest buffer: `len` bytes at `off` in memory `mem` (0: memory 0's RAM, from its first byte; k: spill memory k, ABI 40). */
 export type Segment = { off: number; len: number; mem: number };
@@ -28,4 +29,46 @@ export function ramLayout(ramSize: number, spill: number[] = []): RamLayout {
     end = pa + size;
   }
   return layout;
+}
+
+/**
+ * The least heap a fixed memory gets (docs/backlog.md "The core's heap in a fixed memory", stage 1): the
+ * reserve is what 4 GiB leaves after the scratch page, RAM and fw_cfg's files, capped at `HEAP_RESERVE` (web/vm.ts)
+ * and never under this. 1 GiB until the heap's peak under a heavy load is measured on the dev VM, so
+ * today the reserve is always 1 GiB.
+ */
+export const HEAP_FLOOR = 1 << 30;
+
+/**
+ * The most RAM memory 0 holds with the heap at its floor: 4 GiB less the floor and 1 MiB for the scratch page and
+ * fw_cfg's files (up to 960 KiB: the credentials). Fixed, so that a machine's split never depends on its fw_cfg files
+ * (a snapshot restores only onto the same layout); the rest of a machine's RAM goes to spill memories.
+ */
+export const MAX_MEMORY0_RAM = 2 ** 32 - HEAP_FLOOR - (1 << 20);
+
+/** The largest spill memory (a whole wasm32 memory) and how many a machine has at most (core/src/mem.rs `MAX_SPILL`). */
+export const MAX_SPILL_BYTES = 2 ** 32;
+export const MAX_SPILL = 8;
+
+/**
+ * The automatic split of `total` bytes of guest RAM (a 64 KiB multiple): memory 0 as large as it goes
+ * ({@link MAX_MEMORY0_RAM}), then spill memories of up to 4 GiB (docs/plans/spill-memories.md).
+ */
+export function splitRam(total: number): { ramSize: number; spill: number[] } {
+  const ramSize = Math.min(total, MAX_MEMORY0_RAM);
+  const spill: number[] = [];
+  for (let left = total - ramSize; left > 0; left -= MAX_SPILL_BYTES) spill.push(Math.min(left, MAX_SPILL_BYTES));
+  if (spill.length > MAX_SPILL) throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);
+  return { ramSize, spill };
+}
+
+/** Why memory 0's `ramSize` and the spill memories' sizes (bytes) aren't a split a machine can have, in words for the user; undefined when they are. */
+export function splitError(ramSize: number, spill: number[]): string | undefined {
+  const mib = (n: number) => `${n / 2 ** 20} MiB`;
+  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || ramSize % 65536) return 'memory 0 needs at least 64 MiB';
+  if (ramSize > MAX_MEMORY0_RAM) return `memory 0 holds at most ${mib(MAX_MEMORY0_RAM)}`;
+  if (spill.length > MAX_SPILL) return `at most ${MAX_SPILL} NUMA nodes past memory 0`;
+  const bad = spill.find((s) => !Number.isSafeInteger(s) || s < 65536 || s % 65536 || s > MAX_SPILL_BYTES);
+  if (bad !== undefined) return `a NUMA node holds 1 to ${mib(MAX_SPILL_BYTES)} (not ${bad / 2 ** 20})`;
+  return undefined;
 }

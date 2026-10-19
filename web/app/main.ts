@@ -21,7 +21,7 @@ import { PageAudio } from '../audio.ts';
 import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
-import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, RAM_CHOICES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
+import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, RAM_CHOICES, ramSplitError, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { HeldError, PageNetwork } from './net-live.ts';
@@ -243,6 +243,10 @@ const ramdiskMiB = () => {
 const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
 let ncpus = Number(params.get('ncpus')) || stored?.record.ncpus || (CPU_CHOICES.includes(settings().ncpus!) ? settings().ncpus! : 0) || defaultCpus(navigator.hardwareConcurrency || 4);
 let ramMiB = Number(params.get('ram')) || stored?.record.ramMiB || (RAM_CHOICES.includes(settings().ramMiB!) ? settings().ramMiB! : 0) || spec.ramMiB;
+/** The RAM's split as the user set it, MiB, memory 0 first (docs/plans/spill-memories.md): `?split=3071,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own. */
+const splitParam = params.get('split')?.split(',').map(Number);
+let ramSplit = splitParam && !ramSplitError(splitParam) ? splitParam : params.has('ram') ? undefined : stored?.record.ramSplit;
+if (ramSplit) ramMiB = ramSplit.reduce((a, b) => a + b, 0);
 
 // The page's components (web/app/App.svelte), drawn now: the canvas and the terminal below are theirs. The network and the
 // sound are made first (their menus show them).
@@ -642,7 +646,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -748,7 +752,7 @@ async function reloadStored() {
     setState('failed', `This machine can't be opened: ${String((e as Error).message ?? e)}.`, [{ label: 'Machines…', run: () => openMachines() }]);
     return false;
   }
-  [ncpus, ramMiB] = [stored.record.ncpus, stored.record.ramMiB];
+  [ncpus, ramMiB, ramSplit] = [stored.record.ncpus, stored.record.ramMiB, stored.record.ramSplit];
   want3d = wants3d();
   no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
   syncMachineMenu();
@@ -853,7 +857,7 @@ async function switchMachine(id: string) {
     stored = next;
     storedError = '';
     chosen = undefined;
-    [ncpus, ramMiB] = [next.record.ncpus, next.record.ramMiB];
+    [ncpus, ramMiB, ramSplit] = [next.record.ncpus, next.record.ramMiB, next.record.ramSplit];
     want3d = wants3d();
     no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
     const q = new URLSearchParams(location.search);
@@ -1463,6 +1467,7 @@ setView(isView(asked) ? asked : isView(settings().view) ? settings().view! : 'sc
 function syncMachineMenu() {
   ui.size.ncpus = ncpus;
   ui.size.ramMiB = ramMiB;
+  ui.size.split = ramSplit;
   ui.size.gpu = want3d ? '3d' : '2d';
   ui.size.cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
   ui.size.ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
@@ -1473,12 +1478,13 @@ syncMachineMenu();
 function memoryWarning(r: number, n: number) {
   const need = hostMemoryGiB(r, n);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  return has !== undefined && has < need ? `\n\nThis needs about ${need.toFixed(1)} GiB of memory and this device reports ${has} GiB: if it runs out, the browser closes the tab without warning.` : '';
+  return has !== undefined && has < need ? `\n\nThis needs about ${need.toFixed(1)} GiB of memory and this device reports ${has} GiB${has >= 8 ? ' (browsers report at most 8, so it may well have more)' : ''}: if it runs out, the browser closes the tab without warning.` : '';
 }
 async function applySize(n: number, r: number, g: '3d' | '2d') {
   if (n === ncpus && r === ramMiB && g === (want3d ? '3d' : '2d')) return;
   const running = state === 'running' || state === 'booting';
   if (!(await ask.confirm(`Restart with ${n} vCPU${n > 1 ? 's' : ''}, ${r} MiB of RAM${hasGpu ? ` and ${g === '3d' ? '3D' : '2D'} graphics` : ''}?${running ? ' Like pulling the plug: unsaved work in the guest is lost.' : ''} A suspended machine is resumed as it was, with its own size.${memoryWarning(r, n)}`, { title: 'The machine\'s size', ok: 'Restart', danger: running }))) return;
+  if (r !== ramMiB) ramSplit = undefined;
   [ncpus, ramMiB] = [n, r];
   remember({ ncpus, ramMiB, ...(hasGpu && !gpuAsked ? { gpu: g } : {}) });
   want3d = wants3d();
@@ -1496,7 +1502,7 @@ async function saveSettings(m: MachineRecord) {
     await stop();
     s.record = await updateMachine(store, m);
     syncUsb();
-    [ncpus, ramMiB] = [s.record.ncpus, s.record.ramMiB];
+    [ncpus, ramMiB, ramSplit] = [s.record.ncpus, s.record.ramMiB, s.record.ramSplit];
     want3d = wants3d();
     no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
     syncMachineMenu();
@@ -1908,7 +1914,7 @@ function boot() {
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   if (has !== undefined && has < need) {
     const fewer = Math.floor((has - hostMemoryGiB(ramMiB, 0)) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
-    setState('idle', `This machine needs about ${need.toFixed(1)} GiB of memory (${ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GiB.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
+    setState('idle', `This machine needs about ${need.toFixed(1)} GiB of memory (${ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GiB${has >= 8 ? ' (browsers report at most 8, so it may well have more)' : ''}.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
     return;
   }
   start();

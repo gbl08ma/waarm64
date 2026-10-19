@@ -61,7 +61,7 @@ export const ui = $state({
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
   status: { text: '', data: '' },
   /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
-  size: { ncpus: 1, ramMiB: 1024, gpu: '3d' as '3d' | '2d', cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
+  size: { ncpus: 1, ramMiB: 1024, split: undefined as number[] | undefined, gpu: '3d' as '3d' | '2d', cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
   /** Bumped when the store's records change (the toolbar's snapshot list rereads). */
   records: 0,
   /**

@@ -13,6 +13,7 @@
   import type { Store, SnapshotRecord } from './store.ts';
   import { remember, settings } from './settings.ts';
   import { page, ui, type View } from './ui.svelte.ts';
+  import { numaNote } from './machine.ts';
 
   let { store, audio, net }: { store: Store; audio: PageAudio; net: PageNetwork } = $props();
 
@@ -49,6 +50,8 @@
   let ncpus = $state(ui.size.ncpus), ramMiB = $state(ui.size.ramMiB), gpu = $state(ui.size.gpu);
   // It shows what runs, except while it's open (a choice being made).
   $effect(() => { const [n, r, g] = [ui.size.ncpus, ui.size.ramMiB, ui.size.gpu]; if (!sizeOpen) [ncpus, ramMiB, gpu] = [n, r, g]; });
+  /** The note for a size past memory 0 (its NUMA nodes); the running split (`?split=`) while the size is unchanged. */
+  const numa = $derived(numaNote(Number(ramMiB), Number(ramMiB) === ui.size.ramMiB ? ui.size.split : undefined));
   const ramText = (n: number) => (n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`);
 
   const VIEWS: { v: View; icon: 'device-desktop' | 'terminal-2' | 'layout-columns'; title: string }[] = [
@@ -126,6 +129,7 @@
     <Menu id="machine-menu" icon="cpu" title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart" bind:open={sizeOpen} panel>
       <label>Processors<select id="machine-cpus" bind:value={ncpus}>{#each ui.size.cpuChoices as n (n)}<option value={n}>{n} vCPU{n > 1 ? 's' : ''}</option>{/each}</select></label>
       <label>Memory<select id="machine-ram" bind:value={ramMiB}>{#each ui.size.ramChoices as n (n)}<option value={n}>{ramText(n)}</option>{/each}</select></label>
+      {#if numa}<p class="hint warn" id="machine-numa">{numa}</p>{/if}
       {#if ui.hasGpu}
         <label id="machine-gpu-label" title="3D gives the guest OpenGL ES through the browser's WebGL2 (virgl); 2D is a plain framebuffer">Graphics<select id="machine-gpu" bind:value={gpu} disabled={!!ui.size.gpuLock} title={ui.size.gpuLock}><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
       {/if}

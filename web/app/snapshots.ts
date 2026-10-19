@@ -134,6 +134,7 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     name: uniqueName(`Like ${snap.name}`, taken),
     ncpus: snap.shape.ncpus,
     ramMiB: snap.shape.ramMiB,
+    ...(snap.shape.split ? { ramSplit: snap.shape.split } : {}),
     display: snap.shape.display === '3d' ? '3d' : '2d',
     adapters: macsOf(snap.shape).map((mac) => ({ id: newId(), mac })),
     usb: snap.shape.usb === true,
