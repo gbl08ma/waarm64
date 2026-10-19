@@ -189,7 +189,8 @@ export type FromWorker =
   /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
   | { type: 'snapshot-chunk'; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
-  | { type: 'snapshot-done'; bytes: number; pausedMs: number; pins: SnapshotDisk[] }
+  /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
+  | { type: 'snapshot-done'; bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[] }
   /** The save failed (the machine runs on, unless it had ended): a message for the user. */
   | { type: 'snapshot-error'; message: string }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */

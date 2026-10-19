@@ -1,31 +1,27 @@
-# M8 graphics, 3D: handover after G4 (2026-10-10)
+# M8 graphics, 3D: handover after G4 (2026-10-10; snapshots while 3D is in use done 2026-10-19)
 
 G4 is done (docs/plans/graphics.md §21, "G4's exit"); its kickoff is retired (git history has it). **G5 is proposed
-here and waits for the user's kickoff.** Read first: graphics.md §1, §18, §20, §21; docs/devices.md "virgl";
+here and waits for the user's kickoff**; its first item, snapshots while 3D is in use, was built ahead of it and is
+done (graphics.md §22). Read first: graphics.md §1, §18, §20, §21; docs/devices.md "virgl";
 docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
 
 ## G5, proposed
 
-1. **Snapshots while 3D is in use: built, the dev VM's checks left** (graphics.md §22; started in a cloud session at
-   the user's word, 2026-10-18). The renderer's state is saved as data and its contents read back, carried in the
-   snapshot file's BLOB frames, and loaded into a fresh renderer; refused only while a video decodes; the page warns
-   from 64 MiB. Tested on traces in Chromium (exact frames), every format, the GPU worker's port. **Left:** on the dev
-   VM, a snapshot of the desktop guest with sway, Firefox and GTK4 running (`bench/gpu/guest-session.ts`), loaded in a
-   fresh profile and used on; their resource counts, the 3D state's size, the file's and the pause (the Mac's GPU too);
-   a page test of it if it is cheap enough; and `scripts/ci-deqp.sh` (the DEPTH32F_STENCIL8 upload moved into `drawZs`).
-2. **dEQP on a real GPU:** the whole lists, or the pass lists, on the Mac host's GPU (ANGLE on Metal) through
+1. **dEQP on a real GPU:** the whole lists, or the pass lists, on the Mac host's GPU (ANGLE on Metal) through
    `bench/gpu/sway-mac.sh`'s route (`SCRIPT=`): every G4 run was on SwiftShader. Whatever differs is what users hit.
-3. **The guest-side leftovers**, each measured first (docs/backlog.md): GtkGLArea's graphics offload (caps without
+   `bench/gpu/snapshot-3d.ts` there too (a snapshot's 3D read-back on a GPU: graphics.md §22 measured it on SwiftShader).
+2. **The guest-side leftovers**, each measured first (docs/backlog.md): GtkGLArea's graphics offload (caps without
    `COPY_TRANSFER_BOTH_DIRECTIONS`, every texture then guest-backed, or a Mesa fix). Firefox's resources a second and
    the replies held behind a fenced one were measured and left as they are (graphics.md §21, 2026-10-17).
-4. **Breadth, if the user wants it:** KWin or Mutter, Chromium's GPU process in the guest, Xorg. Beyond GLES 3.0
+3. **Breadth, if the user wants it:** KWin or Mutter, Chromium's GPU process in the guest, Xorg. Beyond GLES 3.0
    (compute, GLES 3.1) is the WebGPU backend, deferred by the 3D decision (§18).
 
 ## Tools G4 left
 
 - `bench/gpu/guest-session.ts` (a page session on a guest image: serial root shell, sway, load phases, the PC
   sampler `PROFILE=1`, the whole serial log on a timeout), `firefox-load.ts`, `gtk4-load.ts`, `sway-load.ts`,
-  `sway-mac.sh` (the Mac host's GPU; `HEADED=1` allowed when the user isn't using the Mac).
+  `sway-mac.sh` (the Mac host's GPU; `HEADED=1` allowed when the user isn't using the Mac), `snapshot-3d.ts`
+  (snapshots of the desktop guest with 3D in use, and the load in a fresh profile; graphics.md §22).
 - dEQP: `images/deqp/build.sh` (`target/deqp/deqp.ext4` and the guest `target/deqp/guest.qcow2`),
   `bench/gpu/deqp-run.ts` (`STRIDE`/`OFFSET` slices, `CASES=` lists and patterns, `DETAIL=`, `VIRGL_GPU=virgl,debug`,
   `CAPTURE=`; `stoppedAt`), `tools/virgl-oracle/deqp.sh` (vtest), `bench/gpu/virgl-pairs.ts` (a capture's read-back
@@ -40,9 +36,10 @@ docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
 
 - **The device** (`web/gpu.ts`, `GpuOptions.virgl`): the VIRGL/VIRGL2 capsets with the caps it is given, contexts,
   3D resources, transfers, `SUBMIT_3D` walked and checked, then handed to a host (`Gpu.host`, `web/virgl-host.ts`:
-  the calls, `runCall`, `localHost` for tests); a fenced command's reply waits for the host. Snapshots (decision 3):
-  unused contexts saved and remade, the caps saved, 3D off where a restore's browser can't back them, refused while
-  3D is in use (`unsaveable`); the restore tells the host the scanout. `Gpu.onCapture` records a guest's 3D commands
+  the calls, `runCall`, `localHost` for tests); a fenced command's reply waits for the host. Snapshots: with 3D
+  in use too (graphics.md §22: the renderer's state as data, its contents read back, BLOB frames; refused only while a
+  video decodes), the caps saved, 3D off where a restore's browser can't back them; the restore tells the host the
+  scanout. `Gpu.onCapture` records a guest's 3D commands
   with the memory they read (`web/virgl-trace.ts`; `web/virgl-replay.ts` replays one through the device).
 - **The page** (`web/app/main.ts` `want3d`): a virtio-gpu machine is 3D unless `?gpu=2d` (or `virgl-null`, G2's null
   renderer). The GPU worker (`web/gpu-worker.ts`) owns the canvas as WebGL2, gives the caps (`web/virgl-caps.ts`), runs

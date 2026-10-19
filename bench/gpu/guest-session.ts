@@ -29,6 +29,8 @@ export type SessionOptions = {
   disk2?: string;
   /** More of the page's query (e.g. `snd=&avprobe`: bench/audio/avsync.ts). */
   query?: string;
+  /** The image opened by its URL (`?disk=`) even without `disk2`: a machine that isn't stored, whose snapshots are files (bench/gpu/snapshot-3d.ts). */
+  byUrl?: boolean;
 };
 
 type Stat = { n: number; lag: number; busy: Record<string, number> & { commands?: Record<string, number>; fenceBack?: { n: number; ms: number; maxMs: number } } };
@@ -112,9 +114,10 @@ export async function openSession(o: SessionOptions) {
 
   // The image under the repository, as the server serves it.
   const served = relative(resolve(new URL('../..', import.meta.url).pathname), resolve(o.image));
-  const byUrl = !!o.disk2;
-  if (byUrl && served.startsWith('..')) throw new Error(`a second disk needs the image under the repository (${o.image})`);
-  await page.goto(`${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=/${served}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`);
+  const byUrl = !!o.disk2 || !!o.byUrl;
+  if (byUrl && served.startsWith('..')) throw new Error(`an image opened by its URL must be under the repository (${o.image})`);
+  const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=/${served}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`;
+  await page.goto(url);
   const gl = await page.evaluate(() => {
     const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
     const d = gl?.getExtension('WEBGL_debug_renderer_info');
@@ -354,7 +357,7 @@ EOF`);
   };
 
   const close = async () => { await browser.close(); server.close(); };
-  return { page, browser, gl, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
+  return { page, browser, url, gl, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
 }
 
 const pctl = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : 0; };

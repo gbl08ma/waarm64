@@ -534,7 +534,7 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
     out = undefined;
     kept?.close();
     kept = undefined;
-    post({ type: 'snapshot-done', bytes: w.bytes, pausedMs, pins: w.pins });
+    post({ type: 'snapshot-done', bytes: w.bytes, pausedMs, stateMs: w.stateMs, blobBytes: w.blobBytes, pins: w.pins });
   } catch (err) {
     fail(`The snapshot couldn't be saved: ${String((err as Error).message ?? err)}`);
   } finally {

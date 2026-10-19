@@ -28,7 +28,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/networking-p2p.md](plans/networking-p2p.md) | peer-to-peer rooms over WebRTC: addresses that are keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory, names that are keys (proposed, not scheduled) |
-| [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4): what each loop found, the numbers; G5 proposed |
+| [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4), snapshots while 3D is in use (G5's first item): what each loop found, the numbers; the rest of G5 proposed |
 | [plans/video.md](plans/video.md) | hardware video decoding (done): VA-API over virgl decoded by WebCodecs (why not V4L2), H.264, VP9 and AV1, each loop's record |
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
 | [plans/remote-disks.md](plans/remote-disks.md) | disks from a remote server: today's HTTP reader, where to host an image (Cloudflare R2 and Pages), a chunked format, caching, concurrency (proposed) |

@@ -1,0 +1,203 @@
+{
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "snaps": 1,
+ "warmS": 30,
+ "scenes": {
+  "desktop": {
+   "pausedMs": {
+    "median": 7297,
+    "all": [
+     7297
+    ]
+   },
+   "stateMs": {
+    "median": 247,
+    "all": [
+     247
+    ]
+   },
+   "fileBytes": {
+    "median": 809735324,
+    "all": [
+     809735324
+    ]
+   },
+   "blobBytes": [
+    123586476
+   ],
+   "snaps": [
+    {
+     "bytes": 809735324,
+     "pausedMs": 7297.394999995828,
+     "stateMs": 246.7199999988079,
+     "blobBytes": 123586476,
+     "wallMs": 7428,
+     "file": {
+      "bytes": 809735324,
+      "tags": {
+       "CORE": {
+        "frames": 2,
+        "raw": 1058892,
+        "stored": 8643
+       },
+       "DEVS": {
+        "frames": 1,
+        "raw": 407571,
+        "stored": 132519
+       },
+       "BLOB": {
+        "frames": 179,
+        "raw": 123586476,
+        "stored": 6661404
+       },
+       "RAM ": {
+        "frames": 1856,
+        "raw": 1735038976,
+        "stored": 792354607
+       },
+       "DISK": {
+        "frames": 193,
+        "raw": 48013312,
+        "stored": 10501843
+       }
+      },
+      "devsBytes": 407571,
+      "renderer": {
+       "resources": 95,
+       "lost": [],
+       "kinds": {
+        "texture": {
+         "n": 55,
+         "bytes": 109073848
+        },
+        "buffer": {
+         "n": 37,
+         "bytes": 9772388
+        },
+        "depth-stencil": {
+         "n": 3,
+         "bytes": 4740240
+        }
+       },
+       "largest": {
+        "bytes": 16777216,
+        "what": "texture 2048x2048 format 1"
+       },
+       "contexts": 8,
+       "subs": 16,
+       "objects": {
+        "shader": 40,
+        "dsa": 8,
+        "blend": 9,
+        "rs": 9,
+        "ve": 17,
+        "sampler": 8,
+        "view": 48,
+        "surface": 7
+       }
+      }
+     }
+    }
+   ],
+   "flushesAfter": 24,
+   "rendererAfter": {
+    "seconds": 6,
+    "busyMs": 44.50333333263794,
+    "submitMs": 43.98666665703058,
+    "drawMs": 0.43166667968034744,
+    "presents": 22.666666666666668,
+    "glDraws": 6917.333333333333,
+    "commands": 10525.666666666666,
+    "uploadKB": 50414.188802083336,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 80,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   }
+  }
+ },
+ "info": "7.2.9-arch1-1sway 1:1.12-4 mesa 1:26.2.4-1 firefox 158.0-1 gtk4 1:4.24.1-1 Mem:            2441         312        1751           4         525        2128",
+ "sway": "",
+ "desktopBefore": {
+  "procs": "sway=1 foot=1 firefox=1 gtk4-demo=1",
+  "ffFps": [
+   23,
+   21,
+   24,
+   21,
+   21,
+   23,
+   21,
+   22,
+   21,
+   21
+  ],
+  "flushes": 30.692307692307693,
+  "renderer": {
+   "seconds": 13,
+   "busyMs": 42.44384618103504,
+   "submitMs": 41.490769231548676,
+   "drawMs": 0.9057692300814849,
+   "presents": 32.53846153846154,
+   "glDraws": 6611.2307692307695,
+   "commands": 9296.692307692309,
+   "uploadKB": 21443.69621394231,
+   "readbacks": 0,
+   "readbackKB": 0,
+   "compileMs": 0,
+   "programs": 80,
+   "errors": 0,
+   "video": {
+    "frames": 0,
+    "decoded": 0,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 0,
+    "latencyMaxMs": 0,
+    "writeMs": 0,
+    "ahead": 0,
+    "maxWaitMs": 0
+   }
+  }
+ },
+ "restore": {
+  "state": "running",
+  "loadMs": 11745,
+  "flushes": 22.8,
+  "flushesWithNewClient": 23.6,
+  "procs": "sway=1 foot=1 firefox=1 gtk4-demo=1",
+  "ffFps": [
+   23,
+   22,
+   23,
+   23,
+   20
+  ],
+  "newClient": {
+   "client": "es2gears_wayland",
+   "alive": true,
+   "windowsBefore": 6,
+   "windowsAfter": 8,
+   "log": ""
+  },
+  "screenChanges": true,
+  "screenDiffersFromSaved": true,
+  "newClientChangedScreen": true,
+  "rendererErrors": 0,
+  "warnings": {}
+ },
+ "warnings": {}
+}

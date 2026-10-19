@@ -46,7 +46,10 @@ const BLOCK = 4096;
  * image's hash, if the caller has it.
  */
 export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean } = {}) {
+  const t0 = performance.now();
   const state = await vm.snapshot();
+  // How long the devices' state took (a 3D machine's renderer read back is in it): tools split a snapshot's pause with it.
+  const stateMs = performance.now() - t0;
   const all = await vm.disks();
   // A suspended machine's file (`suspend`) has no overlay's blocks: it stays beside the overlays it pins, and resumes
   // only while they are as it left them (`readSnapshot`'s `resume`). A ramdisk's are always in the file (they are
@@ -73,7 +76,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
     })());
   }
   const end = await w.end();
-  return { ...end, pages: ram.pages, state: state.core.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
+  return { ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
 }
 
 /**

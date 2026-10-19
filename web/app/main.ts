@@ -601,7 +601,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'snapshot-chunk') {
       snapshotJob?.chunk(m.data);
     } else if (m.type === 'snapshot-done') {
-      snapshotJob?.done(m.bytes, m.pausedMs, m.pins);
+      snapshotJob?.done(m);
     } else if (m.type === 'snapshot-error') {
       snapshotJob?.error(m.message);
     } else if (m.type === 'progress') {
@@ -1043,7 +1043,7 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
 
 // Snapshots (docs/frontend.md "Snapshots"): the running machine, RAM and disk changes and all, in a file, and back.
 /** The save in progress: the worker's messages for it (the page's `worker.onmessage` forwards them). */
-let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(bytes: number, pausedMs: number, pins?: SnapshotDisk[]): void; error(message: string): void } | undefined;
+let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(m: { bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[] }): void; error(message: string): void } | undefined;
 const SNAPSHOT_SUFFIX = '.webpcsnap';
 const mb = bytesText;
 
@@ -1105,11 +1105,11 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   syncButtons();
   const parts: Blob[] = [];
   try {
-    const result = await new Promise<{ bytes: number; pausedMs: number }>((resolve, reject) => {
+    const result = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number }>((resolve, reject) => {
       snapshotJob = {
         progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
         chunk: (data) => { parts.push(new Blob([data as Uint8Array<ArrayBuffer>])); },
-        done: (bytes, pausedMs) => resolve({ bytes, pausedMs }),
+        done: ({ bytes, pausedMs, stateMs, blobBytes }) => resolve({ bytes, pausedMs, stateMs, blobBytes }),
         error: (message) => reject(new Error(message)),
       };
       r.worker.postMessage({ type: 'snapshot', handle, whole: o.whole } satisfies ToWorker);
@@ -1120,7 +1120,7 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
     }
     parts.length = 0;
-    ui.snapshotResult = JSON.stringify(result); // for tools: the file's bytes and the pause's ms
+    ui.snapshotResult = JSON.stringify(result); // for tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes
     if (run === r && (state === 'running' || state === 'booting')) {
       setState(state);
       notify(`Saved the snapshot ${handle?.name ?? suggestedName} (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on.`);
@@ -1150,11 +1150,11 @@ async function keepSnapshot(name: string) {
     const about = (await aboutMachine())!;
     await askPersist();
     const result = await store.writing(async () => {
-      const done = await new Promise<{ bytes: number; pausedMs: number; pins: SnapshotDisk[] }>((resolve, reject) => {
+      const done = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[] }>((resolve, reject) => {
         snapshotJob = {
           progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
           chunk: () => {},
-          done: (bytes, pausedMs, pins) => resolve({ bytes, pausedMs, pins: pins ?? [] }),
+          done: (m) => resolve(m),
           error: (message) => reject(new Error(message)),
         };
         r.worker.postMessage({ type: 'snapshot', keep: snapshotPath(s.record.id, id) } satisfies ToWorker);
@@ -1162,7 +1162,7 @@ async function keepSnapshot(name: string) {
       await store.put('snapshots', { id, machine: s.record.id, name, created: Date.now(), bytes: done.bytes, shape: about.shape, shapeHash: about.shapeHash, urls: about.urls, pins: done.pins.map((p) => ({ slot: p.slot, overlay: p.overlay, generation: p.generation, blocks: p.blocks, ram: p.ram })) });
       return done;
     });
-    ui.snapshotResult = JSON.stringify({ bytes: result.bytes, pausedMs: result.pausedMs, id });
+    ui.snapshotResult = JSON.stringify({ bytes: result.bytes, pausedMs: result.pausedMs, stateMs: result.stateMs, blobBytes: result.blobBytes, id });
     ui.records++; // this tab's own writes aren't announced to it (Store.onChange)
     if (run === r && (state === 'running' || state === 'booting')) { setState(state); notify(`Kept the snapshot ${name} in this browser (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on. Rename it on the Machines page.`); }
   } catch (e) {

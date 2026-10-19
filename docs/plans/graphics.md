@@ -243,8 +243,8 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
   (measured, then made faster), the page's menu choosing 2D or 3D, a dEQP-GLES2/GLES3 subset (VK-GL-CTS,
   Apache-2.0, a guest workload) as the correctness gate and its failures, then GTK4 on the Arch image; the
   shader compile cost. Chromium's GPU process and a full desktop are written down if seen, not targets.
-- **G5 — The product (proposed in `M8-GRAPHICS-HANDOVER.md`, §21 "G4's exit"):** snapshots while 3D is in use, dEQP
-  on a real GPU, the guest-side leftovers measured first; a desktop's compositor if wanted. (The finer instrument
+- **G5 — The product (proposed in `M8-GRAPHICS-HANDOVER.md`, §21 "G4's exit"):** snapshots while 3D is in use
+  (built ahead of the kickoff and done, 2026-10-19: §22), dEQP on a real GPU, the guest-side leftovers measured first; a desktop's compositor if wanted. (The finer instrument
   for the guest's submit path was G4's loop 6: not a cost. Done in G3: the switch, `?gpu=2d`, and the fallback
   without WebGL2; snapshots while 3D is unused; real-GPU numbers.)
 - **Later:** the WebGPU backend for the same protocol (GLES 3.1); Vulkan through Venus on it (§4).
@@ -1290,7 +1290,7 @@ changing:**
   unfenced replies at once (QEMU's way) would win nothing on a real GPU. The display stats now count it
   (`fences.behindMs`, `fullMs`, `heldMax`).
 
-## 22. G5: snapshots while 3D is in use (2026-10-18, built; measuring on real guests is next)
+## 22. G5: snapshots while 3D is in use (2026-10-18 to 10-19, done)
 
 Started in a cloud session at the user's word ahead of a G5 kickoff (`M8-GRAPHICS-HANDOVER.md` item 1). The device
 used to refuse a snapshot as soon as a context had submitted; now a machine using 3D saves, unless a video plays.
@@ -1333,6 +1333,36 @@ that skips the texture uploads; one that drops the bound blend state; a stencil 
 `tests/snapshot-file.test.ts`: BLOB frames round trip and their refusals. Sizes in the traces: glcomp 1.1 MiB
 (4 resources), sway at 640×480 3.4 MiB (7).
 
-**Not done here (the dev VM's):** a snapshot of a real guest using 3D on the page (sway, Firefox, GTK4 on the desktop
-guest), loaded in a fresh profile, and what they hold: resource counts, the 3D state's size, the file's, the pause.
-`scripts/ci-deqp.sh` (G5 changed the DEPTH32F_STENCIL8 upload's code: `drawZs`).
+**On a real guest (the dev VM, 2026-10-19; `bench/gpu/snapshot-3d.ts`, `bench/gpu/results/2026-10-19-snapshot-3d.json` and
+`…-snapshot-3d-restore.json`).**
+The desktop guest (`target/arch/desktop.qcow2`: sway 1.12, Mesa 26.2.4, Firefox 158, GTK 4.24) opened by its URL,
+4 vCPUs, 2.5 GiB, 1376×762, Chromium 153 on SwiftShader; three saves (a download) per scene, medians:
+
+| scene | 3D state (resources; raw → stored) | the file | the pause (of it, the devices' state) |
+|---|---|---|---|
+| idle (root shell, no 3D yet) | none | 369 MB | 2.4 s (13 ms) |
+| sway and foot | 10 resources (8 textures, 2 buffers): 12.9 → 0.1 MB | 458 MB | 3.1 s (25 ms) |
+| sway, Firefox on 400 WebGL 2 cubes, gtk4-demo's gears | 96 resources (55 textures 109 MB, 38 buffers 10.8 MB, 3 depth-stencil 4.7 MB; 8 contexts, 16 sub-contexts, 145 objects): 118.9 → 6.0 MB | 819 MB | 8.2 s (0.23 s) |
+
+- **The 3D state is a small part of a snapshot, in time and in bytes.** Reading 119 MB back from the renderer
+  (`stateMs`: the devices' state, the GPU worker's read-back in it) takes ~0.23 s; the rest of the pause is guest RAM
+  (1.6 GB of non-zero pages for the desktop, 753 MB stored) and the overlay's blocks. The contents compress ~20 to 1
+  (the largest resources are glyph and texture atlases, 2048×2048, mostly empty). The page's 64 MiB question comes up
+  for the desktop scene (its `snapshotBytes` count is the raw size).
+- **The load brings the session back:** the last desktop file, loaded in a fresh profile (a new browser context, the
+  same disk by URL), runs 14.2 s after the choice; sway, foot, Firefox and gtk4-demo are there, Firefox's WebGL page
+  counts 28–29 frames a second (25–28 before the save), the compositor 26 a second, the screen moves, and the
+  renderer logs no error. No resource came back `lost`. A second run (`…-restore.json`: one save of the same scene,
+  810 MB, loaded in 11.7 s; Firefox 20–23 frames a second after as before) also started a new GL client after the
+  load, `es2gears_wayland`: it maps its window and draws. (gtk4-demo is one instance: another `--run` opens nothing.)
+- **The machine runs on after each save** (the compositor's frames over 5 s afterwards; the guest keeps its frame rate).
+- **What the first run found was not 3D's:** every restore of a machine with more than 2 GiB of RAM came back with its
+  RAM past 2 GiB zeroed (the vCPUs spinning with no interrupts, the serial dead), the idle scene too. The snapshot
+  writer's zero-page check shifted the byte offset signed (`off >> 2`), so pages past 2^31 read as zero and were left
+  out; `>>>` fixed it (plans/snapshots.md "The file"; `tests/snapshot-file.test.ts` "RAM past 2 GiB").
+- No page test of it: the desktop guest's session takes ~10 minutes to set up and an 800 MB file; the renderer's save
+  and load are tested on traces (above), the file's large RAM in `tests/snapshot-file.test.ts`, and a snapshot's
+  restore on Debian in `scripts/ci-debian.sh`.
+- `scripts/ci-deqp.sh` passes with `drawZs` (the DEPTH32F_STENCIL8 upload shares its program now).
+- Not measured: the same on the Mac host's GPU (`bench/gpu/sway-mac.sh`'s route); the read-back there is a GPU's, so
+  the 3D part of the pause can only shrink.
