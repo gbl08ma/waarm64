@@ -79,7 +79,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
   const jit = jitHost(memory, compile);
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_release: jit.release, jit_compile: jit.compile }, ram: spillImports(spill), jit };
 }
 
 /**
@@ -240,7 +240,7 @@ export const VCPU_YIELD_MS = 100;
 const RECEIVED_KEEP_MS = 30_000;
 const RECEIVED_MAX = 4096;
 
-/** A flush of at least this many slots is worth a {@link collect}. */
+/** Releases of at least this many slots in all are worth a {@link collect}. */
 const NUDGE_SLOTS = 4096;
 /** An install this long is logged (`webpc-slow install`). */
 const SLOW_INSTALL_MS = 20;
@@ -274,9 +274,8 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
   let imports: WebAssembly.Imports = {};
   // The bytes are copied out of the shared memory (V8 compiles only unshared ones) into one buffer, reused.
   let scratch = new ArrayBuffer(0);
-  // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
-  let lastEnd = 0;
-  let hi = 0;
+  // Slots released since the last nudge of V8's GC.
+  let released = 0;
   // The compile worker's compiled modules by number, as they arrive through the event loop (ABI 37): installing one
   // skips V8's decoding and validating the bytes again, which `new WebAssembly.Module` does before it finds them in
   // its cache (four fifths of an install: bench/boot/REPORT.md "M8: the compile worker's modules, posted").
@@ -321,29 +320,31 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
       const n = Object.keys(f).length;
       const at = base + slot;
       const t2 = performance.now();
-      let gc = 0;
-      const restart = slot < lastEnd;
-      // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
-      // the ones this module doesn't overwrite, and V8 can free their instances and code.
-      if (restart) {
-        for (let k = slot + n; k < hi; k++) table.set(base + k, null);
-        // Only for a big cache (JIT-stress flushes every few blocks).
-        if (hi > NUDGE_SLOTS) {
-          gc = performance.now();
-          collect();
-          gc = performance.now() - gc;
-        }
-        hi = 0;
-      }
-      lastEnd = slot + n;
-      hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
       // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
       const ms = performance.now() - t0;
-      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
+      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} bytes ${len} functions ${n}`);
       return at;
+    },
+    /**
+     * `env.jit_release` (ABI 41): the core's blocks at JIT slots `slot..slot + n` are dead (a flush, or a carried
+     * epoch's slots once its hot set is compiled again: docs/jit.md "Replay after a flush"), so the table lets go of
+     * them and V8 can free their instances and code; past a cache's worth of slots in all, V8 is asked to collect.
+     */
+    release(slot: number, n: number) {
+      if (!table) return;
+      const end = Math.min(base + slot + n, table.length);
+      for (let k = base + slot; k < end; k++) table.set(k, null);
+      released += n;
+      if (released > NUDGE_SLOTS) {
+        const t0 = performance.now();
+        collect();
+        const ms = performance.now() - t0;
+        if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow release ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: ${released} slots`);
+        released = 0;
+      }
     },
     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
     compile(ptr: number, len: number, seq: number, epoch: number, ready: number): number {

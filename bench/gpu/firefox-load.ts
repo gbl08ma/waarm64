@@ -90,13 +90,16 @@ const firefox = async (tag: string, url: string) => {
   await run('. /root/ff.sh; ffkill', 120_000);
   await run(`. /root/ff.sh; ffrun ${url} ${tag}`);
   const started = await run(`. /root/ff.sh; ffwait ${tag}`, 330_000);
+  const readyAt = Date.now(); // ~bench.js's t=0 on the host's clock, as the pages'
   log(tag, started);
   await page.waitForTimeout(WARM_S * 1000);
   const r = await load(tag, PHASE_S, around());
   const ff = await run(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | tail -${PHASE_S} | sed 's/.*frames=//' | tr "\\n" " "`);
   const fps = [...ff.matchAll(/(\d+) maxms=([\d.]+)/g)].map((x) => ({ frames: +x[1], maxms: +x[2] }));
   const sorted = fps.map((x) => x.frames).sort((a, b) => a - b);
-  const rec = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), fps, medianFps: sorted[sorted.length >> 1], ...r, ...(await timeline(tag)) };
+  const all = (await runLines(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | sed 's/.*t=//'`, 300_000)).join(' ');
+  const fpsAll = [...all.matchAll(/(\d+) frames=(\d+) maxms=([\d.]+)/g)].map((x) => [+x[1], +x[2], +x[3]]);
+  const rec = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), fps, medianFps: sorted[sorted.length >> 1], readyAt, fpsAll, ...r, ...(await timeline(tag)) };
   log(tag, 'fps', JSON.stringify(sorted), 'renderer', JSON.stringify(r.display.renderer ?? {}));
   results[tag] = rec;
   save();
@@ -131,6 +134,7 @@ if (PHASES.includes('pages')) {
     await run('. /root/ff.sh; ffkill', 120_000);
     await run(`. /root/ff.sh; ffrun file:///mnt/ffpages/${file} ${tag}`);
     const started = await run(`. /root/ff.sh; ffwait ${tag}`, 330_000);
+    const readyAt = Date.now(); // ~bench.js's t=0 (`ready`), on the host's clock: the timeline's
     const loadMs = Number(/FFBENCH load (\d+)/.exec(await run(`grep "FFBENCH load" /tmp/ff-${tag}.log`))?.[1] ?? NaN);
     log(tag, started, 'load', loadMs);
     await page.waitForTimeout(10_000);
@@ -145,7 +149,10 @@ if (PHASES.includes('pages')) {
     const ff = await run(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | tail -${PHASE_S} | sed 's/.*frames=//' | tr "\\n" " "`);
     const fps = [...ff.matchAll(/(\d+) maxms=([\d.]+)/g)].map((x) => ({ frames: +x[1], maxms: +x[2] }));
     const sorted = fps.map((x) => x.frames).sort((a, b) => a - b);
-    results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], ...r, ...profile, ...(await timeline(tag)) };
+    // Every second since the page's start ([t, frames, the longest gap in ms]), to line up with TIMELINE_ALL's rows by `readyAt`.
+    const all = (await runLines(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | sed 's/.*t=//'`, 300_000)).join(' ');
+    const fpsAll = [...all.matchAll(/(\d+) frames=(\d+) maxms=([\d.]+)/g)].map((x) => [+x[1], +x[2], +x[3]]);
+    results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], readyAt, fpsAll, ...r, ...profile, ...(await timeline(tag)) };
     log(tag, 'fps', JSON.stringify(sorted), 'flushes', r.display.flushes.toFixed(1));
     save();
   }

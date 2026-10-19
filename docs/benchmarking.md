@@ -199,6 +199,61 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   firefox-load's `TIMELINE_ALL=1` records the timeline over its whole `pages` phase (every Firefox start and load,
   where the JIT compiles most), and `QUERY` adds to the page's query (`jit=nocw`: the JIT without its compile
   worker, for A/B). `bench/gpu/stalls.ts` counts a timeline's stalls by length (`--json` for results).
+- **Firefox's pages session, the JIT's real workload** (M8; `bench/boot/REPORT.md` from "M8: warm members" on):
+  `PHASES=pages TIMELINE_ALL=1 WEBPC_GUEST_USER=alarm node bench/gpu/firefox-load.ts virgl
+  target/archarm/desktop.qcow2 <outdir>`, Arch Linux ARM's disk, which every JIT number so far is on (the Arch images
+  moved to arch.bens.haus's port, `target/arch/desktop.qcow2`, user `arch`: re-baseline there before comparing across
+  disks). ~380 s of pages, ~750 s with the boot and Firefox's start: in the background, `timeout 900`, under
+  `systemd-run --user --scope -p MemoryMax=10G -p MemorySwapMax=0`, nothing else Chromium-heavy beside it, and no
+  outer timeout shorter than the session around an A/B loop (it kills the loop and leaves the session running).
+  Busy MIPS from `bench/gpu/stalls.ts <outdir>/pages-all.timeline.json`; `results.json`'s `jit` has the wasm bytes,
+  modules, flushes and replays; each page's `fpsAll` (every second's frames and longest gap since its start, from
+  `readyAt` on the host's clock) lines up with the timeline, whose rows also carry each vCPU's `jitSteps`, `flushes`
+  and `replayed`; `bench/boot/results/m8-replay/flushes.ts` reads both per flush. A/B two sessions each at least,
+  alternating: by `QUERY` for a mode the page takes (`jit=replay`, `jit=nocw`), or by swapping core builds
+  (`bench/boot/results/m8-warm/tools/abw.sh`, `cmp` before each run). The gates beside it:
+  `tools/tpw.sh` there (`smp_alpine_jit`, `smp_user_jit_4`, three rounds alternating; `bench/run.ts --query=jit=replay`
+  reaches bench/boot's worker). Lessons from those sessions:
+  - Browser workloads drift within a session and ~10% between sessions: the baseline in the same session,
+    alternating (≥4 pairs for `bench/apps`), reported by pairs. Copying rounds of A/B JSON into one directory: prefix
+    each round.
+  - The numbers understate interactive gains (the user felt browsing 1.5-2× faster after warm members, the compile
+    worker and the yielding vCPUs, more than busy MIPS showed): don't drop a lever only because its busy-MIPS gain is
+    small; measure latency to input or frame pacing (`fpsAll`) when a lever's case rests on it. And the converse: a
+    synthetic latency win can be nothing on the real workload (a busy vCPU's ping 17% faster, Firefox unchanged).
+  - A stall a profile moves isn't a stall removed: compare guest code's total share, not only one spot's.
+  - The A/B loops leave the last build they copied in `target/`, newer than the sources (cargo won't rebuild it): copy
+    the build you mean back and `cmp` before CI or a profiled run. A host change both builds share needs a baseline
+    built against it (a core of the old ABI under the new host fails): build it from the new source with the
+    mechanism switched off.
+  - A Node gain may not reach Chromium (scalar `UQSUB` inline: compress −9.5% in Node, nothing in Chromium); four
+    concurrent guests slow each other down on this host (4 P-cores, 6 E-cores: Lua 3–6%, compress 22%), so compare
+    N-vCPU runs with N-vCPU runs; the Mac host shares its cores with the VM (run nothing there meanwhile; a failed
+    page leaves `bench/run.ts` and Chrome for Testing idle there).
+  - Every install as a `webpc-slow` line: `SLOW_INSTALL_MS = 0` in `web/vm.ts` (57,000 a session, 8.8 MB of
+    `results.json`, busy MIPS unchanged).
+  - Diagnostic counters without new ABI: `<letter>:<n> <count>` lines appended to `Table::helper_report`
+    (`bench/boot/userprof.ts` prints them per phase; patches in `bench/boot/results/m8-userprof/`, `m8-entries/`,
+    `m8-devlat/`). `vm::Counters` are summed over the tables by the host, so a value written into one table's
+    `Stats` comes back summed: log lines say which table and when. Check a diagnostic against a case whose answer
+    you know first (per-table state in `Seen` vanishes at every flush and `IC IALLU`: "cold" once meant install age).
+  - Where a timer sample lands inside JIT code says what stalls: it blames the oldest instruction not retired, so a
+    function's first instruction collects the frontend's waits for its code (the core's own functions, 0.2-1% at
+    entry, are the control); V8's x16/x17 at an entry tell a `call_indirect` (the signature id, which a
+    `--perf-prof` session changes) from a tail call. `bench/boot/results/m8-warm/tools/run-jd.sh` (a 10.8 GB
+    jitdump; busy MIPS fall ~10% under it; V8's isolate logs land in the cwd) and `jd`, `run-regs.sh` and `jdr`;
+    keep perf data and traces in `bench/results/local/` (`/tmp` is a 6.9 GB tmpfs). The desktop guest's kernel
+    symbols: `System.map` from `/usr/lib/modules/*/build`, `Image` from the ESP (`mcopy -i <raw>@@1048576 ::/image`;
+    not randomized).
+  - A microbenchmark that doesn't reproduce a stall can still clear suspects in minutes (the never-yielding worker
+    cleared `performance.now()`, Atomics and dying modules); then build the fix behind a switch and A/B the real
+    session rather than chase the last cause. In a microbenchmark LLVM deletes an `alloc`/`dealloc` pair nothing
+    uses: pass the pointer through `core::hint::black_box`.
+  - `scripts/build-wasm.sh` is incremental (~4 s for a small change): check the file's time or `cmp` it against
+    saved copies rather than trusting the build's duration.
+  - An arm64 `ldr` folds offsets up to 32,760 (8 bytes), 65,520 (`q`), 4,095 (a byte); past that V8 builds the
+    constant with `mov`+`movk` at every use, which a timer profile won't show: count such pairs in a hot function's
+    disassembly (`ann.sh`).
 - **The JIT's compile worker A/B:** `bench/run.ts --query=nocw` turns it off in `bench/boot` (the bench page passes
   its query to its worker); the page takes `?jit=nocw`.
 - **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the

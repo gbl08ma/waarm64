@@ -231,6 +231,7 @@ pub extern "C" fn jit_new(
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
+        replay: false,
     }))));
     Box::into_raw(v)
 }

@@ -1974,3 +1974,70 @@ compile time didn't pin; with imports only within an eighth of the budget by ins
 `go build` loop: 7%, 17%, 90%). That restriction alone (`cost.patch`, no eviction), A/B alternating: Firefox's busy
 MIPS 139 · 136 → 137 · 135, `smp_alpine_jit` +0.1%, `smp_user_jit_4` −0.9%: noise. Eviction is built on generations
 next.
+
+## M8: carrying the hot set across a flush (2026-10-19)
+
+The user's question: do budget flushes stop stuttering a browser's video, music and WebGL? The dev VM, Chromium
+153.0.8010.52, Arch Linux ARM's desktop disk, 4 vCPUs; data and tools in `results/m8-replay/` (README). Three
+designs, each A/B alternating against the default of the same build: the replay the cloud built (the hot set
+compiled again right after the flush), the same paced, and the carry (the hot set kept running from its slots
+while it's compiled again into the other half of the slots; docs/jit.md "Replay after a flush").
+
+**The replay as built stopped every vCPU ~1.2 s at each flush** (Firefox's pages session, 3 of 3 flushes: vCPU
+stalls of 1.0-1.24 s on all four at once, `overdue` 229): the first table to miss compiled the whole capped hot
+set, ~58,000 regions in ~114 modules, holding the cache's lock. Paced (64 regions a module, one every 4 ms at most),
+no stall over 55 ms.
+
+**What the slow phase after a flush is** (`diag.patch`: a flush for room every 30 s of Firefox's WebGL page, per
+second the steps interpreted by kind and the compile work): the steps in compiled code fall from ~99% to ~84% for a
+second, nearly all of what's interpreted is code compiled before the flush, and the compile work is small (~80 ms
+emitting and ~40 ms installing a second over the vCPUs); Firefox's frames fall from ~33 a second to 4-12 at the
+worst second, ~24 on average over the 10 s after, and the share is back in 3-4 s. **With the threshold's floor
+doubled at each flush** (as at every real session's second and third flush) the same flush took 11-16 s to come
+back, frames 6-10 a second for ~10 s (`s1-base`): that is where the user's long stutters come from.
+
+| per flush, WebGL, the floor kept (a first flush) | default (13 flushes) | replay, no carry (8) | carry (8) |
+|---|---|---|---|
+| slow phase (compiled share back within 2 points) | 3-4 s | 2-3 s | 0 s |
+| worst second's frames, median (range) | 8 (4-12) | 7 (4-8) | 18 (13-22) |
+| frames a second, mean of the 10 s after (31-34 before) | 22.9-25.1 | 19.3-23.2 | 21.1-26.5 |
+
+Replay without carrying compiles the hot set while everything else runs interpreted: shorter but deeper. The carry
+keeps the share at ~99% throughout; what's left is a milder ~5 s dip from the replay's compiling on the vCPUs
+(~0.3 s emitting and ~0.1 s installing a second, under the cache's lock).
+
+**Firefox's pages session** (every flush lands on a new page's code, which no hot set holds; busy MIPS from
+`stalls.ts`):
+
+| | sessions | flushes | wasm MB | busy MIPS | stalls ≥20 / ≥50 ms | interpreted M steps, 10 s after each flush |
+|---|---|---|---|---|---|---|
+| default | 7 | 2-3 | 504-551 | 121-138 | 0-4 / 0 | 108-120, 129-153, 58-166 |
+| replay as built | 1 | 3 | 624 | 139 | 52 / 27 | 142, 125, 62 |
+| replay, paced | 3 | 3 | 624-631 | 125-131 | 11-21 / 0-1 | 107-109, 97-110, 82-133 |
+| floor not doubled | 2 | 3 | 641-645 | 120 | 0-2 / 0-1 | 83-84, 76-99, 52-138 |
+| carry | 2 | 3 | 633-635 | 118-122 | 15 / 4 | 67-80, 121-126, 29-50 |
+
+In the same pairs: carry 122 busy MIPS against the default's 126; no doubling 120 · 120 against 121 · 121. The
+carry's second flush was a classic one each time: the replay had filled half the epoch, which its guard against
+carrying again counts as futile. Its third flush interpreted 29-50 M steps against the default's 58-166. The carry
+and the replay compile ~25% more wasm and brought a third flush; the doubled floor holds the default to 2-3. The
+carry's 20-57 ms stalls are the replay's emitting; `overdue` 68 and 94 (tables waiting a second for the compile
+worker while the replay feeds it).
+
+**The gates** (three rounds alternating, medians of each round, ms; `results/m8-replay/gates/`):
+
+| | default | carry | |
+|---|---|---|---|
+| `smp_alpine_jit_n1_total` | 9,619 · 9,747 · 9,538 | 9,580 · 9,772 · 9,582 | −0.4% |
+| `smp_alpine_jit_n4_total` | 9,457 · 9,579 · 9,391 | 9,410 · 9,619 · 9,435 | −0.2% |
+| `smp_user_jit_n4_total` | 18,683 · 18,653 · 18,884 | 19,061 · 18,763 · 19,313 | +2.0% |
+
+The userspace benchmark is slower in every round (IQR 17-370): the mark per dispatch, under the noise line but
+consistent. Neither gate flushes. **The 4-vCPU `go build` loop** (one each, 420 s): one flush each (in the boot),
+MIPS median 1,061 against the carry's 1,176 (first third 896 against 1,105), the renderer 2.9-3.3 GB against 3.2-3.5 GB.
+
+**Decision: the carry lands off by default** (`?jit=replay`). It clearly removes the interpreted slow phase at a
+flush in steady playback, where the user hears the stutter. But in page loads it compiles a quarter more wasm and
+an extra flush, and it costs the userspace benchmark 2%. What would make it the default (docs/backlog.md "Carrying
+the hot set across a flush, by default"): replay only what was marked, emit outside the cache's lock, and mark
+only while a probe runs.

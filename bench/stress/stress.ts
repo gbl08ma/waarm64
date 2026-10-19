@@ -9,6 +9,7 @@
 //     [--initrd <path>]         serve this initrd for Debian's (images/stress/build.sh: /run/stress/gostress in the guest)
 //     [--disk2 <repo path>]     a read-only second disk, /dev/vdb (images/stress/build-goroot.sh: goroot.ext4)
 //     [--no-load]               no built-in load (the --guest-cmd ones still start)
+//     [--query <a=b&c=d>]       added to the page's query (e.g. `jit=replay`)
 //     [--stall-ms 2000] [--freeze-ms 10000] [--warmup 90]   thresholds (analyze.ts DEFAULTS)
 //     [--inject freeze-main@60:30]  fault injection, to check the detection (main thread busy for 30 s at t=60)
 //     [--inject drop-status@60:30]  the machine worker's status messages don't reach the page for 30 s
@@ -144,7 +145,8 @@ say(`log: ${out}`);
 const initrd = values('--initrd')[0];
 if (initrd) await page.route(`**/target/images/${machine}/initrd.img`, (r) => r.fulfill({ path: initrd }));
 const disk2 = values('--disk2')[0];
-await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal&${unattendedQuery()}${disk2 ? `&disk2=${encodeURIComponent(`/${disk2}`)}` : ''}`);
+const query = values('--query')[0];
+await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal&${unattendedQuery()}${disk2 ? `&disk2=${encodeURIComponent(`/${disk2}`)}` : ''}${query ? `&${query}` : ''}`);
 
 /** Races `p` against a timeout (the main thread may be frozen: Playwright waits for it forever). */
 const within = <T>(p: Promise<T>, ms: number): Promise<T | undefined> => Promise.race([p, new Promise<undefined>((r) => setTimeout(r, ms))]);

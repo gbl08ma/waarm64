@@ -138,14 +138,14 @@ the interpreter's own code.
 - **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
   (`Config::max_bytes`: 160 MiB of wasm for a VM, whose vCPUs share it: [Sharing](#sharing)). When
   either is reached, everything is flushed (slots freed, the host's table lets go of the old
-  functions, [Memory](#memory)); with `Config::replay` the regions in use before it are compiled
-  again at once ([Replay after a flush](#replay-after-a-flush)). Alpine's boot compiles ~30 MiB and Debian's ~73 MiB, so neither
+  functions, [Memory](#memory)); with `Config::replay` the regions in use before it keep running and
+  are compiled again into the other half of the slots ([Replay after a flush](#replay-after-a-flush)). Alpine's boot compiles ~30 MiB and Debian's ~73 MiB, so neither
   flushes; a 4-vCPU `go build` loop flushed once in 5 minutes. Per-module eviction is backlog:
   coldest first. FIFO was tried, and it collapsed a Go build; keeping the flushed hot set warm
   (compiling a block that was compiled before on first sight after a flush) made a too-small cache
   worse (more flushes; `bench/boot/REPORT.md` "M8: one code cache for all vCPUs").
-- **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 5 = the default replaying its
-  hot set after a flush, 6 = **JIT-replay**, that in a 16 KiB cache of four-block modules, tier-up at
+- **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 5 = the default carrying its
+  hot set across a flush, 6 = **JIT-replay**, that in a 16 KiB cache of four-block modules, tier-up at
   the second entry, with the stale-code checker (the tests); 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
   the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks
@@ -356,13 +356,12 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
 
 ## Replay after a flush
 
-With `Config::replay` (`VmConfig.jit` 5, the page's `?jit=replay`) a flush for room keeps the regions
-that were in use and compiles them again at once, instead of waiting for each to be counted to the
-threshold again (whose floor the flush has doubled). Per-module eviction couldn't free a full cache:
-about half its regions were idle at Firefox's flushes, but nearly every module held one in use, and V8
-frees a module only whole (`bench/boot/results/m8-evict/` README, "Rechecked"). Replay works at a
-region's granularity instead, and is the first half of compacting (forming the regions in use again
-in new modules, then dropping the old ones), which would do it before the flush.
+With `Config::replay` (`VmConfig.jit` 5, the page's `?jit=replay`; **off by default**) a flush for room
+doesn't drop the code in use: the regions entered near the flush keep running from their slots while the
+next epoch fills the other half of the slots, and they are compiled again into it a module at a time; once
+that's done the old slots go. So the code in use is never interpreted again after a flush, and nothing waits
+for its compile. Off by default because in Firefox's page loads it compiles a quarter more wasm and brought a
+third flush, and the mark per dispatch costs the userspace benchmark 2% (below, "Measured").
 
 - **The use signal:** the dispatcher stores the cache's sweep number into its table's word for each
   slot it enters (`Table::used`, a relaxed store per dispatch; one word per slot per table, read by
@@ -375,32 +374,76 @@ in new modules, then dropping the old ones), which would do it before the flush.
   direct links (imports, a module's own calls) never comes back to the dispatcher.
 - **The hot set** (`Cache::hot_set`, at a flush from `alloc`): the regions entered since the probe
   (since the epoch began, without one), the regions they link to directly, transitively (each
-  region's recipe keeps its `links`), and a tier-up's loop region in place of its head compiled alone;
-  not a region whose key was invalidated or compiled again since. In slot order, so a region's direct
-  links are compiled again before it (imports, as before the flush, not jump-cache tails), and capped
-  at `REPLAY_MAX` (4) eighths of the budget and of the slots.
-- **Recipes:** each region installed with replay on keeps its blocks' (key, VA), how it was formed
-  (forward, a loop region, a loop head alone) and its links (`Recipe`, in its module's `Logged`;
-  ~100 bytes of the core's heap a region, ~15 MB at a full 160 MiB cache). `Cache::rebuild` forms the region again from the code as it is now, with
-  `block::forward` or `block::region` taking exactly the recipe's blocks, so it gets the same members,
-  predicted returns and tier word; a head with no words any more is left out. An `IC` between the
-  flush and the replay is no hazard: the replay reads the code then, as any compile does.
-- **Paced:** `Cache::emit_if_due` (at the dispatcher's misses, which a flush makes constant) compiles
-  the queue a module of `batch` regions at a time, while the compile worker has at most `REPLAY_AHEAD`
-  (4) modules still to compile: a table that waits [`OVERDUE_NS`] for the worker compiles the module
-  itself, the stall the worker exists to avoid. A region whose head was compiled again meanwhile (or
-  waits in the pending batch) is left out. A flush for a changed guest (`jit_flush`, `IC IALLU`)
-  replays nothing; a flush during a replay replaces its queue.
-- **Counters:** `jit::Stats::replays`, `replayed`, `replayed_bytes` (counter words 108-110).
-- **Not measured yet** (the dev VM's, `M8-JIT-HANDOVER.md`): what a flush's slow phase costs in
-  frames with and without it, how much of the cache the hot set is (the recheck's dispatcher marks
-  saw about half the regions per table over a 16-50 s window), and whether the earlier flush it brings
-  (the replayed code fills part of the new epoch) costs more than it saves. Keeping a flushed hot set
-  warm by "compiled before" (any block compiled before, on first sight after the flush) made a
-  too-small cache worse before ([Compile policy](#compile-policy)); this one takes only what was
-  entered near the flush, under a cap.
-- **Tests:** JIT-replay (docs/testing.md), the unit tests in `jit/mod.rs` (a recipe forms its region
-  again; the hot set, the probe, the marks across a flush).
+  region's recipe keeps its `links`), and a tier-up's loop region with its head; not a region whose key
+  was invalidated or compiled again since. The closure stays compiled; the replay's queue is the closure in
+  slot order (a region's direct links compiled again before it), a tier-up's loop region in place of its head
+  compiled alone, capped at `REPLAY_MAX` (4) eighths of the budget and of the slots.
+- **Carrying** (`Cache::carry`): the slots are two halves of `Config::capacity` (262,144 each), and each such
+  flush moves the next epoch to the other half. The map keeps only the closure's keys (their linkers, pages and
+  spans with them, so an `IC` drops a carried region as any other); the tier-ups are forgotten (a redirect into
+  the old half would outlive it). A table that catches up on the new epoch remembers the carried slots it had
+  installed (`Table::old`; `Table::has` is "this epoch's, up to `limit`, or carried") and runs them; a table
+  that missed an epoch has none. New code is compiled at the threshold's floor as it was (no doubling: the code
+  in use isn't counted again), and never imports a carried region (`Cache::old`; a jump-cache tail instead),
+  since an import would keep its module alive past the release.
+- **The replay** (`Cache::replay`, from `emit_if_due` at the dispatcher's misses): `Cache::rebuild` forms each
+  region again from its recipe (its blocks' key and VA, how it was formed, its links: `Recipe`, in its module's
+  `Logged`, ~100 bytes of the core's heap a region) from the code as it is now, with `block::forward` or
+  `block::region` taking exactly the recipe's blocks, so it gets the same members, predicted returns and tier
+  word; a head with no words any more is left out, and so is one compiled again meanwhile. Paced: with a compile
+  worker, a module of `REPLAY_BATCH` (64) regions at most every `REPLAY_GAP_NS` (4 ms), while the worker has
+  fewer than `REPLAY_AHEAD` (4) left to compile, since the cache's lock is held while a module is emitted and
+  every table needs it at its misses. A replayed region's `Info::prev` is the carried one, which a table that
+  hasn't installed the new module runs meanwhile.
+- **The release** (`Cache::uncarry`): once the queue is empty and every table has installed the replay's
+  modules (or `OVERDUE_NS` after), the carried regions still in the map are dropped (with what links to them) and
+  the old half's slots are released: each table, at its dispatcher, has the host null them
+  (`env.jit_release`, [abi.md](abi.md)), forgets its carried range and clears its jump cache (and, by `drops`,
+  its vCPUs' transfer caches). A classic flush (no replay, `IC IALLU`, `jit_flush`, a flush while a carry is
+  still running) releases its epoch's slots the same way, which replaces the host's guess from slot numbers
+  starting over.
+- **Not again when futile:** if the replay's own modules were more than half of what filled the epoch (a hot set
+  about as large as the cache), the next flush for room is a classic one (which doubles the floor), not another
+  carry.
+- **Counters:** `jit::Stats::replays` (carried flushes), `replayed`, `replayed_bytes` (counter words 108-110).
+- **Tests:** JIT-replay ([testing.md](testing.md): a 16 KiB cache, so the boots carry dozens of times), the unit
+  tests in `jit/mod.rs` (a recipe forms its region again, in memory 0 and in a spill memory; the hot set; a
+  carried epoch runs until it's released; a new region never imports a carried one; no carry after a replay-filled
+  epoch). Planted: carried imports, no `prev`, the release keeping the jump cache (also the boots) or the carried
+  range, the tiers kept, the linkers not closed, the carried keys not dropped, no guard.
+
+### Measured (2026-10-19, `bench/boot/REPORT.md` "M8: carrying the hot set across a flush")
+
+What the slow phase after a flush is, from a diagnostic build (`bench/boot/results/m8-replay/diag.patch`: a flush
+for room every 30 s of Firefox's WebGL page, and per-table counts of what's interpreted): at a first flush (the
+floor 50) the share of steps in compiled code falls from ~99% to ~84% for a second and is back in ~3 s, the
+interpreted steps are nearly all blocks compiled before the flush, the compile work (emitting ~80 ms, installing
+~40 ms a second over the vCPUs) is small, and Firefox's frames fall from ~33 to 6-9 a second at the worst and
+average ~24 over 10 s. **At later flushes the doubled floor is what hurts**: with the floor doubled at each
+flush (as every real session's second and third flush), the same flush took 11-16 s to get back (frames 6-10 a
+second for ~10 s).
+
+| per flush (WebGL; the floor kept: a first flush) | default (13 flushes) | replay, no carry (8) | carry (8) |
+|---|---|---|---|
+| slow phase (compiled share back within 2 points of before) | 3-4 s | 2-3 s | 0 s |
+| worst second's frames (from 31-34), median (range) | 8 (4-12) | 7 (4-8) | 18 (13-22) |
+| frames a second, mean of the 10 s after | 22.9-25.1 | 19.3-23.2 | 21.1-26.5 |
+
+Replay without carrying compiled the hot set while everything else ran interpreted, a deeper dip (its first
+form, compiling it all at the first miss, stopped every vCPU ~1.2 s on the cache's lock). Carrying leaves a
+milder dip of ~5 s, the replay's compile work on the vCPUs (~0.3 s emitting and ~0.1 s installing a second).
+
+Firefox's pages session (every flush lands on a new page's code, which no hot set has): with carry 3 flushes
+against 2, 635 against 509 MB of wasm, busy MIPS 122 against 126 in the same pair, vCPU stalls of 20 ms or more
+15 against 3 (none over 60 ms); its second flush was a classic one (the guard: the replay had filled half the
+epoch), and its first and third interpreted less after them (67-80 and 29-50 M steps in 10 s against 108-120 and
+58-166). The `go build` loop flushes once, in its boot, either way. The gates:
+`smp_alpine_jit` even (−0.4, +0.9, −0.2% at 1, 2, 4 vCPUs), `smp_user_jit_4` +2.0% (three rounds, each slower: the
+mark per dispatch).
+
+**To turn it on by default** (the backlog's "Carrying the hot set"): fewer bytes replayed in page loads (only what
+was marked, not its closure's whole cap: the closure can stay carried without being compiled again), the mark's
+cost, and the replay's emitting outside the cache's lock.
 
 ## Invalidation and the stale-code checker
 
@@ -715,6 +758,23 @@ fast paths send there (`WEBPC_JIT_DIFF_HELPERS=1` on the differential test lists
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **Per-module eviction, coldest first** (M8, 2026-10-18/19; branch `evict-generations`, not merged;
+  `bench/boot/results/m8-evict/` README): about half of a full cache's regions are idle at Firefox's flushes, but
+  nearly every module holds one in use (a module is a batch of what got hot together), and V8 frees a module only
+  whole: with generations (imports only within an eighth of the budget, which cost nothing measurable) and real
+  marks it never evicted (0-12 MiB of 160 unused for 5-60 s). FIFO by install order (branch `fifo-evict-attempt`)
+  collapsed a 4-vCPU Go build within 3 minutes: the oldest code is the hottest, and dropping it cascades through
+  `linkers` to most of the live code. Whatever frees part of a cache must free whole modules and respect that a
+  module's memory goes only with every module that imports it, transitively. Hence regions moved instead
+  ([Replay after a flush](#replay-after-a-flush)).
+- **Replaying the hot set after a flush without carrying it** (M8, 2026-10-19, `bench/boot/REPORT.md` "M8:
+  carrying the hot set across a flush"): compiled again while everything else ran interpreted, the dip was deeper
+  than the default's at a first flush (worst second 4-8 frames against 4-12); compiled all at the first miss, it
+  held the cache's lock ~1.2 s and stopped every vCPU. It helped only where the doubled floor made the default's
+  slow phase long. Carrying keeps that code running instead.
+- **No doubling of the threshold's floor at a flush** (the same section): the interpreted steps after Firefox's
+  flushes fell by a third, but 27% more wasm compiled brought a third flush in its pages session; the doubling
+  stays for classic flushes (a carried flush leaves the floor).
 - **One check for a run of FP instructions** (M8, `bench/interp/REPORT.md` "M8: the FP fast paths'
   SIMD ops"): the inline SIMD&FP instructions between two that can't join (memory, branches,
   helpers, X registers or NZCV; integer instructions that touch no V register stayed inside the

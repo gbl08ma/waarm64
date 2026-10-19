@@ -76,10 +76,13 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each, 82% of them
   tier-ups (a hot loop head's region in a module of its own, with whatever batch is pending). Since the posted modules
   (`bench/boot/REPORT.md` "M8: the compile worker's modules, posted") a module costs a vCPU ~0.06 ms to install, so
-  the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS and those stops,
+  the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS (the pages
+  session records none yet: sample the renderer's `VmRSS`, the Chromium process with `--type=renderer`, through the
+  session, next to `jit.modules`) and those stops,
   then try tier-ups that wait a little for company (the head runs alone meanwhile); Alpine paid +20% for 16M-step
-  batches. Replay after a flush (docs/jit.md, `?jit=replay`) already re-emits the hot set in modules of 512 regions,
-  its loop regions compiled whole with no tier-up module: count its sessions' modules when measuring it.
+  batches. The carried hot set's replay (docs/jit.md "Replay after a flush", `?jit=replay`) knows a whole hot set
+  at once and compiles loop regions whole with no tier-up module: a natural place for large modules grouped by their
+  links, once it emits outside the cache's lock (it uses 64 regions a module now; 512 at once held the lock ~1.2 s).
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
@@ -103,50 +106,28 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the FP checks (below), and sway
   itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
   virgl (plans/graphics.md §1); llvmpipe stays what guests without 3D fall back to.
-- **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
-  "Memory"). With the shared cache a 4-vCPU `go build` loop flushes about once in 5 minutes; a
-  larger working set (a browser in the guest) is where this counts again. A flush also has every
-  table catch up on the new epoch's modules.
-  - **What it would do:** evict the modules unused for the longest time, unlink what chains to them,
-    null their table slots and reuse them from a free list.
-  - **FIFO by install order was built and dropped** (branch `fifo-evict-attempt`, local, not
-    pushed). Under the 4-vCPU Go load of `bench/stress` it collapsed the guest within 3 min: ~1200
-    MIPS fell to 4–100, the guest reported hard and soft lockups (97 s), single `vm_run_cpu` calls
-    ran up to 112 s, the renderer grew to 6.8 GB. The oldest code is the hottest (Go's runtime,
-    compiled first): dropping it cascades through `linkers` to most of the live code, and modules
-    emptied by the cascade kept their bytes until their turn, so the budget stayed full and every
-    install evicted again.
-  - **What a coldest-first design needs:** a cheap use signal per module, since blocks run inside
-    V8 without telling the core (a word per module that the core or the host sets on dispatch or
-    jump-cache misses and a sweep clears, a second-chance clock; or the sampling profiler's PCs);
-    modules released as soon as all their regions are dropped; `drop_key` removals from `pages` and
-    `pending` that don't scan per key.
-  - **Worth keeping from that branch:** the explicit `env.jit_release(slot, n)` host signal, in
-    place of `web/vm.ts` detecting a flush by slot numbers restarting; `drop_key` removing the keys
-    that `linkers` drops from `pages` too, which invalidation leaks today.
-  - **Measure it against the flush under the Go load.**
-  - **What any design must respect** (2026-10-18): a module links to compiled successors as imports, an import keeps
-    its target's instance alive in V8, and imports point from newer modules to older ones, so a module's memory goes
-    only with every module that imports it, transitively: a set to evict must be closed under importers (FIFO's
-    cascade). Rebindable links instead (`return_call_ref` through a mutable global or a typed table) take ~8-10
-    dependent loads in V8's code against an import's 3, on every transfer between modules. Imports only
-    within an eighth of the budget cost nothing measurable (Firefox's busy MIPS −1.1%, the gates within 1%).
-  - **Built and not merged** (branch `evict-generations`, 2026-10-19; `bench/boot/results/m8-evict/` README
-    "Rechecked"): generations, a mark per dispatch, a probe at 7/8 clearing the jump and transfer caches,
-    coldest-first importer-closed eviction to 6/8, slots held until every table lets go (`env.jit_release`). It never
-    evicted in Firefox: the measurement that picked it had lost its marks at the first flush (its "cold" was install
-    age), and with real marks 0-12 MiB of a full 160 MiB cache is unused for 5-60 s. About half the regions are
-    idle, but nearly every module holds one in use, and V8 frees a module only whole. Worth keeping from the branch
-    whatever comes next: `env.jit_release` in place of the host guessing flushes from slot numbers, `Table::has` in
-    place of the table-index limit, the JIT-evict boot tests.
-  - **What could reduce a flush's stutter instead** (the user's choice; unmeasured): compacting (recompile the
-    regions in use out of mostly idle modules, then drop those); two live epochs (the old code keeps running while
-    the new epoch compiles the hot set); recompiling the previous epoch's hot set at once after a flush (the marks
-    give it) where `Cache::flush` now doubles the threshold's floor; a bigger budget.
-  - **Replay is built** (2026-10-19, the user's choice: the precursor of compacting; docs/jit.md "Replay after a
-    flush", `?jit=replay`, off by default): the evict branch's mark per dispatch and probe, a recipe per region, the
-    hot set compiled again right after a flush. Unmeasured on the dev VM (`M8-JIT-HANDOVER.md`); compacting before
-    the flush (a second epoch's slots, tables switching at their dispatcher) is the next step if it isn't enough.
+- **Carrying the hot set across a flush, by default** ([jit.md](jit.md) "Replay after a flush": built 2026-10-19,
+  `?jit=replay`, off by default; per-module eviction is in "Tried and not kept"). At a flush in steady playback it
+  removes the interpreted slow phase (Firefox's WebGL: worst second 18 frames against 8, no seconds below 99%
+  compiled), but in Firefox's page loads it compiled 25% more wasm and brought a third flush, and the mark per
+  dispatch costs `smp_user_jit_4` 2%. Before turning it on:
+  - **Replay less:** only the regions marked since the probe, not the whole closure up to half the budget (the
+    closure must stay carried, being linked, but needn't be compiled again: what isn't replayed is dropped at the
+    release and counted again if it's hot). Measure the pages session's flushes and bytes.
+  - **Emit outside the cache's lock:** the replay's modules (and any batch) are formed and emitted while every
+    other table waits at its misses; plan under the lock, emit outside, log under it again. The carry's remaining
+    dip (~5 s at ~0.3 s of emitting a second) is that, and it would let the replay emit 512-region modules (the
+    backlog's "Fewer, larger modules").
+  - **The mark's cost** (a store per dispatch into `Table::used`): marking only while a probe runs (from 7/8 on)
+    would leave the steady state as it was.
+  - **`overdue` with carry** (68 in one pages session against 0): tables waiting a second for the worker during the
+    replay; the pacing against the worker (`REPLAY_AHEAD`) counts modules, not bytes.
+  - **The guard against futile carries** counts the replay's bytes against the epoch's: with the replay capped at
+    half the budget, a heavy session's next flush is a classic one (in the pages session every second flush). A
+    smaller replay (above) leaves it for what it's for, a hot set as large as the cache.
+  - Not measured: memory while two halves are alive (the carried closure plus the new epoch: up to ~1.5× the
+    budget's V8 memory for the seconds of a replay; the `go build` loop's renderer was ~0.3 GB higher), Debian's
+    boot.
 - **Smaller slow arms of loads and stores** (2026-10-13; memory of the code cache, not speed).
   Measured on Alpine's userspace benchmark (968 modules, 34 MB of wasm; 49 of them, 2,122
   functions, compiled eagerly in Node 26 with `--print-wasm-code`, one tier at a time; the

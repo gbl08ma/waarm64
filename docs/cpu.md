@@ -263,7 +263,8 @@ test it against `tests/steps.txt`.
   dispatch that reaches the compile threshold reports itself (the cache returns how many may be
   counted before it), so a block joins the pending batch exactly when it did with every dispatch
   reported. Without that, blocks of one path joined different batches, and the forward regions,
-  which take only their batch's blocks, came out 30% more and smaller (Alpine's boot 8% slower).
+  which take only their batch's blocks, came out 30% more and smaller (Alpine's boot 8% slower): check
+  `blocks` against `regionBlocks` in a run's counters whenever the batching changes.
   A slot's count survives eviction (the map keeps it).
 - **The cache** (per JIT table, so per vCPU in parallel SMP): 16,384 direct-mapped slots, a map,
   and the micro-ops in one arena, which starts over when full. **The arenas share 16M micro-ops

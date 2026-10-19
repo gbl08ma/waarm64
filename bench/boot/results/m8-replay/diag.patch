@@ -1,0 +1,164 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index 2bb52e6..e241650 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -2,7 +2,7 @@
+ // bench/gpu/firefox-load.ts share. Headless Chromium, the page with `?displaystats`, a disk opened from a file, root
+ // on the serial terminal, keys typed on the screen, and `load()`: a phase measured over N s on both sides (the guest's
+ // /proc/stat and per-thread CPU, the display's and the renderer's stats, the emulator's counters).
+-import { writeFileSync } from 'node:fs';
++import { appendFileSync, writeFileSync } from 'node:fs';
+ import { relative, resolve } from 'node:path';
+ import { chromiumEnv } from '../../tools/nosme.ts';
+ import { chromium, type Page } from 'playwright-core';
+@@ -106,6 +106,7 @@ export async function openSession(o: SessionOptions) {
+     const t = m.text();
+     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
+     if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
++    if (t.startsWith('webpc-evict ')) return void appendFileSync(`${o.out}/evict.txt`, t.slice(12) + '\n'); // DIAG
+     if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
+   });
+   const t0 = performance.now();
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 5e659b9..bccc7b2 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -191,6 +191,8 @@ pub const REPLAY_AHEAD: u32 = 4;
+ /// each, one every this many ns at most ([`Cache::replay`]).
+ pub const REPLAY_BATCH: usize = 64;
+ pub const REPLAY_GAP_NS: u64 = 4_000_000;
++/// DIAG: a flush for room every this many ns.
++pub const DG_FORCE_NS: u64 = 30_000_000_000;
+ 
+ /// What the JIT did (`vm::Counters` publishes them).
+ #[repr(C)]
+@@ -430,6 +432,8 @@ pub struct Cache {
+     /// nulls them, `env.jit_release`), from release number `rel_base` on.
+     releases: VecDeque<(u32, u32)>,
+     rel_base: u64,
++    dg_last: u64,
++    dg_old: std::collections::HashSet<u64>,
+ }
+ 
+ /// The epoch before a flush for room with `Config::replay`, whose hot set
+@@ -575,6 +579,8 @@ impl Cache {
+             carry: None,
+             releases: VecDeque::new(),
+             rel_base: 0,
++            dg_last: 0,
++            dg_old: Default::default(),
+         }
+     }
+ 
+@@ -1073,6 +1079,9 @@ impl Cache {
+             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
+         });
+         if info.idx == 0 && !self.off && info.len > 0 {
++            let w = info.len as u64 * n as u64;
++            t.dg[if self.dg_old.contains(&key) { 0 } else { 1 }] += w;
++            let info = self.map.get_mut(&key).expect("info");
+             info.hits = info.hits.saturating_add(n);
+             if info.hits > self.threshold && !info.queued {
+                 info.queued = true;
+@@ -1106,6 +1115,23 @@ impl Cache {
+     /// [`BATCH_STEPS`] interpreted, or it has waited [`BATCH_TIMEOUT`] (by
+     /// table `t`'s clock), into `t`.
+     fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
++        let now = now_ns();
++        if self.dg_last == 0 {
++            self.dg_last = now;
++        }
++        if self.cfg.max_bytes == MAX_BYTES && self.xmiss.is_some() && now.saturating_sub(self.dg_last) >= DG_FORCE_NS {
++            self.dg_old = self.map.iter().filter(|(_, i)| i.idx != 0).map(|(&k, _)| k).collect();
++            self.dg_last = now;
++            if self.cfg.replay && self.carry.is_none() {
++                self.carry(&mut t.stats);
++            } else {
++                let floor = self.floor;
++                self.flush(&mut t.stats);
++                self.floor = floor;
++                self.retune();
++            }
++            return;
++        }
+         if !self.rp.queue.is_empty() {
+             self.replay(t, mem);
+         }
+@@ -1317,6 +1343,7 @@ impl Cache {
+                 .filter(|i| i.idx != 0 && !old(i.idx))
+                 .map(|i| (i.idx, i.len))
+         };
++        let dg0 = now_ns();
+         let block::Emitted {
+             bytes,
+             inl,
+@@ -1332,6 +1359,7 @@ impl Cache {
+             Some(xmiss),
+         );
+         let len = bytes.len() as u64;
++        t.dg[3] += now_ns() - dg0;
+         let seq = self.seq;
+         let seq = if compile(&bytes, seq, self.epoch as u32, &self.ready) {
+             self.seq = seq.wrapping_add(1).max(1);
+@@ -1471,6 +1499,7 @@ pub struct Table {
+     /// the last report of them ([`Table::helper_report`]).
+     helper_ops: Vec<u64>,
+     report: String,
++    pub dg: [u64; 4],
+     /// Steps dispatched so far (the batch timeout's clock), and the cache's
+     /// pending batch and this clock when this table first saw it pending.
+     clock: u64,
+@@ -1523,6 +1552,7 @@ impl Table {
+             waiting: 0,
+             helper_ops: vec![0; crate::decode::Op::ALL.len()],
+             report: String::new(),
++            dg: [0; 4],
+             clock: 0,
+             since: (u64::MAX, 0),
+             stats: Stats::default(),
+@@ -1816,6 +1846,10 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        self.report += &format!(
++            "E {} {} 0 {} {} {} {} {} {} {}\n",
++            self.id, self.epoch, self.dg[0], self.dg[1], self.dg[2], self.dg[3], self.stats.compile_ns, self.stats.steps, self.stats.dispatches
++        );
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+@@ -1905,7 +1939,10 @@ impl Jit {
+                 Ok((idx, len))
+             }
+             // Compiled, and not installed here yet: interpreted meanwhile.
+-            Ok((_, len)) => Err(len.max(1)),
++            Ok((_, len)) => {
++                self.table.dg[2] += len as u64;
++                Err(len.max(1))
++            }
+             Err(n) => Err(n),
+         }
+     }
+diff --git a/web/vcpu-worker.ts b/web/vcpu-worker.ts
+index f7d49b6..5757ea1 100644
+--- a/web/vcpu-worker.ts
++++ b/web/vcpu-worker.ts
+@@ -99,7 +99,18 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
+     if (w.async) await w.value;
+     yielded = performance.now();
+   };
++  // DIAG (not for commit): the JIT table's `E` line every second.
++  let diagAt = performance.now();
++  const dx = ex as unknown as { jit_helper_report(v: number): number; vm_cpu(vm: number, i: number): number };
++  const diag = () => {
++    const p = dx.jit_helper_report(dx.vm_cpu(j.vm, j.cpu));
++    if (!p) return;
++    const b = new Uint8Array(mem.buffer, p);
++    const t = new TextDecoder().decode(b.slice(0, b.indexOf(0)));
++    for (const l of t.split('\n')) if (l.startsWith('E ')) console.debug(`webpc-evict ${Date.now()} ${l}`);
++  };
+   for (;;) {
++    if (performance.now() - diagAt > 1000) { diagAt = performance.now(); diag(); }
+     live?.enter();
+     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+     live?.leave();

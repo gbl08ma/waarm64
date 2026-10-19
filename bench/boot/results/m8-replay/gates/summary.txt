@@ -1,0 +1,16 @@
+smp_alpine_jit_n1_total
+  base     9,619 (IQR 76, n=5) · 9,747 (IQR 244, n=5) · 9,538 (IQR 64, n=5)
+  replay   9,580 (IQR 59, n=5) · 9,772 (IQR 262, n=5) · 9,582 (IQR 126, n=5)
+  replay/base -0.4%
+smp_alpine_jit_n2_total
+  base     9,332 (IQR 62, n=5) · 9,417 (IQR 82, n=5) · 9,254 (IQR 62, n=5)
+  replay   9,415 (IQR 215, n=5) · 9,530 (IQR 284, n=5) · 9,316 (IQR 20, n=5)
+  replay/base +0.9%
+smp_alpine_jit_n4_total
+  base     9,457 (IQR 36, n=5) · 9,579 (IQR 202, n=5) · 9,391 (IQR 69, n=5)
+  replay   9,410 (IQR 37, n=5) · 9,619 (IQR 35, n=5) · 9,435 (IQR 85, n=5)
+  replay/base -0.2%
+smp_user_jit_n4_total
+  base     18,683 (IQR 17, n=2) · 18,653 (IQR 20, n=2) · 18,884 (IQR 21, n=2)
+  replay   19,061 (IQR 254, n=2) · 18,763 (IQR 183, n=2) · 19,313 (IQR 370, n=2)
+  replay/base +2.0%

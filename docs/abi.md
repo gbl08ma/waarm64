@@ -13,7 +13,7 @@ Design notes for an ABI change go in this file before the code.
   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
   RAM, which the host places after the heap ([architecture.md](architecture.md)).
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
-  slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
+  slot) -> i32`, `env.jit_release(slot, n)` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
   size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
   module `web/spill.ts` makes over the spill memories (traps with none; [spill-memories.md](spill-memories.md)).
   `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
@@ -202,8 +202,9 @@ The translator is in the core ([jit.md](jit.md)); the host only turns bytes into
 puts its functions into the core's table.
 - **Table:** the core's `__indirect_function_table` is exported and growable; Rust function
   pointers are indexes into it. `jit.bind(instance)` records `base` = the table's length then. The
-  core owns **slot** allocation (slot *s* is table index `base + s`), so eviction reuses slots and
-  the table stops growing at the code cache's size.
+  core owns **slot** allocation (slot *s* is table index `base + s`), so a flush reuses slots and
+  the table stops growing at the code cache's size (twice it with `Config::replay`, whose epochs alternate
+  between two halves).
 - **`env.jit_install(ptr, len, slot, seq) -> i32`:** with `seq` 0 the host copies the bytes out of
   shared memory and compiles them **synchronously** (`new WebAssembly.Module` in the vCPU worker);
   with `seq` ≠ 0 (ABI 37) it takes instead the module the compile worker compiled as number `seq`
@@ -223,6 +224,13 @@ puts its functions into the core's table.
   and, when every module up to `seq` is compiled, stores `seq` atomically into the u32 at byte
   address `ready`. A table installs a module (`jit_install`, then a cache hit) only once `ready`
   has reached it, interpreting its blocks until then, or after a second without it.
+- **`env.jit_release(slot, n)`** (ABI 41): slots `slot..slot + n` hold nothing this thread's table may run any
+  more: the host sets them to null, so V8 can free their instances and code, and past 4,096 slots released in all
+  allocates (and drops) a large `ArrayBuffer` to make V8 collect ([jit.md](jit.md) "Memory"). Each table calls it at
+  its dispatcher (never with JIT code of its thread running) for the slots of a flushed epoch, and with
+  `Config::replay` for a carried epoch's once its hot set is compiled again ([jit.md](jit.md) "Replay after a
+  flush"). Before ABI 41 the host guessed a flush from slot numbers starting over, which the two halves of a
+  replaying cache's slots would break.
 - **A JIT module's imports:** `env.memory` (limits 0–65536 pages, or exactly `VmConfig.mem_pages`: ABI 32), `env.table`, any core export by
   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
   module `t`, whose imports are named by table index and resolved with `table.get` (links to
@@ -514,5 +522,5 @@ implemented by this step).
 | 38 | USB: `VmConfig.xhci`, `vm_xhci` (above, "USB"); the `DEVICE` exit's slot 32 for the xHCI |
 | 39 | spill memories: `VmConfig.spill`, the `ram` imports; until S1 of the plan, devices take buffers in memory 0 only |
 | 40 | device records name the memory: virtio segments are (offset, length, memory), the xHCI's length word carries it in bits 27:24 |
-| 41 | `VmConfig.jit` 5 and 6: the JIT replaying its hot set after a flush, and that in a small cache (the tests); counters 108–110 |
+| 41 | `VmConfig.jit` 5 and 6: the JIT carrying its hot set across a flush and compiling it again, and that in a small cache (the tests); counters 108–110; `env.jit_release` |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

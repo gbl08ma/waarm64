@@ -19,10 +19,11 @@ export async function startSampler(memory: WebAssembly.Memory, counters: number 
 }
 
 /** Per vCPU in each timeline row, after the row's time (epoch ms): counters (web/vm.ts `Counter`) and liveness. */
-export const TIMELINE_FIELDS = ['steps', 'compileNs', 'syscalls', 'irqs', 'outNs', 'dsbWaitNs', 'lockWaitNs', 'invalidations', 'enteredAt', 'chunks'] as const;
+export const TIMELINE_FIELDS = ['steps', 'compileNs', 'syscalls', 'irqs', 'outNs', 'dsbWaitNs', 'lockWaitNs', 'invalidations', 'enteredAt', 'chunks', 'jitSteps', 'flushes', 'replayed'] as const;
 /**
  * The timeline's rows, flat: each is the time (epoch ms), then TIMELINE_FIELDS for each vCPU (`enteredAt`: when the
- * vCPU entered the `vm_run_cpu` call it's in, epoch ms, 0 when outside one; `chunks`: calls returned).
+ * vCPU entered the `vm_run_cpu` call it's in, epoch ms, 0 when outside one; `chunks`: calls returned; `jitSteps`: steps in compiled code;
+ * `flushes`, `replayed`: the cache's flushes and regions replayed that this vCPU's table did).
  */
 export type Timeline = { ncpus: number; periodMs: number; fields: string[]; rows: number[] };
 

@@ -317,11 +317,28 @@ start one target must get ALREADY_ON or ON_PENDING).
   when a change targets eviction or invalidation; for coverage per minute prefer short variants
   (a tiny cache with the default threshold, compile-on-sight with a big cache, tier-up after one
   entry).
-- **JIT-replay** (`VmConfig.jit` 6: the hot set compiled again after each flush, [jit.md](jit.md)
-  "Replay after a flush", in a 16 KiB cache of four-block modules, tier-up at the second entry, with
+- **JIT-replay** (`VmConfig.jit` 6: the hot set carried across each flush and compiled again into the other
+  half of the slots, then released, [jit.md](jit.md) "Replay after a flush", in a 16 KiB cache of four-block modules, tier-up at the second entry, with
   the checker): the bare-metal tests (round-robin and parallel) and Buildroot on 1, 2 and 4 vCPUs
   (the interpreter's steps and console), and in parallel Buildroot on 4 vCPUs, which must replay
-  something. The bare-metal tests compile so little that only `maint` and `pairs` flush there.
+  something. The bare-metal tests compile so little that only `maint` and `pairs` flush there. Alone:
+  `node --test --test-name-pattern='(interpreter|JIT-replay)' tests/boot-node-linux.test.ts
+  tests/boot-node-parallel.test.ts` (the interpreter's runs are the reference: without them the JIT-replay runs
+  fail as "the interpreter run failed").
+- **Paths the page doesn't take:** round-robin SMP, Node's deterministic runs and user-mode vCPUs have no compile
+  worker (every module's `seq` 0). A "parked on seq" check that didn't exclude 0 parked them for good: Firefox and
+  the gates couldn't see it, lockstep and the bare-metal tests did. Run `tests/jit-lockstep.test.ts` and
+  `tests/jit.test.ts` on any change to installs before measuring. In round-robin one cache serves every vCPU, each
+  with its own TLB: state derived from the cache but kept per vCPU must notice the cache's changes per vCPU
+  (`Cache::drops` against `Tlb::xdrops`; a one-shot flag was consumed by whichever vCPU ran next). On parallel vCPUs
+  code read twice can differ: read guest code once per decision; a repeated boot loop (500 boots in ~5 min) finds
+  such races, CI only sometimes.
+- **A bad table index** (a "function signature mismatch" in a worker): dump every index the vCPU's JIT state can
+  call (the jump cache, hot-word redirects, the transfer cache) at the trap and test each against the worker's table.
+- In parallel mode input timed by steps is wrong (the vCPUs' summed steps say nothing about how far the boot is):
+  wait for the prompt; and a test that waits for a shell must never match the console's end (count prompt lines:
+  `trim.test.ts` failed 1 in 40 under load until it did). `scripts/ci.sh` runs the native tests from the working
+  tree: don't edit `core/` while it runs, and read its result before committing.
 - **JIT-check** (`VmConfig.jit` 3: compile on sight into the full-size cache, with the checker)
   finds stale blocks JIT-stress's 4-region cache evicts before they're entered again; the `maint`
   test uses it (code rewritten by another vCPU).
@@ -479,7 +496,7 @@ systemctl --user status webpc-stress; journalctl --user -u webpc-stress   # its 
 
 Flags: `--seconds` (the sampling time; the ~45 s boot and login come before it), `--interval` (sample period, 5), `--probe` (guest console probe period, 15),
 `--ncpus`, `--guest-cmd '<cmd>'` (repeatable: started as `( cmd ) &` after the built-in load, for a
-Go or C churn binary put on the guest), `--no-load` (no built-in load; the `--guest-cmd` ones still start), `--disk2 <repo path>` (a read-only second disk: `images/stress/build-goroot.sh`'s Go toolchain, whose `go build` loop the JIT's cache was measured with: [jit.md](jit.md) "Sharing"), `--stall-ms` (2000), `--freeze-ms` (10000),
+Go or C churn binary put on the guest), `--no-load` (no built-in load; the `--guest-cmd` ones still start), `--query` (added to the page's query, e.g. `jit=replay`), `--disk2 <repo path>` (a read-only second disk: `images/stress/build-goroot.sh`'s Go toolchain, whose `go build` loop the JIT's cache was measured with: [jit.md](jit.md) "Sharing"), `--stall-ms` (2000), `--freeze-ms` (10000),
 `--warmup` (150 s from the tool's start, left out of the memory and speed trends). Exit code 0 clean, 1 findings, 2 the
 harness failed (no login).
 
