@@ -16,7 +16,7 @@ const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessa
 let ip: MessagePort | undefined;
 let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
-/** This adapter is the guest's default way out (docs/plans/network-adapters.md §4): otherwise its lease carries only the network's routes. */
+/** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
 const offered = () => routedLease(lease, primary, TAILCAT_ROUTES);
 let client: TsClient | undefined;

@@ -4,7 +4,7 @@
 // credential (the test sets up systemd-networkd and systemd-resolved itself); `page` boots it
 // exactly as the page does with a network card (web/app/machine.ts `network`) on the synchronous
 // echo backend, for tests/net-guest.test.ts; with `adapters` (and `page`), that many cards, each on its own gateway and
-// echo lease (docs/plans/network-adapters.md §4); with `ports`, a card per port on the page's end (its leases are the
+// echo lease (docs/network-adapters.md §4); with `ports`, a card per port on the page's end (its leases are the
 // page's to send: the primary's with the default route, the others' with their network's routes only), as the page's
 // machine with several adapters has them (a two-minute lease).
 import { bootVm, Exit } from '../../web/vm.ts';

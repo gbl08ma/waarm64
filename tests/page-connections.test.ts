@@ -1,4 +1,4 @@
-// The browser's network connections on the page (docs/plans/network-adapters.md §3), in Chromium, on two stored machines
+// The browser's network connections on the page (docs/network-adapters.md §3), in Chromium, on two stored machines
 // whose only disk is blank: the firmware runs and finds nothing to boot, which is all an adapter needs to be live (its
 // client gets the machine's port at the start). The control server, 127.0.0.1:1, never answers, so no client gets
 // further than trying, and its connection is held all the same. A new machine connects in one wizard (no connections

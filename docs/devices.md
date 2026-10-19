@@ -220,7 +220,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
   (`02:77:65:62:70:63`); a machine's adapter `n` (`NetSpec.gateway`) has its own, 169.254.0.<n+1> at
   `02:77:65:62:70:63` plus `n` (`gatewayOf`), and its echo backend leases 198.18.0.<15+n> (`echoLease`), so a guest
-  with several cards tells them apart (docs/plans/network-adapters.md §4). A lease with `routes` (`Routes`: the
+  with several cards tells them apart (docs/network-adapters.md §4). A lease with `routes` (`Routes`: the
   client's `setPrimary(false)`, `routedLease`) makes the gateway the router for those prefixes only: option 121 without
   a default and no option 3, a router advertisement with lifetime 0 and a Route Information option per IPv6 prefix
   (systemd-networkd installs them); the adapter the page picks as the primary (`primaryOf`: the first that reaches the

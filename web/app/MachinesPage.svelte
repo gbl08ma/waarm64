@@ -3,7 +3,7 @@
   The machines kept in this browser (new, from a disk image, import a definition), and one machine: open it here,
   duplicate, export its definition, delete; its Settings, Disks and Snapshots as tabs. A transient machine (a test's
   `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's network connections
-  (docs/plans/network-adapters.md §3.1) under Connections, and the browser's storage at the bottom.
+  (docs/network-adapters.md §3.1) under Connections, and the browser's storage at the bottom.
   Logic is in web/app/machines.ts, disks.ts and main.ts (`page`); every action that loses data asks first.
 -->
 <script lang="ts">

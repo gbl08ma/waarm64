@@ -1,5 +1,5 @@
 // Locks on things one running machine has at a time (a USB device, docs/usb.md "The page"; a network connection,
-// docs/plans/network-adapters.md §2.3): a Web Lock per thing, held while this page's machine has it. Other tabs ask
+// docs/network-adapters.md §2.3): a Web Lock per thing, held while this page's machine has it. Other tabs ask
 // who holds one (`<topic>-who`, answered `<topic>-held` with the machine's name) and ask the holder to let it go
 // (`<topic>-release`), over the store's channel. Without Web Locks (Node's tests may lack them) every take succeeds.
 import type { Note, Store } from './store.ts';

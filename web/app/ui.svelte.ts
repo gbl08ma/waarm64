@@ -50,7 +50,7 @@ export const ui = $state({
   /** Bumped when the network's state changes (the Network menu, the wizard and the Network tab redraw). */
   net: 0,
   /**
-   * The Network wizard, open (web/app/NetWizard.svelte, docs/plans/network-adapters.md §3.2): `attach` a connection to
+   * The Network wizard, open (web/app/NetWizard.svelte, docs/network-adapters.md §3.2): `attach` a connection to
    * `machine`'s adapter `adapter` (machine undefined: the page's transient one), a `new` connection on its own, or `edit`
    * connection `connection`. `here`: the machine is the page's (it connects now, so an auth key is asked for). `tick`
    * opens it again.
@@ -136,7 +136,7 @@ export type Page = {
   /** `?usbzero=1`: attaches Gadget Zero on a free connector, or detaches it. */
   usbZero(): Promise<void>;
   /**
-   * The network (docs/plans/network-adapters.md §3). `machine`: a stored machine's id, or undefined for the page's
+   * The network (docs/network-adapters.md §3). `machine`: a stored machine's id, or undefined for the page's
    * transient one; `adapter`: its index. The page's machine connects what is attached to it at once (one another tab's
    * machine has is taken after asking); another machine connects it when it starts.
    */

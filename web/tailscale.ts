@@ -49,7 +49,7 @@ export type ToTailscale =
   | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; ip: MessagePort; persist?: string }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
-  /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/plans/network-adapters.md §4). */
+  /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/network-adapters.md §4). */
   | { type: 'primary'; primary: boolean }
   /** Withdraw the lease and hand the gateway's port back (`detached`). */
   | { type: 'detach' }

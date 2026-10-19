@@ -199,7 +199,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
   });
 });
 
-// Two adapters (docs/plans/network-adapters.md §4, L2): adapter 1 on this tailnet without an exit node, adapter 2 on
+// Two adapters (docs/network-adapters.md §4, L2): adapter 1 on this tailnet without an exit node, adapter 2 on
 // tailcat through tests/net/tailcat.sh's server (the exit node's machine is this one, so this machine's LAN stands for
 // the internet). The page's credential has the guest configure both cards itself. Only tailcat reaches the internet, so
 // it is the primary although it comes second: the default routes go through it, the tailnet's adapter gives its /10

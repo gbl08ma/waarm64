@@ -16,9 +16,9 @@
   // `?port=1`: the gateway's backend is this page's end of an IP port (as in the real page), whose
   // lease `harness.lease()` sends whenever the test wants (a client that connects after the boot).
   const ip = q.get('port') ? new MessageChannel() : undefined;
-  // `?adapters=<n>`: that many cards on the echo backend, each on its own gateway (docs/plans/network-adapters.md §4).
+  // `?adapters=<n>`: that many cards on the echo backend, each on its own gateway (docs/network-adapters.md §4).
   // `?ports=<n>`: that many cards, each on an IP port whose lease `harness.primary(k)` sends: card k's with the default
-  // route, the others' with the tailnet's routes only (docs/plans/network-adapters.md §4).
+  // route, the others' with the tailnet's routes only (docs/network-adapters.md §4).
   const ports = Array.from({ length: Number(q.get('ports')) || 0 }, () => new MessageChannel());
   worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay'), ip: ip?.port2, adapters: Number(q.get('adapters')) || undefined, ports: ports.length ? ports.map((c) => c.port2) : undefined }, [serial.port2, ...(ip ? [ip.port2] : []), ...ports.map((c) => c.port2)]);
   window.harness = {

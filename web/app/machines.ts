@@ -64,7 +64,7 @@ export function withoutAdapter(m: MachineRecord, id: string): MachineRecord {
 }
 
 /**
- * Machine `id` with connection `connection` (undefined: none) attached to its adapter `index` (docs/plans/network-adapters.md
+ * Machine `id` with connection `connection` (undefined: none) attached to its adapter `index` (docs/network-adapters.md
  * §3.1): saved now, also while it runs (a connection isn't in the shape). A machine made before adapters gets its card as
  * an adapter (the same MAC: the shape stays).
  */

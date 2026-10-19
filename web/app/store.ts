@@ -1,5 +1,5 @@
 // The browser's machines, disks, overlays, snapshots and network connections (docs/plans/machines.md §2,
-// docs/plans/network-adapters.md §2): records in IndexedDB (database `webpc`, a store per kind, keyed by `id`), bytes
+// docs/network-adapters.md §2): records in IndexedDB (database `webpc`, a store per kind, keyed by `id`), bytes
 // in OPFS (`overlays/<id>/`,
 // `disks/<id>/`, `machines/<id>/` with its `flash`, `suspend` and `snapshots/<id>`). **A record is
 // written after its bytes and deleted before them**, so a crash leaves files without a record,

@@ -23,7 +23,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
-| `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/plans/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
+| `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts`, `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
 | `web/app/network.ts`, `web/app/net-live.ts`, `Network.svelte`, `NetWizard.svelte` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
@@ -208,7 +208,7 @@ Duplicate, Export the definition, Delete; then tabs:
   deleted with its overlays (`Store.deleteDisk`: the space comes back). A file or URL added again (or opened, or
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
-- **Network:** the machine's network adapters (docs/plans/network-adapters.md): up to four, each with its MAC (a new
+- **Network:** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (a new
   machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added and removed with the machine
   off, and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
   **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
@@ -852,7 +852,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 
 A machine has up to four **network adapters** (machines with a `network` entry in machine.ts; a stored machine's
 are on its Network tab, above), and each adapter has a **connection** attached, or none (the cable out). A
-connection is the browser's, not the machine's (docs/plans/network-adapters.md): a tailnet (a Tailscale network,
+connection is the browser's, not the machine's (docs/network-adapters.md): a tailnet (a Tailscale network,
 docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker) or tailcat (below), with its
 state (a tailnet's node, tailcat's served address), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
@@ -893,7 +893,7 @@ and the guest's default way out (below).
   admin console has the setting): reach peers' IPv6 addresses by address, or turn it on. The machine worker gets `nets`,
   each adapter's MAC and the gateway's end of its IP port, and adds a `{type: 'net', mac, gateway, adapter: {ip}}` per
   adapter (docs/devices.md "net"); the page keeps the other ends (web/app/network.ts) for as long as no client holds them.
-- **The default way out** (docs/plans/network-adapters.md §4): the first adapter that is connected and reaches the
+- **The default way out** (docs/network-adapters.md §4): the first adapter that is connected and reaches the
   internet (a tailnet with an exit node in use, tailcat through a server), else the first connected
   (`primaryOf`). Its lease has the default route; the others' have only their network's routes (DHCP option 121, a
   router advertisement with lifetime 0 and Route Information options). A machine with several adapters has its
@@ -977,7 +977,7 @@ and the guest's default way out (below).
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 

@@ -87,7 +87,7 @@ export type NetworkView = {
 };
 
 /**
- * Which of a machine's adapters is the guest's default way out (docs/plans/network-adapters.md §4): the first, in
+ * Which of a machine's adapters is the guest's default way out (docs/network-adapters.md §4): the first, in
  * order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
  * keeps its default route, as it always had); -1 when none is connected.
  */

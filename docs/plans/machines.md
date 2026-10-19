@@ -314,7 +314,7 @@ the page, disks or snapshots (all of them from L1).
   path can't tell a new image from the old one: §3.1) and remote-disks' speed for the first boot's reads.
 - **The catalog** is a list of such machine definitions.
 - **The embedding API**'s VM configuration starts from the machine definition and its shape.
-- **Network adapters** join the machine and the shape (several: proposed in [network-adapters.md](network-adapters.md),
+- **Network adapters** join the machine and the shape (several: built since, [network-adapters.md](../network-adapters.md),
   with connections kept by the browser); today's single card is one attachment of a kind `net`.
 - **USB** ([usb.md](usb.md) §4a; the page's side is built: [../usb.md](../usb.md) "The page"): the xHCI joins the shape as a flag that is left out when it is off, so
   existing hashes don't move. Devices are hot-plugged, so they are not part of the shape. They are the machine's

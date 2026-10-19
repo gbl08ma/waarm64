@@ -5,7 +5,7 @@
 
 /** The most disks a machine has (docs/plans/machines.md §4.1: room left of the core's 32 transports for devices to come). */
 export const MAX_DISKS = 16;
-/** The most network adapters a machine has (docs/plans/network-adapters.md §1.1). */
+/** The most network adapters a machine has (docs/network-adapters.md §1.1). */
 export const MAX_ADAPTERS = 4;
 /** The MAC a machine's card had before adapters (and a new machine's first adapter has): such a machine's shape is as it was. */
 export const DEFAULT_MAC = '52:54:00:12:34:56';
@@ -67,7 +67,7 @@ export type MachineRecord = {
   ramMiB: number;
   display: Display;
   /**
-   * The network adapters (virtio-net), in slot order (docs/plans/network-adapters.md). Absent on machines made before
+   * The network adapters (virtio-net), in slot order (docs/network-adapters.md). Absent on machines made before
    * adapters: their `network` says whether they have one, at `DEFAULT_MAC` (`adaptersOf`).
    */
   adapters?: Adapter[];

@@ -83,12 +83,12 @@ function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
 
 const hex32 = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
-/** A new identity (an ephemeral connection's lives in memory: docs/plans/network-adapters.md §2.1). */
+/** A new identity (an ephemeral connection's lives in memory: docs/network-adapters.md §2.1). */
 export const newTailcatIdentity = (): TailcatIdentity => ({ key: hex32(), psk: hex32() });
 
 /**
  * The identity kept under `key`, made the first time. `served` is the one the page kept before connections
- * (docs/plans/network-adapters.md §2.2); a connection's is under its own key.
+ * (docs/network-adapters.md §2.2); a connection's is under its own key.
  */
 export async function tailcatIdentity(key = 'served'): Promise<TailcatIdentity> {
   const kept = await idb<TailcatIdentity | undefined>('readonly', (s) => s.get(key));

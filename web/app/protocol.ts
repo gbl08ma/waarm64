@@ -81,7 +81,7 @@ export type ToWorker =
      */
     home?: string;
     /**
-     * The machine's network adapters in order (docs/plans/network-adapters.md): each a virtio-net with its MAC on its
+     * The machine's network adapters in order (docs/network-adapters.md): each a virtio-net with its MAC on its
      * own gateway, whose end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other
      * end and gives it to a client (web/app/network.ts). The machine gets its `network` credentials when it has any.
      * Only for a machine with `network`.

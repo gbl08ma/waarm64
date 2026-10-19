@@ -4,7 +4,7 @@
 // connecting with an auth key starts the client without restarting the machine (it has its
 // network card from the boot: the guest sees eth0 on its serial console); the client can't reach
 // 127.0.0.1:1, so the menu shows it's connecting or failed, never connected; the connection is
-// kept (docs/plans/network-adapters.md) but never the key; Disconnect stops the client, which
+// kept (docs/network-adapters.md) but never the key; Disconnect stops the client, which
 // stays off over a reload. tailcat (docs/tailnet.md "tailcat"): neither choice, or a malformed
 // address, is refused; with WEBPC_TAILCAT=1 (tests/net/tailcat.sh's relay) an address of a server
 // that isn't there, on an ephemeral connection (never stored), is waited for, then fails, and the

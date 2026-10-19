@@ -1,5 +1,5 @@
 <!--
-  The Network wizard (docs/plans/network-adapters.md §3.2), a dialog opened through `ui.netWizard`: attach a connection
+  The Network wizard (docs/network-adapters.md §3.2), a dialog opened through `ui.netWizard`: attach a connection
   to a machine's adapter (one of the browser's, or a new one: New connection… first), make a new connection on its own,
   or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay). A new connection is
   kept in this browser unless Keep is off (ephemeral: gone when the page closes). The toolbar's Network menu and the

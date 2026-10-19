@@ -1288,7 +1288,7 @@ document.addEventListener('drop', (e) => {
 let replaying = false;
 term.onData((d) => { if (!replaying) run?.serial.postMessage(d); });
 
-// The network (docs/frontend.md "Network", docs/plans/network-adapters.md): the machine's adapters, each with a connection
+// The network (docs/frontend.md "Network", docs/network-adapters.md): the machine's adapters, each with a connection
 // of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Machines page's
 // Network tab and Connections act through these.
 /** The page's machine as the network knows it: a stored machine's id, or the transient machine. */
@@ -1303,7 +1303,7 @@ function pageAdapters() {
 
 /**
  * The network as it was kept before connections (`webpc.settings` `net`, a kept node, the served tailcat identity) made
- * into connections (docs/plans/network-adapters.md §2.2), once: the transient machine's adapter and every stored
+ * into connections (docs/network-adapters.md §2.2), once: the transient machine's adapter and every stored
  * machine's first one get the one the settings were on.
  */
 async function migrateNetwork() {

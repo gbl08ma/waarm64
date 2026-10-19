@@ -1,5 +1,5 @@
 <!--
-  The toolbar's Network menu (docs/frontend.md "Network", docs/plans/network-adapters.md §3.3): a section per network
+  The toolbar's Network menu (docs/frontend.md "Network", docs/network-adapters.md §3.3): a section per network
   adapter of the page's machine (one adapter: no heading), each showing its connection and what can be done with it
   (Log in…, the exit node, the machine's tailcat address, Connect, Disconnect, Log out, Change connection…, which is
   the Network wizard, web/app/NetWizard.svelte). Adapter 1's elements keep the ids they always had; adapter n's end in

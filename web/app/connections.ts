@@ -1,4 +1,4 @@
-// The browser's network connections (docs/plans/network-adapters.md §2): tailnets and tailcat, each with its own
+// The browser's network connections (docs/network-adapters.md §2): tailnets and tailcat, each with its own
 // state, which a machine's adapters attach to. Stored ones are records in IndexedDB `webpc` `connections` (web/app/store.ts);
 // their state stays where the clients keep it: a tailnet's node in `webpc-tailscale` under the profile `stateKey`
 // (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under `identityKey` (web/tailcat.ts). Ephemeral
@@ -146,7 +146,7 @@ export class Connections {
   }
 }
 
-/** What the page kept before connections (docs/plans/network-adapters.md §2.2). */
+/** What the page kept before connections (docs/network-adapters.md §2.2). */
 export type Legacy = {
   /** `webpc.settings` `net`. */
   settings?: NetworkSettings;

@@ -45,7 +45,7 @@ export function profilesOf(keys: string[]): string[] {
   return [...new Set(keys.filter((k) => k.endsWith('/_current-profile')).map((k) => k.slice(0, k.lastIndexOf('/'))))];
 }
 
-/** The profiles kept in this origin's IndexedDB that hold a node (docs/plans/network-adapters.md §2.2). */
+/** The profiles kept in this origin's IndexedDB that hold a node (docs/network-adapters.md §2.2). */
 export async function keptProfiles(): Promise<string[]> {
   if (typeof indexedDB === 'undefined') return [];
   const db = await new Promise<IDBDatabase>((resolve, reject) => {

@@ -468,6 +468,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   vCPU, from one host's RSS) against `navigator.deviceMemory`, which Chromium caps at 8 GB and
   rounds down; it can't see what else the host is running. Revisit with RAM settings (phase D) or
   if a user's tab gets killed.
+- **`tlbi_spin`'s parallel JIT run failed once** in `scripts/ci.sh` (2026-10-19, `tests/boot-node-parallel.test.ts`:
+  exit 42, so CPU 2's LDAXR/STXR loop never won the lock in CPU 0's 100 rounds), with the core at origin/main's. It
+  passed 8 times alone and 54 times six at a time. The check is a fairness one that a scheduler can starve; if it
+  comes back, give the contender more room (more rounds, or a longer pause after `unlock`) or look at whether the
+  JIT's exclusive pairs can starve another vCPU's.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.
@@ -635,9 +640,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
-- **Several adapters' loose ends** ([plans/network-adapters.md](plans/network-adapters.md)): L2's headscale test (a
-  tailnet without an exit node beside tailcat through a server, both reached at once) and the takeover's time are the
-  dev VM's; adapters can't be reordered (remove and add); a connection attached on the Machines page to a machine
+- **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): a tailnet and tailcat
+  both route fd7a:115c:a1e0::/48 (tailcat's tunnel addresses, its clients' too, are in it), so a machine serving
+  tailcat beside a tailnet would answer tailcat clients over IPv6 through the tailnet's adapter (by reading,
+  unchecked; the fix: per-peer routes instead of the /48); adapters can't be reordered (remove and add); a connection attached on the Machines page to a machine
   running in another tab connects at that machine's next start, not at once; a machine powered off with a client
   running keeps its connection (and its lock) until Disconnect, as the one card did; Log out is offered only where the
   connection runs on this page, and deleting a kept tailnet connection forgets the node without logging it out (it
