@@ -117,7 +117,8 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   - **Emit outside the cache's lock:** the replay's modules (and any batch) are formed and emitted while every
     other table waits at its misses; plan under the lock, emit outside, log under it again. The carry's remaining
     dip (~5 s at ~0.3 s of emitting a second) is that, and it would let the replay emit 512-region modules (the
-    backlog's "Fewer, larger modules").
+    backlog's "Fewer, larger modules"). Then **the replay's emission in the compile worker**, given a core instance
+    of its own (the user's choice, 2026-10-19; the order and design are in M8-JIT-HANDOVER.md "Next").
   - **The mark's cost** (a store per dispatch into `Table::used`): marking only while a probe runs (from 7/8 on)
     would leave the steady state as it was.
   - **`overdue` with carry** (68 in one pages session against 0): tables waiting a second for the worker during the
