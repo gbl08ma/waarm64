@@ -61,7 +61,7 @@ const adapterOf = async (page: Page, id: string) => ((await records(page, 'machi
 const phase = (page: Page) => page.evaluate(() => document.getElementById('network')?.dataset.phase);
 const text = async (page: Page, sel: string) => (await page.locator(sel).textContent()) ?? '';
 /** The page's machine has started (its adapters are live). */
-const started = (page: Page) => page.waitForFunction(() => ['booting', 'running'].includes(document.getElementById('state')!.dataset.state!), null, { timeout: 60_000 });
+const started = (page: Page) => page.waitForFunction(() => ['booting', 'running'].includes(document.getElementById('state')?.dataset.state ?? ''), null, { timeout: 60_000 });
 async function menu(page: Page) {
   if (!(await page.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await page.locator('#network summary').click();
 }
