@@ -413,8 +413,10 @@
   .tabs button { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: 0; color: var(--dim); }
   .tabs button[aria-selected=true] { color: var(--text); background: var(--bg); border-color: var(--line); border-bottom: 1px solid var(--bg); }
   .tab { padding: 16px; }
-  .settings { display: grid; grid-template-columns: max-content minmax(0, 320px); gap: 10px 16px; align-items: center; }
-  .settings label:not(.check) { display: contents; color: var(--dim); }
+  .settings { display: grid; grid-template-columns: max-content minmax(0, 320px) 1fr; gap: 10px 16px; align-items: center; }
+  /* A full-row note's text would widen the labels' max-content column and squeeze the controls to nothing: it takes the row's width instead. */
+  .settings > .note, .settings > .advanced { contain: inline-size; }
+  .settings > label:not(.check) { grid-column: 1 / 3; display: grid; grid-template-columns: subgrid; align-items: center; color: var(--dim); }
   .settings .row, .settings .note { grid-column: 1 / -1; }
   .check { display: flex; align-items: center; gap: 6px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
