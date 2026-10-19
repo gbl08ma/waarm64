@@ -4,12 +4,15 @@
 // `tests/net/tailnet.sh` starts in rootless Podman (its range is not the default 100.64.0.0/10:
 // the guest's address is whatever the client reports). The guest takes a DHCP lease from
 // systemd-networkd, pings the peer, resolves it through MagicDNS, and the peer connects to a
-// server in the guest. Realtime, so not exact: one boot, ~2 min alone.
+// server in the guest. Then two adapters: this tailnet beside tailcat through a server (below).
+// Realtime, so not exact: two boots, ~4 min alone.
 // Opt-in: WEBPC_TAILNET=1 (needs Podman, target/net/ts.wasm (net/ts/build.sh) and the Debian image,
 // `npm start` or tools/debian.ts).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -194,4 +197,82 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       await ctx.close();
     }
   });
+});
+
+// Two adapters (docs/plans/network-adapters.md §4, L2): adapter 1 on this tailnet without an exit node, adapter 2 on
+// tailcat through tests/net/tailcat.sh's server (the exit node's machine is this one, so this machine's LAN stands for
+// the internet). The page's credential has the guest configure both cards itself. Only tailcat reaches the internet, so
+// it is the primary although it comes second: the default routes go through it, the tailnet's adapter gives its /10
+// and /48 only, and its lease's MagicDNS domain sends the peer's name to it. The guest reaches the tailnet's peer and
+// the internet at once. Opt-in also with WEBPC_TAILCAT=1 (Go builds tailcat and derper).
+const tailcatSkip = skip ?? (process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1 too' : undefined);
+test('two adapters: a tailnet without an exit node beside tailcat through a server, the peer and the internet at once', { skip: tailcatSkip, timeout: 900_000 }, async () => {
+  const TAILCAT = `${ROOT}tests/net/tailcat.sh`;
+  const addr = /WEBPC_TAILCAT_ADDR=(\S+)/.exec(execFileSync(TAILCAT, ['up'], { encoding: 'utf8', timeout: 300_000 }))![1];
+  const lan = Object.values(networkInterfaces()).flat().find((a) => a && a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254'))?.address;
+  assert.ok(lan, 'this machine has a LAN IPv4 address for the exit node to dial');
+  const http = createServer((_req, res) => res.end('hello-from-the-internet\n'));
+  await new Promise<void>((resolve) => http.listen(0, '0.0.0.0', resolve));
+  const url = `http://${lan}:${(http.address() as { port: number }).port}/`;
+  try {
+    await withDebianLock(async () => {
+      const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // headscale's test CA, the relay's self-signed certificate
+      const page = await ctx.newPage();
+      page.on('console', (m) => { if (/rror|panic/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
+      type View = { phase: string; text: string; address?: string; internet?: boolean };
+      const views = () => harness<View[]>(page, 'views()');
+      const context = async () => `; the adapters: ${JSON.stringify(await views())}`;
+      const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
+      try {
+        await page.goto(`${base}/tests/browser/core.html`);
+        await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY })}`);
+        await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
+          .catch(async (e) => { throw new Error(`${e}${await context()}`); });
+        const [tn, tc] = await views();
+        assert.equal(tn.internet, false, 'the tailnet has no exit node in use');
+        assert.equal(tc.internet, true, 'tailcat goes online through its server');
+        assert.equal(await harness<number>(page, 'primary()'), 1, 'the primary is the adapter that reaches the internet, though second');
+        const self = tn.address!;
+        await loginRoot(page, 240_000, context);
+
+        const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {
+          const t0 = Date.now();
+          let out = await run(cmd);
+          while (!ok(out) && Date.now() - t0 < ms) {
+            await page.waitForTimeout(1000);
+            out = await run(cmd);
+          }
+          assert.ok(ok(out), `${what} after ${ms / 1000} s:\n${out}${await context()}`);
+        };
+        await until('both leases', 'ip -4 -o addr show scope global', (s) => s.includes(`${self}/`) && s.includes('192.0.0.2/'), 90_000);
+        const devOf = async (a: string) => /^(\S+) /m.exec(await run(`ip -4 -o addr show to ${a} | awk '{print $2, $4}'`))?.[1] ?? '';
+        const [a, b] = [await devOf(self), await devOf('192.0.0.2')];
+        assert.ok(a && b && a !== b, `${a} ${b}`);
+        await until("IPv4: the default through tailcat's adapter, the tailnet's /10 through the tailnet's", 'ip -4 route',
+          (s) => new RegExp(`default via 169\\.254\\.0\\.2 dev ${b}`).test(s) && new RegExp(`100\\.64\\.0\\.0/10 via 169\\.254\\.0\\.1 dev ${a}`).test(s), 60_000);
+        assert.doesNotMatch(await run('ip -4 route'), /default via 169\.254\.0\.1 /, 'no default through the tailnet');
+        await until("IPv6: the default through tailcat's adapter, the tailnet's /48 through the tailnet's", 'ip -6 route',
+          (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s) && new RegExp(`fd7a:115c:a1e0::/48 (nhid \\d+ )?via fe80::77:65ff:fe62:7063 dev ${a}`).test(s), 60_000);
+        console.log(`# guest: ${(await run('ip -4 route; ip -6 route')).trim().replace(/\n/g, ' | ')}`);
+
+        // At once: the peer pinged through the tailnet while the internet's page comes through tailcat.
+        const both = await run(`ping -c 5 -W 5 ${env.WEBPC_TS_PEER_IP} > /tmp/ping.txt 2>&1 & curl -s -m 30 ${url}; wait; cat /tmp/ping.txt`, 90_000);
+        assert.match(both, /hello-from-the-internet/, `the internet through tailcat: ${both}`);
+        assert.match(both, /5 packets transmitted, 5 received, 0% packet loss/, `the peer through the tailnet: ${both}`);
+        const ping6 = await run(`ping -6 -c 3 -W 5 ${env.WEBPC_TS_PEER_IP6}`, 90_000);
+        assert.match(ping6, /3 packets transmitted, 3 received, 0% packet loss/, `the peer over IPv6: ${ping6}`);
+        // Names: the tailnet's lease's domain routes the peer's name to MagicDNS, on the tailnet's link.
+        const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
+        const resolved = await run(`getent hosts ${name}`);
+        assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved}); ${await run('resolvectl status 2>&1 | grep -v "^ *$" | head -40')}`);
+      } finally {
+        await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
+        await ctx.close();
+      }
+    });
+  } finally {
+    http.close();
+    spawnSync(TAILCAT, ['down']);
+  }
 });
