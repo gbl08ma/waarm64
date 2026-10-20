@@ -1,0 +1,47 @@
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bc5dd2a..2a956a8 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -679,6 +679,16 @@ pub const ZERO_GLOBAL: u32 = 0;
+ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+     use Op::*;
+     c.ireads = 0;
++    c.counts.flags_stored += 1000; // DIAG: instructions
++    if op == MOVK {
++        c.counts.flags_elided += 1000; // DIAG
++    }
++    if op == ADRP {
++        let n = c.next;
++        if crate::decode::decode(n) == ADD_imm && bits(n, 9, 5) == bits(i, 4, 0) {
++            c.counts.cond_memory += 1000; // DIAG: ADRP + ADD
++        }
++    }
+     let sf = bit(i, 31);
+     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+     let here = 4 * k as i64;
+@@ -1115,10 +1125,14 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+             let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
+             let chain = c.chain.clone();
+             fp_guard(c, cx, i, k);
++            let mut fl = false;
+             if !(cx.crypto && crypto::inline(c, i, op))
+                 && !simd::inline(c, i, op)
+                 && !simd_lane::inline(c, i, op)
+-                && !float::inline(c, cx, i, op, k)
++                && !{
++                    fl = float::inline(c, cx, i, op, k);
++                    fl
++                }
+                 && !float::vector(c, cx, i, op, k)
+             {
+                 let (mark, flags, touched, fp_ok, fpa_ok, regs) = snap;
+@@ -1128,6 +1142,9 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+                 c.chain = chain;
+                 return false;
+             }
++            if fl {
++                c.counts.cond_computed += 1000; // DIAG: scalar FP inline
++            }
+         }
+     }
+     true

@@ -1,0 +1,167 @@
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bc5dd2a..4194c55 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -1478,10 +1478,14 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+     let here = 4 * k as i64;
+     let (size, opc) = (bits(i, 31, 30), bits(i, 23, 22));
+-    // The base register, with SP's alignment check left to the helper.
+-    let base = |c: &mut Func| {
++    // Pushes the base register, also kept in BASE if `keep` (a writeback, or
++    // SP's alignment check: Liftoff zero-fills a function's locals at entry
++    // past 12 of them, so a local the access doesn't need is left out).
++    let base = |c: &mut Func, keep: bool| {
+         get_sp(c, true, rn);
+-        c.local_set(BASE);
++        if keep {
++            c.local_tee(BASE);
++        }
+     };
+     match op {
+         LDR_lit_gen | LDRSW_lit => {
+@@ -1536,30 +1540,29 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+                 _ if size == 3 || (size == 2 && opc == 3) => return false, // UNDEFINED
+                 _ => (false, true, opc == 3),
+             };
+-            base(c);
+-            let mut wb = false;
++            // Pre- and post-index (STRx_LDRx_imm_1, not unprivileged) write the base back.
++            let wb = op == STRx_LDRx_imm_1 && !unpriv;
+             match op {
+                 STRx_LDRx_imm_2 => {
+-                    c.local_get(BASE);
++                    base(c, rn == 31);
+                     c.i64_const(((bits(i, 21, 10) as u64) << size) as i64)
+                         .i64_add();
+                 }
+                 _ if op == STURx_LDURx || unpriv => {
+-                    c.local_get(BASE);
++                    base(c, rn == 31);
+                     c.i64_const(sext(bits(i, 20, 12) as u64, 9) as i64)
+                         .i64_add();
+                 }
+                 STRx_reg | LDRx_reg => {
+                     let amt = if bit(i, 12) { size } else { 0 };
+-                    c.local_get(BASE);
++                    base(c, rn == 31);
+                     extend(c, true, rm, bits(i, 15, 13), amt);
+                     c.i64_add();
+                 }
+                 _ => {
+                     // Pre-index (bit 11) accesses base + imm9, post-index the
+                     // base; both write base + imm9 back.
+-                    wb = true;
+-                    c.local_get(BASE);
++                    base(c, true);
+                     if bit(i, 11) {
+                         c.i64_const(sext(bits(i, 20, 12) as u64, 9) as i64)
+                             .i64_add();
+@@ -1604,8 +1607,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+             let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(len as u64) as i64;
+             // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
+             let mode = bits(i, 24, 23);
+-            base(c);
+-            c.local_get(BASE);
++            base(c, mode & 1 == 1 || rn == 31);
+             if mode != 1 {
+                 c.i64_const(off).i64_add();
+             }
+@@ -1642,8 +1644,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+         // vCPUs need them), which must be aligned (M6 loop 1).
+         LDAR | STLR => {
+             let len = 1 << size;
+-            base(c);
+-            c.local_get(BASE).local_set(ADDR);
++            base(c, rn == 31);
++            c.local_set(ADDR);
+             let store = op == STLR;
+             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+             let written = if store { 0 } else { xmask(rt) };
+@@ -1667,8 +1669,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+         // disarms it. Both must be aligned.
+         LDXR | LDAXR | STXR | STLXR => {
+             let len = 1 << size;
+-            base(c);
+-            c.local_get(BASE).local_set(ADDR);
++            base(c, rn == 31);
++            c.local_set(ADDR);
+             let load = matches!(op, LDXR | LDAXR);
+             let rs = bits(i, 20, 16);
+             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+@@ -1728,8 +1730,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+                 _ => return false,
+             } + RMW_SIZE[size as usize];
+             let len = 1 << size;
+-            base(c);
+-            c.local_get(BASE).local_set(ADDR);
++            base(c, rn == 31);
++            c.local_set(ADDR);
+             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+             let dest = if cas { rs } else { rt };
+             access(
+@@ -1779,8 +1781,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+             }
+             let x = bit(i, 30);
+             let len = if x { 16 } else { 8 };
+-            base(c);
+-            c.local_get(BASE).local_set(ADDR);
++            base(c, rn == 31);
++            c.local_set(ADDR);
+             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+             let written = xmask(rs) | xmask(rs + 1);
+             let pcx = *cx;
+@@ -1847,8 +1849,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+             let (x, rs, rt2) = (bit(i, 30), bits(i, 20, 16), bits(i, 14, 10));
+             let len = if x { 16 } else { 8 };
+             let load = matches!(op, LDXP | LDAXP);
+-            base(c);
+-            c.local_get(BASE).local_set(ADDR);
++            base(c, rn == 31);
++            c.local_set(ADDR);
+             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+             let written = if load {
+                 xmask(rt) | xmask(rt2)
+@@ -2081,13 +2083,15 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+             let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(len as u64) as i64;
+             // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
+             let mode = bits(i, 24, 23);
++            let wb = mode & 1 == 1;
+             get_sp(c, true, rn);
+-            c.local_tee(BASE);
++            if wb || rn == 31 {
++                c.local_tee(BASE);
++            }
+             if mode != 1 {
+                 c.i64_const(off).i64_add();
+             }
+             c.local_set(ADDR);
+-            let wb = mode & 1 == 1;
+             let guards = [Guard::sp(rn)];
+             access(
+                 c,
+@@ -2113,9 +2117,11 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+             );
+         }
+         _ => {
+-            get_sp(c, true, rn);
+-            c.local_tee(BASE);
+             let wb = matches!(op, STR_imm_fpsimd_1 | LDR_imm_fpsimd_1);
++            get_sp(c, true, rn);
++            if wb || rn == 31 {
++                c.local_tee(BASE);
++            }
+             match op {
+                 STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 => {
+                     c.i64_const(bits(i, 21, 10) as i64 * len as i64).i64_add();
+@@ -3892,8 +3898,8 @@ mod tests {
+         let insn = 0xf9400420u32;
+         #[rustfmt::skip]
+         let mut want = vec![
+-            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x21, 3, // BASE = x1 (loaded into local 17)
+-            0x20, 3, 0x42, 8, 0x7c, 0x21, 2,        // ADDR = BASE + 8
++            0x20, 0, 0x29, 3, 8, 0x22, 17,          // x1 (loaded into local 17)
++            0x42, 8, 0x7c, 0x21, 2,                 // ADDR = x1 + 8
+             0x02, 0x40, 0x02, I32,                  // the failure chain's block and this site's segment
+             0x20, 2, 0x22, 4, 0x42, 0xf8, 0x1f, 0x58, // OFF = ADDR; OFF <= 0x1000 - 8
+             0x04, 0x40, 0x20, 4, 0xa7, 0x21, 6,     // if: HOST = OFF

@@ -434,7 +434,7 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   new chain starts (after every helper call, which drops the locals); the chain closes at the block's end. The
   helper reads and writes nothing else, and the run loop takes its exception after the block returns, so
   the other registers stay in their locals on both arms. Before, each arm wrote back every dirty register and
-  stored the flags itself: Alpine's boot made 6.1% less wasm with it, and Liftoff 4.4% less code
+  stored the flags itself: Alpine's boot made 6.1% less wasm with it, Liftoff 8.6% less code and TurboFan 6%
   (`bench/boot/REPORT.md` "M8: smaller slow arms of loads and stores").
 - **Atomics:** LDAR/STLR as aligned wasm atomics, single exclusives and the LSE atomics
   (add/clr/eor/set/swp as `atomic.rmw`, CAS as `cmpxchg`) inline; DC ZVA as a 64-byte zero.
@@ -748,6 +748,19 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   a frame. TurboFan's TLB hit (shift, mask, an L1 load, compare) is cheaper than the memo's
   compares and the extra loop-carried locals. The patch (with two-byte indices for locals from 128
   and bare-metal tests of its rules) is in `bench/boot/results/m8-memo/`.
+- **One TLB check for a run of accesses off the same base** (M8, 2026-10-20, counted, not built; `bench/boot/REPORT.md`
+  "M8: what Liftoff runs that a static change could cut"): in Firefox's pages session 27% of the 1.04 M access
+  sites compiled follow an access in the same direction off the same, unchanged base register within a straight
+  run (Alpine's userspace benchmark 28%). But a base's page offset isn't known when compiling, so a follower can't
+  skip its check: it can only test that it falls in its leader's page (two compares, no load) and must keep the full
+  TLB check behind that for when it doesn't (else a frame straddling a page sends one access to the helper every
+  time), which makes its code bigger, not smaller, and the TLB hit it would save is ~0.1 ns in TurboFan. That is the
+  translation memo's shape, which lost (above); V8's bounds checks don't collapse either, since each access's slow
+  arm is a branch with a call. The count patches are in `bench/boot/results/m8-liftoff/baseruns/`.
+- **Folding constants inside a block** (MOVZ/MOVK chains, ADRP+ADD; M8, 2026-10-20, counted, not built; the same
+  section): MOVK is 1.1% of the instructions compiled in Firefox's pages session (0.7-0.8% in Alpine's boot and
+  userspace benchmark), ADRP followed by an ADD of its register 0.6% (Alpine). A folded MOVK saves about four wasm
+  ops (`get`, mask, `and`, `or`), so ~0.2% of the wasm: below anything a session can show.
 - **Invalidation by the IC's line** (M8, `bench/apps/REPORT.md` "M8: invalidation by the IC's line, not
   its page"):
   each key filed with the bytes its code covers on each page, and `IC IVAU` dropping only the keys

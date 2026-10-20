@@ -82,7 +82,17 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   then try tier-ups that wait a little for company (the head runs alone meanwhile); Alpine paid +20% for 16M-step
   batches.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
-  Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
+  Liftoff's samples in Firefox sit in prologues. Measured 2026-10-20 (`bench/boot/REPORT.md` "M8: what Liftoff runs
+  that a static change could cut"): V8 zero-fills when a function has **more than 12 locals** besides its
+  parameters (half Liftoff's cache registers) or any that isn't i32/i64, and then fills every local's 8-byte slot
+  (16 for a v128) in that loop; with 12 or fewer integer locals it fills nothing (they start as constants). i32 or
+  i64 doesn't matter. In Firefox's pages session 40% of the functions compiled zero-fill (13 locals or more; Alpine's
+  userspace benchmark 42%), 36 loop turns each, and 18.6% have 13-16 integer locals. Trimming a local only shortens
+  the loop (2 turns a local) unless it crosses 12: keeping a load's base in BASE only when needed moved Firefox's
+  zero-filled share from 40.2% to 39.7% (not kept). The lever is getting functions to 12, which dropping scratch
+  locals can't (one load or store takes ADDR, HOST and TLBE): it would take sharing one local between guest
+  registers whose live ranges don't overlap, a register allocator over the block's locals. Bounded by the
+  prologues' ~5% of Liftoff's samples in Firefox.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
@@ -127,7 +137,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     one (two lane extracts, the result's move to a general register for its check, `movi` and `ins` to write it
     back zero-extended); n-body and Horner (~40% of the FP guest) could keep their values in float locals and
     build the v128 only for a vector reader, the flush being stores (no lane op). Needs locals past 128: two-byte
-    indices (the TLB memo's patch has them, [jit.md](jit.md) "Tried and not kept").
+    indices (the TLB memo's patch has them, [jit.md](jit.md) "Tried and not kept"). Counted 2026-10-20: inline
+    scalar FP is 0.5% of the instructions compiled in Firefox's pages session (14,500 of 2.9 M) and none to speak of
+    in Alpine's userspace benchmark (30), so it's for the FP guest and FP-heavy guests, not the ranking workloads.
   - **FZ's operand tests** (llvmpipe's 8%): about five lane ops an operand (the `movi`s included); for singles, an
     unsigned min of every operand's `(x << 1) - 1` before one compare saves about a third.
   - **The single FMA's midpoint test** (8% of the FP guest with everything it computes): folded into the result's

@@ -11,7 +11,7 @@ if (child === 'child') {
   let wasm = 0;
   for (const f of files) wasm += readFileSync(`${dir}/${f}`).length;
   const flags = ['--no-wasm-lazy-compilation', '--print-wasm-code', tier === 'liftoff' ? '--liftoff-only' : '--no-liftoff', '--single-threaded'];
-  const p = spawn(process.execPath, [...flags, process.argv[1], dir, every, tier, 'child'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const p = spawn(process.execPath, [...flags, new URL('compile-child.mjs', import.meta.url).pathname, dir, every], { stdio: ['ignore', 'pipe', 'inherit'] });
   let code = 0, funcs = 0;
   const rl = createInterface({ input: p.stdout });
   rl.on('line', (l) => {

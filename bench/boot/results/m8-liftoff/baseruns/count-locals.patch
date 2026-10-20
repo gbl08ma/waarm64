@@ -1,0 +1,27 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 9a330cc..e92dbe2 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -671,6 +671,22 @@ pub fn module(
+         let (mut c, n) = (x.c, x.inl);
+         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
+         let locals = c.locals();
++        {
++            // DIAG: Liftoff's zero-fill (more than 12 locals, or any not i32/i64).
++            let cnt: u32 = locals.iter().map(|l| l.0).sum();
++            let ints = locals.iter().all(|l| l.1 == 0x7f || l.1 == 0x7e);
++            let bytes: u32 = locals.iter().map(|l| l.0 * if l.1 == 0x7b { 16 } else { 8 }).sum();
++            const M: u64 = 1_000_000;
++            c.counts.flags_stored += M;
++            c.counts.cond_direct += M * cnt as u64;
++            if cnt > 12 || !ints {
++                c.counts.flags_elided += M;
++                c.counts.cond_memory += M * (bytes / 4) as u64;
++            }
++            if (13..=16).contains(&cnt) && ints {
++                c.counts.cond_computed += M;
++            }
++        }
+         m.func(bt, &locals, &c.c, &name);
+         out.inl.push(n);
+         let mut links = vec![];

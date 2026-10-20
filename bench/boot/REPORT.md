@@ -2137,11 +2137,13 @@ eagerly in one tier with `--print-wasm-code`):
 | | base | chain | |
 |---|---|---|---|
 | wasm | 29.47 MB | 27.68 MB | −6.1% |
-| Liftoff code (81 modules, 6,864 functions) | 18.24 MB | 17.44 MB | −4.4% |
-| TurboFan code (the same) | 17.54 MB | 17.17 MB | −2.1% |
+| Liftoff code (81 modules, 2,048 functions) | 9.37 MB | 8.57 MB | −8.6% |
+| TurboFan code (the same) | 6.17 MB | 5.80 MB | −6.0% |
 
-A first version without the shared flag store (each failing site stored NZCV itself) made 2.8% less wasm and 3.3%
-less Liftoff code: the lazy flags' NZCV, computed at every site, was as big as the write-backs. The backlog's bound
+(The code sizes come from a child compiling plain JS: a `.ts` child loads Node's type stripper, whose own wasm
+`--print-wasm-code` prints too; the commit's first numbers, −4.4% and −2.1%, were diluted by it.) A first version
+without the shared flag store (each failing site stored NZCV itself) made 2.8% less wasm: the lazy flags' NZCV,
+computed at every site, was as big as the write-backs. The backlog's bound
 (−12.6% Liftoff with one store per register a function) also dropped the stores the helper needs, which are most of
 them: a site's dirty registers are mostly its base and the value it stores.
 
@@ -2166,4 +2168,42 @@ isn't visible in a session's RSS; the executable mappings' medians are 2-4% lowe
 | `smp_user_jit_n4_total` | 18,513 · 18,971 · 18,574 | 18,809 · 19,271 · 18,427 | +1.3% |
 
 (IQR 12-118, one 553; wasm 30.0 → 28.2 MB for the boot, 38.7 → 36.6 MB for the userspace benchmark.) Within noise
-both ways. **Kept:** 6-7% less wasm and 4.4% less Liftoff code at no cost in speed.
+both ways. **Kept:** 6-7% less wasm, 8.6% less Liftoff code and 6% less TurboFan code at no cost in
+speed.
+
+## M8: what Liftoff runs that a static change could cut (2026-10-20)
+
+The rest of the Liftoff round after the failure chain (above): one TLB check for a run of accesses off one base,
+fewer locals to zero-fill, scalar FP in float locals, and folding constants. Each was counted first with a
+diagnostic core (static counts over every function compiled), deciding on **Firefox's pages session** (the
+desktop guest) and Alpine's userspace benchmark in Node, Alpine's boot only alongside; data and patches in
+`results/m8-liftoff/baseruns/` (README).
+
+| | Firefox's pages session | Alpine userspace (Node) | Alpine boot (Node) |
+|---|---|---|---|
+| instructions compiled (static) | 2.92 M | 350,000 | 296,000 |
+| accesses with a base register | 1.04 M | 101,000 | 84,300 |
+| of those after an access off the same unchanged base, same direction, same run | 27.4% | 28.4% | 28.8% |
+| scalar FP inline | 14,544 (0.5%) | 30 | 0 |
+| MOVK | 32,238 (1.1%) | 2,508 (0.7%) | 2,447 (0.8%) |
+| ADRP followed by an ADD of its register | — | 2,003 (0.6%) | 1,864 (0.6%) |
+| functions compiled | 249,646 | 27,573 | 22,747 |
+| of those zero-filled by Liftoff at entry (more than 12 locals) | 40.2% | 42.1% | 43% |
+| zero-fill loop turns, a function | 14.5 | 15.6 | 16.1 |
+| functions at 13-16 integer locals | 18.6% | 18.6% | 19% |
+
+- **One check for a run of accesses:** the runs are there (27% of Firefox's access sites), but a base's page
+  offset isn't known when compiling, so a follower still needs its full TLB check behind a same-page test (else a
+  frame across a page boundary sends one access to the helper every time): more code, and only the ~0.1 ns TLB hit
+  saved at run time, the translation memo's shape that lost on `alpine_user_jit` and llvmpipe (docs/jit.md "Tried
+  and not kept"). Not built.
+- **Zero-filled locals:** V8 fills nothing for 12 integer locals or fewer and everything past that
+  (`tools/zerofill.mjs`: 13 locals turn the loop on). Keeping a load's base in the BASE local only when a writeback
+  or SP's check needs it (`no-base-local.patch`) moved Firefox's zero-filled functions from 40.2% to 39.7% and the
+  fill turns 0.9% (its wasm 0.6% smaller): one local seldom crosses the threshold, and getting most of the 18% at
+  13-16 locals under it would take sharing locals between guest registers (a register allocator). Sharing HOST with
+  TLBE broke the userspace benchmark (a signature mismatch: something keeps TLBE's local busy while HOST lives) and
+  was dropped. Not kept; docs/backlog.md has the entry with these numbers.
+- **Scalar FP in float locals:** 0.5% of Firefox's instructions, none in the userspace benchmark: for the FP guest,
+  not the ranking workloads. Not started; the backlog entry has the counts.
+- **Folding constants:** MOVK 1.1% of Firefox's instructions, ~4 wasm ops saved each: ~0.2% of the wasm. Not built.
