@@ -130,6 +130,10 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
     store.close();
     return first.kind === 'blank';
   }, id);
+  // The list shows the move too (it rereads after the store): the rows are keyed, so the blank disk's row moves without
+  // being replaced, and a locator resolved before then holds its disabled box and waits for it forever.
+  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: /^blank,/ }).waitFor();
+  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: /^from a URL,/ }).waitFor();
   await m.locator('[data-attachment]').nth(1).getByRole('checkbox', { name: 'read-only' }).check();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -186,9 +190,13 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
-  await modal(page).locator('[data-action=new-machine]').click();
-  const ids = await modal(page).locator('li > button.pick[data-machine]').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.machine!));
+  // Two machines: each click's machine is made and listed (chosen) before the next click; the list is read once both are.
+  const picks = modal(page).locator('li > button.pick[data-machine]');
+  for (const n of [1, 2]) {
+    await modal(page).locator('[data-action=new-machine]').click();
+    await page.waitForFunction((n) => document.querySelectorAll('.machines li > button.pick[data-machine]').length === n && !document.querySelector('.machines[data-busy]'), n, { timeout: 10_000 });
+  }
+  const ids = await picks.evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.machine!));
   assert.equal(ids.length, 2);
   // One machine gets a suspended copy, as Suspend leaves it (`machines/<id>/suspend`, not empty).
   await page.evaluate(async (id) => {
@@ -204,7 +212,9 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   await page.waitForFunction((id) => / · suspended$/.test(document.querySelector(`.machines button.pick[data-machine="${id}"] .meta`)?.textContent ?? ''), ids[0], { timeout: 10_000 });
   assert.match(await meta(ids[1]).textContent() ?? '', / · off$/);
   await meta(ids[0]).click();
-  assert.equal(await modal(page).locator('[data-machine-state]').textContent(), 'suspended');
+  // The chosen machine's header (it showed the last one made, which is off, until the click lands).
+  await modal(page).locator(`section.machine[data-selected="${ids[0]}"] [data-machine-state]`).waitFor();
+  assert.equal(await modal(page).locator(`section.machine[data-selected="${ids[0]}"] [data-machine-state]`).textContent(), 'suspended');
   assert.deepEqual(errors, []);
   await context.close();
 });
