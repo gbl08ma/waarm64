@@ -1,0 +1,52 @@
+{
+ "bench/results/local/screen2/empty-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 77.4,
+   "flushes": 1,
+   "modules": 22946,
+   "mib": 503,
+   "overdue": 0,
+   "parks": 82862,
+   "locks": 64838661,
+   "interpGsteps": 2.72,
+   "share": 0.965,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 85,
+    "atGsteps": 38.01,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 13498,
+    "mibEmitted": 226.9,
+    "shareBefore": 0.945,
+    "shareAfter": [
+     0.964,
+     0.965,
+     0.967,
+     0.967,
+     0.967,
+     0.967,
+     0.961,
+     0.961,
+     0.97,
+     0.969
+    ]
+   }
+  ]
+ }
+}

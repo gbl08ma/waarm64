@@ -268,3 +268,58 @@ fn the_tables_share_the_budget() {
     assert_eq!([0, 1, 2, 4, 8, 123].map(m), [8, 8, 8, 4, 2, 0]);
     assert!(budget(123) * 123 <= BUDGET && budget(123) > 1 << 16);
 }
+
+/// A block put out of its slot by another keeps the quota it had left: put
+/// back, it counts on without reporting (a report takes the JIT cache's lock).
+#[test]
+fn a_block_out_of_its_slot_keeps_its_quota() {
+    let t = TestRam::new(0x2_0000);
+    // Two blocks in one slot: add x0, x0, #1; ret.
+    let (a, b) = (0x1000, 0x1000 + 4 * SLOTS as u64);
+    for k in [a, b] {
+        t.mem.write(k, 4, 0x9100_0400).unwrap();
+        t.mem.write(k + 4, 4, 0xd65f_03c0).unwrap();
+    }
+    let mut c = Cache::new(MAX_BUDGET);
+    assert_eq!(c.decode(a, &t.mem), Some(2));
+    c.quota(a, REPORT);
+    for _ in 0..5 {
+        assert!(c.count(a));
+    }
+    assert_eq!(c.decode(b, &t.mem), Some(2)); // a goes out of the slot
+    assert!(!c.slotted(a));
+    // A quota set while a block is out of its slot counts too.
+    c.quota(a, REPORT);
+    assert!(c.count(a), "a counts on, back in the slot");
+    c.quota(b, 3);
+    for _ in 6..REPORT {
+        assert!(c.count(a));
+    }
+    assert!(!c.count(a), "until its quota is counted");
+    assert!(c.count(b) && c.count(b) && c.count(b) && !c.count(b));
+    assert_eq!(c.counted(a), REPORT);
+    assert_eq!(c.counted(b), 3);
+}
+
+/// A key with no instructions is remembered (the JIT asks its cache about it
+/// once), until an IC names its page.
+#[test]
+fn an_empty_block_is_remembered_until_its_page_goes() {
+    let t = TestRam::new(RAM);
+    t.mem.write(CODE, 4, 0xd400_0001).unwrap(); // svc #0
+    let mut c = Cache::new(MAX_BUDGET);
+    assert!(!c.empty(CODE));
+    assert_eq!(c.decode(CODE, &t.mem), Some(0));
+    assert!(c.empty(CODE) && c.get(CODE, &t.mem).is_none() && !c.count(CODE));
+    assert_eq!(c.decode(CODE, &t.mem), None, "decoded before");
+    // A quota doesn't make it a block to run (the dispatcher would run no
+    // instructions, forever).
+    c.quota(CODE, REPORT);
+    assert!(!c.count(CODE) && c.get(CODE, &t.mem).is_none());
+    t.mem.write(CODE, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+    t.mem.write(CODE + 4, 4, 0xd65f_03c0).unwrap(); // ret
+    c.drop_page(CODE >> 12);
+    assert!(!c.empty(CODE));
+    assert_eq!(c.get(CODE, &t.mem).map(<[Uop]>::len), Some(2));
+    assert_eq!(c.decoded, 1);
+}

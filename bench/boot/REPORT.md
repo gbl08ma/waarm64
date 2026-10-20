@@ -2483,3 +2483,78 @@ The gates (`gates/`, three rounds alternating, ms, lower is better): `smp_alpine
 against 9,347 · 9,422 · 9,306 (−0.9%), n2 −1.4%, n4 −0.6%; `smp_user_jit_4` 18,450 · 18,485 · 19,158 against
 18,095 · 18,228 · 18,645 (−1.4%). **Kept:** 59% fewer modules on the pages session, V8's code 6% smaller there,
 everything timed even or a little faster.
+
+## M8: fewer acquisitions of the JIT cache's lock (2026-10-21)
+
+Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB); the desktop guest from
+`target/snapbench/pages.webpcsnap` (made again for this lane: Arch Linux ARM, Firefox, 2.5 GiB, 4 vCPUs, 320 MiB);
+sessions through `bench/gpu/ab.sh`, one per arm. Data in `bench/boot/results/m8-lock/`: `count/` (the counting
+build on both workloads), `screen1/`–`screen4/` (the churn screen, `rate=60&total=4000`), `pages/` (the timed pages
+session), `go/` and `go2/` (the `go build` loop from `debian-go.webpcsnap`, 300 s, one session per arm each),
+`gates/`; each run's `summary.json` from `ab-summary --json`. `screen.patch` is the screening build: the change
+behind switches (`KNOWN`, `KNOWN_Q0`, `RETAIN`, `EMPTY_KEPT`, `LONG`) and per-caller counters (`Stats::lk`, published
+as counter words 114 on by a host change not in the patch; `tools/lockby.ts` prints them from `results.json`).
+
+**Counted per caller** (each acquisition attributed once taken; "back in its slot" overlaps the others: a block whose
+decoded slot had gone to another key came back with no quota and reported at once):
+
+| | pages session | churn screen |
+|---|---|---|
+| acquisitions, found held, waited | 86.3 M, 4.7%, 25.2 s | 64.3 M, 3.3%, 38.2 s |
+| new to the table (and every key with no instructions) | 15.5%, 3.5 s | 8.0%, 3.2 s |
+| a decoded block's report | 47.8%, 9.6 s | 46.7%, 10.0 s |
+| the report of a block queued in the batch | 1.4%, 0.2 s | 16.7%, 1.3 s |
+| a compiled block out of the jump cache | 33.0%, 10.2 s | 15.9%, 18.6 s |
+| compiled, not installed in the table yet | 0.1%, 0.2 s | 8.7%, 2.1 s |
+| catch-ups, tier-ups, ICs, flushes | 2.2%, 1.5 s | 3.9%, 3.1 s |
+| (of all: a block back in its decoded slot) | 62.5%, 16.1 s | 33.4%, 23.5 s |
+
+So most acquisitions asked the cache what the table had already been told: the decoded cache's 16,384 direct-mapped
+slots put a block that lost its slot back with no quota, and a compiled block that lost its jump-cache entry went
+back to the cache's map (and ran interpreted for its 16-dispatch quota first).
+
+**The change** (all table-local, no new shared state): a table keeps every key the cache answered compiled for it
+this epoch and that it has installed (`Table::known`, dropped at a catch-up with the jump cache's entries, cleared
+with it at a new epoch), and answers a miss for one without the lock; such a block's decoded copy gets no quota, so
+it comes back to the miss instead of being interpreted. The decoded cache keeps a block's quota with its count when
+it loses its slot, and a block out of its slot counts on (`count_out`). A key with no instructions is kept in the
+decoded cache with length 0 and answered without the lock. (A first build let such a key take a quota and ran its
+block of no instructions forever, which hung the guest in both sessions of that arm; it never takes one now, and a
+unit test fails the planted bug.)
+
+Screened on the churn (one session per arm; `none` is the counting build with every switch off):
+
+| | none · none2 | known | retain | all three | and compiled blocks with no quota (A/A) | that, with longer reports |
+|---|---|---|---|---|---|---|
+| acquisitions | 65.2 · 65.1 M | 54.7 M | 41.9 M | 40.8 M | 38.6 · 38.8 · 39.1 M | 31.6 M |
+| found held | 3.4 · 3.4% | 2.6% | 1.7% | 1.2% | 1.4 · 1.1 · 1.1% | 1.3% |
+| waiting | 37.5 · 39.4 s | 27.9 s | 27.6 s | 16.9 s | 15.5 · 15.4 · 15.5 s | 14.0 s |
+| busy MIPS | 190 · 192 | 195 | 205 | 208 | 220 · 221 · 222 | 228 |
+| `doneS` | 133.0 · 132.6 | 126.7 | 126.4 | 126.7 | 120.3 · 120.3 · 120.6 | 120.5 |
+| Gsteps interpreted | 2.78 · 2.78 | 2.78 | 3.01 | 3.13 | 2.82 · 2.82 · 2.85 | 2.86 |
+
+(`known` and `retain` are from `screen1/`, whose A/A pair read 63.7 · 65.1 M, 40.4 · 42.6 s, 187 · 183 MIPS; the rest
+from `screen3/` and `screen4/`; the keys with no instructions were 1% of the churn's acquisitions, `screen2/`.)
+Retaining quotas alone ran more interpreted (compiled blocks out of the jump cache kept running their quota in the
+block interpreter); taking the quota from a compiled block fixed that. **Longer reports** (past `warm`, a table
+counts its share of what's left to the threshold, 16 to 255, before it reports) took 19% fewer acquisitions and
+moved nothing beyond noise: not kept (docs/jit.md "Tried and not kept").
+
+**Timed** (the kept build, without the switches or counters, against main's core):
+
+| | base · base2 | kept |
+|---|---|---|
+| pages: acquisitions | 84.2 · 86.5 M | 21.9 M |
+| pages: found held | 4.9 · 5.0% | 2.4% |
+| pages: waiting | 21.8 · 24.5 s | 9.7 s |
+| pages: busy MIPS | 158 · 157 | 169 |
+| pages: wiki / bbc load | 19.7 · 17.7 / 17.2 · 16.7 s | 15.4 / 14.8 s |
+| pages: stalls ≥ 20 / 50 ms | 0 · 1 / 0 · 0 | 1 / 0 |
+| pages: modules, wasm | 2,816 · 2,769, 266 · 268 MB | 2,806, 270 MB |
+| pages: renderer RSS median / max | 4,844 · 4,896 / 5,158 · 5,133 MiB | 4,909 / 5,127 MiB |
+| `go build` loop: MIPS median (two sessions) | 1,296, 1,176 | 1,239, 1,261 |
+
+The gates (`gates/`, three rounds alternating, ms, lower is better): `smp_alpine_jit` n1 9,189 · 9,167 · 9,321
+against 9,083 · 9,172 · 9,069 (−1.1%), n2 −2.7%, n4 −2.9%; `smp_user_jit_4` 17,964 · 18,302 · 18,419 against
+17,328 · 17,294 · 17,394 (−5.3%). **Kept:** a quarter of the acquisitions on the pages session and three fifths on
+the churn, the waiting less than half, busy MIPS +7% and +15%, nothing slower.

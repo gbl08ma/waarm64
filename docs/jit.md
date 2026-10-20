@@ -48,7 +48,9 @@ the interpreter's own code.
   interpreter** ([cpu.md](cpu.md) "The block interpreter": decoded once, kept per table, chained
   to the blocks after it), as much of it as fits, so lookups stay at block starts. A decoded block
   counts its dispatches itself and reports them to the shared cache every 16, so the lock is
-  taken once per 16 dispatches of a block that isn't compiled, not at every one.
+  taken once per 16 dispatches of a block that isn't compiled, not at every one; a jump-cache
+  miss for a block the table already has compiled, or for a key with no instructions, takes it
+  not at all ([Sharing](#sharing) "What the lock costs").
 - **Exact step accounting:** a block knows its instruction count *n* and is entered only if the
   chunk has ≥ *n* steps left; chained successors and region edges are taken only when `left`
   covers them. So the JIT never outruns a chunk, IRQs, the signal word and deadlines are checked
@@ -249,18 +251,36 @@ its jump cache and hot words, its helper counts and its counters.
 - **The log:** the cache keeps the modules compiled since the last flush, in order
   (`Cache::log`). A table catches up (`Table::sync`, under the lock) by copying the ones it lacks,
   and installs them in order once the lock is released (a module may import any before it): on a
-  jump-cache miss, when the cache's `drops` moved (an atomic read before each block, without the
-  lock), and in `jit_hot`, always before a block runs that could use them. Bytes every table has
+  jump-cache miss that takes the lock (below), when the cache's `drops` moved (an atomic read
+  before each block, without the lock), and in `jit_hot`, always before a block runs that could
+  use them. Bytes every table has
   taken are freed. **No V8 compile runs under the lock** (only a table's two miss functions, once):
   a worker stalled in `jit_install` holding it kept the other vCPUs from even reaching their DSB
   (`tests/hoststall.test.ts`), and in a browser one worker's compile would hold up every vCPU's
   misses.
-  - **What the lock costs** (counter words 108–113, `ab-summary`'s `locks`, `contended`, `waitMs`, `lockedMs`):
-    Firefox's pages session on 4 vCPUs takes it ~87 M times (~230,000 a second: jump-cache misses and the decoded
-    blocks' reports), 5% of them finding it held, ~25 s of vCPU time waiting in all (~1.7% of the vCPUs' time);
-    the churn screen 66 M times, 3.6% held, ~38 s (~4.7%). Emitting the modules is 3.6 s and 7.7 s of that held
-    time, forming the batches 1 s and 2 s: emitting outside the lock cut the waiting by a fifth to a third and
-    nothing else ([Tried and not kept](#tried-and-not-kept)). What's left is the acquisitions' number.
+  - **What the lock costs** (counter words 108–113, `ab-summary`'s `locks`, `contended`, `waitMs`, `lockedMs`), and
+    what takes it: a jump-cache miss for a block the cache hasn't given this table compiled (a new block, a decoded
+    block's report every 16 dispatches, one queued in the pending batch, one compiled but not installed here yet),
+    a catch-up, a tier-up, an IC, a flush. Three misses don't, since they need nothing from the cache:
+    - **a compiled block the table has installed** (`Table::known`: every key a miss was answered with a compiled
+      block for, this epoch, dropped with the jump cache's entries at a catch-up, cleared with it at a new epoch;
+      at most a key per region slot, a few MB a table), when the jump cache lost it to another key; its decoded
+      block then counts nothing, so its next jump-cache miss comes back here instead of running interpreted for
+      16 dispatches;
+    - **a decoded block put back in its slot** (16,384 direct-mapped, [cpu.md](cpu.md) "The block interpreter"):
+      it keeps the quota it had left as well as its count, instead of reporting at once;
+    - **a key with no instructions** (an SVC, say, at a block's start): the table's decoded blocks remember it
+      (length 0, dropped with its page) and the cache was told the first time.
+
+    Counted per caller (a diagnostic build, `bench/boot/results/m8-lock/screen.patch`), the pages session's 86 M
+    acquisitions were 48% reports, 33% compiled blocks out of the jump cache, 16% new blocks; 62% were blocks put
+    back in their decoded slot with no quota. Without the three: the pages session 85/86 M → 22 M acquisitions,
+    5% → 2.4% contended, 22/24 s → 9.7 s waiting, busy MIPS 158/157 → 169; the churn screen 65 M → 39 M,
+    37/39 s → 15.5 s, busy MIPS 190/192 → 220 (`bench/boot/REPORT.md` "M8: fewer acquisitions of the JIT cache's
+    lock"). What takes it now is mostly real reports (38% on the churn), queued blocks' reports (27%) and
+    compiled blocks not installed yet (15%). Emitting the modules is 3.5 s and 7.2 s of the held time, forming the
+    batches 1 s and 2 s: emitting outside the lock and longer reports far from the threshold were tried
+    ([Tried and not kept](#tried-and-not-kept)).
 - **The compile worker** (parallel SMP; `web/jit-compile-worker.ts`, `env.jit_compile` in
   [abi.md](abi.md)): the vCPU that emits a module hands a copy to one worker of the VM's (number
   `seq`, under the lock), which compiles it (`new WebAssembly.Module`: V8's process-wide module
@@ -780,6 +800,13 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   `doneS`, the heavy pages' loads and the stalls of 20 ms or more (0 against 0/3 and 0/4) even. Emission was 1% of
   the vCPUs' time at most (7.7 s of ~800 in the churn), so **emitting in the compile worker** (which would take it
   off the vCPUs altogether) can't show either and wasn't built.
+- **Longer reports far from the threshold** (M8, 2026-10-21; `bench/boot/REPORT.md` "M8: fewer acquisitions of the
+  JIT cache's lock", `LONG` in `bench/boot/results/m8-lock/screen.patch`): once a decoded block had counted `warm`
+  dispatches, the cache let a table count its share of what was left to the threshold (that over the number of
+  tables, 16 to 255) before reporting again, so a block under a high threshold (up to 1000 under pressure) reported
+  a few times instead of ~60. On the churn screen, over the kept change: 39 M → 32 M acquisitions, 15.4 s → 14.0 s
+  waiting, busy MIPS 221/222 → 228, `doneS` 120.3/120.6 → 120.5: within noise, and it makes the cache's counts
+  coarser in parallel SMP (a block may overshoot the threshold by up to a table's share).
 - **An adaptive budget** (M8, 2026-10-20; `bench/boot/REPORT.md` "M8: a machine's JIT budget and the page's memory
   signal", the code in `bench/boot/results/m8-budget/adaptive.patch`): starting at 160 MiB, a probe from 7/8 of the
   budget (the dispatchers marking the slots they enter), and at the fill a growth by half (up to the machine's 320)

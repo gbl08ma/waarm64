@@ -1,0 +1,26 @@
+{
+ "bench/results/local/screen1/known-1/churn-all.timeline.json": {
+  "seconds": 183,
+  "mips": 410,
+  "busyMips": 195,
+  "busyShare": 0.53,
+  "stallsAtLeastMs": {
+   "20": 2,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 43,
+  "stalledMsPerSecondPerVcpu": 0.1,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

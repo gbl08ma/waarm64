@@ -1,0 +1,288 @@
+{
+ "sessions": [
+  {
+   "session": "diag-1",
+   "arm": "diag",
+   "exit": 0,
+   "flushes": 1,
+   "modules": 23056,
+   "wasmMB": 530,
+   "share": 0.964,
+   "interpG": 2.77,
+   "gsteps": 77.39,
+   "busyMips": 195,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 208,
+   "setupS": 11,
+   "measuredS": 197,
+   "restoreS": 8.6,
+   "firstFlushS": 51,
+   "flushesPerMin": 0.48,
+   "slowG": 0,
+   "slowS": 1.2,
+   "made": 4000,
+   "doneS": 126.7,
+   "locks": 64284654,
+   "contended": 0.0334,
+   "waitMs": 38204,
+   "emitMs": 7232,
+   "lockedMs": 7232,
+   "planMs": 2191,
+   "perLock": 0.008,
+   "overdue": 0,
+   "rssMed": 4792,
+   "rssMax": 5218,
+   "codeMed": 824,
+   "codeMax": 1480
+  }
+ ],
+ "arms": {
+  "diag": {
+   "flushes": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "modules": {
+    "median": 23056,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     23056
+    ]
+   },
+   "wasmMB": {
+    "median": 530,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     530
+    ]
+   },
+   "share": {
+    "median": 0.964,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.964
+    ]
+   },
+   "interpG": {
+    "median": 2.77,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2.77
+    ]
+   },
+   "firstFlushS": {
+    "median": 51,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     51
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.48,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.48
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 1.2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.2
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 126.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     126.7
+    ]
+   },
+   "locks": {
+    "median": 64284654,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     64284654
+    ]
+   },
+   "contended": {
+    "median": 0.033,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.0334
+    ]
+   },
+   "waitMs": {
+    "median": 38204,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     38204
+    ]
+   },
+   "emitMs": {
+    "median": 7232,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     7232
+    ]
+   },
+   "lockedMs": {
+    "median": 7232,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     7232
+    ]
+   },
+   "planMs": {
+    "median": 2191,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2191
+    ]
+   },
+   "perLock": {
+    "median": 0.008,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.008
+    ]
+   },
+   "overdue": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "rssMed": {
+    "median": 4792,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4792
+    ]
+   },
+   "rssMax": {
+    "median": 5218,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5218
+    ]
+   },
+   "codeMed": {
+    "median": 824,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     824
+    ]
+   },
+   "codeMax": {
+    "median": 1480,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1480
+    ]
+   },
+   "busyMips": {
+    "median": 195,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     195
+    ]
+   },
+   "stalls20": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 208,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     208
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 197,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     197
+    ]
+   },
+   "restoreS": {
+    "median": 8.6,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.6
+    ]
+   }
+  }
+ }
+}

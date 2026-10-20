@@ -265,7 +265,10 @@ test it against `tests/steps.txt`.
   reported. Without that, blocks of one path joined different batches, and the forward regions,
   which take only their batch's blocks, came out 30% more and smaller (Alpine's boot 8% slower): check
   `blocks` against `regionBlocks` in a run's counters whenever the batching changes.
-  A slot's count survives eviction (the map keeps it).
+  A slot's count and the quota it had left survive eviction (the map keeps them), so a block put back in its slot
+  counts on instead of reporting at once (before, 62% of the cache's lock acquisitions in Firefox's pages session).
+  A key with no instructions (an SVC first, say) is kept too, with length 0, so the dispatcher asks the JIT's cache
+  about it once ([jit.md](jit.md) "Sharing").
 - **The cache** (per JIT table, so per vCPU in parallel SMP): 16,384 direct-mapped slots, a map,
   and the micro-ops in one arena, which starts over when full. **The arenas share 16M micro-ops
   (256 MiB) among a VM's tables, at most 8M a table** (`interp::block::budget`, through

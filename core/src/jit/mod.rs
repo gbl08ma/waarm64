@@ -1081,6 +1081,10 @@ pub struct Table {
     /// compiles, and clearing all 65,536 entries each time was a fifth of an
     /// Alpine boot under it.
     jc_used: Vec<u32>,
+    /// Every block of this epoch the cache has given it compiled (and it has
+    /// installed), as (table index, length): a jump-cache miss for one of
+    /// them needs no lock ([`Jit::miss`]). Caught up as the jump cache is.
+    known: Map<(u32, u32)>,
     /// One hot word per slot ([`emit::tier_up`]).
     hot: Box<[u32]>,
     /// The cache's epoch its slots hold, how many of that epoch's
@@ -1143,6 +1147,7 @@ impl Table {
                 .ok()
                 .expect("JC entries"),
             jc_used: Vec::new(),
+            known: Map::default(),
             hot: vec![0; c.cfg.capacity as usize].into_boxed_slice(),
             epoch: c.epoch,
             installed: 0,
@@ -1200,8 +1205,10 @@ impl Table {
                 self.redirects.clear();
             }
             self.clear_jc();
+            self.known.clear();
         } else {
             for k in seen.dropped.drain(..) {
+                self.known.remove(&k);
                 let e = &mut self.jc[jc_index(k)];
                 if e.key == k {
                     *e = JC_EMPTY;
@@ -1485,7 +1492,25 @@ impl Jit {
         // A block new to this table is decoded now, outside the lock, and its
         // length spares the cache forming it (only a block decoded now: one
         // decoded earlier may be from words an IC has dropped since).
+        //
+        // Two answers need no lock: a key with no instructions (never
+        // compiled; the cache was told when the table first decoded it), and
+        // a block the cache gave this table compiled, which it has installed
+        // (`Table::known`, dropped as the jump cache's entries are). The
+        // decoded block of a compiled one counts nothing more: its next
+        // jump-cache miss comes back here.
+        if self.table.dec.empty(key) {
+            return Err(1);
+        }
         let len = self.table.dec.decode(key, mem);
+        if len.is_none()
+            && let Some(&(idx, n)) = self.table.known.get(&key)
+        {
+            self.table.dec.counted(key);
+            self.table.dec.quota(key, 0);
+            self.table.fill(key, idx, n);
+            return Ok((idx, n));
+        }
         let mut c = lock(&self.cache, &mut self.table.stats);
         // The table catches up after the miss, which may have compiled (or
         // flushed): an entry it fills now and a catch-up then clears is only
@@ -1498,6 +1523,8 @@ impl Jit {
         self.install();
         match r {
             Ok((idx, len)) if idx < self.table.limit => {
+                self.table.known.insert(key, (idx, len));
+                self.table.dec.quota(key, 0);
                 self.table.fill(key, idx, len);
                 Ok((idx, len))
             }
@@ -2425,6 +2452,46 @@ mod tests {
             assert_eq!(i.queued, d > 50, "queued at dispatch 51, not {d}");
         }
         assert!(reports < 200 / 8, "{reports} reports for 200 dispatches");
+    }
+
+    /// A jump-cache miss for a block the cache gave the table compiled before
+    /// takes no lock, until the block is dropped; a key with no instructions
+    /// takes it once.
+    #[test]
+    fn a_known_block_misses_without_the_lock() {
+        let mut ram = vec![0u128; 0x3000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x3000) };
+        mem.write(0x1000, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+        mem.write(0x1004, 4, 0xd65f_03c0).unwrap(); // ret
+        mem.write(0x2000, 4, 0xd400_0001).unwrap(); // svc #0
+        let mut j = Jit::new(Cache::new(Config::DEFAULT));
+        let key = 0x1000;
+        // Compiled (as if) in slot 7, which the table has installed.
+        j.cache.lock().info(key, || 2).idx = 7;
+        j.table.limit = 8;
+        let locks = |j: &Jit| j.table.stats.locks;
+        assert_eq!(j.miss(key, key, &mem), Ok((7, 2)));
+        assert_eq!(locks(&j), 1);
+        let clear = |j: &mut Jit| j.table.jc[jc_index(key)] = JC_EMPTY;
+        clear(&mut j);
+        assert_eq!(j.miss(key, key, &mem), Ok((7, 2)));
+        assert_eq!(locks(&j), 1, "known: no lock");
+        assert_eq!(j.table.jc[jc_index(key)].key, key, "back in the jump cache");
+        // Its decoded block counts nothing: out of the jump cache again, it
+        // comes back to the miss instead of running interpreted.
+        assert!(!j.table.dec.count(key));
+        // Dropped: the table forgets it when it catches up.
+        j.invalidate(0x1000);
+        j.fresh(&mem);
+        clear(&mut j);
+        assert_eq!(j.miss(key, key, &mem), Err(2));
+        assert_eq!(locks(&j), 4); // the IC, the catch-up, the miss
+        // No instructions: the cache is asked once.
+        for _ in 0..3 {
+            assert_eq!(j.miss(0x2000, 0x2000, &mem), Err(1));
+        }
+        assert_eq!(locks(&j), 5);
     }
 
     /// A loop head that gets hot waits for the next batch, counting again

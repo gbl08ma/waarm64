@@ -690,9 +690,11 @@ pub struct Cache {
     /// The slots filled since the last clear (up to `SLOTS / 16`; past it,
     /// all of them are cleared): JIT-stress flushes every few compiles.
     used: Vec<u32>,
-    /// Every block: its micro-ops in `arena` (start, length) and the
-    /// dispatches it counted while out of the slots.
-    map: HashMap<u64, (u32, u32, u16), crate::jit::KeyBuild>,
+    /// Every block: its micro-ops in `arena` (start, length), and the
+    /// dispatches it counted and the quota it had while out of the slots
+    /// (one put back counts on: a report takes the JIT cache's lock). A key
+    /// with no instructions is kept too, with length 0 (never a block to run).
+    map: HashMap<u64, (u32, u32, u16, u8), crate::jit::KeyBuild>,
     /// The keys in `map` by physical page, for `IC IVAU`.
     pages: HashMap<u64, Vec<u64>, crate::jit::KeyBuild>,
     arena: Vec<Uop>,
@@ -738,14 +740,14 @@ impl Cache {
 
     #[inline(never)]
     fn miss(&mut self, key: u64, mem: &Mem) -> Option<(u32, u32)> {
-        let (start, len, hits) = match self.map.get_mut(&key) {
-            Some(e) => {
-                let hits = core::mem::take(&mut e.2);
-                (e.0, e.1, hits)
-            }
+        match self.map.get(&key) {
+            Some(e) if e.1 == 0 => return None,
+            Some(_) => {}
             None => {
                 let uops = crate::jit::block::form_with(mem, key & !3, uop_op);
                 if uops.is_empty() {
+                    self.map.insert(key, (0, 0, 0, 0));
+                    self.pages.entry(key >> 12).or_default().push(key);
                     return None;
                 }
                 if self.arena.len() + uops.len() > self.budget {
@@ -754,29 +756,38 @@ impl Cache {
                 let start = self.arena.len() as u32;
                 self.arena.extend_from_slice(&uops);
                 self.decoded += 1;
-                self.map.insert(key, (start, uops.len() as u32, 0));
+                self.map.insert(key, (start, uops.len() as u32, 0, 0));
                 self.pages.entry(key >> 12).or_default().push(key);
-                (start, uops.len() as u32, 0)
             }
-        };
-        // The block it replaces keeps the dispatches it counted.
+        }
+        Some(self.slot_in(key))
+    }
+
+    /// Puts decoded block `key` in its slot, with the dispatches it counted
+    /// and the quota it had left while out of it; the block it
+    /// replaces keeps its own in the map.
+    fn slot_in(&mut self, key: u64) -> (u32, u32) {
+        let e = self.map.get_mut(&key).expect("decoded");
+        let hits = core::mem::take(&mut e.2);
+        let quota = core::mem::take(&mut e.3);
+        let (start, len) = (e.0, e.1);
         let old = self.slots[slot(key)];
-        if old.hits != 0
+        if (old.hits != 0 || old.quota != 0)
             && let Some(e) = self.map.get_mut(&old.key)
         {
-            e.2 = old.hits;
+            (e.2, e.3) = (old.hits, old.quota);
         }
         self.slots[slot(key)] = Slot {
             key,
             start,
             len: len as u8,
-            quota: 0,
+            quota,
             hits,
         };
         if self.used.len() < SLOTS / 16 {
             self.used.push(slot(key) as u32);
         }
-        Some((start, len))
+        (start, len)
     }
 
     /// Decodes the block at `key` if it isn't yet, and returns its length
@@ -794,20 +805,41 @@ impl Cache {
     #[inline(always)]
     pub fn count(&mut self, key: u64) -> bool {
         let s = &mut self.slots[slot(key)];
-        if s.key == key && s.hits < s.quota as u16 {
-            s.hits += 1;
-            return true;
+        if s.key == key {
+            if s.hits < s.quota as u16 {
+                s.hits += 1;
+                return true;
+            }
+            return false;
         }
-        false
+        self.count_out(key)
+    }
+
+    /// [`Cache::count`] for a block out of its slot: put back with the
+    /// quota it had left, it counts on without reporting.
+    #[inline(never)]
+    fn count_out(&mut self, key: u64) -> bool {
+        match self.map.get(&key) {
+            Some(e) if e.1 != 0 && e.2 < e.3 as u16 => {}
+            _ => return false,
+        }
+        self.slot_in(key);
+        let s = &mut self.slots[slot(key)];
+        s.hits += 1;
+        true
     }
 
     /// The dispatches the block at `key` may count before it reports again
-    /// (`jit::Cache::miss` says, at most [`REPORT`]); a block put back in its
-    /// slot has none until it reports.
+    /// (`jit::Cache::miss` says, at most [`REPORT`]), in its slot or out of it.
     pub fn quota(&mut self, key: u64, n: u32) {
         let s = &mut self.slots[slot(key)];
         if s.key == key {
             s.quota = n.min(REPORT) as u8;
+        } else if let Some(e) = self.map.get_mut(&key)
+            && e.1 != 0
+        {
+            // (Never a key with no instructions: it isn't a block to run.)
+            e.3 = n.min(REPORT) as u8;
         }
     }
 
@@ -821,6 +853,16 @@ impl Cache {
         self.map
             .get_mut(&key)
             .map_or(0, |e| core::mem::take(&mut e.2) as u32)
+    }
+
+    /// Whether `key` was decoded and has no instructions.
+    pub fn empty(&self, key: u64) -> bool {
+        self.map.get(&key).is_some_and(|e| e.1 == 0)
+    }
+
+    #[cfg(test)]
+    pub fn slotted(&self, key: u64) -> bool {
+        self.slots[slot(key)].key == key
     }
 
     #[cfg(test)]
