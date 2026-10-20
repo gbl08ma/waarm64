@@ -120,7 +120,12 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   a2=<a copy>` (each round every arm in turn; under a 10 GiB scope and `timeout` each; in the background, alone), then
   `node bench/gpu/ab-summary.ts <outdir>`: per session and per arm (median, IQR) the counts (flushes, modules, wasm
   MB, compiled share, Gsteps interpreted, the first flush's time, flushes a minute, each flush's slow phase), then
-  busy MIPS and stalls, the heavy pages' loads, the session's wall and setup time.
+  busy MIPS and stalls, the heavy pages' loads, the session's wall and setup time, and the renderer's RSS and V8's
+  wasm code over the workload (`rss.txt`: median and maximum). An arm's core may carry a query for that arm
+  (`b160=core.wasm?jitmb=160`). `MEMLOG=10` adds `mem.jsonl`: every 10 s the renderer's smaps by class
+  (`bench/mem/probe.ts`), the page's own accounting (`__status.memory`) and, unless `MEMLOG_UASM=0`,
+  `measureUserAgentSpecificMemory` (50-60 s a call); `bench/mem/calibrate.ts` compares the page's estimate with smaps
+  ([jit.md](jit.md) "The page's memory signal").
 - **Turnaround** (the dev VM, Firefox's pages session, 160 against 320 MiB and an A/A, three rounds): from boot a
   session is 441-490 s, 72 s of it the boot, the login and sway; from the snapshot 376-428 s, 11 s of it the restore.
   Nine sessions: 70 min from boot, 59 from the snapshot. The measured phase is the cost: what saves time is a shorter
@@ -141,7 +146,8 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
    `bench/gpu/firefox/churn.html` makes JavaScript functions from a template (operators, constants, branches and loops
    varied by their number) and calls each past SpiderMonkey's Baseline and Ion thresholds, so the guest writes new
    machine code all the time; `rate` (functions a second), `calls`, `n` (a call's loop trips) and `total` set the
-   cache's fill. With `total` the work is fixed and the phase ends when it's done (`doneS`): ~215 s a session, 11 for
+   cache's fill; `hot=<n>` calls the last n functions made again every frame (a reused hot set beside the churn).
+   With `total` the work is fixed and the phase ends when it's done (`doneS`): ~215 s a session, 11 for
    the restore, ~135 for the churn. At 320 MiB it flushes 53 s after the page is ready (`rate=40` without `total`:
    two flushes in 180 s); at 160 MiB 26 s, twice. An A/A arm in every run gives the noise band (main against a copy:
    flushes, modules within 0.3%, wasm MB within 0.6%, compiled share within 0.1 point, `doneS` within 0.6 s).

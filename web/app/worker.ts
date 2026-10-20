@@ -16,6 +16,7 @@ import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
 import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
+import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
 import type { MachineName } from './machine.ts';
@@ -445,11 +446,17 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   }
   // Once a second on a timer, not from the loop: a stuck loop then shows in `loopAgeMs` rather than as silence.
   let ticks = 0;
+  const signal = new Signal();
   const timer = setInterval(() => {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
     if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
     const now = performance.now();
-    post({ type: 'status', status: status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt) });
+    const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt);
+    // The memory signal (web/app/memory.ts): past what the device reports, the JIT's cache holds no more than it does now
+    // (the gauge's limit: it flushes there, docs/jit.md "The page's memory signal").
+    const device = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    if (device && signal.update(st.memory, ncpus) > device * 2 ** 30 && !st.memory.jitLimit) vm!.setJitLimit(Math.max(st.memory.jitLiveBytes, 1));
+    post({ type: 'status', status: st });
     loopMax = 0;
   }, 1000);
   // The keyboard's driver: the page sends keys typed on the screen to the serial console until it is up (the firmware's menus, GRUB).
@@ -609,5 +616,5 @@ async function suspend() {
 
 function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number): Status {
   const s = vm.stats();
-  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s };
+  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s, memory: vm.hostUse() };
 }

@@ -325,6 +325,16 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   0.5-0.7 GiB higher; a smaller budget takes at most 0.25 GiB off), so 0.625 GiB more at the default 320. Below it the page doesn't start the machine
   (state `idle`, "Not started") and offers **Start anyway**, naming a vCPU count that fits if one
   does. A device that reports 4 GB or more runs Debian's default on up to 4 vCPUs.
+- **A tab that went away with its machine running** (the memory signal, `web/app/memory.ts`; [jit.md](jit.md) "The
+  page's memory signal"): while a machine runs, the page keeps a mark of it in `localStorage` (`webpc.alive.<stored
+  machine's id>`, or `webpc.alive.transient-<machine>`) with its RAM, vCPUs, JIT budget and what it costs by the
+  emulator's own accounting (the estimate and its peak), renewed every 10 s and cleared at every clean stop. A mark
+  that no tab has renewed for 30 s means the tab was closed for it, most likely out of memory: the next start of that
+  machine (state `idle`) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
+  or less), **Start with N MiB of RAM** (half or less; a stored machine's snapshots of the old size are orphaned, so
+  it asks first) and **Start as it is**. The choice is saved in the stored machine's record, or for a transient
+  machine in `webpc.settings` (`jitMiB`, `ramMiB`). While it runs, past what `navigator.deviceMemory` reports the
+  machine worker caps the JIT cache at what it holds (it flushes there).
 - Another browser than Chromium (no `Chromium` brand in `navigator.userAgentData`): a standing
   note that webpc is developed and tested in Chromium; nothing else changes.
 

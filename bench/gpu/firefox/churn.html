@@ -8,11 +8,14 @@
 // many distinct JavaScript functions made from a template (their operators, constants, branches and loop shapes vary
 // with their number), each called until SpiderMonkey compiles it, so the guest keeps writing new machine code and the
 // emulator's JIT keeps compiling new guest code. Query: rate (functions a second, 40), calls (each one's calls, 1500:
-// past the Baseline and Ion thresholds), n (its loop's trips a call, 40), total (functions in all; none past it).
+// past the Baseline and Ion thresholds), n (its loop's trips a call, 40), total (functions in all; none past it),
+// hot (the last that many functions made are called again once a frame, so a reused hot set exists beside the churn:
+// their compiled code stays in use; 0, the default, none).
 // Each second `FFBENCH churn t=<s> frames=<n> maxms=<ms>` (bench.js) and `FFBENCH made <functions>`.
 // The query, or all of it encoded in `q` (sway's exec runs the command through a shell, where a bare `&` ends it).
 const q0 = new URLSearchParams(location.search), q = q0.has('q') ? new URLSearchParams(q0.get('q')) : q0;
-const rate = +(q.get('rate') ?? 40), calls = +(q.get('calls') ?? 1500), trips = +(q.get('n') ?? 40), total = +(q.get('total') ?? 1e9);
+const rate = +(q.get('rate') ?? 40), calls = +(q.get('calls') ?? 1500), trips = +(q.get('n') ?? 40), total = +(q.get('total') ?? 1e9), hot = +(q.get('hot') ?? 0);
+const recent = [];
 const OPS = ['+', '-', '^', '|', '&', '*'];
 function make(k) {
   const m = 3 + (k % 9);
@@ -38,7 +41,9 @@ ffbench('churn', (t) => {
   for (; carry >= 1 && made < total; carry--) {
     const f = make(made++);
     for (let i = 0; i < calls; i++) sum = (sum + f(i, trips)) | 0;
+    if (hot) { recent.push(f); if (recent.length > hot) recent.shift(); }
   }
+  for (let i = 0; i < recent.length; i++) sum = (sum + recent[i](i, trips)) | 0;
   if (t - last >= 1000) { last = t; dump(`FFBENCH made ${made} ${sum}\n`); document.getElementById('o').textContent = `${made} functions`; }
 });
 </script>

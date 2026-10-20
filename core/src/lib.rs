@@ -29,14 +29,85 @@ pub mod virtio;
 pub mod vm;
 pub mod xhci;
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 44;
+pub const ABI_VERSION: u32 = 45;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
     ABI_VERSION
+}
+
+/// The core's allocator, counting what it holds (ABI 45, [`heap_stats`]): the
+/// system allocator (dlmalloc on wasm32, its state in the shared memory, so
+/// every instance on it counts in the same words) with the bytes live and
+/// their high-water mark beside it. The allocator keeps what it frees, so the
+/// mark is about what the heap has made resident (docs/jit.md "The page's
+/// memory signal").
+struct Counting;
+
+static HEAP_LIVE: AtomicUsize = AtomicUsize::new(0);
+static HEAP_PEAK: AtomicUsize = AtomicUsize::new(0);
+
+// SAFETY: every call goes to the system allocator as is; the counts are only counts.
+unsafe impl std::alloc::GlobalAlloc for Counting {
+    unsafe fn alloc(&self, l: std::alloc::Layout) -> *mut u8 {
+        // SAFETY: the caller's contract, passed on.
+        let p = unsafe { std::alloc::System.alloc(l) };
+        if !p.is_null() {
+            counted(l.size() as isize);
+        }
+        p
+    }
+    unsafe fn alloc_zeroed(&self, l: std::alloc::Layout) -> *mut u8 {
+        // SAFETY: the caller's contract, passed on.
+        let p = unsafe { std::alloc::System.alloc_zeroed(l) };
+        if !p.is_null() {
+            counted(l.size() as isize);
+        }
+        p
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: std::alloc::Layout) {
+        // SAFETY: the caller's contract, passed on.
+        unsafe { std::alloc::System.dealloc(p, l) };
+        counted(-(l.size() as isize));
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: std::alloc::Layout, size: usize) -> *mut u8 {
+        // SAFETY: the caller's contract, passed on.
+        let q = unsafe { std::alloc::System.realloc(p, l, size) };
+        if !q.is_null() {
+            counted(size as isize - l.size() as isize);
+        }
+        q
+    }
+}
+
+fn counted(d: isize) {
+    if d >= 0 {
+        let live = HEAP_LIVE.fetch_add(d as usize, Ordering::Relaxed) + d as usize;
+        if live > HEAP_PEAK.load(Ordering::Relaxed) {
+            HEAP_PEAK.fetch_max(live, Ordering::Relaxed);
+        }
+    } else {
+        HEAP_LIVE.fetch_sub(d.unsigned_abs(), Ordering::Relaxed);
+    }
+}
+
+#[global_allocator]
+static ALLOC: Counting = Counting;
+
+/// The core's heap (ABI 45): writes the bytes its allocations hold now and
+/// their high-water mark since [`heap_reserve`] (or the start) to `out[0..2]`.
+///
+/// # Safety
+/// `out` points at two writable u64s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn heap_stats(out: *mut u64) {
+    // SAFETY: guaranteed by the caller.
+    let out = unsafe { core::slice::from_raw_parts_mut(out, 2) };
+    out[0] = HEAP_LIVE.load(Ordering::Relaxed) as u64;
+    out[1] = HEAP_PEAK.load(Ordering::Relaxed) as u64;
 }
 
 /// Allocates `size` bytes aligned to `align` (a power of two) from the core's
@@ -79,6 +150,8 @@ pub extern "C" fn heap_reserve(pages: u32) -> u32 {
             }
             std::alloc::dealloc(p, l);
         }
+        // The reserve's block isn't the heap's use: the mark starts after it.
+        HEAP_PEAK.store(HEAP_LIVE.load(Ordering::Relaxed), Ordering::Relaxed);
         core::arch::wasm32::memory_size(0) as u32
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -630,6 +703,24 @@ pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm, i: u32) -> *const vm::Co
         .cpus
         .get(i as usize)
         .map_or(core::ptr::null(), |c| &c.counters)
+}
+
+/// The JIT code cache's gauge (ABI 45, `jit::Gauge`): `jit::GAUGE_WORDS` u64s
+/// the core updates as it compiles and flushes (the live wasm bytes and
+/// modules, the budget, the epochs), read with atomic loads; null without a JIT.
+/// The words stay where they are for the VM's life.
+///
+/// # Safety
+/// `vm` comes from [`vm_new`]; no vCPU runs (as for `vm_cpu`): the host asks once, before it starts them.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_jit_gauge(vm: *const vm::Vm) -> *const u64 {
+    // SAFETY: guaranteed by the caller.
+    let vm = unsafe { &*vm };
+    vm.vcpus[0]
+        .jit
+        .cache
+        .as_ref()
+        .map_or(core::ptr::null(), |j| j.gauge())
 }
 
 // Snapshots (ABI 30, docs/abi.md "M8 phase C: snapshots"). Each is called

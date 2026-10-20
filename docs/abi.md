@@ -68,6 +68,13 @@ Design notes for an ABI change go in this file before the code.
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
   flash bank's bytes, null without one; ABI 29), `vm_xhci(vm)` (the xHCI's shared block, null without one;
   ABI 38, "USB" below).
+- `vm_jit_gauge(vm) -> *const u64` (ABI 45; null without a JIT; asked once, before any vCPU runs: the words stay
+  put): the JIT code cache's gauge, `jit::GAUGE_WORDS` u64s read with atomic loads: the wasm bytes and the modules
+  installed since the last flush (what V8 holds code and metadata for), the byte budget now, the epochs (flushes and
+  `IC IALLU`s), and word 4, the **host's limit** on the budget (bytes, 0: none, at least 16 MiB; the host writes it
+  with an atomic store, and the cache flushes at it: the page's memory signal). `heap_stats(out)` (ABI 45, any instance): writes the core heap's live
+  bytes and their high-water mark since `heap_reserve` (the allocator keeps what it frees) to `out[0..2]`; the
+  global allocator counts them. Both feed `Vm.hostUse` ([jit.md](jit.md) "The page's memory signal").
 - `vm_snapshot_size(vm)`, `vm_snapshot_save(vm, ptr, len)`, `vm_snapshot_restore(vm, ptr, len)`,
   `snapshot_version()` (ABI 30): a VM's state without its RAM, out and into a new VM ("M8 phase
   C: snapshots", below).
@@ -103,7 +110,7 @@ Design notes for an ABI change go in this file before the code.
 | `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
 | `xhci` | an xHCI ([usb.md](usb.md)): its USB 2 ports \| USB 3 ports << 8, `0x404` (4 and 4, the only counts built; `vm_new` refuses others) or 0, none (38) |
 | `spill` (8 words) | the spill memories' sizes, memory 1 first, the first 0 ending the list: multiples of 64 KiB, at most 4 GiB each; the core places each at the 1 GiB boundary past the RAM before it (`VmConfig::spill_layout`), a NUMA node in the DT, and reaches it through the `ram` imports ([spill-memories.md](spill-memories.md)). Natively `vm_new` refuses them (a Rust runner passes its own `Mem`) (39) |
-| `jit_bytes` | the JIT's code cache budget in wasm bytes, for `jit` 1 and 4 (JIT-stress and JIT-check keep theirs): the most the live modules hold before a flush ([jit.md](jit.md) "Memory"); 0: the core's default, `jit::MAX_BYTES`. Not part of a snapshot's state: a state restores under any budget. The host's scratch page holds the 33 words at 0 and the device entries from 512 (44) |
+| `jit_bytes` | the JIT's code cache budget in wasm bytes, for `jit` 1 and 4 (JIT-stress and JIT-check keep theirs): the most the live modules hold before a flush ([jit.md](jit.md) "Memory"); 0: the core's default, `jit::MAX_BYTES`. Not part of a snapshot's state: a state restores under any budget. The host's scratch page holds the config's words at 0 and the device entries from 512 (44) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1 and 2 unless told `rng: false`, `e0pd: false` (the bare-metal tests are); the ABI's 0 means none.
@@ -518,4 +525,5 @@ implemented by this step).
 | 42 | `vm_jit_emit`, `vm_jit_active`: the replay's modules emitted by the compile worker's own core instance; counters 111–123 |
 | 43 | 41 and 42 taken out (the carry wasn't kept: [jit.md](jit.md) "Tried and not kept"): exports, imports, counters and `VmConfig.jit` as in 40 |
 | 44 | `VmConfig.jit_bytes`: a machine's JIT code cache budget (the page's `?jitmb=`, a stored machine's JIT cache setting) |
+| 45 | the page's memory signal: `vm_jit_gauge` (the JIT cache's state, and the host's limit on its budget), `heap_stats` |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

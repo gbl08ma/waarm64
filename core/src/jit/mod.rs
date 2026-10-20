@@ -371,7 +371,32 @@ pub struct Cache {
     /// EL1's follows), once a table has installed it: the same in every
     /// table, as is every slot's.
     xmiss: Option<u32>,
+    /// What the host reads of the cache without its lock, and its limit ([`Gauge`]).
+    gauge: Arc<Gauge>,
 }
+
+/// The cache's state for the host, read without the lock (`vm_jit_gauge`,
+/// ABI 45; docs/jit.md "The page's memory signal"): words [`G_LIVE_BYTES`],
+/// [`G_LIVE_MODULES`], [`G_BUDGET`], [`G_EPOCHS`], and [`G_LIMIT`], which the
+/// host writes.
+#[repr(C)]
+#[derive(Default)]
+pub struct Gauge(pub [AtomicU64; GAUGE_WORDS]);
+pub const GAUGE_WORDS: usize = 5;
+/// The wasm bytes and the modules installed since the last flush: what V8
+/// holds code and metadata for (until its GC collects a flushed epoch's).
+pub const G_LIVE_BYTES: usize = 0;
+pub const G_LIVE_MODULES: usize = 1;
+/// The byte budget now ([`Cache::budget`]).
+pub const G_BUDGET: usize = 2;
+/// Flushes and `IC IALLU`s so far.
+pub const G_EPOCHS: usize = 3;
+/// The host's limit on the budget, bytes (0: none; never below
+/// [`MIN_LIMIT`]): the page sets it when its memory signal says the device is
+/// short of memory, and the cache flushes at it.
+pub const G_LIMIT: usize = 4;
+/// The least budget the host's limit leaves.
+pub const MIN_LIMIT: u64 = 16 << 20;
 
 /// A module installed since the last flush.
 struct Logged {
@@ -438,13 +463,38 @@ impl Cache {
             ready: Arc::new(AtomicU32::new(0)),
             tables: Vec::new(),
             xmiss: None,
+            gauge: Arc::new(Gauge::default()),
         }
+        .gauged()
+    }
+
+    /// The byte budget: the configured one, or the host's limit when that is
+    /// lower ([`G_LIMIT`]).
+    fn budget(&self) -> u64 {
+        match self.gauge.0[G_LIMIT].load(Ordering::Relaxed) {
+            0 => self.cfg.max_bytes,
+            l => l.max(MIN_LIMIT).min(self.cfg.max_bytes),
+        }
+    }
+
+    /// Publishes the cache's state to its [`Gauge`].
+    fn publish(&self) {
+        let g = &self.gauge.0;
+        g[G_LIVE_BYTES].store(self.live_bytes, Ordering::Relaxed);
+        g[G_LIVE_MODULES].store(self.log.len() as u64, Ordering::Relaxed);
+        g[G_BUDGET].store(self.budget(), Ordering::Relaxed);
+        g[G_EPOCHS].store(self.epoch, Ordering::Relaxed);
+    }
+
+    fn gauged(self) -> Cache {
+        self.publish();
+        self
     }
 
     /// `n` consecutive slots for a module; flushes the cache first if they
     /// don't fit (counted in `s`).
     fn alloc(&mut self, n: u32, s: &mut Stats) -> u32 {
-        if self.next + n > self.cfg.capacity || self.live_bytes >= self.cfg.max_bytes {
+        if self.next + n > self.cfg.capacity || self.live_bytes >= self.budget() {
             self.flush(s);
         }
         self.next += n;
@@ -500,6 +550,7 @@ impl Cache {
                 ..Seen::default()
             };
         }
+        self.publish();
     }
 
     /// `IC IVAU` on `pa` drops the blocks of its page; `IC IALLU` (`u64::MAX`)
@@ -749,9 +800,7 @@ impl Cache {
         // what it goes on to call must stay in the cache. Without room, the
         // head stays alone until the next flush drops it.
         let r = self.region(key, va, mem);
-        if r.blocks.len() < 2
-            || self.next >= self.cfg.capacity
-            || self.live_bytes >= self.cfg.max_bytes
+        if r.blocks.len() < 2 || self.next >= self.cfg.capacity || self.live_bytes >= self.budget()
         {
             return;
         }
@@ -846,6 +895,7 @@ impl Cache {
         let idx = xmiss + slot;
         self.live_bytes += len;
         self.retune();
+        self.publish();
         let s = &mut t.stats;
         s.flags_stored += counts.flags_stored;
         s.flags_elided += counts.flags_elided;
@@ -1238,6 +1288,7 @@ pub struct Jit {
     drops: Arc<AtomicU64>,
     ivals: Arc<AtomicU64>,
     ready: Arc<AtomicU32>,
+    gauge: Arc<Gauge>,
 }
 
 impl Jit {
@@ -1247,6 +1298,7 @@ impl Jit {
             cache.ivals.clone(),
             cache.ready.clone(),
         );
+        let gauge = cache.gauge.clone();
         let cache = Arc::new(Lock::new(cache));
         let table = Table::new(&mut cache.lock());
         Jit {
@@ -1255,7 +1307,13 @@ impl Jit {
             drops,
             ivals,
             ready,
+            gauge,
         }
+    }
+
+    /// The cache's [`Gauge`]: its words, read without the lock.
+    pub fn gauge(&self) -> *const u64 {
+        self.gauge.0.as_ptr() as *const u64
     }
 
     /// The code cache's byte budget (`Config::max_bytes`).
@@ -1271,6 +1329,7 @@ impl Jit {
             drops: self.drops.clone(),
             ivals: self.ivals.clone(),
             ready: self.ready.clone(),
+            gauge: self.gauge.clone(),
         }
     }
 
@@ -1887,6 +1946,45 @@ mod tests {
         c.live_bytes = 1000;
         assert_eq!((c.alloc(1, s), s.flushes), (2, 3));
         assert_eq!(c.live_bytes, 0);
+    }
+
+    /// The gauge follows the cache (ABI 45), and the host's limit lowers the
+    /// budget (never under `MIN_LIMIT`, never over the configured one).
+    #[test]
+    fn the_gauge_and_the_hosts_limit() {
+        let mut c = Cache::new(Config {
+            batch: 4,
+            capacity: 100,
+            max_bytes: 64 << 20,
+            ..Config::DEFAULT
+        });
+        let s = &mut Stats::default();
+        let g = |c: &Cache, w: usize| c.gauge.0[w].load(Ordering::Relaxed);
+        assert_eq!((g(&c, G_BUDGET), g(&c, G_LIVE_BYTES)), (64 << 20, 0));
+        for (limit, budget) in [
+            (0, 64 << 20),
+            (20 << 20, 20 << 20),
+            (1, MIN_LIMIT),
+            (100 << 20, 64 << 20),
+        ] {
+            c.gauge.0[G_LIMIT].store(limit, Ordering::Relaxed);
+            assert_eq!(c.budget(), budget, "limit {limit}");
+        }
+        // At the limit the next slots flush, and the gauge says so.
+        c.gauge.0[G_LIMIT].store(20 << 20, Ordering::Relaxed);
+        c.live_bytes = (20 << 20) - 1;
+        assert_eq!((c.alloc(1, s), s.flushes), (MISS_SLOTS, 0));
+        c.live_bytes = 20 << 20;
+        c.alloc(1, s);
+        assert_eq!(
+            (
+                s.flushes,
+                g(&c, G_EPOCHS),
+                g(&c, G_BUDGET),
+                g(&c, G_LIVE_BYTES)
+            ),
+            (1, 1, 20 << 20, 0)
+        );
     }
 
     /// The threshold rises with the live modules' bytes past the knee, and

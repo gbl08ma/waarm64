@@ -13,6 +13,13 @@ import { gunzipSync } from 'node:zlib';
 const json = process.argv.includes('--json');
 type Row = Record<string, number | string>;
 const rows: Row[] = [];
+/** The renderer's RSS and V8's wasm code (rss.sh's MiB samples, every 5 s) over the workload: median and maximum. */
+function rssOf(f: string, from?: number, to?: number): Row {
+  const xs = (existsSync(f) ? readFileSync(f, 'utf8') : '').trim().split('\n').filter(Boolean).map((l) => l.split(' ').map(Number)).filter((x) => x.length === 4 && (!from || !to || (x[0] * 1000 >= from && x[0] * 1000 <= to)));
+  if (!xs.length) return {};
+  const med = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+  return { rssMed: med(xs.map((x) => x[2])), rssMax: Math.max(...xs.map((x) => x[2])), codeMed: med(xs.map((x) => x[3])), codeMax: Math.max(...xs.map((x) => x[3])) };
+}
 const read = (f: string) => (existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : undefined);
 for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
   for (const s of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()) {
@@ -55,11 +62,12 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
       slowG: slow.length ? +(slow.reduce((a, b) => a + b.g, 0) / slow.length).toFixed(2) : NaN,
       slowS: slow.length ? +(slow.reduce((a, b) => a + b.s, 0) / slow.length).toFixed(1) : NaN,
       made: res.churn?.made ?? NaN, doneS: res.churn?.doneS ?? NaN,
+      ...rssOf(`${d}/rss.txt`, from, to),
     };
     rows.push(row);
   }
 }
-const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
+const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
 const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); const i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
 const arms: Record<string, Record<string, { median: number; iqr: number; n: number; all: number[] }>> = {};
 for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {
@@ -71,7 +79,7 @@ for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {
 }
 if (json) console.log(JSON.stringify({ sessions: rows, arms }, null, 1));
 else {
-  const cols = ['session', 'exit', ...KEYS.slice(0, 16), 'pagesFps', ...KEYS.slice(16)];
+  const cols = ['session', 'exit', ...KEYS.slice(0, 20), 'pagesFps', ...KEYS.slice(20)];
   console.log(cols.join('\t'));
   for (const r of rows) console.log(cols.map((c) => r[c] ?? '').join('\t'));
   console.log();

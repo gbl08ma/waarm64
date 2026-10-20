@@ -2278,3 +2278,59 @@ loop at once (`go/`: builds of 55 and 38 s in 120 s, 1,134 MIPS).
 
 **For the next lane:** screen variants with the churn page from the snapshot, an A/A arm in each run (five variants
 ~22 min), then time the winner on the full pages session from the snapshot (three rounds) and the gates.
+
+## M8: a machine's JIT budget and the page's memory signal (2026-10-20)
+
+Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB); the desktop guest from
+`target/snapbench/pages.webpcsnap` (Arch Linux ARM, Firefox, 2.5 GiB of RAM, 4 vCPUs, 3D); sessions through
+`bench/gpu/ab.sh` with `MEMLOG=10` (`bench/gpu/guest-session.ts`: every 10 s the renderer's smaps by class,
+`bench/mem/probe.ts`, and the page's own accounting, `__status.memory`). Data in `bench/boot/results/m8-budget/`.
+
+**A machine's budget** (`VmConfig.jit_bytes`, ABI 44): the page's `?jitmb=`, a stored machine's JIT cache setting
+beside its RAM (carried by its shape and definition, outside the shape's hash: the guest doesn't see it, so lowering it
+after a crash orphans no snapshot). The page's memory check counts it (`jitHostGiB`: four times the budget past 160
+MiB, from the pages session's renderer at 160 and 320 MiB). `?jitmb=` is also how the A/Bs below set their arms
+(`bench/gpu/ab.sh` takes `<arm>=<core.wasm>?<query>`).
+
+**What `performance.measureUserAgentSpecificMemory()` counts** (`signal/uasm-j160/`: the churn page at 160 MiB, four
+calls over 3 minutes):
+
+| realm (attribution) | MiB | what it is |
+|---|---|---|
+| 4 × `vcpu-worker.ts` | 14,395 → 14,500 | memory 0's reserved length (3,584 MiB: 2.5 GiB of RAM + the heap reserve) four times, + JS heaps |
+| the machine worker (the page's URL) | 3,697-3,703 | memory 0 + its JS heap |
+| `device-worker.ts`, `gpu-worker.ts`, `jit-compile-worker.ts` | 3,603-3,604, 3,587-3,595, 3,585-3,586 | memory 0 each |
+| `Window` (the page) | 8 | it holds no memory |
+| total | 28,883-28,992 | the renderer meanwhile: 3,231-4,819 MiB |
+
+So the user's 41.9 GB is the shared memory charged at its whole length once per realm that holds it (a bigger guest
+or more vCPUs), not memory used. All of it is typed `JavaScript`. Between the first and the third call V8's wasm code
+grew 209 → 910 MiB and the rest of the renderer's anonymous memory 1,052 → 1,454 MiB, through two flushes, while the
+per-realm totals moved by 105 MiB in all: **V8's wasm code and its C++ metadata aren't counted**, only JS heaps. Each
+call took 50-60 s (also with `--enable-blink-features=ForceEagerMeasureMemory`). Not usable as a signal.
+
+**The self-accounting estimate against smaps** (`signal/calibration.json`, `bench/mem/calibrate.ts`: the page's
+`Signal` over the fixed-320 MiB sessions of the next section, `signal/calib/`):
+
+| session | samples | estimate over the renderer: median (min, max) | V8 code per live wasm byte | other anon per byte | wasm memories resident | renderer max / estimate max (MiB) |
+|---|---|---|---|---|---|---|
+| pages | 36 | +12.0% (+8.9, +32) | 3.90 | 2.83 | 0.76 | 5,296 / 5,776 |
+| pages, again | 36 | +13.6% (+10.8, +30) | 3.94 | 2.77 | 0.74 | 5,208 / 5,772 |
+| churn | 21 | +17.5% (+14.5, +42) | 3.95 | 2.21 | 0.74 | 5,100 / 6,771 |
+| churn, `hot=1500` | 23 | +18.5% (−30.6, +56) | 3.93 | 2.07 | 0.73 | 8,571 / 6,784 |
+
+- **V8's code is 3.9-4.0 × the live wasm bytes** in every session (smaps' executable anonymous mappings); the rest
+  of the anonymous memory grows 2.1-2.8 × them, modules included (the estimate: 1.7 × + 16 KB a module).
+- **The wasm memories are 73-76% resident**: from a snapshot the guest hasn't touched all its RAM, and the core's heap
+  mark (`heap_stats`, ~510 MiB on the 4-vCPU page) counts reserved, unwritten capacity. Counting RAM whole is the
+  estimate's 12-19% over; counting touched pages would take the core marking them at every TLB fill and device
+  write, for a figure a long session reaches anyway.
+- **Under the spikes:** a flushed epoch's code is freed only when V8's GC collects it; counting it for 30 s after the
+  flush (`Signal`) still left one 10 s sample of the hot churn 1.8 GB above the estimate (8.6 GB).
+- The virgl resources aren't the renderer's (textures in the GPU process, backing in guest RAM; the shared transfer
+  mappings 37-45 MiB).
+
+**Built on it:** the status carries `Vm.hostUse` (RAM, the heap, the JIT's gauge: `vm_jit_gauge` and `heap_stats`,
+ABI 45); a running machine keeps a mark in `localStorage`, renewed every 10 s and cleared at a clean stop; a stale
+mark at the next start means the tab went away with it running, and the page offers a smaller JIT cache or less RAM;
+past `navigator.deviceMemory` the machine worker caps the JIT cache at what it holds (the gauge's limit word).

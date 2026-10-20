@@ -426,11 +426,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `bootVm`'s `ncpus` still defaults to 1. Telling the user that a host's efficiency cores make N
   above its performance-core count scale poorly (this host: 4 P + 6 E) belongs with M8 phase D's
   settings and embedding API.
-- **The page's memory check** is a rule of thumb (`hostMemoryGiB`: RAM + 1 GiB + 0.3 GiB per
-  vCPU, from one host's RSS) against `navigator.deviceMemory`, which Chromium caps at 8 GB and
-  rounds down; it can't see what else the host is running. A guest whose code fills the JIT's 320 MiB cache (Firefox's page
-  loads) takes the renderer past it (5.1-5.4 GiB median, 5.8 at most, with 2.5 GiB of RAM on 4 vCPUs, against 4.7). Revisit with RAM settings (phase D) or
-  if a user's tab gets killed.
+- **The page's memory check and signal** ([jit.md](jit.md) "The page's memory signal"): the check before a start is a
+  rule of thumb (`hostMemoryGiB`, the JIT budget counted since 2026-10-20) and the live estimate is calibrated on one
+  host (headless Chromium 153 on the dev VM, a 2.5 GiB desktop guest on 4 vCPUs); both are compared with
+  `navigator.deviceMemory`, which Chromium caps at 8 GB and rounds down, and neither sees what else the host runs. Open:
+  the estimate counts guest RAM whole (12-19% over the renderer's median from a snapshot) and misses a flush's
+  garbage at its spikes (one 10 s sample 1.8 GB over, with the flushed epoch counted for 30 s); a calibration with 1 vCPU, a 2D machine and a longer session;
+  what a user's crash mark says once one is seen.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.

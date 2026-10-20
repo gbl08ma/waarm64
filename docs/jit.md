@@ -355,10 +355,45 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   single-cache VM gets the whole budget (then 160 MiB) (`Config::for_vcpus`; Debian's 73 MB boot never flushes) and
   only the 4-vCPU page runs at 40 MiB per cache. After a guest panic and `page.reload()` the renderer
   went from 3.55 GB to 1.2 GB at once (`mem-run6-crash` in the summary).
-- **The page's memory estimate** (`hostMemoryGiB`, `web/app/machine.ts`: RAM + 1 + 0.3 per vCPU,
-  3.2 GiB for the default) matches the capped median of that mixed load; the peaks above it are the GC's lag. A
-  browser that fills the 320 MiB cache goes past it (5.1-5.4 GiB median, 5.8 at most, with 2.5 GiB of RAM on 4
-  vCPUs, against its 4.7; docs/backlog.md "The page's memory check").
+- **The page's memory check before a start** (`hostMemoryGiB`, `web/app/machine.ts`: RAM + 1 + 0.3 per vCPU, plus
+  four times the machine's JIT budget past 160 MiB, `jitHostGiB`) matches the capped median of that mixed load and
+  Firefox's pages session at 160 and 320 MiB (4.6-4.7 and 5.1-5.4 GiB with 2.5 GiB of RAM on 4 vCPUs, the rule's
+  4.7 and 5.3); the peaks above it are the GC's lag.
+
+### The page's memory signal
+
+What the machine costs its tab, accounted from what the emulator knows (`web/app/memory.ts`), and a mark that tells a
+crash afterwards. Measured in headless Chromium 153 against the renderer's smaps (`bench/mem/probe.ts`,
+`bench/mem/calibrate.ts`; `bench/boot/REPORT.md` "M8: a machine's JIT budget and the page's memory signal"). **Wasm
+bytes emitted aren't browser memory:** every factor here is the renderer's, measured.
+- **`performance.measureUserAgentSpecificMemory()` can't be it.** It charges the shared `WebAssembly.Memory` (guest
+  RAM, the core's heap reserve) at its whole reserved length **once per realm that holds it**: the machine worker,
+  each vCPU worker, the compile, device and GPU workers (8 realms on 4 vCPUs: 28.9 GB reported for a 2.5 GiB guest
+  whose memory 0 reserves 3.5 GiB, while the renderer used 3.0-4.7 GB; the main window holds none, 8 MB). Beside that
+  it counts only JS heaps: across ~700 MB of V8 wasm code and ~400-800 MB of its metadata compiled, and across two
+  flushes, its per-realm totals moved by 60-190 MB. Its types are all `JavaScript`. And it answers after 50-60 s
+  (`ForceEagerMeasureMemory` didn't change that).
+- **The estimate** (`estimate`): guest RAM whole (memory 0's and the spill memories'), the core's heap at its
+  high-water mark (`heap_stats`, ABI 45: the global allocator counts its live bytes; dlmalloc keeps what it frees), the
+  JIT's live wasm bytes (`vm_jit_gauge`: the modules since the last flush) × 5.7 (V8's code **4.0×**, smaps'
+  executable anonymous mappings, 3.9-4.1 in every session; its C++ metadata ~1.7×) plus 16 KB a module, and 0.9 GiB +
+  0.05 per vCPU for the rest of the tab. `Signal` adds a flushed epoch's code for 30 s after the flush (V8 frees it
+  only when its GC collects the instances). Against smaps every 10 s through Firefox's pages and churn sessions at
+  the default budget it runs **12-19% over the renderer's median** (the wasm memories are 73-76% resident: RAM the
+  guest hasn't touched since a snapshot's restore, and heap reserved but unwritten: the 4-vCPU page's heap mark
+  reaches ~510 MiB) and **under its spikes**: a flush's garbage took one 10 s sample of the churn to 8.6 GB against
+  a 6.8 GB estimate. Guest RAM touched isn't counted (the core would have to mark pages at
+  every TLB fill and device write): over a session a guest's page cache fills its RAM anyway. The virgl resources
+  aren't in the renderer: their textures are the GPU process's, their backing is guest RAM, and the GPU worker's
+  shared transfer buffers were 37-45 MB.
+- **Where it goes:** the machine worker reads it each second into the status (`Status.memory`, `Vm.hostUse`). Past
+  what `navigator.deviceMemory` reports (at most 8 in Chromium), it caps the JIT cache at what it holds then (the
+  gauge's limit word, `G_LIMIT`: the cache flushes there and refills to it, never under 16 MiB). The page keeps a mark
+  per running machine in `localStorage` (`webpc.alive.<machine id>`: name, RAM, vCPUs, JIT budget, the estimate and
+  its peak), renewed every 10 s and cleared at every clean stop (power off, restart, the guest's shutdown, a crash
+  the page saw, the tab's `pagehide`). A mark no tab renewed for 30 s means the tab went away with the machine running,
+  most likely killed for memory (Chromium gives a page no out-of-memory error): the next start says so and offers a
+  160 MiB (or 64 MiB) JIT cache, half the RAM, or to start as it is ([frontend.md](frontend.md) "Too little memory").
 
 ## Invalidation and the stale-code checker
 

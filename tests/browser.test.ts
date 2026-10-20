@@ -40,7 +40,7 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 44, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 45, counter: 2 });
 });
 
 test('three core instances run guests concurrently on one memory in workers (M7)', async () => {
@@ -585,6 +585,23 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   assert.deepEqual(r.actions, ['Start anyway']);
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
+  // Running, it keeps a mark of itself and what it costs (web/app/memory.ts); a clean stop clears it.
+  const mark = () => page.evaluate(() => JSON.parse(localStorage.getItem('webpc.alive.transient-buildroot') ?? 'null'));
+  await page.waitForFunction(() => !!localStorage.getItem('webpc.alive.transient-buildroot'), null, { timeout: 30_000 });
+  const m = await mark();
+  assert.equal(m.ramMiB, 256);
+  assert.ok(m.gib > 1 && m.gib < 3, `the estimate ${m.gib} GiB`);
+  await page.close();
+  // A machine whose tab went away while it ran (a mark no tab renews): the page says so and offers less first.
+  page = await open((p) => p.addInitScript(() => localStorage.setItem('webpc.alive.transient-buildroot', JSON.stringify({ name: 'Buildroot', ramMiB: 1024, ncpus: 1, jitMiB: 320, gib: 2.9, peakGiB: 3.1, t: Date.now() - 600_000 }))));
+  r = await settled(page);
+  assert.equal(r.state, 'idle');
+  assert.match(r.text!, /Buildroot was running when its tab closed without stopping it .*about 2\.9 GiB \(3\.1 at most\), with 1024 MiB of guest RAM and a 320 MiB JIT cache/s);
+  assert.deepEqual(r.actions, ['Start with a 160 MiB JIT cache', 'Start with 512 MiB of RAM', 'Start as it is']);
+  await page.locator('#message-actions button', { hasText: '160 MiB' }).click();
+  assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').jitMiB), 160);
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('webpc.settings') ?? '{}'); delete s.jitMiB; localStorage.setItem('webpc.settings', JSON.stringify(s)); });
   await page.close();
   // A saved disk written over another image: the way out is a reset.
   const prep = await ctx.newPage();

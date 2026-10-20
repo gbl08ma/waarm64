@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 44;
+export const ABI = 45;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -48,6 +48,8 @@ type Exports = {
   panic_message(): number;
   thread_alloc(size: number, align: number): number;
   heap_reserve(pages: number): number;
+  heap_stats(out: number): void;
+  vm_jit_gauge(vm: number): number;
   vm_snapshot_size(vm: number): bigint;
   vm_snapshot_save(vm: number, ptr: number, len: number): bigint;
   vm_snapshot_restore(vm: number, ptr: number, len: number): number;
@@ -142,7 +144,7 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * RAM puts the core's later allocations there, M8 loop 0).
  */
 /** The core's exports that return an address (every `-> *` export: tests/core-wasm.test.ts checks), past 2 GiB in a big memory. */
-export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'jit_helper_report', 'panic_message'];
+export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'vm_jit_gauge', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -579,6 +581,8 @@ export const DISTROS = {
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
 const S_CFG = 0;
 const S_DEVICES = 512;
+/** `heap_stats`'s two words (ABI 45). */
+const S_HEAP = 384;
 const S_BELL = 2048;
 /** Parallel mode: the coordinator's word (vCPU workers bump it on TX_FULL). */
 const S_CTL = 2056;
@@ -785,6 +789,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** The buffer `snapshot` has the core write its state to (never freed: kept for the next one). */
   let stateBuf = { at: 0, len: 0 };
   const blocks = Array.from({ length: ncpus }, (_, i) => ex.vm_counters(vm, i));
+  // The JIT cache's gauge (ABI 45), asked for before any vCPU runs.
+  const gauge = ex.vm_jit_gauge(vm);
   const counters = blocks[0];
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
@@ -873,6 +879,19 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * files, and how far into the reserve the last one is (the allocator carves it from its start, and freed memory
      * keeps its bytes, so that is the heap's high-water mark). Scans the memory: tenths of a second for a 1 GiB reserve.
      */
+    /**
+     * What the machine holds that its host pays for, cheaply (docs/jit.md "The page's memory signal"): the guest's RAM
+     * (memory 0's and the spill memories'), the core's heap (`heap_stats`: live bytes and their high-water mark), and
+     * the JIT's cache (`vm_jit_gauge`: the wasm bytes and modules since the last flush, the budget, the epochs).
+     */
+    hostUse: () => {
+      const h = new BigUint64Array(memory.buffer, scratch + S_HEAP, 2);
+      ex.heap_stats(scratch + S_HEAP);
+      const g = (i: number) => (gauge ? Number(Atomics.load(new BigUint64Array(memory.buffer, gauge, 5), i)) : 0);
+      return { ramBytes: o.ramSize + spillSizes.reduce((a, b) => a + b, 0), heapLive: Number(h[0]), heapPeak: Number(h[1]), jitLiveBytes: g(0), jitModules: g(1), jitBudget: g(2), jitEpochs: g(3), jitLimit: g(4) };
+    },
+    /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */
+    setJitLimit: (bytes: number) => { if (gauge) Atomics.store(new BigUint64Array(memory.buffer, gauge, 5), 4, BigInt(Math.max(0, Math.round(bytes)))); },
     heapUse: () => {
       const w = new Uint32Array(memory.buffer);
       const nonzero = (page: number) => { for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true; return false; };

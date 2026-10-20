@@ -21,6 +21,7 @@ import { PageAudio } from '../audio.ts';
 import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
+import { ALIVE_EVERY_MS, clearAlive, lastCrash, markAlive, Signal } from './memory.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, JIT_DEFAULT_MIB, MACHINES, RAM_CHOICES, ramSplitError, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
@@ -249,7 +250,7 @@ let ramSplit = splitParam && !ramSplitError(splitParam) ? splitParam : params.ha
 if (ramSplit) ramMiB = ramSplit.reduce((a, b) => a + b, 0);
 /** The JIT's code cache budget, MiB (`BootOptions.jitBytes`; docs/jit.md "Memory"): `?jitmb=`, else a stored machine's own; 0: the default. */
 const jitParam = () => Math.max(0, Math.round(Number(new URLSearchParams(location.search).get('jitmb')) || 0));
-let jitMiB = jitParam() || stored?.record.jitMiB || 0;
+let jitMiB = jitParam() || (stored ? stored.record.jitMiB : settings().jitMiB) || 0;
 /** The budget the machine runs with, MiB. */
 const jitBudget = () => jitMiB || JIT_DEFAULT_MIB;
 
@@ -581,6 +582,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       // Its devices go on once the machine runs: at a boot, a resume and a restore alike (a snapshot's ports are empty).
       if ((m.state === 'booting' || m.state === 'running') && r.usb && !r.usbStarted) { r.usbStarted = true; void attachAtStart(r); }
       if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended' || m.state === 'failed') {
+        clearAlive(aliveKey());
         r.usb?.close();
         dropLock();
         void refreshRecords();
@@ -598,6 +600,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       void syncKeyboard(r);
     } else if (m.type === 'status') {
       showStatus(m.status);
+      alive(m.status);
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
     } else if (m.type === 'profile') {
       (window as unknown as { __profile?: [string, number][] }).__profile = m.samples;
@@ -712,6 +715,7 @@ async function stop() {
   const r = run;
   run = undefined;
   if (!r) return;
+  clearAlive(aliveKey());
   r.input.detach();
   audio.detach();
   r.usb?.close();
@@ -1483,6 +1487,46 @@ function syncMachineMenu() {
   ui.size.gpuLock = !webgl2 ? 'This browser has no WebGL2: 2D only' : gpuAsked ? `Set by the page's address (?gpu=${params.get('gpu')})` : '';
 }
 syncMachineMenu();
+// The memory signal (web/app/memory.ts, docs/frontend.md "Memory"): while the machine runs, a mark in localStorage
+// with what it costs, renewed every 10 s and cleared at a clean stop; a mark left over means its tab went away with
+// it running (most likely killed for memory), and the next start offers a smaller JIT cache or less RAM first.
+const aliveKey = () => (stored ? stored.record.id : `transient-${machine}`);
+let aliveAt = 0, signal = new Signal(), signalRun: Run | undefined;
+function alive(st: Status) {
+  const now = Date.now();
+  if (signalRun !== run) [signal, signalRun] = [new Signal(), run];
+  const est = signal.update(st.memory, st.ncpus);
+  if (now - aliveAt < ALIVE_EVERY_MS) return;
+  aliveAt = now;
+  markAlive(aliveKey(), { name: machineTitle(), ramMiB, ncpus, jitMiB: Math.round(st.memory.jitBudget / 2 ** 20), gib: +(est / 2 ** 30).toFixed(2), peakGiB: +(signal.peak / 2 ** 30).toFixed(2), t: now });
+}
+addEventListener('pagehide', () => { if (run) clearAlive(aliveKey()); });
+/** A mark left by a tab that went away with this machine running: says so and offers what may fit (true: not started). */
+function crashedBefore() {
+  const a = lastCrash(aliveKey());
+  if (!a) return false;
+  const use = async (o: { jitMiB?: number; ramMiB?: number }) => {
+    clearAlive(aliveKey());
+    if (stored) {
+      const m = { ...stored.record, ...(o.jitMiB ? { jitMiB: o.jitMiB } : {}), ...(o.ramMiB ? { ramMiB: o.ramMiB, ramSplit: undefined } : {}) };
+      if (o.ramMiB && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('Less RAM orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Use less RAM' }))) return void crashedBefore();
+      stored.record = await updateMachine(store, m);
+    } else remember(o);
+    if (o.jitMiB) jitMiB = o.jitMiB;
+    if (o.ramMiB) [ramMiB, ramSplit] = [o.ramMiB, undefined];
+    syncMachineMenu();
+    void restart();
+  };
+  const jitNow = a.jitMiB || jitBudget();
+  const ramLess = [...RAM_CHOICES].reverse().find((r) => r <= a.ramMiB / 2) ?? RAM_CHOICES[0];
+  const actions: Action[] = [
+    ...(jitNow > 160 ? [{ label: 'Start with a 160 MiB JIT cache', run: () => void use({ jitMiB: 160 }) }] : jitNow > 64 ? [{ label: 'Start with a 64 MiB JIT cache', run: () => void use({ jitMiB: 64 }) }] : []),
+    ...(ramLess < a.ramMiB ? [{ label: `Start with ${ramLess} MiB of RAM`, run: () => void use({ ramMiB: ramLess }) }] : []),
+    { label: 'Start as it is', run: () => { clearAlive(aliveKey()); void restart(); } },
+  ];
+  setState('idle', `${a.name} was running when its tab closed without stopping it (${new Date(a.t).toLocaleString()}), most likely because the browser ran out of memory: by the emulator's own accounting it was using about ${a.gib} GiB (${a.peakGiB} at most), with ${a.ramMiB} MiB of guest RAM and a ${a.jitMiB} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled (the browser spends about six times the cache's size on it when it is full); less RAM leaves the guest less room.`, actions, 'warn');
+  return true;
+}
 /** The warning for a size this device may not have the memory for. */
 function memoryWarning(r: number, n: number, j = jitBudget()) {
   const need = hostMemoryGiB(r, n, j);
@@ -1918,6 +1962,7 @@ function boot() {
   }
   if (storedError) return setState('failed', `This machine can't be opened: ${storedError}.`);
   if (needsDisk()) return waitForDisk();
+  if (crashedBefore()) return;
   // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
   const need = hostMemoryGiB(ramMiB + ramdiskMiB(), ncpus, jitBudget());
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;

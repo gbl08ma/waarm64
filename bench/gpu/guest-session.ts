@@ -12,6 +12,7 @@ import { SYSCALLS } from './arm64-syscalls.ts';
 import type { Timeline } from '../../web/profiler.ts';
 import { answerAsks } from '../../tests/page-ask.ts';
 import { loadSnapshotFile, routeCore, sessionTag } from '../snapshot-start.ts';
+import { rendererPid, smapsClasses, uasm } from '../mem/probe.ts';
 
 const SETTINGS_KEY = 'webpc.settings';
 /** The guest's desktop user: images/arch/desktop.sh's `arch` (password the same); `alarm` for an Arch Linux ARM disk. */
@@ -165,6 +166,22 @@ export async function openSession(o: SessionOptions) {
       if (st) appendFileSync(`${o.out}/jit.jsonl`, JSON.stringify({ t: Date.now(), steps: st.steps, jit: st.jit }) + '\n');
     } catch {}
   }, 1000) : undefined;
+
+  // MEMLOG=<s>: every that many seconds, the renderer's smaps by class, `measureUserAgentSpecificMemory` by realm and
+  // type (bench/mem/probe.ts; CHROMIUM_ARGS=--enable-blink-features=ForceEagerMeasureMemory makes it answer at once) and
+  // the page's own accounting (`__status.memory`) into <out>/mem.jsonl.
+  let memBusy = false;
+  const memLog = process.env.MEMLOG ? setInterval(async () => {
+    if (memBusy) return;
+    memBusy = true;
+    try {
+      const st = await page.evaluate(() => (window as unknown as { __status?: { memory: unknown; stats: { jit: unknown } } }).__status);
+      const pid = rendererPid();
+      const smaps = pid ? smapsClasses(pid) : undefined;
+      const u = process.env.MEMLOG_UASM === '0' ? undefined : await uasm(page).catch((e) => String(e).slice(0, 200));
+      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit }) + '\n');
+    } catch {} finally { memBusy = false; }
+  }, Number(process.env.MEMLOG) * 1000) : undefined;
 
   const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
   const shows = (re: RegExp, ms = 60_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 200 })
@@ -396,7 +413,7 @@ EOF`);
     return Object.fromEntries(names.map((g, i) => [g, { samples: sums[i], pct: +((100 * sums[i]) / total).toFixed(2), ranges: ranges.filter((r) => r.g === i).length }]));
   };
 
-  const close = async () => { clearInterval(jitLog); await browser.close(); server.close(); };
+  const close = async () => { clearInterval(jitLog); clearInterval(memLog); await browser.close(); server.close(); };
   return { page, browser, url, gl, restored, coreSha: coreServed?.sha, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
 }
 

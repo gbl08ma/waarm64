@@ -1,6 +1,7 @@
 #!/bin/bash
 # Firefox sessions alternating core builds (docs/benchmarking.md "Starting from a snapshot"; dev-only):
-#   bench/gpu/ab.sh <outdir> <rounds> <arm>=<core.wasm>...
+#   bench/gpu/ab.sh <outdir> <rounds> <arm>=<core.wasm>[?<query>]...
+# (a `?<query>` after an arm's core adds to the page's query for that arm: e.g. `b160=core.wasm?jitmb=160`).
 # Per round, each arm in turn: bench/gpu/firefox-load.ts virgl on Arch Linux ARM's desktop disk with CORE=<core.wasm>
 # (served as the page's core: target/ is never written), PHASES=pages by default, TIMELINE_ALL=1 and JITLOG=1, the
 # renderer's RSS beside it (bench/boot/results/m8-replay/r2/rss.sh). FROM=<file.webpcsnap> starts every session from
@@ -18,14 +19,15 @@ out=$1 rounds=$2; shift 2
 cap() { systemd-run --user --scope -q -p MemoryMax="$1" -p MemorySwapMax=0 -- timeout "$2" "${@:3}"; }
 for r in $(seq 1 "$rounds"); do
   for arm in "$@"; do
-    name=${arm%%=*} core=${arm#*=}
+    name=${arm%%=*} core=${arm#*=} aq=
+    case $core in *\?*) aq=${core#*\?} core=${core%%\?*} ;; esac
     [ -f "$core" ] || { echo "no core $core"; exit 1; }
     o=$out/$name-$r
     rm -rf "$o"; mkdir -p "$o"
     bash bench/boot/results/m8-replay/r2/rss.sh "$o/rss.txt" "${SESSION_S:-900}" &
     rp=$!
     t0=$(date +%s.%N)
-    CORE=$core PHASES=${PHASES:-pages} TIMELINE_ALL=${TIMELINE_ALL-1} JITLOG=1 WEBPC_GUEST_USER=${WEBPC_GUEST_USER:-alarm} \
+    CORE=$core QUERY=${QUERY:-}${QUERY:+${aq:+&}}$aq PHASES=${PHASES:-pages} TIMELINE_ALL=${TIMELINE_ALL-1} JITLOG=1 WEBPC_GUEST_USER=${WEBPC_GUEST_USER:-alarm} \
       cap 10G "${SESSION_S:-900}" node bench/gpu/firefox-load.ts virgl "${IMAGE:-target/archarm/desktop.qcow2}" "$o" > "$o/log.txt" 2>&1
     code=$?
     t1=$(date +%s.%N)

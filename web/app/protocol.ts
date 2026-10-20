@@ -230,4 +230,6 @@ export type Status = {
   vcpus: VcpuLiveness[];
   /** Every counter, summed over the vCPUs (`Vm.stats`): for harnesses that diff them across a run (bench/apps). */
   stats: ReturnType<Vm['stats']>;
+  /** What the machine holds that the host pays for (`Vm.hostUse`: RAM, the core's heap, the JIT's cache), for the page's memory signal (web/app/memory.ts). */
+  memory: ReturnType<Vm['hostUse']>;
 };
