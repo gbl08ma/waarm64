@@ -207,12 +207,16 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   `systemd-run --user --scope -p MemoryMax=10G -p MemorySwapMax=0`, nothing else Chromium-heavy beside it, and no
   outer timeout shorter than the session around an A/B loop (it kills the loop and leaves the session running).
   Busy MIPS from `bench/gpu/stalls.ts <outdir>/pages-all.timeline.json`; `results.json`'s `jit` has the wasm bytes,
-  modules, flushes and replays; each page's `fpsAll` (every second's frames and longest gap since its start, from
-  `readyAt` on the host's clock) lines up with the timeline, whose rows also carry each vCPU's `jitSteps`, `flushes`
-  and `replayed`; `bench/boot/results/m8-replay/flushes.ts` reads both per flush. A/B two sessions each at least,
-  alternating: by `QUERY` for a mode the page takes (`jit=replay`, `jit=nocw`), or by swapping core builds
+  modules and flushes; each page's `fpsAll` (every second's frames and longest gap since its start, from
+  `readyAt` on the host's clock) lines up with the timeline, whose rows also carry each vCPU's `jitSteps` and
+  `flushes`; `bench/boot/results/m8-replay/flushes.ts` reads both per flush. `JITLOG=1` logs the JIT's counters once
+  a second (`<outdir>/jit.jsonl`; `bench/boot/results/m8-replay/counts.ts report` per flush: the wasm alive before and
+  after). The renderer's memory: `bench/boot/results/m8-replay/r2/rss.sh <out> [s]` beside the session (the biggest
+  `--type=renderer` process's RSS and its executable anonymous mappings, V8's wasm code, every 5 s). At the 320 MiB
+  budget the session doesn't flush (it did twice at 160). A/B two sessions each at least,
+  alternating: by `QUERY` for a mode the page takes (`jit=nocw`), or by swapping core builds
   (`bench/boot/results/m8-warm/tools/abw.sh`, `cmp` before each run). The gates beside it:
-  `tools/tpw.sh` there (`smp_alpine_jit`, `smp_user_jit_4`, three rounds alternating; `bench/run.ts --query=jit=replay`
+  `tools/tpw.sh` there (`smp_alpine_jit`, `smp_user_jit_4`, three rounds alternating; `bench/run.ts --query=nocw`
   reaches bench/boot's worker). Lessons from those sessions:
   - Browser workloads drift within a session and ~10% between sessions: the baseline in the same session,
     alternating (≥4 pairs for `bench/apps`), reported by pairs. Copying rounds of A/B JSON into one directory: prefix

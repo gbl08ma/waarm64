@@ -1,0 +1,27 @@
+[    0 s] log: bench/results/local/r2/go/carry-2.jsonl
+(node:957031) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[   38 s] logged in
+[   40 s] load started (2 commands); sampling every 5 s for 420 s
+[   70 s] running, 762 MIPS, interp 0.7%, flushes +0 (0), compiling 8 ms/s, 138 MiB compiled, JIT 117162, status age 307 ms, renderer 2892 MiB, vCPU longest 343 ms
+[  100 s] running, 1052 MIPS, interp 0.8%, flushes +0 (0), compiling 7 ms/s, 156 MiB compiled, JIT 129680, status age 707 ms, renderer 3201 MiB, vCPU longest 343 ms
+[  130 s] running, 1356 MIPS, interp 0.2%, flushes +0 (0), compiling 3 ms/s, 162 MiB compiled, JIT 135305, status age 105 ms, renderer 3273 MiB, vCPU longest 343 ms
+[  160 s] running, 1391 MIPS, interp 0.2%, flushes +0 (0), compiling 3 ms/s, 167 MiB compiled, JIT 139635, status age 570 ms, renderer 3284 MiB, vCPU longest 343 ms
+[  190 s] running, 1152 MIPS, interp 0.3%, flushes +0 (1), compiling 9 ms/s, 283 MiB compiled, JIT 228985, status age 958 ms, renderer 3059 MiB, vCPU longest 343 ms
+[  220 s] running, 1291 MIPS, interp 0.1%, flushes +0 (1), compiling 2 ms/s, 288 MiB compiled, JIT 234631, status age 329 ms, renderer 3069 MiB, vCPU longest 380 ms
+[  250 s] running, 1316 MIPS, interp 0.2%, flushes +0 (1), compiling 4 ms/s, 291 MiB compiled, JIT 237783, status age 698 ms, renderer 3067 MiB, vCPU longest 380 ms
+[  280 s] running, 1743 MIPS, interp 0.1%, flushes +0 (1), compiling 3 ms/s, 296 MiB compiled, JIT 242462, status age 148 ms, renderer 3128 MiB, vCPU longest 380 ms
+[  310 s] running, 986 MIPS, interp 0.1%, flushes +0 (1), compiling 1 ms/s, 301 MiB compiled, JIT 246535, status age 542 ms, renderer 3172 MiB, vCPU longest 380 ms
+[  340 s] running, 833 MIPS, interp 0.1%, flushes +0 (1), compiling 1 ms/s, 305 MiB compiled, JIT 250483, status age 926 ms, renderer 3174 MiB, vCPU longest 380 ms
+[  370 s] running, 1417 MIPS, interp 0.1%, flushes +0 (1), compiling 1 ms/s, 308 MiB compiled, JIT 252719, status age 329 ms, renderer 3201 MiB, vCPU longest 411 ms
+[  400 s] running, 1167 MIPS, interp 0.1%, flushes +0 (1), compiling 1 ms/s, 308 MiB compiled, JIT 252861, status age 725 ms, renderer 3215 MiB, vCPU longest 411 ms
+[  430 s] running, 1418 MIPS, interp 0.1%, flushes +0 (1), compiling 1 ms/s, 309 MiB compiled, JIT 254310, status age 112 ms, renderer 3239 MiB, vCPU longest 411 ms
+[  460 s] running, 1528 MIPS, interp 0.1%, flushes +0 (1), compiling 2 ms/s, 312 MiB compiled, JIT 256212, status age 503 ms, renderer 3257 MiB, vCPU longest 411 ms
+
+samples 84 over 460 s, final page state running
+MIPS median 1183 (first third 1152, last third 1350); JIT blocks 256212
+renderer memory 3306 to 3257 MiB after warm-up, slope 2248 MiB/h
+longest vm_run_cpu / host handling per vCPU (ms): 0: 411/6  1: 380/0  2: 325/14  3: 322/1
+run loop max 64 ms, status gap max 1493 ms, main-thread lag max 90 ms
+guest console probes: 26/26 answered, slowest 1512 ms
+no findings

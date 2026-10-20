@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports, MAX_MEMORY0_RAM, panicMessage, splitError, splitRam, withPanic } from '../web/vm.ts';
+import { coreImports, MAX_MEMORY0_RAM, panicMessage, POINTERS, splitError, splitRam, withPanic } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 42);
+  assert.equal(ex.abi_version(), 43);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -24,6 +24,16 @@ test('core instantiates on shared imported memory and uses atomics', () => {
 
 // A fixed-size memory (ABI 32, web/vm.ts `bootVm`): the host grows its part, the core's heap takes
 // the rest, and allocations after it never grow the memory (at its maximum, they'd fail).
+test('every export that returns an address is read unsigned', () => {
+  // A heap past 2 GiB (a big guest's RAM grows memory 0 first) gives addresses a signed i32 makes negative: an
+  // export left out of POINTERS once failed the page with a 2.5 GiB guest.
+  const src = ['lib.rs', 'diag.rs'].map((f) => readFileSync(new URL(`../core/src/${f}`, import.meta.url), 'utf8')).join('\n');
+  const pointers = [...src.matchAll(/extern "C" fn (\w+)\([^)]*\)\s*->\s*\*/g)].map((m) => m[1]);
+  assert.ok(pointers.length > 10, 'the exports were found');
+  const missing = pointers.filter((p) => !POINTERS.includes(p));
+  assert.equal(missing.join(' '), '', 'not in web/vm.ts POINTERS');
+});
+
 test('heap_reserve makes the core\'s heap the rest of a fixed-size memory', () => {
   const PAGES = 1024;
   const mem = new WebAssembly.Memory({ initial: 32, maximum: PAGES, shared: true } as WebAssembly.MemoryDescriptor);

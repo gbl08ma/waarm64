@@ -93,9 +93,7 @@ pub struct VmConfig {
     pub fb_height: u64,
     /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10);
     /// 3 JIT-check (`jit::Config::CHECK`) (ABI 24); 4 the JIT's dispatcher
-    /// without compiling, so the block interpreter (`jit::Config::INTERP`, ABI 33);
-    /// 5 the JIT replaying the hot set after a flush (`jit::Config::REPLAY`),
-    /// 6 that in a small cache (`jit::Config::REPLAY_STRESS`) (ABI 41).
+    /// without compiling, so the block interpreter (`jit::Config::INTERP`, ABI 33).
     pub jit: u64,
     /// Optional CPU features (`cpu::FEATURE_*`; ABI 19); 0, the default, is none.
     pub features: u64,
@@ -304,12 +302,6 @@ pub struct Counters {
     /// the host didn't have the worker's compiled module yet, and the runs
     /// that ended early for it to arrive.
     pub cw: [AtomicU64; 4],
-    /// Replay (ABI 41, `jit::Stats`): flushes that replayed a hot set, the
-    /// regions compiled again, and those modules' wasm bytes.
-    pub rp: [AtomicU64; 3],
-    /// The carry and the replay's emission (ABI 42, `jit::Stats` from
-    /// `marked` to `wasted`, in order).
-    pub carry: [AtomicU64; 13],
 }
 
 /// Indexes into [`Counters::par`].
@@ -340,8 +332,6 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
-            rp: [const { AtomicU64::new(0) }; 3],
-            carry: [const { AtomicU64::new(0) }; 13],
         }
     }
 }
@@ -556,9 +546,6 @@ pub struct Vm {
     dsb_limit_ns: u64,
     /// The longest pass of a DSB wait that counts as waiting (a test lowers it).
     dsb_pass_max_ns: u64,
-    /// Parallel mode with the JIT's replay: its emitter, for the host's
-    /// compile worker (`vm_jit_emit`).
-    pub emitter: Option<Lock<jit::Emitter>>,
 }
 
 /// The host clock for realtime mode: `performance.now()` through the core's
@@ -707,8 +694,6 @@ impl Vm {
             1 => Some(jit::Config::DEFAULT),
             3 => Some(jit::Config::CHECK),
             4 => Some(jit::Config::INTERP),
-            5 => Some(jit::Config::REPLAY),
-            6 => Some(jit::Config::REPLAY_STRESS),
             _ => Some(jit::Config::STRESS),
         }
         .map(|c| jit::Config {
@@ -749,9 +734,6 @@ impl Vm {
                 vcpus[i].jit.cache = vcpus[0].jit.cache.as_ref().map(|j| Box::new(j.join()));
             }
         }
-        let emitter = (parallel && jit.is_some_and(|c| c.replay))
-            .then(|| vcpus[0].jit.cache.as_ref().map(|j| Lock::new(j.emitter())))
-            .flatten();
         let off = Sched {
             power: Power::Off,
             wait: Wait::No,
@@ -815,7 +797,6 @@ impl Vm {
             last: AtomicU64::new(0),
             dsb_limit_ns: parallel::DSB_LIMIT_NS,
             dsb_pass_max_ns: parallel::DSB_PASS_MAX_NS,
-            emitter,
         }
     }
 
@@ -1459,27 +1440,6 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         c.cw.iter()
             .zip([s.worker_installs, s.overdue, s.parks, s.park_exits])
     {
-        a.store(v, Ordering::Relaxed);
-    }
-    for (a, v) in c.rp.iter().zip([s.replays, s.replayed, s.replayed_bytes]) {
-        a.store(v, Ordering::Relaxed);
-    }
-    let carry = [
-        s.marked,
-        s.kept,
-        s.futile,
-        s.released_modules,
-        s.released_bytes,
-        s.locks,
-        s.replay_locks,
-        s.emits_inline,
-        s.emits_worker,
-        s.discard_epoch,
-        s.discard_page,
-        s.discard_import,
-        s.wasted,
-    ];
-    for (a, v) in c.carry.iter().zip(carry) {
         a.store(v, Ordering::Relaxed);
     }
 }

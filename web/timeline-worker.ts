@@ -7,8 +7,8 @@ import { TIMELINE_FIELDS, type Timeline } from './profiler.ts';
 
 type Start = { memory: WebAssembly.Memory; counters: number[]; live?: Float64Array; ctl: SharedArrayBuffer; periodMs: number; maxRows: number };
 const WORDS = [Counter.STEPS, Counter.JIT_COMPILE_NS, Counter.EXCEPTIONS + 0x15, Counter.IRQS, Counter.PAR_OUT_NS, Counter.PAR_DSB_WAIT_NS, Counter.PAR_LOCK_WAIT_NS, Counter.JIT_INVALIDATIONS];
-/** After the liveness fields: TIMELINE_FIELDS' `jitSteps`, `flushes`, `replayed`. */
-const TAIL = [Counter.JIT_STEPS, Counter.JIT_FLUSHES, Counter.JIT_REPLAYED];
+/** After the liveness fields: TIMELINE_FIELDS' `jitSteps`, `flushes`. */
+const TAIL = [Counter.JIT_STEPS, Counter.JIT_FLUSHES];
 
 self.onmessage = (e: MessageEvent<Start>) => {
   const { memory, counters, live, ctl, periodMs, maxRows } = e.data;

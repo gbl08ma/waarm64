@@ -7,6 +7,7 @@
 // The budget is the core's: build it cut (e.g. `MAX_BYTES` 24 MiB, a local edit) for flushes to happen.
 //   node bench/boot/results/m8-replay/counts.ts run <out.json> [query] [repo dir: whose page]   (one session)
 //   node bench/boot/results/m8-replay/counts.ts report [--json] <out.json[.gz]>...             (the analysis)
+//   (or a Firefox session's <outdir>/jit.jsonl[.gz]: bench/gpu/guest-session.ts with JITLOG=1)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
@@ -133,7 +134,11 @@ if (mode === 'run') {
   const out: Record<string, unknown> = {};
   for (const f of rest.filter((a) => a !== '--json')) {
     const raw = readFileSync(f);
-    const r = report(JSON.parse((f.endsWith('.gz') ? gunzipSync(raw) : raw).toString('utf8')) as Session);
+    const text = (f.endsWith('.gz') ? gunzipSync(raw) : raw).toString('utf8');
+    // A Firefox session's counters (guest-session.ts's JITLOG=1: <outdir>/jit.jsonl, epoch ms) as a session.
+    const lines = /\.jsonl(\.gz)?$/.test(f) ? text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as Sample) : undefined;
+    const session = lines ? { query: '', core: '', phases: {}, samples: lines.map((x) => ({ ...x, t: x.t - lines[0].t })) } : (JSON.parse(text) as Session);
+    const r = report(session);
     out[f] = r;
     if (!json) {
       console.log(`${f} (${r.query || 'default'}): ${JSON.stringify(r.totals)}`);

@@ -1,0 +1,158 @@
+{
+ "bench/results/local/r2/p-carryv-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 131.23,
+   "flushes": 3,
+   "replays": 2,
+   "futile": 1,
+   "modules": 16832,
+   "mib": 624.2,
+   "alive": {
+    "modules": 3550,
+    "mib": 138.5
+   },
+   "replayed": 120107,
+   "overdue": 91,
+   "parks": 56607,
+   "locks": 198045974,
+   "replayLocks": 1887,
+   "emitsInline": 1887,
+   "emitsWorker": 0,
+   "interpGsteps": 3.39,
+   "share": 0.974,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 90,
+    "atGsteps": 43.07,
+    "kind": "carry",
+    "marked": 61584,
+    "kept": 75848,
+    "replayed": 60228,
+    "replayedMiB": 81.5,
+    "emits": {
+     "inline": 951,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 632
+    },
+    "replayLocks": 951,
+    "before": {
+     "modules": 4468,
+     "mib": 159.5
+    },
+    "after": {
+     "modules": 1118,
+     "mib": 94.4
+    },
+    "modulesEmitted": 4040,
+    "mibEmitted": 160,
+    "shareBefore": 0.939,
+    "shareAfter": [
+     0.983,
+     0.95,
+     0.922,
+     0.96,
+     0.963,
+     0.957,
+     0.934,
+     0.925,
+     0.938,
+     0.95
+    ],
+    "stepsToNextG": 23.94
+   },
+   {
+    "atS": 189,
+    "atGsteps": 67.01,
+    "kind": "futile",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "before": {
+     "modules": 4022,
+     "mib": 159.2
+    },
+    "after": {
+     "modules": 19,
+     "mib": 3.4
+    },
+    "modulesEmitted": 4577,
+    "mibEmitted": 160.7,
+    "shareBefore": 0.956,
+    "shareAfter": [
+     0.913,
+     0.979,
+     0.919,
+     0.925,
+     0.944,
+     0.946,
+     0.942,
+     0.951,
+     0.952,
+     0.971
+    ],
+    "stepsToNextG": 39.37
+   },
+   {
+    "atS": 353,
+    "atGsteps": 106.39,
+    "kind": "carry",
+    "marked": 77604,
+    "kept": 96212,
+    "replayed": 59879,
+    "replayedMiB": 81.5,
+    "emits": {
+     "inline": 936,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 936,
+    "before": {
+     "modules": 4542,
+     "mib": 159.8
+    },
+    "after": {
+     "modules": 1025,
+     "mib": 84.6
+    },
+    "modulesEmitted": 3558,
+    "mibEmitted": 138.7,
+    "shareBefore": 0.98,
+    "shareAfter": [
+     0.985,
+     0.991,
+     0.991,
+     0.97,
+     0.934,
+     0.952,
+     0.961,
+     0.955,
+     0.964,
+     0.966
+    ]
+   }
+  ]
+ }
+}

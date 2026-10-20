@@ -1,0 +1,41 @@
+{
+ "bench/results/local/r2/p-b240-2": {
+  "seconds": 402,
+  "flushes": [
+   {
+    "atS": 179,
+    "n": 1,
+    "baseShare": 0.998,
+    "baseMips": 77,
+    "slowS": 0,
+    "slow2S": 0,
+    "minShare": 0.997,
+    "mipsSlow": 526,
+    "excessInterpM": 396,
+    "interp10M": 67,
+    "interp60M": 425,
+    "mips10": 249,
+    "replayed60s": 98824,
+    "frames": []
+   }
+  ],
+  "jit": {
+   "flushes": 1,
+   "modules": 10872,
+   "bytes": 499094440,
+   "replays": 1,
+   "replayed": 98824,
+   "replayedBytes": 129400381,
+   "overdue": 0,
+   "workerInstalls": 42989,
+   "futile": 0,
+   "marked": 122963,
+   "kept": 144816,
+   "aliveModules": 4295,
+   "emitsInline": 0,
+   "emitsWorker": 194,
+   "discards": 0,
+   "wasted": 342
+  }
+ }
+}

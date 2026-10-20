@@ -1,0 +1,28 @@
+{
+ "bench/results/local/r2/p-b320-2/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 126.39,
+   "flushes": 0,
+   "replays": 0,
+   "futile": 0,
+   "modules": 8177,
+   "mib": 311,
+   "alive": {
+    "modules": 7989,
+    "mib": 305.6
+   },
+   "replayed": 0,
+   "overdue": 0,
+   "parks": 27216,
+   "locks": 119973993,
+   "replayLocks": 1,
+   "emitsInline": 0,
+   "emitsWorker": 0,
+   "interpGsteps": 1.54,
+   "share": 0.988,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

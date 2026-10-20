@@ -1,7 +1,7 @@
 # Budget flushes: replay, then carrying the hot set (2026-10-19)
 
-The data behind `bench/boot/REPORT.md` "M8: carrying the hot set across a flush" and docs/jit.md "Replay after a
-flush". The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk (`target/archarm/desktop.qcow2`,
+The data behind `bench/boot/REPORT.md` "M8: carrying the hot set across a flush" and docs/jit.md "Tried and not
+kept". The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk (`target/archarm/desktop.qcow2`,
 `WEBPC_GUEST_USER=alarm`), 4 vCPUs. The builds: the replay as the cloud built it (`unpaced`), paced (`replay-*`,
 `s2`/`s3` `jit_replay`), the floor not doubled at a flush (`nodouble-*`), and the carry (`replay-c*`, `s4`/`s5`
 `jit_replay`); `base-*` the default of the same build, by `?jit=replay` or not (`nodouble` by core swap).
@@ -26,5 +26,24 @@ flush". The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk (`targ
   `carry` (that round, the compile worker emitting) and `carry-vcpu` (`?emitter=0`). `<name>.json.gz`: the page's
   counters once a second; `report.json`: `counts.ts report --json` of them (docs/jit.md "Counted in the cloud").
 - `counts.ts`: that session and its per-flush report (usage in its header).
-- `flushes.ts`, `steady.ts`: the analyses (usage in their headers); `diag.patch`: the diagnostic build, against the
-  commit that adds this directory (apply, `scripts/build-wasm.sh`, measure, then restore the source and rebuild).
+- `flushes.ts`, `steady.ts`: the analyses (usage in their headers); `diag.patch`: the diagnostic build (apply,
+  `scripts/build-wasm.sh`, measure, then restore the source and rebuild), now against commit 57a42a7 (the carry's
+  last; marks exist only during a probe, so it starts one 5 s before each forced flush, and its `E` lines add, at the
+  last carry, the regions marked, their bytes, the slots kept and the bytes alive). Its first version, against the
+  commit that added this directory, is in git history.
+- `r2/` (2026-10-20, `bench/boot/REPORT.md` "M8: the carry timed, and a larger code cache"): the second round timed
+  on the dev VM and the budgets, each session with `JITLOG=1` (bench/gpu/guest-session.ts: the counters once a
+  second, `<name>.jit.jsonl.gz`, which `counts.ts report` reads) and `r2/rss.sh` beside it (`<name>.rss.txt`: the
+  biggest renderer's RSS and executable anonymous mappings, MiB, every 5 s).
+  - `steady/`: the WebGL page with `diag.patch` as above: `base-*` the default, `carry-*` `?jit=replay`, `carryv-1`
+    `?jit=replay&emitter=0`; `results.json`, `summary.json` (`steady.ts --summary`), the `E` lines (`evict.txt.gz`).
+  - `pages/`: the pages session. Round 1 (the carry's core, ABI 42): `base-1`, `-2` the default, `carry-*`
+    `?jit=replay`, `carryv-1` with `&emitter=0`, `b240-*`, `b320-*` the same core built with `MAX_BYTES` 240 and 320
+    MiB, with `?jit=replay`. Round 2: `base-3`, `carry-3`, `rmax2-1` (`REPLAY_MAX` 2), `rm128-1` (`REPLAY_MODULE`
+    128). Final: the landed core (ABI 43, no carry), `final320-*` as committed, `final160-*` the same with
+    `MAX_BYTES` 160 MiB, by core swap (their timelines have no `flushes` field, so no `flushes.json`).
+    `results.json`, `stalls.json`, `flushes.json`, `counts.json` (`counts.ts report --json` of the counters).
+  - `go/`: the `go build` loop (`r1-*`: `base`, `carry`, `b320` as in round 1; `final-*`: `f160`, `f320`), the
+    stress tool's logs and samples.
+  - `gates/`: the gates, three rounds alternating (`r1-*`: `base`, `carry`, `b320`; `final-*`: `f160`, `f320`);
+    `summary.txt` the medians by round.

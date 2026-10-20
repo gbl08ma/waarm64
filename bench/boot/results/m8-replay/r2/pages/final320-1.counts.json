@@ -1,0 +1,17 @@
+{
+ "bench/results/local/r2/f-p320-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 125.92,
+   "flushes": 0,
+   "modules": 8152,
+   "mib": 313.9,
+   "overdue": 0,
+   "parks": 27210,
+   "interpGsteps": 1.53,
+   "share": 0.988,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

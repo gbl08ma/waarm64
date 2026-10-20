@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 42;
+export const ABI = 43;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -79,7 +79,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
   const jit = jitHost(memory, compile);
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_release: jit.release, jit_compile: jit.compile }, ram: spillImports(spill), jit };
+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
 }
 
 /**
@@ -141,7 +141,8 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * but JS sees an i32, negative past 2 GiB of memory (a guest with 2 GiB of
  * RAM puts the core's later allocations there, M8 loop 0).
  */
-const POINTERS = ['thread_alloc', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'jit_helper_report', 'panic_message'];
+/** The core's exports that return an address (every `-> *` export: tests/core-wasm.test.ts checks), past 2 GiB in a big memory. */
+export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -240,7 +241,7 @@ export const VCPU_YIELD_MS = 100;
 const RECEIVED_KEEP_MS = 30_000;
 const RECEIVED_MAX = 4096;
 
-/** Releases of at least this many slots in all are worth a {@link collect}. */
+/** A flush of at least this many slots is worth a {@link collect}. */
 const NUDGE_SLOTS = 4096;
 /** An install this long is logged (`webpc-slow install`). */
 const SLOW_INSTALL_MS = 20;
@@ -274,8 +275,9 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
   let imports: WebAssembly.Imports = {};
   // The bytes are copied out of the shared memory (V8 compiles only unshared ones) into one buffer, reused.
   let scratch = new ArrayBuffer(0);
-  // Slots released since the last nudge of V8's GC.
-  let released = 0;
+  // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
+  let lastEnd = 0;
+  let hi = 0;
   // The compile worker's compiled modules by number, as they arrive through the event loop (ABI 37): installing one
   // skips V8's decoding and validating the bytes again, which `new WebAssembly.Module` does before it finds them in
   // its cache (four fifths of an install: bench/boot/REPORT.md "M8: the compile worker's modules, posted").
@@ -320,31 +322,29 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
       const n = Object.keys(f).length;
       const at = base + slot;
       const t2 = performance.now();
+      let gc = 0;
+      const restart = slot < lastEnd;
+      // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
+      // the ones this module doesn't overwrite, and V8 can free their instances and code.
+      if (restart) {
+        for (let k = slot + n; k < hi; k++) table.set(base + k, null);
+        // Only for a big cache (JIT-stress flushes every few blocks).
+        if (hi > NUDGE_SLOTS) {
+          gc = performance.now();
+          collect();
+          gc = performance.now() - gc;
+        }
+        hi = 0;
+      }
+      lastEnd = slot + n;
+      hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
       // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
       const ms = performance.now() - t0;
-      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} bytes ${len} functions ${n}`);
+      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
       return at;
-    },
-    /**
-     * `env.jit_release` (ABI 41): the core's blocks at JIT slots `slot..slot + n` are dead (a flush, or a carried
-     * epoch's slots once its hot set is compiled again: docs/jit.md "Replay after a flush"), so the table lets go of
-     * them and V8 can free their instances and code; past a cache's worth of slots in all, V8 is asked to collect.
-     */
-    release(slot: number, n: number) {
-      if (!table) return;
-      const end = Math.min(base + slot + n, table.length);
-      for (let k = base + slot; k < end; k++) table.set(k, null);
-      released += n;
-      if (released > NUDGE_SLOTS) {
-        const t0 = performance.now();
-        collect();
-        const ms = performance.now() - t0;
-        if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow release ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: ${released} slots`);
-        released = 0;
-      }
     },
     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
     compile(ptr: number, len: number, seq: number, epoch: number, ready: number): number {
@@ -385,15 +385,7 @@ export const Counter = {
   JIT_WORKER_INSTALLS: 104, JIT_OVERDUE: 105,
   // ABI 37: times the worker's compiled module hadn't reached the vCPU yet, and runs ended early for it to arrive.
   JIT_PARKS: 106, JIT_PARK_EXITS: 107,
-  // ABI 41: flushes that replayed the hot set, regions compiled again for them, those modules' wasm bytes.
-  JIT_REPLAYS: 108, JIT_REPLAYED: 109, JIT_REPLAYED_BYTES: 110,
-  // ABI 42: at those flushes the regions marked and the slots kept, flushes made plain (the replay filled most of the
-  // epoch), the modules and bytes let go of; the cache's lock taken, and for the replay; the replay's modules emitted
-  // by a vCPU and by the compile worker, discarded at the commit (epoch, page, import), and the slots left empty.
-  JIT_MARKED: 111, JIT_KEPT: 112, JIT_FUTILE: 113, JIT_RELEASED_MODULES: 114, JIT_RELEASED_BYTES: 115,
-  JIT_LOCKS: 116, JIT_REPLAY_LOCKS: 117, JIT_EMITS_INLINE: 118, JIT_EMITS_WORKER: 119,
-  JIT_DISCARD_EPOCH: 120, JIT_DISCARD_PAGE: 121, JIT_DISCARD_IMPORT: 122, JIT_WASTED: 123,
-  LEN: 124,
+  LEN: 108,
 } as const;
 
 /**
@@ -416,8 +408,8 @@ export type BootOptions = {
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
   kernelOffset?: number;
-  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33), 5 the JIT replaying the hot set after a flush, 6 that in a small cache (ABI 41). */
-  jit?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33). */
+  jit?: 0 | 1 | 2 | 3 | 4;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
@@ -442,8 +434,6 @@ export type BootOptions = {
    * On unless false.
    */
   compileWorker?: boolean;
-  /** With the JIT's replay (`jit` 5, 6) and a compile worker, the worker also emits the replay's modules (ABI 42); false: the vCPUs do. */
-  jitEmitter?: boolean;
   /**
    * Parallel mode: each vCPU worker returns to its event loop this often, in ms (web/vcpu-worker.ts `yieldMs`;
    * default {@link VCPU_YIELD_MS}, 0: never).
@@ -792,7 +782,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, jitEmitter: o.jitEmitter !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
+  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -1046,11 +1036,6 @@ function stats(n: (i: number) => number) {
       regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
-      replays: n(Counter.JIT_REPLAYS), replayed: n(Counter.JIT_REPLAYED), replayedBytes: n(Counter.JIT_REPLAYED_BYTES),
-      marked: n(Counter.JIT_MARKED), kept: n(Counter.JIT_KEPT), futile: n(Counter.JIT_FUTILE),
-      releasedModules: n(Counter.JIT_RELEASED_MODULES), releasedBytes: n(Counter.JIT_RELEASED_BYTES),
-      locks: n(Counter.JIT_LOCKS), replayLocks: n(Counter.JIT_REPLAY_LOCKS), emitsInline: n(Counter.JIT_EMITS_INLINE), emitsWorker: n(Counter.JIT_EMITS_WORKER),
-      discardEpoch: n(Counter.JIT_DISCARD_EPOCH), discardPage: n(Counter.JIT_DISCARD_PAGE), discardImport: n(Counter.JIT_DISCARD_IMPORT), wasted: n(Counter.JIT_WASTED),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
@@ -1069,7 +1054,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; jitEmitter: boolean; yieldMs: number }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number }) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -1166,10 +1151,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     if (channels.length) {
       compiler = spawn(new URL('./jit-compile-worker.ts', import.meta.url));
       const ports = channels.map((ch) => ch.port2);
-      // With the JIT's replay it also emits the replay's modules (ABI 42), on a core instance of its own.
-      const emits = c.jitEmitter && (unsigned(c.instance.exports).vm_jit_active as (vm: number) => number)(c.vm) !== 0;
-      const emit = emits ? { module: c.module, block: threadAlloc(c.instance.exports), vm: c.vm, spill: c.spill } : undefined;
-      void compiler.then((h) => h.post({ memory: c.memory, ports, emit } satisfies CompileInit, ports));
+      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
     }
     return Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();

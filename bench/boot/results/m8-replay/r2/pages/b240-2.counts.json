@@ -1,0 +1,72 @@
+{
+ "bench/results/local/r2/p-b240-2/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 130.37,
+   "flushes": 1,
+   "replays": 1,
+   "futile": 0,
+   "modules": 10886,
+   "mib": 476.2,
+   "alive": {
+    "modules": 4309,
+    "mib": 230.5
+   },
+   "replayed": 98824,
+   "overdue": 0,
+   "parks": 35986,
+   "locks": 148925063,
+   "replayLocks": 400,
+   "emitsInline": 0,
+   "emitsWorker": 194,
+   "interpGsteps": 2.2,
+   "share": 0.983,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 214,
+    "atGsteps": 74.29,
+    "kind": "carry",
+    "marked": 122963,
+    "kept": 144816,
+    "replayed": 98824,
+    "replayedMiB": 123.4,
+    "emits": {
+     "inline": 0,
+     "worker": 194
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 342
+    },
+    "replayLocks": 399,
+    "before": {
+     "modules": 6390,
+     "mib": 240.1
+    },
+    "after": {
+     "modules": 284,
+     "mib": 126.4
+    },
+    "modulesEmitted": 4309,
+    "mibEmitted": 230.5,
+    "shareBefore": 0.985,
+    "shareAfter": [
+     0.993,
+     0.993,
+     0.984,
+     0.935,
+     0.963,
+     0.974,
+     0.962,
+     0.959,
+     0.966,
+     0.95
+    ]
+   }
+  ]
+ }
+}

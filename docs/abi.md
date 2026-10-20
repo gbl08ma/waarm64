@@ -1,4 +1,4 @@
-# Host ABI (version 42)
+# Host ABI (version 43)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -13,7 +13,7 @@ Design notes for an ABI change go in this file before the code.
   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
   RAM, which the host places after the heap ([architecture.md](architecture.md)).
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
-  slot) -> i32`, `env.jit_release(slot, n)` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
+  slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
   size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
   module `web/spill.ts` makes over the spill memories (traps with none; [spill-memories.md](spill-memories.md)).
   `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
@@ -63,11 +63,6 @@ Design notes for an ABI change go in this file before the code.
   `vm_set_chunk(vm, steps)` (ABI 34, any thread): the steps between two publications of a vCPU's PC in its counters,
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
   at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
-- `vm_jit_emit(vm) -> u32` (parallel with the JIT's replay, ABI 42): emits the replay's next module on the calling
-  thread, the compile worker's core instance ("Many core instances on one memory"), and hands it to that
-  instance's `env.jit_compile`; the vCPUs leave the replay to it from the first call. 0: nothing to emit now, wait
-  until the u32 at `vm_jit_active(vm)` is 1 (the core notifies it); null there: no emitter (round-robin, or no
-  replay). [jit.md](jit.md) "Replay after a flush".
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
@@ -95,7 +90,7 @@ Design notes for an ABI change go in this file before the code.
 | `ticks_per_insn` | counter ticks per step, 0 → 1 (5) |
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
-| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33), 5 the JIT replaying its hot set after a flush, 6 that in a 16 KiB cache with the checker (41) |
+| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
 | `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35); other bits reserved, and `vm_new` refuses them |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
@@ -158,8 +153,6 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 101–103 | the block interpreter (33, [cpu.md](cpu.md) "The block interpreter"): steps it ran, blocks it decoded, times a table's cache of them started over (full) |
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 | 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
-| 108–110 | replay (41, [jit.md](jit.md) "Replay after a flush"): flushes that kept a hot set to compile again, the regions compiled again, those modules' wasm bytes |
-| 111–123 | the carry and the replay's emission (42): regions marked and slots kept at the carries, flushes the futile guard made classic, modules and wasm bytes let go of (alive: 72 and 73 less these); the cache's lock taken, and for the replay's snapshots and commits; replay modules emitted by a vCPU and by the compile worker; discarded at the commit as the epoch moved, a page was invalidated, an import moved; slots reserved and left empty |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -208,9 +201,8 @@ The translator is in the core ([jit.md](jit.md)); the host only turns bytes into
 puts its functions into the core's table.
 - **Table:** the core's `__indirect_function_table` is exported and growable; Rust function
   pointers are indexes into it. `jit.bind(instance)` records `base` = the table's length then. The
-  core owns **slot** allocation (slot *s* is table index `base + s`), so a flush reuses slots and
-  the table stops growing at the code cache's size (twice it with `Config::replay`, whose epochs alternate
-  between two halves).
+  core owns **slot** allocation (slot *s* is table index `base + s`), so eviction reuses slots and
+  the table stops growing at the code cache's size.
 - **`env.jit_install(ptr, len, slot, seq) -> i32`:** with `seq` 0 the host copies the bytes out of
   shared memory and compiles them **synchronously** (`new WebAssembly.Module` in the vCPU worker);
   with `seq` ≠ 0 (ABI 37) it takes instead the module the compile worker compiled as number `seq`
@@ -230,13 +222,6 @@ puts its functions into the core's table.
   and, when every module up to `seq` is compiled, stores `seq` atomically into the u32 at byte
   address `ready`. A table installs a module (`jit_install`, then a cache hit) only once `ready`
   has reached it, interpreting its blocks until then, or after a second without it.
-- **`env.jit_release(slot, n)`** (ABI 41): slots `slot..slot + n` hold nothing this thread's table may run any
-  more: the host sets them to null, so V8 can free their instances and code, and past 4,096 slots released in all
-  allocates (and drops) a large `ArrayBuffer` to make V8 collect ([jit.md](jit.md) "Memory"). Each table calls it at
-  its dispatcher (never with JIT code of its thread running) for the slots of a flushed epoch, and with
-  `Config::replay` for a carried epoch's once its hot set is compiled again ([jit.md](jit.md) "Replay after a
-  flush"). Before ABI 41 the host guessed a flush from slot numbers starting over, which the two halves of a
-  replaying cache's slots would break.
 - **A JIT module's imports:** `env.memory` (limits 0–65536 pages, or exactly `VmConfig.mem_pages`: ABI 32), `env.table`, any core export by
   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
   module `t`, whose imports are named by table index and resolved with `table.get` (links to
@@ -530,4 +515,5 @@ implemented by this step).
 | 40 | device records name the memory: virtio segments are (offset, length, memory), the xHCI's length word carries it in bits 27:24 |
 | 41 | `VmConfig.jit` 5 and 6: the JIT carrying its hot set across a flush and compiling it again, and that in a small cache (the tests); counters 108–110; `env.jit_release` |
 | 42 | `vm_jit_emit`, `vm_jit_active`: the replay's modules emitted by the compile worker's own core instance; counters 111–123 |
+| 43 | 41 and 42 taken out (the carry wasn't kept: [jit.md](jit.md) "Tried and not kept"): exports, imports, counters and `VmConfig.jit` as in 40 |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

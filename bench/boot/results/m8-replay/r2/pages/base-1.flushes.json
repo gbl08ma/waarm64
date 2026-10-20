@@ -1,0 +1,174 @@
+{
+ "bench/results/local/r2/p-base-1": {
+  "seconds": 425,
+  "flushes": [
+   {
+    "atS": 54,
+    "n": 1,
+    "baseShare": 0.943,
+    "baseMips": 281,
+    "slowS": 2,
+    "slow2S": 3,
+    "minShare": 0.811,
+    "mipsSlow": 88,
+    "excessInterpM": 36,
+    "interp10M": 107,
+    "interp60M": 380,
+    "mips10": 158,
+    "replayed60s": 0,
+    "frames": [
+     [
+      12,
+      2,
+      1552.8
+     ],
+     [
+      13,
+      14,
+      175.9
+     ],
+     [
+      15,
+      41,
+      1693.7
+     ]
+    ]
+   },
+   {
+    "atS": 224,
+    "n": 1,
+    "baseShare": 0.976,
+    "baseMips": 260,
+    "slowS": 8,
+    "slow2S": 18,
+    "minShare": 0.681,
+    "mipsSlow": 111,
+    "excessInterpM": 287,
+    "interp10M": 126,
+    "interp60M": 550,
+    "mips10": 144,
+    "replayed60s": 0,
+    "fps10": {
+     "s": 10,
+     "fps": 17.2,
+     "gaps250": 5
+    },
+    "frames": [
+     [
+      -5,
+      19,
+      528
+     ],
+     [
+      -4,
+      3,
+      607.8
+     ],
+     [
+      -3,
+      14,
+      256
+     ],
+     [
+      -2,
+      17,
+      316.5
+     ],
+     [
+      0,
+      2,
+      1763.3
+     ],
+     [
+      1,
+      2,
+      626.4
+     ],
+     [
+      2,
+      9,
+      318
+     ],
+     [
+      3,
+      28,
+      135
+     ],
+     [
+      4,
+      38,
+      111
+     ],
+     [
+      5,
+      12,
+      718.9
+     ],
+     [
+      6,
+      19,
+      149.6
+     ],
+     [
+      7,
+      20,
+      257
+     ],
+     [
+      8,
+      16,
+      129.4
+     ],
+     [
+      9,
+      26,
+      156
+     ],
+     [
+      10,
+      34,
+      144.6
+     ],
+     [
+      11,
+      30,
+      204.7
+     ],
+     [
+      12,
+      33,
+      145.7
+     ],
+     [
+      13,
+      13,
+      635.6
+     ],
+     [
+      14,
+      36,
+      519.8
+     ]
+    ]
+   }
+  ],
+  "jit": {
+   "flushes": 2,
+   "modules": 14328,
+   "bytes": 509053913,
+   "replays": 0,
+   "replayed": 0,
+   "replayedBytes": 0,
+   "overdue": 0,
+   "workerInstalls": 56806,
+   "futile": 0,
+   "marked": 0,
+   "kept": 0,
+   "aliveModules": 4789,
+   "emitsInline": 0,
+   "emitsWorker": 0,
+   "discards": 0,
+   "wasted": 0
+  }
+ }
+}

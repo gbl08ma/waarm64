@@ -2,7 +2,7 @@
 // bench/gpu/firefox-load.ts share. Headless Chromium, the page with `?displaystats`, a disk opened from a file, root
 // on the serial terminal, keys typed on the screen, and `load()`: a phase measured over N s on both sides (the guest's
 // /proc/stat and per-thread CPU, the display's and the renderer's stats, the emulator's counters).
-import { writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { chromiumEnv } from '../../tools/nosme.ts';
 import { chromium, type Page } from 'playwright-core';
@@ -127,6 +127,14 @@ export async function openSession(o: SessionOptions) {
   if (!byUrl) await page.setInputFiles('#open-disk-input', o.image);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
   log('running');
+  // JITLOG=1: the JIT's counters (`__status.stats.jit`, summed over the vCPUs) once a second, as JSON lines in
+  // <out>/jit.jsonl ({t: epoch ms, steps, jit}): the flushes, the wasm compiled and alive (bench/boot/results/m8-replay/counts.ts reads it).
+  const jitLog = process.env.JITLOG ? setInterval(async () => {
+    try {
+      const st = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number; jit: unknown } } }).__status?.stats);
+      if (st) appendFileSync(`${o.out}/jit.jsonl`, JSON.stringify({ t: Date.now(), steps: st.steps, jit: st.jit }) + '\n');
+    } catch {}
+  }, 1000) : undefined;
 
   const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
   const shows = (re: RegExp, ms = 60_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 200 })
@@ -356,7 +364,7 @@ EOF`);
     return Object.fromEntries(names.map((g, i) => [g, { samples: sums[i], pct: +((100 * sums[i]) / total).toFixed(2), ranges: ranges.filter((r) => r.g === i).length }]));
   };
 
-  const close = async () => { await browser.close(); server.close(); };
+  const close = async () => { clearInterval(jitLog); await browser.close(); server.close(); };
   return { page, browser, url, gl, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
 }
 

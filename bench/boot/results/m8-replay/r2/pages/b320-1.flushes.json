@@ -1,0 +1,24 @@
+{
+ "bench/results/local/r2/p-b320-1": {
+  "seconds": 377,
+  "flushes": [],
+  "jit": {
+   "flushes": 0,
+   "modules": 8071,
+   "bytes": 328681044,
+   "replays": 0,
+   "replayed": 0,
+   "replayedBytes": 0,
+   "overdue": 0,
+   "workerInstalls": 31780,
+   "futile": 0,
+   "marked": 0,
+   "kept": 0,
+   "aliveModules": 7882,
+   "emitsInline": 0,
+   "emitsWorker": 0,
+   "discards": 0,
+   "wasted": 0
+  }
+ }
+}

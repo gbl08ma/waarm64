@@ -2041,3 +2041,83 @@ flush in steady playback, where the user hears the stutter. But in page loads it
 an extra flush, and it costs the userspace benchmark 2%. What would make it the default (docs/backlog.md "Carrying
 the hot set across a flush, by default"): replay only what was marked, emit outside the cache's lock, and mark
 only while a probe runs.
+
+## M8: the carry timed, and a larger code cache (2026-10-20)
+
+The second round of carrying the hot set across a flush (replay only what was marked, mark only during a probe, emit
+outside the cache's lock and in the compile worker; built and counted in a cloud session, docs/jit.md "Tried and not
+kept") timed on the dev VM, and the user's belief tested that Firefox's flushes come from a hot working set larger
+than the cache, which only a larger budget fixes. The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk,
+4 vCPUs, 2.5 GiB; data in `results/m8-replay/r2/` (`results/m8-replay/README.md`). Busy MIPS from `bench/gpu/stalls.ts`; the renderer's RSS
+from `results/m8-replay/r2/rss.sh` beside each session (MiB, median and maximum over the session).
+
+**The carry at a flush in steady WebGL** (`results/m8-replay/diag.patch`, updated: a probe 5 s before each flush
+forced every 30 s; flushes 2-4 of each session, the one during Firefox's start left out):
+
+| per flush | default (3 sessions, 9 flushes) | carry, the worker emitting (2, 6) | carry, the vCPUs emitting (1, 3) |
+|---|---|---|---|
+| slow phase (compiled share back within 2 points) | 3-5 s | 2-3 s | 0-3 s |
+| worst second's frames (from 31-34), median (range) | 8 (6-9) | 10.5 (6-14) | 10 (10-11) |
+| frames a second, mean of the 10 s after | 22.6-25.1 | 24.2-27.2 | 22.8-25.2 |
+
+Better than the default, less than the first carry's (worst second 18): what was marked in the 5 s before the flush
+(22,000-47,000 regions, 22-59 MiB of 41-115 MiB alive) leaves code in use unmarked, interpreted after the release.
+Where the replay is emitted doesn't show.
+
+**Firefox's pages session**, alternating in one session (round 1: the carry's core at ABI 42, `?jit=replay` for
+the carry and the budgets; round 2 the same core with two knobs; then the landed core, ABI 43, by core swap):
+
+| | busy MIPS | flushes | wasm MB | stalls ≥20 / ≥50 ms | wiki, bbc load (s) | RSS median, max (MiB) |
+|---|---|---|---|---|---|---|
+| default 160 MiB (r1) | 113 · 111 | 2 · 2 | 509 · 504 | 2/0 · 3/0 | 30 · 32, 32 · 29 | 4,562 · 4,570, 5,523 · 5,504 |
+| carry 160 MiB (r1) | 107 · 109 | 3 · 3 | 664 · 658 | 23/7 · 18/11 | 30 · 39, 31 · 23 | 4,765 · 4,805, 6,105 · 6,004 |
+| carry, vCPUs emitting (r1) | 108 | 3 | 654 | 27/5 | 32, 25 | 4,666, 5,750 |
+| carry 240 MiB (r1) | 125 · 124 | 1 · 1 | 499 · 499 | 9/2 · 9/4 | 24 · 27, 22 · 27 | 5,169 · 4,873, 6,155 · 5,957 |
+| carry 320 MiB (r1) | 131 · 128 | 0 · 0 | 329 · 326 | 1/1 · 0/0 | 22 · 22, 21 · 23 | 5,803 · 5,488, 6,343 · 6,062 |
+| default 160 MiB (r2) | 113 | 2 | 507 | 4/0 | 28, 30 | 4,809, 5,742 |
+| carry, `REPLAY_MAX` 2 (r2) | 109 | 3 | 662 | 26/6 | 29, 37 | 4,867, 5,982 |
+| carry, `REPLAY_MODULE` 128 (r2) | 109 | 3 | 661 | 23/5 | 30, 25 | 4,487, 5,657 |
+| carry (r2) | 105 | 3 | 651 | 28/6 | 29, 27 | 4,738, 5,958 |
+| **landed, 160 MiB** | 121 · 127 | 2 · 3 | 506 · 525 | 0/0 · 3/0 | 32 · 25, 30 · 25 | 4,856 · 4,709, 5,955 · 5,552 |
+| **landed, 320 MiB** | **144 · 143** | **0 · 0** | 329 · 329 | 1/0 · 0/0 | **19 · 19, 19 · 20** | 5,250 · 5,544, 5,847 · 5,928 |
+
+- **The hot set is about the cache, as the user thought.** At every carried flush the regions marked since the probe
+  (from 7/8 of the budget) were more than half the budget: 62,000-77,000 at 160 MiB and 122,000-123,000 at 240, and
+  the replay hit its cap each time (81 and 123 MiB). So the carry filled half the next epoch with the old hot set,
+  the next flush came after 23 G steps instead of 40, and every second flush was made classic by the guard against
+  carrying a replay-filled epoch: a third flush, 30% more wasm, 2-7% fewer busy MIPS in each of four pairs (the first
+  round's 122 against 126 too), and 5-11 stalls of 50-95 ms (the replay's modules: `overdue` 116-356) against none.
+  A quarter replayed or smaller worker modules (one session each) removed the overdue tables, not the cost.
+- **A larger budget is what helps:** at 320 MiB the session never flushes (~330 MB of wasm: the default at 160
+  compiled ~505 MB, compiling the same pages' code again after each flush), busy MIPS +16% (143-144 against
+  121-127), the heavy pages load in 19 s against 25-32. 240 MiB flushes once.
+- **Memory:** the renderer's median RSS +0.4-0.8 GiB (5,250-5,544 MiB against 4,709-4,856), its maximum about the
+  same (5,847-5,928 against 5,552-5,955: at 160 MiB the peaks are the flushes' garbage); V8's wasm code (the
+  executable mappings) ~1.2 GiB at 320 against ~1.3 at 160, which compiled more. The carry's maximum was 5,750-6,105
+  MiB (two halves alive).
+
+**The gates** (three rounds alternating, medians of each round, ms; `results/m8-replay/r2/gates/summary.txt`):
+
+| | landed, 160 MiB | landed, 320 MiB | |
+|---|---|---|---|
+| `smp_alpine_jit_n1_total` | 9,503 · 9,470 · 9,423 | 9,604 · 9,468 · 9,436 | −0.0% |
+| `smp_alpine_jit_n2_total` | 9,233 · 9,228 · 9,156 | 9,345 · 9,213 · 9,198 | −0.2% |
+| `smp_alpine_jit_n4_total` | 9,314 · 9,318 · 9,260 | 9,419 · 9,309 · 9,285 | −0.1% |
+| `smp_user_jit_n4_total` | 19,023 · 18,673 · 18,461 | 18,725 · 18,657 · 18,425 | −0.1% |
+
+(IQR 2-77, n=5 and 2; the change in the median of the rounds' medians.) In round 1 the carry was even too (+0.1
+to +0.8%; `smp_user_jit_4` 18,787-19,445 against 18,691-19,118: marking only during a probe removed the first
+round's +2%).
+
+**The 4-vCPU `go build` loop** (420 s, two each alternating; MIPS median): round 1, the default 1,069 · 1,104, the
+carry 1,189 · 1,183, the carry's core at 320 MiB 1,212 · 1,181; landed, 160 MiB 1,152 · 1,151, 320 MiB 1,133 ·
+1,174. At 160 MiB it flushes once in its first minutes (that build takes 46-49 s, against 39-41 at 320; the steady
+builds 37-39 s alike); at 320 never. The renderer: 2,501-3,319 MiB at 160, 3,523-3,852 at 320 (the stress tool's first and last
+after its warm-up).
+
+**Decision:** the carry is taken out (ABI 43; docs/jit.md "Tried and not kept"): it costs Firefox's page loads,
+the workload whose flushes it was for, in every pair, and its `go build` gain the larger budget gives too. The budget
+is **320 MiB** (`MAX_BYTES`): the pages session without a flush, +16% busy MIPS and its heavy pages loaded a third
+faster, the gates and the `go build` loop even, for ~0.5 GiB more renderer memory while the cache is full (the
+maximum about the same). More would be past the slots (262,144: ~340 MiB at Firefox's ~1.3 KB a region) and past
+what the pages session uses.

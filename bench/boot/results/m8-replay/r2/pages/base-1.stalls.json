@@ -1,0 +1,26 @@
+{
+ "bench/results/local/r2/p-base-1/pages-all.timeline.json": {
+  "seconds": 425,
+  "mips": 241,
+  "busyMips": 113,
+  "busyShare": 0.53,
+  "stallsAtLeastMs": {
+   "20": 2,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 22,
+  "stalledMsPerSecondPerVcpu": 0.02,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

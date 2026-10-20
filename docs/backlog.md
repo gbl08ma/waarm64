@@ -76,13 +76,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each, 82% of them
   tier-ups (a hot loop head's region in a module of its own, with whatever batch is pending). Since the posted modules
   (`bench/boot/REPORT.md` "M8: the compile worker's modules, posted") a module costs a vCPU ~0.06 ms to install, so
-  the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS (the pages
-  session records none yet: sample the renderer's `VmRSS`, the Chromium process with `--type=renderer`, through the
-  session, next to `jit.modules`) and those stops,
+  the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS (the renderer's
+  `VmRSS` beside the session: `bench/boot/results/m8-replay/r2/rss.sh`; at the 320 MiB budget 5,250-5,544 MiB
+  median, ~8,150 modules) and those stops,
   then try tier-ups that wait a little for company (the head runs alone meanwhile); Alpine paid +20% for 16M-step
-  batches. The carried hot set's replay (docs/jit.md "Replay after a flush", `?jit=replay`) knows a whole hot set
-  at once and compiles loop regions whole with no tier-up module: a natural place for large modules grouped by their
-  links, once it emits outside the cache's lock (it uses 64 regions a module now; 512 at once held the lock ~1.2 s).
+  batches.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
@@ -106,23 +104,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the FP checks (below), and sway
   itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
   virgl (plans/graphics.md §1); llvmpipe stays what guests without 3D fall back to.
-- **Carrying the hot set across a flush, by default** ([jit.md](jit.md) "Replay after a flush": built 2026-10-19,
-  `?jit=replay`, off by default; per-module eviction is in "Tried and not kept"). At a flush in steady playback it
-  removes the interpreted slow phase (Firefox's WebGL: worst second 18 frames against 8, no seconds below 99%
-  compiled), but in Firefox's page loads it compiled 25% more wasm and brought a third flush, and the mark per
-  dispatch cost `smp_user_jit_4` 2%. The round after (2026-10-19, built in a cloud session and counted there:
-  jit.md "Counted in the cloud") replays only what was marked, marks only while a probe runs, emits the replay
-  outside the cache's lock (a snapshot and a commit) and in the compile worker, 512-region modules. Before turning
-  it on: **the dev VM's timing of that round** (M8-JIT-HANDOVER.md "Next": the WebGL steady run, the pages
-  session's flushes and bytes, the gates for the mark, `go build`, ci-debian), and then the default-on call.
-  - **`overdue` with carry** (68 in one pages session against 0, before the round): in the cloud counts, after the
-    round's fix that numbers the replay's modules in log order, 0; check the pages session.
-  - **The guard against futile carries** counts the replay's bytes against the epoch's: with the replay capped at
-    half the budget, a heavy session's next flush is a classic one (in the pages session every second flush). A
-    smaller replay (above) leaves it for what it's for, a hot set as large as the cache.
-  - Not measured: memory while two halves are alive (the carried closure plus the new epoch: up to ~1.5× the
-    budget's V8 memory for the seconds of a replay; the `go build` loop's renderer was ~0.3 GB higher), Debian's
-    boot.
+- **A browser session past the 320 MiB budget** (`bench/boot/REPORT.md` "M8: the carry timed, and a larger code
+  cache"): Firefox's pages session compiles ~330 MB and doesn't flush; a longer one will, and each flush doubles the
+  threshold's floor (the long stutters at later flushes were the doubled floor). Not measured: a session long
+  enough to flush at 320 MiB. Carrying the hot set across the flush didn't pay (jit.md "Tried and not kept").
 - **Smaller slow arms of loads and stores** (2026-10-13; memory of the code cache, not speed).
   Measured on Alpine's userspace benchmark (968 modules, 34 MB of wasm; 49 of them, 2,122
   functions, compiled eagerly in Node 26 with `--print-wasm-code`, one tier at a time; the
@@ -200,7 +185,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   - a worker installs every module of the epoch, those its vCPU never runs too (an instance and
     table entries each: small, not measured);
   - a module's bytes stay in the core's heap until every table has it, and a vCPU that never runs
-    (offline) holds them until the next flush (at most the 160 MiB budget);
+    (offline) holds them until the next flush (at most the 320 MiB budget);
   - the cache's lock is taken on every jump-cache miss and held while a batch is planned and
     emitted (V8 compiles outside it); contention wasn't measured.
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
@@ -463,7 +448,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   settings and embedding API.
 - **The page's memory check** is a rule of thumb (`hostMemoryGiB`: RAM + 1 GiB + 0.3 GiB per
   vCPU, from one host's RSS) against `navigator.deviceMemory`, which Chromium caps at 8 GB and
-  rounds down; it can't see what else the host is running. Revisit with RAM settings (phase D) or
+  rounds down; it can't see what else the host is running. A guest whose code fills the JIT's 320 MiB cache (Firefox's page
+  loads) takes the renderer past it (5.1-5.4 GiB median, 5.8 at most, with 2.5 GiB of RAM on 4 vCPUs, against 4.7). Revisit with RAM settings (phase D) or
   if a user's tab gets killed.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features

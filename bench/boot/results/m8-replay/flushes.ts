@@ -34,7 +34,7 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
     const back = (d: number) => { const k = after.findIndex((x, k) => !(x.share < base - d) && !((after[k + 1]?.share ?? 1) < base - d)); return k < 0 ? 60 : k; };
     const slow = back(0.05), slow2 = back(0.02);
     const excess = after.reduce((a, x, k) => a + (isNaN(x.share) ? 0 : Math.max(0, x.interp - (1 - base) * (x.mips * 1e6 * ((time(at(ft + k * 1000 + 1000)) - time(at(ft + k * 1000))) / 1000)))), 0);
-    const rp = sum(at(ft + 60_000), RP) - sum(r - 1, RP);
+    const rp = RP < 0 ? 0 : sum(at(ft + 60_000), RP) - sum(r - 1, RP); // (no `replayed` without the carry)
     const near = frames.filter(([h]) => h > ft - 5000 && h <= ft + 15_000).map(([h, fr, mx]) => [Math.round((h - ft) / 1000), fr, mx]);
     // The seconds of frames in the 10 s after the flush: how many, their frames a second, those with a gap ≥ 250 ms.
     const ten = frames.filter(([h]) => h > ft && h <= ft + 10_000);

@@ -20,37 +20,59 @@ index 2bb52e6..e241650 100644
    });
    const t0 = performance.now();
 diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
-index 5e659b9..bccc7b2 100644
+index fab5f98..d5cc174 100644
 --- a/core/src/jit/mod.rs
 +++ b/core/src/jit/mod.rs
-@@ -191,6 +191,8 @@ pub const REPLAY_AHEAD: u32 = 4;
- /// each, one every this many ns at most ([`Cache::replay`]).
- pub const REPLAY_BATCH: usize = 64;
- pub const REPLAY_GAP_NS: u64 = 4_000_000;
-+/// DIAG: a flush for room every this many ns.
+@@ -194,6 +194,9 @@ pub const REPLAY_GAP_NS: u64 = 4_000_000;
+ /// The regions of a replay module the cache's emitter makes (the host's
+ /// compile worker, off the vCPUs: [`Cache::emitter`]).
+ pub const REPLAY_MODULE: usize = 512;
++/// DIAG: a flush for room every this many ns, a probe this many ns before it.
 +pub const DG_FORCE_NS: u64 = 30_000_000_000;
++pub const DG_PROBE_NS: u64 = 5_000_000_000;
  
  /// What the JIT did (`vm::Counters` publishes them).
  #[repr(C)]
-@@ -430,6 +432,8 @@ pub struct Cache {
+@@ -474,6 +477,11 @@ pub struct Cache {
      /// nulls them, `env.jit_release`), from release number `rel_base` on.
      releases: VecDeque<(u32, u32)>,
      rel_base: u64,
 +    dg_last: u64,
 +    dg_old: std::collections::HashSet<u64>,
- }
- 
- /// The epoch before a flush for room with `Config::replay`, whose hot set
-@@ -575,6 +579,8 @@ impl Cache {
++    /// DIAG: at the last carry: marked regions, their bytes, kept slots, live bytes.
++    pub dg_hot: [u64; 4],
++    dg_mbytes: core::cell::Cell<u64>,
+     /// The modules installed since the last flush (`live_bytes` are their bytes).
+     live_modules: u64,
+     /// Counts of the cache's own (no table's), which the next table to catch
+@@ -752,6 +760,10 @@ impl Cache {
              carry: None,
              releases: VecDeque::new(),
              rel_base: 0,
 +            dg_last: 0,
 +            dg_old: Default::default(),
++            dg_hot: [0; 4],
++            dg_mbytes: Default::default(),
+             live_modules: 0,
+             owed: Stats::default(),
+             emitter: false,
+@@ -925,6 +937,7 @@ impl Cache {
+             }
+             out.push_back(r.clone());
          }
-     }
- 
-@@ -1073,6 +1079,9 @@ impl Cache {
++        self.dg_mbytes.set(bytes);
+         // The slots that stay: the closure, and only regions still what
+         // their key runs (their recipes).
+         for (h, r) in hot.iter_mut().zip(&recipes) {
+@@ -958,6 +971,7 @@ impl Cache {
+         let (epoch, modules, bytes) = (self.epoch, self.live_modules, self.live_bytes);
+         s.marked += marked;
+         s.kept += kept.len() as u64;
++        self.dg_hot = [marked, self.dg_mbytes.get(), kept.len() as u64, self.live_bytes];
+         self.map.retain(|k, i| {
+             (i.hits, i.queued, i.prev) = (0, false, 0);
+             kept.contains_key(k)
+@@ -1419,6 +1433,9 @@ impl Cache {
              len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
          });
          if info.idx == 0 && !self.off && info.len > 0 {
@@ -60,74 +82,89 @@ index 5e659b9..bccc7b2 100644
              info.hits = info.hits.saturating_add(n);
              if info.hits > self.threshold && !info.queued {
                  info.queued = true;
-@@ -1106,6 +1115,23 @@ impl Cache {
+@@ -1452,6 +1469,35 @@ impl Cache {
      /// [`BATCH_STEPS`] interpreted, or it has waited [`BATCH_TIMEOUT`] (by
      /// table `t`'s clock), into `t`.
      fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
++        t.dg_hot = self.dg_hot;
 +        let now = now_ns();
 +        if self.dg_last == 0 {
 +            self.dg_last = now;
 +        }
-+        if self.cfg.max_bytes == MAX_BYTES && self.xmiss.is_some() && now.saturating_sub(self.dg_last) >= DG_FORCE_NS {
-+            self.dg_old = self.map.iter().filter(|(_, i)| i.idx != 0).map(|(&k, _)| k).collect();
-+            self.dg_last = now;
-+            if self.cfg.replay && self.carry.is_none() {
-+                self.carry(&mut t.stats);
-+            } else {
-+                let floor = self.floor;
-+                self.flush(&mut t.stats);
-+                self.floor = floor;
-+                self.retune();
++        if self.cfg.max_bytes == MAX_BYTES && self.xmiss.is_some() {
++            let age = now.saturating_sub(self.dg_last);
++            // Marks exist only during a probe: start one before the flush.
++            if self.cfg.replay
++                && age >= DG_FORCE_NS - DG_PROBE_NS
++                && self.rp.probe.is_none()
++                && self.carry.is_none()
++            {
++                self.probe();
 +            }
-+            return;
++            if age >= DG_FORCE_NS {
++                self.dg_old = self.map.iter().filter(|(_, i)| i.idx != 0).map(|(&k, _)| k).collect();
++                self.dg_last = now;
++                if self.cfg.replay && self.carry.is_none() {
++                    self.carry(&mut t.stats);
++                } else {
++                    let floor = self.floor;
++                    self.flush(&mut t.stats);
++                    self.floor = floor;
++                    self.retune();
++                }
++                return;
++            }
 +        }
-         if !self.rp.queue.is_empty() {
-             self.replay(t, mem);
+         if self.carry.is_some() {
+             self.uncarry(false);
          }
-@@ -1317,6 +1343,7 @@ impl Cache {
+@@ -1652,6 +1698,7 @@ impl Cache {
                  .filter(|i| i.idx != 0 && !old(i.idx))
                  .map(|i| (i.idx, i.len))
          };
 +        let dg0 = now_ns();
-         let block::Emitted {
-             bytes,
-             inl,
-@@ -1332,6 +1359,7 @@ impl Cache {
+         let e = block::module(
+             &regions,
+             mem,
+@@ -1661,6 +1708,7 @@ impl Cache {
+             self.features,
              Some(xmiss),
          );
-         let len = bytes.len() as u64;
 +        t.dg[3] += now_ns() - dg0;
-         let seq = self.seq;
-         let seq = if compile(&bytes, seq, self.epoch as u32, &self.ready) {
-             self.seq = seq.wrapping_add(1).max(1);
-@@ -1471,6 +1499,7 @@ pub struct Table {
+         Some(self.record(&mut t.stats, slot, &regions, e, None, true))
+     }
+ 
+@@ -1837,6 +1885,8 @@ pub struct Table {
      /// the last report of them ([`Table::helper_report`]).
      helper_ops: Vec<u64>,
      report: String,
 +    pub dg: [u64; 4],
++    pub dg_hot: [u64; 4],
      /// Steps dispatched so far (the batch timeout's clock), and the cache's
      /// pending batch and this clock when this table first saw it pending.
      clock: u64,
-@@ -1523,6 +1552,7 @@ impl Table {
+@@ -1889,6 +1939,8 @@ impl Table {
              waiting: 0,
              helper_ops: vec![0; crate::decode::Op::ALL.len()],
              report: String::new(),
 +            dg: [0; 4],
++            dg_hot: [0; 4],
              clock: 0,
              since: (u64::MAX, 0),
              stats: Stats::default(),
-@@ -1816,6 +1846,10 @@ impl Table {
+@@ -2205,6 +2257,11 @@ impl Table {
              .collect();
          ops.sort_by_key(|a| core::cmp::Reverse(a.0));
          self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
 +        self.report += &format!(
-+            "E {} {} 0 {} {} {} {} {} {} {}\n",
-+            self.id, self.epoch, self.dg[0], self.dg[1], self.dg[2], self.dg[3], self.stats.compile_ns, self.stats.steps, self.stats.dispatches
++            "E {} {} 0 {} {} {} {} {} {} {} {} {} {} {}\n",
++            self.id, self.epoch, self.dg[0], self.dg[1], self.dg[2], self.dg[3], self.stats.compile_ns, self.stats.steps, self.stats.dispatches,
++            self.dg_hot[0], self.dg_hot[1], self.dg_hot[2], self.dg_hot[3]
 +        );
          self.report.push('\0');
          self.report.as_ptr()
      }
-@@ -1905,7 +1939,10 @@ impl Jit {
+@@ -2303,7 +2360,10 @@ impl Jit {
                  Ok((idx, len))
              }
              // Compiled, and not installed here yet: interpreted meanwhile.
@@ -139,6 +176,16 @@ index 5e659b9..bccc7b2 100644
              Err(n) => Err(n),
          }
      }
+@@ -2312,7 +2372,9 @@ impl Jit {
+     /// without the lock, and commits it.
+     #[inline(never)]
+     fn replay(&mut self, job: Job, mem: &Mem) {
++        let dg0 = now_ns();
+         let made = job.make(mem);
++        self.table.dg[3] += now_ns() - dg0;
+         let mut c = self.cache.lock();
+         let s = &mut self.table.stats;
+         (s.locks, s.replay_locks) = (s.locks + 1, s.replay_locks + 1);
 diff --git a/web/vcpu-worker.ts b/web/vcpu-worker.ts
 index f7d49b6..5757ea1 100644
 --- a/web/vcpu-worker.ts
