@@ -1,0 +1,26 @@
+{
+ "bench/results/local/snapbench/snap/main-3/pages-all.timeline.json": {
+  "seconds": 356,
+  "mips": 259,
+  "busyMips": 143,
+  "busyShare": 0.45,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

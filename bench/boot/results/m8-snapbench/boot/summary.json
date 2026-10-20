@@ -1,0 +1,714 @@
+{
+ "sessions": [
+  {
+   "session": "b160-1",
+   "arm": "b160",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 13974,
+   "wasmMB": 468,
+   "share": 0.975,
+   "interpG": 3.07,
+   "gsteps": 124.78,
+   "busyMips": 124,
+   "stalls20": 1,
+   "stalls50": 1,
+   "wikiLoadS": 24.1,
+   "bbcLoadS": 31.5,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 481,
+   "setupS": 71,
+   "measuredS": 410,
+   "restoreS": null,
+   "firstFlushS": 58,
+   "flushesPerMin": 0.29,
+   "slowG": 0.6,
+   "slowS": 3.7,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "b160-2",
+   "arm": "b160",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 14119,
+   "wasmMB": 470,
+   "share": 0.976,
+   "interpG": 3.07,
+   "gsteps": 127.65,
+   "busyMips": 125,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": 27.4,
+   "bbcLoadS": 29.3,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 486,
+   "setupS": 72,
+   "measuredS": 414,
+   "restoreS": null,
+   "firstFlushS": 58,
+   "flushesPerMin": 0.29,
+   "slowG": 0.8,
+   "slowS": 5.3,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "b160-3",
+   "arm": "b160",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 14045,
+   "wasmMB": 468,
+   "share": 0.975,
+   "interpG": 3.07,
+   "gsteps": 127.05,
+   "busyMips": 121,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": 25.3,
+   "bbcLoadS": 33.2,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 490,
+   "setupS": 73,
+   "measuredS": 417,
+   "restoreS": null,
+   "firstFlushS": 60,
+   "flushesPerMin": 0.29,
+   "slowG": 0.7,
+   "slowS": 5.6,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "main-1",
+   "arm": "main",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 8138,
+   "wasmMB": 308,
+   "share": 0.988,
+   "interpG": 1.44,
+   "gsteps": 125.05,
+   "busyMips": 138,
+   "stalls20": 0,
+   "stalls50": 0,
+   "wikiLoadS": 18.8,
+   "bbcLoadS": 19.1,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 457,
+   "setupS": 73,
+   "measuredS": 384,
+   "restoreS": null,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "main-2",
+   "arm": "main",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 8187,
+   "wasmMB": 308,
+   "share": 0.988,
+   "interpG": 1.44,
+   "gsteps": 123.48,
+   "busyMips": 144,
+   "stalls20": 0,
+   "stalls50": 0,
+   "wikiLoadS": 18.4,
+   "bbcLoadS": 17.5,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 441,
+   "setupS": 72,
+   "measuredS": 369,
+   "restoreS": null,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "main-3",
+   "arm": "main",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 8199,
+   "wasmMB": 308,
+   "share": 0.989,
+   "interpG": 1.45,
+   "gsteps": 130.17,
+   "busyMips": 135,
+   "stalls20": 0,
+   "stalls50": 0,
+   "wikiLoadS": 19.7,
+   "bbcLoadS": 22.6,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 463,
+   "setupS": 76,
+   "measuredS": 387,
+   "restoreS": null,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "mainB-1",
+   "arm": "mainB",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 8167,
+   "wasmMB": 308,
+   "share": 0.988,
+   "interpG": 1.44,
+   "gsteps": 124.5,
+   "busyMips": 142,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": 18.5,
+   "bbcLoadS": 19.3,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 453,
+   "setupS": 72,
+   "measuredS": 380,
+   "restoreS": null,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "mainB-2",
+   "arm": "mainB",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 8144,
+   "wasmMB": 308,
+   "share": 0.988,
+   "interpG": 1.44,
+   "gsteps": 125.73,
+   "busyMips": 143,
+   "stalls20": 0,
+   "stalls50": 0,
+   "wikiLoadS": 19.7,
+   "bbcLoadS": 19.3,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 451,
+   "setupS": 72,
+   "measuredS": 379,
+   "restoreS": null,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null
+  },
+  {
+   "session": "mainB-3",
+   "arm": "mainB",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 8186,
+   "wasmMB": 308,
+   "share": 0.988,
+   "interpG": 1.45,
+   "gsteps": 126.08,
+   "busyMips": 131,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": 20.2,
+   "bbcLoadS": 22.5,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 469,
+   "setupS": 74,
+   "measuredS": 394,
+   "restoreS": null,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null
+  }
+ ],
+ "arms": {
+  "b160": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     2,
+     2,
+     2
+    ]
+   },
+   "modules": {
+    "median": 14045,
+    "iqr": 72.5,
+    "n": 3,
+    "all": [
+     13974,
+     14119,
+     14045
+    ]
+   },
+   "wasmMB": {
+    "median": 468,
+    "iqr": 1,
+    "n": 3,
+    "all": [
+     468,
+     470,
+     468
+    ]
+   },
+   "share": {
+    "median": 0.975,
+    "iqr": 0.001,
+    "n": 3,
+    "all": [
+     0.975,
+     0.976,
+     0.975
+    ]
+   },
+   "interpG": {
+    "median": 3.07,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     3.07,
+     3.07,
+     3.07
+    ]
+   },
+   "firstFlushS": {
+    "median": 58,
+    "iqr": 1,
+    "n": 3,
+    "all": [
+     58,
+     58,
+     60
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.29,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.29,
+     0.29,
+     0.29
+    ]
+   },
+   "slowG": {
+    "median": 0.7,
+    "iqr": 0.1,
+    "n": 3,
+    "all": [
+     0.6,
+     0.8,
+     0.7
+    ]
+   },
+   "slowS": {
+    "median": 5.3,
+    "iqr": 0.95,
+    "n": 3,
+    "all": [
+     3.7,
+     5.3,
+     5.6
+    ]
+   },
+   "busyMips": {
+    "median": 124,
+    "iqr": 2,
+    "n": 3,
+    "all": [
+     124,
+     125,
+     121
+    ]
+   },
+   "stalls20": {
+    "median": 1,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     1,
+     1,
+     1
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0.5,
+    "n": 3,
+    "all": [
+     1,
+     0,
+     0
+    ]
+   },
+   "wikiLoadS": {
+    "median": 25.3,
+    "iqr": 1.65,
+    "n": 3,
+    "all": [
+     24.1,
+     27.4,
+     25.3
+    ]
+   },
+   "bbcLoadS": {
+    "median": 31.5,
+    "iqr": 1.95,
+    "n": 3,
+    "all": [
+     31.5,
+     29.3,
+     33.2
+    ]
+   },
+   "wallS": {
+    "median": 486,
+    "iqr": 4.5,
+    "n": 3,
+    "all": [
+     481,
+     486,
+     490
+    ]
+   },
+   "setupS": {
+    "median": 72,
+    "iqr": 1,
+    "n": 3,
+    "all": [
+     71,
+     72,
+     73
+    ]
+   },
+   "measuredS": {
+    "median": 414,
+    "iqr": 3.5,
+    "n": 3,
+    "all": [
+     410,
+     414,
+     417
+    ]
+   }
+  },
+  "main": {
+   "flushes": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "modules": {
+    "median": 8187,
+    "iqr": 30.5,
+    "n": 3,
+    "all": [
+     8138,
+     8187,
+     8199
+    ]
+   },
+   "wasmMB": {
+    "median": 308,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     308,
+     308,
+     308
+    ]
+   },
+   "share": {
+    "median": 0.988,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.988,
+     0.988,
+     0.989
+    ]
+   },
+   "interpG": {
+    "median": 1.44,
+    "iqr": 0.005,
+    "n": 3,
+    "all": [
+     1.44,
+     1.44,
+     1.45
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "busyMips": {
+    "median": 138,
+    "iqr": 4.5,
+    "n": 3,
+    "all": [
+     138,
+     144,
+     135
+    ]
+   },
+   "stalls20": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "wikiLoadS": {
+    "median": 18.8,
+    "iqr": 0.65,
+    "n": 3,
+    "all": [
+     18.8,
+     18.4,
+     19.7
+    ]
+   },
+   "bbcLoadS": {
+    "median": 19.1,
+    "iqr": 2.55,
+    "n": 3,
+    "all": [
+     19.1,
+     17.5,
+     22.6
+    ]
+   },
+   "wallS": {
+    "median": 457,
+    "iqr": 11,
+    "n": 3,
+    "all": [
+     457,
+     441,
+     463
+    ]
+   },
+   "setupS": {
+    "median": 73,
+    "iqr": 2,
+    "n": 3,
+    "all": [
+     73,
+     72,
+     76
+    ]
+   },
+   "measuredS": {
+    "median": 384,
+    "iqr": 9,
+    "n": 3,
+    "all": [
+     384,
+     369,
+     387
+    ]
+   }
+  },
+  "mainB": {
+   "flushes": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "modules": {
+    "median": 8167,
+    "iqr": 21,
+    "n": 3,
+    "all": [
+     8167,
+     8144,
+     8186
+    ]
+   },
+   "wasmMB": {
+    "median": 308,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     308,
+     308,
+     308
+    ]
+   },
+   "share": {
+    "median": 0.988,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.988,
+     0.988,
+     0.988
+    ]
+   },
+   "interpG": {
+    "median": 1.44,
+    "iqr": 0.005,
+    "n": 3,
+    "all": [
+     1.44,
+     1.44,
+     1.45
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "busyMips": {
+    "median": 142,
+    "iqr": 6,
+    "n": 3,
+    "all": [
+     142,
+     143,
+     131
+    ]
+   },
+   "stalls20": {
+    "median": 1,
+    "iqr": 0.5,
+    "n": 3,
+    "all": [
+     1,
+     0,
+     1
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "wikiLoadS": {
+    "median": 19.7,
+    "iqr": 0.85,
+    "n": 3,
+    "all": [
+     18.5,
+     19.7,
+     20.2
+    ]
+   },
+   "bbcLoadS": {
+    "median": 19.3,
+    "iqr": 1.6,
+    "n": 3,
+    "all": [
+     19.3,
+     19.3,
+     22.5
+    ]
+   },
+   "wallS": {
+    "median": 453,
+    "iqr": 9,
+    "n": 3,
+    "all": [
+     453,
+     451,
+     469
+    ]
+   },
+   "setupS": {
+    "median": 72,
+    "iqr": 1,
+    "n": 3,
+    "all": [
+     72,
+     72,
+     74
+    ]
+   },
+   "measuredS": {
+    "median": 380,
+    "iqr": 7.5,
+    "n": 3,
+    "all": [
+     380,
+     379,
+     394
+    ]
+   }
+  }
+ }
+}

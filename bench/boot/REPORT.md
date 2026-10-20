@@ -2207,3 +2207,74 @@ desktop guest) and Alpine's userspace benchmark in Node, Alpine's boot only alon
 - **Scalar FP in float locals:** 0.5% of Firefox's instructions, none in the userspace benchmark: for the FP guest,
   not the ranking workloads. Not started; the backlog entry has the counts.
 - **Folding constants:** MOVK 1.1% of Firefox's instructions, ~4 wasm ops saved each: ~0.2% of the wasm. Not built.
+
+## M8: benchmarks started from a snapshot (2026-10-20)
+
+How a JIT A/B on the desktop guest can turn around faster (docs/benchmarking.md "Starting from a snapshot" and
+"Screening an A/B"). The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk, 4 vCPUs, 2.5 GiB; `main` the
+core at e14fb66 (320 MiB), `mainB` a copy of it (the A/A), `b160` the same with `MAX_BYTES` 160 MiB; data in
+`results/m8-snapbench/` (per session `results.json`, `counts.json`, `stalls.json`, `jit.jsonl.gz`, `rss.txt`,
+`wall.txt`; `summary.json` per directory from `bench/gpu/ab-summary.ts --json`; `cut.txt` from `cut.mjs`, the counts
+at cutoffs; `snapshots/` the warm files' sidecars).
+
+**Where a session's time goes** (Firefox's pages session from boot): the page running at 38 s (UEFI and the boot),
+the root login and the files by 45 s, sway by 72 s; then the five pages, each Firefox's start, the load, 10 s of rest
+and 10 s scrolled, ~370-417 s; 441-490 s in all. The setup is 15% of a session: the boots weren't what made a round
+cost 10 hours, the number of full sessions was.
+
+**A snapshot of the warm guest** (`bench/gpu/warm-snapshots.sh`, 321 s once: two files, 701 and 717 MB) loads in
+8.7-9.3 s into any core with the same state layout (the page's own rule: `tests/snapshot.test.ts`); the phases begin
+11 s after the start. Three rounds each way, alternating the three cores:
+
+| pages session | busy MIPS | flushes | wasm MB | modules | compiled share | wiki, bbc load (s) | wall (s) | setup (s) |
+|---|---|---|---|---|---|---|---|---|
+| boot, main | 138 · 144 · 135 | 0 | 308 | 8,138-8,199 | 98.8% | 18.8, 19.1 | 441-463 | 72-76 |
+| boot, mainB | 142 · 143 · 131 | 0 | 308 | 8,144-8,186 | 98.8% | 19.7, 19.3 | 451-469 | 72-74 |
+| boot, b160 | 124 · 125 · 121 | 2 | 468-470 | 13,974-14,119 | 97.5% | 25.3, 31.5 | 481-490 | 71-73 |
+| snapshot, main | 146 · 151 · 143 | 0 | 269-270 | 6,632-6,741 | 98.9% | 18.1, 19.2 | 377-380 | 11 |
+| snapshot, mainB | 147 · 148 · 140 | 0 | 270 | 6,691-6,807 | 98.9% | 18.9, 18.4 | 376-390 | 11 |
+| snapshot, b160 | 124 · 124 · 129 | 2 | 382-426 | 10,654-12,218 | 97.5% | 18.6, 23.3 | 395-428 | 11 |
+
+(The loads are medians. Busy MIPS IQR 2-6 either way; the counts' IQR at 320 MiB 0-0.5 MB and 21-73 modules; at
+160 MiB from the snapshot 22 MB and 782 modules, where the second flush's time varies.)
+
+- **The 320 MiB conclusions reproduce both ways:** no flush against two, busy MIPS +12% from boot (138-142 against
+  124) and +18% from the snapshot (146-147 against 124), the heavy pages' loads shorter (from boot 18.8-19.7 s against
+  25.3-31.5; from the snapshot only bbc's, 18.4-19.2 against 23.3: the first flush comes later there, 133-135 s in,
+  after wiki has loaded). The A/A is even both ways.
+- **Turnaround:** nine sessions took 70 min from boot, 59 from the snapshot (−16%). A snapshot doesn't change what a
+  full session costs; it makes short ones possible.
+- **What differs from a boot:** the code cache starts empty (the boot's ~40 MB of compiled code isn't in it), so the
+  counts are lower (269 against 308 MB at 320 MiB) and a budget fills later. Arms compare within one mode.
+
+**How early the counts decide** (`cut.txt`): from the snapshot, at 120 s (wiki loaded, mdn starting) the compiled
+share since the start was 97.5-97.7% at 160 MiB against 98.6% in all six sessions at 320 (the A/A within 0.1 point);
+by 180 s every 160 MiB session had flushed once and none at 320. From boot the 160 MiB sessions had flushed by 120 s.
+Busy MIPS needs whole sessions (its spread, 131-151, is wider than the A/A's difference).
+
+**A workload that flushes at 320 MiB: the churn page** (`bench/gpu/firefox/churn.html`: functions made from a
+template and called past SpiderMonkey's tiers). From the snapshot at `rate=40` for 180 s: the first flush 60 s after
+the page was ready, two in 180 s, 744 MB compiled, 4,960 functions, busy MIPS 185 (`churn1/`). As a screen with fixed
+work (`rate=60&total=4000`, the phase ending when the 4,000 are made; `screen/`, one round):
+
+| churn screen | flushes | first flush (s) | wasm MB | modules | compiled share | done in (s) | busy MIPS | wall (s) |
+|---|---|---|---|---|---|---|---|---|
+| main | 1 | 53 | 546 | 32,790 | 96.4% | 132.7 | 184 | 216 |
+| mainB | 1 | 53 | 543 | 32,710 | 96.5% | 133.3 | 189 | 214 |
+| b160 | 2 | 26 | 491 | 33,551 | 95.4% | 138.8 | 174 | 220 |
+
+The same verdict as the pages session (more flushes, a lower compiled share, slower) in 3 × ~215 s, 11 min with the
+A/A, against 59-70 min for three rounds of full sessions. Its functions run once, so it measures the fill and the
+flushes' cost, not the keeping of a reused hot set; the smaller wasm total at 160 MiB is that (dead code isn't
+compiled again after a flush).
+
+**Real sites** (opt-in; `sites2/`): the guest online through `tests/net/tailcat.sh`'s exit node, IPv6 dropped in the
+guest (a curl to youtube.com: 200 in 1.0 s), six sites (a YouTube watch page, the Guardian, CNN, BBC News,
+Excalidraw, Google Maps) 20 s each in one tab: 264 MB compiled and no flush in 130 s at 320 MiB, against the churn's
+424 MB in its first 120 s. Too short a run to compare their flushes with the churn's.
+
+**Debian:** `debian-go.webpcsnap` (176 MB, saved 37 s after the start) loaded into the 160 MiB core ran the `go build`
+loop at once (`go/`: builds of 55 and 38 s in 120 s, 1,134 MIPS).
+
+**For the next lane:** screen variants with the churn page from the snapshot, an A/A arm in each run (five variants
+~22 min), then time the winner on the full pages session from the snapshot (three rounds) and the gates.

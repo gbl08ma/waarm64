@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>churn</title>
+<script src="bench.js"></script>
+<pre id="o"></pre>
+<script>
+// Code churn for the JIT's cache (bench/gpu/firefox-load.ts PHASES=churn; docs/benchmarking.md "Screening an A/B"):
+// many distinct JavaScript functions made from a template (their operators, constants, branches and loop shapes vary
+// with their number), each called until SpiderMonkey compiles it, so the guest keeps writing new machine code and the
+// emulator's JIT keeps compiling new guest code. Query: rate (functions a second, 40), calls (each one's calls, 1500:
+// past the Baseline and Ion thresholds), n (its loop's trips a call, 40), total (functions in all; none past it).
+// Each second `FFBENCH churn t=<s> frames=<n> maxms=<ms>` (bench.js) and `FFBENCH made <functions>`.
+// The query, or all of it encoded in `q` (sway's exec runs the command through a shell, where a bare `&` ends it).
+const q0 = new URLSearchParams(location.search), q = q0.has('q') ? new URLSearchParams(q0.get('q')) : q0;
+const rate = +(q.get('rate') ?? 40), calls = +(q.get('calls') ?? 1500), trips = +(q.get('n') ?? 40), total = +(q.get('total') ?? 1e9);
+const OPS = ['+', '-', '^', '|', '&', '*'];
+function make(k) {
+  const m = 3 + (k % 9);
+  let body = `let a = x | 0, b = ${k % 997}, s = ${k & 255};\nfor (let i = 0; i < n; i++) {\n`;
+  for (let j = 0; j < m; j++) {
+    const op = OPS[((k >> (j % 13)) + j) % OPS.length], c = (k * 31 + j * 17) % 4093;
+    switch ((k + j) % 4) {
+      case 0: body += `a = (a ${op} (b + ${c})) | 0; s = (s + a) | 0;\n`; break;
+      case 1: body += `if ((a & ${c}) > ${c >> 1}) { s = (s ${op} a) | 0; } else { a = (a ${op} ${c}) | 0; }\n`; break;
+      case 2: body += `for (let j${j} = 0; j${j} < ${1 + (c & 3)}; j${j}++) b = (b ${op} (i + j${j} + ${c})) | 0;\n`; break;
+      default: body += `switch ((a + i) & 3) { case 0: a = (a + ${c}) | 0; break; case 1: s = (s ${op} ${c}) | 0; break; default: b = (b ^ a) | 0; }\n`;
+    }
+  }
+  body += `b = (b + i) | 0;\n}\nreturn (s ^ a ^ b) | 0;`;
+  return new Function('x', 'n', `// churn ${k}\n${body}`);
+}
+let made = 0, sum = 0, carry = 0, last = 0, prev = 0;
+ffbench('churn', (t) => {
+  // The time since the last frame's share of the rate (at most half a second's: a slow guest falls behind, never
+  // bursts), each function made and run to its compiled tiers.
+  carry = Math.min(carry + (prev ? (rate * (t - prev)) / 1000 : 0), Math.max(1, rate / 2));
+  prev = t;
+  for (; carry >= 1 && made < total; carry--) {
+    const f = make(made++);
+    for (let i = 0; i < calls; i++) sum = (sum + f(i, trips)) | 0;
+  }
+  if (t - last >= 1000) { last = t; dump(`FFBENCH made ${made} ${sum}\n`); document.getElementById('o').textContent = `${made} functions`; }
+});
+</script>

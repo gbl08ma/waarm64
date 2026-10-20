@@ -703,6 +703,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
+  wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
+  hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long
+  enough to flush (six at 20 s didn't: more cycles or longer dwells), and whether their flushes look like the
+  churn's; the churn screen ran one round (main, 160 MiB, the A/A), so its noise band is from one pair; a pages
+  session cut to its first pages (`PAGES=wiki,mdn`) as a screen was read off full sessions' counts, never run.
+  The real sites mode drops the guest's IPv6 by hand: the client-side fix ("tailcat, IPv6 where the exit node's
+  machine has none out", below) would make that unnecessary.
+
 - **`linux-gpu`'s build number isn't pinned** (audio's finding, [audio.md](audio.md) "Linux driver behavior"): the `#N` in a kernel's version
   string grows with each rebuild in the same tree and moves its guest's step count (469 steps for `linux-snd` from `#2`
   to `#1`); `linux-snd` pins `KBUILD_BUILD_VERSION=1`, `linux-gpu` (at `#2`) doesn't, so a rebuild would move `gpu`'s

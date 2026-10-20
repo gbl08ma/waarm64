@@ -92,6 +92,74 @@ PCs and logs helper calls in a window.
 - CoreMark: `bench/interp/build-coremark.sh` fetches EEMBC's pinned sources (unmodified; our port
   layer) into `target/bench/`.
 
+## Starting from a snapshot
+
+A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is made once and every session loads it
+(`bench/boot/REPORT.md` "M8: benchmarks started from a snapshot", data in `bench/boot/results/m8-snapbench/`).
+
+- **The snapshots:** `bench/gpu/warm-snapshots.sh firefox` (5.5 min; Arch Linux ARM's disk, sway up, then Firefox
+  started on a still page and saved as `target/snapbench/pages.webpcsnap`, then on the WebGL cubes as
+  `webgl.webpcsnap`, ~700 MB each, the pages disk attached); `bench/gpu/warm-snapshots.sh debian` (40 s: Debian
+  logged in with the Go tree as `/dev/vdb`, `debian-go.webpcsnap`, 176 MB). Each has a sidecar `<file>.json` (the
+  core's SHA-256, the commit). Keep them in `target/` (never /tmp, which is RAM): Playwright's downloads go through
+  `WEBPC_DOWNLOADS` (the browser's `downloadsPath`). Make them again when the guest-visible machine or the host's
+  device state changes (the page refuses another state layout, see below; a host whose devices save other state
+  isn't caught).
+- **Across core builds:** a snapshot is tied to the core's state layout (`snapshot_version`) and the machine (devices,
+  vCPUs, RAM, CPU features), never to the build that made it or its ABI, so a core that differs only in its JIT loads
+  it and the guest runs on exactly (`tests/snapshot.test.ts` "a snapshot loads into another build of the core";
+  docs/plans/snapshots.md "Versions"). There is no special mode: the user's Load snapshot does it. The JIT's code,
+  the TLBs and the counters aren't in a snapshot (core/src/vm/state.rs), and the restore starts a new machine worker
+  with new vCPU workers, so every arm starts with an empty code cache.
+- **A session from one:** `FROM_SNAPSHOT=<file>` for `bench/gpu/firefox-load.ts` (no login, no files, no sway: the
+  phases begin 11 s after the start, the 700 MB file loading in 9 s), `--from-snapshot <file>` for
+  `bench/stress/stress.ts` (the load starts at once). `CORE=<file.wasm>` (`--core`) serves another core build as the
+  page's (a route in the browser: target/ is never written, nothing to copy back before CI). A session's
+  `results.json` has `from` (the file, which core made it, which runs) and `times`.
+- **An A/B:** `FROM=target/snapbench/pages.webpcsnap bash bench/gpu/ab.sh <outdir> <rounds> a=<a.wasm> b=<b.wasm>
+  a2=<a copy>` (each round every arm in turn; under a 10 GiB scope and `timeout` each; in the background, alone), then
+  `node bench/gpu/ab-summary.ts <outdir>`: per session and per arm (median, IQR) the counts (flushes, modules, wasm
+  MB, compiled share, Gsteps interpreted, the first flush's time, flushes a minute, each flush's slow phase), then
+  busy MIPS and stalls, the heavy pages' loads, the session's wall and setup time.
+- **Turnaround** (the dev VM, Firefox's pages session, 160 against 320 MiB and an A/A, three rounds): from boot a
+  session is 441-490 s, 72 s of it the boot, the login and sway; from the snapshot 376-428 s, 11 s of it the restore.
+  Nine sessions: 70 min from boot, 59 from the snapshot. The measured phase is the cost: what saves time is a shorter
+  workload, below.
+- **What differs from a boot:** the guest has done its first-boot work and Firefox has started once (its files are
+  in the page cache); the code cache starts empty instead of holding the boot's ~100 MB, so a budget fills later (at
+  160 MiB the pages session's first flush came 133 s in, against before 120 s after a boot) and the counts are lower
+  (269 MB compiled against 308 at 320 MiB). Compare arms within one mode, never across. A boot benchmark stays a boot.
+
+## Screening an A/B
+
+The pages session at 320 MiB no longer flushes, so it doesn't exercise the cache a JIT lane tunes, and its counts
+decide within its first two pages (`m8-snapbench/cut.txt`: at 120 s from the snapshot the compiled share was 97.5-97.7%
+at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 point). So:
+
+1. **Screen on counts, with the churn page, from the snapshot.** `PHASES=churn CHURN='rate=60&total=4000'
+   CHURN_S=300 FROM=target/snapbench/pages.webpcsnap bash bench/gpu/ab.sh <outdir> 1 <arms…> base2=<base copy>`:
+   `bench/gpu/firefox/churn.html` makes JavaScript functions from a template (operators, constants, branches and loops
+   varied by their number) and calls each past SpiderMonkey's Baseline and Ion thresholds, so the guest writes new
+   machine code all the time; `rate` (functions a second), `calls`, `n` (a call's loop trips) and `total` set the
+   cache's fill. With `total` the work is fixed and the phase ends when it's done (`doneS`): ~215 s a session, 11 for
+   the restore, ~135 for the churn. At 320 MiB it flushes 53 s after the page is ready (`rate=40` without `total`:
+   two flushes in 180 s); at 160 MiB 26 s, twice. An A/A arm in every run gives the noise band (main against a copy:
+   flushes, modules within 0.3%, wasm MB within 0.6%, compiled share within 0.1 point, `doneS` within 0.6 s).
+   Five variants and the A/A: ~22 min. The churn's functions run once and die: it tests the cache's fill and its
+   flushes' cost, not how a policy keeps a reused hot set (the pages and the sites do).
+2. **Then time only the winner** against the base on the full pages session from the snapshot (three rounds
+   alternating, busy MIPS and the heavy pages' loads; at least an A/A once per session of runs), and its gates.
+3. **Real sites** (opt-in, benchmarks only, never in CI): `tests/net/tailcat.sh up`, then `TAILCAT=rig PHASES=sites`:
+   the page's adapter connected to the rig's exit node, the guest on IPv4 only (the dev VM has no IPv6 out: its IPv6
+   default route dropped, DNS at 1.1.1.1, IPv4 preferred, Firefox's `network.dns.disableIPv6`), a curl checked, then
+   `bench/gpu/firefox/sites.html` opens `SITES` (a video watch page, three news sites, two web apps by default) in one
+   tab, `DWELL_S` (20) each, `CYCLES` times; `results.sites` has the URLs and each visit's time. Real sites change
+   daily: an A/A in the same run as each A/B, arms close in time. Six sites at 20 s each didn't flush at 320 MiB (264
+   MB in 130 s, against the churn's 424 MB in 120 s): longer runs or more cycles to see a flush.
+4. **The `go build` loop** from `debian-go.webpcsnap`: `bench/stress/stress.ts --from-snapshot … --disk2
+   target/images/stress/goroot.ext4 --no-load --guest-cmd '<the loop>'` (the command in
+   `bench/boot/results/m8-replay/r2/go/*.log`'s meta).
+
 ## Rules
 
 - **Don't claim a speedup or regression without `bench/run.ts` numbers in Chromium.** Report

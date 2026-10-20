@@ -13,6 +13,11 @@
 //     [--stall-ms 2000] [--freeze-ms 10000] [--warmup 90]   thresholds (analyze.ts DEFAULTS)
 //     [--inject freeze-main@60:30]  fault injection, to check the detection (main thread busy for 30 s at t=60)
 //     [--inject drop-status@60:30]  the machine worker's status messages don't reach the page for 30 s
+//     [--core <file.wasm>]      serve this core build instead of target/'s (bench/snapshot-start.ts)
+//     [--save-snapshot <file>]  once logged in, save the machine (Save snapshot) to <file> and end: the warm start below
+//     [--from-snapshot <file>]  start from that file instead of booting (docs/benchmarking.md "Starting from a snapshot"):
+//                               no boot, no login; the load starts at once (`--seconds` counts from there too). The
+//                               page's query and --disk2 must be the ones it was saved with (the same devices)
 //
 // Exit codes: 0 clean, 1 findings, 2 the harness itself failed (no login, no browser).
 // Hours long: docs/testing.md gives the detached command (systemd-run, timeout, log).
@@ -21,6 +26,8 @@ import { dirname } from 'node:path';
 import { chromium, type CDPSession, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { unattendedQuery } from '../../tests/debian-unattended.ts';
+import { answerAsks } from '../../tests/page-ask.ts';
+import { loadSnapshotFile, routeCore, saveSnapshotFile } from '../snapshot-start.ts';
 import { analyze, DEFAULTS, report, type Options, type PageStatus, type Proc, type Rec, type Sample } from './analyze.ts';
 
 const argv = process.argv.slice(2);
@@ -124,10 +131,17 @@ const installHook = () => {
 
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', downloadsPath: process.env.WEBPC_DOWNLOADS });
 process.on('SIGTERM', () => stop(finish(), 'SIGTERM'));
 const page = await browser.newPage();
 await page.addInitScript(installHook);
+// A snapshot saved is a download (not a file picker); the page's confirmations (Load snapshot…) are answered.
+await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
+await answerAsks(page);
+const saveTo = values('--save-snapshot')[0];
+const fromFile = values('--from-snapshot')[0];
+const core = values('--core')[0];
+const served = core ? await routeCore(page, core) : undefined;
 page.on('console', (m) => { if (/panic|error|DSB|unreachable/i.test(m.text())) event('console', m.text()); });
 page.on('pageerror', (e) => event('pageerror', String(e)));
 page.on('crash', () => event('pagecrash', 'the renderer crashed'));
@@ -206,7 +220,11 @@ function finish() {
   return r.findings.length ? 1 : 0;
 }
 
-if (!(await until(/login: /, 300_000))) {
+if (fromFile) {
+  const r = await loadSnapshotFile(page, fromFile, core);
+  emit({ type: 'event', t: secs(), kind: 'restored', text: JSON.stringify(r) });
+  say(`restored ${JSON.stringify(r)}`);
+} else if (!(await until(/login: /, 300_000))) {
   // A boot that stops short: say whether the machine still ran (steps, uptime, per-vCPU liveness), twice 10 s apart.
   for (let i = 0; i < 2; i++) {
     if (i) await new Promise((r) => setTimeout(r, 10_000));
@@ -217,12 +235,25 @@ if (!(await until(/login: /, 300_000))) {
   finish();
   stop(2, `no login prompt; the console ended: ${JSON.stringify(serial.slice(-3000))}`);
 }
-await type('root');
-if (!(await until(/root@\S+:~# /, 60_000))) {
-  finish();
-  stop(2, 'no root prompt');
+if (!fromFile) {
+  await type('root');
+  if (!(await until(/root@\S+:~# /, 60_000))) {
+    finish();
+    stop(2, 'no root prompt');
+  }
+  say('logged in');
 }
-say('logged in');
+if (served) {
+  if (!served.n) stop(2, `the page didn't load the core ${core}`);
+  emit({ type: 'event', t: secs(), kind: 'core', text: `${core} ${served.sha}` });
+}
+if (saveTo) {
+  const made = await saveSnapshotFile(page, saveTo, { scene: 'debian-shell', core, query: query ?? '', disk2: disk2 ?? '', machine, ncpus, bootS: Math.round(secs()) });
+  say(`saved ${JSON.stringify(made)}`);
+  await within(browser.close(), 10_000);
+  server.close();
+  process.exit(0);
+}
 
 // The guest load. Python (Debian has it) does the mmap/mprotect/munmap churn through libc, with threads.
 const CHURN = [

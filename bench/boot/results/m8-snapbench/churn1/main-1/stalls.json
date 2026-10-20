@@ -1,0 +1,26 @@
+{
+ "bench/results/local/snapbench/churn1/main-1/churn-all.timeline.json": {
+  "seconds": 246,
+  "mips": 412,
+  "busyMips": 185,
+  "busyShare": 0.56,
+  "stallsAtLeastMs": {
+   "20": 2,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 31,
+  "stalledMsPerSecondPerVcpu": 0.05,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

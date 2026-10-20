@@ -11,6 +11,7 @@ import type { VideoStats } from '../../web/virgl-video.ts';
 import { SYSCALLS } from './arm64-syscalls.ts';
 import type { Timeline } from '../../web/profiler.ts';
 import { answerAsks } from '../../tests/page-ask.ts';
+import { loadSnapshotFile, routeCore, sessionTag } from '../snapshot-start.ts';
 
 const SETTINGS_KEY = 'webpc.settings';
 /** The guest's desktop user: images/arch/desktop.sh's `arch` (password the same); `alarm` for an Arch Linux ARM disk. */
@@ -31,6 +32,13 @@ export type SessionOptions = {
   query?: string;
   /** The image opened by its URL (`?disk=`) even without `disk2`: a machine that isn't stored, whose snapshots are files (bench/gpu/snapshot-3d.ts). */
   byUrl?: boolean;
+  /** A snapshot file to start from instead of a boot (bench/snapshot-start.ts; the image is then opened by its URL, as when the file was saved). */
+  snapshot?: string;
+  /** Another core build served as the page's (bench/snapshot-start.ts `routeCore`); default target/'s. */
+  core?: string;
+  /** A tailcat exit node's address (tests/net/tailcat.sh's WEBPC_TAILCAT_ADDR): the machine's adapter connected to it
+   * once it runs (the Network wizard, an ephemeral connection), so the guest reaches the internet. Benchmarks only. */
+  tailcat?: string;
 };
 
 type Stat = { n: number; lag: number; busy: Record<string, number> & { commands?: Record<string, number>; fenceBack?: { n: number; ms: number; maxMs: number } } };
@@ -90,8 +98,8 @@ export async function openSession(o: SessionOptions) {
   // CHROMIUM_ARGS: extra flags (e.g. `--mute-audio` on the Mac host: its sound still renders and keeps time, unheard).
   // CHROMIUM_JS_FLAGS: V8's flags, spaces and all (`--js-flags`; e.g. `--perf-basic-prof --perf-basic-prof-path=<dir>`).
   // A 3D machine decodes its guest's video with WebCodecs: SME hidden where the CPU needs it (tools/nosme.ts).
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() });
-  const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, downloadsPath: process.env.WEBPC_DOWNLOADS, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() });
+  const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 }, ignoreHTTPSErrors: !!o.tailcat })).newPage(); // the tailcat rig's relay has a self-signed certificate
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
   await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, o.screen ?? '1376x762']);
   await answerAsks(page);
@@ -114,9 +122,10 @@ export async function openSession(o: SessionOptions) {
 
   // The image under the repository, as the server serves it.
   const served = relative(resolve(new URL('../..', import.meta.url).pathname), resolve(o.image));
-  const byUrl = !!o.disk2 || !!o.byUrl;
+  const byUrl = !!o.disk2 || !!o.byUrl || !!o.snapshot;
   if (byUrl && served.startsWith('..')) throw new Error(`an image opened by its URL must be under the repository (${o.image})`);
   const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=/${served}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`;
+  const coreServed = o.core ? await routeCore(page, o.core) : undefined;
   await page.goto(url);
   const gl = await page.evaluate(() => {
     const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
@@ -125,8 +134,29 @@ export async function openSession(o: SessionOptions) {
   });
   log('WebGL2:', gl, '|', browser.version());
   if (!byUrl) await page.setInputFiles('#open-disk-input', o.image);
-  await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
+  /** Where the machine came from when it started from a snapshot (`loadSnapshotFile`'s record). */
+  const restored = o.snapshot ? await loadSnapshotFile(page, o.snapshot, o.core) : undefined;
+  if (restored) log('restored', JSON.stringify(restored));
+  else await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
+  if (coreServed && !coreServed.n) throw new Error(`the page didn't load the core ${o.core}`);
+  if (coreServed) log('core', o.core, coreServed.sha);
   log('running');
+  if (o.tailcat) {
+    // The Network menu's wizard: tailcat through an exit node, not kept (tests/page-network.test.ts drives it the same way).
+    if (!(await page.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await page.locator('#network summary').click();
+    await page.click('#net-setup');
+    if (await page.locator('#net-step-pick').isVisible()) await page.click('#net-pick-new');
+    await page.click('#net-pick-tailcat');
+    await page.check('#net-tc-exit');
+    await page.fill('#net-tailcat', o.tailcat);
+    await page.uncheck('#net-keep');
+    await page.click('#net-connect');
+    await page.waitForFunction(() => ['connected', 'error'].includes(document.getElementById('network')!.dataset.phase!), null, { timeout: 60_000, polling: 250 });
+    const net = await page.evaluate(() => [document.getElementById('network')!.dataset.phase, document.getElementById('net-status')?.textContent]);
+    if (net[0] !== 'connected') throw new Error(`tailcat didn't connect: ${net[1]}`);
+    await page.keyboard.press('Escape');
+    log('tailcat', net[1]);
+  }
   // JITLOG=1: the JIT's counters (`__status.stats.jit`, summed over the vCPUs) once a second, as JSON lines in
   // <out>/jit.jsonl ({t: epoch ms, steps, jit}): the flushes, the wasm compiled and alive (bench/boot/results/m8-replay/counts.ts reads it).
   const jitLog = process.env.JITLOG ? setInterval(async () => {
@@ -210,10 +240,12 @@ export async function openSession(o: SessionOptions) {
     await pasteSerial(`cat > /root/load.sh <<'EOF'\n${LOAD_SH}EOF`);
   };
 
-  /** A command's output on the serial terminal, between markers (rows run together: one screenful at most). */
+  /** A command's output on the serial terminal, between markers (rows run together: one screenful at most). The
+   * markers carry the session's tag: a terminal restored from a snapshot shows the saving session's. */
+  const tag = sessionTag();
   let runs = 0;
   const run = async (cmd: string, ms = 60_000) => {
-    const m = `R${++runs}`;
+    const m = `R${tag}${++runs}`;
     await onSerial(`clear; echo ${m}-be""gin; ${cmd}; echo ${m}-e""nd\n`);
     await shows(new RegExp(`${m}-end`), ms);
     const t = await terminal();
@@ -235,7 +267,7 @@ export async function openSession(o: SessionOptions) {
    * (threads sorted by CPU) and screenshots the screen as <out>/<label>.png. */
   const load = async (label: string, secs = 10, during?: { start(): Promise<void>; stop(): Promise<void> }, then?: () => Promise<void>) => {
     await display();
-    const m = `L${++mark}`;
+    const m = `L${tag}${++mark}`;
     const v0 = await vmStats();
     await during?.start();
     await onSerial(`clear; sh /root/load.sh ${secs} ${m}${process.env.SYSCALLS ? ' sys' : ''}\n`);
@@ -365,7 +397,7 @@ EOF`);
   };
 
   const close = async () => { clearInterval(jitLog); await browser.close(); server.close(); };
-  return { page, browser, url, gl, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
+  return { page, browser, url, gl, restored, coreSha: coreServed?.sha, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
 }
 
 const pctl = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : 0; };

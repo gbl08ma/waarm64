@@ -120,6 +120,11 @@ The core's state has a **format version** (`SNAPSHOT_VERSION`), bumped when a sa
 a unit test pins the saved bytes of a fixed machine so a forgotten bump fails CI. Not the wasm's
 input hash: that would void every snapshot at every core change, including the JIT's, which never
 changes what is saved. A snapshot from another version is refused; migrating is out of scope.
+The header's `abi` is recorded, not checked. **As a bench tool** (2026-10-20, docs/benchmarking.md "Starting from a
+snapshot"): JIT A/Bs start every arm from one warm snapshot, loaded by cores that differ only in their JIT through the
+page's own Load snapshot, with no special mode; `tests/snapshot.test.ts` "a snapshot loads into another build of the
+core" pins the rule (another build's bytes and ABI load and run on to the unbroken run's steps; another state version,
+another core state word or another machine are refused; planted: the ABI checked, the version not checked).
 
 ### The page
 

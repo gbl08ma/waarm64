@@ -8,9 +8,9 @@ import { test } from 'node:test';
 import { lzCodec } from '../web/lz.ts';
 import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
 import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
-import { SnapshotError } from '../web/snapshot-file.ts';
+import { crc32, SnapshotError } from '../web/snapshot-file.ts';
 import { STEPS } from './steps.ts';
-import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
+import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
 
 const WASM = await WebAssembly.compile(readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)));
 const IMAGES = new URL('../target/images/', import.meta.url);
@@ -165,6 +165,75 @@ test('a snapshot of another machine, another version or with a damaged state is 
   await assert.rejects(bootVm(WASM, { ...o, restore: { ...restore, core } }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-version');
   const cut = { ...restore, core: restore.core.slice(0, restore.core.length - 9) };
   await assert.rejects(bootVm(WASM, { ...o, restore: cut }), (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt');
+});
+
+/** `wasm` with a custom section appended: the same code, other bytes, as another build of the core is. */
+function otherBuild(wasm: Uint8Array, name: string) {
+  const leb = (n: number) => { const out: number[] = []; do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; out.push(b); } while (n); return out; };
+  const body = [...leb(name.length), ...new TextEncoder().encode(name), ...new TextEncoder().encode(`built ${name}`)];
+  return new Uint8Array([...wasm, 0, ...leb(body.length), ...body]);
+}
+
+/** A snapshot file with its header changed by `f` (and its checksum made again). */
+function reheaded(file: Uint8Array, f: (h: Record<string, unknown>) => void) {
+  const v = new DataView(file.buffer, file.byteOffset, file.length);
+  const len = v.getUint32(12, true);
+  const h = JSON.parse(new TextDecoder().decode(file.subarray(16, 16 + len))) as Record<string, unknown>;
+  f(h);
+  const json = new TextEncoder().encode(JSON.stringify(h));
+  const out = new Uint8Array(file.length - len + json.length);
+  out.set(file.subarray(0, 16));
+  new DataView(out.buffer).setUint32(12, json.length, true);
+  out.set(json, 16);
+  new DataView(out.buffer).setUint32(16 + json.length, crc32(json), true);
+  out.set(file.subarray(16 + len + 4), 16 + json.length + 4);
+  return out;
+}
+
+// Benchmarks start their arms from one warm snapshot (docs/benchmarking.md "Starting from a snapshot"): a file is tied
+// to the core's state layout (`snapshot_version`) and the machine, not to the build that made it or the ABI it ran on,
+// so a core that differs only in its JIT loads it and the guest runs on exactly; another layout is refused.
+test('a snapshot loads into another build of the core (a JIT-only change), and not into another state layout', { skip }, async () => {
+  const bytes = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+  const other = await WebAssembly.compile(otherBuild(bytes, 'webpc-other-jit'));
+  const [codec, otherCodec] = [await lzCodec(WASM), await lzCodec(other)];
+  const o = buildroot();
+  const whole = await runToPowerOff(WASM, o);
+  const vm = await bootVm(WASM, o);
+  let [steps, console] = [0, ''];
+  for (const at = 12_000_000; steps < at;) {
+    const r = await vm.runAsync(at - steps);
+    steps += r.steps;
+    console += vm.drain();
+    if (r.kind === Exit.DEVICE) await vm.settle();
+  }
+  if (!(await vm.pause())) throw new Error('the machine ended as it was paused');
+  const parts: Uint8Array[] = [];
+  await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+  await vm.close();
+  const saved = new Uint8Array(await new Blob(parts as BlobPart[]).arrayBuffer());
+  // As another build saved it: another ABI in the header, a build name the reader doesn't know.
+  const file = new Blob([reheaded(saved, (h) => { h.abi = Number(h.abi) + 7; h.build = 'webpc-other-jit'; })]);
+  const { header, restore } = await readSnapshot(file, otherCodec, otherCodec.snapshotVersion, { devices: o.devices });
+  assert.equal(header.abi, ABI + 7);
+  const next = await bootVm(other, { ...o, restore });
+  let kind: number = Exit.BUDGET;
+  while (kind === Exit.BUDGET || kind === Exit.TX_FULL || kind === Exit.DEVICE) {
+    const r = await next.runAsync(100_000_000);
+    [kind, steps, console] = [r.kind, steps + r.steps, console + next.drain()];
+    if (kind === Exit.DEVICE) await next.settle();
+  }
+  await next.close();
+  assert.equal(kind, Exit.PSCI);
+  assert.equal(steps, STEPS.buildroot);
+  assert.equal(console, whole.console);
+  // Another state layout: the version the other core reads (its `snapshot_version`) and the core state's own word.
+  await assert.rejects(readSnapshot(file, otherCodec, otherCodec.snapshotVersion + 1), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-version');
+  const core = restore.core.slice();
+  core[4]++;
+  await assert.rejects(bootVm(other, { ...o, restore: { ...restore, core } }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-version');
+  // Another machine (a device more) under the other build: refused too.
+  await assert.rejects((async () => { const x = await readSnapshot(file, otherCodec, otherCodec.snapshotVersion); await (await bootVm(other, { ...o, devices: [...o.devices!, { type: 'rng' }], restore: x.restore })).close(); })(), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-machine');
 });
 
 test('a VM started from a snapshot saves the same state: the core\'s bytes and the backends\'', { skip }, async () => {

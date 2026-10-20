@@ -1,0 +1,26 @@
+{
+ "bench/results/local/snapbench/boot/b160-3/pages-all.timeline.json": {
+  "seconds": 406,
+  "mips": 242,
+  "busyMips": 121,
+  "busyShare": 0.5,
+  "stallsAtLeastMs": {
+   "20": 1,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 35,
+  "stalledMsPerSecondPerVcpu": 0.02,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

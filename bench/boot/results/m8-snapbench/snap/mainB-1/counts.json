@@ -1,0 +1,17 @@
+{
+ "bench/results/local/snapbench/snap/mainB-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 94.55,
+   "flushes": 0,
+   "modules": 6823,
+   "mib": 257.8,
+   "overdue": 0,
+   "parks": 23304,
+   "interpGsteps": 1.04,
+   "share": 0.989,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}
