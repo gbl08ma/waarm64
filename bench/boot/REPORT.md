@@ -2384,3 +2384,55 @@ renderer's median (~190 MiB of ~4.8 GiB) for an extra flush, and on the reused h
 less memory where the hot set is small" at "320's speed where it is large". The fixed 320 MiB budget stays the
 default, with a machine's own (the JIT cache setting) for a device that needs less, and the memory signal's limit
 for one that runs short.
+
+## M8: emitting outside the JIT cache's lock (2026-10-20)
+
+Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB); the desktop guest from
+`target/snapbench/pages.webpcsnap` (Arch Linux ARM, Firefox, 2.5 GiB of RAM, 4 vCPUs, the default 320 MiB budget);
+sessions through `bench/gpu/ab.sh`, one per arm with an A/A copy of the base. Data in `bench/boot/results/m8-emit/`
+(`churn1/`, `pages1/`: each arm's `results.json`, `counts.json`, `stalls.json`, `rss.txt`, and `summary.json`, the
+`ab-summary` of the run). The patch is `outside-lock.patch` there.
+
+**The lock, counted** (counter words 108–113, ABI 46; `ab-summary`'s `locks`, `contended`, `waitMs`, `emitMs`,
+`lockedMs`, `planMs`): every vCPU takes the cache's one lock at each jump-cache miss, each decoded block's report
+(every 16 dispatches), each catch-up after a flush or an IC, and each tier-up; the vCPU that makes a batch due forms
+it and emits its module under it.
+
+| | pages session (base · copy) | churn screen, `rate=60&total=4000` (base · copy) |
+|---|---|---|
+| acquisitions | 86.9 M · 86.8 M | 66.1 M · 66.1 M |
+| found it held | 5.1% · 5.0% | 3.6% · 3.6% |
+| vCPU time waiting | 25.4 · 24.5 s | 37.6 · 41.2 s |
+| emitting (all under the lock) | 3.6 · 3.6 s | 7.7 · 7.8 s |
+| forming batches (under it) | 1.0 · 1.0 s | 2.1 · 2.1 s |
+| modules | 6,735 · 6,748 | 33,035 · 32,888 |
+
+Of ~1,450 vCPU-seconds in the pages session the waiting is ~1.7%, of ~800 in the churn ~4.7%; emission is under 1%
+of either. Most of the waiting is the acquisitions' number (~230,000 a second), not what is held.
+
+**Emitting outside it** (commit 1e628b8's design for the replay, ported to batches and tier-ups): under the lock a
+batch or a tier-up is formed and taken (its slots, a held place in the log, its module number, the epoch, the
+`ival_log` position, pinned, and the imports its regions' successors resolve to; its heads marked taken so no batch
+takes them again), emitted without it, and committed under it unless the epoch moved, an IC named one of its pages or
+an import moved, in which case the whole module goes, its place stays empty and its number reaches the compile worker
+as no bytes. Tables install up to the first held place; a head whose tier-up another table is emitting counts 64
+entries again. Unit tests for the take and for each discard rule (a planted bug in each failed them); the Node JIT
+tests, the boots' exact steps, the parallel boots and the compile worker's tests passed.
+
+| | base · copy | outside the lock |
+|---|---|---|
+| churn: vCPU time waiting | 37.6 · 41.2 s | 25.9 s |
+| churn: busy MIPS | 191 · 187 | 192 |
+| churn: `doneS` | 132.3 · 132.7 | 132.5 |
+| churn: stalls ≥ 20 ms | 0 · 3 | 0 |
+| churn: discarded | | 13 of 32,826 |
+| pages: vCPU time waiting | 25.4 · 24.5 s | 19.2 s |
+| pages: busy MIPS | 154 · 154 | 155 |
+| pages: wiki / bbc load | 17.5 · 17.5 / 16.7 · 16.0 s | 18.0 / 16.5 s |
+| pages: stalls ≥ 20 ms | 0 · 4 | 0 |
+| pages: discarded | | 2 of 6,755 |
+
+The waiting fell by a third on the churn and a fifth on the pages, and nothing a user would see moved: what it freed
+is ~1% of the vCPUs' time at most. **Not kept**; the counters are. **Emitting in the compile worker** would take the
+rest of emission off the vCPUs, at most the same ~1%, so it wasn't built. What would cut the waiting is fewer
+acquisitions (docs/backlog.md).

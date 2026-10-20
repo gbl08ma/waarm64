@@ -1,0 +1,778 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 9a330cc..4deb179 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -248,7 +248,7 @@ fn succ(key: u64, off: i64) -> u64 {
+ }
+ 
+ /// The keys of a block's static successors (the taken side first).
+-fn succs(key: u64, words: &[u32]) -> Vec<u64> {
++pub(crate) fn succs(key: u64, words: &[u32]) -> Vec<u64> {
+     match next(words) {
+         Next::None => vec![],
+         Next::One(o) => vec![succ(key, o)],
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index b849fb8..9c605ac 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -258,6 +258,9 @@ struct Info {
+     hash: u64,
+     /// A loop head compiled alone: its hot word's index + 1 (step 8.3).
+     word: u32,
++    /// Heads a module being emitted outside the lock ([`Cache::take`]):
++    /// no batch takes it again, no tier-up starts again, until its commit.
++    taken: bool,
+ }
+ 
+ /// A jump cache entry: the compiled block for a key. Blocks read it too
+@@ -306,6 +309,10 @@ pub const BATCH_TIMEOUT: u64 = 64_000_000;
+ /// [`Config::DEFAULT`]'s `warm`.
+ pub const WARM: u32 = 16;
+ 
++/// The entries a hot word counts again when its head's tier-up is being
++/// emitted by another table ([`Cache::tier_up`]).
++const REARM: u32 = 64;
++
+ /// The code cache a VM's vCPUs share (docs/jit.md "Sharing"): the blocks, the
+ /// pending batch, the slot allocator, and the modules installed since the
+ /// last flush, which every [`Table`] installs in the same slots, in order.
+@@ -365,6 +372,10 @@ pub struct Cache {
+     /// oldest (a table that missed one starts over).
+     ival_log: VecDeque<u64>,
+     ival_base: u64,
++    /// The `ival_log` positions (absolute) of the modules being emitted
++    /// outside the lock ([`Cache::take`]): the log keeps what follows them
++    /// for their commits to check.
++    pins: Vec<u64>,
+     /// `ival_base` + the log's length, read without the lock ([`Jit::fresh`]).
+     ivals: Arc<AtomicU64>,
+     /// Flushes (and `IC IALLU`s) so far: each starts the slots over.
+@@ -415,6 +426,10 @@ pub const MIN_LIMIT: u64 = 16 << 20;
+ 
+ /// A module installed since the last flush.
+ struct Logged {
++    /// Its place while it's emitted outside the lock ([`Cache::take`]): no
++    /// table takes it or what follows it until its commit, which fills it in
++    /// (or leaves it empty, `n` 0, when it discards the module).
++    held: bool,
+     slot: u32,
+     /// Its functions, and its number for the compile worker (0: none).
+     n: u32,
+@@ -470,6 +485,7 @@ impl Cache {
+             drops: Arc::new(AtomicU64::new(1)),
+             ival_log: VecDeque::new(),
+             ival_base: 0,
++            pins: Vec::new(),
+             ivals: Arc::new(AtomicU64::new(0)),
+             epoch: 0,
+             log: Vec::new(),
+@@ -559,6 +575,7 @@ impl Cache {
+         self.epoch += 1;
+         self.log.clear();
+         self.freed = 0;
++        self.pins.clear();
+         for t in &mut self.tables {
+             *t = Seen {
+                 ival: t.ival,
+@@ -644,6 +661,9 @@ impl Cache {
+     /// it (as the blocks a forward region takes from the batch did when every
+     /// dispatch reported: counting 16 at a time scattered them over batches,
+     /// and Alpine's boot made 30% more, smaller regions and ran 8% slower).
++    /// The batch it makes due comes back as a module to emit outside the
++    /// lock ([`Cache::take`]).
++    #[allow(clippy::too_many_arguments)]
+     fn miss(
+         &mut self,
+         t: &mut Table,
+@@ -652,11 +672,12 @@ impl Cache {
+         mem: &Mem,
+         n: u32,
+         len: Option<u32>,
+-    ) -> (Result<(u32, u32), u32>, u32) {
++    ) -> (Result<(u32, u32), u32>, u32, Option<Job>) {
+         let info = info(&mut self.map, &mut self.pages, key, || {
+             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
+         });
+-        if info.idx == 0 && !self.off && info.len > 0 {
++        let mut job = None;
++        if info.idx == 0 && !self.off && info.len > 0 && !info.taken {
+             info.hits = info.hits.saturating_add(n);
+             if info.hits > self.threshold && !info.queued {
+                 info.queued = true;
+@@ -664,27 +685,28 @@ impl Cache {
+             } else if info.queued {
+                 self.pending_steps += info.len as u64 * n as u64;
+             }
+-            self.emit_if_due(t, mem);
++            job = self.emit_if_due(t, mem);
+         }
+         let report = interp::block::REPORT;
+-        match self.map.get(&key) {
++        let (r, quota) = match self.map.get(&key) {
+             // The jump cache gets it once the table has installed it ([`Jit::miss`]).
+             Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len)), report),
+-            Some(i) if !i.queued && !self.off => (
++            Some(i) if !i.queued && !i.taken && !self.off => (
+                 Err(i.len.max(1)),
+                 report.min(self.threshold.saturating_sub(i.hits)),
+             ),
+             Some(i) => (Err(i.len.max(1)), report),
+             None => (Err(1), 0), // flushed by the emit
+-        }
++        };
++        (r, quota, job)
+     }
+ 
+     /// Emits the pending batch when it's full, its blocks have run
+     /// [`BATCH_STEPS`] interpreted, or it has waited [`BATCH_TIMEOUT`] (by
+     /// table `t`'s clock), into `t`.
+-    fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
++    fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) -> Option<Job> {
+         if self.pending.is_empty() {
+-            return;
++            return None;
+         }
+         if t.since.0 != self.batch {
+             t.since = (self.batch, t.clock);
+@@ -697,8 +719,9 @@ impl Cache {
+             let regions = self.plan(mem);
+             t.stats.plan_ns += now_ns().saturating_sub(ns);
+             self.batch += 1;
+-            self.install(t, regions, mem);
++            return self.take(t, regions, mem, None);
+         }
++        None
+     }
+ 
+     /// The pending batch as regions. A head whose region is a loop is
+@@ -762,7 +785,11 @@ impl Cache {
+                             let warm = self.cfg.warm;
+                             (all || warm > 0
+                                 && self.map.get(&k).is_some_and(|i| {
+-                                    i.idx == 0 && !i.queued && i.len > 0 && i.hits >= warm
++                                    i.idx == 0
++                                        && !i.queued
++                                        && !i.taken
++                                        && i.len > 0
++                                        && i.hits >= warm
+                                 }))
+                                 && !heads_loop(&self.region(k, 0, mem))
+                         }
+@@ -801,37 +828,44 @@ impl Cache {
+     }
+ 
+     /// A loop head compiled alone got hot in table `t` (`jit_hot`, which runs
+-    /// inside JIT code: never a flush here): compiles its loop region in its
+-    /// own module, or finds it compiled already (it got hot in another table
+-    /// first), and points the head's hot word in `t` at it.
+-    fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
++    /// inside JIT code: never a flush here): takes its loop region as a
++    /// module to emit outside the lock ([`Cache::take`]; its commit points
++    /// the head's hot word in `t` at it), or finds it compiled already (it
++    /// got hot in another table first) and points the word at it now.
++    fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) -> Option<Job> {
+         if let Some(r) = self.tiers.get(&key) {
+             r.quiet.iter().for_each(|&w| t.quiet(w));
+             t.redirect(r.word, r.idx, key);
+-            return;
++            return None;
++        }
++        let (word, taken) = self.map.get(&key).map(|i| (i.word, i.taken))?;
++        if word == 0 {
++            return None;
++        }
++        if taken {
++            // Another table is emitting its region: the head counts again,
++            // and finds it compiled then.
++            t.rearm(word);
++            return None;
+         }
+-        let Some(word) = self.map.get(&key).map(|i| i.word).filter(|&w| w != 0) else {
+-            return;
+-        };
+         // Never a flush here: JIT code is running (the head's prologue), and
+         // what it goes on to call must stay in the cache. Without room, the
+         // head stays alone until the next flush drops it.
+         let r = self.region(key, va, mem);
+         if r.blocks.len() < 2 || self.next >= self.cfg.capacity || self.live_bytes >= self.budget()
+         {
+-            return;
++            return None;
+         }
+-        // Members that are loop heads compiled alone stop counting: this
+-        // region runs their loop now, unless they head an inner loop (an
+-        // edge back to them leaves the region).
++        // Members that are loop heads compiled alone stop counting once it's
++        // committed: this region runs their loop then, unless they head an
++        // inner loop (an edge back to them leaves the region).
+         let quiet: Vec<u32> = r
+             .inner_free()
+             .into_iter()
+             .filter_map(|m| self.map.get(&m).map(|i| i.word).filter(|&w| w != 0))
+             .collect();
+-        quiet.iter().for_each(|&w| t.quiet(w));
+         // The pending batch goes along (a module fewer, V8's per-module cost:
+-        // docs/jit.md "Memory"), the region first so `idx` is its index.
++        // docs/jit.md "Memory"), the region first so its index is the module's.
+         let mut regions = vec![r];
+         if !self.pending.is_empty()
+             && self.next + 1 + self.pending.len() as u32 <= self.cfg.capacity
+@@ -841,24 +875,24 @@ impl Cache {
+             t.stats.plan_ns += now_ns().saturating_sub(ns);
+             self.batch += 1;
+         }
+-        let Some(idx) = self.install(t, regions, mem) else {
+-            return;
+-        };
+-        t.redirect(word, idx, key);
+-        self.tiers.insert(key, Tier { idx, word, quiet });
+-        t.stats.tier_ups += 1;
++        self.take(t, regions, mem, Some((key, word, quiet)))
+     }
+ 
+-    /// Compiles `regions` into one module and logs it; the table index of its
+-    /// first function. Table `t` installs it after the lock is released
+-    /// ([`Jit::install`]: a compile in V8 under the lock would hold up every
+-    /// vCPU's misses). Counted in `t`.
+-    fn install(
++    /// Takes `regions` as a module to emit outside the lock ([`Job::make`],
++    /// then [`Cache::commit`]): its slots (a flush first if they don't fit:
++    /// never for a tier-up, which checked), its place in the log, held until
++    /// the commit, its number for the compile worker, the epoch, the
++    /// `ival_log` position (pinned until the commit), and what its regions
++    /// may import as the cache has it now. Its heads are taken: no batch
++    /// takes them again meanwhile. `tier`: a tier-up's head, its hot word
++    /// and the words its region quiets ([`Cache::tier_up`]).
++    fn take(
+         &mut self,
+         t: &mut Table,
+         mut regions: Vec<block::Region>,
+         mem: &Mem,
+-    ) -> Option<u32> {
++        tier: Option<(u64, u32, Vec<u32>)>,
++    ) -> Option<Job> {
+         let (base, phys) = mem.base();
+         let ram = (base as usize, phys, mem.size());
+         assert!(
+@@ -872,50 +906,138 @@ impl Cache {
+         let slot = self.alloc(n, &mut t.stats);
+         t.miss_functions(self, mem);
+         let xmiss = self.xmiss.filter(|_| !self.off)?;
+-        let mut tiers = Vec::new();
+         for (k, r) in regions.iter_mut().enumerate() {
+             if r.tier.is_some() {
+-                let w = slot + k as u32;
+-                r.tier = Some(w);
+-                tiers.push(w);
++                r.tier = Some(slot + k as u32);
+             }
+         }
+-        let map = &self.map;
+-        let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
+-        let ns = now_ns();
++        let heads = |k: u64| regions.iter().any(|r| r.blocks[0].key == k);
++        let mut imports = Map::default();
++        for b in regions.iter().flat_map(|r| &r.blocks) {
++            for k in block::succs(b.key, &b.words) {
++                if !heads(k)
++                    && let Some(i) = self.map.get(&k).filter(|i| i.idx != 0)
++                {
++                    imports.insert(k, (i.idx, i.len));
++                }
++            }
++        }
++        for r in &regions {
++            if let Some(i) = self.map.get_mut(&r.blocks[0].key) {
++                i.taken = true;
++            }
++        }
++        self.log.push(Logged {
++            held: true,
++            slot,
++            n,
++            seq: 0,
++            bytes: Vec::new(),
++            tiers: Vec::new(),
++        });
++        let ival = self.ival_base + self.ival_log.len() as u64;
++        self.pins.push(ival);
++        // Numbered now, so the numbers follow the log; a host without a
++        // compile worker ignores them (and the commit logs 0).
++        let seq = self.seq;
++        self.seq = seq.wrapping_add(1).max(1);
++        Some(Job {
++            epoch: self.epoch,
++            ival,
++            slot,
++            log: self.log.len() - 1,
++            seq,
++            regions,
++            imports,
++            cfg: self.cfg,
++            features: self.features,
++            xmiss,
++            tier,
++        })
++    }
++
++    /// Logs job `j`'s module `e` ([`Cache::take`]) in its place and files its
++    /// regions, unless the cache moved on since in a way that may make it
++    /// wrong: the epoch moved (a flush, `IC IALLU`: its slots and its log
++    /// entry are gone), an IC named a page of one of its regions (their
++    /// code may have changed after it was read), or a block it imports
++    /// isn't at the same index any more (dropped: the module would call a
++    /// slot that may hold something else). The whole module goes (its
++    /// regions call each other directly) and its place in the log is left
++    /// empty (its number passed to the compile worker as nothing). Returns
++    /// the table index of its first function; counted in `t`.
++    fn commit(&mut self, t: &mut Table, j: Job, e: block::Emitted) -> Option<u32> {
++        let skip = |c: &Cache| {
++            compile(&[], j.seq, j.epoch as u32, &c.ready);
++        };
++        if j.epoch != self.epoch {
++            t.stats.discard_epoch += 1;
++            skip(self);
++            return None;
++        }
++        if let Some(p) = self.pins.iter().position(|&p| p == j.ival) {
++            self.pins.swap_remove(p);
++        }
++        for r in &j.regions {
++            if let Some(i) = self.map.get_mut(&r.blocks[0].key) {
++                i.taken = false;
++            }
++        }
++        let named = j.ival < self.ival_base
++            || self
++                .ival_log
++                .range((j.ival - self.ival_base) as usize..)
++                .any(|&p| {
++                    p == u64::MAX
++                        || j.regions
++                            .iter()
++                            .any(|r| r.blocks.iter().any(|b| b.key >> 12 == p))
++                });
++        let moved = || {
++            j.imports
++                .iter()
++                .any(|(k, &(idx, _))| self.map.get(k).map(|i| i.idx) != Some(idx))
++        };
++        if named || moved() {
++            if named {
++                t.stats.discard_page += 1;
++            } else {
++                t.stats.discard_import += 1;
++            }
++            self.log[j.log] = Logged {
++                held: false,
++                slot: j.slot,
++                n: 0,
++                seq: 0,
++                bytes: Vec::new(),
++                tiers: Vec::new(),
++            };
++            skip(self);
++            return None;
++        }
+         let block::Emitted {
+             bytes,
+             inl,
+             links,
+             counts,
+-        } = block::module(
+-            &regions,
+-            mem,
+-            compiled,
+-            &self.cfg,
+-            true,
+-            self.features,
+-            Some(xmiss),
+-        );
+-        let ns = now_ns().saturating_sub(ns);
+-        (t.stats.emit_ns, t.stats.emit_locked_ns) =
+-            (t.stats.emit_ns + ns, t.stats.emit_locked_ns + ns);
++        } = e;
++        let (slot, regions, n) = (j.slot, &j.regions, j.regions.len() as u32);
+         let len = bytes.len() as u64;
+-        let seq = self.seq;
+-        let seq = if compile(&bytes, seq, self.epoch as u32, &self.ready) {
+-            self.seq = seq.wrapping_add(1).max(1);
+-            seq
++        let seq = if compile(&bytes, j.seq, j.epoch as u32, &self.ready) {
++            j.seq
+         } else {
+             0
+         };
+-        self.log.push(Logged {
++        let tiers = regions.iter().filter_map(|r| r.tier).collect();
++        self.log[j.log] = Logged {
++            held: false,
+             slot,
+             n,
+             seq,
+             bytes,
+             tiers,
+-        });
+-        let idx = xmiss + slot;
++        };
++        let idx = j.xmiss + slot;
+         self.live_bytes += len;
+         self.retune();
+         self.publish();
+@@ -962,10 +1084,57 @@ impl Cache {
+                 }
+             }
+         }
++        if let Some((key, word, quiet)) = j.tier {
++            quiet.iter().for_each(|&w| t.quiet(w));
++            t.redirect(word, idx, key);
++            self.tiers.insert(key, Tier { idx, word, quiet });
++            t.stats.tier_ups += 1;
++        }
+         Some(idx)
+     }
+ }
+ 
++/// A module taken under the cache's lock and emitted without it
++/// ([`Cache::take`], [`Job::make`], [`Cache::commit`]).
++pub struct Job {
++    /// The epoch and the `ival_log` position (absolute) it was taken at,
++    /// its slots' first, its entry in `Cache::log`, its number for the
++    /// compile worker.
++    epoch: u64,
++    ival: u64,
++    slot: u32,
++    log: usize,
++    seq: u32,
++    regions: Vec<block::Region>,
++    /// What its regions import, as the cache had it (key: table index and
++    /// length).
++    imports: Map<(u32, u32)>,
++    cfg: Config,
++    features: u64,
++    xmiss: u32,
++    /// A tier-up's head, its hot word and the words its region quiets.
++    tier: Option<(u64, u32, Vec<u32>)>,
++}
++
++impl Job {
++    /// Emits the module (without the lock: [`Cache::commit`] finds what
++    /// changed meanwhile). Counted in `s`.
++    fn make(&self, mem: &Mem, s: &mut Stats) -> block::Emitted {
++        let ns = now_ns();
++        let e = block::module(
++            &self.regions,
++            mem,
++            |k| self.imports.get(&k).copied(),
++            &self.cfg,
++            true,
++            self.features,
++            Some(self.xmiss),
++        );
++        s.emit_ns += now_ns().saturating_sub(ns);
++        e
++    }
++}
++
+ /// A function table's side of the JIT: a thread's (each vCPU worker's in
+ /// parallel SMP; round-robin's one, which every vCPU uses). The modules of
+ /// the shared [`Cache`] it has installed, the jump cache and the hot words
+@@ -1126,13 +1295,15 @@ impl Table {
+         }
+         seen.ival = end;
+         self.ivals = end;
+-        let oldest = c.tables.iter().map(|t| t.ival).min().unwrap_or(end);
++        let seen = c.tables.iter().map(|t| t.ival);
++        let oldest = seen.chain(c.pins.iter().copied()).min().unwrap_or(end);
+         while c.ival_base < oldest {
+             c.ival_log.pop_front();
+             c.ival_base += 1;
+         }
+         if self.xmiss {
+-            for l in &c.log[self.installed..] {
++            // Up to the first module still emitted outside the lock.
++            for l in c.log[self.installed..].iter().take_while(|l| !l.held) {
+                 self.todo.push(Todo {
+                     slot: l.slot,
+                     n: l.n,
+@@ -1140,8 +1311,8 @@ impl Table {
+                     bytes: l.bytes.clone(),
+                     tiers: l.tiers.clone(),
+                 });
++                self.installed += 1;
+             }
+-            self.installed = c.log.len();
+         }
+         c.tables[self.id].installed = self.installed;
+         // The modules every table has taken: their bytes aren't needed again.
+@@ -1178,6 +1349,11 @@ impl Table {
+         }
+         let mut done = 0;
+         for m in &self.todo[..k] {
++            if m.n == 0 {
++                // Discarded at its commit: nothing in its slots.
++                done += 1;
++                continue;
++            }
+             // The host takes the worker's compiled module, or compiles the
+             // bytes itself (seq 0: no worker, or waited too long).
+             let at = match install_seq(&m.bytes, m.slot, if overdue { 0 } else { m.seq }) {
+@@ -1270,6 +1446,15 @@ impl Table {
+         }
+     }
+ 
++    /// Hot word `word - 1` counts [`REARM`] entries again, unless it
++    /// redirects already (a tier-up of its head is being emitted).
++    fn rearm(&mut self, word: u32) {
++        let h = &mut self.hot[word as usize - 1];
++        if *h & emit::REDIRECT == 0 {
++            *h = REARM;
++        }
++    }
++
+     /// Hot word `word - 1` stops counting (its head's loop is in a region
+     /// now), unless it redirects already: its region stays.
+     fn quiet(&mut self, word: u32) {
+@@ -1383,10 +1568,23 @@ impl Jit {
+         // flushed): an entry it fills now and a catch-up then clears is only
+         // a later miss. What it returns is installed before any block runs.
+         let n = self.table.dec.counted(key) + 1;
+-        let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
++        let (mut r, quota, job) = c.miss(&mut self.table, key, va, mem, n, len);
+         self.table.dec.quota(key, quota);
+         self.table.sync(&mut c, mem);
+         drop(c);
++        if let Some(j) = job {
++            // The block that made the batch due is compiled once it commits.
++            let head = j
++                .regions
++                .iter()
++                .enumerate()
++                .find(|(_, r)| r.blocks[0].key == key);
++            let head = head.map(|(k, r)| (k as u32, r.blocks[0].words.len() as u32));
++            if let (Some(idx), Some((k, len))) = (self.emit(j, mem, true), head) {
++                r = Ok((idx + k, len));
++                self.table.dec.quota(key, interp::block::REPORT);
++            }
++        }
+         self.install();
+         match r {
+             Ok((idx, len)) if idx < self.table.limit => {
+@@ -1472,11 +1670,28 @@ impl Jit {
+         }
+         // The hot words it sets are read only when this returns, by then
+         // with their region installed.
+-        c.tier_up(&mut self.table, key, va, mem);
++        let job = c.tier_up(&mut self.table, key, va, mem);
+         self.table.sync(&mut c, mem);
+         drop(c);
++        if let Some(j) = job {
++            self.emit(j, mem, false);
++        }
+         self.install();
+     }
++
++    /// Emits job `j` without the cache's lock and commits it under it
++    /// ([`Cache::take`]), then catches up. `dispatcher`: no JIT code is on
++    /// the stack, so the table may move to a new epoch (else, from
++    /// `jit_hot`, it catches up only within its own).
++    fn emit(&mut self, j: Job, mem: &Mem, dispatcher: bool) -> Option<u32> {
++        let e = j.make(mem, &mut self.table.stats);
++        let mut c = lock(&self.cache, &mut self.table.stats);
++        let idx = c.commit(&mut self.table, j, e);
++        if dispatcher || self.table.epoch == c.epoch {
++            self.table.sync(&mut c, mem);
++        }
++        idx
++    }
+ }
+ 
+ type Map<V> = HashMap<u64, V, BuildHasherDefault<KeyHasher>>;
+@@ -2308,7 +2523,7 @@ mod tests {
+             // Jit::miss, without the lock.
+             let len = t.dec.decode(key, &mem);
+             let n = t.dec.counted(key) + 1;
+-            let (r, quota) = c.miss(&mut t, key, 0, &mem, n, len);
++            let (r, quota, _) = c.miss(&mut t, key, 0, &mem, n, len);
+             t.dec.quota(key, quota);
+             assert_eq!(r, Err(2));
+             reports += 1;
+@@ -2359,6 +2574,104 @@ mod tests {
+         assert!(t.redirects.is_empty());
+     }
+ 
++    /// A cache and a table as if a JIT host had installed the miss functions
++    /// at table index 1 (natively there's none), and RAM with a block at
++    /// 0x1000 that branches to one at 0x2000 (another page) and one there
++    /// that returns.
++    fn hosted(ram: &mut [u128]) -> (Cache, Table, Mem) {
++        // SAFETY: `ram` outlives the test's use of `mem` and is 16-byte aligned.
++        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), ram.len() as u64 * 16) };
++        mem.write(0x1000, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
++        mem.write(0x1004, 4, 0x1400_03ff).unwrap(); // b 0x2000
++        mem.write(0x2000, 4, 0xd65f_03c0).unwrap(); // ret
++        let mut c = Cache::new(Config::DEFAULT);
++        let mut t = Table::new(&mut c);
++        c.xmiss = Some(1);
++        (t.xmiss, t.base) = (true, 1);
++        (c, t, mem)
++    }
++
++    /// Takes the region at `key` as a module and emits it (as [`Jit::emit`]
++    /// does, without the lock between).
++    fn taken(c: &mut Cache, t: &mut Table, key: u64, mem: &Mem) -> (Job, block::Emitted) {
++        let r = c.region(key, key, mem);
++        c.info(key, || 0);
++        let j = c.take(t, vec![r], mem, None).expect("a job");
++        let e = j.make(mem, &mut t.stats);
++        (j, e)
++    }
++
++    /// A module emitted outside the lock holds its place in the log until
++    /// its commit: no table takes it, or what follows it, before; then it is
++    /// filed with what it imports as the cache had it at its take.
++    #[test]
++    fn a_module_emitted_outside_the_lock_commits_in_its_place() {
++        let mut ram = vec![0u128; 0x3000 / 16];
++        let (mut c, mut t, mem) = hosted(&mut ram);
++        let (j, e) = taken(&mut c, &mut t, 0x2000, &mem);
++        let b = c.commit(&mut t, j, e).expect("committed");
++        assert_eq!((b, c.map[&0x2000].idx), (1 + MISS_SLOTS, 1 + MISS_SLOTS));
++        let (j, e) = taken(&mut c, &mut t, 0x1000, &mem);
++        assert_eq!(
++            j.imports.get(&0x2000),
++            Some(&(b, 1)),
++            "imports the block at 0x2000"
++        );
++        assert!(c.map[&0x1000].taken && c.log[1].held);
++        t.sync(&mut c, &mem);
++        assert_eq!((t.todo.len(), t.installed), (1, 1), "up to the held place");
++        let a = c.commit(&mut t, j, e).expect("committed");
++        assert_eq!((a, c.map[&0x1000].idx), (b + 1, b + 1));
++        assert!(!c.map[&0x1000].taken && !c.log[1].held && c.pins.is_empty());
++        assert_eq!(c.linkers[&0x2000], vec![0x1000]);
++        t.sync(&mut c, &mem);
++        assert_eq!((t.todo.len(), t.installed), (2, 2));
++        let s = &t.stats;
++        assert_eq!(
++            (s.modules, s.discard_epoch, s.discard_page, s.discard_import),
++            (2, 0, 0, 0)
++        );
++    }
++
++    /// The commit discards the whole module when the epoch moved, an IC
++    /// named one of its pages, or a block it imports was dropped, and
++    /// leaves its place in the log empty.
++    #[test]
++    fn a_commit_discards_what_moved_meanwhile() {
++        let mut ram = vec![0u128; 0x3000 / 16];
++        let mut s = Stats::default();
++        // A flush: its slots and its log entry are gone.
++        let (mut c, mut t, mem) = hosted(&mut ram);
++        let (j, e) = taken(&mut c, &mut t, 0x1000, &mem);
++        c.flush(&mut s);
++        assert_eq!(c.commit(&mut t, j, e), None);
++        assert_eq!(t.stats.discard_epoch, 1);
++        assert!(c.log.is_empty() && !c.map.contains_key(&0x1000));
++        // An IC on its page.
++        let (mut c, mut t, mem) = hosted(&mut ram);
++        let (j, e) = taken(&mut c, &mut t, 0x1000, &mem);
++        c.invalidate(0x1000, &mut s);
++        c.info(0x1000, || 1); // seen again meanwhile
++        assert_eq!(c.commit(&mut t, j, e), None);
++        assert_eq!(t.stats.discard_page, 1);
++        assert_eq!(
++            (c.log[0].held, c.log[0].n, c.map[&0x1000].idx),
++            (false, 0, 0)
++        );
++        t.sync(&mut c, &mem);
++        assert_eq!((t.todo.len(), t.todo[0].n), (1, 0), "taken as nothing");
++        // A block it imports dropped (an IC on that block's page).
++        let (mut c, mut t, mem) = hosted(&mut ram);
++        let (j, e) = taken(&mut c, &mut t, 0x2000, &mem);
++        c.commit(&mut t, j, e).expect("committed");
++        let (j, e) = taken(&mut c, &mut t, 0x1000, &mem);
++        c.invalidate(0x2000, &mut s);
++        assert_eq!(c.commit(&mut t, j, e), None);
++        assert_eq!((t.stats.discard_import, t.stats.discard_page), (1, 0));
++        assert_eq!(c.map[&0x1000].idx, 0);
++        assert!(!c.map[&0x1000].taken, "a later batch may take it again");
++    }
++
+     /// Module numbers wrap (u32), and 0 is a module the worker didn't take.
+     #[test]
+     fn the_ready_word_compares_with_wrapping() {
+diff --git a/tests/jit-compile-worker.test.ts b/tests/jit-compile-worker.test.ts
+index e1ed02e..45fcce1 100644
+--- a/tests/jit-compile-worker.test.ts
++++ b/tests/jit-compile-worker.test.ts
+@@ -38,3 +38,15 @@ test('compile worker: each compiled module goes to every vCPU before the ready w
+   ]);
+   assert.equal(ready[0], 2);
+ });
++
++test('compile worker: a number the core discarded (no bytes) is passed, compiled as nothing and posted to no vCPU', () => {
++  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
++  const ready = new Uint32Array(memory.buffer, 64, 1);
++  const got: number[] = [];
++  const c = compiler(memory, [{ postMessage: (m: { seq: number }) => got.push(m.seq) }]);
++  c.job({ seq: 2, epoch: 0, ready: 64, bytes: EMPTY.slice(0) });
++  c.job({ seq: 1, epoch: 0, ready: 64, bytes: new ArrayBuffer(0) });
++  assert.equal(ready[0], 2);
++  assert.deepEqual(got, [2]);
++  assert.deepEqual(c.stats(), { compiled: 1, failed: 0, ms: c.stats().ms, kept: 1 });
++});
+diff --git a/web/jit-compile-worker.ts b/web/jit-compile-worker.ts
+index 314ec14..d328be2 100644
+--- a/web/jit-compile-worker.ts
++++ b/web/jit-compile-worker.ts
+@@ -24,9 +24,21 @@ export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: Com
+   let epoch = 0;
+   const kept: { module?: WebAssembly.Module; epoch: number; at: number }[] = [];
+   let compiled = 0, failed = 0, ms = 0;
++  /** Module `j.seq` is done: `ready` moves up to the lowest number not done yet. */
++  const finish = (j: CompileJob) => {
++    done.add(j.seq);
++    let moved = false;
++    while (done.delete(next)) {
++      next = (next + 1) >>> 0 || 1;
++      moved = true;
++    }
++    if (moved) Atomics.store(new Uint32Array(memory.buffer, j.ready, 1), 0, (next - 1) >>> 0 || 0xffff_ffff);
++  };
+   return {
+     job(j: CompileJob) {
+       const t0 = performance.now();
++      // No bytes: a number the core took for a module it then discarded (core/src/jit `Cache::commit`), passed.
++      if (j.bytes.byteLength === 0) return finish(j);
+       let module: WebAssembly.Module | undefined;
+       try {
+         module = new WebAssembly.Module(j.bytes);
+@@ -44,13 +56,7 @@ export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: Com
+       // To every vCPU before `ready` says it's compiled: a table installs it once it's there (ABI 37).
+       for (const p of ports) p.postMessage({ seq: j.seq, module } satisfies CompiledJob);
+       while (kept.length && t0 - kept[0].at > KEEP_MS) kept.shift();
+-      done.add(j.seq);
+-      let moved = false;
+-      while (done.delete(next)) {
+-        next = (next + 1) >>> 0 || 1;
+-        moved = true;
+-      }
+-      if (moved) Atomics.store(new Uint32Array(memory.buffer, j.ready, 1), 0, (next - 1) >>> 0 || 0xffff_ffff);
++      finish(j);
+     },
+     stats: () => ({ compiled, failed, ms, kept: kept.length }),
+   };
+diff --git a/web/vm.ts b/web/vm.ts
+index 2c36f26..baae079 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
+ import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
+ export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
+ 
+-export const ABI = 45;
++export const ABI = 46;
+ const RAM_BASE = 0x4000_0000;
+ const RING = 4096;
+ 

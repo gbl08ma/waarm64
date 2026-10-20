@@ -239,6 +239,12 @@ its jump cache and hot words, its helper counts and its counters.
   a worker stalled in `jit_install` holding it kept the other vCPUs from even reaching their DSB
   (`tests/hoststall.test.ts`), and in a browser one worker's compile would hold up every vCPU's
   misses.
+  - **What the lock costs** (counter words 108–113, `ab-summary`'s `locks`, `contended`, `waitMs`, `lockedMs`):
+    Firefox's pages session on 4 vCPUs takes it ~87 M times (~230,000 a second: jump-cache misses and the decoded
+    blocks' reports), 5% of them finding it held, ~25 s of vCPU time waiting in all (~1.7% of the vCPUs' time);
+    the churn screen 66 M times, 3.6% held, ~38 s (~4.7%). Emitting the modules is 3.6 s and 7.7 s of that held
+    time, forming the batches 1 s and 2 s: emitting outside the lock cut the waiting by a fifth to a third and
+    nothing else ([Tried and not kept](#tried-and-not-kept)). What's left is the acquisitions' number.
 - **The compile worker** (parallel SMP; `web/jit-compile-worker.ts`, `env.jit_compile` in
   [abi.md](abi.md)): the vCPU that emits a module hands a copy to one worker of the VM's (number
   `seq`, under the lock), which compiles it (`new WebAssembly.Module`: V8's process-wide module
@@ -746,6 +752,18 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   modules of 128 regions changed neither (one session each). The 4-vCPU `go build` loop ran 9% faster with it (one
   flush, in its first minutes), which the larger budget gives without it; the gates were even. What it was for, a
   flush in a browser's session, the larger budget mostly removes.
+- **Emitting outside the cache's lock** (M8, 2026-10-20; `bench/boot/REPORT.md` "M8: emitting outside the JIT
+  cache's lock", the patch in `bench/boot/results/m8-emit/outside-lock.patch`): a batch or a tier-up taken under the
+  lock (its slots, a held place in the log that no table installs past, its module number, the epoch, a pinned
+  `ival_log` position, the imports looked up), emitted without it, and committed under it unless the epoch moved, an
+  IC named one of its pages or an import moved (each rule with a unit test that a planted bug fails; a module
+  discarded leaves an empty place and passes its number to the compile worker as no bytes). Correct, and identical
+  in deterministic runs. From the pages snapshot, one session per arm with an A/A: the vCPUs' time waiting for the
+  lock fell from 37.6/41.2 s to 25.9 s on the churn screen and from 25.4/24.5 s to 19.2 s on the pages session, with
+  13 and 2 modules discarded of 32,800 and 6,750; busy MIPS 192 against 191/187 and 155 against 154/154, the churn's
+  `doneS`, the heavy pages' loads and the stalls of 20 ms or more (0 against 0/3 and 0/4) even. Emission was 1% of
+  the vCPUs' time at most (7.7 s of ~800 in the churn), so **emitting in the compile worker** (which would take it
+  off the vCPUs altogether) can't show either and wasn't built.
 - **An adaptive budget** (M8, 2026-10-20; `bench/boot/REPORT.md` "M8: a machine's JIT budget and the page's memory
   signal", the code in `bench/boot/results/m8-budget/adaptive.patch`): starting at 160 MiB, a probe from 7/8 of the
   budget (the dispatchers marking the slots they enter), and at the fill a growth by half (up to the machine's 320)

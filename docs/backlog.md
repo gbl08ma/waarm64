@@ -168,8 +168,13 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     table entries each: small, not measured);
   - a module's bytes stay in the core's heap until every table has it, and a vCPU that never runs
     (offline) holds them until the next flush (at most the 320 MiB budget);
-  - the cache's lock is taken on every jump-cache miss and held while a batch is planned and
-    emitted (V8 compiles outside it); contention wasn't measured.
+  - **the cache's lock is taken ~230,000 times a second** in Firefox's pages session on 4 vCPUs (every jump-cache
+    miss, every 16th dispatch of a decoded block, catch-ups, tier-ups): 5% of them find it held, 1.7% of the vCPUs'
+    time waiting (4.7% on the churn screen; counter words 108–113, `ab-summary`'s `waitMs`). Emission under it is
+    a fifth to a third of that, and taking it out showed in nothing else ([jit.md](jit.md) "Tried and not kept").
+    What's left is the acquisitions' number: count which callers take it (a decoded block's report may not need
+    it until its key nears the threshold; a miss for a key the cache has seen could read a lock-free snapshot),
+    then measure busy MIPS on the churn screen, where the waiting is largest.
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
   which every function needs for the table; writing the table from an active element segment

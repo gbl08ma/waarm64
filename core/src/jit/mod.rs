@@ -15,8 +15,8 @@ pub mod wasm;
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::{BuildHasherDefault, Hasher};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, MutexGuard};
 
 use crate::cpu::sctlr;
 use crate::interp::{self, Exit};
@@ -206,6 +206,15 @@ pub struct Stats {
     /// so that it arrives (ABI 37, [`Table::parked`]).
     pub parks: u64,
     pub park_exits: u64,
+    /// The cache's lock (ABI 46): acquisitions, those that found it held and
+    /// the ns they waited; ns spent emitting modules (`block::module`), and
+    /// of those under the lock; ns forming batches into regions (under it).
+    pub locks: u64,
+    pub lock_contended: u64,
+    pub lock_wait_ns: u64,
+    pub emit_ns: u64,
+    pub emit_locked_ns: u64,
+    pub plan_ns: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -678,7 +687,9 @@ impl Cache {
             || t.clock - t.since.1 >= BATCH_TIMEOUT
             || self.pending_steps >= BATCH_STEPS
         {
+            let ns = now_ns();
             let regions = self.plan(mem);
+            t.stats.plan_ns += now_ns().saturating_sub(ns);
             self.batch += 1;
             self.install(t, regions, mem);
         }
@@ -819,7 +830,9 @@ impl Cache {
         if !self.pending.is_empty()
             && self.next + 1 + self.pending.len() as u32 <= self.cfg.capacity
         {
+            let ns = now_ns();
             regions.extend(self.plan(mem));
+            t.stats.plan_ns += now_ns().saturating_sub(ns);
             self.batch += 1;
         }
         let Some(idx) = self.install(t, regions, mem) else {
@@ -863,6 +876,7 @@ impl Cache {
         }
         let map = &self.map;
         let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
+        let ns = now_ns();
         let block::Emitted {
             bytes,
             inl,
@@ -877,6 +891,9 @@ impl Cache {
             self.features,
             Some(xmiss),
         );
+        let ns = now_ns().saturating_sub(ns);
+        (t.stats.emit_ns, t.stats.emit_locked_ns) =
+            (t.stats.emit_ns + ns, t.stats.emit_locked_ns + ns);
         let len = bytes.len() as u64;
         let seq = self.seq;
         let seq = if compile(&bytes, seq, self.epoch as u32, &self.ready) {
@@ -1355,7 +1372,7 @@ impl Jit {
         // length spares the cache forming it (only a block decoded now: one
         // decoded earlier may be from words an IC has dropped since).
         let len = self.table.dec.decode(key, mem);
-        let mut c = self.cache.lock();
+        let mut c = lock(&self.cache, &mut self.table.stats);
         // The table catches up after the miss, which may have compiled (or
         // flushed): an entry it fills now and a catch-up then clears is only
         // a later miss. What it returns is installed before any block runs.
@@ -1417,7 +1434,7 @@ impl Jit {
 
     #[inline(never)]
     fn sync(&mut self, mem: &Mem) {
-        let mut c = self.cache.lock();
+        let mut c = lock(&self.cache, &mut self.table.stats);
         self.table.sync(&mut c, mem);
         drop(c);
         self.install();
@@ -1425,25 +1442,25 @@ impl Jit {
 
     /// [`Cache::invalidate`].
     pub fn invalidate(&mut self, pa: u64) {
-        self.cache.lock().invalidate(pa, &mut self.table.stats);
+        lock(&self.cache, &mut self.table.stats).invalidate(pa, &mut self.table.stats);
     }
 
     /// [`Cache::flush`], and this table's decoded blocks too (the code
     /// changed: `jit_flush`).
     pub fn flush(&mut self) {
-        self.cache.lock().flush(&mut self.table.stats);
+        lock(&self.cache, &mut self.table.stats).flush(&mut self.table.stats);
         self.table.dec.clear();
     }
 
     fn check(&mut self, key: u64, mem: &Mem) -> bool {
-        self.cache.lock().check(key, mem, &mut self.table.stats)
+        lock(&self.cache, &mut self.table.stats).check(key, mem, &mut self.table.stats)
     }
 
     /// [`Cache::tier_up`], unless this table's slots are an epoch behind
     /// (the cache flushed since its vCPU entered JIT code): the head stays
     /// alone until the next.
     fn tier_up(&mut self, key: u64, va: u64, mem: &Mem) {
-        let mut c = self.cache.lock();
+        let mut c = lock(&self.cache, &mut self.table.stats);
         if self.table.epoch != c.epoch {
             return;
         }
@@ -1457,6 +1474,19 @@ impl Jit {
 }
 
 type Map<V> = HashMap<u64, V, BuildHasherDefault<KeyHasher>>;
+
+/// The cache's lock, counted in `s` (and the wait, when another table holds it).
+fn lock<'a>(c: &'a Lock<Cache>, s: &mut Stats) -> MutexGuard<'a, Cache> {
+    s.locks += 1;
+    if let Some(g) = c.try_lock() {
+        return g;
+    }
+    let t = now_ns();
+    let g = c.lock();
+    s.lock_contended += 1;
+    s.lock_wait_ns += now_ns().saturating_sub(t);
+    g
+}
 
 /// Whether the head's region ([`Cache::region`]) is a loop, of several
 /// blocks or of the head onto itself.
