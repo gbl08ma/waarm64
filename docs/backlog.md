@@ -31,6 +31,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## Interpreter
 
+The block interpreter's speed is a track of its own (`M8-INTERP-HANDOVER.md`, 2026-10-20), whose loops take up
+the first two items here.
+
 - **One decoded-block store the tables share** ([cpu.md](cpu.md) "The block interpreter"): each
   vCPU's table decodes the same code again (Chromium in Debian on 4 vCPUs: ~2M decodes a warm
   render with 4M micro-ops a table, ~1.5M of them re-decodes after a full arena). Sharing would

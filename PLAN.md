@@ -269,6 +269,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   on node 1, so the JIT's inline second path waits in the backlog; the heap floor stays 1 GiB (the heap reaches
   ~600 MiB).
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.
+- **The block interpreter's speed** (the user, 2026-10-20; `M8-INTERP-HANDOVER.md`): judged by the interpreter's
+  own MIPS, not by what it adds to a JIT run, so that the compile threshold can rise and less code reaches V8 (less
+  memory, later flushes: the JIT cache's flush work found no other lever). Loops 0–7: profile, a call-free hot loop,
+  pre-linked successors, lazy NZCV, superinstructions, specialization and more handlers, the threshold again, one
+  decoded-block store for every table.
 
 ### M9 — Backlog
 
