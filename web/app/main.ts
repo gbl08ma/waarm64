@@ -21,7 +21,7 @@ import { PageAudio } from '../audio.ts';
 import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
-import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, RAM_CHOICES, ramSplitError, type DiskChoice, type Machine, type MachineName } from './machine.ts';
+import { defaultCpus, diskOverlay, hostMemoryGiB, JIT_DEFAULT_MIB, MACHINES, RAM_CHOICES, ramSplitError, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { HeldError, PageNetwork } from './net-live.ts';
@@ -247,6 +247,11 @@ let ramMiB = Number(params.get('ram')) || stored?.record.ramMiB || (RAM_CHOICES.
 const splitParam = params.get('split')?.split(',').map(Number);
 let ramSplit = splitParam && !ramSplitError(splitParam) ? splitParam : params.has('ram') ? undefined : stored?.record.ramSplit;
 if (ramSplit) ramMiB = ramSplit.reduce((a, b) => a + b, 0);
+/** The JIT's code cache budget, MiB (`BootOptions.jitBytes`; docs/jit.md "Memory"): `?jitmb=`, else a stored machine's own; 0: the default. */
+const jitParam = () => Math.max(0, Math.round(Number(new URLSearchParams(location.search).get('jitmb')) || 0));
+let jitMiB = jitParam() || stored?.record.jitMiB || 0;
+/** The budget the machine runs with, MiB. */
+const jitBudget = () => jitMiB || JIT_DEFAULT_MIB;
 
 // The page's components (web/app/App.svelte), drawn now: the canvas and the terminal below are theirs. The network and the
 // sound are made first (their menus show them).
@@ -650,7 +655,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -756,7 +761,7 @@ async function reloadStored() {
     setState('failed', `This machine can't be opened: ${String((e as Error).message ?? e)}.`, [{ label: 'Machines…', run: () => openMachines() }]);
     return false;
   }
-  [ncpus, ramMiB, ramSplit] = [stored.record.ncpus, stored.record.ramMiB, stored.record.ramSplit];
+  [ncpus, ramMiB, ramSplit, jitMiB] = [stored.record.ncpus, stored.record.ramMiB, stored.record.ramSplit, jitParam() || stored.record.jitMiB || 0];
   want3d = wants3d();
   no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
   syncMachineMenu();
@@ -861,11 +866,11 @@ async function switchMachine(id: string) {
     stored = next;
     storedError = '';
     chosen = undefined;
-    [ncpus, ramMiB, ramSplit] = [next.record.ncpus, next.record.ramMiB, next.record.ramSplit];
+    [ncpus, ramMiB, ramSplit, jitMiB] = [next.record.ncpus, next.record.ramMiB, next.record.ramSplit, next.record.jitMiB ?? 0];
     want3d = wants3d();
     no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
     const q = new URLSearchParams(location.search);
-    for (const k of ['m', 'disk', 'ncpus', 'ram']) q.delete(k);
+    for (const k of ['m', 'disk', 'ncpus', 'ram', 'jitmb']) q.delete(k);
     q.set('m', id);
     history.replaceState(null, '', `?${q}`);
     rememberMachine(id);
@@ -1479,8 +1484,8 @@ function syncMachineMenu() {
 }
 syncMachineMenu();
 /** The warning for a size this device may not have the memory for. */
-function memoryWarning(r: number, n: number) {
-  const need = hostMemoryGiB(r, n);
+function memoryWarning(r: number, n: number, j = jitBudget()) {
+  const need = hostMemoryGiB(r, n, j);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   return has !== undefined && has < need ? `\n\nThis needs about ${need.toFixed(1)} GiB of memory and this device reports ${has} GiB${has >= 8 ? ' (browsers report at most 8, so it may well have more)' : ''}: if it runs out, the browser closes the tab without warning.` : '';
 }
@@ -1501,12 +1506,12 @@ async function saveSettings(m: MachineRecord) {
   const s = stored;
   if (!s || m.id !== s.record.id) return;
   const running = state === 'running' || state === 'booting';
-  if (running && !(await ask.confirm(`Restart ${m.name} with its new settings? Like pulling the plug: unsaved work in the guest is lost. A suspended machine is resumed as it was, with its own size.${memoryWarning(m.ramMiB, m.ncpus)}`, { title: 'Save and restart', ok: 'Restart', danger: true }))) return;
+  if (running && !(await ask.confirm(`Restart ${m.name} with its new settings? Like pulling the plug: unsaved work in the guest is lost. A suspended machine is resumed as it was, with its own size.${memoryWarning(m.ramMiB, m.ncpus, jitParam() || m.jitMiB || JIT_DEFAULT_MIB)}`, { title: 'Save and restart', ok: 'Restart', danger: true }))) return;
   await exclusively(async () => {
     await stop();
     s.record = await updateMachine(store, m);
     syncUsb();
-    [ncpus, ramMiB, ramSplit] = [s.record.ncpus, s.record.ramMiB, s.record.ramSplit];
+    [ncpus, ramMiB, ramSplit, jitMiB] = [s.record.ncpus, s.record.ramMiB, s.record.ramSplit, jitParam() || s.record.jitMiB || 0];
     want3d = wants3d();
     no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
     syncMachineMenu();
@@ -1914,10 +1919,10 @@ function boot() {
   if (storedError) return setState('failed', `This machine can't be opened: ${storedError}.`);
   if (needsDisk()) return waitForDisk();
   // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
-  const need = hostMemoryGiB(ramMiB + ramdiskMiB(), ncpus);
+  const need = hostMemoryGiB(ramMiB + ramdiskMiB(), ncpus, jitBudget());
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   if (has !== undefined && has < need) {
-    const fewer = Math.floor((has - hostMemoryGiB(ramMiB, 0)) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
+    const fewer = Math.floor((has - hostMemoryGiB(ramMiB, 0, jitBudget())) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
     setState('idle', `This machine needs about ${need.toFixed(1)} GiB of memory (${ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GiB${has >= 8 ? ' (browsers report at most 8, so it may well have more)' : ''}.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
     return;
   }

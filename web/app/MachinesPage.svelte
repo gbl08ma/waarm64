@@ -24,7 +24,7 @@
   import { remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
   import { errorView, type ErrorView } from './usb-ports.ts';
-  import { MEMORY0_MIB, numaNote, RAM_CHOICES, ramSplitError, ramSplitMiB } from './machine.ts';
+  import { JIT_CHOICES, JIT_DEFAULT_MIB, MEMORY0_MIB, numaNote, RAM_CHOICES, ramSplitError, ramSplitMiB } from './machine.ts';
 
   let { store, net }: { store: Store; net: PageNetwork } = $props();
 
@@ -99,14 +99,17 @@
   // Settings.
   let dirty = $state(false);
   const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb;
+  /** What takes a restart: the shape, and the JIT's budget (the guest doesn't see it: no snapshot is orphaned). */
+  const restartChanged = (a: MachineRecord, b: MachineRecord) => shapeChanged(a, b) || (a.jitMiB ?? 0) !== (b.jitMiB ?? 0);
   async function saveSettings() {
     const m = plain(draft!);
+    if (!m.jitMiB) delete m.jitMiB;
     await act('Saving', async () => {
       const was = machines.find((x) => x.id === m.id)!;
       if (shapeChanged(was, m) && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('This change orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Save' }))) return;
       // The machine on this page, running: it restarts with them (the page asks).
-      if (shapeChanged(was, m) && m.id === ui.current && isOn(m.id)) return page.saveSettings(m);
-      if (shapeChanged(was, m) && isOn(m.id)) throw new Error('It runs in another tab: power it off there first.');
+      if (restartChanged(was, m) && m.id === ui.current && isOn(m.id)) return page.saveSettings(m);
+      if (restartChanged(was, m) && isOn(m.id)) throw new Error('It runs in another tab: power it off there first.');
       await updateMachine(store, m);
     });
     dirty = false;
@@ -127,7 +130,7 @@
     if (!splitProblem) [draft!.ramSplit, draft!.ramMiB] = [split, split.reduce((a, b) => a + b, 0)];
     dirty = true;
   }
-  const restartsToSave = $derived(!!draft && draft.id === ui.current && isOn(draft.id) && (() => { const was = machines.find((x) => x.id === draft!.id); return !!was && shapeChanged(was, draft!); })());
+  const restartsToSave = $derived(!!draft && draft.id === ui.current && isOn(draft.id) && (() => { const was = machines.find((x) => x.id === draft!.id); return !!was && restartChanged(was, draft!); })());
 
   // Definitions in and out (§6): the machine's shape as a small file; disks that are files are picked again at its first start.
   async function exportDef(m: MachineRecord) {
@@ -327,10 +330,11 @@
                 {/if}
                 <p class="note">Memory 0 is the fast memory, beside the emulator, up to {MEMORY0_MIB} MiB. Each NUMA node (up to 4096 MiB, at most 8) is a memory of its own, slower to reach. The guest's processors are all on memory 0's node, so Linux fills it first.</p>
               </details>
+              <label>JIT cache <select bind:value={draft.jitMiB} data-field="jit" title="The most compiled guest code the emulator keeps before it starts over. The browser spends several times this on it: a smaller cache saves memory, a larger one keeps a big guest's code (a web browser's) compiled">{#each [undefined, ...new Set([...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])])].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option value={n}>{n ? `${n} MiB` : `Default (${JIT_DEFAULT_MIB} MiB)`}</option>{/each}</select></label>
               <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
               {@render usbSwitch()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display, the network adapters and the USB controller make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted).</p>
+              <p class="note">vCPUs, RAM, the display, the network adapters and the USB controller make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">

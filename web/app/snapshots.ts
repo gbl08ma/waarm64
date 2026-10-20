@@ -138,6 +138,7 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     display: snap.shape.display === '3d' ? '3d' : '2d',
     adapters: macsOf(snap.shape).map((mac) => ({ id: newId(), mac })),
     usb: snap.shape.usb === true,
+    ...(snap.shape.jitMiB ? { jitMiB: snap.shape.jitMiB } : {}),
     attachments,
     created: now,
     modified: now,

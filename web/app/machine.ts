@@ -178,7 +178,20 @@ export function numaNote(ramMiB: number, split?: number[]): string | undefined {
  * killed: PLAN.md §4 "Guest RAM ceiling"), so the page compares this with
  * `navigator.deviceMemory` before it starts a machine.
  */
-export const hostMemoryGiB = (ramMiB: number, ncpus: number) => ramMiB / 1024 + 1 + 0.3 * ncpus;
+export const hostMemoryGiB = (ramMiB: number, ncpus: number, jitMiB = JIT_DEFAULT_MIB) => ramMiB / 1024 + 1 + 0.3 * ncpus + jitHostGiB(jitMiB);
+
+/** The JIT's code cache budget when a machine sets none, MiB (the core's `jit::MAX_BYTES`, docs/jit.md "Memory"). */
+export const JIT_DEFAULT_MIB = 320;
+/** The budgets a stored machine's Settings offer, MiB (past ~320 MiB a browser's code fills the cache's 262,144 slots first). */
+export const JIT_CHOICES = [64, 128, 160, 256, 320, 512];
+/**
+ * What a JIT budget adds to `hostMemoryGiB`'s rule, GiB. The rule was measured with up to 160 MiB of budget (a
+ * mixed load, and Firefox's pages session at 160: renderer 4.6-4.7 GiB median with 2.5 GiB of RAM on 4 vCPUs, the
+ * rule's 4.7); at 320 the same session's renderer was 5.1-5.4 (`bench/boot/REPORT.md` "M8: the carry timed, and a
+ * larger code cache"): ~4 bytes of the renderer's for each byte of budget past 160 MiB. A smaller budget saves less
+ * than that (the measured loads didn't fill 160 MiB), so the saving stops at a quarter of a GiB.
+ */
+export const jitHostGiB = (jitMiB: number) => Math.max(-0.25, (4 * (jitMiB - 160)) / 1024);
 
 /**
  * Watches a machine's serial output, given in chunks as it comes, for its `ready` marker: true

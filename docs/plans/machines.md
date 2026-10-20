@@ -203,7 +203,9 @@ This replaces Suspend's discipline of dropping the copy before any machine runs 
 - **The shape** is a canonical JSON of what the guest sees: vCPUs, RAM, the display (2D or 3D: different devices),
   the transports in slot order, each disk's size, read-only or not, serial and base identity, the CPU features
   (`cpu`), whether there's a network card, and `usb: true` when there's a USB controller (left out when there isn't, so
-  machines made before it keep their hash). Its SHA-256 is the **shape hash**; the header carries the whole shape, so a
+  machines made before it keep their hash). It also carries the machine's JIT cache budget (`jitMiB`, only when set),
+  so a snapshot's machine is made with it, but **outside the hash**: the guest doesn't see it and a state restores
+  under any budget (abi.md "Snapshots"), so lowering it after a crash orphans no snapshot or suspended state. Its SHA-256 is the **shape hash**; the header carries the whole shape, so a
   snapshot file can make its machine (§5.2).
 - **The pins:** for each read-write disk, the overlay's id and generation.
 - **Orphaned:** a stored snapshot whose shape hash differs from its machine's current one (the user changed RAM,
@@ -257,7 +259,7 @@ Machines page" says what each part does:
 - **The list:** each machine's name, disks and state; new, from a disk image, import a definition. A transient machine
   (a test's) is listed as this page's.
 - **A machine:** open on this page, duplicate, export the definition, delete; tabs **Settings** (name, vCPUs, RAM,
-  display; Save and restart on the running machine), **Disks** (Add a disk… (the wizard: a disk already in this
+  the JIT cache, display; Save and restart on the running machine), **Disks** (Add a disk… (the wizard: a disk already in this
   browser, attached again or deleted, or a new one; a file or URL the browser knows is that disk again), reorder,
   read-only, write in place, detach (the disk and its overlays stay); per read-write disk its overlays: switch, new empty, rename, delete, merge, Export, Import
   changes…), **Network** (the adapters), **Snapshots** (kept ones with orphaned marked: restore, rename, download,

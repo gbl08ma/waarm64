@@ -44,7 +44,8 @@ test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloa
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
 worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
 `bench/audio/snd-page.ts`), `?jit=nocw` (the JIT without its compile worker: each vCPU compiles what it installs,
-for A/B measurements; docs/jit.md "Sharing"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
+for A/B measurements; docs/jit.md "Sharing"), `?jitmb=MiB` (the JIT's code cache budget, over a stored machine's
+own: `VmConfig.jit_bytes`, docs/jit.md "Memory"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
 its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page").
 
 ## The machines
@@ -319,7 +320,9 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   renderer is killed; PLAN.md §4 "Guest RAM ceiling"), so the page compares
   `navigator.deviceMemory` (GB, rounded down to a power of two, at most 8 in Chromium) with
   `hostMemoryGiB` in machine.ts: the guest's RAM + 1 GiB + 0.3 GiB per vCPU (M8 loop 0's RSS: 2.3
-  GiB on 1 vCPU, 3.1 on 4, with 1 GiB of guest RAM). Below it the page doesn't start the machine
+  GiB on 1 vCPU, 3.1 on 4, with 1 GiB of guest RAM), plus the JIT's budget past 160 MiB four times over
+  (`jitHostGiB`: the rule was measured with up to 160 MiB; Firefox's pages session at 320 MiB took the renderer
+  0.5-0.7 GiB higher; a smaller budget takes at most 0.25 GiB off), so 0.625 GiB more at the default 320. Below it the page doesn't start the machine
   (state `idle`, "Not started") and offers **Start anyway**, naming a vCPU count that fits if one
   does. A device that reports 4 GB or more runs Debian's default on up to 4 vCPUs.
 - Another browser than Chromium (no `Chromium` brand in `navigator.userAgentData`): a standing
@@ -703,7 +706,9 @@ Screen (the default, decision 2; edge to edge between the toolbar and the status
 black around the canvas), Serial terminal, or Both (side by side; stacked below 1100 px).
 The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
-it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs); a transient
+it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs; its **JIT cache**, beside the RAM, is
+the code cache's budget: Default (320 MiB) or 64 to 512 MiB, `MachineRecord.jitMiB`, in its definition and carried by
+its shape outside the hash, so changing it restarts the machine but orphans no snapshot); a transient
 machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
 (512 MiB to 16 GiB; past 3071 MiB the note under it says how much becomes NUMA nodes) and
 applies them with a confirmed restart; both are remembered per browser too (`ncpus`, `ramMiB`),

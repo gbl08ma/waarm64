@@ -40,7 +40,7 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 43, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 44, counter: 2 });
 });
 
 test('three core instances run guests concurrently on one memory in workers (M7)', async () => {
@@ -581,7 +581,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   page = await open((p) => p.addInitScript(() => Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 1 })));
   r = await settled(page);
   assert.equal(r.state, 'idle');
-  assert.match(r.text!, /needs about 1\.6 GiB of memory \(256 MiB of guest RAM plus the emulator, 1 vCPU\), and this device reports 1 GiB/);
+  assert.match(r.text!, /needs about 2\.2 GiB of memory \(256 MiB of guest RAM plus the emulator, 1 vCPU\), and this device reports 1 GiB/);
   assert.deepEqual(r.actions, ['Start anyway']);
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');

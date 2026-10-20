@@ -70,6 +70,11 @@ export type MachineRecord = {
    * docs/spill-memories.md), summing to `ramMiB`. Absent: the automatic one (web/app/machine.ts `ramSplitMiB`).
    */
   ramSplit?: number[];
+  /**
+   * The JIT's code cache budget, MiB (docs/jit.md "Memory"); absent: the page's default. The guest doesn't see it: it
+   * travels with the shape (a snapshot's header, "make a machine like it") but isn't in its hash.
+   */
+  jitMiB?: number;
   display: Display;
   /**
    * The network adapters (virtio-net), in slot order (docs/network-adapters.md). Absent on machines made before
@@ -181,7 +186,15 @@ export type Shape = {
   usb?: true;
   /** The adapters' MACs, in order: left out for none, or one at `DEFAULT_MAC` (so shapes made before adapters hash as they did). */
   macs?: string[];
+  /**
+   * The machine's JIT budget, MiB, only when set (`MachineRecord.jitMiB`). Not in the hash (`hashed`): the guest
+   * doesn't see it and a state restores under any budget, so changing it orphans no snapshot.
+   */
+  jitMiB?: number;
 };
+
+/** The part of a shape its hash covers: what the guest sees (all but `jitMiB`). */
+const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined });
 
 /**
  * A machine's shape, from its record and its disks' (by id). `cpu`: the vCPUs' features (all,
@@ -210,6 +223,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
     }),
     ...(m.usb ? { usb: true as const } : {}),
     ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}),
+    ...(m.jitMiB ? { jitMiB: m.jitMiB } : {}),
   };
 }
 
@@ -228,7 +242,7 @@ export function canonical(v: unknown): string {
 
 /** The shape's SHA-256 (hex) of its canonical JSON. */
 export async function shapeHash(s: Shape): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical(s)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical(hashed(s))));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -257,7 +271,7 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
     if (a.readOnly !== b.readOnly) out.push(`${what}: ${a.readOnly ? 'read-only' : 'writable'} then, ${b.readOnly ? 'read-only' : 'writable'} now`);
     if (a.serial !== b.serial) out.push(`${what}: attached anew (its serial changed)`);
   }
-  if (!out.length && canonical(was) !== canonical(now)) out.push('its devices are in another order');
+  if (!out.length && canonical(hashed(was)) !== canonical(hashed(now))) out.push('its devices are in another order');
   return out;
 }
 

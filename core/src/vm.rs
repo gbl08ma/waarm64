@@ -133,6 +133,12 @@ pub struct VmConfig {
     /// memory and a CPU-less NUMA node to the guest; the first 0 ends the
     /// list. Each a multiple of 64 KiB, at most 4 GiB; placed by [`VmConfig::spill_layout`].
     pub spill: [u64; crate::mem::MAX_SPILL],
+    /// The JIT's code cache budget in wasm bytes (ABI 44, docs/jit.md
+    /// "Memory"): the most its live modules may hold before a flush, for the
+    /// default JIT (`jit` 1) and the block interpreter; 0 is
+    /// `jit::MAX_BYTES`. A per-machine setting: V8 spends several times
+    /// these bytes on their code and metadata.
+    pub jit_bytes: u64,
 }
 
 impl VmConfig {
@@ -225,6 +231,7 @@ impl Default for VmConfig {
             rng_seed: [0; 4],
             xhci: 0,
             spill: [0; crate::mem::MAX_SPILL],
+            jit_bytes: 0,
         }
     }
 }
@@ -697,6 +704,13 @@ impl Vm {
             _ => Some(jit::Config::STRESS),
         }
         .map(|c| jit::Config {
+            // The machine's budget, for the modes with the default's (JIT-stress
+            // and JIT-check keep theirs: they compile everything, unbounded).
+            max_bytes: if cfg.jit_bytes != 0 && c.max_bytes == jit::MAX_BYTES {
+                cfg.jit_bytes
+            } else {
+                c.max_bytes
+            },
             pages: cfg.mem_pages as u32,
             // A table per vCPU in parallel SMP, one in round-robin.
             decoded: crate::interp::block::budget(if parallel { n } else { 1 }) as u32,

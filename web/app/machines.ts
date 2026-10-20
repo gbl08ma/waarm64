@@ -92,11 +92,12 @@ export async function deleteMachine(store: Store, id: string) {
   await store.deleteMachine(id);
 }
 
-/** Saves the machine's settings (name, vCPUs, RAM, display, network, the USB controller): the guest sees them, so it must be off. */
+/** Saves the machine's settings (name, vCPUs, RAM, the JIT's budget, display, network, the USB controller): they're set at its start, so it must be off. */
 export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw new Error('that machine is gone');
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb]);
+  // What takes a restart: the shape, and the JIT's budget (set when the machine starts; not the guest's).
+  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb, x.jitMiB ?? 0]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'Changing its processors, memory or devices');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;

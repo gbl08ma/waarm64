@@ -1111,3 +1111,28 @@ fn spill_memory_end_to_end() {
         }
     }
 }
+
+/// `VmConfig.jit_bytes` (ABI 44) sets the default JIT's code cache budget (0: `jit::MAX_BYTES`); JIT-stress and
+/// JIT-check keep their unbounded one.
+#[test]
+fn jit_bytes_sets_the_budget() {
+    for (jit, jit_bytes, want) in [
+        (1, 0, crate::jit::MAX_BYTES),
+        (1, 96 << 20, 96 << 20),
+        (4, 96 << 20, 96 << 20),
+        (3, 96 << 20, u64::MAX),
+    ] {
+        let cfg = VmConfig {
+            ram_size: 1 << 20,
+            jit,
+            jit_bytes,
+            ..VmConfig::default()
+        };
+        let mut ram = vec![0u128; 1 << 16];
+        // SAFETY: the buffer is 16-byte aligned, 1 MiB, and outlives the Vm.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20) };
+        let vm = Vm::new(mem, cfg);
+        let got = vm.vcpus[0].jit.cache.as_ref().unwrap().max_bytes();
+        assert_eq!(got, want, "jit {jit} jit_bytes {jit_bytes}");
+    }
+}

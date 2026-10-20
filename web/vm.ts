@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 43;
+export const ABI = 44;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -410,6 +410,12 @@ export type BootOptions = {
   kernelOffset?: number;
   /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33). */
   jit?: 0 | 1 | 2 | 3 | 4;
+  /**
+   * `VmConfig.jit_bytes` (ABI 44): the JIT's code cache budget in wasm bytes, the most its live modules hold before a
+   * flush (V8 spends several times that on their code and metadata: docs/jit.md "Memory"). Default (0): the core's,
+   * `jit::MAX_BYTES`.
+   */
+  jitBytes?: number;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
@@ -572,7 +578,7 @@ export const DISTROS = {
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
 const S_CFG = 0;
-const S_DEVICES = 256;
+const S_DEVICES = 512;
 const S_BELL = 2048;
 /** Parallel mode: the coordinator's word (vCPU workers bump it on TX_FULL). */
 const S_CTL = 2056;
@@ -659,9 +665,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 32).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 33).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
-    ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0))]); // the spill memories' sizes (ABI 39)
+    ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
+    BigInt(o.jitBytes ?? 0)]); // the JIT's code cache budget (ABI 44)
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);

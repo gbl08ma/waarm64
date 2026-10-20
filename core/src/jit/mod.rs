@@ -1258,6 +1258,11 @@ impl Jit {
         }
     }
 
+    /// The code cache's byte budget (`Config::max_bytes`).
+    pub fn max_bytes(&self) -> u64 {
+        self.cache.lock().cfg.max_bytes
+    }
+
     /// Another table on the same cache (another thread's).
     pub fn join(&self) -> Jit {
         Jit {

@@ -103,6 +103,7 @@ Design notes for an ABI change go in this file before the code.
 | `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
 | `xhci` | an xHCI ([usb.md](usb.md)): its USB 2 ports \| USB 3 ports << 8, `0x404` (4 and 4, the only counts built; `vm_new` refuses others) or 0, none (38) |
 | `spill` (8 words) | the spill memories' sizes, memory 1 first, the first 0 ending the list: multiples of 64 KiB, at most 4 GiB each; the core places each at the 1 GiB boundary past the RAM before it (`VmConfig::spill_layout`), a NUMA node in the DT, and reaches it through the `ram` imports ([spill-memories.md](spill-memories.md)). Natively `vm_new` refuses them (a Rust runner passes its own `Mem`) (39) |
+| `jit_bytes` | the JIT's code cache budget in wasm bytes, for `jit` 1 and 4 (JIT-stress and JIT-check keep theirs): the most the live modules hold before a flush ([jit.md](jit.md) "Memory"); 0: the core's default, `jit::MAX_BYTES`. Not part of a snapshot's state: a state restores under any budget. The host's scratch page holds the 33 words at 0 and the device entries from 512 (44) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1 and 2 unless told `rng: false`, `e0pd: false` (the bare-metal tests are); the ABI's 0 means none.
@@ -420,7 +421,7 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
 `fb_height`, `features`, `ncpus`, whether there is an RTC, `firmware`, `flash_size`. Free: `jit`
-(a state is the same under either tier), `mem_pages`, `smp` in realtime mode (the per-vCPU state is saved in
+(a state is the same under either tier) and `jit_bytes`, `mem_pages`, `smp` in realtime mode (the per-vCPU state is saved in
 one form: power, WFI, a pending CPU_ON), `rtc`'s value and the fw_cfg files (the state's files
 replace the VM's: they are part of the machine).
 
@@ -516,4 +517,5 @@ implemented by this step).
 | 41 | `VmConfig.jit` 5 and 6: the JIT carrying its hot set across a flush and compiling it again, and that in a small cache (the tests); counters 108–110; `env.jit_release` |
 | 42 | `vm_jit_emit`, `vm_jit_active`: the replay's modules emitted by the compile worker's own core instance; counters 111–123 |
 | 43 | 41 and 42 taken out (the carry wasn't kept: [jit.md](jit.md) "Tried and not kept"): exports, imports, counters and `VmConfig.jit` as in 40 |
+| 44 | `VmConfig.jit_bytes`: a machine's JIT code cache budget (the page's `?jitmb=`, a stored machine's JIT cache setting) |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

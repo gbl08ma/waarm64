@@ -136,7 +136,8 @@ the interpreter's own code.
   prologue tail-calls the region, so blocks linked to the head reach it too. A head that gets hot
   in another table finds the region compiled (`Cache::tiers`) and redirects its own word.
 - **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
-  (`Config::max_bytes`: **320 MiB** of wasm for a VM, whose vCPUs share it: [Sharing](#sharing)). When
+  (`Config::max_bytes`: **320 MiB** of wasm for a VM by default, whose vCPUs share it: [Sharing](#sharing); a machine
+  sets its own with `VmConfig.jit_bytes`, the page's `?jitmb=` and a stored machine's JIT cache setting). When
   either is reached, everything is flushed (slots freed, the host's table lets go of the old
   functions, [Memory](#memory)). Alpine's boot compiles ~30 MiB and Debian's ~73 MiB, so neither
   flushes; nor do a 4-vCPU `go build` loop (once in its first 3 minutes at 160 MiB) and Firefox's pages session

@@ -295,3 +295,29 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
     assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, ramSplit } })), /damaged/, JSON.stringify(ramSplit));
   }
 });
+
+test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule", async () => {
+  const { hostMemoryGiB, jitHostGiB, JIT_DEFAULT_MIB } = await import('../web/app/machine.ts');
+  const { createMachine, updateMachine } = await import('../web/app/machines.ts');
+  const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
+  const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
+  const m = await createMachine(store, { name: 'Jit' });
+  const s = shapeOf(m, () => undefined);
+  assert.equal('jitMiB' in s, false, 'unset: no field');
+  const set = shapeOf({ ...m, jitMiB: 128 }, () => undefined);
+  assert.equal(set.jitMiB, 128);
+  assert.equal(await shapeHash(set), await shapeHash(s), 'the guest does not see it: no snapshot is orphaned');
+  assert.deepEqual(shapeDiff(s, set), []);
+  const plain = await createMachine(store, { name: 'Plain' });
+  const saved = await updateMachine(store, { ...m, jitMiB: 128 });
+  const def = await exportDefinition(store, saved.id);
+  assert.equal(def.machine.jitMiB, 128);
+  assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(def)))).machine.jitMiB, 128);
+  assert.equal('jitMiB' in (await exportDefinition(store, plain.id)).machine, false);
+  for (const jitMiB of [0, -5, 1.5, 'big']) assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, jitMiB } })), /damaged/, String(jitMiB));
+  // The rule: 160 MiB is what it was measured with; the default (320) adds 0.625 GiB; smaller saves at most 0.25.
+  assert.equal(jitHostGiB(160), 0);
+  assert.equal(JIT_DEFAULT_MIB, 320);
+  assert.equal(hostMemoryGiB(1024, 4), hostMemoryGiB(1024, 4, 160) + 0.625);
+  assert.equal(jitHostGiB(16), -0.25);
+});
