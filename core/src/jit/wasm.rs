@@ -229,6 +229,11 @@ impl Code {
         self.b.extend([0x02, 0x40]);
         self
     }
+    /// `block` with a result of type `ty`; closed by [`Code::end`].
+    pub fn block_t(&mut self, ty: u8) -> &mut Self {
+        self.b.extend([0x02, ty]);
+        self
+    }
     /// `loop` with no result type; closed by [`Code::end`].
     pub fn loop_(&mut self) -> &mut Self {
         self.b.extend([0x03, 0x40]);

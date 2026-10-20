@@ -2121,3 +2121,49 @@ is **320 MiB** (`MAX_BYTES`): the pages session without a flush, +16% busy MIPS 
 faster, the gates and the `go build` loop even, for ~0.5 GiB more renderer memory while the cache is full (the
 maximum about the same). More would be past the slots (262,144: ~340 MiB at Firefox's ~1.3 KB a region) and past
 what the pages session uses.
+
+## M8: smaller slow arms of loads and stores (2026-10-20)
+
+The backlog's first Liftoff item: a load's or store's slow arm (the `else` of its TLB check, which almost never
+runs) wrote back every dirty register and stored the lazy flags before its helper, and returned on its own. Now it
+writes back only the registers the instruction reads or writes, and a failing helper branches to the block's
+**failure chain**, where each register is stored once and the flags once (docs/jit.md "Loads and stores"). The dev
+VM, Chromium 153.0.8010.52, Node 26.7.0; `base` main at fbd9b02 (the 320 MiB cache), `chainf` the change, swapped
+in as the core; data and tools in `results/m8-liftoff/slowarms/` (README).
+
+**Size** (Alpine's boot in Node, deterministic, 643 modules either way; V8's code from every 8th module compiled
+eagerly in one tier with `--print-wasm-code`):
+
+| | base | chain | |
+|---|---|---|---|
+| wasm | 29.47 MB | 27.68 MB | −6.1% |
+| Liftoff code (81 modules, 6,864 functions) | 18.24 MB | 17.44 MB | −4.4% |
+| TurboFan code (the same) | 17.54 MB | 17.17 MB | −2.1% |
+
+A first version without the shared flag store (each failing site stored NZCV itself) made 2.8% less wasm and 3.3%
+less Liftoff code: the lazy flags' NZCV, computed at every site, was as big as the write-backs. The backlog's bound
+(−12.6% Liftoff with one store per register a function) also dropped the stores the helper needs, which are most of
+them: a site's dirty registers are mostly its base and the value it stores.
+
+**Firefox's pages session** (alternating: base-0, chainf-1, base-1, chainf-2, base-2):
+
+| | busy MIPS | wasm MB | modules | flushes | stalls ≥20 ms | RSS median, max (MiB) | wasm code median, max (MiB) |
+|---|---|---|---|---|---|---|---|
+| base | 144 · 143 · 143 | 329 · 329 · 330 | 8,094-8,155 | 0 | 3 · 0 · 0 | 5,298 · 5,468 · 5,406, 5,888 · 6,062 · 5,825 | 1,007 · 997 · 1,032, 1,201 · 1,165 · 1,207 |
+| chain | 145 · 146 | 307 · 307 | 8,161-8,194 | 0 | 1 · 0 | 5,267 · 5,544, 5,763 · 5,945 | 989 · 950, 1,345 · 1,134 |
+
+6.7% less wasm and the same busy MIPS (+1.5%, noise). The renderer's RSS moves ±150 MiB between sessions of one
+build, more than the ~30-60 MiB the code saves (V8's wasm code ~1 GiB, of which this is 2-4%), so the memory gain
+isn't visible in a session's RSS; the executable mappings' medians are 2-4% lower.
+
+**The gates** (three rounds alternating, medians of each round, ms):
+
+| | base | chain | |
+|---|---|---|---|
+| `smp_alpine_jit_n1_total` | 9,487 · 9,562 · 9,457 | 9,413 · 9,377 · 9,399 | −0.9% |
+| `smp_alpine_jit_n2_total` | 9,209 · 9,234 · 9,231 | 9,167 · 9,158 · 9,123 | −0.8% |
+| `smp_alpine_jit_n4_total` | 9,307 · 9,357 · 9,327 | 9,215 · 9,246 · 9,179 | −1.2% |
+| `smp_user_jit_n4_total` | 18,513 · 18,971 · 18,574 | 18,809 · 19,271 · 18,427 | +1.3% |
+
+(IQR 12-118, one 553; wasm 30.0 → 28.2 MB for the boot, 38.7 → 36.6 MB for the userspace benchmark.) Within noise
+both ways. **Kept:** 6-7% less wasm and 4.4% less Liftoff code at no cost in speed.

@@ -383,8 +383,9 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   (an i64 for X0–X30 and SP, a v128 for V0–V31), loaded on first use and written back before
   helper calls and returns; after a helper every local is dropped. One pair of masks (`Regs`:
   valid, dirty; bits 0–31 the X registers and SP, 32–63 the V registers) tracks both kinds, so
-  every rule below holds for both. The slow path of a load/store or of an FP fast path writes
-  back before its helper and drops the instruction's destinations (`written`, V ones included)
+  every rule below holds for both. The slow path of an FP fast path writes
+  back every dirty register before its helper (a load's or store's only what the helper reads or
+  writes: below) and drops the instruction's destinations (`written`, V ones included)
   after it, reloading what the fast arm had loaded, so both arms merge. Only the locals a
   function uses are declared (`wasm::Code::compact_locals`: Liftoff zero-initializes each one
   per call); registers read once and never written stay plain loads (for a V register read as a
@@ -423,6 +424,18 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   instruction: the fast path changes nothing before its check, so fault state is exact by
   construction. Every guest RAM access in generated code goes through one lowering function
   (layout A's single point of change).
+  **The slow arms share their failure exits** (`emit::Chain`, `fallback_chain`): the arm writes back only the
+  dirty registers the instruction reads (its fast path's reads, `Func::ireads`) or writes, calls the helper, and
+  if that doesn't retire branches with its retired count to its segment of the block's failure chain. A segment
+  stores the registers dirty at its site that no earlier site's segment stores, then falls through the earlier
+  ones to one lazy-flag store and one `return`. Segments are nested `block (result i32)`s opened at the sites,
+  at the instruction level; a site joins the open chain while every register it stores is still valid and the
+  sites' lazy flags have the same kind and size (the flag locals then hold the failing site's setter), else a
+  new chain starts (after every helper call, which drops the locals); the chain closes at the block's end. The
+  helper reads and writes nothing else, and the run loop takes its exception after the block returns, so
+  the other registers stay in their locals on both arms. Before, each arm wrote back every dirty register and
+  stored the flags itself: Alpine's boot made 6.1% less wasm with it, and Liftoff 4.4% less code
+  (`bench/boot/REPORT.md` "M8: smaller slow arms of loads and stores").
 - **Atomics:** LDAR/STLR as aligned wasm atomics, single exclusives and the LSE atomics
   (add/clr/eor/set/swp as `atomic.rmw`, CAS as `cmpxchg`) inline; DC ZVA as a 64-byte zero.
   CASP inline too: the W pair as one 64-bit `cmpxchg`, the X pair as `Mem::cas_pair`'s protocol

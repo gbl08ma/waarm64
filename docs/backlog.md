@@ -108,38 +108,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   cache"): Firefox's pages session compiles ~330 MB and doesn't flush; a longer one will, and each flush doubles the
   threshold's floor (the long stutters at later flushes were the doubled floor). Not measured: a session long
   enough to flush at 320 MiB. Carrying the hot set across the flush didn't pay (jit.md "Tried and not kept").
-- **Smaller slow arms of loads and stores** (2026-10-13; memory of the code cache, not speed).
-  Measured on Alpine's userspace benchmark (968 modules, 34 MB of wasm; 49 of them, 2,122
-  functions, compiled eagerly in Node 26 with `--print-wasm-code`, one tier at a time; the
-  scripts were scratch, not committed): V8's machine code is 3.6× the wasm body bytes in Liftoff
-  and 2.4× in TurboFan. By region (a per-op-type fit, 2.5% mean error for Liftoff, 12% for
-  TurboFan): the `else` arm of the TLB check (**the slow arm**) is 31% of Liftoff code and 43% of
-  TurboFan's, the TLB check plus fast path only 7.5% and 5%, exit arms 5%, the prologue 2%. A site
-  is ~22 wasm ops: ~4 write-back stores of dirty registers (`Func::flush` in `fallback`) and one
-  helper call, ~320 B of Liftoff code against ~77 B for the fast path. Calls are 1.4% of the ops
-  and 27% of Liftoff bytes (~50% of TurboFan's); the 118 B (Liftoff) to 210 B (TurboFan) helper
-  call is the next largest item and can't be shared as easily (arguments differ per site). The
-  slow arms almost never run: ~1.7M load/store helper calls in 10.76G steps (0.016%).
-  - **Bound, measured by rewriting the captured modules** (wasm-level, V8 compiled both tiers;
-    size only, the modules don't run): without any slow-arm write-back (30,442 stores, ~40 B of
-    Liftoff each) Liftoff code is −15.3% and TurboFan −11.8%, the wasm body −10.3%; with one
-    store per distinct register per function (24,717 removed, a shared failure epilogue) −12.6%,
-    −9.6%, −8.3%. Machine code is about half of V8's per-region cost, the rest metadata
-    that doesn't move, so the cache's host memory would fall **~5–7%**.
-  - **How it would be built:** the slow arm flushes only the registers the instruction reads
-    before the helper (Rn, Rt, Rt2, Rm, V registers and SP included; the helper reads nothing
-    else, and the run loop takes exceptions after the block returns, so flushing the rest after
-    the call is safe); a failed call branches to a chain of nested-block epilogues, site *k*
-    storing its newly dirty registers and falling through to site *k−1*'s (storing a clean valid
-    local is harmless); the chain restarts at every helper call that drops the locals; each
-    failing site keeps its lazy-flag store and retired count (set in a local before the `br`).
-    Moving the stores into the failure arm without sharing them saves nothing. Risk: a helper
-    that writes a destination and then doesn't retire (the differential test, lockstep and
-    exact-step boots would catch it; plant a bug for the rule).
-  - **Expected CPU:** the fast path is unchanged and a successful slow arm gets cheaper (≤3
-    stores instead of every dirty register), but TurboFan's spill and register allocation around
-    the deferred arms could move the hot path a few percent either way; unmeasured, needs a
-    Chromium A/B. Dropped for now as not worth the emitter complexity for ~6% of the cache.
 - **Transfers that still leave a function** (the userspace benchmark's remaining lever:
   `bench/boot/REPORT.md` from "M8: where the userspace benchmark's time goes"; re-profile with
   `bench/boot/userprof.ts` before and after). Per 1000 instructions in Lua and SQLite: 27 to 37
@@ -745,6 +713,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   resolution is still pending but the event loop has already resolved", so a pause or an end that nothing will
   resolve, with no timer left), passed alone and 9 times in 3 copies at once. Which of its tests is unknown (a
   cancelled file prints none); its tests now have a 2-minute deadline, so the next one says.
+- **The parallel usb guest test fails or hangs now and then** (`parallel: usb test kernel, testusb against Gadget
+  Zero on 2 vCPUs (JIT)`, tests/boot-node-suite.ts; 2026-10-20): once it held `tests/boot-node-parallel.test.ts`
+  until `scripts/ci.sh`'s outer timeout (~29 min), and run alone it failed 4 times in 5 with main's core (fbd9b02)
+  as with the lane's ("missing \"webpc: usb test ok\n\"", the run 1.4-3.4 s), while a direct run of the same
+  options printed the line (amid usbtest's `unlink retry` flood from the other vCPU). Look at the failing runs'
+  console: the two vCPUs' output interleaving inside the line, or the guest powering off early.
 - **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
   0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall

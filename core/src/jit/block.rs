@@ -858,6 +858,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             c.end();
             c.forget(!0);
         }
+        c.chain_close();
         if last && !c.defer_pc {
             emit::set_pc(&mut c, 4 * len as i64);
         }
@@ -1319,16 +1320,22 @@ mod tests {
         let at = bytes.windows(3).position(|w| w == [0x37, 3, 0x88]).unwrap();
         assert!(bytes[at..].windows(2).any(|w| w == [0x10, 0])); // the call comes after
         assert_eq!(counts.flags_stored, 1);
-        // cmp x1, x2; ldr x0, [x1]: stored on the load's failure return, and at the end.
+        // cmp x1, x2; ldr x0, [x1]: stored on the load's failure return (by the
+        // failure chain, which returns acc + 1), and at the end.
         let (bytes, counts) = one(&[0xeb02003f, 0xf9400020]);
         assert_eq!(nzcv_stores(&bytes), 2);
-        // local.get acc; i32.const 1; i32.add; return
+        // i32.const 1; br to the failure chain
         let ret = bytes
             .windows(4)
-            .position(|w| w == [0x20, 1, 0x41, 1])
+            .position(|w| w == [0x41, 1, 0x0c, 2])
             .unwrap();
-        assert_eq!(bytes[ret + 5], 0x0f);
-        assert!(nzcv_stores(&bytes[..ret]) == 1);
+        let back = ret
+            + bytes[ret..]
+                .windows(4)
+                .position(|w| w == [0x20, 1, 0x6a, 0x0f])
+                .unwrap();
+        assert_eq!(nzcv_stores(&bytes[..ret]), 0);
+        assert_eq!(nzcv_stores(&bytes[ret..back]), 1);
         assert_eq!((counts.flags_stored, counts.flags_elided), (1, 0));
     }
 

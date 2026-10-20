@@ -207,6 +207,37 @@ pub struct Func {
     pub prev: u32,
     pub next: u32,
     pub fused: bool,
+    /// The registers the instruction being emitted has read so far ([`Func::reg`]):
+    /// what a load's or store's helper reads, flushed before its call ([`fallback_chain`]).
+    pub ireads: u64,
+    /// The open chain of load and store failure exits ([`Chain`]).
+    chain: Option<Chain>,
+}
+
+/// Load and store failure exits that share their write-backs (docs/jit.md
+/// "Loads and stores"). A load's or store's slow arm writes back only the
+/// registers its helper reads or writes; if the helper doesn't retire, the
+/// arm branches (with its retired count) to its segment's end, which stores
+/// the registers dirty at that site that no earlier site's segment stores,
+/// and falls through the earlier segments' ends to the shared return. So each
+/// register is stored once per chain, not once per site. The segments are
+/// nested `block (result i32)`s opened at the sites, at the instruction
+/// level, inside a `block` that the code falling through branches past at
+/// the chain's close. A site joins the open chain only while every register
+/// the chain stores is still valid there (a helper call that drops the
+/// locals ends it) and its lazy flags are the chain's kind and size, which
+/// the return stores once; [`Func::chain_close`] ends it at the block's end.
+#[derive(Clone, Default)]
+struct Chain {
+    /// Each segment's registers, outermost first.
+    segs: Vec<u64>,
+    /// Their union.
+    cum: u64,
+    /// The kind and size of the lazy flags every site has, stored once on the
+    /// way to the return from the flag locals, which hold the setter of the
+    /// failing site's (setters of one kind and size share them); none if the
+    /// `Cpu` holds NZCV at every site.
+    flags: Option<(Kind, bool)>,
 }
 
 impl Deref for Func {
@@ -301,6 +332,7 @@ impl Func {
     fn reg(&mut self, n: u32) {
         self.reused |= self.read & 1 << n;
         self.read |= 1 << n;
+        self.ireads |= 1 << n;
         if self.plain & 1 << n != 0 {
             self.load_cpu(n);
         } else if self.regs.valid & 1 << n != 0 {
@@ -510,6 +542,60 @@ impl Func {
         self.reload(to.valid);
     }
 
+    /// Opens a load's or store's failure segment, before its fast path's `if`
+    /// ([`Chain`]): in the open chain if every register it stores is still
+    /// valid, else in a new one.
+    fn chain_open(&mut self) {
+        let flags = match self.flags {
+            Flags::Lazy {
+                kind,
+                sf,
+                current: false,
+                ..
+            } => Some((kind, sf)),
+            _ => None,
+        };
+        if !matches!(&self.chain, Some(ch) if ch.cum & !self.regs.valid == 0 && ch.flags == flags) {
+            self.chain_close();
+            self.c.block();
+            self.chain = Some(Chain {
+                flags,
+                ..Chain::default()
+            });
+        }
+        self.c.block_t(I32);
+        if let Some(ch) = &mut self.chain {
+            ch.segs.push(0);
+        }
+    }
+
+    /// Closes the open chain, if any, where the code falls through at the
+    /// instruction level: it branches past the segments' ends, each storing
+    /// its registers, and the shared return of acc + the retired count the
+    /// failing site passed.
+    pub fn chain_close(&mut self) {
+        let Some(ch) = self.chain.take() else {
+            return;
+        };
+        self.c.br(ch.segs.len() as u32);
+        for &d in ch.segs.iter().rev() {
+            self.c.end();
+            let mut d = d;
+            while d != 0 {
+                let n = d.trailing_zeros();
+                d &= d - 1;
+                self.store_cpu(n);
+            }
+        }
+        if let Some((kind, sf)) = ch.flags {
+            self.c.local_get(VCPU);
+            nzcv_of(self, kind, sf);
+            self.c.i64_extend_i32_u().i64_store(NZCV);
+        }
+        self.c.local_get(ACC).op(0x6a).return_(); // i32.add
+        self.c.end();
+    }
+
     /// Loads the registers in `mask` whose locals aren't valid.
     fn reload(&mut self, mask: u64) {
         let mut m = mask & !self.regs.valid;
@@ -592,6 +678,7 @@ pub const ZERO_GLOBAL: u32 = 0;
 /// it; false (and nothing emitted) if it stays a helper call.
 pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
     use Op::*;
+    c.ireads = 0;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let here = 4 * k as i64;
@@ -1026,6 +1113,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // nothing emitted for the rest.
         _ => {
             let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
+            let chain = c.chain.clone();
             fp_guard(c, cx, i, k);
             if !(cx.crypto && crypto::inline(c, i, op))
                 && !simd::inline(c, i, op)
@@ -1037,6 +1125,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 c.c.rewind(mark);
                 (c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs) =
                     (flags, touched, fp_ok, fpa_ok, regs);
+                c.chain = chain;
                 return false;
             }
         }
@@ -2505,6 +2594,7 @@ fn access(
     written: u64,
     body: impl FnOnce(&mut Func, u32),
 ) {
+    c.chain_open();
     let off = match cx.bus {
         Bus::Flat { base, phys, size } => {
             c.local_get(ADDR);
@@ -2547,7 +2637,7 @@ fn access(
     c.local_set(HOST);
     let before = c.regs;
     body(c, off);
-    fallback(c, cx, i, here, before, written);
+    fallback_chain(c, cx, i, here, before, written);
 }
 
 /// ANDs the condition of `g` into the i32 on the stack (an access of `len` bytes).
@@ -2610,6 +2700,47 @@ fn fallback_with(
     c.forget(written);
     c.reload(fast.valid);
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
+    c.regs = fast;
+    c.end();
+}
+
+/// [`fallback`] for a load or store ([`access`], whose segment of the open
+/// [`Chain`] holds the `if`): only the dirty registers the instruction reads
+/// (its fast path's reads so far) or writes are written back before the
+/// helper; if it doesn't retire, the arm branches to its segment with the
+/// retired count, the segment storing the dirty registers no earlier site's
+/// stores (and the chain the lazy flags). The helper reads and writes no
+/// other register, and the run loop takes its exception after the block
+/// returns, so the rest stay in their locals on both arms.
+fn fallback_chain(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u64) {
+    let fast = c.regs;
+    c.else_();
+    c.regs = before;
+    let mut need = (c.ireads | written) & c.regs.dirty;
+    c.regs.dirty &= !need;
+    while need != 0 {
+        let n = need.trailing_zeros();
+        need &= need - 1;
+        c.store_cpu(n);
+    }
+    let dirty = c.regs.dirty;
+    let ch = c.chain.as_mut().expect("access opens a chain");
+    let d = dirty & !ch.cum;
+    *ch.segs.last_mut().expect("a segment") = d;
+    ch.cum |= d;
+    c.local_get(VCPU).i32_const(i as i32);
+    pc_plus(c, here);
+    c.call(cx.helper).hint(false).if_();
+    // The chain stores lazy flags on the way (its sites share them).
+    c.touched.get_or_insert(true);
+    if let Flags::Lazy { stored, .. } = &mut c.flags {
+        *stored = true;
+    }
+    // Inside the `if`s of the fast path and of the failure: the segment is 2 out.
+    c.i32_const((here / 4) as i32).br(2);
+    c.end();
+    c.forget(written);
+    c.reload(fast.valid);
     c.regs = fast;
     c.end();
 }
@@ -3311,13 +3442,16 @@ mod tests {
 
     fn emit_in(i: u32, k: usize, cx: &Ctx) -> Option<Vec<u8>> {
         let mut c = Func::default();
-        inline(&mut c, i, decode(i), k, cx).then_some(c.c.b)
+        let ok = inline(&mut c, i, decode(i), k, cx);
+        c.chain_close();
+        ok.then_some(c.c.b)
     }
 
     /// As [`emit`], the registers written back after (as at a block's end).
     fn emit_flushed(i: u32) -> Vec<u8> {
         let mut c = Func::default();
         assert!(inline(&mut c, i, decode(i), 0, &FLAT));
+        c.chain_close();
         c.flush();
         c.c.b
     }
@@ -3760,16 +3894,19 @@ mod tests {
         let mut want = vec![
             0x20, 0, 0x29, 3, 8, 0x22, 17, 0x21, 3, // BASE = x1 (loaded into local 17)
             0x20, 3, 0x42, 8, 0x7c, 0x21, 2,        // ADDR = BASE + 8
+            0x02, 0x40, 0x02, I32,                  // the failure chain's block and this site's segment
             0x20, 2, 0x22, 4, 0x42, 0xf8, 0x1f, 0x58, // OFF = ADDR; OFF <= 0x1000 - 8
             0x04, 0x40, 0x20, 4, 0xa7, 0x21, 6,     // if: HOST = OFF
             0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x21, 18, // x0 (local 18) = [HOST + base]
             0x05, 0x20, 0, 0x41,                    // else: helper(vcpu, insn, pc)
         ];
         sleb(&mut want, insn as i32 as i64);
-        // if it didn't retire: return acc + 0
-        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x20, ACC as u8, 0x0f, 0x0b]);
+        // if it didn't retire: to the segment with 0 retired
+        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x41, 0, 0x0c, 2, 0x0b]);
         // After the helper, x0 (written) is reloaded; x1 (only read) stays in its local.
         want.extend([0x20, 0, 0x29, 3, 0, 0x21, 18, 0x0b]);
+        // The chain's close: past the segment, which stores nothing; the return of acc + the count.
+        want.extend([0x0c, 1, 0x0b, 0x20, ACC as u8, 0x6a, 0x0f, 0x0b]);
         assert_eq!(emit(insn, 0).unwrap(), want);
         // Through the TLB at EL1: the tag at the entry, then the addend at + 8.
         let read = tlb_array(1, 0);

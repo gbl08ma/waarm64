@@ -1,0 +1,5 @@
+base-0 busy 144 MIPS, 329 MB 8094 mods 0 fl, stalls 3/2/0/0/0/0, RSS med/max 5298 5888, wasm code med/max 1007 1201
+base-1 busy 143 MIPS, 329 MB 8155 mods 0 fl, stalls 0/0/0/0/0/0, RSS med/max 5468 6062, wasm code med/max 997 1165
+base-2 busy 143 MIPS, 330 MB 8117 mods 0 fl, stalls 0/0/0/0/0/0, RSS med/max 5406 5825, wasm code med/max 1032 1207
+chainf-1 busy 145 MIPS, 307 MB 8194 mods 0 fl, stalls 1/0/0/0/0/0, RSS med/max 5267 5763, wasm code med/max 989 1345
+chainf-2 busy 146 MIPS, 307 MB 8161 mods 0 fl, stalls 0/0/0/0/0/0, RSS med/max 5544 5945, wasm code med/max 950 1134
