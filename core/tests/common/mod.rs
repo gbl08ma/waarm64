@@ -1016,6 +1016,7 @@ pub fn boot(b: &Boot) -> Run {
     let mut backends = Backends::new(devices, ram_size);
     if let Some(u) = usb {
         let mut host = usb::UsbHost::default();
+        host.realtime = realtime || parallel;
         for &(c, o) in u.attach {
             host.attach(&vm, c, o);
         }

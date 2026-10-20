@@ -4,8 +4,19 @@ import assert from 'node:assert/strict';
 
 export * from './options.ts';
 
+/**
+ * The console without the kernel's records ("[    1.234567] …\r\n"), so init's lines read whole. With
+ * more than one vCPU the kernel writes a record whenever its console lock comes free, between two of
+ * init's writes too: in parallel SMP usbtest's "unlink retry" flood (printed late, from the other vCPU)
+ * landed inside "webpc: usb test ok\n", between the text and its newline, in about one run in seven. A
+ * record is written whole (under the port's lock), init's lines may not be.
+ */
+export function userLines(console: string) {
+  return console.replace(/\[ *\d+\.\d{6}\] [^\r\n]*\r?\n/g, '').replaceAll('\r\n', '\n');
+}
+
 export function checkUsbHubs(console: string) {
-  const c = console.replaceAll('\r\n', '\n');
+  const c = userLines(console);
   for (const want of ['usb: hub usb1 480 Mb/s 4 ports, USB 2.00, xHCI Host Controller\n', 'usb: hub usb2 5000 Mb/s 4 ports, USB 3.00, xHCI Host Controller\n', 'webpc: usb test ok\n']) {
     assert.ok(c.includes(want), `missing ${JSON.stringify(want)}`);
   }
@@ -13,7 +24,7 @@ export function checkUsbHubs(console: string) {
 
 /** The testusb run's lines: both gadgets with usbtest bound, a clean first pass, the unplug inside a pass, a clean pass after the replug. */
 export function checkUsbGuest(console: string, unplug = true) {
-  const c = console.replaceAll('\r\n', '\n');
+  const c = userLines(console);
   for (const want of [
     'usb: gadget 1-1: Gadget Zero, 480 Mb/s, configuration 3, interface driver usbtest\n',
     'usb: gadget 2-2: Gadget Zero, 5000 Mb/s, configuration 3, interface driver usbtest\n',

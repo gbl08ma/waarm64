@@ -136,11 +136,52 @@ fn testusb_passes_in_parallel_smp() {
         });
         eprintln!("[run {run}: {}]", r.summary);
         assert!(r.powered_off(), "run {run}: no SYSTEM_OFF\n{}", r.console);
+        let c = user_lines(&r.console);
         assert!(
-            r.console.contains("usb: pass 1: 46 lines, 0 failed\n"),
+            c.contains("usb: pass 1: 46 lines, 0 failed\n"),
             "run {run}:\n{}",
             r.console
         );
-        assert!(r.console.contains("webpc: usb test ok\n"), "run {run}");
+        assert!(c.contains("webpc: usb test ok\n"), "run {run}");
     }
+}
+
+/// The console without the kernel's records ("[    1.234567] …\n"; tests/usb/guest.ts `userLines`):
+/// on two vCPUs one may land inside a line of init's, between its text and its newline.
+fn user_lines(console: &str) -> String {
+    let record = |l: &str| {
+        let rest = l.strip_prefix('[')?;
+        let end = rest.find("] ")?;
+        let (secs, frac) = rest[..end].trim_start().split_once('.')?;
+        let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        (digits(secs) && frac.len() == 6 && digits(frac)).then_some(())
+    };
+    let mut out = String::new();
+    let mut rest = console;
+    while !rest.is_empty() {
+        match rest.find('[') {
+            Some(i) if record(&rest[i..]).is_some() => {
+                out.push_str(&rest[..i]);
+                rest = rest[i..].find('\n').map_or("", |n| &rest[i + n + 1..]);
+            }
+            Some(i) => {
+                out.push_str(&rest[..=i]);
+                rest = &rest[i + 1..];
+            }
+            None => {
+                out.push_str(rest);
+                break;
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn user_lines_drops_the_kernels_records() {
+    let c = "usb: pass 1: 46 lines, 0 failed[    1.102637] usbtest 1-1:3.0: unlink retry\n\n[    1.2] x\n[a] b\nwebpc: usb test ok\n";
+    assert_eq!(
+        user_lines(c),
+        "usb: pass 1: 46 lines, 0 failed\n[    1.2] x\n[a] b\nwebpc: usb test ok\n"
+    );
 }

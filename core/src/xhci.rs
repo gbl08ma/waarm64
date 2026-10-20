@@ -339,6 +339,17 @@ pub struct Xhci {
     more: bool,
     /// The command ring waits for room in the event ring.
     cmd_wait: bool,
+    /// Realtime mode: a command whose cancels the backend hasn't read yet completes once it has
+    /// (`held`). The host sets it (`Vm`); deterministic mode, whose host serves every record before
+    /// the guest runs on, needs no wait.
+    pub fence: bool,
+    /// The request ring's head after the last cancel record posted to it.
+    cancel_mark: Option<u32>,
+    /// A command's completion event, held until the backend has read every cancel record.
+    held: Option<[u32; 4]>,
+    /// `EV_REQUEST` from a flush whose caller doesn't return it (the commands' own): the next
+    /// flush returns it.
+    posted: u32,
 }
 
 impl Default for Xhci {
@@ -408,6 +419,10 @@ impl Xhci {
             latency: LATENCY_NS,
             more: false,
             cmd_wait: false,
+            fence: false,
+            cancel_mark: None,
+            held: None,
+            posted: 0,
         }
     }
 
@@ -643,6 +658,7 @@ impl Xhci {
             next_tag,
             now: self.now,
             latency: self.latency,
+            fence: self.fence,
             ..Xhci::new()
         };
         for (i, p) in ports.iter().enumerate() {
@@ -863,6 +879,18 @@ impl Xhci {
     fn commands(&mut self, mem: &Mem, sh: &XhciShared) {
         // What the backends finished comes first (a Stop Endpoint must not cancel a TD that completed).
         self.drain(mem, sh);
+        if let Some(ev) = self.held {
+            if self.cancelling(sh) {
+                return;
+            }
+            self.held = None;
+            self.event(ev, true);
+            self.write_events(mem);
+            if !self.pending.is_empty() {
+                self.cmd_wait = true;
+                return;
+            }
+        }
         self.crr = true;
         let mut links = 0;
         for _ in 0..4096 {
@@ -888,16 +916,25 @@ impl Xhci {
             }
             links = 0;
             let (cc, slot) = self.command(&t, mem);
-            self.event(
-                [
-                    at as u32,
-                    (at >> 32) as u32,
-                    cc << 24,
-                    T_COMMAND_EVENT << 10 | (slot as u32) << 24,
-                ],
-                true,
-            );
+            let ev = [
+                at as u32,
+                (at >> 32) as u32,
+                cc << 24,
+                T_COMMAND_EVENT << 10 | (slot as u32) << 24,
+            ];
             self.crcr.at = self.crcr.at.wrapping_add(16);
+            if self.fence {
+                // The backend may still be writing IN data into a TD this cancelled: the guest gets
+                // its buffers back (this completion) only once the backend has read the cancel.
+                self.posted |= self.flush(sh);
+                if self.cancelling(sh) {
+                    self.held = Some(ev);
+                    // The backend's poll that reads it signals (`complete`); a tick looks again.
+                    self.due = self.due.min(self.now.saturating_add(LATENCY_NS));
+                    break;
+                }
+            }
+            self.event(ev, true);
             self.write_events(mem);
             if !self.pending.is_empty() {
                 // No room for its completion: the ring goes on when the guest makes room.
@@ -906,6 +943,31 @@ impl Xhci {
             }
         }
         self.write_events(mem);
+    }
+
+    /// Whether the backend has cancel records it hasn't read (`fence`).
+    fn cancelling(&mut self, sh: &XhciShared) -> bool {
+        if self.outbox.iter().any(|r| r.words[1] >> 16 == REQ_CANCEL) {
+            return true;
+        }
+        let Some(mark) = self.cancel_mark else {
+            return false;
+        };
+        if (sh.req.tail.load(Ordering::Acquire).wrapping_sub(mark) as i32) < 0 {
+            return true;
+        }
+        self.cancel_mark = None;
+        false
+    }
+
+    /// A held command completes, and the ring runs on, once the backend has read the cancels.
+    fn release(&mut self, mem: &Mem, sh: &XhciShared) {
+        if self.held.is_some() && self.running() {
+            self.commands(mem, sh);
+            if self.held.is_some() {
+                self.due = self.due.min(self.now.saturating_add(LATENCY_NS));
+            }
+        }
     }
 
     /// Commands that waited for room in the event ring run on, if there is room now.
@@ -1330,10 +1392,13 @@ impl Xhci {
 
     /// Moves waiting records into the request ring, in order, as far as there is room.
     fn flush(&mut self, sh: &XhciShared) -> u32 {
-        let mut ev = 0;
+        let mut ev = core::mem::take(&mut self.posted);
         while let Some(r) = self.outbox.front() {
             if !sh.req.push(&r.words) {
                 break;
+            }
+            if r.words[1] >> 16 == REQ_CANCEL {
+                self.cancel_mark = Some(sh.req.head.load(Ordering::Relaxed));
             }
             self.outbox.pop_front();
             ev = EV_REQUEST;
@@ -1667,6 +1732,7 @@ impl Xhci {
         }
         self.force = false;
         self.rewalk(mem);
+        self.release(mem, sh);
         self.write_events(mem);
         self.flush(sh)
     }
@@ -1678,6 +1744,7 @@ impl Xhci {
         self.drain(mem, sh);
         // Endpoints that stopped walking for room walk again.
         self.rewalk(mem);
+        self.release(mem, sh);
         self.write_events(mem);
         self.flush(sh)
     }
@@ -1880,7 +1947,7 @@ impl Xhci {
     /// Whether a snapshot can be taken at all: every port empty (a restored controller's are;
     /// the host detaches its devices first, docs/usb.md "Snapshots").
     pub fn saveable(&self) -> bool {
-        self.ports.iter().all(|p| !p.attached) && self.tags.is_empty()
+        self.ports.iter().all(|p| !p.attached) && self.tags.is_empty() && self.held.is_none()
     }
 
     /// Saves the registers, ports, slots and rings; the TDs in flight and the records are empty

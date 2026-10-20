@@ -725,12 +725,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   resolution is still pending but the event loop has already resolved", so a pause or an end that nothing will
   resolve, with no timer left), passed alone and 9 times in 3 copies at once. Which of its tests is unknown (a
   cancelled file prints none); its tests now have a 2-minute deadline, so the next one says.
-- **The parallel usb guest test fails or hangs now and then** (`parallel: usb test kernel, testusb against Gadget
-  Zero on 2 vCPUs (JIT)`, tests/boot-node-suite.ts; 2026-10-20): once it held `tests/boot-node-parallel.test.ts`
-  until `scripts/ci.sh`'s outer timeout (~29 min), and run alone it failed 4 times in 5 with main's core (fbd9b02)
-  as with the lane's ("missing \"webpc: usb test ok\n\"", the run 1.4-3.4 s), while a direct run of the same
-  options printed the line (amid usbtest's `unlink retry` flood from the other vCPU). Look at the failing runs'
-  console: the two vCPUs' output interleaving inside the line, or the guest powering off early.
 - **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
   0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall

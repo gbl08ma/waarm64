@@ -781,7 +781,12 @@ impl Vm {
                 fw_cfg: cfg
                     .firmware()
                     .then(|| FwCfg::new(crate::smbios::with(&cfg, vec![])).unwrap()),
-                xhci: (cfg.xhci != 0).then(Xhci::new),
+                // Realtime: a backend on its own thread may still write a cancelled TD's buffer.
+                xhci: (cfg.xhci != 0).then(|| {
+                    let mut x = Xhci::new();
+                    x.fence = cfg.deterministic == 0;
+                    x
+                }),
                 start: vec![None; n],
             }),
             shared,

@@ -260,6 +260,9 @@ export class Usb {
         case REQ_CLEAR_HALT: guarded('clearHalt', () => p.dev.clearHalt?.(ep)); break;
       }
     }
+    // In realtime mode the core holds the command that cancelled until this has read the cancel (no
+    // `done` writes into those TDs' buffers after it): the signal lets it complete.
+    if (!this.init.deterministic && records.some((r) => r.w1 >>> 16 === REQ_CANCEL)) this.init.kick();
   }
 
   private transfer(p: Plugged, connector: number, gen: number, tag: number, ep: number, w: number[]) {

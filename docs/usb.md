@@ -201,6 +201,16 @@ transports do.
 
   The guest moves the dequeue pointer past what it cancelled. Its next doorbell posts the rest again,
   with new tags.
+
+  **In realtime mode a command that cancelled completes once the backend has read the cancel.** The
+  backend runs on its own thread and may be writing a stopped IN TD's data into its buffer, which the
+  command's completion hands back to the guest. So the core holds the completion event (and the
+  commands behind it) until the request ring's consumer has passed the cancel record: from then on
+  the glue drops that TD's data. The glue signals (`SIGNAL_DEVICE`) after a poll that read a cancel,
+  and the core looks again at its ticks too. Deterministic mode needs no wait: the host serves every
+  record before the guest runs on. (Without it, in parallel SMP about one run in a hundred under load
+  had a cancelled read's bytes land on the TRBs of a transfer ring the guest had just put in the freed
+  buffer: TRB Errors, then usbtest waiting for good.)
 - **Root ports:**
   - A USB 3 port goes straight to U0, enabled, on connect.
   - A USB 2 port connects in Polling and is enabled (U0) by the driver's port reset.
@@ -302,6 +312,8 @@ that don't fit the request ring wait in order, and are posted after the next com
 - For a transfer, it gathers the OUT data, calls `UsbDevice.submit`, scatters IN data, and posts the
   completion. A device's `done` for a cancelled tag, or for a connector whose device has changed, is
   dropped. The other kinds go to `reset`, `cancel`, `configured` and `clearHalt`.
+- In realtime mode, a poll that read a cancel signals the vCPUs: the core holds the command that
+  cancelled until then ("Stop Endpoint" above).
 - **Opening devices:**
   - `virtual` devices are made here: Gadget Zero, from its options in `UsbVirtual`.
   - `usb` and `hid` identities go to the opener registered for their API (`registerUsbOpener`). The
@@ -370,7 +382,11 @@ Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest
   - `core/tests/usb_guest.rs`, natively (in `scripts/ci.sh`)
   - `tests/boot-node-suite.ts`, in Node, interpreter and JIT
   - `tests/browser.test.ts`, in Chromium, interpreter and JIT
-- **Parallel SMP**, natively and in Node: two vCPUs, one clean pass, three runs each.
+- **Parallel SMP**, natively and in Node: two vCPUs, one clean pass, three runs each. The checks drop
+  the kernel's records from the console first (`userLines`): on two vCPUs the kernel writes one
+  whenever its console lock comes free, in the middle of a line of init's too (usbtest's late
+  `unlink retry` flood once split `webpc: usb test ok` from its newline, about one run in seven). In
+  Node a run that hasn't powered off after a minute fails with the console's end.
 
 The unit tests (`core/src/xhci/tests.rs`) drive the controller as Linux does, on hand-built rings, and
 check:

@@ -687,6 +687,61 @@ pub(super) fn stop_endpoint_cancels_what_is_in_flight() {
 }
 
 #[test]
+pub(super) fn in_realtime_a_stop_completes_once_the_backend_read_its_cancel() {
+    // A backend on its own thread may still be writing a stopped IN TD's data: the guest gets its
+    // buffers back (the command's completion) only once the backend has read the cancel, which
+    // drops that TD's data (web/usb.ts `done`). Found in parallel SMP, a late read's bytes on the
+    // TRBs of a new transfer ring the guest had put in the freed buffer.
+    let mut t = configured();
+    t.x.fence = true;
+    let a = t.trb(
+        BULK_IN,
+        [BUF as u32, 0, 512, T_NORMAL << 10 | C_IOC | C_ISP],
+    );
+    t.wr(DBOFF + 4, 3);
+    let r = t.requests();
+    assert_eq!(r.len(), 1);
+    // Stop Endpoint, then a No-Op behind it.
+    let stop = CMD + 16 * t.cmd.0;
+    for (k, ty_) in [T_STOP_EP << 10 | 3 << 16 | 1 << 24, T_NOOP_CMD << 10]
+        .into_iter()
+        .enumerate()
+    {
+        t.put(stop + 16 * k as u64, &[0, 0, 0, ty_ | t.cmd.1 as u32]);
+    }
+    t.cmd.0 += 2;
+    assert_eq!(t.wr(DBOFF, 0), EV_REQUEST, "the cancel is posted");
+    let ev = t.events();
+    assert_eq!(ev.len(), 1, "only the Stopped event: {ev:x?}");
+    let (at, cc, _, _) = transfer(&ev[0]);
+    assert_eq!((at, cc), (a, CC_STOPPED));
+    // Neither a tick nor the command doorbell completes it while the cancel is unread.
+    t.x.tick(t.ns, true, &t.mem, &t.sh);
+    t.wr(DBOFF, 0);
+    assert!(
+        t.events().is_empty(),
+        "completed before the backend read the cancel"
+    );
+    // The backend reads it (and signals): both commands complete, in order.
+    let c = t.requests();
+    assert_eq!(
+        (c[0].kind, c[0].words.clone()),
+        (REQ_CANCEL, vec![1, r[0].tag])
+    );
+    t.x.complete(&t.mem, &t.sh, t.ns);
+    let ev = t.events();
+    assert_eq!(ev.len(), 2);
+    for (k, e) in ev.iter().enumerate() {
+        assert_eq!(ty(e), T_COMMAND_EVENT);
+        assert_eq!(e[0] as u64 | (e[1] as u64) << 32, stop + 16 * k as u64);
+        assert_eq!(e[2] >> 24, CC_SUCCESS);
+    }
+    assert_eq!(t.ep_state(3), EP_STOPPED);
+    // Commands without a cancel complete at once.
+    assert_eq!(t.command([0, 0, 0, T_NOOP_CMD << 10]), (CC_SUCCESS, 0));
+}
+
+#[test]
 pub(super) fn an_unplug_fails_what_is_in_flight() {
     let mut t = configured();
     let a = t.trb(

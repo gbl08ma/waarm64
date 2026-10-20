@@ -434,6 +434,9 @@ pub struct UsbHost {
     devs: Vec<Option<GadgetZero>>,
     gens: [u8; CONNECTORS],
     flights: Vec<Flight>,
+    /// Realtime: a poll that read a cancel signals, so that the command the core holds for it
+    /// completes (web/usb.ts `poll`).
+    pub realtime: bool,
 }
 
 impl Default for UsbHost {
@@ -442,6 +445,7 @@ impl Default for UsbHost {
             devs: (0..CONNECTORS).map(|_| None).collect(),
             gens: [0; CONNECTORS],
             flights: vec![],
+            realtime: false,
         }
     }
 }
@@ -480,6 +484,7 @@ impl UsbHost {
         }
         // A TD cancelled before it was read never reaches its device (web/usb.ts `poll`); from the
         // end, so that a tag given again after its cancel is the new TD's.
+        let read_cancel = records.iter().any(|r| r.1 >> 16 == REQ_CANCEL);
         let mut skip = vec![false; records.len()];
         let mut cancelled: Vec<u32> = vec![];
         for (i, r) in records.iter().enumerate().rev() {
@@ -521,6 +526,9 @@ impl UsbHost {
                 REQ_CONFIGURED | REQ_CLEAR_HALT => {}
                 _ => {}
             }
+        }
+        if read_cancel && self.realtime {
+            vm.signal(SIGNAL_DEVICE);
         }
     }
 

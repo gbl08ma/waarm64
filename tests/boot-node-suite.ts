@@ -107,14 +107,17 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
 // Parallel SMP (M7 loop 5): each bare-metal test under the JIT and JIT-check
 // (whose checker tolerates the legal cross-modification window here: a stale
 // block is dropped and counted, not a trap).
+// A run that doesn't power off within `maxMs` fails (a realtime guest stuck with its timers running
+// would otherwise hold the test file until CI's outer timeout).
 const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
-const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void, input?: ConsoleInput) => {
+const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void, input?: ConsoleInput, maxMs = 300_000) => {
   for (let i = 0; i < RUNS; i++) {
-    const r = await boot({ ...o, parallel: true, idleLimitMs: 30_000 }, jit, 1e12, input);
+    const t0 = performance.now();
     try {
+      const r = await runToPowerOff(WASM, { ...o, parallel: true, idleLimitMs: 30_000, jit }, 1e12, undefined, input, maxMs);
       check(r);
     } catch (e) {
-      throw new Error(`run ${i + 1} of ${RUNS} (${(r.ms / 1000).toFixed(1)} s): ${(e as Error).message}`);
+      throw new Error(`run ${i + 1} of ${RUNS} (${((performance.now() - t0) / 1000).toFixed(1)} s): ${(e as Error).message}`);
     }
   }
 };
@@ -431,7 +434,7 @@ guest('usb test kernel: testusb against Gadget Zero, hot-plugged', () => ({ ramS
 test('parallel: usb test kernel, testusb against Gadget Zero on 2 vCPUs (JIT)', { skip: usbSkip }, () => parallel({ ramSize: 256 << 20, kernel: image(USB_KERNEL), initrd: image(USB_INITRD), cmdline: USB_CMDLINE.replace('usb_unplug=1', 'usb_unplug=0'), usb: usbGuest(false), ncpus: 2 }, 1, (r) => {
   poweredOff(r);
   checkUsbGuest(r.console, false);
-}));
+}, undefined, 60_000)); // a run takes 1-4 s
 
 // The firmware configuration (M8 phase B): EDK2 boots the UEFI Shell from the test disk
 // (images/build.sh edk2: shell.img), whose startup.nsh prints a variable, sets it in the

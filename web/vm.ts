@@ -1231,46 +1231,73 @@ export type ConsoleInput = { step?: number; after?: string; data: string };
 /**
  * Boots and runs until the guest powers off (or `maxSteps`), collecting the
  * console. `booted` sees the VM before it runs; `input` goes to its serial
- * console when {@link ConsoleInput} says.
+ * console when {@link ConsoleInput} says. Past `maxMs` of wall-clock time it
+ * closes the VM and throws with the console's end: a realtime guest stuck
+ * waiting with its timers running retires too few steps for `maxSteps`, and
+ * too many for `idleLimitMs`, to end the run.
  */
-export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9, booted?: (vm: Vm) => void, input?: ConsoleInput) {
+export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9, booted?: (vm: Vm) => void, input?: ConsoleInput, maxMs = Infinity) {
   const vm = await bootVm(wasm, o);
   booted?.(vm);
   let console = '';
   let steps = 0;
   const t0 = performance.now();
   const usbEvents = [...(o.usb?.events ?? [])].sort((a, b) => a.step - b.step);
-  for (;;) {
-    // USB plugs at their steps: the run stops there, and the device worker has the plug before it runs on.
-    while (usbEvents.length && steps >= usbEvents[0].step) {
-      const e = usbEvents.shift()!;
-      if (!vm.usb) throw new Error("usb.events with a port of the caller's");
-      const m = await (e.device ? vm.usb.attach(e.connector, e.device) : vm.usb.detach(e.connector));
-      if (m.state === 'error') throw new Error(`USB connector ${e.connector}: ${m.message}`);
+  let late: Error | undefined;
+  const run = async () => {
+    for (;;) {
+      if (late) throw late; // past `maxMs`: the caller has its error already
+      // USB plugs at their steps: the run stops there, and the device worker has the plug before it runs on.
+      while (usbEvents.length && steps >= usbEvents[0].step) {
+        const e = usbEvents.shift()!;
+        if (!vm.usb) throw new Error("usb.events with a port of the caller's");
+        const m = await (e.device ? vm.usb.attach(e.connector, e.device) : vm.usb.detach(e.connector));
+        if (m.state === 'error') throw new Error(`USB connector ${e.connector}: ${m.message}`);
+      }
+      const until = Math.min(input?.step !== undefined && steps < input.step ? input.step : Infinity, usbEvents[0]?.step ?? Infinity);
+      const r = await vm.runAsync(Math.min(100_000_000, until - steps));
+      steps += r.steps;
+      console += vm.drain();
+      const idle = r.kind === Exit.IDLE; // deterministic, with no deadline: waiting for input or for nothing
+      if (input && (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))) {
+        vm.send(input.data);
+        input = undefined;
+        if (idle) continue;
+      }
+      if (r.kind === Exit.DEVICE) await vm.settle();
+      // `maxSteps` bounds DEVICE exits too (an idle guest may make one every few million steps).
+      if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) && steps < maxSteps) continue;
+      const ms = performance.now() - t0;
+      await vm.flush();
+      // The display's state (hashes of the scanout and the cursor), for a machine with a virtio-gpu; what a
+      // virtio-snd played (its sink's checksum) and the control requests it took.
+      const slot = (type: string) => (o.devices ?? []).findIndex((d) => d.type === type);
+      const states = slot('gpu') >= 0 || slot('snd') >= 0 ? await vm.deviceState() : [];
+      const gpu = slot('gpu') >= 0 ? states[slot('gpu')] as GpuState : undefined;
+      const snd = slot('snd') >= 0 ? states[slot('snd')] as SndState : undefined;
+      vm.close();
+      return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd, stats: vm.stats() };
     }
-    const until = Math.min(input?.step !== undefined && steps < input.step ? input.step : Infinity, usbEvents[0]?.step ?? Infinity);
-    const r = await vm.runAsync(Math.min(100_000_000, until - steps));
-    steps += r.steps;
-    console += vm.drain();
-    const idle = r.kind === Exit.IDLE; // deterministic, with no deadline: waiting for input or for nothing
-    if (input && (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))) {
-      vm.send(input.data);
-      input = undefined;
-      if (idle) continue;
-    }
-    if (r.kind === Exit.DEVICE) await vm.settle();
-    // `maxSteps` bounds DEVICE exits too (an idle guest may make one every few million steps).
-    if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) && steps < maxSteps) continue;
-    const ms = performance.now() - t0;
-    await vm.flush();
-    // The display's state (hashes of the scanout and the cursor), for a machine with a virtio-gpu; what a
-    // virtio-snd played (its sink's checksum) and the control requests it took.
-    const slot = (type: string) => (o.devices ?? []).findIndex((d) => d.type === type);
-    const states = slot('gpu') >= 0 || slot('snd') >= 0 ? await vm.deviceState() : [];
-    const gpu = slot('gpu') >= 0 ? states[slot('gpu')] as GpuState : undefined;
-    const snd = slot('snd') >= 0 ? states[slot('snd')] as SndState : undefined;
-    vm.close();
-    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd, stats: vm.stats() };
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    if (maxMs === Infinity) return;
+    timer = setTimeout(() => {
+      const pcs = Array.from({ length: o.ncpus ?? 1 }, (_, i) => `0x${vm.pc(i).toString(16)}`).join(' ');
+      console += vm.drain();
+      // The whole console goes with it (`console`), for a caller that keeps it.
+      reject(late = Object.assign(new Error(`no power-off in ${maxMs / 1000} s (${steps} steps, pcs ${pcs}); the console's end:\n${console.slice(-3000)}`), { console }));
+    }, maxMs);
+  });
+  const running = run();
+  running.catch(() => {}); // after the deadline it ends unseen (on `late`, or a promise the closed VM never settles)
+  try {
+    return await Promise.race([running, deadline]);
+  } catch (e) {
+    void Promise.resolve(vm.close()).catch(() => {}); // the vCPU workers too: alive, they would keep the process from exiting
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
