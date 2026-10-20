@@ -131,10 +131,26 @@ the interpreter's own code.
     edges (its loop; seen by the dispatcher). Without a loop the region is the head alone.
 - **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per slot of each
   function table, which blocks reach through `jit::State::hot`) counting entries down from `region_after` (**1000**); the entry that reaches 0 calls
-  `jit_hot(vcpu, key, pc)`, which compiles the loop region in a module with the pending batch, if any (never with a flush,
-  since JIT code is on the stack) and stores `1 << 31 | index` in the word; from then on the head's
-  prologue tail-calls the region, so blocks linked to the head reach it too. A head that gets hot
-  in another table finds the region compiled (`Cache::tiers`) and redirects its own word.
+  `jit_hot(vcpu, key, pc)`, which queues the loop region for the **next batch** (`Cache::tierq`); once that is
+  emitted, `1 << 31 | index` goes in the word, and from then on the head's prologue tail-calls the region, so
+  blocks linked to the head reach it too. A head that gets hot in another table finds the region compiled
+  (`Cache::tiers`) and redirects its own word.
+  - **Waiting for the batch:** a queued head adds `TIER_STEPS` (**1,562**) to the batch's steps
+    (`BATCH_STEPS`) and its word counts 64 entries again (`REARM`), in every table that sees it hot; each time it
+    gets hot again it adds again, so a loop that keeps running makes the batch due after 32 of them (~2,000 more
+    entries alone) and lukewarm loops go with whatever is pending. `jit_hot` emits the batch it made due when it
+    fits without a flush (JIT code is on the stack), else the dispatcher's next miss does. A queued head whose loop an
+    earlier region of the same batch runs (it got hot while it waited: its loop's other blocks are heads alone too)
+    goes quiet (`Info::covered`) instead of compiling the same loop again. JIT-stress, JIT-check and the forced mode
+    (batch 1) tier up at once, in a module of their own.
+  - **Why:** tier-ups made most modules, each with its region alone or with a small batch: in Firefox's pages session
+    5,600 of 6,750 modules (1,580 of them one region), in the churn screen 17,700 of 33,000 (7,900 alone), and V8 spends
+    ~16 KB a module besides its functions ([Memory](#memory)). Waiting: the pages session's modules 6,731/6,767 → 2,778,
+    V8's wasm code 927/921 → 870 MB (median), the renderer 4,987/5,006 → 4,947 MB, busy MIPS 152/155 → 158, the heavy
+    pages' loads 17.8/17.7 → 16.8 s; the churn's 32,900 → 23,000 (wasm −3%: fewer loops compiled twice); the 4-vCPU
+    `go build` loop 1,110 → 1,141 MIPS, the renderer 3,229 → 2,876 MiB (`bench/boot/REPORT.md` "M8: tier-ups
+    folded into the batches"). Without the quieting the churn compiled 11% more wasm; a quarter of the wait
+    (`TIER_STEPS` 6,250: 8 times hot) left 25,400 modules there.
 - **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
   (`Config::max_bytes`: **320 MiB** of wasm for a VM by default, whose vCPUs share it: [Sharing](#sharing); a machine
   sets its own with `VmConfig.jit_bytes`, the page's `?jitmb=` and a stored machine's JIT cache setting). When

@@ -1,0 +1,18 @@
+{
+ "bench/results/local/emit/fold-pages/g32-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 92.64,
+   "flushes": 0,
+   "modules": 2783,
+   "mib": 255.9,
+   "overdue": 0,
+   "parks": 10240,
+   "locks": 86424731,
+   "interpGsteps": 1.04,
+   "share": 0.989,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

@@ -252,6 +252,11 @@ struct Info {
     hash: u64,
     /// A loop head compiled alone: its hot word's index + 1 (step 8.3).
     word: u32,
+    /// A loop head whose region waits in `Cache::tierq` for the next batch.
+    tiering: bool,
+    /// A loop head that a region tiered up with it runs the loop of: it
+    /// doesn't tier up itself.
+    covered: bool,
 }
 
 /// A jump cache entry: the compiled block for a key. Blocks read it too
@@ -300,6 +305,14 @@ pub const BATCH_TIMEOUT: u64 = 64_000_000;
 /// [`Config::DEFAULT`]'s `warm`.
 pub const WARM: u32 = 16;
 
+/// What a tier-up waiting for the next batch adds to the pending batch's
+/// steps ([`BATCH_STEPS`]): how much sooner it brings the batch.
+pub const TIER_STEPS: u64 = 1_562;
+
+/// The entries a hot word counts again while its head's region waits for a
+/// batch ([`Cache::tier_up`]).
+const REARM: u32 = 64;
+
 /// The code cache a VM's vCPUs share (docs/jit.md "Sharing"): the blocks, the
 /// pending batch, the slot allocator, and the modules installed since the
 /// last flush, which every [`Table`] installs in the same slots, in order.
@@ -322,6 +335,9 @@ pub struct Cache {
     tiers: Map<Tier>,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
+    /// (key, VA) of loop heads compiled alone that got hot, whose regions
+    /// wait for the next batch ([`Cache::tier_up`]).
+    tierq: Vec<(u64, u64)>,
     /// Steps the pending blocks have been dispatched for since they joined it
     /// ([`BATCH_STEPS`]).
     pending_steps: u64,
@@ -452,6 +468,7 @@ impl Cache {
             spans: HashMap::default(),
             tiers: HashMap::default(),
             pending: Vec::new(),
+            tierq: Vec::new(),
             pending_steps: 0,
             batch: 0,
             next: MISS_SLOTS,
@@ -545,6 +562,7 @@ impl Cache {
         self.spans.clear();
         self.tiers.clear();
         self.pending.clear();
+        self.tierq.clear();
         self.pending_steps = 0;
         self.batch += 1;
         self.next = MISS_SLOTS;
@@ -677,21 +695,73 @@ impl Cache {
     /// [`BATCH_STEPS`] interpreted, or it has waited [`BATCH_TIMEOUT`] (by
     /// table `t`'s clock), into `t`.
     fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
-        if self.pending.is_empty() {
-            return;
+        if self.due(t) {
+            self.emit_batch(t, mem);
+        }
+    }
+
+    /// Whether the pending batch (with the loop regions waiting) is due, by
+    /// table `t`'s clock.
+    fn due(&mut self, t: &mut Table) -> bool {
+        if self.pending.is_empty() && self.tierq.is_empty() {
+            return false;
         }
         if t.since.0 != self.batch {
             t.since = (self.batch, t.clock);
         }
-        if self.pending.len() >= self.cfg.batch as usize
+        self.pending.len() >= self.cfg.batch as usize
             || t.clock - t.since.1 >= BATCH_TIMEOUT
             || self.pending_steps >= BATCH_STEPS
-        {
-            let ns = now_ns();
-            let regions = self.plan(mem);
-            t.stats.plan_ns += now_ns().saturating_sub(ns);
-            self.batch += 1;
-            self.install(t, regions, mem);
+    }
+
+    /// Emits the pending batch and the loop regions waiting, into `t`.
+    fn emit_batch(&mut self, t: &mut Table, mem: &Mem) {
+        let ns = now_ns();
+        // The loop regions that waited first, so each one's index is
+        // the module's plus its place.
+        let mut tiers = Vec::new();
+        let mut regions = Vec::new();
+        for (key, va) in core::mem::take(&mut self.tierq) {
+            let Some(i) = self.map.get_mut(&key).filter(|i| i.tiering && i.word != 0) else {
+                continue;
+            };
+            i.tiering = false;
+            let word = i.word;
+            // A head that a region taken already runs the loop of (its
+            // members got hot while it waited) goes quiet.
+            if i.covered {
+                t.quiet(word);
+                continue;
+            }
+            let r = self.region(key, va, mem);
+            if r.blocks.len() < 2 {
+                continue;
+            }
+            let inner = r.inner_free();
+            for m in &inner {
+                if let Some(i) = self.map.get_mut(m) {
+                    i.covered = true;
+                }
+            }
+            let quiet: Vec<u32> = inner
+                .into_iter()
+                .filter_map(|m| self.map.get(&m).map(|i| i.word).filter(|&w| w != 0))
+                .collect();
+            tiers.push((key, word, quiet));
+            regions.push(r);
+        }
+        regions.extend(self.plan(mem));
+        t.stats.plan_ns += now_ns().saturating_sub(ns);
+        self.batch += 1;
+        let Some(idx) = self.install(t, regions, mem) else {
+            return;
+        };
+        for (k, (key, word, quiet)) in tiers.into_iter().enumerate() {
+            let idx = idx + k as u32;
+            quiet.iter().for_each(|&w| t.quiet(w));
+            t.redirect(word, idx, key);
+            self.tiers.insert(key, Tier { idx, word, quiet });
+            t.stats.tier_ups += 1;
         }
     }
 
@@ -795,18 +865,53 @@ impl Cache {
     }
 
     /// A loop head compiled alone got hot in table `t` (`jit_hot`, which runs
-    /// inside JIT code: never a flush here): compiles its loop region in its
-    /// own module, or finds it compiled already (it got hot in another table
-    /// first), and points the head's hot word in `t` at it.
+    /// inside JIT code: never a flush here): finds its loop region compiled
+    /// already (it got hot in another table first) and points the head's hot
+    /// word in `t` at it, or queues the region for the next batch
+    /// ([`Cache::emit_batch`], which points the word at it then), or (batch
+    /// 1: JIT-stress, JIT-check, the forced mode) compiles it now.
     fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
         if let Some(r) = self.tiers.get(&key) {
             r.quiet.iter().for_each(|&w| t.quiet(w));
             t.redirect(r.word, r.idx, key);
             return;
         }
-        let Some(word) = self.map.get(&key).map(|i| i.word).filter(|&w| w != 0) else {
+        let Some(&Info {
+            word,
+            tiering,
+            covered,
+            ..
+        }) = self.map.get(&key).filter(|i| i.word != 0)
+        else {
             return;
         };
+        if covered && self.cfg.batch > 1 {
+            t.quiet(word);
+            return;
+        }
+        if self.cfg.batch > 1 {
+            // Its region goes with the next batch (V8's per-module cost:
+            // docs/jit.md "Memory"), which it brings nearer. Meanwhile the
+            // head counts again in every table that sees it hot, and finds
+            // the region then.
+            if !tiering {
+                if self.region(key, va, mem).blocks.len() < 2 {
+                    return;
+                }
+                self.map.get_mut(&key).expect("a head").tiering = true;
+                self.tierq.push((key, va));
+            }
+            self.pending_steps += TIER_STEPS;
+            t.rearm(word);
+            // Never a flush here (JIT code is running): without room the
+            // dispatcher's next miss emits it.
+            let n = (self.pending.len() + self.tierq.len()) as u32;
+            if self.due(t) && self.next + n <= self.cfg.capacity && self.live_bytes < self.budget()
+            {
+                self.emit_batch(t, mem);
+            }
+            return;
+        }
         // Never a flush here: JIT code is running (the head's prologue), and
         // what it goes on to call must stay in the cache. Without room, the
         // head stays alone until the next flush drops it.
@@ -1261,6 +1366,15 @@ impl Table {
         let j = &mut self.jc[jc_index(key)];
         if j.key == key {
             j.idx = idx;
+        }
+    }
+
+    /// Hot word `word - 1` counts [`REARM`] entries again, unless it
+    /// redirects already (its head's region waits for a batch).
+    fn rearm(&mut self, word: u32) {
+        let h = &mut self.hot[word as usize - 1];
+        if *h & emit::REDIRECT == 0 {
+            *h = REARM;
         }
     }
 
@@ -2311,6 +2425,68 @@ mod tests {
             assert_eq!(i.queued, d > 50, "queued at dispatch 51, not {d}");
         }
         assert!(reports < 200 / 8, "{reports} reports for 200 dispatches");
+    }
+
+    /// A loop head that gets hot waits for the next batch, counting again
+    /// meanwhile; each time it gets hot again it brings the batch nearer, so
+    /// a loop that keeps running gets its region after [`BATCH_STEPS`] /
+    /// [`TIER_STEPS`] of them, in a module with whatever else is pending.
+    #[test]
+    fn a_tier_up_waits_for_the_next_batch() {
+        let mut ram = vec![0u128; 0x2000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
+        mem.write(0x1000, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+        mem.write(0x1004, 4, 0x1400_0003).unwrap(); // b 0x1010
+        mem.write(0x1010, 4, 0xf100_04a5).unwrap(); // subs x5, x5, #1
+        mem.write(0x1014, 4, 0x54ff_ff61).unwrap(); // b.ne 0x1000
+        mem.write(0x1018, 4, 0xd420_0000).unwrap(); // brk
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        c.xmiss = Some(1);
+        (t.xmiss, t.base) = (true, 1);
+        let (a, b) = (0x1000, 0x1010);
+        for k in [a, b] {
+            c.info(k, || 2).queued = true;
+            c.pending.push((k, k));
+        }
+        let regions = c.plan(&mem);
+        assert!(
+            regions
+                .iter()
+                .all(|r| r.blocks.len() == 1 && r.tier.is_some())
+        );
+        c.install(&mut t, regions, &mem).expect("installed");
+        let word = c.map[&a].word;
+        let modules = c.log.len();
+        c.tier_up(&mut t, a, a, &mem);
+        assert!(c.map[&a].tiering && c.tierq == vec![(a, a)]);
+        assert_eq!((c.log.len(), t.hot[word as usize - 1]), (modules, REARM));
+        // The loop's other block gets hot meanwhile: a's region runs its
+        // loop, so it doesn't get one of its own.
+        let wb = c.map[&b].word;
+        c.tier_up(&mut t, b, b, &mem);
+        assert_eq!(c.tierq, vec![(a, a), (b, b)]);
+        let calls = BATCH_STEPS.div_ceil(TIER_STEPS);
+        for _ in 2..calls - 1 {
+            c.tier_up(&mut t, a, a, &mem);
+        }
+        assert_eq!(c.log.len(), modules, "not due yet");
+        c.tier_up(&mut t, a, a, &mem);
+        assert_eq!(c.log.len(), modules + 1, "due: emitted");
+        let idx = c.tiers[&a].idx;
+        assert_eq!(idx, c.xmiss.unwrap() + c.log[modules].slot);
+        assert!(!c.map[&a].tiering && c.tierq.is_empty());
+        assert_eq!(
+            t.redirects,
+            vec![(word, idx, a)],
+            "once this table has installed it"
+        );
+        assert_eq!(c.log[modules].n, 1, "a's region alone");
+        assert!(c.map[&b].covered && !c.tiers.contains_key(&b));
+        assert_eq!(t.hot[wb as usize - 1], 0, "b goes quiet");
+        c.tier_up(&mut t, b, b, &mem);
+        assert!(c.tierq.is_empty() && t.hot[wb as usize - 1] == 0);
     }
 
     /// A member's hot word stops counting when an enclosing region is

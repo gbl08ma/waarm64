@@ -2436,3 +2436,50 @@ The waiting fell by a third on the churn and a fifth on the pages, and nothing a
 is ~1% of the vCPUs' time at most. **Not kept**; the counters are. **Emitting in the compile worker** would take the
 rest of emission off the vCPUs, at most the same ~1%, so it wasn't built. What would cut the waiting is fewer
 acquisitions (docs/backlog.md).
+
+## M8: tier-ups folded into the batches (2026-10-20)
+
+The same host, guest and harness as the section above; data in `bench/boot/results/m8-emit/` (`count-*/`, `fold*/`,
+`go/`, `gates/`; `hist.jsonl` from `hist.ts`, the counting build is `count.patch`).
+
+**Counted first** (a build that buckets each module by its regions and what emitted it): the modules are the
+tier-ups'. A loop head compiled alone that gets hot compiled its region at once, in a module with whatever batch was
+pending.
+
+| | modules | regions a module | 1-8 regions | tier-up modules (the region alone) | batches by `BATCH_STEPS` / full / timeout |
+|---|---|---|---|---|---|
+| pages session | 6,802 | 30.6 | 47% | 5,656 (1,542) | 1,001 / 70 / 75 |
+| churn screen | 33,013 | 15.5 | 54% | 17,744 (8,049) | 15,195 / 65 / 9 |
+
+**The fold:** `jit_hot` queues the head's loop region for the next batch instead (`Cache::tierq`), adds
+`TIER_STEPS` to the batch's steps and makes the head's word count 64 entries again, in each table that sees it hot,
+so a loop that keeps running brings the batch due after `BATCH_STEPS / TIER_STEPS` times hot and lukewarm loops go
+with what's pending. `jit_hot` emits the batch it made due if it fits without a flush, else the dispatcher's next
+miss does. Batch-1 modes (JIT-stress, JIT-check, forced) tier up at once as before.
+
+Screened on the churn, one session per arm (`fold-churn/`, `fold2-churn/`): the first form (`TIER_STEPS` 6,250 and
+1,562: 8 or 32 times hot) cut modules 33,050 → 26,500 and 23,800 but compiled 6% and 11% more wasm (583, 610 MB
+against 549): while a head waited, its loop's other blocks (heads alone too) got hot and queued their own regions of
+the same loop. With a queued head quieted once an earlier region of the batch covers it (`Info::covered`): 1,562
+made 23,031 modules of 531 MB against 32,881 of 546, tier-up regions 17,606 → 7,870, the renderer's median 4,661
+against 4,805 MiB (the base's sessions this evening 4,692-4,805), busy MIPS 188 against 193 (187-193), `doneS` 132.6
+against 132.6; 6,250 made 25,429. Kept 1,562.
+
+**Timed** (one session each, an A/A in the pages run):
+
+| | base · copy | folded |
+|---|---|---|
+| pages: modules | 6,731 · 6,767 | 2,778 (75 regions each, 11% with 1-8) |
+| pages: wasm | 270 · 270 MB | 268 MB |
+| pages: V8's wasm code (median / max) | 927 · 921 / 1,001 · 1,068 MiB | 870 / 985 MiB |
+| pages: renderer RSS (median / max) | 4,987 · 5,006 / 5,273 · 5,282 MiB | 4,947 / 5,201 MiB |
+| pages: busy MIPS | 152 · 155 | 158 |
+| pages: wiki / bbc load | 17.8 · 17.7 / 16.6 · 16.0 s | 16.8 / 15.6 s |
+| pages: stalls ≥ 20 ms | 0 · 2 | 0 |
+| `go build` loop, 300 s from `debian-go.webpcsnap`: MIPS over the run | 1,110 | 1,141 |
+| `go build` loop: the renderer (median of the 30 s samples) | 3,229 MiB | 2,876 MiB |
+
+The gates (`gates/`, three rounds alternating, ms, lower is better): `smp_alpine_jit` n1 9,432 · 9,403 · 9,514
+against 9,347 · 9,422 · 9,306 (−0.9%), n2 −1.4%, n4 −0.6%; `smp_user_jit_4` 18,450 · 18,485 · 19,158 against
+18,095 · 18,228 · 18,645 (−1.4%). **Kept:** 59% fewer modules on the pages session, V8's code 6% smaller there,
+everything timed even or a little faster.

@@ -1,0 +1,110 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 9ac3df3..9a22ca1 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -215,6 +215,9 @@ pub struct Stats {
+     pub emit_ns: u64,
+     pub emit_locked_ns: u64,
+     pub plan_ns: u64,
++    /// COUNT: modules by regions (1, 2, 3-8, 9-32, 33-128, 129-511, 512+),
++    /// batches emitted full / by steps / by timeout, tier-up modules and those alone.
++    pub hist: [u64; 12],
+ }
+ 
+ /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
+@@ -687,6 +690,14 @@ impl Cache {
+             || t.clock - t.since.1 >= BATCH_TIMEOUT
+             || self.pending_steps >= BATCH_STEPS
+         {
++            let why = if self.pending.len() >= self.cfg.batch as usize {
++                7
++            } else if self.pending_steps >= BATCH_STEPS {
++                8
++            } else {
++                9
++            };
++            t.stats.hist[why] += 1;
+             let ns = now_ns();
+             let regions = self.plan(mem);
+             t.stats.plan_ns += now_ns().saturating_sub(ns);
+@@ -835,9 +846,12 @@ impl Cache {
+             t.stats.plan_ns += now_ns().saturating_sub(ns);
+             self.batch += 1;
+         }
++        let alone = regions.len() == 1;
+         let Some(idx) = self.install(t, regions, mem) else {
+             return;
+         };
++        t.stats.hist[10] += 1;
++        t.stats.hist[11] += alone as u64;
+         t.redirect(word, idx, key);
+         self.tiers.insert(key, Tier { idx, word, quiet });
+         t.stats.tier_ups += 1;
+@@ -920,6 +934,15 @@ impl Cache {
+         s.cond_computed += counts.cond_computed;
+         s.cond_memory += counts.cond_memory;
+         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
++        s.hist[match n {
++            1 => 0,
++            2 => 1,
++            3..=8 => 2,
++            9..=32 => 3,
++            33..=128 => 4,
++            129..=511 => 5,
++            _ => 6,
++        }] += 1;
+         for (k, ((r, inl), links)) in regions.iter().zip(inl).zip(links).enumerate() {
+             let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
+             let s = &mut t.stats;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index bed7795..35d5dbc 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -313,6 +313,7 @@ pub struct Counters {
+     /// ones, ns waited; ns emitting modules, of those under the lock, ns
+     /// forming batches into regions.
+     pub jx: [AtomicU64; 6],
++    pub hist: [AtomicU64; 12],
+ }
+ 
+ /// Indexes into [`Counters::par`].
+@@ -344,6 +345,7 @@ impl Default for Counters {
+             dec: [const { AtomicU64::new(0) }; 3],
+             cw: [const { AtomicU64::new(0) }; 4],
+             jx: [const { AtomicU64::new(0) }; 6],
++            hist: [const { AtomicU64::new(0) }; 12],
+         }
+     }
+ }
+@@ -1477,6 +1479,9 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
+     for (a, v) in c.jx.iter().zip(jx) {
+         a.store(v, Ordering::Relaxed);
+     }
++    for (a, v) in c.hist.iter().zip(s.hist) {
++        a.store(v, Ordering::Relaxed);
++    }
+ }
+ 
+ /// Runs the instruction at `vcpu`'s PC again through [`Io`], after it hit a
+diff --git a/web/vm.ts b/web/vm.ts
+index c00bf36..7dfa067 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -390,7 +390,8 @@ export const Counter = {
+   // ABI 46: the JIT cache's lock (acquisitions, contended ones, ns waited), ns emitting, of those under the lock, ns
+   // forming batches into regions.
+   JIT_LOCKS: 108, JIT_LOCK_CONTENDED: 109, JIT_LOCK_WAIT_NS: 110, JIT_EMIT_NS: 111, JIT_EMIT_LOCKED_NS: 112, JIT_PLAN_NS: 113,
+-  LEN: 114,
++  HIST: 114,
++  LEN: 126,
+ } as const;
+ 
+ /**
+@@ -1067,6 +1068,7 @@ function stats(n: (i: number) => number) {
+       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
+       locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
+       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
++      hist: Array.from({ length: 12 }, (_, i) => n(Counter.HIST + i)),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

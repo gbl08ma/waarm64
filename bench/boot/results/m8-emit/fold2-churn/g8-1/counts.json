@@ -1,0 +1,52 @@
+{
+ "bench/results/local/emit/fold2-churn/g8-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 77.98,
+   "flushes": 1,
+   "modules": 25471,
+   "mib": 506.8,
+   "overdue": 0,
+   "parks": 88957,
+   "locks": 65910249,
+   "interpGsteps": 2.76,
+   "share": 0.964,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 88,
+    "atGsteps": 38.14,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 15052,
+    "mibEmitted": 231.1,
+    "shareBefore": 0.941,
+    "shareAfter": [
+     0.96,
+     0.96,
+     0.957,
+     0.962,
+     0.97,
+     0.97,
+     0.97,
+     0.97,
+     0.968,
+     0.968
+    ]
+   }
+  ]
+ }
+}

@@ -76,14 +76,14 @@ the first two items here.
     an indirect one (`chain.mjs` with the targets evicted). A per-site slot in a module-local
     table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
   - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
-- **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each, 82% of them
-  tier-ups (a hot loop head's region in a module of its own, with whatever batch is pending). Since the posted modules
-  (`bench/boot/REPORT.md` "M8: the compile worker's modules, posted") a module costs a vCPU ~0.06 ms to install, so
-  the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS (the renderer's
-  `VmRSS` beside the session: `bench/boot/results/m8-replay/r2/rss.sh`; at the 320 MiB budget 5,250-5,544 MiB
-  median, ~8,150 modules) and those stops,
-  then try tier-ups that wait a little for company (the head runs alone meanwhile); Alpine paid +20% for 16M-step
-  batches.
+- **Fewer, larger modules for a browser, what's left** after tier-ups wait for the batch ([jit.md](jit.md) "Compile
+  policy"; `bench/boot/REPORT.md` "M8: tier-ups folded into the batches"): Firefox's pages session makes ~2,800
+  modules (75 regions each, 11% with 1-8), the churn screen ~23,000 (22 each, 35% with 1-8: batches made due by
+  `BATCH_STEPS` while the guest writes new code all the time). Not tried: larger batches while the cache is warm
+  (Alpine paid +20% for 16M-step batches), and rebuilding the live regions into 512-region modules while the guest
+  is idle (from recipes, in the compile worker, swapped in at the dispatcher: most of the machinery was 1e628b8's
+  replay). Either is worth it only past what the fold gave: the pages session's V8 code fell 6% for 59% fewer
+  modules.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Measured 2026-10-20 (`bench/boot/REPORT.md` "M8: what Liftoff runs
   that a static change could cut"): V8 zero-fills when a function has **more than 12 locals** besides its
