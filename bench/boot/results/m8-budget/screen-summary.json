@@ -1,0 +1,2106 @@
+{
+ "sessions": [
+  {
+   "session": "scr1-ad-1",
+   "arm": "scr1-ad",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 42254,
+   "wasmMB": 692,
+   "share": 0.966,
+   "interpG": 3.04,
+   "gsteps": 89.44,
+   "busyMips": 175,
+   "stalls20": 2,
+   "stalls50": 2,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 236,
+   "setupS": 11,
+   "measuredS": 225,
+   "restoreS": 8.7,
+   "firstFlushS": 32,
+   "flushesPerMin": 0.8,
+   "slowG": 0,
+   "slowS": 0.9,
+   "made": 4000,
+   "doneS": 150.5,
+   "rssMed": 4561,
+   "rssMax": 5201,
+   "codeMed": 729,
+   "codeMax": 1591
+  },
+  {
+   "session": "scr1-f160-1",
+   "arm": "scr1-f160",
+   "exit": 0,
+   "flushes": 3,
+   "modules": 45972,
+   "wasmMB": 625,
+   "share": 0.952,
+   "interpG": 4.23,
+   "gsteps": 87.88,
+   "busyMips": 165,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 242,
+   "setupS": 11,
+   "measuredS": 231,
+   "restoreS": 8.8,
+   "firstFlushS": 27,
+   "flushesPerMin": 1.14,
+   "slowG": 0.07,
+   "slowS": 1.1,
+   "made": 4000,
+   "doneS": 157.5,
+   "rssMed": 4229,
+   "rssMax": 5009,
+   "codeMed": 577,
+   "codeMax": 1035
+  },
+  {
+   "session": "scr1-f320-1",
+   "arm": "scr1-f320",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 43695,
+   "wasmMB": 694,
+   "share": 0.964,
+   "interpG": 3.23,
+   "gsteps": 89.76,
+   "busyMips": 178,
+   "stalls20": 4,
+   "stalls50": 4,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 238,
+   "setupS": 10,
+   "measuredS": 227,
+   "restoreS": 8.7,
+   "firstFlushS": 52,
+   "flushesPerMin": 0.8,
+   "slowG": 0,
+   "slowS": 1.1,
+   "made": 4000,
+   "doneS": 151.2,
+   "rssMed": 4907,
+   "rssMax": 5462,
+   "codeMed": 853,
+   "codeMax": 1892
+  },
+  {
+   "session": "scr1-f320b-1",
+   "arm": "scr1-f320b",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 44301,
+   "wasmMB": 697,
+   "share": 0.961,
+   "interpG": 3.38,
+   "gsteps": 88.2,
+   "busyMips": 173,
+   "stalls20": 2,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 238,
+   "setupS": 11,
+   "measuredS": 227,
+   "restoreS": 8.7,
+   "firstFlushS": 51,
+   "flushesPerMin": 0.8,
+   "slowG": 0,
+   "slowS": 1.1,
+   "made": 4000,
+   "doneS": 151,
+   "rssMed": 4893,
+   "rssMax": 5433,
+   "codeMed": 867,
+   "codeMax": 1769
+  },
+  {
+   "session": "scr2-ad-1",
+   "arm": "scr2-ad",
+   "exit": 0,
+   "flushes": 1,
+   "modules": 32898,
+   "wasmMB": 546,
+   "share": 0.964,
+   "interpG": 2.81,
+   "gsteps": 78.14,
+   "busyMips": 178,
+   "stalls20": 4,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 223,
+   "setupS": 11,
+   "measuredS": 212,
+   "restoreS": 9.1,
+   "firstFlushS": 53,
+   "flushesPerMin": 0.43,
+   "slowG": 0,
+   "slowS": 0.2,
+   "made": 4000,
+   "doneS": 139.2,
+   "rssMed": 4810,
+   "rssMax": 5363,
+   "codeMed": 808,
+   "codeMax": 1407
+  },
+  {
+   "session": "scr2-f160-1",
+   "arm": "scr2-f160",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 33615,
+   "wasmMB": 489,
+   "share": 0.953,
+   "interpG": 3.6,
+   "gsteps": 76.66,
+   "busyMips": 179,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 218,
+   "setupS": 11,
+   "measuredS": 207,
+   "restoreS": 8.7,
+   "firstFlushS": 26,
+   "flushesPerMin": 0.87,
+   "slowG": 0,
+   "slowS": 1.1,
+   "made": 4000,
+   "doneS": 139.1,
+   "rssMed": 4118,
+   "rssMax": 4847,
+   "codeMed": 513,
+   "codeMax": 942
+  },
+  {
+   "session": "scr2-f320-1",
+   "arm": "scr2-f320",
+   "exit": 0,
+   "flushes": 1,
+   "modules": 32768,
+   "wasmMB": 546,
+   "share": 0.963,
+   "interpG": 2.84,
+   "gsteps": 77.53,
+   "busyMips": 182,
+   "stalls20": 0,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 222,
+   "setupS": 11,
+   "measuredS": 211,
+   "restoreS": 8.7,
+   "firstFlushS": 56,
+   "flushesPerMin": 0.44,
+   "slowG": 0,
+   "slowS": 1.1,
+   "made": 4000,
+   "doneS": 138.8,
+   "rssMed": 4698,
+   "rssMax": 5216,
+   "codeMed": 827,
+   "codeMax": 1120
+  },
+  {
+   "session": "scr3-plant-1",
+   "arm": "scr3-plant",
+   "exit": 0,
+   "flushes": 4,
+   "modules": 46637,
+   "wasmMB": 825,
+   "share": 0.957,
+   "interpG": 4.07,
+   "gsteps": 95.87,
+   "busyMips": 151,
+   "stalls20": 3,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 273,
+   "setupS": 11,
+   "measuredS": 262,
+   "restoreS": 8.8,
+   "firstFlushS": 3,
+   "flushesPerMin": 1.33,
+   "slowG": 0.9,
+   "slowS": 3,
+   "made": 4000,
+   "doneS": 182.1,
+   "rssMed": 4528,
+   "rssMax": 5459,
+   "codeMed": 694,
+   "codeMax": 1205
+  },
+  {
+   "session": "scr4-ad3-1",
+   "arm": "scr4-ad3",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 33470,
+   "wasmMB": 600,
+   "share": 0.967,
+   "interpG": 2.55,
+   "gsteps": 78.83,
+   "busyMips": 180,
+   "stalls20": 1,
+   "stalls50": 0,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 223,
+   "setupS": 11,
+   "measuredS": 212,
+   "restoreS": 8.8,
+   "firstFlushS": 32,
+   "flushesPerMin": 0.87,
+   "slowG": 0,
+   "slowS": 0.8,
+   "made": 4000,
+   "doneS": 138.8,
+   "rssMed": 4461,
+   "rssMax": 4877,
+   "codeMed": 692,
+   "codeMax": 1070
+  },
+  {
+   "session": "scr5-ad3-1",
+   "arm": "scr5-ad3",
+   "exit": 0,
+   "flushes": 2,
+   "modules": 47993,
+   "wasmMB": 741,
+   "share": 0.962,
+   "interpG": 3.31,
+   "gsteps": 87.89,
+   "busyMips": 169,
+   "stalls20": 3,
+   "stalls50": 2,
+   "wikiLoadS": null,
+   "bbcLoadS": null,
+   "pagesFps": "",
+   "webglFps": null,
+   "wallS": 239,
+   "setupS": 11,
+   "measuredS": 228,
+   "restoreS": 8.7,
+   "firstFlushS": 32,
+   "flushesPerMin": 0.8,
+   "slowG": 0.1,
+   "slowS": 0.4,
+   "made": 4000,
+   "doneS": 150.7,
+   "rssMed": 4580,
+   "rssMax": 5122,
+   "codeMed": 788,
+   "codeMax": 1032
+  }
+ ],
+ "arms": {
+  "scr1-ad": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "modules": {
+    "median": 42254,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     42254
+    ]
+   },
+   "wasmMB": {
+    "median": 692,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     692
+    ]
+   },
+   "share": {
+    "median": 0.966,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.966
+    ]
+   },
+   "interpG": {
+    "median": 3.04,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3.04
+    ]
+   },
+   "firstFlushS": {
+    "median": 32,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     32
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.8
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 0.9,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.9
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 150.5,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     150.5
+    ]
+   },
+   "rssMed": {
+    "median": 4561,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4561
+    ]
+   },
+   "rssMax": {
+    "median": 5201,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5201
+    ]
+   },
+   "codeMed": {
+    "median": 729,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     729
+    ]
+   },
+   "codeMax": {
+    "median": 1591,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1591
+    ]
+   },
+   "busyMips": {
+    "median": 175,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     175
+    ]
+   },
+   "stalls20": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "stalls50": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "wallS": {
+    "median": 236,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     236
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 225,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     225
+    ]
+   },
+   "restoreS": {
+    "median": 8.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.7
+    ]
+   }
+  },
+  "scr1-f160": {
+   "flushes": {
+    "median": 3,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3
+    ]
+   },
+   "modules": {
+    "median": 45972,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     45972
+    ]
+   },
+   "wasmMB": {
+    "median": 625,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     625
+    ]
+   },
+   "share": {
+    "median": 0.952,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.952
+    ]
+   },
+   "interpG": {
+    "median": 4.23,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4.23
+    ]
+   },
+   "firstFlushS": {
+    "median": 27,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     27
+    ]
+   },
+   "flushesPerMin": {
+    "median": 1.14,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.14
+    ]
+   },
+   "slowG": {
+    "median": 0.07,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.07
+    ]
+   },
+   "slowS": {
+    "median": 1.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.1
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 157.5,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     157.5
+    ]
+   },
+   "rssMed": {
+    "median": 4229,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4229
+    ]
+   },
+   "rssMax": {
+    "median": 5009,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5009
+    ]
+   },
+   "codeMed": {
+    "median": 577,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     577
+    ]
+   },
+   "codeMax": {
+    "median": 1035,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1035
+    ]
+   },
+   "busyMips": {
+    "median": 165,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     165
+    ]
+   },
+   "stalls20": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 242,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     242
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 231,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     231
+    ]
+   },
+   "restoreS": {
+    "median": 8.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.8
+    ]
+   }
+  },
+  "scr1-f320": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "modules": {
+    "median": 43695,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     43695
+    ]
+   },
+   "wasmMB": {
+    "median": 694,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     694
+    ]
+   },
+   "share": {
+    "median": 0.964,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.964
+    ]
+   },
+   "interpG": {
+    "median": 3.23,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3.23
+    ]
+   },
+   "firstFlushS": {
+    "median": 52,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     52
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.8
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 1.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.1
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 151.2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     151.2
+    ]
+   },
+   "rssMed": {
+    "median": 4907,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4907
+    ]
+   },
+   "rssMax": {
+    "median": 5462,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5462
+    ]
+   },
+   "codeMed": {
+    "median": 853,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     853
+    ]
+   },
+   "codeMax": {
+    "median": 1892,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1892
+    ]
+   },
+   "busyMips": {
+    "median": 178,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     178
+    ]
+   },
+   "stalls20": {
+    "median": 4,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4
+    ]
+   },
+   "stalls50": {
+    "median": 4,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4
+    ]
+   },
+   "wallS": {
+    "median": 238,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     238
+    ]
+   },
+   "setupS": {
+    "median": 10,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     10
+    ]
+   },
+   "measuredS": {
+    "median": 227,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     227
+    ]
+   },
+   "restoreS": {
+    "median": 8.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.7
+    ]
+   }
+  },
+  "scr1-f320b": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "modules": {
+    "median": 44301,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     44301
+    ]
+   },
+   "wasmMB": {
+    "median": 697,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     697
+    ]
+   },
+   "share": {
+    "median": 0.961,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.961
+    ]
+   },
+   "interpG": {
+    "median": 3.38,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3.38
+    ]
+   },
+   "firstFlushS": {
+    "median": 51,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     51
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.8
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 1.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.1
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 151,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     151
+    ]
+   },
+   "rssMed": {
+    "median": 4893,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4893
+    ]
+   },
+   "rssMax": {
+    "median": 5433,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5433
+    ]
+   },
+   "codeMed": {
+    "median": 867,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     867
+    ]
+   },
+   "codeMax": {
+    "median": 1769,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1769
+    ]
+   },
+   "busyMips": {
+    "median": 173,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     173
+    ]
+   },
+   "stalls20": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 238,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     238
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 227,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     227
+    ]
+   },
+   "restoreS": {
+    "median": 8.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.7
+    ]
+   }
+  },
+  "scr2-ad": {
+   "flushes": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "modules": {
+    "median": 32898,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     32898
+    ]
+   },
+   "wasmMB": {
+    "median": 546,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     546
+    ]
+   },
+   "share": {
+    "median": 0.964,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.964
+    ]
+   },
+   "interpG": {
+    "median": 2.81,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2.81
+    ]
+   },
+   "firstFlushS": {
+    "median": 53,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     53
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.43,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.43
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 0.2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.2
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 139.2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     139.2
+    ]
+   },
+   "rssMed": {
+    "median": 4810,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4810
+    ]
+   },
+   "rssMax": {
+    "median": 5363,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5363
+    ]
+   },
+   "codeMed": {
+    "median": 808,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     808
+    ]
+   },
+   "codeMax": {
+    "median": 1407,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1407
+    ]
+   },
+   "busyMips": {
+    "median": 178,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     178
+    ]
+   },
+   "stalls20": {
+    "median": 4,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 223,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     223
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 212,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     212
+    ]
+   },
+   "restoreS": {
+    "median": 9.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     9.1
+    ]
+   }
+  },
+  "scr2-f160": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "modules": {
+    "median": 33615,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     33615
+    ]
+   },
+   "wasmMB": {
+    "median": 489,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     489
+    ]
+   },
+   "share": {
+    "median": 0.953,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.953
+    ]
+   },
+   "interpG": {
+    "median": 3.6,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3.6
+    ]
+   },
+   "firstFlushS": {
+    "median": 26,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     26
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.87,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.87
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 1.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.1
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 139.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     139.1
+    ]
+   },
+   "rssMed": {
+    "median": 4118,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4118
+    ]
+   },
+   "rssMax": {
+    "median": 4847,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4847
+    ]
+   },
+   "codeMed": {
+    "median": 513,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     513
+    ]
+   },
+   "codeMax": {
+    "median": 942,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     942
+    ]
+   },
+   "busyMips": {
+    "median": 179,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     179
+    ]
+   },
+   "stalls20": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 218,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     218
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 207,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     207
+    ]
+   },
+   "restoreS": {
+    "median": 8.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.7
+    ]
+   }
+  },
+  "scr2-f320": {
+   "flushes": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "modules": {
+    "median": 32768,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     32768
+    ]
+   },
+   "wasmMB": {
+    "median": 546,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     546
+    ]
+   },
+   "share": {
+    "median": 0.963,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.963
+    ]
+   },
+   "interpG": {
+    "median": 2.84,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2.84
+    ]
+   },
+   "firstFlushS": {
+    "median": 56,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     56
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.44,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.44
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 1.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.1
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 138.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     138.8
+    ]
+   },
+   "rssMed": {
+    "median": 4698,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4698
+    ]
+   },
+   "rssMax": {
+    "median": 5216,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5216
+    ]
+   },
+   "codeMed": {
+    "median": 827,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     827
+    ]
+   },
+   "codeMax": {
+    "median": 1120,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1120
+    ]
+   },
+   "busyMips": {
+    "median": 182,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     182
+    ]
+   },
+   "stalls20": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 222,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     222
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 211,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     211
+    ]
+   },
+   "restoreS": {
+    "median": 8.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.7
+    ]
+   }
+  },
+  "scr3-plant": {
+   "flushes": {
+    "median": 4,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4
+    ]
+   },
+   "modules": {
+    "median": 46637,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     46637
+    ]
+   },
+   "wasmMB": {
+    "median": 825,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     825
+    ]
+   },
+   "share": {
+    "median": 0.957,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.957
+    ]
+   },
+   "interpG": {
+    "median": 4.07,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4.07
+    ]
+   },
+   "firstFlushS": {
+    "median": 3,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3
+    ]
+   },
+   "flushesPerMin": {
+    "median": 1.33,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1.33
+    ]
+   },
+   "slowG": {
+    "median": 0.9,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.9
+    ]
+   },
+   "slowS": {
+    "median": 3,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 182.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     182.1
+    ]
+   },
+   "rssMed": {
+    "median": 4528,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4528
+    ]
+   },
+   "rssMax": {
+    "median": 5459,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5459
+    ]
+   },
+   "codeMed": {
+    "median": 694,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     694
+    ]
+   },
+   "codeMax": {
+    "median": 1205,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1205
+    ]
+   },
+   "busyMips": {
+    "median": 151,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     151
+    ]
+   },
+   "stalls20": {
+    "median": 3,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 273,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     273
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 262,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     262
+    ]
+   },
+   "restoreS": {
+    "median": 8.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.8
+    ]
+   }
+  },
+  "scr4-ad3": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "modules": {
+    "median": 33470,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     33470
+    ]
+   },
+   "wasmMB": {
+    "median": 600,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     600
+    ]
+   },
+   "share": {
+    "median": 0.967,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.967
+    ]
+   },
+   "interpG": {
+    "median": 2.55,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2.55
+    ]
+   },
+   "firstFlushS": {
+    "median": 32,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     32
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.87,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.87
+    ]
+   },
+   "slowG": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "slowS": {
+    "median": 0.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.8
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 138.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     138.8
+    ]
+   },
+   "rssMed": {
+    "median": 4461,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4461
+    ]
+   },
+   "rssMax": {
+    "median": 4877,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4877
+    ]
+   },
+   "codeMed": {
+    "median": 692,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     692
+    ]
+   },
+   "codeMax": {
+    "median": 1070,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1070
+    ]
+   },
+   "busyMips": {
+    "median": 180,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     180
+    ]
+   },
+   "stalls20": {
+    "median": 1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0
+    ]
+   },
+   "wallS": {
+    "median": 223,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     223
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 212,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     212
+    ]
+   },
+   "restoreS": {
+    "median": 8.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.8
+    ]
+   }
+  },
+  "scr5-ad3": {
+   "flushes": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "modules": {
+    "median": 47993,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     47993
+    ]
+   },
+   "wasmMB": {
+    "median": 741,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     741
+    ]
+   },
+   "share": {
+    "median": 0.962,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.962
+    ]
+   },
+   "interpG": {
+    "median": 3.31,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3.31
+    ]
+   },
+   "firstFlushS": {
+    "median": 32,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     32
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0.8,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.8
+    ]
+   },
+   "slowG": {
+    "median": 0.1,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.1
+    ]
+   },
+   "slowS": {
+    "median": 0.4,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     0.4
+    ]
+   },
+   "made": {
+    "median": 4000,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4000
+    ]
+   },
+   "doneS": {
+    "median": 150.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     150.7
+    ]
+   },
+   "rssMed": {
+    "median": 4580,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     4580
+    ]
+   },
+   "rssMax": {
+    "median": 5122,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     5122
+    ]
+   },
+   "codeMed": {
+    "median": 788,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     788
+    ]
+   },
+   "codeMax": {
+    "median": 1032,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     1032
+    ]
+   },
+   "busyMips": {
+    "median": 169,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     169
+    ]
+   },
+   "stalls20": {
+    "median": 3,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     3
+    ]
+   },
+   "stalls50": {
+    "median": 2,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     2
+    ]
+   },
+   "wallS": {
+    "median": 239,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     239
+    ]
+   },
+   "setupS": {
+    "median": 11,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     11
+    ]
+   },
+   "measuredS": {
+    "median": 228,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     228
+    ]
+   },
+   "restoreS": {
+    "median": 8.7,
+    "iqr": 0,
+    "n": 1,
+    "all": [
+     8.7
+    ]
+   }
+  }
+ }
+}

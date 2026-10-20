@@ -1,0 +1,12 @@
+smp_alpine_jit_n1_total
+  ad     9,524 (IQR 53, n=5) · 9,560 (IQR 87, n=5) · 9,500 (IQR 42, n=5)   0.0%
+  base   9,486 (IQR 144, n=5) · 9,478 (IQR 15, n=5) · 9,627 (IQR 29, n=5)   -0.4%
+smp_alpine_jit_n2_total
+  ad     9,252 (IQR 58, n=5) · 9,240 (IQR 64, n=5) · 9,277 (IQR 42, n=5)   0.0%
+  base   9,293 (IQR 43, n=5) · 9,285 (IQR 29, n=5) · 9,370 (IQR 45, n=5)   0.4%
+smp_alpine_jit_n4_total
+  ad     9,371 (IQR 56, n=5) · 9,343 (IQR 51, n=5) · 9,342 (IQR 15, n=5)   0.0%
+  base   9,371 (IQR 204, n=5) · 9,296 (IQR 12, n=5) · 9,443 (IQR 59, n=5)   0.3%
+smp_user_jit_n4_total
+  ad     18,664 (IQR 17, n=2) · 18,600 (IQR 15, n=2) · 19,075 (IQR 13, n=2)   0.0%
+  base   18,574 (IQR 101, n=2) · 18,616 (IQR 5, n=2) · 18,676 (IQR 73, n=2)   -0.3%

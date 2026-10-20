@@ -143,7 +143,7 @@ the interpreter's own code.
   flushes; nor do a 4-vCPU `go build` loop (once in its first 3 minutes at 160 MiB) and Firefox's pages session
   (~330 MB of wasm; 2 flushes and ~505 MB at 160 MiB, which the next epoch compiled again). At Firefox's ~1.3 KB a
   region 320 MiB is about what the slots hold. Per-module eviction, FIFO, keeping the flushed hot set warm and
-  carrying it across a flush were tried ([Tried and not kept](#tried-and-not-kept)).
+  carrying it across a flush, and a budget that adapts to the code in use, were tried ([Tried and not kept](#tried-and-not-kept)).
 - **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
   the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks
@@ -746,6 +746,18 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   modules of 128 regions changed neither (one session each). The 4-vCPU `go build` loop ran 9% faster with it (one
   flush, in its first minutes), which the larger budget gives without it; the gates were even. What it was for, a
   flush in a browser's session, the larger budget mostly removes.
+- **An adaptive budget** (M8, 2026-10-20; `bench/boot/REPORT.md` "M8: a machine's JIT budget and the page's memory
+  signal", the code in `bench/boot/results/m8-budget/adaptive.patch`): starting at 160 MiB, a probe from 7/8 of the
+  budget (the dispatchers marking the slots they enter), and at the fill a growth by half (up to the machine's 320)
+  when the marked code was more than half the budget, else a flush, and a shrink by a third after two flushes with
+  under a quarter in use. Correct, and even on the gates; with the tier-up's room at the cap (a tier-up refused over
+  the budget leaves its head alone until a flush: 7% fewer busy MIPS in Firefox's pages until fixed) it matched 320 on
+  the pages session, growing 160 → 240 → 320 without a flush. But **the renderer pays for the code compiled, not the
+  budget**: a smaller budget saves memory only by flushing, the cost the budget exists to avoid. Firefox's own code in
+  use passes 80 MiB, so every browser session grew to at least 240; holding there saved 4% of the renderer's median
+  for an extra flush, and ran a reused hot set (the churn page's `hot=1500`) 4% slower. Counting what marked code links
+  to directly grew it on code that never runs (to 320 MiB on the churn alone); clearing every jump and transfer cache
+  at the probe marked no more.
 - **Replaying the hot set after a flush without carrying it** (M8, 2026-10-19, `bench/boot/REPORT.md` "M8:
   carrying the hot set across a flush"): compiled again while everything else ran interpreted, the dip was deeper
   than the default's at a first flush (worst second 4-8 frames against 4-12); compiled all at the first miss, it

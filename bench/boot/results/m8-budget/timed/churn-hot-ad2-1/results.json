@@ -1,0 +1,1045 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "prefs": "",
+ "from": {
+  "file": "target/snapbench/pages.webpcsnap",
+  "bytes": 700791652,
+  "loadMs": 8756,
+  "created": "2026-10-20T10:51:35.294Z",
+  "coreVersion": 1,
+  "abi": 43,
+  "scene": "pages",
+  "madeBy": "b27381a494fd1860",
+  "madeAt": "e14fb66-dirty",
+  "core": "d191e75515139c32",
+  "sameCore": false
+ },
+ "core": "d191e75515139c32",
+ "info": "7.2.10-1-aarch64-ARCHMem:            2449         559         969          49        1047        1889",
+ "mesa": "527 firefox 6;",
+ "timelineAll": {
+  "seconds": 222.7,
+  "rows": 21051,
+  "cpus": [
+   {
+    "cpu": 0,
+    "mips": 65.4,
+    "binMips": {
+     "p10": 39.5,
+     "p50": 116.1,
+     "p90": 513.3
+    },
+    "outMs": 466,
+    "compileMs": 9.8,
+    "syscalls": 763,
+    "stallMs": 0,
+    "worstStall": {
+     "ms": 0,
+     "compileMs": 0,
+     "atMs": 0
+    },
+    "longCalls": [
+     {
+      "atMs": 22014,
+      "ms": 77,
+      "Msteps": 65.9,
+      "compileMs": 0.4
+     },
+     {
+      "atMs": 198495,
+      "ms": 54,
+      "Msteps": 19.4,
+      "compileMs": 0.1
+     }
+    ]
+   },
+   {
+    "cpu": 1,
+    "mips": 104.7,
+    "binMips": {
+     "p10": 41.5,
+     "p50": 132.6,
+     "p90": 633.3
+    },
+    "outMs": 416.3,
+    "compileMs": 9,
+    "syscalls": 755,
+    "stallMs": 0,
+    "worstStall": {
+     "ms": 0,
+     "compileMs": 0,
+     "atMs": 0
+    },
+    "longCalls": [
+     {
+      "atMs": 196706,
+      "ms": 248,
+      "Msteps": 65.5,
+      "compileMs": 0
+     },
+     {
+      "atMs": 197081,
+      "ms": 72,
+      "Msteps": 38.4,
+      "compileMs": 0
+     },
+     {
+      "atMs": 198771,
+      "ms": 73,
+      "Msteps": 20.4,
+      "compileMs": 0
+     }
+    ]
+   },
+   {
+    "cpu": 2,
+    "mips": 148.4,
+    "binMips": {
+     "p10": 52.5,
+     "p50": 187.3,
+     "p90": 565.5
+    },
+    "outMs": 308.1,
+    "compileMs": 9,
+    "syscalls": 640,
+    "stallMs": 0.1,
+    "worstStall": {
+     "ms": 11,
+     "compileMs": 0,
+     "atMs": 170691
+    },
+    "longCalls": [
+     {
+      "atMs": 24409,
+      "ms": 85,
+      "Msteps": 52.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 27217,
+      "ms": 66,
+      "Msteps": 66.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 168168,
+      "ms": 146,
+      "Msteps": 27.9,
+      "compileMs": 0.5
+     },
+     {
+      "atMs": 168455,
+      "ms": 565,
+      "Msteps": 81.2,
+      "compileMs": 2
+     },
+     {
+      "atMs": 169170,
+      "ms": 553,
+      "Msteps": 79.4,
+      "compileMs": 1.6
+     },
+     {
+      "atMs": 169851,
+      "ms": 260,
+      "Msteps": 47.5,
+      "compileMs": 0.7
+     },
+     {
+      "atMs": 193405,
+      "ms": 59,
+      "Msteps": 66.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 193779,
+      "ms": 111,
+      "Msteps": 71.3,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 194040,
+      "ms": 58,
+      "Msteps": 70.8,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 194326,
+      "ms": 73,
+      "Msteps": 74.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 194530,
+      "ms": 86,
+      "Msteps": 77.5,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 194741,
+      "ms": 204,
+      "Msteps": 100.3,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 195182,
+      "ms": 151,
+      "Msteps": 101,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 195466,
+      "ms": 179,
+      "Msteps": 104.4,
+      "compileMs": 0
+     },
+     {
+      "atMs": 195929,
+      "ms": 246,
+      "Msteps": 83.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 219594,
+      "ms": 75,
+      "Msteps": 50.6,
+      "compileMs": 0.2
+     }
+    ]
+   },
+   {
+    "cpu": 3,
+    "mips": 71.2,
+    "binMips": {
+     "p10": 42.1,
+     "p50": 124.4,
+     "p90": 590.5
+    },
+    "outMs": 451.2,
+    "compileMs": 9.5,
+    "syscalls": 840,
+    "stallMs": 0,
+    "worstStall": {
+     "ms": 0,
+     "compileMs": 0,
+     "atMs": 0
+    },
+    "longCalls": [
+     {
+      "atMs": 28669,
+      "ms": 53,
+      "Msteps": 9.8,
+      "compileMs": 0.3
+     },
+     {
+      "atMs": 34343,
+      "ms": 65,
+      "Msteps": 68.2,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 47044,
+      "ms": 64,
+      "Msteps": 46,
+      "compileMs": 0.1
+     }
+    ]
+   }
+  ]
+ },
+ "churn": {
+  "query": "rate=60&total=4000&hot=1500",
+  "seconds": 158.3,
+  "doneS": 158.3,
+  "startAt": 1792518903344,
+  "readyAt": 1792518932447,
+  "started": 28.3,
+  "made": 4000,
+  "vm": {
+   "seconds": 161.0000449999869,
+   "Msteps": 427.494846,
+   "irqs": 3291,
+   "exceptions": {
+    "0x0": 3,
+    "0x15": 2777,
+    "0x20": 96,
+    "0x24": 657,
+    "0x25": 21
+   },
+   "tlbMisses": 162536,
+   "tlbFlushes": 1875,
+   "jitFlushes": 0,
+   "jitInvalidations": 53,
+   "jitCompileMs": 39.944833
+  },
+  "fpsAll": [
+   [
+    1,
+    4,
+    750
+   ],
+   [
+    2,
+    1,
+    1393
+   ],
+   [
+    3,
+    1,
+    1073
+   ],
+   [
+    5,
+    3,
+    1704.5
+   ],
+   [
+    6,
+    1,
+    1158.5
+   ],
+   [
+    7,
+    1,
+    1074
+   ],
+   [
+    8,
+    1,
+    444
+   ],
+   [
+    10,
+    1,
+    2252
+   ],
+   [
+    11,
+    1,
+    1102
+   ],
+   [
+    13,
+    1,
+    1611
+   ],
+   [
+    14,
+    1,
+    1502.6
+   ],
+   [
+    16,
+    1,
+    1371.4
+   ],
+   [
+    17,
+    1,
+    1927
+   ],
+   [
+    20,
+    1,
+    2168
+   ],
+   [
+    21,
+    1,
+    1424.4
+   ],
+   [
+    22,
+    1,
+    1340.6
+   ],
+   [
+    24,
+    1,
+    1366
+   ],
+   [
+    25,
+    1,
+    1201
+   ],
+   [
+    26,
+    1,
+    1067
+   ],
+   [
+    27,
+    1,
+    982
+   ],
+   [
+    28,
+    1,
+    983
+   ],
+   [
+    29,
+    1,
+    953
+   ],
+   [
+    30,
+    1,
+    1099
+   ],
+   [
+    31,
+    1,
+    949
+   ],
+   [
+    32,
+    1,
+    984
+   ],
+   [
+    34,
+    1,
+    2253
+   ],
+   [
+    36,
+    1,
+    1663
+   ],
+   [
+    37,
+    1,
+    1400
+   ],
+   [
+    39,
+    2,
+    1968.7
+   ],
+   [
+    40,
+    1,
+    646.3
+   ],
+   [
+    42,
+    1,
+    2300
+   ],
+   [
+    43,
+    1,
+    1117
+   ],
+   [
+    45,
+    1,
+    1116.3
+   ],
+   [
+    46,
+    2,
+    982.7
+   ],
+   [
+    48,
+    2,
+    1311
+   ],
+   [
+    49,
+    1,
+    1146
+   ],
+   [
+    50,
+    1,
+    1117
+   ],
+   [
+    51,
+    1,
+    1117
+   ],
+   [
+    52,
+    1,
+    1018
+   ],
+   [
+    53,
+    1,
+    1031
+   ],
+   [
+    54,
+    1,
+    1050
+   ],
+   [
+    55,
+    1,
+    1183
+   ],
+   [
+    56,
+    1,
+    1076
+   ],
+   [
+    57,
+    1,
+    1058
+   ],
+   [
+    59,
+    1,
+    1153
+   ],
+   [
+    60,
+    1,
+    1047
+   ],
+   [
+    61,
+    1,
+    1150
+   ],
+   [
+    62,
+    1,
+    1200
+   ],
+   [
+    63,
+    1,
+    1153
+   ],
+   [
+    64,
+    1,
+    1064
+   ],
+   [
+    65,
+    1,
+    1201
+   ],
+   [
+    66,
+    1,
+    1033
+   ],
+   [
+    68,
+    1,
+    1066
+   ],
+   [
+    69,
+    1,
+    984
+   ],
+   [
+    70,
+    1,
+    1055
+   ],
+   [
+    71,
+    1,
+    1064
+   ],
+   [
+    72,
+    1,
+    1030
+   ],
+   [
+    73,
+    1,
+    1151
+   ],
+   [
+    74,
+    1,
+    1100
+   ],
+   [
+    75,
+    1,
+    984
+   ],
+   [
+    76,
+    1,
+    957
+   ],
+   [
+    77,
+    1,
+    1076
+   ],
+   [
+    78,
+    1,
+    937
+   ],
+   [
+    79,
+    1,
+    1031
+   ],
+   [
+    80,
+    1,
+    1051
+   ],
+   [
+    81,
+    1,
+    968
+   ],
+   [
+    82,
+    1,
+    1031
+   ],
+   [
+    83,
+    1,
+    1071
+   ],
+   [
+    84,
+    1,
+    929
+   ],
+   [
+    85,
+    1,
+    1202
+   ],
+   [
+    86,
+    1,
+    1130
+   ],
+   [
+    87,
+    1,
+    987
+   ],
+   [
+    88,
+    1,
+    949
+   ],
+   [
+    89,
+    1,
+    967
+   ],
+   [
+    90,
+    1,
+    1001
+   ],
+   [
+    91,
+    1,
+    1066
+   ],
+   [
+    92,
+    1,
+    1216
+   ],
+   [
+    93,
+    1,
+    1000
+   ],
+   [
+    94,
+    1,
+    967
+   ],
+   [
+    95,
+    1,
+    1033
+   ],
+   [
+    96,
+    1,
+    915
+   ],
+   [
+    97,
+    1,
+    1102
+   ],
+   [
+    99,
+    1,
+    1082
+   ],
+   [
+    100,
+    1,
+    1168
+   ],
+   [
+    101,
+    1,
+    982
+   ],
+   [
+    102,
+    1,
+    934
+   ],
+   [
+    103,
+    1,
+    1000
+   ],
+   [
+    104,
+    1,
+    1199
+   ],
+   [
+    105,
+    1,
+    1034
+   ],
+   [
+    106,
+    1,
+    915
+   ],
+   [
+    107,
+    1,
+    884
+   ],
+   [
+    108,
+    1,
+    1002
+   ],
+   [
+    110,
+    1,
+    1952
+   ],
+   [
+    111,
+    1,
+    1699
+   ],
+   [
+    113,
+    1,
+    1434
+   ],
+   [
+    114,
+    1,
+    1231
+   ],
+   [
+    115,
+    1,
+    1082
+   ],
+   [
+    116,
+    1,
+    659
+   ],
+   [
+    117,
+    1,
+    1676
+   ],
+   [
+    119,
+    1,
+    1133
+   ],
+   [
+    120,
+    1,
+    1172
+   ],
+   [
+    121,
+    1,
+    1111
+   ],
+   [
+    122,
+    1,
+    1036
+   ],
+   [
+    123,
+    1,
+    1149
+   ],
+   [
+    124,
+    1,
+    1115
+   ],
+   [
+    125,
+    1,
+    1034
+   ],
+   [
+    126,
+    1,
+    1184
+   ],
+   [
+    127,
+    1,
+    1083
+   ],
+   [
+    128,
+    1,
+    1033
+   ],
+   [
+    130,
+    1,
+    1205
+   ],
+   [
+    131,
+    1,
+    1095
+   ],
+   [
+    132,
+    1,
+    1118
+   ],
+   [
+    133,
+    1,
+    1265
+   ],
+   [
+    134,
+    1,
+    1083
+   ],
+   [
+    135,
+    1,
+    1167
+   ],
+   [
+    136,
+    1,
+    1000
+   ],
+   [
+    137,
+    1,
+    984
+   ],
+   [
+    138,
+    1,
+    1034
+   ],
+   [
+    141,
+    1,
+    2600
+   ],
+   [
+    142,
+    1,
+    1083
+   ],
+   [
+    143,
+    1,
+    1067
+   ],
+   [
+    144,
+    1,
+    1016
+   ],
+   [
+    145,
+    1,
+    950
+   ],
+   [
+    146,
+    1,
+    935
+   ],
+   [
+    147,
+    1,
+    948
+   ],
+   [
+    148,
+    1,
+    1102
+   ],
+   [
+    149,
+    1,
+    1015
+   ],
+   [
+    150,
+    1,
+    1067
+   ],
+   [
+    151,
+    1,
+    933
+   ],
+   [
+    152,
+    1,
+    916
+   ],
+   [
+    153,
+    1,
+    951
+   ],
+   [
+    154,
+    1,
+    1150
+   ],
+   [
+    155,
+    4,
+    133
+   ],
+   [
+    156,
+    15,
+    100
+   ],
+   [
+    157,
+    16,
+    99
+   ],
+   [
+    158,
+    21,
+    68
+   ],
+   [
+    159,
+    26,
+    52
+   ],
+   [
+    160,
+    27,
+    68
+   ],
+   [
+    161,
+    26,
+    51
+   ],
+   [
+    162,
+    30,
+    51
+   ],
+   [
+    163,
+    32,
+    50
+   ]
+  ]
+ },
+ "jit": {
+  "blocks": 696916,
+  "modules": 49375,
+  "bytes": 752443231,
+  "compileNs": 8526511360,
+  "steps": 84979909073,
+  "dispatches": 294995538,
+  "invalidations": 11089,
+  "flushes": 2,
+  "inline": 7532399,
+  "helpers": 654,
+  "inlineSteps": 84918366078,
+  "flagsStored": 887749,
+  "flagsElided": 12616,
+  "condDirect": 468395,
+  "condComputed": 50342,
+  "condMemory": 8882,
+  "regionBlocks": 1465643,
+  "backEdges": 46469,
+  "tierUps": 33675,
+  "stale": 0,
+  "decSteps": 3439277774,
+  "decoded": 6338309,
+  "decClears": 5,
+  "workerInstalls": 197495,
+  "overdue": 0,
+  "parks": 141808,
+  "parkExits": 141203
+ },
+ "log": [
+  "32",
+  "26 console.error: services.settings:",
+  "26   Stack:",
+  "24   Message: TypeError: NetworkError: Network request failed",
+  "24     fetch/</request.onerror@resource://services-settings/Utils.sys.mjs:264:26",
+  "10 Exiting due to channel error.",
+  "4 JavaScript warning: resource://gre/modules/Troubleshoot.sys.mjs, line 748: WebGL context was lost.",
+  "2 void main() {}",
+  "2 getRecipesFromCollection@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:816:13",
+  "2 console.warn: TopSitesFeed: Failed to fetch data from MARS server: NetworkError when attempting to fetch resource.",
+  "2 console.error: RSLoader:",
+  "2 GetShaderSource() ->",
+  "2 GetShaderInfoLog() ->",
+  "2 0:2(12): error: extension `GL_EXT_shader_texture_lod' unsupported in fragment shader",
+  "2 #extension GL_EXT_shader_texture_lod: require",
+  "2   Remote Settings startup changesets bundle could not be extracted (TypeError: NetworkError: Network request failed)",
+  "2   Message: Error: Could not sync nimbus-desktop-experiments: get-exception",
+  "2   Failed to retrieve recipes from Remote Settings",
+  "2     RemoteSettingsSyncError@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:1562:5",
+  "1 JavaScript error: moz-src:///browser/components/sidebar/SidebarState.sys.mjs, line 545: TypeError: this[#launcherEl].requestUpdate is not a function",
+  "1 1792493476398 addons.xpi      ERROR   System addon update list error Error: Failed downloading XML, status: 0, channelStatus: 2152398878, errorCode: 2, reason: error"
+ ],
+ "times": {
+  "start": 1792518886557,
+  "running": 1792518896076,
+  "setUp": 1792518897151,
+  "saved": 1792519133698
+ },
+ "warnings": {},
+ "slow": []
+}

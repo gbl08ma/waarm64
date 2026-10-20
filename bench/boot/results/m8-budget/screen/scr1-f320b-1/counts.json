@@ -1,0 +1,85 @@
+{
+ "bench/results/local/scr1/f320b-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 88.2,
+   "flushes": 2,
+   "modules": 44382,
+   "mib": 666.8,
+   "overdue": 0,
+   "parks": 127635,
+   "interpGsteps": 3.38,
+   "share": 0.961,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 86,
+    "atGsteps": 36.1,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 20798,
+    "mibEmitted": 253.3,
+    "shareBefore": 0.939,
+    "shareAfter": [
+     0.922,
+     0.948,
+     0.966,
+     0.947,
+     0.949,
+     0.953,
+     0.959,
+     0.96,
+     0.961,
+     0.97
+    ],
+    "stepsToNextG": 33.45
+   },
+   {
+    "atS": 165,
+    "atGsteps": 69.55,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 9545,
+    "mibEmitted": 128.1,
+    "shareBefore": 0.929,
+    "shareAfter": [
+     0.947,
+     0.945,
+     0.939,
+     0.938,
+     0.937,
+     0.956,
+     0.964,
+     0.95,
+     0.944,
+     0.953
+    ]
+   }
+  ]
+ }
+}

@@ -33,7 +33,7 @@ are done; of the C tracks, networking is done up to its loose ends ([docs/plans/
 Firefox's page loads don't flush, and a machine sets its own (the JIT cache in its Settings, `?jitmb=`); the page keeps a
 memory signal (docs/jit.md "The page's memory signal": what the tab costs by the emulator's accounting, and a tab
 killed with its machine running is noted at the next start, which offers a smaller cache or less RAM); carrying the
-hot set across a flush was tried and not kept (docs/jit.md). Loose ends go in
+hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

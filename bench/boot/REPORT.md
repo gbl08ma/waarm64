@@ -2334,3 +2334,53 @@ call took 50-60 s (also with `--enable-blink-features=ForceEagerMeasureMemory`).
 ABI 45); a running machine keeps a mark in `localStorage`, renewed every 10 s and cleared at a clean stop; a stale
 mark at the next start means the tab went away with it running, and the page offers a smaller JIT cache or less RAM;
 past `navigator.deviceMemory` the machine worker caps the JIT cache at what it holds (the gauge's limit word).
+
+**An adaptive budget, measured and not kept** (the code: `m8-budget/adaptive.patch`, against the JIT of the per-machine
+budget's commit; `VmConfig.jit_start` and `?jitstart=MiB` chose the start). The budget started at 160 MiB and could
+reach the machine's (320). From 7/8 of it a probe ran: the dispatchers marked each slot they entered (one shared
+`AtomicU32` per slot, stored once a sweep; outside a probe a branch per dispatch). When the live modules reached the
+budget, it grew by half if the marked code (the marked slots' share of their modules' bytes, and the loop regions of
+marked heads) was more than half of it; otherwise it flushed, and after two flushes in a row with under a quarter in
+use it shrank by a third, not below the start. The host's limit capped the growth. Unit-tested, with planted bugs
+(the growth and shrink thresholds) caught; a core with the dispatchers' marking taken out never grew (`screen/scr3-plant-1`:
+4 flushes, 825 MB compiled, the churn done in 182 s against 151).
+
+The screens (`screen/`, the churn page `rate=60&total=4000`, one session each; `hot=1500` calls the last 1,500
+functions made again every frame, a reused hot set):
+
+| churn | arm | flushes | wasm MB | Gsteps interpreted | done in (s) | renderer median / max (MiB) |
+|---|---|---|---|---|---|---|
+| `hot=1500` | 160 MiB | 3 | 625 | 4.23 | 157.5 | 4,229 / 5,009 |
+| | 320 MiB | 2 | 694 | 3.23 | 151.2 | 4,907 / 5,462 |
+| | 320 MiB (A/A) | 2 | 697 | 3.38 | 151.0 | 4,893 / 5,433 |
+| | adaptive, first form | 2 | 692 | 3.04 | 150.5 | 4,561 / 5,201 |
+| none | 160 MiB | 2 | 489 | 3.60 | 139.1 | 4,118 / 4,847 |
+| | 320 MiB | 1 | 546 | 2.84 | 138.8 | 4,698 / 5,216 |
+| | adaptive, first form | 1 | 546 | 2.81 | 139.2 | 4,810 / 5,363 |
+| | adaptive, no link closure | 2 | 600 | 2.55 | 138.8 | 4,461 / — |
+
+- **The first form counted what the marked code links to directly, transitively**: static links reach code that
+  doesn't run, and the churn alone (functions that run once) grew it to 320 MiB. Without the closure Firefox's own code
+  in use still exceeds 80 MiB at the first fill (both churns grew 160 → 240 and stayed there).
+- **The timed pages session** (`timed/`, two pairs alternating, base = the same core with a fixed 320 MiB budget and
+  no marking): the adaptive core grew 160 → 240 → 320 MiB without a flush, as base compiled the same ~258 MiB (270 MB
+  in all, no flush either way), but ran **busy MIPS 140-141 against 149-153** and loaded bbc in 19.7 s against 16.7.
+  Not the probe: dropping its clearing of every jump and transfer cache (which made code entered from compiled code
+  come back through a dispatcher) left 141 (`pages3-noclear-1`; it grew at the same points). **The cause was the
+  tier-ups:** a loop head that got hot while the live modules were over the budget, between the fill and the next
+  module's growth, was refused its region for good (a tier-up can neither flush nor grow, and a refused head stays
+  alone until a flush). With the tier-up's room at the cap: busy MIPS 151-152 against base's 139-147, the heavy pages
+  even (wiki 17.8-18.9 s against 18.2-19.4, bbc 17.1-18.1 against 17.2-20.2), the renderer the same (median 4,964-4,995
+  MiB against 5,040-5,075).
+- **That form on the churn** (`timed/churn*`, one pair each): with `hot=1500` done in 158.3 s against 151.6 (+4%; both
+  2 flushes, its median renderer 4,648 against 4,833 MiB), without it 139.1 against 139.1 (2 flushes against 1;
+  4,583 against 4,773 MiB). The gates (`gates/`, `smp_alpine_jit` and `smp_user_jit_4`, three rounds alternating) even:
+  −0.4 to +0.4% (neither fills 160 MiB).
+
+**Why it wasn't kept:** the renderer pays for the code compiled, not for the budget, so a smaller budget saves memory
+only by flushing, and flushing is the cost the budget is there to avoid. Where Firefox fills the cache the adaptive
+budget grew to 320 and cost the same memory as the fixed one; where it held a budget below 320 it saved 4% of the
+renderer's median (~190 MiB of ~4.8 GiB) for an extra flush, and on the reused hot set ran 4% slower. Not "clearly
+less memory where the hot set is small" at "320's speed where it is large". The fixed 320 MiB budget stays the
+default, with a machine's own (the JIT cache setting) for a device that needs less, and the memory signal's limit
+for one that runs short.
