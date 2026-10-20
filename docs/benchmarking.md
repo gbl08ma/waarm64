@@ -120,6 +120,7 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   a2=<a copy>` (each round every arm in turn; under a 10 GiB scope and `timeout` each; in the background, alone), then
   `node bench/gpu/ab-summary.ts <outdir>`: per session and per arm (median, IQR) the counts (flushes, modules, wasm
   MB, compiled share, Gsteps interpreted, the first flush's time, flushes a minute, each flush's slow phase), then
+  the JIT cache's lock (acquisitions, the share found held, ms waited, ms emitting under it: ABI 46), then
   busy MIPS and stalls, the heavy pages' loads, the session's wall and setup time, and the renderer's RSS and V8's
   wasm code over the workload (`rss.txt`: median and maximum). An arm's core may carry a query for that arm
   (`b160=core.wasm?jitmb=160`). `MEMLOG=10` adds `mem.jsonl`: every 10 s the renderer's smaps by class
