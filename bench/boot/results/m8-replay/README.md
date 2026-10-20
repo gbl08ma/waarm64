@@ -27,7 +27,7 @@ kept". The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk (`targe
   counters once a second; `report.json`: `counts.ts report --json` of them (docs/jit.md "Counted in the cloud").
 - `counts.ts`: that session and its per-flush report (usage in its header).
 - `flushes.ts`, `steady.ts`: the analyses (usage in their headers); `diag.patch`: the diagnostic build (apply,
-  `scripts/build-wasm.sh`, measure, then restore the source and rebuild), now against commit 57a42a7 (the carry's
+  `scripts/build-wasm.sh`, measure, then restore the source and rebuild), now against commit 277b738 (57a42a7 before it was rebased onto main; the carry's
   last; marks exist only during a probe, so it starts one 5 s before each forced flush, and its `E` lines add, at the
   last carry, the regions marked, their bytes, the slots kept and the bytes alive). Its first version, against the
   commit that added this directory, is in git history.
@@ -46,4 +46,5 @@ kept". The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk (`targe
   - `go/`: the `go build` loop (`r1-*`: `base`, `carry`, `b320` as in round 1; `final-*`: `f160`, `f320`), the
     stress tool's logs and samples.
   - `gates/`: the gates, three rounds alternating (`r1-*`: `base`, `carry`, `b320`; `final-*`: `f160`, `f320`);
-    `summary.txt` the medians by round.
+    `summary.txt` the medians by round. Their `commit` (57a42a7, dirty) is the tree they ran in: the cores were
+    swapped in.

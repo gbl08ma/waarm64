@@ -683,7 +683,7 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   carry, next).
 - **Carrying the hot set across a flush** (M8, 2026-10-19/20; the page's `?jit=replay`, ABI 41-42, taken out at
   43; `bench/boot/REPORT.md` "M8: carrying the hot set across a flush" and "M8: the carry timed, and a larger code
-  cache"; the code is commit 57a42a7's): at a flush for room the regions entered since a probe (at 7/8 of the
+  cache"; the code is commit 277b738's): at a flush for room the regions entered since a probe (at 7/8 of the
   budget: every jump and transfer cache cleared, the dispatcher marking what it entered) and their direct-link
   closure kept running from their slots while the next epoch took the other half of the slots; the marked regions
   (up to half the budget) were compiled again into it from recipes, by the compile worker off the vCPUs and
