@@ -1150,3 +1150,31 @@ userspace phases and Chromium's renders): now every workload but the `go build` 
 compiles a fifth to two fifths less code. The cost is in the counting: a block reports 31 times before it compiles
 (lock acquisitions +44% on the churn page, +54% in the pages session), which "longer reports far from the
 threshold" (docs/jit.md "Tried and not kept") would address.
+
+**On the Mac host** (one round, `results/m8-interp-l6/mac/`): Alpine's boot 501.1 → 526.7 MIPS (+5.1%), Buildroot's
+99.6 → 141.7 (+42%), the userspace benchmark 13,162 → 12,854 ms (−2.3%: Lua −2.7%, its process churn +5.9%).
+Correctness: `scripts/ci.sh` (a unit test of the pressure's steps now sets its floor of 50 itself) and
+`scripts/ci-debian.sh` pass; the steps don't move (a threshold changes what compiles, not what runs).
+
+## M8-INTERP loop 4: superinstructions, a run of MOVs in one dispatch
+
+2026-10-21, the dev VM, Chromium 153.0.8010.52; raw data `results/m8-interp-l4/` (`scr4/` the screen). Loop 0's
+mix has no dominant pair; its largest were `MOVZ+MOVZ` (6.7%, mostly runs: `MOVZ+MOVZ+MOVZ` 5.4%) and the flag
+setters with their B.cond (~6% together, loop 2's `fuse`: +1%). Screen 4 (one round, against loop 6's core:
+405.9 / 167.3 / 113.6 for `dec_mips` / Alpine / Buildroot; A/A 403.9 / 167.6 / 114.0): **MOV runs** (each MovI
+carries the number of MovIs right after it, `mov_runs` at decode, and `hot` writes them all in its dispatch, never
+past the prefix) 424.9 / 171.4 / 114.1; MOV runs with the fused setter and B.cond (`fuse-movrun.patch`) 408.6 /
+166.4 / 111.3. Then MOV runs against the base, two rounds:
+
+| benchmark (MIPS) | loop 6 (round 1 · 2) | MOV runs (round 1 · 2) | |
+|---|---|---|---|
+| `dec_mips` | 404.2 ±3.6 · 405.7 ±2.5 | 425.0 ±3.4 · 423.5 ±4.9 | +4.8% |
+| `vm_dec_flat_mips` | 406.6 ±1.9 · 407.7 ±2.6 | 424.4 ±2.5 · 415.7 ±10.1 | +2.2% |
+| `vm_dec_mmu_mips` | 395.9 ±4.7 · 391.5 ±1.8 | 411.9 ±1.7 · 412.0 ±1.3 | +5.2% |
+| Buildroot boot | 114.0 ±1.0 · 113.1 ±1.2 | 114.1 ±1.2 · 114.3 ±2.2 | +0.9% |
+| Alpine boot | 168.1 ±0.2 · 167.7 ±0.2 | 171.8 ±0.2 · 171.5 ±0.1 | +2.2% |
+
+Kept. The two fusions together lost (the fused setter's test sits in five handlers, the MOV run's in one). A planted
+bug (each MOV of a run writing the first one's value) failed the differential test; a run not bounded by the prefix
+didn't (random blocks rarely end a prefix inside a run), so `a_mov_run_stops_at_the_prefix` covers it and fails
+with that bug.

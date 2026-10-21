@@ -204,7 +204,8 @@ fn blocks_run_as_the_interpreter_runs_them() {
         if block.is_empty() {
             continue;
         }
-        let uops: Vec<Uop> = block.iter().map(|&w| uop(w)).collect();
+        let mut uops: Vec<Uop> = block.iter().map(|&w| uop(w)).collect();
+        mov_runs(&mut uops);
         let left = 1 + r.below(block.len() as u64) as usize;
         let left = if r.below(2) == 0 { block.len() } else { left };
 
@@ -256,6 +257,30 @@ fn blocks_run_as_the_interpreter_runs_them() {
     assert!(ran > 20_000, "{ran}");
     for k in 0..=K::LdLit as usize {
         assert!(kinds[k] > 0, "kind {k} never ran: {kinds:?}");
+    }
+}
+
+/// A run of MOVs ([`mov_runs`]) stops at the prefix's end, as the steps left say.
+#[test]
+fn a_mov_run_stops_at_the_prefix() {
+    // movz x0, #1; movz x1, #2; movz x2, #3; ret
+    let mut uops: Vec<Uop> = [0xd280_0020, 0xd280_0041, 0xd280_0062, 0xd65f_03c0]
+        .into_iter()
+        .map(uop)
+        .collect();
+    mov_runs(&mut uops);
+    let t = TestRam::new(RAM);
+    for left in 1..=3 {
+        let mut c = Cpu::default();
+        assert_eq!(
+            run_hot(&mut c, &mut Flat(&t.mem), &uops[..left], CODE),
+            (left as u64, None)
+        );
+        assert_eq!(
+            c.x[..3],
+            [1, 2, 3].map(|v| if v <= left as u64 { v } else { 0 })
+        );
+        assert_eq!(c.pc, CODE + 4 * left as u64);
     }
 }
 

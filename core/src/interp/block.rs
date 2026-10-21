@@ -107,6 +107,20 @@ enum K {
     LdLit,
 }
 
+/// Marks each MovI with the number of MovIs right after it ([`hot`] runs
+/// them in its dispatch; [`run`] ignores the count).
+pub fn mov_runs(b: &mut [Uop]) {
+    let mut n = 0;
+    for k in (0..b.len()).rev() {
+        if b[k].k == K::MovI {
+            b[k].x = n;
+            n += 1;
+        } else {
+            n = 0;
+        }
+    }
+}
+
 /// One instruction, decoded.
 #[derive(Clone, Copy, Debug)]
 pub struct Uop {
@@ -752,7 +766,19 @@ pub fn hot<B: Fast>(
                     let y = extend(rd(c, o.m as u32), o.x & 7, o.x >> 3 & 7);
                     addsub_h(c, o.x, d, rsp(c, n), y, sf, true);
                 }
-                K::MovI => wsp(c, d, o.imm),
+                K::MovI => {
+                    wsp(c, d, o.imm);
+                    // SAFETY: u < end, both in the block's micro-ops.
+                    let k = (o.x as usize).min(unsafe { end.offset_from(u) } as usize - 1);
+                    for j in 1..=k {
+                        // SAFETY: u + j < end.
+                        let b = unsafe { &*u.add(j) };
+                        wsp(c, b.d as u32, b.imm);
+                    }
+                    // SAFETY: as above.
+                    u = unsafe { u.add(k) };
+                    pc = pc.wrapping_add(4 * k as u64);
+                }
                 K::Movk => {
                     let v = (rd(c, d) & !(0xffff << (o.m & 63))) | o.imm;
                     wr(c, d, trunc(v, sf));
@@ -1335,7 +1361,8 @@ impl Cache {
             Some(e) if e.1 == 0 => return None,
             Some(_) => {}
             None => {
-                let uops = crate::jit::block::form_with(mem, key & !3, uop_op);
+                let mut uops = crate::jit::block::form_with(mem, key & !3, uop_op);
+                mov_runs(&mut uops);
                 if uops.is_empty() {
                     self.map.insert(key, (0, 0, 0, 0));
                     self.pages.entry(key >> 12).or_default().push(key);

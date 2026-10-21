@@ -259,6 +259,9 @@ test it against `tests/steps.txt`.
   needs a call returns a status to `jit::interpret`, which runs that one micro-op through `run` (the
   slow path) or finds the next block, and calls `hot` again. +26% on the user-mode guest, +56-68% at
   EL1, +13% and +18% on the Buildroot and Alpine boots (`bench/interp/REPORT.md` "M8-INTERP loop 1").
+- **Runs of MOVs** (MOVZ, MOVN, MOV of a bitmask immediate: `MovI`) go in one dispatch: each carries
+  the number of MovIs right after it (`mov_runs`, at decode), and `hot` writes them all, never past
+  the prefix (`run` ignores the count). +2-5% (`bench/interp/REPORT.md` "M8-INTERP loop 4").
 - **Chaining:** after a block that ends on a branch or runs out, the next block is found without
   going back to the dispatcher (`jit::interpret`): in the same page from the block's own key (a
   block ends after anything that could change the translation), in another through the
@@ -303,9 +306,9 @@ test it against `tests/steps.txt`.
   `hot` too (`run_hot`).
 - **Its speed** (`bench/interp/REPORT.md` from "M8-INTERP loop 0"; the yardstick is
   `bench/interp/yardstick.sh`: the small guests and the boots under `VmConfig.jit` 4, with
-  `--config liftoff-only` the JIT's reference): on the dev VM 405 MIPS on the user-mode guest,
-  ~390-405 at EL1, 113 on Buildroot's boot and 167 on Alpine's (from 249, 176-198, 89 and 122);
-  on the Mac host 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
+  `--config liftoff-only` the JIT's reference): on the dev VM 424 MIPS on the user-mode guest,
+  412-416 at EL1, 114 on Buildroot's boot and 172 on Alpine's (from 249, 176-198, 89 and 122);
+  on the Mac host (before the MOV runs) 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
   Buildroot at 60, and runs the hot guests at ~1,700-2,600. The guest accesses' `ldar`/`stlr`
   cost nothing measurable in it (0.24% of `run`'s samples).
 
@@ -316,7 +319,7 @@ All in `bench/interp/REPORT.md` "M8-INTERP loop 2", the variants' diffs in `resu
   CSEL and CCMP read conditions from them): −2% on the user-mode guest, −4% on Alpine's boot. Three
   more loop-carried values, and the conditions' selects cost more than a stored NZCV's bits.
 - **A flag setter fused with its B.cond** (one dispatch for the pair, ~6% of the instructions):
-  +1%, twice; with lazy NZCV −4 to −8%.
+  +1%, twice; with lazy NZCV −4 to −8%; with the MOV runs −2 to +1% (loop 4).
 - **Pre-linked successors** (the arena index of each successor and a compiled bit in the slot):
   dropping the jump-cache check altogether, the most they could save, gave 1-1.5%. A block's cost
   is its micro-ops and the reports, not the slot and jump-cache lookups.
