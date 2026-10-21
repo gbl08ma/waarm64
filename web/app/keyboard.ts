@@ -1,0 +1,132 @@
+// The guest's keyboard layout (docs/frontend.md "The keyboard layout"): the page sends `KeyboardEvent.code`, the keys'
+// positions on a PC keyboard (web/input.ts), so the guest has to be told which characters the user's keys carry. A
+// machine with the setting on gives the guest, as SMBIOS credentials, a unit that sets it at every boot: localed's X11
+// keymap (Xorg, GNOME, KDE, display managers, and on most distributions the console's keymap converted from it) and
+// libxkbcommon's `XKB_DEFAULT_*` in /etc/environment (wlroots compositors such as sway; every PAM login and the user
+// manager read it). Both stay in the guest's disk: turning the setting off leaves the last layout set.
+
+import type { Credential } from './machine.ts';
+
+/** A layout the setting offers: XKB's names for it (xkeyboard-config's base.lst). */
+export type KeyboardLayout = { id: string; label: string; layout: string; variant?: string; model?: string };
+
+/**
+ * Latin-script layouts only (a guest's login and shell need Latin letters; a layout that toggles needs its own
+ * options). `sig`: a few keys' unshifted characters as `navigator.keyboard.getLayoutMap()` gives them, for "Match this
+ * browser" (`detectLayout`).
+ */
+const TABLE: (KeyboardLayout & { sig: Record<string, string> })[] = [
+  { id: 'us', label: 'English (US)', layout: 'us', sig: { KeyQ: 'q', KeyY: 'y', KeyW: 'w', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/' } },
+  { id: 'us-intl', label: 'English (US, international with dead keys)', layout: 'us', variant: 'intl', sig: {} },
+  { id: 'gb', label: 'English (UK)', layout: 'gb', sig: { KeyY: 'y', Semicolon: ';', Quote: "'", BracketLeft: '[', Backslash: '#', IntlBackslash: '\\', Minus: '-', Backquote: '`' } },
+  { id: 'us-dvorak', label: 'English (Dvorak)', layout: 'us', variant: 'dvorak', sig: { KeyQ: "'", KeyW: ',', KeyE: '.', KeyS: 'o', Semicolon: 's', Minus: '[', BracketLeft: '/' } },
+  { id: 'us-colemak', label: 'English (Colemak)', layout: 'us', variant: 'colemak', sig: { KeyE: 'f', KeyR: 'p', KeyS: 'r', KeyD: 's', Semicolon: 'o', KeyJ: 'n', KeyK: 'e' } },
+  { id: 'pt', label: 'Portuguese', layout: 'pt', sig: { Semicolon: 'ç', Quote: 'º', BracketLeft: '+', BracketRight: '´', Backslash: '~', Minus: "'", Equal: '«', Backquote: '\\' } },
+  { id: 'br', label: 'Portuguese (Brazil, ABNT2)', layout: 'br', model: 'abnt2', sig: { Semicolon: 'ç', Quote: '~', BracketLeft: '´', BracketRight: '[', Backslash: ']', Minus: '-', Equal: '=', Backquote: "'", IntlRo: '/' } },
+  { id: 'es', label: 'Spanish', layout: 'es', sig: { Semicolon: 'ñ', Quote: '´', BracketLeft: '`', BracketRight: '+', Backslash: 'ç', Minus: "'", Equal: '¡', Backquote: 'º' } },
+  { id: 'latam', label: 'Spanish (Latin American)', layout: 'latam', sig: { Semicolon: 'ñ', Quote: '{', BracketLeft: '´', BracketRight: '+', Backslash: '}', Minus: "'", Equal: '¿', Backquote: '|' } },
+  { id: 'fr', label: 'French (AZERTY)', layout: 'fr', sig: { KeyQ: 'a', KeyA: 'q', KeyW: 'z', KeyZ: 'w', Semicolon: 'm', KeyM: ',', Digit2: 'é', Quote: 'ù', BracketLeft: '^', Minus: ')', Equal: '=', Backquote: '²', Backslash: '*' } },
+  { id: 'be', label: 'Belgian (AZERTY)', layout: 'be', sig: { KeyQ: 'a', KeyA: 'q', KeyW: 'z', Semicolon: 'm', Digit2: 'é', Quote: 'ù', BracketLeft: '^', Minus: ')', Equal: '-', Backquote: '²', Backslash: 'µ' } },
+  { id: 'de', label: 'German', layout: 'de', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '+', Minus: 'ß', Equal: '´', Backquote: '^', Backslash: '#', Slash: '-' } },
+  { id: 'ch', label: 'German (Switzerland)', layout: 'ch', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '¨', Minus: "'", Equal: '^', Backquote: '§', Backslash: '$', Slash: '-' } },
+  { id: 'ch-fr', label: 'French (Switzerland)', layout: 'ch', variant: 'fr', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'é', Quote: 'à', BracketLeft: 'è', BracketRight: '¨', Minus: "'", Equal: '^', Backquote: '§', Backslash: '$' } },
+  { id: 'it', label: 'Italian', layout: 'it', sig: { Semicolon: 'ò', Quote: 'à', BracketLeft: 'è', BracketRight: '+', Backslash: 'ù', Minus: "'", Equal: 'ì', Backquote: '\\' } },
+  { id: 'se', label: 'Swedish', layout: 'se', sig: { Semicolon: 'ö', Quote: 'ä', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '´', Backquote: '§' } },
+  { id: 'fi', label: 'Finnish', layout: 'fi', sig: {} },
+  { id: 'no', label: 'Norwegian', layout: 'no', sig: { Semicolon: 'ø', Quote: 'æ', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '\\', Backquote: '|' } },
+  { id: 'dk', label: 'Danish', layout: 'dk', sig: { Semicolon: 'æ', Quote: 'ø', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '´', Backquote: '½' } },
+  { id: 'pl', label: 'Polish', layout: 'pl', sig: {} },
+  { id: 'cz', label: 'Czech', layout: 'cz', sig: { KeyY: 'z', KeyZ: 'y', Digit2: 'ě', Semicolon: 'ů', Quote: '§', BracketLeft: 'ú', BracketRight: ')', Minus: '=', Equal: '´', Backquote: ';' } },
+  { id: 'hu', label: 'Hungarian', layout: 'hu', sig: { KeyY: 'z', KeyZ: 'y', Digit0: 'ö', Minus: 'ü', Equal: 'ó', BracketLeft: 'ő', BracketRight: 'ú', Semicolon: 'é', Quote: 'á', Backslash: 'ű', Backquote: '0' } },
+  { id: 'tr', label: 'Turkish (Q)', layout: 'tr', sig: { KeyI: 'ı', Semicolon: 'ş', Quote: 'i', BracketLeft: 'ğ', BracketRight: 'ü', Comma: 'ö', Period: 'ç', Minus: '*', Equal: '-', Backquote: '"' } },
+  { id: 'jp', label: 'Japanese', layout: 'jp', model: 'jp106', sig: { Minus: '-', Equal: '^', BracketLeft: '@', BracketRight: '[', Semicolon: ';', Quote: ':', Backslash: ']', IntlYen: '¥', IntlRo: '\\' } },
+];
+
+export const KEYBOARD_LAYOUTS: readonly KeyboardLayout[] = TABLE.map(({ sig: _, ...l }) => l);
+export const keyboardLayout = (id: string | undefined) => KEYBOARD_LAYOUTS.find((l) => l.id === id);
+
+/**
+ * The layout whose keys best match `map` (`navigator.keyboard.getLayoutMap()`'s code → character), or undefined
+ * when none matches most of its keys. Layouts that differ only past what the map shows (US and its international
+ * variant, Swedish and Finnish, US and Polish) come out as the first: the user confirms.
+ */
+export function detectLayout(map: ReadonlyMap<string, string>): KeyboardLayout | undefined {
+  let best: { l: KeyboardLayout; score: number } | undefined;
+  for (const { sig, ...l } of TABLE) {
+    const keys = Object.keys(sig).filter((k) => map.has(k));
+    if (keys.length < 4) continue;
+    const hits = keys.filter((k) => map.get(k) === sig[k]).length;
+    const score = hits / keys.length;
+    if (score >= 0.75 && (!best || score > best.score)) best = { l, score };
+  }
+  return best?.l;
+}
+
+/** The layout this browser reports, if it can (Chromium's Keyboard API; not in Firefox or over plain HTTP). */
+export async function browserLayout(): Promise<KeyboardLayout | undefined> {
+  const kb = (navigator as Navigator & { keyboard?: { getLayoutMap?: () => Promise<ReadonlyMap<string, string>> } }).keyboard;
+  if (!kb?.getLayoutMap) return undefined;
+  return detectLayout(await kb.getLayoutMap().catch(() => new Map()));
+}
+
+const UNIT = 'webpc-keyboard.service';
+
+/** The script the unit runs (a credential of its own: no quoting in the unit). POSIX sh: Debian's is dash. */
+export function keyboardScript(l: KeyboardLayout): string {
+  const model = l.model ?? 'pc105';
+  const variant = l.variant ?? '';
+  const env = [`XKB_DEFAULT_LAYOUT=${l.layout}`, `XKB_DEFAULT_MODEL=${model}`, ...(variant ? [`XKB_DEFAULT_VARIANT=${variant}`] : [])].join('\n');
+  return `# From webpc: the machine's keyboard layout setting (${l.label}), run at every boot while it is on.
+# Sets KEY="VALUE" in a file, unless it says so already.
+set_kv() {
+  grep -qx "$2=\\"$3\\"" "$1" 2>/dev/null && return
+  if grep -q "^$2=" "$1" 2>/dev/null; then sed -i "s|^$2=.*|$2=\\"$3\\"|" "$1"; else printf '%s="%s"\\n' "$2" "$3" >>"$1"; fi
+}
+if [ -e /etc/default/keyboard ] || [ -e /usr/share/dbus-1/system.d/systemd-localed-read-only.conf ]; then
+  # Debian and Ubuntu: /etc/default/keyboard, which Xorg, localed (read-only on Debian 13: GNOME and KDE read it there) and console-setup read.
+  set_kv /etc/default/keyboard XKBMODEL ${model}
+  set_kv /etc/default/keyboard XKBLAYOUT ${l.layout}
+  set_kv /etc/default/keyboard XKBVARIANT '${variant}'
+  if command -v setupcon >/dev/null 2>&1; then setupcon -k --force || true; fi
+elif command -v localectl >/dev/null 2>&1; then
+  # Elsewhere localed's X11 keymap (Xorg, GNOME, KDE, display managers), which it also converts to the console's.
+  localectl set-x11-keymap ${l.layout} ${model} '${variant}' || echo 'webpc-keyboard: localectl failed' >&2
+fi
+# wlroots compositors (sway) and anything else on libxkbcommon's defaults: XKB_DEFAULT_* for every login (pam_env).
+want='${env}'
+if [ "$(grep '^XKB_DEFAULT_' /etc/environment 2>/dev/null)" != "$want" ]; then
+  sed -i '/^XKB_DEFAULT_/d' /etc/environment 2>/dev/null
+  printf '%s\\n' "$want" >>/etc/environment
+fi
+`;
+}
+
+/** The systemd credentials (SMBIOS type 11, `oemStrings`) that set `l` in the guest: systemd 256+. */
+export function keyboardCredentials(l: KeyboardLayout): Credential[] {
+  return [
+    { name: 'webpc.keyboard.sh', data: keyboardScript(l) },
+    {
+      name: `systemd.extra-unit.${UNIT}`,
+      data: `[Unit]
+Description=Keyboard layout from webpc's machine settings
+ConditionPathExists=!/etc/initrd-release
+After=dbus.service local-fs.target
+Before=systemd-user-sessions.service display-manager.service
+
+[Service]
+Type=oneshot
+ImportCredential=webpc.keyboard.sh
+ExecStart=/bin/sh %d/webpc.keyboard.sh
+`,
+    },
+    // What starts it: the generator can't read an [Install] section, so a drop-in has the logins' gate want it.
+    { name: `systemd.unit-dropin.systemd-user-sessions.service~${UNIT.replace('.service', '')}`, data: `[Unit]\nWants=${UNIT}\nAfter=${UNIT}\n` },
+  ];
+}
+
+/** The fw_cfg file the core moves into SMBIOS type 11 (core/src/smbios.rs `OEM_STRINGS`, ABI 49): NUL-separated strings. */
+export const OEM_STRINGS_FILE = 'opt/webpc/oem-strings';
+
+/** Credentials as SMBIOS type 11 strings, systemd's binary form (base64: the contents have newlines). */
+export const oemStrings = (credentials: Credential[]) =>
+  credentials.map((c) => `io.systemd.credential.binary:${c.name}=${btoa(String.fromCharCode(...new TextEncoder().encode(c.data)))}`);

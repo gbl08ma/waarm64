@@ -91,6 +91,13 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-field=ram]').selectOption('1024');
   await m.locator('[data-field=jit]').selectOption({ label: '128 MiB' });
   await m.locator('[data-field=display]').selectOption('2d');
+  // The keyboard layout: off by default, its note only with one set; "Match this browser" answers either way.
+  assert.equal(await m.locator('[data-field=keyboard]').inputValue(), await m.locator('[data-field=keyboard] option').first().getAttribute('value') ?? '');
+  assert.equal(await m.locator('[data-keyboard-note]').count(), 0);
+  await m.locator('[data-action=match-keyboard]').click();
+  await m.locator('[data-keyboard-match]').waitFor();
+  await m.locator('[data-field=keyboard]').selectOption({ label: 'Portuguese' });
+  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', /^The next time the machine boots, the page changes the guest's own keyboard settings to this layout/);
   await m.locator('[data-action=save]').click();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).waitFor();
   // A URL disk (checked), a blank one, a ramdisk; a URL whose server lacks CORS is refused with the reason (the wizard stays open).
@@ -115,9 +122,9 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
     const m = await store.get('machines', id);
     const disks = await Promise.all(m.attachments.map((a: { disk: string }) => store.get('disks', a.disk)));
     store.close();
-    return { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, jitMiB: m.jitMiB, display: m.display, disks: disks.map((d: { kind: string; size: number }) => [d.kind, d.size]), readOnly: m.attachments.map((a: { readOnly: boolean }) => a.readOnly) };
+    return { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, jitMiB: m.jitMiB, keyboard: m.keyboard, display: m.display, disks: disks.map((d: { kind: string; size: number }) => [d.kind, d.size]), readOnly: m.attachments.map((a: { readOnly: boolean }) => a.readOnly) };
   }, id);
-  const want = { name: 'Workbench', ncpus: 2, ramMiB: 1024, jitMiB: 128, display: '2d', disks: [['url', 1 << 20], ['blank', 64 << 20], ['ramdisk', 32 << 20]], readOnly: [false, false, false] };
+  const want = { name: 'Workbench', ncpus: 2, ramMiB: 1024, jitMiB: 128, keyboard: 'pt', display: '2d', disks: [['url', 1 << 20], ['blank', 64 << 20], ['ramdisk', 32 << 20]], readOnly: [false, false, false] };
   const got = await record();
   assert.ok((got.disks[0][1] as number) > 0);
   assert.deepEqual({ ...got, disks: got.disks.slice(1) }, { ...want, disks: want.disks.slice(1) });

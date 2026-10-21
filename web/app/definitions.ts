@@ -9,6 +9,7 @@
 // browser the first start offers one click each (docs/usb.md "The page"). Both are left out when there's nothing to say.
 // The network adapters go as their MACs (`machine.macs`, left out for one at the default), without their connections.
 import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
+import { keyboardLayout } from './keyboard.ts';
 import { adaptersOf, canonical, DEFAULT_MAC, isMac, MAX_ADAPTERS, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskKind, type DiskRecord, type Display, type MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 import { ramSplitError } from './machine.ts';
@@ -21,7 +22,7 @@ export type Definition = {
   type: typeof DEFINITION_TYPE;
   version: number;
   /** `network`: whether it has an adapter; `macs`: the adapters' MACs, left out for none or one at the default (as before adapters). */
-  machine: { name: string; ncpus: number; ramMiB: number; ramSplit?: number[]; jitMiB?: number; display: Display; network: boolean; macs?: string[]; usb?: boolean };
+  machine: { name: string; ncpus: number; ramMiB: number; ramSplit?: number[]; jitMiB?: number; keyboard?: string; display: Display; network: boolean; macs?: string[]; usb?: boolean };
   disks: DefinitionDisk[];
   usbDevices?: DefinitionUsb[];
 };
@@ -38,7 +39,7 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
   }
   const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
   const macs = adaptersOf(m).map((a) => a.mac);
-  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, ...(m.ramSplit ? { ramSplit: m.ramSplit } : {}), ...(m.jitMiB ? { jitMiB: m.jitMiB } : {}), display: m.display, network: macs.length > 0, ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}), ...(m.usb ? { usb: true } : {}) }, disks, ...usb };
+  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, ...(m.ramSplit ? { ramSplit: m.ramSplit } : {}), ...(m.jitMiB ? { jitMiB: m.jitMiB } : {}), ...(m.keyboard ? { keyboard: m.keyboard } : {}), display: m.display, network: macs.length > 0, ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}), ...(m.usb ? { usb: true } : {}) }, disks, ...usb };
 }
 
 /** Parses a definition file's text; throws a message for the user when it isn't one this page reads. */
@@ -52,7 +53,7 @@ export function parseDefinition(text: string): Definition {
   if (d?.type !== DEFINITION_TYPE) throw new Error("this file isn't a machine definition");
   if (d.version !== DEFINITION_VERSION) throw new Error(`this definition is version ${d.version}; this page reads version ${DEFINITION_VERSION}`);
   const m = d.machine;
-  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.ramSplit === undefined || (Array.isArray(m.ramSplit) && !ramSplitError(m.ramSplit) && m.ramSplit.reduce((a, b) => a + b, 0) === m.ramMiB)) && (m.jitMiB === undefined || (Number.isInteger(m.jitMiB) && m.jitMiB >= 1 && m.jitMiB <= 4096)) && (m.display === '2d' || m.display === '3d') && typeof m.network === 'boolean' && (m.macs === undefined || (Array.isArray(m.macs) && m.macs.length >= 1 && m.macs.length <= MAX_ADAPTERS && m.macs.every((x) => typeof x === 'string' && isMac(x)) && m.network)) && (m.usb === undefined || typeof m.usb === 'boolean') && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
+  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.ramSplit === undefined || (Array.isArray(m.ramSplit) && !ramSplitError(m.ramSplit) && m.ramSplit.reduce((a, b) => a + b, 0) === m.ramMiB)) && (m.jitMiB === undefined || (Number.isInteger(m.jitMiB) && m.jitMiB >= 1 && m.jitMiB <= 4096)) && (m.keyboard === undefined || !!keyboardLayout(m.keyboard)) && (m.display === '2d' || m.display === '3d') && typeof m.network === 'boolean' && (m.macs === undefined || (Array.isArray(m.macs) && m.macs.length >= 1 && m.macs.length <= MAX_ADAPTERS && m.macs.every((x) => typeof x === 'string' && isMac(x)) && m.network)) && (m.usb === undefined || typeof m.usb === 'boolean') && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
     && Array.isArray(d.disks) && d.disks.length <= MAX_DISKS && d.disks.every((x) => ['url', 'file', 'stored', 'blank', 'ramdisk'].includes(x?.kind) && Number.isSafeInteger(x.size) && x.size > 0 && typeof x.name === 'string' && x.identity?.kind && typeof x.serial === 'string' && /^[0-9a-f]{12}$/.test(x.serial));
   if (!ok) throw new Error('this machine definition is damaged (a field is missing or out of range)');
   return d;
@@ -95,6 +96,7 @@ export async function importDefinition(store: Store, def: Definition): Promise<{
     ramMiB: def.machine.ramMiB,
     ...(def.machine.ramSplit ? { ramSplit: def.machine.ramSplit } : {}),
     ...(def.machine.jitMiB ? { jitMiB: def.machine.jitMiB } : {}),
+    ...(def.machine.keyboard ? { keyboard: def.machine.keyboard } : {}),
     display: def.machine.display,
     // The adapters come without connections: those hold secrets, and are this browser's (network-adapters.md §5).
     adapters: (def.machine.macs ?? (def.machine.network ? [DEFAULT_MAC] : [])).map((mac) => ({ id: newId(), mac })),

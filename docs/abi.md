@@ -535,5 +535,6 @@ implemented by this step).
 | 45 | the page's memory signal: `vm_jit_gauge` (the JIT cache's state, and the host's limit on its budget), `heap_stats` |
 | 46 | counter words 108–113: the JIT cache's lock and the time emission holds it |
 | 47 | the core's heap bounded: `vm_jit_gauge` words 5–7 (`jit::GAUGE_WORDS` 8), counter words 114–118; an allocation that fails records a `panic_message` |
-| 119 | (48) jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
+| 48 | counter word 119: jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
+| 49 | the host's type 11 strings: fw_cfg's `opt/webpc/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

@@ -9,7 +9,7 @@
 //    (xterm.js to the PL011) and on the screen (keys on the canvas through virtio-input to tty1's
 //    getty); a command typed on the screen writes a marker to /dev/ttyAMA0 that comes back on the
 //    serial side; the platform the firmware gave Linux (RTC, framebuffer, EFI, both vCPUs, a
-//    credential read back from fw_cfg); the page's size reaches the guest (the console is born at it,
+//    credential read back from fw_cfg; the keyboard layout `?keyboard=gb` set through SMBIOS); the page's size reaches the guest (the console is born at it,
 //    a bigger window is a new preferred mode, a smaller one never crops the console); a snapshot of
 //    the logged-in machine with a file on its disk (the machine runs on).
 // 2. A reload (as a user closes the tab: no shutdown): the file written in 1 is on the disk.
@@ -224,7 +224,8 @@ const flashWritten = (page: Page) => page.waitForFunction(async () => {
 
 for (let run = 1; run <= RUNS; run++) {
   test(`the page runs Debian: a key on the screen stops GRUB; root logs in on the screen and on the serial terminal; the platform is the firmware's; the page's size reaches the guest; the disk persists over a reload; a snapshot loads in a fresh profile, suspends and resumes${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&${unattendedQuery()}`;
+    // The UK layout: the screen's typing below is the same on it (Debian's image has no console keymaps anyway).
+    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&keyboard=gb&${unattendedQuery()}`;
     const context = await browser.newContext({ viewport: { width: 1400, height: 900 } }); // a fresh profile: an empty OPFS
     const page = await context.newPage();
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
@@ -278,6 +279,10 @@ for (let run = 1; run <= RUNS; run++) {
     // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
     await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
     await shows(page, /==dmi webpc webpc Virtual Machine webpc EDK II ArmVirtQemuKernel/);
+    // The keyboard layout (web/app/keyboard.ts): SMBIOS credentials, a unit that ran before the logins; Debian's
+    // /etc/default/keyboard, read back by localed, and XKB_DEFAULT_* in this login's environment.
+    await onSerial(page, 'clear; echo ==kb""d $(systemctl show -P Result webpc-keyboard.service) $(localectl status | grep -o "X11 Layout: [a-z]*" | cut -d" " -f3) $XKB_DEFAULT_LAYOUT $XKB_DEFAULT_MODEL.\n');
+    await shows(page, /==kbd success gb gb pc105\./);
     // Nothing speculates, and the core's SMCCC answers say so (docs/cpu.md): Spectre-v4 is not affected. (Spectre-v2 still
     // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
     await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');

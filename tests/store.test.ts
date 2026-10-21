@@ -296,7 +296,7 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   }
 });
 
-test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule", async () => {
+test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule; its keyboard layout by its definition", async () => {
   const { hostMemoryGiB, jitHostGiB, JIT_DEFAULT_MIB } = await import('../web/app/machine.ts');
   const { createMachine, updateMachine } = await import('../web/app/machines.ts');
   const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
@@ -315,6 +315,13 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
   assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(def)))).machine.jitMiB, 128);
   assert.equal('jitMiB' in (await exportDefinition(store, plain.id)).machine, false);
   for (const jitMiB of [0, -5, 1.5, 'big']) assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, jitMiB } })), /damaged/, String(jitMiB));
+  // The keyboard layout likewise: in the record and its definition, not in the shape; an unknown one is refused.
+  assert.equal('keyboard' in shapeOf({ ...m, keyboard: 'pt' }, () => undefined), false);
+  const kbd = await exportDefinition(store, (await updateMachine(store, { ...saved, keyboard: 'pt' })).id);
+  assert.equal(kbd.machine.keyboard, 'pt');
+  assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(kbd)))).machine.keyboard, 'pt');
+  assert.equal('keyboard' in (await exportDefinition(store, plain.id)).machine, false);
+  for (const keyboard of ['xx', 7, '']) assert.throws(() => parseDefinition(JSON.stringify({ ...kbd, machine: { ...kbd.machine, keyboard } })), /damaged/, String(keyboard));
   // The rule: 160 MiB is what it was measured with; the default (320) adds 0.625 GiB; smaller saves at most 0.25.
   assert.equal(jitHostGiB(160), 0);
   assert.equal(JIT_DEFAULT_MIB, 320);

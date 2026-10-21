@@ -24,6 +24,7 @@
   import { remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
   import { errorView, type ErrorView } from './usb-ports.ts';
+  import { browserLayout, KEYBOARD_LAYOUTS } from './keyboard.ts';
   import { JIT_CHOICES, JIT_DEFAULT_MIB, MEMORY0_MIB, numaNote, RAM_CHOICES, ramSplitError, ramSplitMiB } from './machine.ts';
 
   let { store, net }: { store: Store; net: PageNetwork } = $props();
@@ -104,6 +105,7 @@
   async function saveSettings() {
     const m = plain(draft!);
     if (!m.jitMiB) delete m.jitMiB;
+    if (!m.keyboard) delete m.keyboard;
     await act('Saving', async () => {
       const was = machines.find((x) => x.id === m.id)!;
       if (shapeChanged(was, m) && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('This change orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Save' }))) return;
@@ -113,6 +115,13 @@
       await updateMachine(store, m);
     });
     dirty = false;
+  }
+  // The keyboard layout: "Match this browser" picks the one the browser reports (web/app/keyboard.ts), for the user to save.
+  let keyboardNote = $state('');
+  async function matchKeyboard() {
+    const l = await browserLayout();
+    if (l) { draft!.keyboard = l.id; dirty = true; }
+    keyboardNote = l ? `This browser's keyboard looks like ${l.label}: save to use it.` : "This browser doesn't say which layout its keyboard has (only Chromium-based browsers do), or it isn't one in the list: pick it yourself.";
   }
   // The RAM's split, set by hand (the advanced section; docs/spill-memories.md): memory 0, then the NUMA nodes past it, MiB.
   let splitProblem = $state('');
@@ -332,6 +341,10 @@
               </details>
               <label>JIT cache <select bind:value={draft.jitMiB} data-field="jit" title="The most compiled guest code the emulator keeps before it starts over. The browser spends several times this on it: a smaller cache saves memory, a larger one keeps a big guest's code (a web browser's) compiled">{#each [undefined, ...new Set([...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])])].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option value={n}>{n ? `${n} MiB` : `Default (${JIT_DEFAULT_MIB} MiB)`}</option>{/each}</select></label>
               <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
+              <label>Keyboard layout <select bind:value={draft.keyboard} onchange={() => (keyboardNote = '')} data-field="keyboard" title="The layout of your keyboard, for the page to set in the guest">{#each [undefined, ...KEYBOARD_LAYOUTS.map((l) => l.id)] as id}<option value={id}>{id ? KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label : "Don't set it (the guest's own)"}</option>{/each}</select></label>
+              <button class="beside" onclick={matchKeyboard} data-action="match-keyboard" title="The layout this browser reports for your keyboard"><Icon name="keyboard" size={16} />Match this browser</button>
+              {#if keyboardNote}<p class="note" data-keyboard-match>{keyboardNote}</p>{/if}
+              {#if draft.keyboard}<p class="note" data-keyboard-note>The next time the machine boots, the page changes the guest's own keyboard settings to this layout (console, X11 and Wayland, on a guest with systemd 256 or newer), and again at every boot while it is set. "Don't set it" leaves the last layout set.</p>{/if}
               {@render usbSwitch()}
               {@render saveRow()}
               <p class="note">vCPUs, RAM, the display, the network adapters and the USB controller make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
@@ -435,6 +448,7 @@
   .note, .hint { color: var(--dim); font-size: 12px; margin: 0; }
   .note.warn { color: #ffb36b; }
   .settings .check, .settings .warn { grid-column: 1 / -1; }
+  .settings > .beside { justify-self: start; }
   .advanced { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
   .advanced summary { color: var(--dim); cursor: pointer; }
   .advanced .split { display: grid; grid-template-columns: max-content minmax(0, 200px); gap: 8px 16px; align-items: center; }

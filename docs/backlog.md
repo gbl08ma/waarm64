@@ -572,9 +572,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
   Phase C, host integration.
-- **Keyboard layouts** other than US: the page maps `KeyboardEvent.code` as a US PC keyboard and
-  Debian's keymap is US; another layout needs the guest's keymap set to match (loadkeys, or
-  `vconsole.keymap=` on the command line). Phase C, host integration.
+- **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): the desktop
+  guest's sway and Firefox under it not checked yet (`M8-KEYBOARD-HANDOVER.md`); KDE untested; non-Latin layouts (a
+  second, toggled layout and its `XKBOPTIONS`) not offered; `detectLayout`'s signatures are from the layouts' charts,
+  checked against Chromium on one (US) keyboard only; a Mac's ISO keyboard swaps `Backquote` and `IntlBackslash` in
+  Chromium's codes, which the guest then sees swapped.
 - **Restart's "disk in use"** (the user's pass after phase A, 2026-09-29; loop 8 made restarts
   not overlap and ordered the overlay's hand-over with a Web Lock: [frontend.md](frontend.md)
   "Overlay hand-over"): whether the user's failure was that overlap or a browser releasing a lock

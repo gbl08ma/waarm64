@@ -10,6 +10,11 @@ use crate::vm::{RAM_BASE, VmConfig};
 
 pub const ANCHOR: &str = "etc/smbios/smbios-anchor";
 pub const TABLES: &str = "etc/smbios/smbios-tables";
+/// The host's file of type 11 strings, NUL-separated (ABI 49): systemd
+/// credentials the page gives a machine (web/app/keyboard.ts). The core takes
+/// it out of fw_cfg and lists its strings in type 11; a credential's name and
+/// contents don't fit fw_cfg's 56-byte file names there.
+pub const OEM_STRINGS: &str = "opt/webpc/oem-strings";
 
 /// What the tables call the machine and its maker.
 const VENDOR: &str = "webpc";
@@ -18,10 +23,11 @@ const VENDOR: &str = "webpc";
 /// credential `sysctl.extra` (systemd 252+).
 pub const NUMA_CREDENTIAL: &str = "io.systemd.credential:sysctl.extra=kernel.numa_balancing=0";
 
-/// fw_cfg's files for `cfg`: the 3.0 entry point (its table address left 0,
-/// as QEMU's) and the structures, ending with type 127.
-pub fn files(cfg: &VmConfig) -> Vec<(String, Vec<u8>)> {
-    let t = tables(cfg);
+/// fw_cfg's files for `cfg` and the host's type 11 strings: the 3.0 entry
+/// point (its table address left 0, as QEMU's) and the structures, ending with
+/// type 127.
+pub fn files(cfg: &VmConfig, oem: &[&str]) -> Vec<(String, Vec<u8>)> {
+    let t = tables(cfg, oem);
     let mut a = b"_SM3_".to_vec();
     a.extend([0, 0x18, 3, 0, 0, 1, 0]); // checksum, length, 3.0.0, revision 1, reserved
     a.extend((t.len() as u32).to_le_bytes());
@@ -31,10 +37,20 @@ pub fn files(cfg: &VmConfig) -> Vec<(String, Vec<u8>)> {
 }
 
 /// The host's fw_cfg files with the tables after them, unless the host
-/// brings its own.
+/// brings its own; its [`OEM_STRINGS`] file goes into the tables, not fw_cfg.
 pub fn with(cfg: &VmConfig, mut host: Vec<(String, Vec<u8>)>) -> Vec<(String, Vec<u8>)> {
+    let oem = host
+        .iter()
+        .position(|(n, _)| n == OEM_STRINGS)
+        .map(|i| host.remove(i).1)
+        .unwrap_or_default();
+    let oem: Vec<&str> = oem
+        .split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| core::str::from_utf8(s).ok())
+        .collect();
     if !host.iter().any(|(n, _)| n.starts_with("etc/smbios/")) {
-        host.extend(files(cfg));
+        host.extend(files(cfg, &oem));
     }
     host
 }
@@ -55,7 +71,7 @@ fn structure(out: &mut Vec<u8>, ty: u8, handle: u16, body: &[u8], strings: &[&st
     out.extend(if any { &[0][..] } else { &[0, 0] });
 }
 
-fn tables(cfg: &VmConfig) -> Vec<u8> {
+fn tables(cfg: &VmConfig, oem: &[&str]) -> Vec<u8> {
     let ncpus = cfg.ncpus.max(1) as u16;
     let mut t = Vec::new();
     // Type 0, firmware: EDK2 (the page's QEMU_EFI.fd), characteristics not
@@ -90,11 +106,16 @@ fn tables(cfg: &VmConfig) -> Vec<u8> {
     structure(&mut t, 4, 0x0400, &b, &["CPU 0", VENDOR, "AArch64"]);
     // Type 11, OEM strings: with spill memories (NUMA nodes), a systemd
     // credential that turns NUMA balancing off (its scanner's faults are guest
-    // code; docs/spill-memories.md). systemd imports SMBIOS credentials
-    // in a VM, which type 0's "a virtual machine" bit tells it.
+    // code; docs/spill-memories.md); then the host's. systemd imports SMBIOS
+    // credentials in a VM, which type 0's "a virtual machine" bit tells it.
     let spill = cfg.spill_layout();
-    if !spill.is_empty() {
-        structure(&mut t, 11, 0x0b00, &[1], &[NUMA_CREDENTIAL]);
+    let strings: Vec<&str> = (!spill.is_empty())
+        .then_some(NUMA_CREDENTIAL)
+        .into_iter()
+        .chain(oem.iter().copied())
+        .collect();
+    if !strings.is_empty() {
+        structure(&mut t, 11, 0x0b00, &[strings.len() as u8], &strings);
     }
     // Type 16, the memory array: system memory without error correction, one device.
     let total = cfg.ram_size + spill.iter().map(|s| s.1).sum::<u64>();
@@ -176,7 +197,7 @@ mod tests {
             ncpus: 4,
             ..VmConfig::default()
         };
-        let f = files(&cfg);
+        let f = files(&cfg, &[]);
         let (a, t) = (&f[0].1, &f[1].1);
         assert_eq!((f[0].0.as_str(), f[1].0.as_str()), (ANCHOR, TABLES));
         assert_eq!(
@@ -226,7 +247,7 @@ mod tests {
             spill: [4 << 30, 0, 0, 0, 0, 0, 0, 0],
             ..VmConfig::default()
         };
-        let t = &files(&cfg)[1].1;
+        let t = &files(&cfg, &[])[1].1;
         let w = walk(t);
         let types: Vec<_> = w.iter().map(|x| x.0).collect();
         assert_eq!(types, [0, 1, 3, 4, 11, 16, 17, 19, 19, 32, 127]);
@@ -244,12 +265,47 @@ mod tests {
     }
 
     #[test]
+    fn the_hosts_strings_go_into_type_11_not_fw_cfg() {
+        let cfg = VmConfig {
+            ram_size: 2 << 30,
+            ..VmConfig::default()
+        };
+        let host = vec![
+            ("opt/a".to_string(), vec![1]),
+            (
+                OEM_STRINGS.to_string(),
+                b"io.systemd.credential:a=1\0\0b=2\0".to_vec(),
+            ),
+        ];
+        let f = with(&cfg, host);
+        let names: Vec<_> = f.iter().map(|x| x.0.as_str()).collect();
+        assert_eq!(names, ["opt/a", ANCHOR, TABLES]);
+        let w = walk(&f[2].1);
+        assert_eq!(
+            (w[4].0, &w[4].2[..]),
+            (
+                11,
+                &["io.systemd.credential:a=1".to_string(), "b=2".to_string()][..]
+            )
+        );
+        assert_eq!(f[2].1[w[4].3 + 4], 2);
+        // With spill memories, the NUMA credential first.
+        let cfg = VmConfig {
+            spill: [1 << 30, 0, 0, 0, 0, 0, 0, 0],
+            ..cfg
+        };
+        let f = with(&cfg, vec![(OEM_STRINGS.to_string(), b"b=2".to_vec())]);
+        let w = walk(&f[1].1);
+        assert_eq!(w[4].2, [NUMA_CREDENTIAL, "b=2"]);
+    }
+
+    #[test]
     fn large_memory_uses_the_extended_fields() {
         let cfg = VmConfig {
             ram_size: 64 << 30,
             ..VmConfig::default()
         };
-        let t = &files(&cfg)[1].1;
+        let t = &files(&cfg, &[])[1].1;
         let d = walk(t)[5].3;
         assert_eq!(u16::from_le_bytes([t[d + 0xc], t[d + 0xd]]), 0x7fff);
         assert_eq!(

@@ -199,7 +199,8 @@ Duplicate, Export the definition, Delete; then tabs:
   so: [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
   is), **Memory split (advanced)**, closed unless the machine has one: *Set the split myself* starts from the
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
-  (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display. Save; on the machine running on this page it reads **Save and restart**
+  (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
+  **keyboard layout** (off by default; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **Save and restart**
   (asked first), and the USB controller. A change of shape asks first when it orphans snapshots.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
@@ -663,9 +664,40 @@ page writes the context's output latency into the ring's header, and the guest g
   integration).
 - **The tablet** maps a pointer to 0–32767 across the canvas's box as laid out
   (`getBoundingClientRect`), so it follows the CSS scaling, integer or not.
-- Keys are mapped by `KeyboardEvent.code` (a US PC keyboard, as the guest's default keymap); a
-  synthesized key without its modifier events (Playwright's `type()` of `>` sends Period without
-  Shift) reaches the guest unshifted.
+- Keys are mapped by `KeyboardEvent.code`: a key's position on a PC keyboard (the US one's keys, ISO's
+  `IntlBackslash`, ABNT2's `IntlRo`, JIS's `IntlYen` and its conversion keys), whatever the host's layout prints on it.
+  The guest's keymap says what the key types (a US one unless it is told otherwise: "The keyboard layout"). A
+  synthesized key without its modifier events (Playwright's `type()` of `>` sends Period without Shift) reaches the
+  guest unshifted. The built-in USB keyboard is a boot keyboard (usages up to 101): the keys past it reach only virtio-input.
+
+### The keyboard layout
+
+A machine's **Keyboard layout** setting (`MachineRecord.keyboard`, an id in `web/app/keyboard.ts`'s
+`KEYBOARD_LAYOUTS`, in its definition, not its shape; `?keyboard=<id>` on the page; off by default, because it changes
+the guest's own configuration) has the guest set that layout at every boot. **Match this browser** picks it from
+`navigator.keyboard.getLayoutMap()` (Chromium only: a few keys' characters against each layout's, `detectLayout`), for
+the user to save. It takes effect at the next boot, without a restart.
+
+What the guest gets: three systemd credentials (256+: `systemd.extra-unit.*`, `systemd.unit-dropin.*`) as SMBIOS
+type 11 strings (base64, `io.systemd.credential.binary:`), which PID 1 imports in a VM with nothing loaded first. The
+page passes them in fw_cfg's `opt/webpc/oem-strings` and the core moves them into type 11 (`core/src/smbios.rs`,
+ABI 49): their names are too long for fw_cfg's 56-byte file names. They add `webpc-keyboard.service`, wanted by
+`systemd-user-sessions.service` and ordered before it and the display manager (so every login sees what it set), which
+runs the third, a POSIX sh script:
+
+- **Debian and Ubuntu** (`/etc/default/keyboard` there, or Debian 13's read-only localed, whose D-Bus policy refuses
+  `localectl set-x11-keymap` even to root): `XKBMODEL`, `XKBLAYOUT`, `XKBVARIANT` in `/etc/default/keyboard`, other
+  lines kept, which Xorg, localed (so GNOME and KDE) and console-setup read; `setupcon -k` where console-setup is.
+  Debian's cloud image has neither console-setup nor kbd: its consoles stay US, `localectl status` shows the X11 layout.
+- **Elsewhere** (Arch): `localectl set-x11-keymap`, which writes Xorg's `00-keyboard.conf` and converts it to the
+  console's keymap (`/etc/vconsole.conf`; on the desktop guest not checked yet: `M8-KEYBOARD-HANDOVER.md`).
+- **Wayland compositors** that read libxkbcommon's defaults (sway and the other wlroots ones): `XKB_DEFAULT_LAYOUT`,
+  `_MODEL` and `_VARIANT` in `/etc/environment`, rewritten only when they differ. pam_env gives them to every login
+  (Debian checked: a serial login and root's user manager have them); GNOME and KDE take the X11 layout above.
+
+All of it stays on the guest's disk: turning the setting off leaves the last layout set, as the setting's note says.
+Guests without systemd 256 ignore the strings. `tests/keyboard.test.ts` runs the script under dash on files of its own;
+`tests/page-debian.test.ts` boots with `?keyboard=gb`.
 
 ## Latency
 

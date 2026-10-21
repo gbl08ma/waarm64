@@ -75,6 +75,11 @@ export type MachineRecord = {
    * travels with the shape (a snapshot's header, "make a machine like it") but isn't in its hash.
    */
   jitMiB?: number;
+  /**
+   * The guest's keyboard layout, set by the page at every boot (web/app/keyboard.ts, an id in `KEYBOARD_LAYOUTS`);
+   * absent: the page leaves the guest's own. Not in the shape: only a boot reads it.
+   */
+  keyboard?: string;
   display: Display;
   /**
    * The network adapters (virtio-net), in slot order (docs/network-adapters.md). Absent on machines made before

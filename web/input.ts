@@ -8,7 +8,7 @@ const EV_KEY = 1;
 const EV_REL = 2;
 const EV_ABS = 3;
 
-// KeyboardEvent.code → Linux keycodes (input-event-codes.h), a US-layout PC keyboard.
+// KeyboardEvent.code → Linux keycodes (input-event-codes.h): a key's position on a PC keyboard, whatever its layout.
 const ROW = (codes: string, first: number) => codes.split(' ').map((c, k) => [c, first + k] as const);
 const KEYS = new Map<string, number>([
   ...ROW('Escape Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Minus Equal Backspace Tab', 1),
@@ -21,6 +21,8 @@ const KEYS = new Map<string, number>([
   ['PrintScreen', 99], ['AltRight', 100], ['Home', 102], ['ArrowUp', 103], ['PageUp', 104], ['ArrowLeft', 105],
   ['ArrowRight', 106], ['End', 107], ['ArrowDown', 108], ['PageDown', 109], ['Insert', 110], ['Delete', 111],
   ['Pause', 119], ['MetaLeft', 125], ['MetaRight', 126], ['ContextMenu', 127],
+  // Keys a US keyboard lacks (ABNT2's and JIS's; the guest's layout gives them characters: web/app/keyboard.ts).
+  ['IntlRo', 89], ['Convert', 92], ['KanaMode', 93], ['NonConvert', 94], ['Lang1', 122], ['Lang2', 123], ['IntlYen', 124],
 ]);
 const BUTTONS = [0x110, 0x112, 0x111]; // DOM buttons 0, 1, 2: BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
 
