@@ -189,6 +189,11 @@ the interpreter's own code.
   cold render 37% less wasm and 9-24% faster renders; Alpine's boot +8%, its userspace benchmark
   4% faster; the 4-vCPU `go build` loop 4-6% slower (two sessions each, within its session spread).
   A floor of 200 sat between (the `go build` loop −10% in its one session).
+- **A block reports every 16 dispatches until it has run `warm`, then once at the threshold** (at most 255 at a
+  time, a slot's quota; queued blocks every 16 for `BATCH_STEPS`): what a forward region's members need is the
+  count up to `warm`, and the batch the crossing. At the floor of 500 it halves the cache's lock acquisitions,
+  and Firefox's pages session compiled 20% less wasm at +6% busy MIPS, `smp_user_jit_4` −4.5%
+  (`bench/interp/REPORT.md` "Loop 6 continued").
 
 ## Linking
 

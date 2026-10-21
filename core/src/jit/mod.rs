@@ -688,9 +688,17 @@ impl Cache {
         match self.map.get(&key) {
             // The jump cache gets it once the table has installed it ([`Jit::miss`]).
             Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len)), report),
+            // Past `warm` (what a forward region's members need the cache to
+            // have seen), up to the threshold in one report, at most a slot's
+            // quota: the counts in between change nothing the cache decides.
             Some(i) if !i.queued && !self.off => (
                 Err(i.len.max(1)),
-                report.min(self.threshold.saturating_sub(i.hits)),
+                if i.hits < self.cfg.warm.max(report) {
+                    report
+                } else {
+                    interp::block::REPORT_IDLE
+                }
+                .min(self.threshold.saturating_sub(i.hits)),
             ),
             Some(i) => (Err(i.len.max(1)), report),
             None => (Err(1), 0), // flushed by the emit

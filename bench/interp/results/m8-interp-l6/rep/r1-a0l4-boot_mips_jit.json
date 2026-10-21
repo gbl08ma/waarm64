@@ -1,0 +1,188 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-21T05:39:48.850Z",
+ "commit": "74888e7a317b",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "distro": "buildroot",
+    "jit": 1,
+    "steps": 40211695,
+    "counters": {
+     "steps": 40211695,
+     "irqs": 187,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 348,
+      "0x24": 931,
+      "0x25": 58
+     },
+     "tlbMisses": 62664,
+     "tlbWalks": 60655,
+     "tlbFlushes": 1252,
+     "jit": {
+      "blocks": 924,
+      "modules": 40,
+      "bytes": 1427850,
+      "compileNs": 9149696,
+      "steps": 25416561,
+      "dispatches": 210428,
+      "invalidations": 48,
+      "flushes": 0,
+      "inline": 13516,
+      "helpers": 8,
+      "inlineSteps": 25376138,
+      "flagsStored": 2135,
+      "flagsElided": 123,
+      "condDirect": 1202,
+      "condComputed": 5,
+      "condMemory": 97,
+      "regionBlocks": 2992,
+      "backEdges": 89,
+      "tierUps": 44,
+      "stale": 0,
+      "decSteps": 14769116,
+      "decoded": 55445,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 299070,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 19150336,
+      "emitLockedNs": 19150336,
+      "planNs": 5665792
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    101.79660523241314,
+    107.11407527871678,
+    105.5203500540997,
+    106.01833689494762,
+    105.39313047355314,
+    106.89198277533919,
+    104.52876954664774
+   ],
+   "median": 105.5203500540997,
+   "iqr": 1.494209825042958,
+   "n": 7
+  },
+  {
+   "name": "boot_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "buildroot",
+    "jit": 1,
+    "steps": 40211695,
+    "counters": {
+     "steps": 40211695,
+     "irqs": 187,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 348,
+      "0x24": 931,
+      "0x25": 58
+     },
+     "tlbMisses": 62664,
+     "tlbWalks": 60655,
+     "tlbFlushes": 1252,
+     "jit": {
+      "blocks": 924,
+      "modules": 40,
+      "bytes": 1427850,
+      "compileNs": 9149696,
+      "steps": 25416561,
+      "dispatches": 210428,
+      "invalidations": 48,
+      "flushes": 0,
+      "inline": 13516,
+      "helpers": 8,
+      "inlineSteps": 25376138,
+      "flagsStored": 2135,
+      "flagsElided": 123,
+      "condDirect": 1202,
+      "condComputed": 5,
+      "condMemory": 97,
+      "regionBlocks": 2992,
+      "backEdges": 89,
+      "tierUps": 44,
+      "stale": 0,
+      "decSteps": 14769116,
+      "decoded": 55445,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 299070,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 19150336,
+      "emitLockedNs": 19150336,
+      "planNs": 5665792
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    395.02000001072884,
+    375.4099999964237,
+    381.080000013113,
+    379.28999999165535,
+    381.53999999165535,
+    376.1899999976158,
+    384.69499999284744
+   ],
+   "median": 381.080000013113,
+   "iqr": 5.377499997615814,
+   "n": 7
+  }
+ ]
+}

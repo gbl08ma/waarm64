@@ -269,7 +269,7 @@ test it against `tests/steps.txt`.
   its dispatches, after a block that ends on an instruction run generically (an MSR, ERET: the
   regime may have changed), at an exit, or when the chunk's steps run out.
 - **Counting:** a decoded block counts its dispatches in its slot and reports them to the shared
-  cache every 16 (`REPORT`; the cache's lock and map lookup were a third of the time), and the
+  cache every 16 (`REPORT`; past the JIT's `warm`, once at the threshold: [jit.md](jit.md) "Compile policy"; the cache's lock and map lookup were a third of the time), and the
   dispatch that reaches the compile threshold reports itself (the cache returns how many may be
   counted before it), so a block joins the pending batch exactly when it did with every dispatch
   reported. A cache that never compiles (`VmConfig.jit` 4, or no JIT: natively) has its blocks report

@@ -1,0 +1,18 @@
+{
+ "bench/results/local/reppages/l4-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 91.8,
+   "flushes": 0,
+   "modules": 2910,
+   "mib": 205.8,
+   "overdue": 0,
+   "parks": 10047,
+   "locks": 34484435,
+   "interpGsteps": 2.13,
+   "share": 0.976,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

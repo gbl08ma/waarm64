@@ -1156,6 +1156,30 @@ threshold" (docs/jit.md "Tried and not kept") would address.
 Correctness: `scripts/ci.sh` (a unit test of the pressure's steps now sets its floor of 50 itself) and
 `scripts/ci-debian.sh` pass; the steps don't move (a threshold changes what compiles, not what runs).
 
+### Loop 6 continued: one report from `warm` to the threshold
+
+At a floor of 500 a block reported every 16 dispatches, 31 times before it compiled. Now a block reports every 16
+until it has run `warm` (16, what a forward region's members need the cache to have seen), and then once more at
+the threshold (at most 255 at a time: a slot's quota); queued blocks still report every 16 (`BATCH_STEPS`).
+Against loop 4's core (`results/m8-interp-l6/rep*`):
+
+| | before | one report to the threshold |
+|---|---|---|
+| Firefox's pages session, two rounds: wasm MB / V8's code, median MB | 216, 217 / 589, 613 | **172, 173** / 475, 495 (−20%) |
+| … busy MIPS / the wiki's and BBC's loads, s | 176, 187 / 14.5, 13.9 and 14.2, 13.2 | **194, 193** / 11.9, 12.1 and 12.6, 11.9 |
+| … the cache's lock acquisitions / the renderer's RSS, median MB | 34.4M, 34.4M / 4,227, 4,258 | 17.6M, 17.5M / 4,021, 4,066 |
+| churn page: busy MIPS / `doneS` / lock acquisitions / wasm MB | 234 / 115.7 / 58.8M / 362 | 243 / 114.0 / 28.2M / 363 |
+| Alpine userspace benchmark (two rounds), total ms | 16,039, 16,316 | 16,302, 15,878 (even) |
+| `smp_alpine_jit` to the script at 1 / 2 / 4 vCPUs, ms | 5,405 / 4,855 / 4,899 | 5,294 / 4,697 / 4,598 (−2 to −6%) |
+| `smp_user_jit_4` total, ms | 17,027 | 16,261 (−4.5%) |
+| `go build` loop, MIPS (one session) | 1,392 | 1,434 |
+| Alpine's boot under the JIT, MIPS / regions, blocks in them | 393.7 / 10,903, 32,123 | 394.5 / 11,139, 31,563 |
+
+Kept. It moves what compiles (the cache sees a block's counts between `warm` and the threshold only at the
+threshold, so the batches gather differently: Firefox compiled a fifth less), unlike loop 2's 255 everywhere,
+which hid the counts below `warm` too and slowed the batches (Alpine interpreted 2.5× the steps); here Alpine's
+boot interpreted the same 104M steps.
+
 ## M8-INTERP loop 4: superinstructions, a run of MOVs in one dispatch
 
 2026-10-21, the dev VM, Chromium 153.0.8010.52; raw data `results/m8-interp-l4/` (`scr4/` the screen). Loop 0's
@@ -1177,4 +1201,5 @@ past the prefix) 424.9 / 171.4 / 114.1; MOV runs with the fused setter and B.con
 Kept. The two fusions together lost (the fused setter's test sits in five handlers, the MOV run's in one). A planted
 bug (each MOV of a run writing the first one's value) failed the differential test; a run not bounded by the prefix
 didn't (random blocks rarely end a prefix inside a run), so `a_mov_run_stops_at_the_prefix` covers it and fails
-with that bug.
+with that bug. **On the Mac host** (one round, `results/m8-interp-l4/mac/`): `dec_mips` 427.1 → 440.8 (+3.2%),
+`vm_dec_mmu_mips` 406.5 → 416.5 (+2.5%), Buildroot's boot 130.9 → 144.8 (+10.6%), Alpine's 175.6 → 185.7 (+5.7%).
