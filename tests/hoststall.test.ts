@@ -51,9 +51,11 @@ test('host stall: vCPU 1 blocked in the host while OUT (idle): vCPU 0\'s DSB doe
 // time it spent waiting (parallel.rs DsbBudget), so it ends when vCPU 1 does, without the panic.
 test('host stall: the waiting vCPU\'s own worker stalls past the DSB limit: no panic, the DSB returns once vCPU 1 does', { timeout: 90_000 }, async () => {
   const t0 = performance.now();
+  // vCPU 0's stall starts 1 s after its worker first sees vCPU 1's: by then its DSB waits (under CI's load, 100 ms
+  // was sometimes before it timed the DSB, which then waited only the 2 s past its own stall: exit 22).
   const r = await boot('waiter', [
     { cpu: 1, on: 'clock', addr: FLAG, ms: 13_000 },
-    { cpu: 0, on: 'clock', addr: FLAG, arm: 2, after: 100, ms: 11_000 },
+    { cpu: 0, on: 'clock', addr: FLAG, arm: 2, after: 1000, ms: 11_000 },
   ]);
   const s = (performance.now() - t0) / 1000;
   assert.equal(r.kind, Exit.PSCI, r.console);
