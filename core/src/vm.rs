@@ -315,7 +315,8 @@ pub struct Counters {
     /// flushes for a heap without room for a map to grow, and flushes for a
     /// table that lacked modules whose bytes were dropped; the heap bytes the
     /// table's decoded blocks and its known blocks take.
-    pub jx: [AtomicU64; 11],
+    /// Then (ABI 48) the misses that found the lock held and didn't wait.
+    pub jx: [AtomicU64; 12],
 }
 
 /// Indexes into [`Counters::par`].
@@ -346,7 +347,7 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
-            jx: [const { AtomicU64::new(0) }; 11],
+            jx: [const { AtomicU64::new(0) }; 12],
         }
     }
 }
@@ -1481,6 +1482,7 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         s.lag_flushes,
         s.dec_bytes,
         s.known_bytes,
+        s.lock_skipped,
     ];
     for (a, v) in c.jx.iter().zip(jx) {
         a.store(v, Ordering::Relaxed);

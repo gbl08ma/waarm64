@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 47;
+export const ABI = 48;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -393,7 +393,9 @@ export const Counter = {
   // ABI 47: the core's heap: the JIT block map's prunes, flushes for a heap with no room for a map to grow, flushes for a
   // table that lacked modules whose bytes were dropped; the heap bytes a table's decoded blocks and its known blocks take.
   JIT_PRUNES: 114, JIT_RESCUES: 115, JIT_LAG_FLUSHES: 116, JIT_DEC_BYTES: 117, JIT_KNOWN_BYTES: 118,
-  LEN: 119,
+  // ABI 48: jump-cache misses that found the lock held and ran their block interpreted instead of waiting.
+  JIT_LOCK_SKIPPED: 119,
+  LEN: 120,
 } as const;
 
 /**
@@ -1080,7 +1082,7 @@ function stats(n: (i: number) => number) {
       locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
       prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
-      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES),
+      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

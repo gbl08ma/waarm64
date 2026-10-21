@@ -227,6 +227,9 @@ pub struct Stats {
     /// and its known blocks take, estimated ([`Table::stats`]).
     pub dec_bytes: u64,
     pub known_bytes: u64,
+    /// Jump-cache misses that found the lock held and ran their block
+    /// interpreted instead of waiting (ABI 48, [`Jit::miss`]).
+    pub lock_skipped: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -1742,6 +1745,12 @@ impl Jit {
         // (`Table::known`, dropped as the jump cache's entries are). The
         // decoded block of a compiled one counts nothing more: its next
         // jump-cache miss comes back here.
+        //
+        // Nor does a miss wait for the lock when another table holds it
+        // (parallel SMP): nothing here needs the cache's answer now, so the
+        // block runs interpreted (its decoded block keeps what it counted)
+        // and its next dispatch asks again. The waits had come to sit behind
+        // a table emitting a module, a millisecond or more.
         if self.table.dec.empty(key) {
             return Err(1);
         }
@@ -1754,7 +1763,18 @@ impl Jit {
             self.table.fill(key, idx, n);
             return Ok((idx, n));
         }
-        let mut c = lock(&self.cache, &mut self.table.stats);
+        let mut c = if Arc::strong_count(&self.cache) > 1 {
+            let Some(c) = self.cache.try_lock() else {
+                self.table.stats.lock_skipped += 1;
+                return Err(len.unwrap_or(1));
+            };
+            self.table.stats.locks += 1;
+            c
+        } else {
+            // One table (round-robin, Node's deterministic runs): no other
+            // thread takes the lock, and the run stays exactly the same.
+            lock(&self.cache, &mut self.table.stats)
+        };
         // The table catches up after the miss, which may have compiled (or
         // flushed): an entry it fills now and a catch-up then clears is only
         // a later miss. What it returns is installed before any block runs.
@@ -2786,6 +2806,39 @@ mod tests {
             assert_eq!(j.miss(0x2000, 0x2000, &mem), Err(1));
         }
         assert_eq!(locks(&j), 5);
+    }
+
+    /// A miss that finds the lock held by another table runs its block
+    /// interpreted instead of waiting, and asks again at the next one.
+    #[test]
+    fn a_miss_doesnt_wait_for_another_tables_lock() {
+        let ram: &'static mut [u128] = Box::leak(vec![0u128; 0x3000 / 16].into_boxed_slice());
+        let at = ram.as_mut_ptr() as usize;
+        // SAFETY: `ram` lives for the rest of the process and is 16-byte aligned.
+        let mem = move || unsafe { Mem::new(at as *mut u8, 0x3000) };
+        let mem = (mem(), mem());
+        mem.0.write(0x1000, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+        mem.0.write(0x1004, 4, 0xd65f_03c0).unwrap(); // ret
+        let (mem, theirs) = mem;
+        let j = Jit::new(Cache::new(Config::DEFAULT));
+        let mut other = j.join();
+        let held = j.cache.lock();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let r = other.miss(0x1000, 0x1000, &theirs);
+            tx.send((r, other)).unwrap();
+        });
+        let (r, mut other) = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the miss waited for the lock");
+        assert_eq!(r, Err(2), "interpreted: the block's length");
+        let s = &other.table.stats;
+        assert_eq!((s.locks, s.lock_skipped), (0, 1));
+        drop(held);
+        // Free again: the next miss asks the cache.
+        assert_eq!(other.miss(0x1000, 0x1000, &mem), Err(2));
+        let s = &other.table.stats;
+        assert_eq!((s.locks, s.lock_skipped), (1, 1));
     }
 
     /// A loop head that gets hot waits for the next batch, counting again

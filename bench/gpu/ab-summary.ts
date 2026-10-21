@@ -69,14 +69,18 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
         locks: res.jit.locks, contended: +(res.jit.lockContended / res.jit.locks).toFixed(4), waitMs: Math.round(res.jit.lockWaitNs / 1e6),
         emitMs: Math.round(res.jit.emitNs / 1e6), lockedMs: Math.round(res.jit.emitLockedNs / 1e6), planMs: Math.round(res.jit.planNs / 1e6),
         perLock: +(res.jit.blocks / res.jit.locks).toFixed(4),
+        // (ABI 48) misses that found it held and ran their block interpreted instead of waiting.
+        ...(res.jit.lockSkipped !== undefined ? { skipped: res.jit.lockSkipped } : {}),
       } : {}),
+      // Parallel SMP's other waits: DSB waits for TLBI IS, and the platform lock's (ms).
+      ...(res.par?.dsbWaitNs !== undefined ? { dsbMs: Math.round(res.par.dsbWaitNs / 1e6), platMs: Math.round(res.par.lockWaitNs / 1e6) } : {}),
       overdue: res.jit?.overdue ?? NaN,
       ...rssOf(`${d}/rss.txt`, from, to),
     };
     rows.push(row);
   }
 }
-const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
+const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
 const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); const i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
 const arms: Record<string, Record<string, { median: number; iqr: number; n: number; all: number[] }>> = {};
 for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {

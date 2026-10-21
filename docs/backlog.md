@@ -233,7 +233,10 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
     Firefox's pages session (2.4% of them find it held, ~0.7% of the vCPUs' time waiting) and ~2% of the vCPUs' time
     waits on the churn screen (before 2026-10-21's one report from `warm` to the threshold, which halved the
     acquisitions at the floor of 500). What's left is reports below `warm`, queued blocks' reports and compiled
-    blocks not installed in the table yet. Not worth a loop alone.
+    blocks not installed in the table yet. Not worth a loop alone. Since a miss no longer waits for it
+    (jit.md "A miss doesn't wait for it"), what waits is catch-ups, tier-ups, flushes and ICs. A Debian boot takes it
+    for ~2.15 M `IC IVAU`s, a third of its acquisitions, which drop compiled blocks a few hundred times
+    (`M8-JITLOCK-HANDOVER.md`).
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
   which every function needs for the table; writing the table from an active element segment

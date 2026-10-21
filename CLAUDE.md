@@ -36,7 +36,8 @@ killed with its machine running is noted at the next start, which offers a small
 hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is the current CPU track (`M8-INTERP-HANDOVER.md`: judged by its own MIPS, so the
 compile threshold can rise and less code reaches V8): loops 0–6 done (a call-free hot loop, 1.3–1.9× the interpreter;
 the threshold's floor at 1000 with one report from `warm` to it, a third less wasm in Firefox; docs/cpu.md "The block
-interpreter"), loop 7 (one decoded-block store for every table) and more handlers left. Loose ends go in
+interpreter"), loop 7 (one decoded-block store for every table) and more handlers left. **The JIT cache's lock, round two** (`M8-JITLOCK-HANDOVER.md`: a miss no longer waits for it, built in a cloud
+session, to be measured on the VM; a 2 KiB instruction cache line in CTR_EL0, guest-visible, to do there). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment
