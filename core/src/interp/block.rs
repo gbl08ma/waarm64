@@ -97,6 +97,12 @@ enum K {
     Ldp,
     /// STP/STNP.
     Stp,
+    /// UMADDL/SMADDL/UMSUBL/SMSUBL: `x` = Ra | sub << 5 | signed << 6.
+    Maddl,
+    /// EXTR: `x` = lsb | sf << 8.
+    Extr,
+    /// RBIT, REV16, REV32, REV, CLZ (`x` 0 to 4) | sf << 8.
+    Bit1,
     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
     LdLit,
 }
@@ -259,6 +265,35 @@ fn uop_op(w: u32, op: Op) -> Uop {
                 | (sf as u32) << 6
                 | bits(w, 3, 0) << 8;
             u(K::Ccmp, x, 0)
+        }
+        SMADDL | SMSUBL | UMADDL | UMSUBL => u(
+            K::Maddl,
+            bits(w, 14, 10)
+                | (bit(w, 15) as u32) << 5
+                | (matches!(op, SMADDL | SMSUBL) as u32) << 6,
+            0,
+        ),
+        EXTR => {
+            let lsb = bits(w, 15, 10);
+            if bit(w, 22) != sf || (!sf && lsb >= 32) {
+                return generic;
+            }
+            u(K::Extr, lsb | (sf as u32) << 8, 0)
+        }
+        RBIT_int | REV16_int | REV32_int | REV | CLZ_int => {
+            let k = match op {
+                RBIT_int => 0,
+                REV16_int => 1,
+                REV32_int => 2,
+                REV => {
+                    if sf != bit(w, 10) {
+                        return generic;
+                    }
+                    3
+                }
+                _ => 4,
+            };
+            u(K::Bit1, k | (sf as u32) << 8, 0)
         }
         MADD | MSUB => u(
             K::Madd,
@@ -452,6 +487,12 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
                 };
                 c.set_reg(d, trunc(r, u.x >> 6 & 1 != 0));
             }
+            K::Maddl => {
+                let v = maddl(u.x, c.reg(n), c.reg(u.m as u32), c.reg(u.x & 31));
+                c.set_reg(d, v);
+            }
+            K::Extr => c.set_reg(d, extr(u.x, c.reg(n), c.reg(u.m as u32))),
+            K::Bit1 => c.set_reg(d, bit1(u.x, c.reg(n))),
             K::Adr => c.set_reg(d, pc.wrapping_add(u.imm)),
             K::Adrp => c.set_reg(d, (pc & !0xfff).wrapping_add(u.imm)),
             K::B => return taken(c, b, pc.wrapping_add(u.imm)),
@@ -686,6 +727,13 @@ pub fn hot<B: Fast>(
             let sf = o.x & 1 != 0;
             match o.k {
                 K::Generic | K::LdLit => break 'run SLOW,
+                K::Maddl => wr(
+                    c,
+                    d,
+                    maddl(o.x, rd(c, n), rd(c, o.m as u32), rd(c, o.x & 31)),
+                ),
+                K::Extr => wr(c, d, extr(o.x, rd(c, n), rd(c, o.m as u32))),
+                K::Bit1 => wr(c, d, bit1(o.x, rd(c, n))),
                 K::Nop => {}
                 K::AddI64 => wsp(c, d, rsp(c, n).wrapping_add(o.imm)),
                 K::AddI32 => wsp(c, d, rsp(c, n).wrapping_add(o.imm) as u32 as u64),
@@ -986,6 +1034,56 @@ fn logical_h(c: &mut Cpu, opc: u32, d: u32, r: u64, sf: bool, sp_dest: bool) {
         wsp(c, d, r);
     } else {
         wr(c, d, r);
+    }
+}
+
+/// UMADDL & co (`K::Maddl`): `f` its `x`.
+#[inline(always)]
+fn maddl(f: u32, n: u64, m: u64, a: u64) -> u64 {
+    let (x, y) = if f >> 6 & 1 != 0 {
+        (n as i32 as u64, m as i32 as u64)
+    } else {
+        (n as u32 as u64, m as u32 as u64)
+    };
+    let p = x.wrapping_mul(y);
+    if f >> 5 & 1 != 0 {
+        a.wrapping_sub(p)
+    } else {
+        a.wrapping_add(p)
+    }
+}
+
+/// EXTR (`K::Extr`) of `hi:lo`, `f` its `x` (no u128: compiler-rt's shifts are calls).
+#[inline(always)]
+fn extr(f: u32, hi: u64, lo: u64) -> u64 {
+    let lsb = f & 63;
+    if f >> 8 & 1 != 0 {
+        if lsb == 0 {
+            lo
+        } else {
+            lo >> lsb | hi << (64 - lsb)
+        }
+    } else {
+        ((hi as u32 as u64) << 32 | lo as u32 as u64) >> lsb & 0xffff_ffff
+    }
+}
+
+/// RBIT, REV16, REV32, REV, CLZ (`K::Bit1`), `f` its `x`.
+#[inline(always)]
+fn bit1(f: u32, x: u64) -> u64 {
+    let sf = f >> 8 & 1 != 0;
+    match f & 7 {
+        0 if sf => x.reverse_bits(),
+        0 => (x as u32).reverse_bits() as u64,
+        1 => {
+            let m8 = 0x00ff_00ff_00ff_00ff;
+            trunc(((x & m8) << 8) | ((x >> 8) & m8), sf)
+        }
+        2 => (x as u32).swap_bytes() as u64 | (((x >> 32) as u32).swap_bytes() as u64) << 32,
+        3 if sf => x.swap_bytes(),
+        3 => (x as u32).swap_bytes() as u64,
+        _ if sf => x.leading_zeros() as u64,
+        _ => (x as u32).leading_zeros() as u64,
     }
 }
 

@@ -1081,3 +1081,24 @@ through registers (the jump table then waits on the extraction); **pre-linked su
 `nojc` saved, 1-1.5%: the slot and jump-cache lookups are not what a block costs; **fusion** saves a dispatch for
 ~6% of the instructions, ~1% (repeated, under the 5% bar); **the literal load inline** slowed the user-mode guest
 (each handler in `hot` is code the hot path carries).
+
+## M8-INTERP loop 5: the generic path's commonest classes as handlers
+
+2026-10-21, the dev VM, Chromium 153.0.8010.52, two rounds alternating; raw data `results/m8-interp-l5/`. Loop 0's
+mix put `MRS` (28% of the generic path), `UMADDL` & co (17%), `EXTR` (4%) and `REV`/`CLZ` (6%) first. `K::Maddl`
+(UMADDL, SMADDL, UMSUBL, SMSUBL), `K::Extr` (no `u128`: compiler-rt's shifts are calls) and `K::Bit1` (RBIT,
+REV16, REV32, REV, CLZ), in `run` and in `hot`; the literal load stays on the slow path (inline, it cost the
+user-mode guest 4-5% in two screens). `MRS` isn't a handler: its plain registers are a fraction of a `sys::read`
+that also reads the timers, and the screens left no room for it.
+
+| benchmark (MIPS) | loop 2 (round 1 · 2) | handlers (round 1 · 2) | |
+|---|---|---|---|
+| `dec_mips` | 405.6 ±3.7 · 404.5 ±2.8 | 405.3 ±2.7 · 405.2 ±1.8 | +0.2% |
+| `vm_dec_flat_mips` | 402.3 ±3.6 · 404.0 ±3.0 | 405.6 ±3.3 · 406.7 ±2.2 | +0.8% |
+| `vm_dec_mmu_mips` | 389.4 ±2.8 · 393.2 ±5.6 | 396.0 ±1.6 · 391.2 ±10.6 | +0.5% |
+| Buildroot boot | 112.0 ±1.5 · 110.8 ±3.1 | 114.0 ±2.0 · 113.1 ±1.6 | +2.1% |
+| Alpine boot | 162.8 ±0.2 · 163.2 ±0.1 | 167.4 ±0.1 · 166.9 ±0.1 | +2.5% |
+
+Under the 5% bar, but the third time in a row on the boots (screen 3: +2.2%), with the small guests flat: kept.
+The differential test draws the new classes; a planted EXTR bug (the high word shifted one short) and a planted
+UMSUBL bug (the sign bit read for the subtract) each failed it.

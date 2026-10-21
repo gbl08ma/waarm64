@@ -112,6 +112,14 @@ fn classes() -> Vec<(u32, u32, Op)> {
         EXTR,
         UDIV,
         CLZ_int,
+        RBIT_int,
+        REV16_int,
+        REV32_int,
+        REV,
+        UMADDL,
+        SMADDL,
+        UMSUBL,
+        SMSUBL,
         LDXR,
         STXR,
         LDTR,
@@ -176,7 +184,7 @@ fn state(r: &mut Rng) -> Cpu {
 fn blocks_run_as_the_interpreter_runs_them() {
     let classes = classes();
     let mut r = Rng(0x9e37_79b9_7f4a_7c15);
-    let (mut ran, mut kinds) = (0, [0u64; 32]);
+    let (mut ran, mut kinds) = (0, [0u64; 64]);
     for _ in 0..30_000 {
         let n = 1 + r.below(8) as usize;
         let words: Vec<u32> = (0..n).map(|_| word(&mut r, &classes)).collect();

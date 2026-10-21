@@ -245,7 +245,8 @@ test it against `tests/steps.txt`.
 - **A block is the JIT's** (`jit::block::form`, the same key: PA and regime bits), decoded once into
   16-byte micro-ops with their operand fields pulled out and kept in the vCPU table's cache. The
   common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
-  UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, ADR/ADRP), every branch, and
+  UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, EXTR, RBIT/REV/CLZ,
+  ADR/ADRP), every branch, and
   the integer loads and stores (single register in every addressing form but the unprivileged
   one, pairs, literal) have handlers; the rest is a generic micro-op that runs the interpreter's
   own code with the decoded `Op` (`interp::exec_at_op`). One micro-op is one instruction, so the
