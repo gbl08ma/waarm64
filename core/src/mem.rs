@@ -257,6 +257,13 @@ impl Mem {
         }
     }
 
+    /// [`Mem::pa`] of a host address in memory 0, else `None` (no call, no
+    /// panic: the block interpreter's inline paths, `interp::block::hot`).
+    #[inline(always)]
+    pub(crate) fn pa0(&self, h: Host) -> Option<u64> {
+        (h.mem() == 0).then(|| (h.0 as usize).wrapping_sub(self.base as usize) as u64 + self.phys)
+    }
+
     /// The guest physical address of `h`, a host address in the RAM ([`Mem::host`]'s inverse).
     #[inline]
     pub fn pa(&self, h: Host) -> u64 {
@@ -446,6 +453,52 @@ pub(crate) unsafe fn load(p: *const u8, size: u32) -> u64 {
         // SAFETY: guaranteed by the caller.
         unsafe { load_split(p, size) }
     }
+}
+
+/// [`load`] if it is one aligned access, else `None`: the block interpreter's
+/// inline paths (`interp::block::hot`), which leave the rest to [`load`] and
+/// make no call (`size` is 1, 2, 4 or 8; anything else reads 8 bytes).
+///
+/// # Safety
+/// As for [`load`].
+#[inline(always)]
+pub(crate) unsafe fn load_aligned(p: *const u8, size: u32) -> Option<u64> {
+    const O: Ordering = Ordering::Relaxed;
+    if p as usize & (size as usize - 1) != 0 {
+        return None;
+    }
+    let p = p as *mut u8;
+    // SAFETY: guaranteed by the caller; aligned.
+    Some(unsafe {
+        match size {
+            1 => AtomicU8::from_ptr(p).load(O) as u64,
+            2 => u16::from_le(AtomicU16::from_ptr(p as *mut u16).load(O)) as u64,
+            4 => u32::from_le(AtomicU32::from_ptr(p as *mut u32).load(O)) as u64,
+            _ => u64::from_le(AtomicU64::from_ptr(p as *mut u64).load(O)),
+        }
+    })
+}
+
+/// [`store`] if it is one aligned access (whether it was), as [`load_aligned`].
+///
+/// # Safety
+/// As for [`load`].
+#[inline(always)]
+pub(crate) unsafe fn store_aligned(p: *mut u8, size: u32, val: u64) -> bool {
+    const O: Ordering = Ordering::Relaxed;
+    if p as usize & (size as usize - 1) != 0 {
+        return false;
+    }
+    // SAFETY: guaranteed by the caller; aligned.
+    unsafe {
+        match size {
+            1 => AtomicU8::from_ptr(p).store(val as u8, O),
+            2 => AtomicU16::from_ptr(p as *mut u16).store((val as u16).to_le(), O),
+            4 => AtomicU32::from_ptr(p as *mut u32).store((val as u32).to_le(), O),
+            _ => AtomicU64::from_ptr(p as *mut u64).store(val.to_le(), O),
+        }
+    }
+    true
 }
 
 /// [`load`] of an unaligned access, in naturally aligned pieces.

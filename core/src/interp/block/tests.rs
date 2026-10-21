@@ -181,8 +181,8 @@ fn blocks_run_as_the_interpreter_runs_them() {
         let n = 1 + r.below(8) as usize;
         let words: Vec<u32> = (0..n).map(|_| word(&mut r, &classes)).collect();
         let c0 = state(&mut r);
-        let (a, b) = (TestRam::new(RAM), TestRam::new(RAM));
-        for t in [&a, &b] {
+        let (a, b, h) = (TestRam::new(RAM), TestRam::new(RAM), TestRam::new(RAM));
+        for t in [&a, &b, &h] {
             for k in 0..DATA / 8 {
                 t.mem
                     .write(8 * k, 8, k.wrapping_mul(0x0101_0101_9e37_79b9))
@@ -220,14 +220,24 @@ fn blocks_run_as_the_interpreter_runs_them() {
         };
         assert_eq!(got, want, "{}", ctx());
         assert_eq!(c2, c1, "{}", ctx());
+        // The same through the call-free loop and its slow paths (`jit::interpret`'s).
+        let mut c3 = c0.clone();
+        let got = run_hot(&mut c3, &mut Flat(&h.mem), &uops[..left], CODE);
+        assert_eq!(got, want, "hot: {}", ctx());
+        assert_eq!(c3, c1, "hot: {}", ctx());
         for k in 0..RAM as u64 / 8 {
-            let (x, y) = (a.mem.read(8 * k, 8).unwrap(), b.mem.read(8 * k, 8).unwrap());
-            assert!(
-                x == y,
-                "memory at {:#x}: {y:#x}, not {x:#x}; {}",
-                8 * k,
-                ctx()
-            );
+            let x = a.mem.read(8 * k, 8).unwrap();
+            for (y, what) in [
+                (b.mem.read(8 * k, 8).unwrap(), "run"),
+                (h.mem.read(8 * k, 8).unwrap(), "hot"),
+            ] {
+                assert!(
+                    x == y,
+                    "{what}: memory at {:#x}: {y:#x}, not {x:#x}; {}",
+                    8 * k,
+                    ctx()
+                );
+            }
         }
         ran += 1;
         for u in &uops[..left] {

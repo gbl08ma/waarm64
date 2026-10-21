@@ -21,10 +21,10 @@ use super::{
     Exit, R, add_with_carry, base_reg, bit, bit_masks, bits, cond_holds, extend, ror, sext, shift,
     trunc,
 };
-use crate::cpu::Cpu;
+use crate::cpu::{Cpu, sctlr};
 use crate::decode::Op;
-use crate::mem::{self, Mem};
-use crate::mmu::{Bus, Use};
+use crate::mem::{self, Host, Mem};
+use crate::mmu::{Bus, Flat, Mmu, TLB_ENTRIES, Use};
 use std::collections::HashMap;
 
 /// Micro-op kinds. Field use is listed per kind; `x` holds flags packed as
@@ -506,6 +506,489 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
     (b.len() as u64, None)
 }
 
+/// A bus's inline paths for [`hot`]: no call and no panic on any path, so
+/// that V8 keeps the loop's state in registers (it spills every value live
+/// across a call at its definition, docs/v8.md "Spills"). `None`: the slow
+/// path's, outside the loop.
+pub trait Fast: Bus {
+    /// The host address of `size` bytes of RAM at `va` for `u`, if the TLB
+    /// (or the flat map) has it, as [`Bus::fast`].
+    fn fast_ptr(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8>;
+    /// The block key of the instruction at `pc` (aligned), if the instruction
+    /// TLB has it: `jit::key`'s.
+    fn ikey(&mut self, c: &Cpu, pc: u64) -> Option<u64>;
+}
+
+impl Fast for Flat<'_> {
+    #[inline(always)]
+    fn fast_ptr(&mut self, _: &Cpu, va: u64, size: u32, _: Use) -> Option<*mut u8> {
+        self.0.host0(va, size as u64)
+    }
+
+    #[inline(always)]
+    fn ikey(&mut self, c: &Cpu, pc: u64) -> Option<u64> {
+        Some(pc | c.el() & 1)
+    }
+}
+
+impl Fast for Mmu<'_> {
+    #[inline(always)]
+    fn fast_ptr(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8> {
+        // With SCTLR_EL1.A (alignment faults) or the MMU off, the slow path.
+        if c.sctlr_el1 & (sctlr::M | sctlr::A) != sctlr::M {
+            return None;
+        }
+        // EL0 and EL1 only (masked: no bounds check), as `Mmu::fast`.
+        let e = self.tlb.as_ref()?.e[(va >> 12) as usize & (TLB_ENTRIES - 1)].0
+            [3 * (c.el() & 1) as usize + u as usize];
+        (e.tag == va.wrapping_add(size as u64 - 1) | 0xfff)
+            .then(|| va.wrapping_add(e.addend) as usize as *mut u8)
+    }
+
+    #[inline(always)]
+    fn ikey(&mut self, c: &Cpu, pc: u64) -> Option<u64> {
+        if c.sctlr_el1 & sctlr::M == 0 {
+            return None;
+        }
+        let el = c.el() & 1;
+        let e = self.tlb.as_ref()?.e[(pc >> 12) as usize & (TLB_ENTRIES - 1)].0
+            [3 * el as usize + Use::Exec as usize];
+        if e.tag != pc.wrapping_add(3) | 0xfff {
+            return None;
+        }
+        let pa = self.mem.pa0(Host(pc.wrapping_add(e.addend)))?;
+        Some(pa | el | crate::jit::block::KEY_MMU)
+    }
+}
+
+/// Where a run of decoded blocks stands between [`hot`]'s returns.
+pub struct Run {
+    /// The micro-op to run next, and the end of its block's prefix (the
+    /// micro-ops that fit in the steps left).
+    u: *const Uop,
+    end: *const Uop,
+    /// The PC of `u`'s instruction.
+    pub pc: u64,
+    /// The block's key and the PC of its first instruction.
+    pub key: u64,
+    pub bpc: u64,
+    /// The steps retired once the block's prefix has run, and at most.
+    pub done: u64,
+    pub left: u64,
+}
+
+impl Run {
+    /// A run of `left` steps, before its first block.
+    pub fn new(left: u64) -> Run {
+        Run {
+            u: core::ptr::null(),
+            end: core::ptr::null(),
+            pc: 0,
+            key: 0,
+            bpc: 0,
+            done: 0,
+            left,
+        }
+    }
+
+    /// Enters block `b` (`key`) at `pc`: its prefix that fits in the steps left.
+    pub fn enter(&mut self, b: &[Uop], key: u64, pc: u64) {
+        let n = b.len().min((self.left - self.done) as usize);
+        self.u = b.as_ptr();
+        // SAFETY: n <= b.len().
+        self.end = unsafe { self.u.add(n) };
+        (self.pc, self.key, self.bpc) = (pc, key, pc);
+        self.done += n as u64;
+    }
+
+    /// The steps retired before the micro-op [`hot`] stopped at.
+    pub fn retired(&self) -> u64 {
+        // SAFETY: both point into the block's micro-ops, `u` <= `end`.
+        self.done - (unsafe { self.end.offset_from(self.u) }) as u64
+    }
+
+    /// The micro-op [`hot`] stopped at ([`SLOW`]), and whether it's its
+    /// block prefix's last.
+    pub fn uop(&self) -> (Uop, bool) {
+        // SAFETY: `u` < `end`, into the arena, which nothing changed since.
+        (unsafe { *self.u }, unsafe { self.u.add(1) } == self.end)
+    }
+
+    /// Past the micro-op [`hot`] stopped at, which retired (not its block's last).
+    pub fn step(&mut self) {
+        // SAFETY: `u` < `end`.
+        self.u = unsafe { self.u.add(1) };
+        self.pc = self.pc.wrapping_add(4);
+    }
+}
+
+/// [`hot`] stopped: the run ends here, `c.pc` set.
+pub const STOP: u32 = 0;
+/// [`hot`] stopped at a micro-op it can't run inline ([`Run::uop`] at
+/// [`Run::pc`], `c.pc` not set): a generic one, a literal load, or a load or
+/// store whose fast path missed.
+pub const SLOW: u32 = 1;
+/// [`hot`] ran its block's prefix out (`c.pc` the next instruction's) and
+/// found no next block inline: its caller looks for one.
+pub const NEXT: u32 = 2;
+
+#[inline(always)]
+fn rd(c: &Cpu, n: u32) -> u64 {
+    if n == 31 { 0 } else { c.x[(n & 31) as usize] }
+}
+
+#[inline(always)]
+fn wr(c: &mut Cpu, n: u32, v: u64) {
+    if n != 31 {
+        c.x[(n & 31) as usize] = v;
+    }
+}
+
+/// Register `n`, 31 the SP.
+#[inline(always)]
+fn rsp(c: &Cpu, n: u32) -> u64 {
+    c.x[(n & 31) as usize]
+}
+
+#[inline(always)]
+fn wsp(c: &mut Cpu, n: u32, v: u64) {
+    c.x[(n & 31) as usize] = v;
+}
+
+/// Runs decoded blocks from `r` as [`run`] does, chaining from each to the
+/// next as `jit::interpret` does, and returns at what needs a call: a
+/// micro-op the inline paths can't run ([`SLOW`]), a next block not in its
+/// slot or a key the instruction TLB doesn't have ([`NEXT`]); or where the
+/// run ends ([`STOP`]: the steps ran out, or the next block is `compiled` or
+/// due to report its dispatches). Nothing in it calls, so its state stays in
+/// registers; `r` holds it between calls.
+#[inline(never)]
+pub fn hot<B: Fast>(
+    c: &mut Cpu,
+    m: &mut B,
+    dec: &mut Cache,
+    compiled: impl Fn(u64) -> bool,
+    r: &mut Run,
+) -> u32 {
+    let (mut u, mut end, mut pc, mut key, mut bpc, mut done) =
+        (r.u, r.end, r.pc, r.key, r.bpc, r.done);
+    let left = r.left;
+    let arena = dec.arena.as_ptr();
+    let status = 'run: loop {
+        // The block's prefix, to the PC after it.
+        let next = 'block: loop {
+            if u == end {
+                break 'block pc;
+            }
+            // SAFETY: u < end, in the arena.
+            let o = unsafe { &*u };
+            let (d, n) = (o.d as u32, o.n as u32);
+            let sf = o.x & 1 != 0;
+            match o.k {
+                K::Generic | K::LdLit => break 'run SLOW,
+                K::Nop => {}
+                K::AddI64 => wsp(c, d, rsp(c, n).wrapping_add(o.imm)),
+                K::AddI32 => wsp(c, d, rsp(c, n).wrapping_add(o.imm) as u32 as u64),
+                K::AddsI => {
+                    let (v, f) = add_with_carry(rsp(c, n), o.imm, o.x & 2 != 0, sf);
+                    c.nzcv = f;
+                    wr(c, d, v);
+                }
+                K::AddR => {
+                    let sf = o.x >> 8 & 1 != 0;
+                    let y = shift(rd(c, o.m as u32), o.x & 3, o.x >> 2 & 63, sf);
+                    addsub_h(c, o.x, d, rd(c, n), y, sf, false);
+                }
+                K::AddX => {
+                    let sf = o.x >> 8 & 1 != 0;
+                    let y = extend(rd(c, o.m as u32), o.x & 7, o.x >> 3 & 7);
+                    addsub_h(c, o.x, d, rsp(c, n), y, sf, true);
+                }
+                K::MovI => wsp(c, d, o.imm),
+                K::Movk => {
+                    let v = (rd(c, d) & !(0xffff << (o.m & 63))) | o.imm;
+                    wr(c, d, trunc(v, sf));
+                }
+                K::Mov => wsp(c, d, trunc(rd(c, o.m as u32), sf)),
+                K::LogI => {
+                    let opc = o.x & 3;
+                    logical_h(c, opc, d, op(opc, rd(c, n), o.imm), o.x & 4 != 0, true);
+                }
+                K::LogR => {
+                    let sf = o.x >> 11 & 1 != 0;
+                    let y = shift(rd(c, o.m as u32), o.x & 3, o.x >> 2 & 63, sf);
+                    let y = if o.x >> 10 & 1 != 0 { !y } else { y };
+                    let opc = o.x >> 8 & 3;
+                    logical_h(c, opc, d, op(opc, rd(c, n), y), sf, false);
+                }
+                K::Ubfm => wr(c, d, ror(trunc(rd(c, n), sf), o.m as u32 & 63, sf) & o.imm),
+                K::Sbfm => {
+                    let (rr, s, sf) = (o.m as u32 & 63, o.x & 63, o.x >> 8 & 1 != 0);
+                    let src = rd(c, n);
+                    let v = if s >= rr {
+                        sext(src >> rr, s - rr + 1)
+                    } else {
+                        sext(src, s + 1) << ((if sf { 64 } else { 32 } - rr) & 63)
+                    };
+                    wr(c, d, trunc(v, sf));
+                }
+                K::ShiftV => {
+                    let sf = o.x & 4 != 0;
+                    let amt = (rd(c, o.m as u32) & if sf { 63 } else { 31 }) as u32;
+                    wr(c, d, shift(rd(c, n), o.x & 3, amt, sf));
+                }
+                K::Csel => {
+                    let v = if cond_holds(c.nzcv, o.x & 15) {
+                        rd(c, n)
+                    } else {
+                        let y = rd(c, o.m as u32);
+                        match o.x >> 4 & 3 {
+                            0 => y,
+                            1 => y.wrapping_add(1),
+                            2 => !y,
+                            _ => y.wrapping_neg(),
+                        }
+                    };
+                    wr(c, d, trunc(v, o.x >> 6 & 1 != 0));
+                }
+                K::Ccmp => {
+                    c.nzcv = if cond_holds(c.nzcv, o.x & 15) {
+                        let y = if o.x >> 4 & 1 != 0 {
+                            o.m as u64
+                        } else {
+                            rd(c, o.m as u32)
+                        };
+                        let sub = o.x >> 5 & 1 != 0;
+                        let y = if sub { !y } else { y };
+                        add_with_carry(rd(c, n), y, sub, o.x >> 6 & 1 != 0).1
+                    } else {
+                        ((o.x >> 8 & 15) as u64) << 28
+                    };
+                }
+                K::Madd => {
+                    let p = rd(c, n).wrapping_mul(rd(c, o.m as u32));
+                    let a = rd(c, o.x & 31);
+                    let v = if o.x >> 5 & 1 != 0 {
+                        a.wrapping_sub(p)
+                    } else {
+                        a.wrapping_add(p)
+                    };
+                    wr(c, d, trunc(v, o.x >> 6 & 1 != 0));
+                }
+                K::Adr => wr(c, d, pc.wrapping_add(o.imm)),
+                K::Adrp => wr(c, d, (pc & !0xfff).wrapping_add(o.imm)),
+                // Branches end their block.
+                K::B => break 'block pc.wrapping_add(o.imm),
+                K::Bl => {
+                    c.x[30] = pc.wrapping_add(4);
+                    break 'block pc.wrapping_add(o.imm);
+                }
+                K::Bcond => {
+                    let t = cond_holds(c.nzcv, d);
+                    break 'block pc.wrapping_add(if t { o.imm } else { 4 });
+                }
+                K::Cbz => {
+                    let t = (trunc(rd(c, d), sf) != 0) == (o.x & 2 != 0);
+                    break 'block pc.wrapping_add(if t { o.imm } else { 4 });
+                }
+                K::Tbz => {
+                    let t = (rd(c, d) >> (o.m & 63) & 1 != 0) == (o.x != 0);
+                    break 'block pc.wrapping_add(if t { o.imm } else { 4 });
+                }
+                K::Br => break 'block rd(c, n),
+                K::Blr => {
+                    let to = rd(c, n);
+                    c.x[30] = pc.wrapping_add(4);
+                    break 'block to;
+                }
+                K::Ld | K::St => {
+                    let base = rsp(c, n);
+                    if n == 31 && base & 15 != 0 {
+                        break 'run SLOW;
+                    }
+                    let (addr, wb) = match o.x >> 2 & 3 {
+                        0 => (base.wrapping_add(o.imm), None),
+                        1 => {
+                            let a = base.wrapping_add(o.imm);
+                            (a, Some(a))
+                        }
+                        2 => (base, Some(base.wrapping_add(o.imm))),
+                        _ => {
+                            let off = extend(rd(c, o.m as u32), o.x >> 8 & 7, o.x >> 12 & 7);
+                            (base.wrapping_add(off), None)
+                        }
+                    };
+                    let bytes = 1 << (o.x & 3);
+                    if o.k == K::St {
+                        let Some(p) = m.fast_ptr(c, addr, bytes, Use::Write) else {
+                            break 'run SLOW;
+                        };
+                        // SAFETY: `fast_ptr` found `bytes` bytes of RAM at `p`.
+                        if !unsafe { mem::store_aligned(p, bytes, rd(c, d)) } {
+                            break 'run SLOW;
+                        }
+                    } else {
+                        let Some(p) = m.fast_ptr(c, addr, bytes, Use::Read) else {
+                            break 'run SLOW;
+                        };
+                        // SAFETY: as for the store.
+                        let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
+                            break 'run SLOW;
+                        };
+                        let v = match o.x >> 4 & 3 {
+                            0 => v,
+                            1 => sext(v, 8 * bytes),
+                            _ => sext(v, 8 * bytes) as u32 as u64,
+                        };
+                        wr(c, d, v);
+                    }
+                    if let Some(wb) = wb {
+                        wsp(c, n, wb);
+                    }
+                }
+                K::Ldp | K::Stp => {
+                    let base = rsp(c, n);
+                    if n == 31 && base & 15 != 0 {
+                        break 'run SLOW;
+                    }
+                    let (size, mode) = (o.x & 15, o.x >> 8 & 3);
+                    let addr = if mode == 1 {
+                        base
+                    } else {
+                        base.wrapping_add(o.imm)
+                    };
+                    let a2 = addr.wrapping_add(size as u64);
+                    let (rt, rt2) = (d, o.m as u32);
+                    let w = if o.k == K::Ldp { Use::Read } else { Use::Write };
+                    let (Some(p1), Some(p2)) =
+                        (m.fast_ptr(c, addr, size, w), m.fast_ptr(c, a2, size, w))
+                    else {
+                        break 'run SLOW;
+                    };
+                    if (p1 as usize | p2 as usize) & (size as usize - 1) != 0 {
+                        break 'run SLOW;
+                    }
+                    if o.k == K::Ldp {
+                        // SAFETY: `fast_ptr` found RAM at both, aligned (checked).
+                        let (v1, v2) = unsafe {
+                            (
+                                mem::load_aligned(p1, size).unwrap_or(0),
+                                mem::load_aligned(p2, size).unwrap_or(0),
+                            )
+                        };
+                        let ext = |v: u64| if o.x & 16 != 0 { v as i32 as u64 } else { v };
+                        wr(c, rt, ext(v1));
+                        wr(c, rt2, ext(v2));
+                    } else {
+                        let (v1, v2) = (rd(c, rt), rd(c, rt2));
+                        // SAFETY: as for the loads.
+                        unsafe {
+                            mem::store_aligned(p1, size, v1);
+                            mem::store_aligned(p2, size, v2);
+                        }
+                    }
+                    if mode & 1 == 1 {
+                        wsp(c, n, base.wrapping_add(o.imm));
+                    }
+                }
+            }
+            // SAFETY: u < end.
+            u = unsafe { u.add(1) };
+            pc = pc.wrapping_add(4);
+        };
+        // The block's prefix ran: on to the next, as `jit::interpret` goes.
+        (pc, u) = (next, end);
+        if done >= left {
+            break 'run STOP;
+        }
+        let k = if (next ^ bpc) < 0x1000 && next & 3 == 0 {
+            key & !0xfff | next & 0xffc | key & 3
+        } else if next & 3 == 0
+            && let Some(k) = m.ikey(c, next)
+        {
+            k
+        } else {
+            break 'run NEXT;
+        };
+        if compiled(k) {
+            break 'run STOP;
+        }
+        let s = &mut dec.slots[slot(k)];
+        if s.key != k {
+            break 'run NEXT;
+        }
+        if s.hits >= s.quota as u16 {
+            break 'run STOP;
+        }
+        s.hits += 1;
+        let n = (s.len as u64).min(left - done);
+        // SAFETY: a slotted block's micro-ops are in the arena.
+        u = unsafe { arena.add(s.start as usize) };
+        // SAFETY: n <= its length.
+        end = unsafe { u.add(n as usize) };
+        done += n;
+        (key, bpc) = (k, next);
+    };
+    (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, done);
+    if status != SLOW {
+        c.pc = pc;
+    }
+    status
+}
+
+/// [`run`] through [`hot`], as `jit::interpret` drives it, for one block (the tests).
+#[cfg(test)]
+pub fn run_hot(c: &mut Cpu, m: &mut impl Fast, b: &[Uop], pc: u64) -> (u64, Option<Exit>) {
+    let mut dec = Cache::new(1 << 10);
+    let mut r = Run::new(b.len() as u64);
+    r.enter(b, 0, pc);
+    loop {
+        if hot(c, m, &mut dec, |_| false, &mut r) != SLOW {
+            return (r.done, None);
+        }
+        let (u, last) = r.uop();
+        let before = r.retired();
+        let (k, e) = run(c, m, core::slice::from_ref(&u), r.pc);
+        if e.is_some() {
+            return (before + k, e);
+        }
+        if last {
+            return (r.done, None);
+        }
+        r.step();
+    }
+}
+
+/// [`addsub`] through the inline register accessors.
+#[inline(always)]
+fn addsub_h(c: &mut Cpu, f: u32, d: u32, x: u64, y: u64, sf: bool, sp_dest: bool) {
+    let (sub, s) = (f >> 10 & 1 != 0, f >> 9 & 1 != 0);
+    let (r, fl) = add_with_carry(x, if sub { !y } else { y }, sub, sf);
+    if s {
+        c.nzcv = fl;
+        wr(c, d, r);
+    } else if sp_dest {
+        wsp(c, d, r);
+    } else {
+        wr(c, d, r);
+    }
+}
+
+/// [`logical`] through the inline register accessors.
+#[inline(always)]
+fn logical_h(c: &mut Cpu, opc: u32, d: u32, r: u64, sf: bool, sp_dest: bool) {
+    let r = trunc(r, sf);
+    if opc == 3 {
+        let n = r >> (if sf { 63 } else { 31 }) & 1 == 1;
+        c.nzcv = super::nzcv(n, r == 0, false, false);
+        wr(c, d, r);
+    } else if sp_dest {
+        wsp(c, d, r);
+    } else {
+        wr(c, d, r);
+    }
+}
+
 /// A branch (always a block's last instruction) to `to`.
 #[inline(always)]
 fn taken(c: &mut Cpu, b: &[Uop], to: u64) -> (u64, Option<Exit>) {
@@ -686,7 +1169,7 @@ const EMPTY: Slot = Slot {
 /// block's micro-ops stay in the arena until it's full, and then everything
 /// starts over.
 pub struct Cache {
-    slots: Box<[Slot]>,
+    slots: Box<[Slot; SLOTS]>,
     /// The slots filled since the last clear (up to `SLOTS / 16`; past it,
     /// all of them are cleared): JIT-stress flushes every few compiles.
     used: Vec<u32>,
@@ -714,7 +1197,10 @@ impl Cache {
     /// A cache of `budget` micro-ops.
     pub fn new(budget: usize) -> Cache {
         Cache {
-            slots: vec![EMPTY; SLOTS].into_boxed_slice(),
+            slots: match vec![EMPTY; SLOTS].into_boxed_slice().try_into() {
+                Ok(s) => s,
+                Err(_) => unreachable!(),
+            },
             used: Vec::new(),
             map: HashMap::default(),
             pages: HashMap::default(),

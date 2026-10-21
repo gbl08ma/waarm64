@@ -1769,7 +1769,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
 
 /// The bus a run of decoded blocks goes through, and how it finds the key of
 /// the block at a PC (as [`key`] does; `None`: the dispatcher's to find).
-trait Regime: crate::mmu::Bus {
+trait Regime: interp::block::Fast {
     fn key(&mut self, c: &crate::cpu::Cpu, pc: u64) -> Option<u64>;
 }
 
@@ -1801,47 +1801,70 @@ impl Regime for Mmu<'_> {
 /// the instruction TLB, as the dispatcher finds them; a block in the same page
 /// as the one before has the same translation (a block ends after any
 /// instruction that could change it).
+///
+/// The blocks run in [`interp::block::hot`], a loop with no calls in it, so
+/// that V8 keeps its state in registers; it returns to this one for what
+/// takes a call (a generic micro-op or a slow load or store, which run
+/// through [`interp::block::run`]; a next block out of its slot or a TLB
+/// miss) and is called again.
 #[inline(never)]
 fn interpret<B: Regime>(
     cpu: &mut crate::cpu::Cpu,
     m: &mut B,
     t: &mut Table,
     mem: &Mem,
-    mut key: u64,
+    key: u64,
     left: u64,
 ) -> Option<(u64, Option<Exit>)> {
-    let mut done = 0;
-    let r = loop {
-        let pc = cpu.pc;
-        let Some(b) = t.dec.get(key, mem) else {
-            if done == 0 {
-                return None;
+    use interp::block::{NEXT, SLOW, STOP};
+    let pc = cpu.pc;
+    let b = t.dec.get(key, mem)?;
+    let mut r = interp::block::Run::new(left);
+    r.enter(b, key, pc);
+    let res = loop {
+        let jc = &t.jc;
+        match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
+            STOP => break (r.done, None),
+            SLOW => {
+                let (u, last) = r.uop();
+                let before = r.retired();
+                let (k, e) = interp::block::run(cpu, m, core::slice::from_ref(&u), r.pc);
+                if e.is_some() {
+                    break (before + k, e);
+                }
+                if !last {
+                    r.step();
+                    continue;
+                }
+                // The block's prefix ran: the PC is the next instruction's
+                // (or a generic one's branch).
+                if r.done >= left || !u.chains() {
+                    break (r.done, None);
+                }
             }
-            break (done, None);
-        };
-        let b = &b[..b.len().min((left - done) as usize)];
-        let chains = b.last().is_some_and(interp::block::Uop::chains);
-        let (k, e) = interp::block::run(cpu, m, b, pc);
-        t.stats.dec_steps += k + e.is_some_and(Exit::retired) as u64;
-        done += k;
-        if e.is_some() || done >= left || !chains {
-            break (done, e);
+            n => debug_assert_eq!(n, NEXT),
         }
+        // The next block, through the slow paths.
         let next = cpu.pc;
-        key = if (next ^ pc) < 0x1000 && next & 3 == 0 {
-            key & !0xfff | next & 0xffc | key & 3
+        let k = if (next ^ r.bpc) < 0x1000 && next & 3 == 0 {
+            r.key & !0xfff | next & 0xffc | r.key & 3
         } else {
             match m.key(cpu, next) {
                 Some(k) => k,
-                None => break (done, None),
+                None => break (r.done, None),
             }
         };
-        if t.jc[jc_index(key)].key == key || !t.dec.count(key) {
-            break (done, None);
+        if t.jc[jc_index(k)].key == k || !t.dec.count(k) {
+            break (r.done, None);
         }
+        let Some(b) = t.dec.get(k, mem) else {
+            break (r.done, None);
+        };
+        r.enter(b, k, next);
     };
+    t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
-    Some(r)
+    Some(res)
 }
 
 /// [`interp::run`] through the JIT, for user-mode hosts (the corpus, the benchmarks).

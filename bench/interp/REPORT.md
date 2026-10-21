@@ -1008,3 +1008,28 @@ and exit) weigh as much as per-instruction ones: loop 1 (one call-free loop) and
 first; superinstructions (loop 4) have no dominant pair to fuse; the generic path (loop 5) is 3.5% of the
 instructions, `MRS` and `UMADDL` first; lazy flags (loop 3) touch ~10% of the instructions (the flag setters and
 their branches).
+
+## M8-INTERP loop 1: a call-free hot loop
+
+2026-10-21, the dev VM, Chromium 153.0.8010.52, two rounds alternating (`bench/interp/ab.sh`); raw data
+`results/m8-interp-l1/`. `interp::block::hot` runs the decoded blocks and chains from each to the next in one loop
+with no call on any path: no generic micro-op, no slow load or store (a TLB probe that misses, an unaligned access,
+a misaligned SP base: `Fast::fast_ptr` and `mem::load_aligned`/`store_aligned`), no instruction-TLB walk
+(`Fast::ikey`), no panic (register indexes masked, the slots a fixed-size array). What needs a call returns a
+status (`SLOW`: the micro-op at `Run::u`, which `jit::interpret` runs through the old `run`, then calls `hot` again;
+`NEXT`: the next block out of its slot or its key not in the TLB; `STOP`), and the loop's state goes back to a
+`Run` in memory only then. Nothing returns through the shadow stack; the old `run` is the slow path.
+
+| benchmark (MIPS) | base (round 1 · 2) | loop 1 (round 1 · 2) | |
+|---|---|---|---|
+| `dec_mips` (8 placements) | 247.0 ±1.2 · 248.3 ±2.2 | 310.5 ±1.0 · 310.5 ±3.6 | +25.7% |
+| `vm_dec_flat_mips` | 197.5 ±0.5 · 197.3 ±0.5 | 307.0 ±3.7 · 309.5 ±1.4 | +55.6% |
+| `vm_dec_mmu_mips` | 175.3 ±1.1 · 174.9 ±1.3 | 293.8 ±1.8 · 293.9 ±2.1 | +68.0% |
+| Buildroot boot (`boot_dec_mips`) | 88.9 ±1.4 · 88.4 ±0.8 | 101.9 ±1.7 · 100.2 ±0.9 | +13.3% |
+| Alpine boot (`boot_alpine_dec_mips`) | 121.5 ±0.2 · 122.4 ±0.3 | 143.5 ±0.1 · 143.7 ±3.8 | +18.1% |
+
+Alpine's boot under `jit` 4 now 18.5 s (from 21.7); against Liftoff's 244 MIPS, 0.59× (from 0.50×). The steps are
+the same (40,211,695 and 2,651,936,453). Correctness: the differential test runs every random block through `hot`
+too (`run_hot`, `jit::interpret`'s driving), against `interp::steps`; a planted carry bug in `hot`'s ADDS/SUBS
+failed it, and a planted same-page chaining bug (the next key's bit 2 dropped) kept the native Buildroot boot
+through the block interpreter from powering off.

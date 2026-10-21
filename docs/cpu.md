@@ -252,6 +252,12 @@ test it against `tests/steps.txt`.
   steps and the exits are `interp::steps`'s for the same instructions.
 - **Loads and stores** try the TLB entry inline (`Bus::fast`) and take the interpreter's path on a
   miss, so faults are the interpreter's.
+- **One call-free loop** (`interp::block::hot`): the blocks run, and chain from one to the next, in a
+  loop with no call on any path (no generic micro-op, no slow load or store, no TLB walk, no panic:
+  register indexes masked, the slots a fixed-size array), so V8 keeps its state in registers. What
+  needs a call returns a status to `jit::interpret`, which runs that one micro-op through `run` (the
+  slow path) or finds the next block, and calls `hot` again. +26% on the user-mode guest, +56-68% at
+  EL1, +13% and +18% on the Buildroot and Alpine boots (`bench/interp/REPORT.md` "M8-INTERP loop 1").
 - **Chaining:** after a block that ends on a branch or runs out, the next block is found without
   going back to the dispatcher (`jit::interpret`): in the same page from the block's own key (a
   block ends after anything that could change the translation), in another through the

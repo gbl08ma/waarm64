@@ -1,14 +1,14 @@
 // Sums up bench/interp/ab.sh's results: per benchmark and arm, each round's median, then the arms'
 // medians of them against the first arm's.
-//   node bench/interp/ab-summary.ts <outdir>
+//   node bench/interp/ab-summary.ts <outdir> [prefix]   (prefix: bench/interp/ab-mac.sh's)
 import { readdirSync, readFileSync } from 'node:fs';
 
-const dir = process.argv[2];
+const [dir, prefix = ''] = process.argv.slice(2);
 type Result = { name: string; unit: string; median: number; iqr: number };
 const rows = new Map<string, Map<string, { median: number; iqr: number }[]>>();
 const arms: string[] = [];
-for (const f of readdirSync(dir).filter((f) => /^r\d+-.*\.json$/.test(f)).sort()) {
-  const arm = f.split('-')[1];
+for (const f of readdirSync(dir).filter((f) => f.startsWith(prefix ? `${prefix}-r` : 'r') && f.endsWith('.json')).sort()) {
+  const arm = f.slice(prefix ? prefix.length + 1 : 0).split('-')[1];
   if (!arms.includes(arm)) arms.push(arm);
   for (const r of JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')).results as Result[]) {
     if (r.name.endsWith('_cold') || r.unit === 'ms') continue;
