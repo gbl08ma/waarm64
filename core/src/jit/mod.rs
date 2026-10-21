@@ -271,8 +271,8 @@ struct Info {
     /// A loop head that a region tiered up with it runs the loop of: it
     /// doesn't tier up itself.
     covered: bool,
-    /// Reported since the last prune ([`Cache::prune`]).
-    seen: bool,
+    /// The cache's tick ([`Cache::tick`]) at its last report.
+    age: u8,
 }
 
 impl Info {
@@ -285,19 +285,29 @@ impl Info {
 }
 
 /// Keys the block map holds, compiled or not, before a prune drops the cold
-/// ones ([`Cache::prune`]), counting those an IC removed since its table was
-/// last rebuilt (their tombstones take room until then). Under the 1.835 M
-/// that 2^21 buckets hold (50 MiB at 25 B), so the table never doubles past
-/// them: it held a whole session's keys before, and the desktop guest's
+/// ones ([`Cache::prune`]); it prunes too when its full table would double
+/// past the 2^21 buckets that hold them ([`grows_past`]: the keys an IC
+/// removed leave tombstones, which fill it until it's rebuilt). So the table
+/// stays at 2^21 buckets at most (1.835 M keys, 50 MiB at 25 B): it held a whole session's keys before, and the desktop guest's
 /// doubling from 2^22 buckets ran the core's 1 GiB heap out (2026-10-21).
 pub const MAP_KEYS: usize = 1_500_000;
 const _: () = assert!(block::CAP <= u8::MAX as usize, "Info::len");
 
-/// The dispatches that keep an uncompiled key, reported since the last
-/// prune, through the next one with its count ([`Cache::prune`]): one that
-/// ran this often and lately is on its way to the threshold, and the cold
-/// ones (run once: JavaScript engines' code, start-up code) lose a few counts.
+/// The dispatches that keep an uncompiled key reported in the last
+/// [`WARM_TICKS`] through a prune with its count ([`Cache::prune`]): one that
+/// ran this often is on its way to the threshold, and the cold ones (run
+/// once: JavaScript engines' code, start-up code) lose a few counts.
 pub const KEEP_HITS: u16 = 16;
+
+/// The block map's clock ([`Cache::tick`]): a tick every 2^`TICK_SHIFT` keys
+/// added to it. A prune keeps every key reported in the last [`RECENT_TICKS`]
+/// (262,144 keys added: the code running now, which a page's load would
+/// otherwise count again from zero), and the warm ones reported in the last
+/// [`WARM_TICKS`] (2 M keys added: since the last prune, which comes at most
+/// every 1.5 M; under the u8's wrap at 256).
+pub const TICK_SHIFT: u32 = 14;
+pub const RECENT_TICKS: u8 = 16;
+pub const WARM_TICKS: u8 = 128;
 
 /// Module bytes the cache holds for tables that haven't taken them yet
 /// (`Cache::held`): past it the oldest go, and a table that still lacked
@@ -394,12 +404,10 @@ pub struct Cache {
     batch: u64,
     /// The next free slot.
     next: u32,
-    /// Keys an IC removed from `map` since its table was last rebuilt (a
-    /// bound on its tombstones: [`MAP_KEYS`]), and its capacity then.
-    removed: usize,
-    map_cap: usize,
     /// The bytes of the logged modules not dropped yet ([`HELD_MAX`]).
     held: u64,
+    /// Keys added to the block map so far (at misses: [`Cache::tick`]).
+    added: u64,
     /// The bytes of the modules installed since the last flush (`Config::max_bytes`).
     live_bytes: u64,
     /// The compile threshold now, and the one it starts from after a flush
@@ -534,9 +542,8 @@ impl Cache {
             pending_steps: 0,
             batch: 0,
             next: MISS_SLOTS,
-            removed: 0,
-            map_cap: 0,
             held: 0,
+            added: 0,
             live_bytes: 0,
             threshold: cfg.threshold,
             floor: cfg.threshold,
@@ -599,11 +606,11 @@ impl Cache {
     /// heap has no room, the cache flushes and frees its maps whole
     /// ([`Cache::rescue`]).
     fn room(&mut self, s: &mut Stats) {
-        if self.map.capacity() != self.map_cap {
-            // Grown (rebuilt): no tombstones.
-            (self.map_cap, self.removed) = (self.map.capacity(), 0);
-        }
-        if self.map.len() + self.removed >= MAP_KEYS {
+        // `capacity` is the keys it holds now plus the room left before it
+        // grows (tombstones take room): none left, with as many keys as
+        // `grows_past` in it, it would double past 2^21 buckets.
+        let n = self.map.len();
+        if n >= MAP_KEYS || self.map.capacity() == n && n > grows_past(MAP_KEYS) {
             self.prune(s);
         }
         if self.map.try_reserve(1).is_err() {
@@ -611,18 +618,30 @@ impl Cache {
         }
     }
 
-    /// Drops the keys nothing needs ([`Info::needed`]) but those counted
-    /// [`KEEP_HITS`] times that reported since the last prune; all but the
-    /// needed ones if that leaves more than half of [`MAP_KEYS`]; and
-    /// flushes if even that does. Then rebuilds the map's table to fit, and
+    /// The block map's clock: keys added to it, in units of
+    /// 2^[`TICK_SHIFT`] (wrapping).
+    fn tick(&self) -> u8 {
+        (self.added >> TICK_SHIFT) as u8
+    }
+
+    /// Drops the keys nothing needs ([`Info::needed`]) but those reported in
+    /// the last [`RECENT_TICKS`], and those counted [`KEEP_HITS`] times
+    /// reported in the last [`WARM_TICKS`]; if that leaves more than half of
+    /// [`MAP_KEYS`], only the needed and the recent ones; then only the
+    /// needed ones; and flushes if even that does. Then rebuilds the map's table to fit, and
     /// the page index and the links to match. A pruned key that runs again
     /// counts from zero (its decoded blocks report it as new).
     fn prune(&mut self, s: &mut Stats) {
+        let tick = self.tick();
+        let since = move |i: &Info| tick.wrapping_sub(i.age);
         self.map.retain(|_, i| {
-            let warm = i.seen && i.hits >= KEEP_HITS;
-            i.seen = false;
-            warm || i.needed()
+            let d = since(i);
+            i.needed() || d < RECENT_TICKS || i.hits >= KEEP_HITS && d < WARM_TICKS
         });
+        if self.map.len() > MAP_KEYS / 2 {
+            self.map
+                .retain(|_, i| i.needed() || since(i) < RECENT_TICKS);
+        }
         if self.map.len() > MAP_KEYS / 2 {
             self.map.retain(|_, i| i.needed());
         }
@@ -632,7 +651,6 @@ impl Cache {
             return;
         }
         self.map.shrink_to(0);
-        (self.map_cap, self.removed) = (self.map.capacity(), 0);
         let map = &self.map;
         self.pages.retain(|_, keys| {
             keys.retain(|k| map.contains_key(k));
@@ -660,7 +678,6 @@ impl Cache {
         self.spans = Map::default();
         self.tiers = Map::default();
         self.log = Vec::new();
-        (self.map_cap, self.removed) = (0, 0);
         s.rescues += 1;
         self.publish();
     }
@@ -722,7 +739,6 @@ impl Cache {
     fn drop_all(&mut self) {
         self.drops.fetch_add(1, Ordering::Relaxed);
         self.map.clear();
-        (self.map_cap, self.removed) = (self.map.capacity(), 0);
         self.pages.clear();
         self.linkers.clear();
         self.spans.clear();
@@ -763,7 +779,7 @@ impl Cache {
             // With the blocks that chain to them, transitively: their code
             // calls the dropped functions directly.
             while let Some(k) = keys.pop() {
-                self.removed += self.map.remove(&k).is_some() as usize;
+                self.map.remove(&k);
                 self.spans.remove(&k);
                 self.tiers.remove(&k);
                 for t in self.tables.iter_mut().filter(|t| !t.all) {
@@ -833,11 +849,11 @@ impl Cache {
         len: Option<u32>,
     ) -> (Result<(u32, u32), u32>, u32) {
         self.room(&mut t.stats);
-        let keys = self.map.len();
+        let (keys, tick) = (self.map.len(), self.tick());
         let info = info(&mut self.map, &mut self.pages, key, || {
             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
         });
-        info.seen = true;
+        info.age = tick;
         if info.idx == 0 && !self.off && info.len > 0 {
             info.hits = info.hits.saturating_add(n.min(u16::MAX as u32) as u16);
             if info.hits as u32 > self.threshold && !info.queued {
@@ -849,6 +865,7 @@ impl Cache {
             self.emit_if_due(t, mem);
         }
         if keys != self.map.len() {
+            self.added += 1;
             self.publish_keys();
         }
         // A cache that never compiles (no JIT, or `jit` 4's threshold) needs
@@ -1866,6 +1883,15 @@ fn heads_loop(r: &block::Region) -> bool {
     r.blocks.len() > 1 || (r.blocks.len() == 1 && r.looped())
 }
 
+/// The keys past which a full hash table (std's: hashbrown's) that holds
+/// `keys` grows instead of rehashing in place (half of what its buckets hold
+/// at 7/8; at exactly that many, a full table half its size grows into it):
+/// a map bounded to `keys` takes no more room in the heap if it doesn't grow
+/// past them (tombstones fill a table too).
+pub(crate) fn grows_past(keys: usize) -> usize {
+    (keys * 8 / 7).next_power_of_two() / 16 * 7
+}
+
 /// The bytes a hash table of `cap` entries of `entry` bytes takes in the
 /// heap (hashbrown's: 7/8 of its buckets usable, a control byte each).
 pub(crate) fn table_bytes(cap: usize, entry: usize) -> u64 {
@@ -2619,7 +2645,6 @@ mod tests {
         let drops = c.drops.load(Ordering::Relaxed);
         c.invalidate(0x1ab0, s); // IC IVAU on page 1
         assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x2000]);
-        assert_eq!(c.removed, 5, "its tombstones count toward the bound");
         assert!(c.linkers.is_empty() && c.drops.load(Ordering::Relaxed) == drops + 1);
         assert_eq!(c.pending, []);
         assert_eq!(s.invalidations, 1);
@@ -2634,7 +2659,7 @@ mod tests {
         c.invalidate(0x5000, s); // no code there
         assert_eq!(s.invalidations, 1);
         c.invalidate(u64::MAX, s); // IC IALLU: a new epoch
-        assert!(c.map.is_empty() && c.pages.is_empty() && c.removed == 0);
+        assert!(c.map.is_empty() && c.pages.is_empty());
         assert_eq!((s.invalidations, s.flushes), (2, 0));
         u.sync(&mut c, &mem);
         assert!(jc(&u, 0x1000) == u64::MAX && jc(&u, 0x2000) == u64::MAX && u.epoch == c.epoch);
@@ -2908,10 +2933,40 @@ mod tests {
         assert_eq!(size_of::<(u64, Info)>(), 24);
     }
 
+    /// ICs that keep dropping pages leave tombstones, which take room in the
+    /// map's table: it prunes before they'd double it (the pages session's
+    /// desktop guest had the table at 2^22 buckets with 1.49 M keys).
+    #[test]
+    fn ic_tombstones_dont_grow_the_map() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        let mut most = 0;
+        // ~1.4 M keys live, 256 a page: each new page's keys, then an IC on
+        // the oldest page.
+        let live = 1_400_000 / 256;
+        for p in 0..(live + 16_000) as u64 {
+            for k in 0..256 {
+                let key = ((1 << 32) + (p << 12) + k * 16) | block::KEY_MMU;
+                let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
+            }
+            if p >= live as u64 {
+                c.invalidate((1 << 32) + ((p - live as u64) << 12), s);
+            }
+            most = most.max(c.map.capacity());
+        }
+        assert!(most < 2_000_000, "the map grew to hold {most} keys");
+        assert!(t.stats.prunes > 0, "pruned for the tombstones");
+    }
+
     /// A prune keeps what the cache needs (compiled, queued, tiering
-    /// blocks) and the keys counted [`KEEP_HITS`] times that reported since
-    /// the last one, with their counts; the cold ones go, from the page
-    /// index too, so an IC still finds the blocks kept.
+    /// blocks), the keys reported in the last [`RECENT_TICKS`] and those
+    /// counted [`KEEP_HITS`] times reported in the last [`WARM_TICKS`], with
+    /// their counts; the rest go, from the page index too, so an IC still
+    /// finds the blocks kept.
     #[test]
     fn a_prune_keeps_what_matters() {
         let mut ram = vec![0u128; 0x1000 / 16];
@@ -2920,8 +2975,8 @@ mod tests {
         let mut c = Cache::new(Config::DEFAULT);
         let mut t = Table::new(&mut c);
         let s = &mut Stats::default();
-        let (compiled, queued, tiering, hot, warm, cold) =
-            (0x1000, 0x1004, 0x1008, 0x2000, 0x2004, 0x3000);
+        let (compiled, queued, tiering, hot, warm, cold, now) =
+            (0x1000, 0x1004, 0x1008, 0x2000, 0x2004, 0x3000, 0x2008);
         for k in [compiled, queued, tiering, hot, warm, cold] {
             let _ = c.miss(&mut t, k, k, &mem, 1, Some(4));
         }
@@ -2932,25 +2987,34 @@ mod tests {
         let _ = c.miss(&mut t, warm, warm, &mem, 600, Some(4));
         c.linkers.insert(compiled, vec![0x5000]);
         c.linkers.insert(cold, vec![0x5000]);
+        let at = |c: &mut Cache, tick: u64| c.added = tick << TICK_SHIFT;
+        // Reported then, kept now: everything.
         c.prune(s);
         let keys = |c: &Cache| {
             let mut k: Vec<u64> = c.map.keys().copied().collect();
             k.sort();
             k
         };
-        assert_eq!(keys(&c), [compiled, queued, tiering, hot, warm]);
-        // Only `hot` reports before the next prune: `warm` goes, with its count.
-        let _ = c.miss(&mut t, hot, hot, &mem, 1, Some(4));
+        assert_eq!(keys(&c), [compiled, queued, tiering, hot, warm, cold]);
+        // No longer recent: the cold key goes, the warm ones stay.
+        at(&mut c, RECENT_TICKS as u64);
         c.prune(s);
-        assert_eq!(keys(&c), [compiled, queued, tiering, hot]);
+        assert_eq!(keys(&c), [compiled, queued, tiering, hot, warm]);
+        // `hot` reports again; `warm` doesn't for WARM_TICKS and goes, with
+        // its count; `now`, a cold key just reported, stays.
+        let _ = c.miss(&mut t, hot, hot, &mem, 1, Some(4));
+        at(&mut c, WARM_TICKS as u64);
+        let _ = c.miss(&mut t, now, now, &mem, 1, Some(4));
+        c.prune(s);
+        assert_eq!(keys(&c), [compiled, queued, tiering, hot, now]);
         assert_eq!(c.map[&hot].hits, 602, "its count kept");
         assert_eq!(c.pages.len(), 2);
         assert_eq!(c.pages[&1], [compiled, queued, tiering]);
         assert_eq!(c.linkers.keys().copied().collect::<Vec<_>>(), [compiled]);
-        assert_eq!(s.prunes, 2);
+        assert_eq!(s.prunes, 3);
         // An IC on page 1 still drops the compiled block.
         c.invalidate(0x1000, s);
-        assert_eq!(keys(&c), [hot]);
+        assert_eq!(keys(&c), [hot, now]);
         // Run again, a pruned key counts from zero.
         let _ = c.miss(&mut t, cold, cold, &mem, 1, Some(4));
         assert_eq!(c.map[&cold].hits, 1);
@@ -2962,11 +3026,20 @@ mod tests {
     fn a_prune_of_hot_keys_falls_back() {
         let mut c = Cache::new(Config::DEFAULT);
         let s = &mut Stats::default();
+        // Warm, not recent, too many: the needed and the recent ones stay.
+        c.added = (RECENT_TICKS as u64) << TICK_SHIFT;
         for k in 0..(MAP_KEYS / 2 + 10) as u64 {
             let i = c.info(k << 2, || 4);
-            (i.hits, i.seen) = (KEEP_HITS, true);
+            (i.hits, i.age) = (KEEP_HITS, 0);
         }
         c.info(1 << 40, || 4).idx = 9;
+        c.info(1 << 41, || 4).age = RECENT_TICKS;
+        c.prune(s);
+        assert_eq!(c.map.len(), 2, "the compiled and the recent one");
+        // Recent, too many: the needed ones.
+        for k in 0..(MAP_KEYS / 2 + 10) as u64 {
+            c.info(k << 2, || 4).age = RECENT_TICKS;
+        }
         c.prune(s);
         assert_eq!(c.map.len(), 1, "only the compiled one");
         assert_eq!(s.flushes, 0);
@@ -2975,7 +3048,7 @@ mod tests {
         }
         c.prune(s);
         assert!(c.map.is_empty());
-        assert_eq!((s.flushes, s.prunes), (1, 2));
+        assert_eq!((s.flushes, s.prunes), (1, 3));
     }
 
     /// Without room in the heap the cache flushes and frees its maps.
@@ -3051,6 +3124,25 @@ mod tests {
         assert!(d.bytes() > 0);
         d.rescue();
         assert_eq!((d.rescues, d.clears, d.bytes()), (1, 0x4000 / 1024, 0));
+        // ICs leave tombstones: with 1,700 keys live of a bound of 1,792, a
+        // page decoded and an old one dropped at a time, its table never
+        // doubles past the 2,048 buckets that hold them (1,792 at 7/8).
+        let mut ram = vec![0u128; (8 << 20) / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 8 << 20) };
+        for p in 0..2048u64 {
+            mem.write(p << 12, 4, 0x1400_0001).unwrap(); // b .+4
+        }
+        let mut d = interp::block::Cache::new(1792 * interp::block::KEY_UOPS);
+        let mut most = 0;
+        for p in 0..50_000u64 {
+            assert!(d.get((p % 2048) << 12, &mem).is_some());
+            if p >= 1700 {
+                d.drop_page((p - 1700) % 2048);
+            }
+            most = most.max(d.capacity());
+        }
+        assert!(most <= 1792, "{most}");
     }
 
     /// Module numbers wrap (u32), and 0 is a module the worker didn't take.

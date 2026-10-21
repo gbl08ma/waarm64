@@ -194,6 +194,29 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
 - **The transfer cache's costs in kernel-heavy phases** ([jit.md](jit.md) "Linking"): a miss costs
   a call to the shared miss function, a TLBI by VA a 16 KiB scan (the boot ~1% slower with it).
+- **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
+  heap bounded"):
+  - **The decoded blocks are most of it:** ~350-365 MiB on 4 vCPUs in every session measured (the arenas' 256 MiB
+    budget, their maps and page indexes ~100 MiB). A micro-op is 16 bytes; a smaller one, or a budget that follows the
+    heap's room, would give back 100-200 MiB of the 1 GiB. Payoff only if the heap runs short again (or `HEAP_FLOOR`
+    is to come down); test with `MEMLOG=5` sessions and `m8-heap/long/tools/heapsum.ts`, and the block interpreter's
+    gates (bench/interp/REPORT.md) for its speed.
+  - **The page index takes a good part of the bound** (the gauge's ~60 MiB at 1.5 M keys is the map's 50 and an
+    estimate of the index), and its lists are `Vec<u64>`s of at least 4 entries plus the allocator's overhead, more than the gauge's estimate of a
+    key's 8 B: a page-keyed index of small inline arrays, or none (an IC scanning the map, ~1.5 M entries, a few ms)
+    would halve the bound.
+  - **Not tuned:** `KEEP_HITS` (16), `RECENT_TICKS` (the last 262,144 keys), `WARM_TICKS`, the prune's target (half
+    of `MAP_KEYS`) and `MAX_KEYS` were set from the heap's budget and one A/B (keeping only the warm keys cost the
+    pages session's bbc load ~0.8 s; with the recent ones nothing measured: `bench/boot/REPORT.md` "M8: the core's
+    heap bounded"). A smaller bound (say 2^20 buckets) would save ~25 MiB more and prune twice as often: try it with
+    the pages session and the run-once churn if the heap gets tight. A prune takes 6-11 ms natively (release, 1.5 M keys, under the cache's lock),
+    not measured in wasm (time `Cache::prune` over 1.5 M keys in a wasm build).
+  - **The user's own session wasn't replayed:** no Chromium in the desktop image and no real sites offline; the
+    run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
+    flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and
+    Chromium in the guest (add it to `images/arch/desktop.sh`).
+  - **The allocation error hook is checked only natively** (`core/tests/alloc_hook.rs`): a wasm test would need an
+    export that allocates infallibly on request.
 - **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
   - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
     for the catch-up even when the table is the only one (a lone table could take them instead);

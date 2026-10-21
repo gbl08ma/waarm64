@@ -1,0 +1,52 @@
+{
+ "fix-1": {
+  "samples": 156,
+  "seconds": 765,
+  "maxLive": 508,
+  "peak": 557,
+  "maxKeys": 1491404,
+  "maxKeyMiB": 113,
+  "maxHeldMiB": 0,
+  "maxDecMiB": 365,
+  "maxKnownMiB": 4,
+  "flushes": 0,
+  "prunes": 5,
+  "rescues": 0,
+  "lagFlushes": 0,
+  "decClears": 34,
+  "decoded": 26296802,
+  "atMaxLive": {
+   "live": 508,
+   "map": 113,
+   "held": 0,
+   "decoded": 347,
+   "known": 4,
+   "rest": 44
+  }
+ },
+ "nobound-1": {
+  "samples": 156,
+  "seconds": 765,
+  "maxLive": 633,
+  "peak": 725,
+  "maxKeys": 3223578,
+  "maxKeyMiB": 226,
+  "maxHeldMiB": 0,
+  "maxDecMiB": 362,
+  "maxKnownMiB": 4,
+  "flushes": 0,
+  "prunes": 0,
+  "rescues": 0,
+  "lagFlushes": 0,
+  "decClears": 34,
+  "decoded": 26004628,
+  "atMaxLive": {
+   "live": 633,
+   "map": 226,
+   "held": 0,
+   "decoded": 351,
+   "known": 4,
+   "rest": 51
+  }
+ }
+}

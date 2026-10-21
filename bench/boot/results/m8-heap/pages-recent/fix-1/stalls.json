@@ -1,0 +1,26 @@
+{
+ "bench/results/local/heap-pages3/fix-1/pages-all.timeline.json": {
+  "seconds": 315,
+  "mips": 286,
+  "busyMips": 197,
+  "busyShare": 0.36,
+  "stallsAtLeastMs": {
+   "20": 4,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 33,
+  "stalledMsPerSecondPerVcpu": 0.09,
+  "allVcpuStallsAtLeastMs": {
+   "20": 1,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

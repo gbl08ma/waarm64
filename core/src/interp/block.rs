@@ -1514,9 +1514,10 @@ const SLOTS: usize = 16384;
 /// arena, at 21 B a bucket of it and 8-16 of the page index a key.
 pub const KEY_UOPS: usize = 4;
 
-/// The keys a table's map holds at most, counting those dropped since its
-/// table was last rebuilt (their tombstones take room): under the 917,504
-/// that 2^20 buckets hold (21 MiB), so it never doubles past them.
+/// The keys a table's map holds at most (and it starts over when it would
+/// double past the table that holds them, `jit::grows_past`: an IC's
+/// tombstones fill it): under the
+/// 917,504 that 2^20 buckets hold (21 MiB), so it never doubles past them.
 pub const MAX_KEYS: usize = 900_000;
 
 /// Dispatches a decoded block counts, at most, before the dispatcher reports
@@ -1569,12 +1570,9 @@ pub struct Cache {
     pages: HashMap<u64, Vec<u64>, crate::jit::KeyBuild>,
     arena: Vec<Uop>,
     /// The micro-ops it holds before it starts over, and the keys
-    /// ([`KEY_UOPS`]); keys dropped since the map's table was last rebuilt,
-    /// and its capacity then.
+    /// ([`KEY_UOPS`]).
     budget: usize,
     keys: usize,
-    removed: usize,
-    map_cap: usize,
     /// Blocks decoded, times the cache started over, and times it freed
     /// its memory because the heap had no room for it to grow (`jit::Stats`).
     pub decoded: u64,
@@ -1601,8 +1599,6 @@ impl Cache {
             arena: Vec::new(),
             budget,
             keys: (budget / KEY_UOPS).clamp(1, MAX_KEYS),
-            removed: 0,
-            map_cap: 0,
             decoded: 0,
             clears: 0,
             rescues: 0,
@@ -1635,11 +1631,12 @@ impl Cache {
                 // Full (its micro-ops, or its keys: blocks of one or none
                 // fill the map before the arena), it starts over; with no
                 // room in the heap for it to grow, it frees its memory too.
-                if self.map.capacity() != self.map_cap {
-                    // Grown (rebuilt): no tombstones.
-                    (self.map_cap, self.removed) = (self.map.capacity(), 0);
-                }
-                if self.map.len() + self.removed >= self.keys
+                // (`capacity` is its keys plus the room left before it
+                // grows: an IC's tombstones take room, so with none left and
+                // half its keys in it, it would double past them.)
+                let n = self.map.len();
+                if n >= self.keys
+                    || self.map.capacity() == n && n > crate::jit::grows_past(self.keys)
                     || !uops.is_empty() && self.arena.len() + uops.len() > self.budget
                 {
                     self.clear();
@@ -1768,6 +1765,11 @@ impl Cache {
     }
 
     #[cfg(test)]
+    pub fn capacity(&self) -> usize {
+        self.map.capacity()
+    }
+
+    #[cfg(test)]
     pub fn has(&self, key: u64) -> bool {
         self.map.contains_key(&key)
     }
@@ -1775,7 +1777,7 @@ impl Cache {
     /// Drops the blocks of physical page `page` (`IC IVAU`).
     pub fn drop_page(&mut self, page: u64) {
         for key in self.pages.remove(&page).unwrap_or_default() {
-            self.removed += self.map.remove(&key).is_some() as usize;
+            self.map.remove(&key);
             let s = &mut self.slots[slot(key)];
             if s.key == key {
                 *s = EMPTY;
@@ -1819,7 +1821,6 @@ impl Cache {
         self.pages.clear();
         self.arena.clear();
         self.clears += 1;
-        self.removed = 0;
     }
 }
 

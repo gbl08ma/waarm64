@@ -31,7 +31,7 @@ test('8M blocks run once fit a 320 MiB heap', { timeout: 240_000 }, async () => 
   const j = r.stats.jit;
   console.log(`heap ${(use.heapLive / MiB).toFixed(0)} MiB live, ${(use.heapPeak / MiB).toFixed(0)} at most; ${use.jitKeys} keys (${(use.jitKeyBytes / MiB).toFixed(0)} MiB); ${j.prunes} prunes, ${j.decClears} decoded starts over, ${j.rescues} rescues, ${j.flushes} flushes`);
   assert.ok(j.prunes >= 4, `${j.prunes} prunes`);
-  assert.ok(use.jitKeyBytes <= 50 * MiB);
+  assert.ok(use.jitKeyBytes <= 64 * MiB, `${use.jitKeyBytes} bytes of keys`); // the table (50 MiB at most) and its page index
   assert.equal(j.rescues, 0);
   assert.ok(use.heapPeak < 300 * MiB, `${use.heapPeak} bytes at most`);
 });

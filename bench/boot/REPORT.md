@@ -2576,8 +2576,8 @@ a mark of 131 MiB (5 prunes), and in 96, 64 and 24 MiB heaps through the safety 
 the old one traps. Natively, `jit::tests::the_block_map_stays_bounded` (3.2M keys with ICs) saw the old map's table
 reach 7.3M keys' capacity (2^23 buckets).
 
-**The fix** (docs/jit.md "The core's heap"): the block map prunes at 1.5 M keys (tombstones counted) to the needed
-keys and the warm ones that reported lately, so its table stays at 2^21 buckets; `Info` 32 → 16 bytes (the stale
+**The fix** (docs/jit.md "The core's heap"): the block map prunes at 1.5 M keys (or when tombstones would double its table) to the needed
+keys, the recent ones and the warm ones (below), so its table stays at 2^21 buckets; `Info` 32 → 16 bytes (the stale
 checker's hash moved to `spans`, `hits` u16, `len` u8): 25 B a bucket; the decoded blocks' map starts over at 900,000
 keys or a key per 4 micro-ops; module bytes held for tables that haven't taken them are capped at 64 MiB (a lagging
 table flushes); `try_reserve` before those maps grow, which flushes and frees them on failure; an allocation that
@@ -2599,3 +2599,41 @@ after that, so neither session got near the crash's 3.7 M keys. Unbounded, the t
 1.6 M keys. In the pages part (one session each): busy MIPS 196 against 194, wiki and bbc loads 11.5 and 12.3 s
 against 11.9 and 12.1, no stalls ≥ 50 ms. Both sessions ended with the harness's 30 s wait after the churn timing out
 (the same in both; the measurements before it are complete).
+
+**The crash's path, reproduced** (`m8-heap/once/`): a run-once churn, `CHURN='rate=300&calls=120&n=2'` for 10 minutes
+from the same snapshot (functions compiled by SpiderMonkey's Baseline and run a few dozen times: new guest code that
+our JIT never compiles, so the byte budget never fills and nothing flushes). Unbounded, the map grew to 3.2 M keys in
+12 minutes with no flush (the table at 2^22 buckets, 226 MiB with its page index; heap 633 MiB live, mark 725): the
+crash's state, short of the next doubling, which at the old 41 B a bucket needed 344 MiB more. Bounded: 1.49 M keys
+at most, 5 prunes (each back to 80-120 K keys after the first), heap 508 MiB live at most, mark 557.
+
+**A bug found there:** one sample of the bounded session had the table at 2^22 buckets with 1.49 M keys. The first
+build counted the keys an IC removed toward the bound (their tombstones fill the table) and reset the count when
+`HashMap::capacity` changed, taken as a rebuild; but `capacity` is the keys plus the room left, and drops with each
+tombstone, so the count kept resetting. Now a prune also happens when the full table would double past the size that
+holds `MAP_KEYS` (`jit::grows_past`), and the same for the decoded blocks' map; two unit tests (IC churn at 1.4 M keys
+live, and at 1,700 of 1,792 in a decoded map) fail without it (3.67 M and 3,584 keys' capacity). The churn screens
+below ran the first build, the pages sessions the later ones.
+
+**Cost** (A/A screens: the bounded core twice, `fix`·`fix2`, against the same core unbounded; one session each):
+
+| | churn screen (`rate=60&total=4000`): `doneS` | busy MIPS | run-once screen (`…&total=30000`): `doneS` | busy MIPS | prunes |
+|---|---|---|---|---|---|
+| fix · fix2 | 108.2 · 108.5 | 244 · 241 | 150.0 · 156.8 | 211 · 200 | 2 · 2 |
+| unbounded | 114.7 | 232 | 149.9 | 209 | 0 |
+
+The standard screen flushes 53 s in and never prunes; the run-once one prunes twice, within the A/A's spread. A prune
+of 1.5 M keys takes 6-11 ms natively (release build; under the cache's lock).
+
+**The pages session** (from the snapshot, no flush; it prunes once, at 221-231 s, in the bbc page's load; s, MIPS):
+
+| | busy MIPS | wiki load | bbc load | keys max |
+|---|---|---|---|---|
+| unbounded (5 sessions: `pages-warm1/`, `pages-warm2/`, `pages-recent/`) | 196 · 194 · 196 · 189 · 194 | 11.2 · 11.5 · 11.4 · 11.8 · 10.7 | 12.1 · 12.7 · 12.2 · 13.2 · 11.7 | 1.63 M |
+| keeping the warm keys only (4: `fix`, `fix2` and two rounds) | 193 · 186 · 198 · 195 | 11.1 · 11.7 · 11.1 · 10.9 | 13.2 · 13.6 · 12.8 · 12.3 | 1.35 M |
+| and the recent ones (kept, `pages-recent/`) | 197 · 199 | 10.8 · 11.6 | 11.8 · 11.9 | 1.21 M |
+
+Keeping only the warm keys (counted 16 times) made the bbc load ~0.8 s slower (median 13.0 against 12.2): the page's
+code, reported a few times, counted from zero again, and each key coming back was formed again under the lock. A
+prune now also keeps every key reported in the last 262,144 keys added to the map (its clock, `Cache::tick`, a byte
+in `Info`'s spare room): bbc 11.8 and 11.9, busy MIPS 197 and 199. **Kept:** the heap bounded at no measured cost.

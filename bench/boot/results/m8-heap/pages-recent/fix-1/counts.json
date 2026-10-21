@@ -1,0 +1,18 @@
+{
+ "bench/results/local/heap-pages3/fix-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 91.7,
+   "flushes": 0,
+   "modules": 2970,
+   "mib": 151.2,
+   "overdue": 0,
+   "parks": 10106,
+   "locks": 18327674,
+   "interpGsteps": 3.35,
+   "share": 0.963,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

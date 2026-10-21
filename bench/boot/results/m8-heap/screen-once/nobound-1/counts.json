@@ -1,0 +1,18 @@
+{
+ "bench/results/local/heap-screen-once/nobound-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 84.18,
+   "flushes": 0,
+   "modules": 2310,
+   "mib": 109.8,
+   "overdue": 0,
+   "parks": 8015,
+   "locks": 27374630,
+   "interpGsteps": 5.93,
+   "share": 0.929,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

@@ -430,19 +430,23 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
 The core's heap is a fixed reserve (1 GiB, `HEAP_RESERVE` in web/vm.ts; [abi.md](abi.md) "A fixed-size memory"), and
 running it out traps the machine. Everything the JIT keeps there is bounded:
 - **The block map** (`Cache::map`: every block key a vCPU dispatched, compiled or not, with its count; `Info` is 16
-  bytes, 25 a bucket) and its page index. At `MAP_KEYS` (1.5 M keys, counting those an IC removed since the table was
-  last rebuilt, whose tombstones take room) a **prune** (`Cache::prune`) keeps what the cache needs (compiled, queued,
-  tiering or covered blocks) and the keys counted `KEEP_HITS` (16) times that reported since the last prune (on their
-  way to the threshold: they keep their counts), drops the rest, rebuilds the table to fit and the page index and
-  links to match. If that leaves more than half of `MAP_KEYS`, only the needed keys stay; if even those are too many,
-  the cache flushes. So the table never passes 2^21 buckets (50 MiB; the page index adds ~8 B a key). A pruned key
+  bytes, 25 a bucket) and its page index. At `MAP_KEYS` (1.5 M keys), or when its full table would double past the 2^21 buckets that hold them
+  (the keys an IC removed leave tombstones that take room: counting the removals instead missed resizes, since
+  `HashMap::capacity` drops with each tombstone), a **prune** (`Cache::prune`) keeps what the cache needs (compiled, queued,
+  tiering or covered blocks), the keys reported in the last 262,144 keys added (`RECENT_TICKS` of the map's clock,
+  `Cache::tick`: the code running now) and those counted `KEEP_HITS` (16) times reported in the last 2 M (on their way
+  to the threshold), with their counts; it drops the rest and rebuilds the table to fit, and the page index and links
+  to match. If that leaves more than half of `MAP_KEYS`, the needed and the recent keys stay; then only the needed;
+  if even those are too many, the cache flushes. **Why recent ones too:** with only the warm ones kept, the prune
+  (which lands in the pages session's bbc load, 210-240 s in) made that load 0.5-1 s slower: its code, reported a
+  few times, counted from zero again, and each key coming back is formed again under the lock. So the table never passes 2^21 buckets (50 MiB; the page index adds ~8 B a key). A pruned key
   that runs again counts from zero. **Why:** the map held every key since the last flush, and with the 320 MiB budget
   flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
   and one flush when the table doubled from 2^22 buckets (`rust_oom` in `Jit::miss`, 2026-10-21). JavaScript
   engines' code that runs a few times, at addresses later reused, is most of those keys.
 - **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 256 MiB shared out
   among the tables, at most 128 MiB one), and its map and page index, which also start over at `MAX_KEYS` (900,000:
-  2^20 buckets, 21 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, counting the keys an IC dropped (a block of
+  2^20 buckets, 21 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full table would double past the one that holds them (a block of
   one micro-op, or none, filled the map long before the arena).
 - **A table's known blocks** (`Table::known`): at most a key per slot this epoch.
 - **Module bytes** held for tables that haven't taken them: at most `HELD_MAX` ([Sharing](#sharing)).
