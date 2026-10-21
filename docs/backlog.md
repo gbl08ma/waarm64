@@ -45,9 +45,8 @@ most promising first.
   a shorter, steadier Go workload, or many more sessions, before it can decide anything
   (`bench/interp/REPORT.md` "M8-INTERP round 2").
 - **More micro-op handlers:** MRS (the plain registers: 28% of the generic path in Alpine's boot), FP and SIMD
-  loads and stores (memcpy: a Q-register copy runs 7× slower than integer code) and LSE atomics are written and
-  screened (`bench/interp/results/m8-interp-r2/handlers/*.patch`: +0-1.5% on the boots, not repeated, so not kept;
-  the SIMD&FP ones want a browser's count), exclusives, BFM
+  loads and stores (memcpy: a Q-register copy runs 7× slower than integer code) and LSE atomics are handlers since
+  2026-10-21 (+3.2% on Alpine's boot under `jit` 4); left: the exclusives, BFM
   run generically through `exec` (3.5% of the interpreted instructions in Alpine's boot before UMADDL, EXTR and
   REV/CLZ became handlers). Each handler in the hot loop is code its hot path carries: the literal load inline cost
   the user-mode guest 4-5%; measure every one on the small guests too. A browser's mix wasn't counted: the diagnostic

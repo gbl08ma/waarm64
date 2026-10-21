@@ -1231,6 +1231,9 @@ Alpine's userspace and boot and on the `go build` loop.
 **Handlers** (one round, against `b2fdaea`: `dec_mips` / Alpine / Buildroot 424.7 / 171.0 / 112.7; the diffs in
 `handlers/`): MRS of the registers `sys::plain` knows at the block's EL (`uop_el`, the JIT's inline set) 423.4 /
 172.4 / 114.8; the SIMD&FP single and pair loads and stores (B to Q, offset, pre, post) 425.0 / 171.0 / 112.4; LSE
-LD<op> and SWP of W and X registers (a CAS loop inline) 424.9 / 171.8 / 114.3; all three 424.5 / 173.6 / 113.6. At
-most +1.5% on a boot, under the bar, and not kept for lack of time to repeat them (the boots' generic path is
-3.5% of their instructions; the SIMD&FP ones should show in a browser's memcpy, not counted: see loop 0).
+LD<op> and SWP of W and X registers (a CAS loop inline) 424.9 / 171.8 / 114.3; all three 424.5 / 173.6 / 113.6. All
+three again, two rounds (`handlers-ab/`): Alpine's boot 167.7, 170.9 → 173.2, 173.9 (+3.2%), Buildroot's 112.2,
+114.2 → 114.4, 115.2 (+1.9%), `dec_mips` 424.6, 424.0 → 424.0, 425.3, `vm_dec_mmu_mips` 411.0, 411.3 → 409.7, 408.3
+(−0.7%). **Kept, all three** (as loop 5: under the bar, repeated on the boots, the small guests flat). Planted bugs
+(LDCLR as AND, a Q pair's second register given the first value) each failed the differential test; MRS has
+`an_mrs_runs_as_the_interpreter_runs_it`, every key `sys::plain` knows at EL0 and EL1. Not confirmed on the Mac.

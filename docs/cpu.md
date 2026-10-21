@@ -246,7 +246,8 @@ test it against `tests/steps.txt`.
   16-byte micro-ops with their operand fields pulled out and kept in the vCPU table's cache. The
   common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
   UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, EXTR, RBIT/REV/CLZ,
-  ADR/ADRP), every branch, and
+  ADR/ADRP), every branch, MRS of what `sys::plain` reads at the block's EL (`uop_el`), the LSE
+  LD<op>/SWP of W and X registers (a CAS loop), the SIMD&FP single and pair loads and stores, and
   the integer loads and stores (single register in every addressing form but the unprivileged
   one, pairs, literal) have handlers; the rest is a generic micro-op that runs the interpreter's
   own code with the decoded `Op` (`interp::exec_at_op`). One micro-op is one instruction, so the

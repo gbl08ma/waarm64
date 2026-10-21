@@ -109,6 +109,14 @@ fn classes() -> Vec<(u32, u32, Op)> {
         LDRx_reg,
         STP_LDP_gen,
         STNP_LDNP_gen,
+        STR_imm_fpsimd_2,
+        LDR_imm_fpsimd_2,
+        STUR_fpsimd,
+        LDUR_fpsimd,
+        STR_imm_fpsimd_1,
+        LDR_imm_fpsimd_1,
+        STP_LDP_fpsimd,
+        STNP_LDNP_fpsimd,
         EXTR,
         UDIV,
         CLZ_int,
@@ -125,6 +133,14 @@ fn classes() -> Vec<(u32, u32, Op)> {
         LDTR,
         CAS,
         LDADD,
+        LDCLR,
+        LDEOR,
+        LDSET,
+        LDSMAX,
+        LDSMIN,
+        LDUMAX,
+        LDUMIN,
+        SWP,
     ];
     let p: Vec<_> = crate::decode::patterns()
         .iter()
@@ -171,6 +187,11 @@ fn state(r: &mut Rng) -> Cpu {
             2 => r.below(DATA) & !7,
             _ => r.below(DATA),
         };
+    }
+    // FP enabled mostly (the SIMD&FP loads and stores' inline path), not always.
+    c.cpacr_el1 = if r.below(4) == 0 { 0 } else { 3 << 20 };
+    for v in &mut c.v {
+        *v = (r.next() as u128) << 64 | r.next() as u128;
     }
     c.x[31] = if r.below(8) == 0 {
         r.below(DATA)
@@ -258,6 +279,45 @@ fn blocks_run_as_the_interpreter_runs_them() {
     for k in 0..=K::LdLit as usize {
         assert!(kinds[k] > 0, "kind {k} never ran: {kinds:?}");
     }
+}
+
+/// An MRS that `sys::plain` knows runs as the interpreter runs it, at EL0 and
+/// EL1, for every such key.
+#[test]
+fn an_mrs_runs_as_the_interpreter_runs_it() {
+    let mut r = Rng(0x2545_f491_4f6c_dd1d);
+    let t = TestRam::new(RAM);
+    let mut ran = 0;
+    for key in 0..1u32 << 16 {
+        for el1 in [false, true] {
+            if crate::interp::sys::plain(key, el1).is_none() {
+                continue;
+            }
+            let w = 0xd530_0000 | key << 5 | r.below(32) as u32;
+            let u = uop_el(w, crate::decode::decode(w), el1);
+            if u.k != K::Mrs {
+                continue;
+            }
+            t.mem.write(CODE, 4, w as u64).unwrap();
+            let mut c0 = state(&mut r);
+            c0.pstate = if el1 { 0b0101 } else { 0 } | (r.next() & 0x3c0);
+            c0.nzcv = r.below(16) << 28;
+            (c0.tpidr_el0, c0.tpidrro_el0, c0.sctlr_el1, c0.ttbr0_el1) =
+                (r.next(), r.next(), r.next() & !1, r.next());
+            (c0.tcr_el1, c0.esr_el1, c0.vbar_el1, c0.tpidr_el1) =
+                (r.next(), r.next(), r.next(), r.next());
+            (c0.spsr_el1, c0.elr_el1, c0.mair_el1, c0.mpidr) =
+                (r.next(), r.next(), r.next(), r.next());
+            let mut c1 = c0.clone();
+            let want = interp::steps(&mut c1, &t.mem, None, 1);
+            let mut c2 = c0.clone();
+            let got = run_hot(&mut c2, &mut Flat(&t.mem), &[u], CODE);
+            assert_eq!(got, want, "{w:#010x} el1 {el1}");
+            assert_eq!(c2, c1, "{w:#010x} el1 {el1}");
+            ran += 1;
+        }
+    }
+    assert!(ran > 25, "{ran}");
 }
 
 /// A run of MOVs ([`mov_runs`]) stops at the prefix's end, as the steps left say.
