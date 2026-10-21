@@ -19,8 +19,10 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
 
 ## Next, ranked (expected payoff · evidence · how to test)
 
-1. **Confirm the second round on the Mac host.** Payoff: certainty. Evidence: loops 1, 2, 4, 5 and the floor of 500
-   were confirmed there; the floor of 1000 and the round-2 handlers weren't (no time). Test: `bench/interp/ab-mac.sh
+1. **Settle the floor of 1000 on the Mac host.** Payoff: certainty about the default. Evidence: on the Mac,
+   one round, 1000 against 500 made Alpine's boot under the JIT 2.0% slower and its userspace 0.6% slower (the dev
+   VM: +0.7% and −0.8%); its case is the browser sessions (less wasm, +9% busy MIPS on the dev VM), never run on the
+   Mac (`bench/gpu/sway-mac.sh` runs a desktop guest there). The round-2 handlers were confirmed (+1.4%, +2.7%). Test: `bench/interp/ab-mac.sh
    r2 1 a0=<b2fdaea's core> h=<main's core>` on the yardstick, and `-- boot_alpine_mips_jit alpine_user_jit
    boot_mips_jit` with floors 500 and 1000.
 2. **Loop 7: one decoded-block store for every table.** Payoff: a few percent on 4-vCPU browser workloads, more now

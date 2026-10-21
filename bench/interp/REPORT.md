@@ -1241,4 +1241,10 @@ three again, two rounds (`handlers-ab/`): Alpine's boot 167.7, 170.9 → 173.2, 
 114.2 → 114.4, 115.2 (+1.9%), `dec_mips` 424.6, 424.0 → 424.0, 425.3, `vm_dec_mmu_mips` 411.0, 411.3 → 409.7, 408.3
 (−0.7%). **Kept, all three** (as loop 5: under the bar, repeated on the boots, the small guests flat). Planted bugs
 (LDCLR as AND, a Q pair's second register given the first value) each failed the differential test; MRS has
-`an_mrs_runs_as_the_interpreter_runs_it`, every key `sys::plain` knows at EL0 and EL1. Not confirmed on the Mac.
+`an_mrs_runs_as_the_interpreter_runs_it`, every key `sys::plain` knows at EL0 and EL1.
+
+**On the Mac host** (one round each, `results/m8-interp-r2/mac/`): the handlers, Alpine's boot under `jit` 4 185.6
+→ 188.2 (+1.4%), Buildroot's 141.3 → 145.1 (+2.7%), `dec_mips` 438.9 → 440.1. The floor of 1000 against 500: Alpine's
+boot under the JIT 544.2 → 533.2 MIPS (−2.0%), the userspace benchmark 12,738 → 12,820 ms (+0.6%): not the dev VM's
+small gain; one round, within the session's spread, but the Mac doesn't confirm 1000 over 500 on Alpine (its
+browser workloads, where 1000's case rests, weren't run there).

@@ -34,7 +34,8 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 What the block interpreter's speed track (2026-10-21, `bench/interp/REPORT.md` from "M8-INTERP loop 0") left open,
 most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence and test in full.
 
-- **Confirm round 2 on the Mac host:** the floor of 1000 and the MRS, SIMD&FP and LSE handlers weren't.
+- **Settle the floor of 1000 on the Mac host:** there, one round, Alpine's boot under the JIT was 2.0% slower than
+  at 500 and its userspace 0.6% slower; the browser sessions that made the case for 1000 weren't run on the Mac.
 - **What the guest accesses' atomics cost on x86_64** (the user's desktop, most users): wasm's sequentially
   consistent stores are `xchg` (or `mov` + `mfence`) there, never measured; on the M4 `run`'s `ldar`/`stlr` took
   0.24% of its cycle samples, and M7 loop 6 measured 88.7 → 79.0 MIPS (MMU on, half alignment, half ordering) when
