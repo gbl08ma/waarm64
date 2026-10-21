@@ -175,35 +175,8 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
         _ => {
             // LD<op> and SWP: size in 31:30, o3:opc in 15:12.
             let size = 1 << bits(i, 31, 30);
-            let bw = 8 * size;
-            let mask = u64::MAX >> (64 - bw);
-            let v = c.reg(rs) & mask;
-            let s = |x: u64| sext(x, bw) as i64;
-            let old = m.rmw(c, base, size, |old| {
-                (match bits(i, 15, 12) {
-                    0 => old.wrapping_add(v),
-                    1 => old & !v,
-                    2 => old ^ v,
-                    3 => old | v,
-                    4 => {
-                        if s(old) > s(v) {
-                            old
-                        } else {
-                            v
-                        }
-                    }
-                    5 => {
-                        if s(old) < s(v) {
-                            old
-                        } else {
-                            v
-                        }
-                    }
-                    6 => old.max(v),
-                    7 => old.min(v),
-                    _ => v, // SWP (8)
-                }) & mask
-            })?;
+            let v = c.reg(rs) & u64::MAX >> (64 - 8 * size);
+            let old = m.rmw(c, base, size, bits(i, 15, 12), v)?;
             c.set_reg(rt, old);
         }
     }

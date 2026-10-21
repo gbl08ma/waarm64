@@ -36,7 +36,9 @@ killed with its machine running is noted at the next start, which offers a small
 hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is the current CPU track (`M8-INTERP-HANDOVER.md`: judged by its own MIPS, so the
 compile threshold can rise and less code reaches V8): loops 0–6 done (a call-free hot loop, 1.3–1.9× the interpreter;
 the threshold's floor at 1000 with one report from `warm` to it, a third less wasm in Firefox; docs/cpu.md "The block
-interpreter"), loop 7 (one decoded-block store for every table) and more handlers left. **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
+interpreter"), loop 8 done (`hot` re-profiled: the access path's invariants once a call, offset loads and stores
+with their own handler and in pairs, LSE's common ops as single atomics; +4-5% on the boots, +5-8% on the small
+guests), loop 7 (one decoded-block store for every table) and more handlers left. **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
 cache lines, so guests issue 2 ICs a page; docs/jit.md "Sharing", bench/boot/REPORT.md). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
@@ -172,7 +174,9 @@ needs no CI run.
 
 **Performance** ([docs/benchmarking.md](docs/benchmarking.md))
 - Don't claim a speedup or regression without numbers from `bench/run.ts` in Chromium: medians and
-  IQR (from the JSON), host and Chromium version; differences under ~5% are noise unless repeated.
+  IQR (from the JSON), host and Chromium version; in one session's alternated A/B (≥3 rounds), a
+  difference counts when the arms' rounds don't overlap and it's past ~1% (Buildroot's boot ~3%);
+  across sessions the host moves runs by up to ~8% (docs/benchmarking.md "Rules").
 - Commit the result JSON behind any written report; ad-hoc runs go to `bench/results/local/`.
 - Compare A/B in one session, alternating; small guests at eight placements.
 - Rank changes by the long, real workloads (Alpine, Alpine userspace); don't optimize for

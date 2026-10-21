@@ -1,4 +1,4 @@
-# M8 interpreter speed: handover (2026-10-21, after loops 0-6 and a second round)
+# M8 interpreter speed: handover (2026-10-21, after loops 0-6, a second round and loop 8)
 
 **The goal is the block interpreter's own speed**, so the compile threshold can rise and less code reaches V8. What
 ran on 2026-10-21 is in `bench/interp/REPORT.md` from "M8-INTERP loop 0" to "M8-INTERP round 2"; how things work now
@@ -9,9 +9,12 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
   and MRS, the SIMD&FP loads and stores and LSE (round 2) as handlers; the compile threshold's floor at 500, then
   1000 (loop 6 and round 2), with one report from `warm` to the threshold. The interpreter alone on the dev VM:
   user-mode guest 249 → 424 MIPS, EL1 176-198 → ~410, Buildroot's boot 89 → ~114, Alpine's 122 → ~173. Firefox's
-  pages session compiled 271 MB of wasm at the old floor of 50, 164 at 1000.
+  pages session compiled 271 MB of wasm at the old floor of 50, 164 at 1000. Loop 8 (a profile of `hot`, then
+  what it pointed at): the access path's invariants once a `hot` call, an `LdO`/`StO` handler, LdO/StO pairs in one
+  dispatch, LSE's common ops as single atomics: Alpine's boot +4-5%, the small guests +4-9%.
 - **Tried and not kept:** lazy NZCV, the flag setter + B.cond fusion, pre-linked successors, the micro-op copied
-  whole, the literal load inline, reports every 255 in the JIT, floors of 250 and 2000.
+  whole, the literal load inline, reports every 255 in the JIT, floors of 250 and 2000; (loop 8) an `End`
+  sentinel per block, LdO/StO runs in a loop, STP+STP pairs.
 - **The tools:** `bench/interp/yardstick.sh` (the yardstick; `CONFIG=liftoff-only` the reference),
   `bench/interp/ab.sh` + `ab-summary.ts` (A/B on it, alternated), `bench/interp/ab-mac.sh` (the same on the Mac),
   `bench/interp/boot-node.ts` (a boot in Node for `perf`); JIT policy changes with the churn page, the pages session,
@@ -60,19 +63,14 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
 7. **The exclusives (LDXR/STXR & co) and `DC ZVA` as handlers.** Payoff: ~1% on Buildroot's boot (the exclusives
    were 28% of its generic path), less on Alpine. Evidence: loop 0's mix. Test: as the round-2 handlers (the monitor
    stays in the `Cpu`; STXR a CAS as `Mem`'s); the differential test already draws LDXR/STXR.
-8. **Superinstructions beyond the MOV runs.** Payoff: ≤1-2%; the setter + B.cond fusion gave +1% alone and lost
-   beside the MOV runs. Candidates from the mix: `STR+STR`/`LDR+LDR` off one base (3.2% as pairs), `STP+STP` (2.4%),
-   `ADRP+ADD` (0.5%). Test: one variant each on the yardstick; watch the user-mode guest, which any code in `hot` can
-   slow.
+8. **Superinstructions beyond the MOV runs.** Done (loop 8): LdO/StO pairs kept (~+0.7% on Alpine's boot, two
+   sessions); runs in a loop and STP+STP pairs not; ADRP+ADD untried (docs/backlog.md "`hot`'s cost per micro-op").
 9. **A guest-visible lever: fewer IC IVAU exits.** Done (2026-10-21): `CTR_EL0.IminLine` 9, 2 KiB lines. Debian's
    boot issues 1/17 of the ICs, the `go build` loop 1/32 (bench/boot/REPORT.md "M8: a miss doesn't wait for the JIT
    cache's lock, and 2 KiB instruction cache lines"). Not measured: Chromium in Debian (`bench/apps/chromium.ts`'s
    renders and IC count).
-10. **Re-profile `hot`, then register caching or another dispatch shape.** Payoff: unclear. Evidence: no profile was
-   taken after loop 1; before it, every register write paid a wasm bounds check with the growable memory's size
-   reloaded (backlog "The core's heap in a fixed memory", stage 2, would remove that), and the handlers' entries took
-   ~20% of the samples (the jump table's redirect). Test: `perf` with `bench/interp/boot-node.ts alpine 4`, then
-   variants on the yardstick.
+10. **Re-profile `hot`.** Done (loop 8, `bench/interp/REPORT.md` "M8-INTERP loop 8"); what it leaves (the cost per
+   micro-op, register caching, tail-call dispatch) is docs/backlog.md "`hot`'s cost per micro-op".
 
 Dropped by argument, not measurement: threaded dispatch through tail calls (a `call_indirect` is 2.5 ns on the M4,
 more than a predicted jump-table branch; there's no PMU in the VM to count mispredicts), and the reference

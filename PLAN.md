@@ -277,8 +277,10 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   user-mode guest and from 122 to 172 on Alpine's boot (the Mac host: 261 → 427, 138 → 182 before the MOV runs), and
   the threshold's floor rose from 50 to 1000 (round 2's curve) with one report from `warm` to it (Firefox's pages session 36% less
   wasm at +7% busy MIPS; docs/jit.md "Compile policy"); lazy NZCV, the setter + B.cond fusion and pre-linked
-  successors were measured and not kept (docs/cpu.md). Left: one decoded-block store for every table (loop 7),
-  more handlers.
+  successors were measured and not kept (docs/cpu.md). Loop 8 (2026-10-21) re-profiled `hot` and took the
+  interpreter alone to 447 MIPS on the user-mode guest and 184 on Alpine's boot (+5.1%, +4.5%): the access path's
+  invariants once a call, offset loads and stores with their own handler and in pairs, LSE's common ops as single
+  atomics. Left: one decoded-block store for every table (loop 7), more handlers.
 
 ### M9 — Backlog
 

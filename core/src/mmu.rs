@@ -562,23 +562,12 @@ pub trait Bus {
         Ok(unsafe { self.mem().cas(p, size, expected, new) })
     }
 
-    /// Atomic read-modify-write (LSE LDADD & co, SWP). Returns the old value.
-    fn rmw(&mut self, c: &Cpu, va: u64, size: u32, op: impl Fn(u64) -> u64) -> Result<u64, Fault> {
-        // ponytail: generic CAS loop; add/and/or/xor/xchg map to single wasm
-        // atomic.rmw ops if a profile ever shows this.
+    /// Atomic read-modify-write: LSE's LD<op> or SWP, `op` its o3:opc and `v`
+    /// its operand (`mem::lse`). Returns the old value.
+    fn rmw(&mut self, c: &Cpu, va: u64, size: u32, op: u32, v: u64) -> Result<u64, Fault> {
         let p = self.host_aligned(c, va, size as u64, Access::Write)?;
         // SAFETY: as in read_atomic.
-        unsafe {
-            let m = self.mem();
-            let mut old = m.load_atomic(p, size);
-            loop {
-                let seen = m.cas(p, size, old, op(old));
-                if seen == old {
-                    return Ok(old);
-                }
-                old = seen;
-            }
-        }
+        Ok(unsafe { self.mem().rmw(p, size, op, v) })
     }
 
     /// 16-byte read of an aligned pair of X registers (LDXP), atomic with

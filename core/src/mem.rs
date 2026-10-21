@@ -353,6 +353,32 @@ impl Mem {
         }
     }
 
+    /// LSE's LD<op> or SWP ([`lse`]) at a host address of any memory: one
+    /// atomic op where there is one, else a CAS loop (min and max; a spill
+    /// memory's, through its imports). Returns the old value.
+    ///
+    /// # Safety
+    /// As for [`Mem::load_atomic`].
+    pub(crate) unsafe fn rmw(&self, h: Host, size: u32, op: u32, v: u64) -> u64 {
+        if let Some(p) = h.as_ptr()
+            // SAFETY: guaranteed by the caller.
+            && let Some(old) = unsafe { rmw(p, size, op, v) }
+        {
+            return old;
+        }
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let mut old = self.load_atomic(h, size);
+            loop {
+                let seen = self.cas(h, size, old, lse(op, old, v, 8 * size));
+                if seen == old {
+                    return old;
+                }
+                old = seen;
+            }
+        }
+    }
+
     /// A spill memory's load, in naturally aligned pieces as [`load`]'s.
     #[inline(never)]
     fn spill_load(&self, h: Host, size: u32) -> u64 {
@@ -734,9 +760,109 @@ pub(crate) unsafe fn cas(p: *mut u8, size: u32, expected: u64, new: u64) -> u64 
     }
 }
 
+/// LSE's LD<op> and SWP of `bits` bits: what `op` (o3:opc, bits 15:12)
+/// makes of `old` and the operand `v`, masked to the access.
+pub(crate) fn lse(op: u32, old: u64, v: u64, bits: u32) -> u64 {
+    let s = |x: u64| ((x << (64 - bits)) as i64) >> (64 - bits);
+    (match op {
+        0 => old.wrapping_add(v),
+        1 => old & !v,
+        2 => old ^ v,
+        3 => old | v,
+        4 => {
+            if s(old) > s(v) {
+                old
+            } else {
+                v
+            }
+        }
+        5 => {
+            if s(old) < s(v) {
+                old
+            } else {
+                v
+            }
+        }
+        6 => old.max(v),
+        7 => old.min(v),
+        _ => v, // SWP (8)
+    }) & u64::MAX >> (64 - bits)
+}
+
+/// [`lse`] at `p` as one atomic read-modify-write (wasm's `atomic.rmw`): add,
+/// clear, xor, set and swap; `None` for the min and max ops (a CAS loop's).
+/// Returns the old value. `size` is 1, 2, 4 or 8 (anything else is 8: no
+/// panic, for `interp::block::hot`).
+///
+/// # Safety
+/// As for [`cas`].
+#[inline(always)]
+pub(crate) unsafe fn rmw(p: *mut u8, size: u32, op: u32, v: u64) -> Option<u64> {
+    const O: Ordering = Ordering::SeqCst;
+    macro_rules! one {
+        ($a:expr, $t:ty) => {{
+            let (a, v) = ($a, v as $t);
+            (match op {
+                0 => a.fetch_add(v, O),
+                1 => a.fetch_and(!v, O),
+                2 => a.fetch_xor(v, O),
+                3 => a.fetch_or(v, O),
+                8 => a.swap(v, O),
+                _ => return None,
+            }) as u64
+        }};
+    }
+    // SAFETY: guaranteed by the caller.
+    Some(unsafe {
+        match size {
+            1 => one!(AtomicU8::from_ptr(p), u8),
+            2 => one!(AtomicU16::from_ptr(p as *mut u16), u16),
+            4 => one!(AtomicU32::from_ptr(p as *mut u32), u32),
+            _ => one!(AtomicU64::from_ptr(p as *mut u64), u64),
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// The single atomic ops ([`rmw`]) do what [`lse`] says, at every size,
+    /// and leave the bytes past the access alone.
+    #[test]
+    fn rmw_ops_are_lse() {
+        let vals = [
+            0,
+            1,
+            0x7f,
+            0x80,
+            0xffff,
+            0x8000_0000,
+            u64::MAX,
+            0x0123_4567_89ab_cdef,
+        ];
+        for size in [1u32, 2, 4, 8] {
+            let mask = u64::MAX >> (64 - 8 * size);
+            for op in 0..=8 {
+                for &old in &vals {
+                    for &v in &vals {
+                        let (old, v) = (old & mask, v & mask);
+                        let mut cell = [old | !mask & 0x5a5a_5a5a_5a5a_5a5a];
+                        // SAFETY: 8 aligned bytes, ours.
+                        let got = unsafe { rmw(cell.as_mut_ptr() as *mut u8, size, op, v) };
+                        match got {
+                            None => assert!((4..=7).contains(&op), "op {op}"),
+                            Some(g) => {
+                                assert_eq!(g, old, "op {op} size {size}");
+                                assert_eq!(cell[0] & mask, lse(op, old, v, 8 * size));
+                                assert_eq!(cell[0] & !mask, !mask & 0x5a5a_5a5a_5a5a_5a5a);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /// Owns zeroed, 16-byte-aligned RAM for native tests.
     pub struct TestRam {

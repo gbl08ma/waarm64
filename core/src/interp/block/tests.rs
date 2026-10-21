@@ -320,6 +320,33 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
     assert!(ran > 25, "{ran}");
 }
 
+/// A pair of LdOs and StOs ([`mov_runs`]) stops at the prefix's end, as the steps left say.
+#[test]
+fn a_store_pair_stops_at_the_prefix() {
+    // str w1, [x0]; str w2, [x0, #4]; ret
+    let mut uops: Vec<Uop> = [0xb900_0001, 0xb900_0402, 0xd65f_03c0]
+        .into_iter()
+        .map(uop)
+        .collect();
+    mov_runs(&mut uops);
+    assert_eq!((uops[0].k, uops[0].x >> 16), (K::StO, 1));
+    for left in 1..=2 {
+        let t = TestRam::new(RAM);
+        let mut c = Cpu::default();
+        (c.x[0], c.x[1], c.x[2]) = (DATA, 0x11, 0x22);
+        assert_eq!(
+            run_hot(&mut c, &mut Flat(&t.mem), &uops[..left], CODE),
+            (left as u64, None)
+        );
+        assert_eq!(t.mem.read(DATA, 4), Ok(0x11));
+        assert_eq!(
+            t.mem.read(DATA + 4, 4),
+            Ok(if left == 2 { 0x22 } else { 0 })
+        );
+        assert_eq!(c.pc, CODE + 4 * left as u64);
+    }
+}
+
 /// A run of MOVs ([`mov_runs`]) stops at the prefix's end, as the steps left say.
 #[test]
 fn a_mov_run_stops_at_the_prefix() {

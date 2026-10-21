@@ -79,14 +79,15 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   through `exec`. Each handler in the hot loop is code its hot path carries (the literal load inline cost the
   user-mode guest 4-5%): measure every one on the small guests too. FP itself runs at a sixth of the integer rate
   (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by lane through `u128`).
-- **Superinstructions beyond the MOV runs** (≤1-2%): `STR+STR`/`LDR+LDR` off one base, `STP+STP`, `ADRP+ADD`.
-- **Re-profile `hot`** (none since loop 1), then register caching or another dispatch shape; tail-call dispatch
-  (`become`) as an A/B on top.
+- **`hot`'s cost per micro-op** (profiled 2026-10-21, `bench/interp/REPORT.md` "M8-INTERP loop 8"): ~30% of its
+  time whatever the kind runs: V8's interrupt check at the loop head, four field loads, the jump table, and the
+  handler's first instruction (the indirect branch's redirect, 15-20% between them). Untried: tail-call dispatch
+  (`become`) as an A/B; register caching; ADRP+ADD as a pair (0.5% of the pairs). A sentinel instead of the
+  `u == end` test and LdO/StO runs in a loop lost (docs/cpu.md "Tried and not kept"): any code in `hot` moves V8's
+  register allocation for all of it, so measure on the small guests too.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
-- `Mem::rmw` is a generic CAS loop; the JIT does LSE as single wasm ops. Matters again for M7's
-  contention.
 
 ## JIT
 

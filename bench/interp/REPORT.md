@@ -1248,3 +1248,58 @@ three again, two rounds (`handlers-ab/`): Alpine's boot 167.7, 170.9 → 173.2, 
 boot under the JIT 544.2 → 533.2 MIPS (−2.0%), the userspace benchmark 12,738 → 12,820 ms (+0.6%): not the dev VM's
 small gain; one round, within the session's spread, but the Mac doesn't confirm 1000 over 500 on Alpine (its
 browser workloads, where 1000's case rests, weren't run there).
+
+## M8-INTERP loop 8: `hot` re-profiled, the access path, superinstructions, LSE as single atomics
+
+2026-10-21 (18:40-21:00), the dev VM, Chromium 153.0.8010.52, on main at `14e8cbf`; raw data
+`results/m8-interp-l8/` (`abN/` one A/B each, three rounds alternated; the dropped variants' diffs against
+`14e8cbf`). Judged by the noise floor this loop set (docs/benchmarking.md "Rules"): a build's per-round medians
+stayed within ~0.5% (Buildroot's boot 2-3%), so a difference counts when the arms' rounds don't overlap and it's
+past ~1%.
+
+**The profile** (`perf` with `--perf-prof` in Node, Alpine's boot under `jit` 4, `bench/interp/boot-node.ts`,
+189 MIPS; `perf-alpine.txt`, `hot-annotate.txt`): `hot` 81.5% of the samples, `Bus::write_el` 2.6%,
+`jit::interpret` 2.3%, `exec_at_op` 1.7%. In `hot`'s machine code:
+- **~30% is the dispatch, whatever the kind:** V8's interrupt check at the inner loop's head (`ldurb [x26, #-207];
+  cbnz`, its slow path out of line), the micro-op's four field loads, the jump table's bounds check and `br` (10.2%
+  together); each handler's first instruction (the indirect branch's redirect, 15-20% summed over the handlers);
+  the back edge 4.7%, 2.7 points of it reloading `end` from the stack (spilled: the interrupt check's slow path
+  calls).
+- **Loads and stores ~30%:** the single-register handler 20% (mode, extension and size switches; SCTLR_EL1,
+  PSTATE and the TLB's pointer re-read every access), the pairs 10%. Then AddR 6.8%, Mov 4.2%, MovI 3.3%, AddI64
+  2.7%; chaining between blocks 8.9% and a block's entry 2.7%; the exits to the slow path 3.6%.
+
+**Variants** (each against the one before it that was kept):
+
+| | Alpine's boot | Buildroot's boot | `dec_mips` | `vm_dec_mmu_mips` | |
+|---|---|---|---|---|---|
+| v1: the access path's invariants once a `hot` call (`Fast::ctx`) | **+2.5%** | +2.3% | +0.1% | **+3.9%** | kept |
+| v2: an `End` micro-op after each block, no `u == end` test | −2.7% | −2.6% | −4.8% | −13.3% | not |
+| v3: `LdO`/`StO`, offset loads and stores of 4 or 8 bytes, own handler | **+1.4%** | +1.2% | **+4.1%** | **+4.5%** | kept |
+| v4: runs of LdO/StO in one dispatch, a loop (as the MOV runs) | −0.6% | −1.6% | −8.2% | −8.4% | not |
+| v4b: pairs of LdO/StO, straight-line | +0.8% | −0.4% | −0.2% | +0.3% | (below) |
+| LSE: add, clear, xor, set, swap as one atomic op | 0.0% | | +0.6% | +0.3% | kept |
+| v5: v4b and STP+STP pairs | +0.2% | −0.1% | −0.5% | −0.5% | not |
+
+v2: the compare was cheap and predicted, the sentinel one more indirect dispatch a block (blocks are a few
+instructions). v4: the loop's code slowed `hot` everywhere, as the literal load did in loop 2. The LSE change, on
+the 4-vCPU userspace benchmark too (`smp_user_jit_4`, `ab5/`): total 15,806 against 15,751 ms, every phase's rounds
+overlapping; hot atomics are compiled, so the interpreter's and the slow paths' CAS loops weren't a cost. Kept for
+what it is (no retry loop under contention, the five common ops as the JIT does them).
+
+**The final build** (`ab8/`, against main and against itself without the pairs, one session):
+
+| benchmark (MIPS) | main | without the pairs | **loop 8** |
+|---|---|---|---|
+| `dec_mips` | 424.7 · 426.7 · 425.9 | 441.7 · 441.6 · 443.7 | **446.9 · 447.6 · 447.9** (+5.1%) |
+| `vm_dec_flat_mips` | 422.6 · 425.1 · 424.7 | 442.6 · 443.8 · 444.1 | **443.6 · 445.2 · 445.0** (+4.8%) |
+| `vm_dec_mmu_mips` | 407.2 · 403.7 · 408.6 | 439.6 · 439.5 · 440.9 | **442.0 · 439.0 · 441.0** (+8.3%) |
+| Buildroot's boot | 117.0 · 119.2 · 118.2 | 121.6 · 122.1 · 122.9 | **123.0 · 122.7 · 122.9** (+4.0%) |
+| Alpine's boot | 175.8 · 176.2 · 176.2 | 182.3 · 182.8 · 183.3 | **183.9 · 184.1 · 184.1** (+4.5%) |
+
+The pairs over the build without them: Alpine's boot +0.7% and `dec_mips` +1.3% with disjoint rounds, as in `ab7/`
+(+0.7%, +0.8%): repeated, so kept. Planted bugs: every access looked up in the read array (the native boot through
+the block interpreter never powers off); LdO/StO always 8 bytes (the differential test); a pair not stopped at the
+prefix (only `a_store_pair_stops_at_the_prefix`, new: random blocks rarely end a prefix inside a pair); LDCLR as AND
+(`mem::tests::rmw_ops_are_lse`, new, and `interp::tests::lse`). The context's EL flipped passed the boot: a
+flipped entry mostly misses and takes the slow path, so it isn't a useful plant.

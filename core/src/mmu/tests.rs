@@ -363,10 +363,7 @@ fn atomics_mmu_off() {
         assert_eq!(b.cas(&c, a, size, 1, 5).unwrap(), 0); // fails, old = 0
         assert_eq!(b.cas(&c, a, size, 0, top).unwrap(), 0);
         assert_eq!(b.read_atomic(&c, a, size).unwrap(), top);
-        assert_eq!(
-            b.rmw(&c, a, size, |v| v.wrapping_add(2) & top).unwrap(),
-            top
-        );
+        assert_eq!(b.rmw(&c, a, size, 0, 2).unwrap(), top);
         assert_eq!(b.read(&c, a, size).unwrap(), 1);
     }
     assert_eq!(b.cas_pair(&c, 48, [0, 0], [7, 9]).unwrap(), [0, 0]);
@@ -380,7 +377,7 @@ fn atomics_mmu_off() {
         })
     };
     assert_eq!(b.read_atomic(&c, 4, 8), align(4, Access::Read));
-    assert_eq!(b.rmw(&c, 4, 8, |v| v), align(4, Access::Write));
+    assert_eq!(b.rmw(&c, 4, 8, 8, 0), align(4, Access::Write));
     assert_eq!(
         b.cas_pair(&c, 8, [0; 2], [1; 2]).map(|_| 0),
         align(8, Access::Write)
@@ -605,7 +602,7 @@ fn spill_memory_pages() {
     assert_eq!(p.r.mem.read(0x100_5000, 2), Ok(0xaabb));
     // Atomics, pairs and instruction fetch.
     assert_eq!(b.cas(&c, 0x1010, 8, 0, 7), Ok(0));
-    assert_eq!(b.rmw(&c, 0x1010, 8, |x| x + 1), Ok(7));
+    assert_eq!(b.rmw(&c, 0x1010, 8, 0, 1), Ok(7));
     assert_eq!(b.read_atomic(&c, 0x1010, 8), Ok(8));
     assert_eq!(b.cas_pair(&c, 0x1020, [0, 0], [3, 4]), Ok([0, 0]));
     assert_eq!(b.read_pair(&c, 0x1020), Ok([3, 4]));

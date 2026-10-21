@@ -173,9 +173,13 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   medians and IQR (take `iqr` from the JSON, never by hand), the host and the Chromium version.
 - **Commit the result JSON behind any written report** (`bench/*/results/<milestone>-<loop>/`);
   ad-hoc runs stay in `bench/results/local/`.
-- **Differences under ~5% are noise unless repeated.** Compare builds **A/B in one session,
-  alternating**; boots are compared only within one session (the host's state moves runs by up
-  to ~8% between sessions); check the interpreter's number in the same JSON to see the host's
+- **The noise floor, in one session:** compare builds **A/B in one session, alternating**, three
+  rounds or more (`bench/interp/ab.sh`). A difference counts when every round of one arm beats every
+  round of the other and it's past ~1%; Buildroot's boot, whose rounds spread 2-3%, needs ~3%. On
+  the idle dev VM a build's per-round medians of the yardstick stay within ~0.5% (Alpine's boot
+  0.2-0.8 MIPS of ~180, the small guests ~0.5% bar a rare outlier round; `bench/interp/REPORT.md`
+  "M8-INTERP loop 8"). Boots are compared only within one session (the host's state moves runs by
+  up to ~8% between sessions); check the interpreter's number in the same JSON to see the host's
   state.
 - **The small guests run at eight guest-RAM placements** (the placement effect, [v8.md](v8.md)):
   never rank builds on one placement.

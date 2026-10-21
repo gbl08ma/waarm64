@@ -24,7 +24,7 @@ use super::{
 use crate::cpu::{Cpu, sctlr};
 use crate::decode::Op;
 use crate::mem::{self, Host, Mem};
-use crate::mmu::{Bus, Flat, Mmu, TLB_ENTRIES, Use};
+use crate::mmu::{Bus, Entry, Flat, Mmu, Slots, TLB_ENTRIES, Use};
 use std::collections::HashMap;
 
 /// Micro-op kinds. Field use is listed per kind; `x` holds flags packed as
@@ -92,6 +92,11 @@ enum K {
     Ld,
     /// Single-register store, as `Ld` without ext.
     St,
+    /// `Ld` of 4 or 8 bytes at base + imm, zero-extended (`x` as `Ld`'s: mode
+    /// 0, ext 0); [`hot`] runs it without `Ld`'s choices.
+    LdO,
+    /// `St` likewise.
+    StO,
     /// LDP/LDNP/LDPSW: `d` Rt, `m` Rt2, `x` = size | signed << 4 | mode << 8
     /// (24:23: 0 or 2 offset, 1 post-index, 3 pre-index).
     Ldp,
@@ -119,8 +124,9 @@ enum K {
     Mrs,
 }
 
-/// Marks each MovI with the number of MovIs right after it ([`hot`] runs
-/// them in its dispatch; [`run`] ignores the count).
+/// Marks each MovI with the number of MovIs right after it, and each LdO or
+/// StO followed by another with bit 16 of `x` (pairs from the block's
+/// start): [`hot`] runs them in its dispatch; [`run`] ignores the marks.
 pub fn mov_runs(b: &mut [Uop]) {
     let mut n = 0;
     for k in (0..b.len()).rev() {
@@ -129,6 +135,16 @@ pub fn mov_runs(b: &mut [Uop]) {
             n += 1;
         } else {
             n = 0;
+        }
+    }
+    let o = |u: &Uop| matches!(u.k, K::LdO | K::StO);
+    let mut k = 0;
+    while k + 1 < b.len() {
+        if o(&b[k]) && o(&b[k + 1]) {
+            b[k].x |= 1 << 16;
+            k += 2;
+        } else {
+            k += 1;
         }
     }
 }
@@ -416,6 +432,11 @@ fn uop_op(w: u32, op: Op) -> Uop {
                 2 => (K::Ld, 1),
                 _ => (K::Ld, 2),
             };
+            let k = match k {
+                K::Ld if mode == 0 && ext == 0 && size >= 2 => K::LdO,
+                K::St if mode == 0 && size >= 2 => K::StO,
+                k => k,
+            };
             u(
                 k,
                 size | mode << 2 | ext << 4 | option << 8 | amt << 12,
@@ -638,7 +659,7 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
                 c.x[30] = pc.wrapping_add(4);
                 return taken(c, b, to);
             }
-            K::Ld | K::St => {
+            K::Ld | K::St | K::LdO | K::StO => {
                 if let Err(e) = single(c, m, u) {
                     c.pc = pc;
                     return (k as u64, Some(e));
@@ -672,17 +693,28 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
 /// across a call at its definition, docs/v8.md "Spills"). `None`: the slow
 /// path's, outside the loop.
 pub trait Fast: Bus {
+    /// What [`Fast::fast_in`] needs that can't change while [`hot`] runs
+    /// (anything that could change it runs generically, outside the loop).
+    type Ctx: Copy;
+    /// The context for `c` as it stands.
+    fn ctx(&self, c: &Cpu) -> Self::Ctx;
     /// The host address of `size` bytes of RAM at `va` for `u`, if the TLB
-    /// (or the flat map) has it, as [`Bus::fast`].
-    fn fast_ptr(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8>;
+    /// (or the flat map) has it, as [`Bus::fast`], in a context from
+    /// [`Fast::ctx`] with nothing in between that changes its inputs.
+    fn fast_in(&mut self, x: Self::Ctx, va: u64, size: u32, u: Use) -> Option<*mut u8>;
     /// The block key of the instruction at `pc` (aligned), if the instruction
     /// TLB has it: `jit::key`'s.
     fn ikey(&mut self, c: &Cpu, pc: u64) -> Option<u64>;
 }
 
 impl Fast for Flat<'_> {
+    type Ctx = ();
+
     #[inline(always)]
-    fn fast_ptr(&mut self, _: &Cpu, va: u64, size: u32, _: Use) -> Option<*mut u8> {
+    fn ctx(&self, _: &Cpu) {}
+
+    #[inline(always)]
+    fn fast_in(&mut self, _: (), va: u64, size: u32, _: Use) -> Option<*mut u8> {
         self.0.host0(va, size as u64)
     }
 
@@ -693,15 +725,35 @@ impl Fast for Flat<'_> {
 }
 
 impl Fast for Mmu<'_> {
+    /// The EL's first array in the TLB's first slots, or null: the slow path
+    /// (SCTLR_EL1.A, alignment faults, or the MMU off, or no TLB).
+    type Ctx = *const Entry;
+
     #[inline(always)]
-    fn fast_ptr(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8> {
-        // With SCTLR_EL1.A (alignment faults) or the MMU off, the slow path.
-        if c.sctlr_el1 & (sctlr::M | sctlr::A) != sctlr::M {
+    fn ctx(&self, c: &Cpu) -> *const Entry {
+        match self.tlb.as_deref() {
+            // EL0 and EL1 only (masked), as `Mmu::fast`.
+            Some(t) if c.sctlr_el1 & (sctlr::M | sctlr::A) == sctlr::M => {
+                // SAFETY: entry 3 × EL of the first slots, in the array.
+                unsafe { (t.e.as_ptr() as *const Entry).add(3 * (c.el() & 1) as usize) }
+            }
+            _ => core::ptr::null(),
+        }
+    }
+
+    #[inline(always)]
+    fn fast_in(&mut self, x: *const Entry, va: u64, size: u32, u: Use) -> Option<*mut u8> {
+        if x.is_null() {
             return None;
         }
-        // EL0 and EL1 only (masked: no bounds check), as `Mmu::fast`.
-        let e = self.tlb.as_ref()?.e[(va >> 12) as usize & (TLB_ENTRIES - 1)].0
-            [3 * (c.el() & 1) as usize + u as usize];
+        let i = (va >> 12) as usize & (TLB_ENTRIES - 1);
+        // SAFETY: `x` is in the TLB's first slots (`ctx`), which `self.tlb`
+        // borrows; slot `i` (masked) is `i` slots on, entry `u` of the EL's
+        // three in it.
+        let e = unsafe {
+            *x.byte_add(i * core::mem::size_of::<Slots>())
+                .add(u as usize)
+        };
         (e.tag == va.wrapping_add(size as u64 - 1) | 0xfff)
             .then(|| va.wrapping_add(e.addend) as usize as *mut u8)
     }
@@ -835,6 +887,7 @@ pub fn hot<B: Fast>(
         (r.u, r.end, r.pc, r.key, r.bpc, r.done);
     let left = r.left;
     let arena = dec.arena.as_ptr();
+    let fx = m.ctx(c);
     let status = 'run: loop {
         // The block's prefix, to the PC after it.
         let next = 'block: loop {
@@ -854,60 +907,41 @@ pub fn hot<B: Fast>(
                     }
                     let sf = o.x & 1 != 0;
                     let size = if sf { 8 } else { 4 };
-                    let Some(p) = m.fast_ptr(c, base, size, Use::Write) else {
+                    let Some(p) = m.fast_in(fx, base, size, Use::Write) else {
                         break 'run SLOW;
                     };
                     if p as usize & (size as usize - 1) != 0 {
                         break 'run SLOW;
                     }
-                    let mask = if sf { u64::MAX } else { u32::MAX as u64 };
-                    let v = rd(c, o.m as u32) & mask;
-                    let sx = |x: u64| if sf { x as i64 } else { x as u32 as i32 as i64 };
-                    let f = |old: u64| {
-                        (match o.x >> 1 {
-                            0 => old.wrapping_add(v),
-                            1 => old & !v,
-                            2 => old ^ v,
-                            3 => old | v,
-                            4 => {
-                                if sx(old) > sx(v) {
-                                    old
-                                } else {
-                                    v
+                    let v = rd(c, o.m as u32) & if sf { u64::MAX } else { u32::MAX as u64 };
+                    let op = o.x >> 1;
+                    // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
+                    let old = match unsafe { mem::rmw(p, size, op, v) } {
+                        Some(old) => old,
+                        // Min and max: a CAS loop.
+                        // SAFETY: as above.
+                        None => unsafe {
+                            const O: core::sync::atomic::Ordering =
+                                core::sync::atomic::Ordering::SeqCst;
+                            let f = |old| mem::lse(op, old, v, 8 * size);
+                            if sf {
+                                let a = core::sync::atomic::AtomicU64::from_ptr(p as *mut u64);
+                                let mut old = a.load(O);
+                                while let Err(seen) = a.compare_exchange(old, f(old), O, O) {
+                                    old = seen;
                                 }
-                            }
-                            5 => {
-                                if sx(old) < sx(v) {
-                                    old
-                                } else {
-                                    v
+                                old
+                            } else {
+                                let a = core::sync::atomic::AtomicU32::from_ptr(p as *mut u32);
+                                let mut old = a.load(O) as u64;
+                                while let Err(seen) =
+                                    a.compare_exchange(old as u32, f(old) as u32, O, O)
+                                {
+                                    old = seen as u64;
                                 }
+                                old
                             }
-                            6 => old.max(v),
-                            7 => old.min(v),
-                            _ => v,
-                        }) & mask
-                    };
-                    const O: core::sync::atomic::Ordering = core::sync::atomic::Ordering::SeqCst;
-                    // SAFETY: `fast_ptr` found `size` bytes of RAM at `p`, aligned (checked).
-                    let old = unsafe {
-                        if sf {
-                            let a = core::sync::atomic::AtomicU64::from_ptr(p as *mut u64);
-                            let mut old = a.load(O);
-                            while let Err(seen) = a.compare_exchange(old, f(old), O, O) {
-                                old = seen;
-                            }
-                            old
-                        } else {
-                            let a = core::sync::atomic::AtomicU32::from_ptr(p as *mut u32);
-                            let mut old = a.load(O) as u64;
-                            while let Err(seen) =
-                                a.compare_exchange(old as u32, f(old) as u32, O, O)
-                            {
-                                old = seen as u64;
-                            }
-                            old
-                        }
+                        },
                     };
                     wr(c, d, old);
                 }
@@ -931,11 +965,11 @@ pub fn hot<B: Fast>(
                     let (bytes, pair, load) = (1u32 << log, o.x >> 6 & 1 != 0, o.x >> 5 & 1 != 0);
                     let a2 = addr.wrapping_add(bytes as u64);
                     let w = if load { Use::Read } else { Use::Write };
-                    let Some(p1) = m.fast_ptr(c, addr, bytes, w) else {
+                    let Some(p1) = m.fast_in(fx, addr, bytes, w) else {
                         break 'run SLOW;
                     };
                     let p2 = if pair {
-                        match m.fast_ptr(c, a2, bytes, w) {
+                        match m.fast_in(fx, a2, bytes, w) {
                             Some(p) => p,
                             None => break 'run SLOW,
                         }
@@ -948,7 +982,7 @@ pub fn hot<B: Fast>(
                         break 'run SLOW;
                     }
                     let (rt, rt2) = ((d & 31) as usize, (o.m & 31) as usize);
-                    // SAFETY: `fast_ptr` found `bytes` bytes of RAM at each, aligned
+                    // SAFETY: `fast_in` found `bytes` bytes of RAM at each, aligned
                     // as each access needs (checked).
                     unsafe {
                         let ld = |p: *mut u8| -> u128 {
@@ -1120,6 +1154,22 @@ pub fn hot<B: Fast>(
                     c.x[30] = pc.wrapping_add(4);
                     break 'block to;
                 }
+                K::LdO | K::StO => {
+                    if !single_h(c, m, fx, o) {
+                        break 'run SLOW;
+                    }
+                    // Its pair, if in the prefix.
+                    // SAFETY: u < end.
+                    if o.x >> 16 != 0 && unsafe { u.add(1) } != end {
+                        // SAFETY: u + 1 < end.
+                        u = unsafe { u.add(1) };
+                        pc = pc.wrapping_add(4);
+                        // SAFETY: as above.
+                        if !single_h(c, m, fx, unsafe { &*u }) {
+                            break 'run SLOW;
+                        }
+                    }
+                }
                 K::Ld | K::St => {
                     let base = rsp(c, n);
                     if n == 31 && base & 15 != 0 {
@@ -1139,15 +1189,15 @@ pub fn hot<B: Fast>(
                     };
                     let bytes = 1 << (o.x & 3);
                     if o.k == K::St {
-                        let Some(p) = m.fast_ptr(c, addr, bytes, Use::Write) else {
+                        let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
                             break 'run SLOW;
                         };
-                        // SAFETY: `fast_ptr` found `bytes` bytes of RAM at `p`.
+                        // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
                         if !unsafe { mem::store_aligned(p, bytes, rd(c, d)) } {
                             break 'run SLOW;
                         }
                     } else {
-                        let Some(p) = m.fast_ptr(c, addr, bytes, Use::Read) else {
+                        let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
                             break 'run SLOW;
                         };
                         // SAFETY: as for the store.
@@ -1166,48 +1216,8 @@ pub fn hot<B: Fast>(
                     }
                 }
                 K::Ldp | K::Stp => {
-                    let base = rsp(c, n);
-                    if n == 31 && base & 15 != 0 {
+                    if !pair_h(c, m, fx, o) {
                         break 'run SLOW;
-                    }
-                    let (size, mode) = (o.x & 15, o.x >> 8 & 3);
-                    let addr = if mode == 1 {
-                        base
-                    } else {
-                        base.wrapping_add(o.imm)
-                    };
-                    let a2 = addr.wrapping_add(size as u64);
-                    let (rt, rt2) = (d, o.m as u32);
-                    let w = if o.k == K::Ldp { Use::Read } else { Use::Write };
-                    let (Some(p1), Some(p2)) =
-                        (m.fast_ptr(c, addr, size, w), m.fast_ptr(c, a2, size, w))
-                    else {
-                        break 'run SLOW;
-                    };
-                    if (p1 as usize | p2 as usize) & (size as usize - 1) != 0 {
-                        break 'run SLOW;
-                    }
-                    if o.k == K::Ldp {
-                        // SAFETY: `fast_ptr` found RAM at both, aligned (checked).
-                        let (v1, v2) = unsafe {
-                            (
-                                mem::load_aligned(p1, size).unwrap_or(0),
-                                mem::load_aligned(p2, size).unwrap_or(0),
-                            )
-                        };
-                        let ext = |v: u64| if o.x & 16 != 0 { v as i32 as u64 } else { v };
-                        wr(c, rt, ext(v1));
-                        wr(c, rt2, ext(v2));
-                    } else {
-                        let (v1, v2) = (rd(c, rt), rd(c, rt2));
-                        // SAFETY: as for the loads.
-                        unsafe {
-                            mem::store_aligned(p1, size, v1);
-                            mem::store_aligned(p2, size, v2);
-                        }
-                    }
-                    if mode & 1 == 1 {
-                        wsp(c, n, base.wrapping_add(o.imm));
                     }
                 }
             }
@@ -1276,6 +1286,85 @@ pub fn run_hot(c: &mut Cpu, m: &mut impl Fast, b: &[Uop], pc: u64) -> (u64, Opti
         }
         r.step();
     }
+}
+
+/// An LdO or StO on [`hot`]'s inline paths; false (and nothing done) where
+/// it needs the slow path.
+#[inline(always)]
+fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+    let (d, n) = (o.d as u32, o.n as u32);
+    let base = rsp(c, n);
+    if n == 31 && base & 15 != 0 {
+        return false;
+    }
+    let addr = base.wrapping_add(o.imm);
+    let bytes = 4 << (o.x & 1);
+    if o.k == K::StO {
+        let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
+            return false;
+        };
+        // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
+        unsafe { mem::store_aligned(p, bytes, rd(c, d)) }
+    } else {
+        let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
+            return false;
+        };
+        // SAFETY: as for the store.
+        let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
+            return false;
+        };
+        wr(c, d, v);
+        true
+    }
+}
+
+/// An LDP or STP (`K::Ldp`, `K::Stp`) on [`hot`]'s inline paths; false (and
+/// nothing done) where it needs the slow path.
+#[inline(always)]
+fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+    let (d, n) = (o.d as u32, o.n as u32);
+    let base = rsp(c, n);
+    if n == 31 && base & 15 != 0 {
+        return false;
+    }
+    let (size, mode) = (o.x & 15, o.x >> 8 & 3);
+    let addr = if mode == 1 {
+        base
+    } else {
+        base.wrapping_add(o.imm)
+    };
+    let a2 = addr.wrapping_add(size as u64);
+    let (rt, rt2) = (d, o.m as u32);
+    let w = if o.k == K::Ldp { Use::Read } else { Use::Write };
+    let (Some(p1), Some(p2)) = (m.fast_in(fx, addr, size, w), m.fast_in(fx, a2, size, w)) else {
+        return false;
+    };
+    if (p1 as usize | p2 as usize) & (size as usize - 1) != 0 {
+        return false;
+    }
+    if o.k == K::Ldp {
+        // SAFETY: `fast_in` found RAM at both, aligned (checked).
+        let (v1, v2) = unsafe {
+            (
+                mem::load_aligned(p1, size).unwrap_or(0),
+                mem::load_aligned(p2, size).unwrap_or(0),
+            )
+        };
+        let ext = |v: u64| if o.x & 16 != 0 { v as i32 as u64 } else { v };
+        wr(c, rt, ext(v1));
+        wr(c, rt2, ext(v2));
+    } else {
+        let (v1, v2) = (rd(c, rt), rd(c, rt2));
+        // SAFETY: as for the loads.
+        unsafe {
+            mem::store_aligned(p1, size, v1);
+            mem::store_aligned(p2, size, v2);
+        }
+    }
+    if mode & 1 == 1 {
+        wsp(c, n, base.wrapping_add(o.imm));
+    }
+    true
 }
 
 /// [`addsub`] through the inline register accessors.
@@ -1448,7 +1537,7 @@ fn single(c: &mut Cpu, m: &mut impl Bus, u: &Uop) -> R {
         }
     };
     let bytes = 1 << size;
-    if u.k == K::St {
+    if matches!(u.k, K::St | K::StO) {
         store(c, m, addr, bytes, c.reg(u.d as u32))?;
     } else {
         let v = load(c, m, addr, bytes)?;

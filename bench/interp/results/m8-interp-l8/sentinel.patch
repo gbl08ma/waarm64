@@ -1,0 +1,387 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index c837382..4009d5a 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -24,7 +24,7 @@ use super::{
+ use crate::cpu::{Cpu, sctlr};
+ use crate::decode::Op;
+ use crate::mem::{self, Host, Mem};
+-use crate::mmu::{Bus, Flat, Mmu, TLB_ENTRIES, Use};
++use crate::mmu::{Bus, Entry, Flat, Mmu, Slots, TLB_ENTRIES, Use};
+ use std::collections::HashMap;
+ 
+ /// Micro-op kinds. Field use is listed per kind; `x` holds flags packed as
+@@ -117,8 +117,21 @@ enum K {
+     /// the kinds the random blocks draw): `x` 0 the u64 at offset `imm` in the `Cpu`,
+     /// 1 the constant `imm`, 2 `pstate & imm`, 3 NZCV.
+     Mrs,
++    /// After a block's last micro-op in the arena: [`hot`] runs whole blocks
++    /// and stops at it (never in a block's micro-ops).
++    End,
+ }
+ 
++/// [`K::End`].
++const END: Uop = Uop {
++    k: K::End,
++    d: 0,
++    n: 0,
++    m: 0,
++    x: 0,
++    imm: 0,
++};
++
+ /// Marks each MovI with the number of MovIs right after it ([`hot`] runs
+ /// them in its dispatch; [`run`] ignores the count).
+ pub fn mov_runs(b: &mut [Uop]) {
+@@ -505,7 +518,7 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
+                     return (b.len() as u64, None);
+                 }
+             }
+-            K::Nop => {}
++            K::Nop | K::End => {}
+             K::AddI64 => c.x[d as usize] = c.x[n as usize].wrapping_add(u.imm),
+             K::AddI32 => c.x[d as usize] = c.x[n as usize].wrapping_add(u.imm) as u32 as u64,
+             K::AddsI => {
+@@ -672,17 +685,28 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
+ /// across a call at its definition, docs/v8.md "Spills"). `None`: the slow
+ /// path's, outside the loop.
+ pub trait Fast: Bus {
++    /// What [`Fast::fast_in`] needs that can't change while [`hot`] runs
++    /// (anything that could change it runs generically, outside the loop).
++    type Ctx: Copy;
++    /// The context for `c` as it stands.
++    fn ctx(&self, c: &Cpu) -> Self::Ctx;
+     /// The host address of `size` bytes of RAM at `va` for `u`, if the TLB
+-    /// (or the flat map) has it, as [`Bus::fast`].
+-    fn fast_ptr(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8>;
++    /// (or the flat map) has it, as [`Bus::fast`], in a context from
++    /// [`Fast::ctx`] with nothing in between that changes its inputs.
++    fn fast_in(&mut self, x: Self::Ctx, va: u64, size: u32, u: Use) -> Option<*mut u8>;
+     /// The block key of the instruction at `pc` (aligned), if the instruction
+     /// TLB has it: `jit::key`'s.
+     fn ikey(&mut self, c: &Cpu, pc: u64) -> Option<u64>;
+ }
+ 
+ impl Fast for Flat<'_> {
++    type Ctx = ();
++
++    #[inline(always)]
++    fn ctx(&self, _: &Cpu) {}
++
+     #[inline(always)]
+-    fn fast_ptr(&mut self, _: &Cpu, va: u64, size: u32, _: Use) -> Option<*mut u8> {
++    fn fast_in(&mut self, _: (), va: u64, size: u32, _: Use) -> Option<*mut u8> {
+         self.0.host0(va, size as u64)
+     }
+ 
+@@ -693,15 +717,32 @@ impl Fast for Flat<'_> {
+ }
+ 
+ impl Fast for Mmu<'_> {
++    /// The EL's first array in the TLB's first slots, or null: the slow path
++    /// (SCTLR_EL1.A, alignment faults, or the MMU off, or no TLB).
++    type Ctx = *const Entry;
++
++    #[inline(always)]
++    fn ctx(&self, c: &Cpu) -> *const Entry {
++        match self.tlb.as_deref() {
++            // EL0 and EL1 only (masked), as `Mmu::fast`.
++            Some(t) if c.sctlr_el1 & (sctlr::M | sctlr::A) == sctlr::M => {
++                // SAFETY: entry 3 × EL of the first slots, in the array.
++                unsafe { (t.e.as_ptr() as *const Entry).add(3 * (c.el() & 1) as usize) }
++            }
++            _ => core::ptr::null(),
++        }
++    }
++
+     #[inline(always)]
+-    fn fast_ptr(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8> {
+-        // With SCTLR_EL1.A (alignment faults) or the MMU off, the slow path.
+-        if c.sctlr_el1 & (sctlr::M | sctlr::A) != sctlr::M {
++    fn fast_in(&mut self, x: *const Entry, va: u64, size: u32, u: Use) -> Option<*mut u8> {
++        if x.is_null() {
+             return None;
+         }
+-        // EL0 and EL1 only (masked: no bounds check), as `Mmu::fast`.
+-        let e = self.tlb.as_ref()?.e[(va >> 12) as usize & (TLB_ENTRIES - 1)].0
+-            [3 * (c.el() & 1) as usize + u as usize];
++        let i = (va >> 12) as usize & (TLB_ENTRIES - 1);
++        // SAFETY: `x` is in the TLB's first slots (`ctx`), which `self.tlb`
++        // borrows; slot `i` (masked) is `i` slots on, entry `u` of the EL's
++        // three in it.
++        let e = unsafe { *x.byte_add(i * core::mem::size_of::<Slots>()).add(u as usize) };
+         (e.tag == va.wrapping_add(size as u64 - 1) | 0xfff)
+             .then(|| va.wrapping_add(e.addend) as usize as *mut u8)
+     }
+@@ -752,14 +793,27 @@ impl Run {
+         }
+     }
+ 
+-    /// Enters block `b` (`key`) at `pc`: its prefix that fits in the steps left.
+-    pub fn enter(&mut self, b: &[Uop], key: u64, pc: u64) {
++    /// Enters block `b` (`key`) at `pc`: its prefix that fits in the steps
++    /// left. Whether that's the whole block: [`hot`] runs only whole blocks
++    /// (it stops at the [`K::End`] after one), so a prefix cut short runs
++    /// through [`run`] ([`Run::cut`]).
++    pub fn enter(&mut self, b: &[Uop], key: u64, pc: u64) -> bool {
+         let n = b.len().min((self.left - self.done) as usize);
+         self.u = b.as_ptr();
+         // SAFETY: n <= b.len().
+         self.end = unsafe { self.u.add(n) };
+         (self.pc, self.key, self.bpc) = (pc, key, pc);
+         self.done += n as u64;
++        n == b.len()
++    }
++
++    /// Runs the block prefix [`Run::enter`] cut short, through [`run`]: what
++    /// retired in all, and the exit.
++    pub fn cut(&self, c: &mut Cpu, m: &mut impl Bus) -> (u64, Option<Exit>) {
++        // SAFETY: `u` and `end` bound the prefix, in the block's micro-ops.
++        let b = unsafe { core::slice::from_raw_parts(self.u, self.end.offset_from(self.u) as usize) };
++        let (k, e) = run(c, m, b, self.pc);
++        (self.retired() + k, e)
+     }
+ 
+     /// The steps retired before the micro-op [`hot`] stopped at.
+@@ -835,17 +889,16 @@ pub fn hot<B: Fast>(
+         (r.u, r.end, r.pc, r.key, r.bpc, r.done);
+     let left = r.left;
+     let arena = dec.arena.as_ptr();
++    let fx = m.ctx(c);
+     let status = 'run: loop {
+         // The block's prefix, to the PC after it.
+         let next = 'block: loop {
+-            if u == end {
+-                break 'block pc;
+-            }
+-            // SAFETY: u < end, in the arena.
++            // SAFETY: u is in the block's micro-ops or its `End`, in the arena.
+             let o = unsafe { &*u };
+             let (d, n) = (o.d as u32, o.n as u32);
+             let sf = o.x & 1 != 0;
+             match o.k {
++                K::End => break 'block pc,
+                 K::Generic | K::LdLit => break 'run SLOW,
+                 K::Lse => {
+                     let base = rsp(c, n);
+@@ -854,7 +907,7 @@ pub fn hot<B: Fast>(
+                     }
+                     let sf = o.x & 1 != 0;
+                     let size = if sf { 8 } else { 4 };
+-                    let Some(p) = m.fast_ptr(c, base, size, Use::Write) else {
++                    let Some(p) = m.fast_in(fx, base, size, Use::Write) else {
+                         break 'run SLOW;
+                     };
+                     if p as usize & (size as usize - 1) != 0 {
+@@ -889,7 +942,7 @@ pub fn hot<B: Fast>(
+                         }) & mask
+                     };
+                     const O: core::sync::atomic::Ordering = core::sync::atomic::Ordering::SeqCst;
+-                    // SAFETY: `fast_ptr` found `size` bytes of RAM at `p`, aligned (checked).
++                    // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
+                     let old = unsafe {
+                         if sf {
+                             let a = core::sync::atomic::AtomicU64::from_ptr(p as *mut u64);
+@@ -931,11 +984,11 @@ pub fn hot<B: Fast>(
+                     let (bytes, pair, load) = (1u32 << log, o.x >> 6 & 1 != 0, o.x >> 5 & 1 != 0);
+                     let a2 = addr.wrapping_add(bytes as u64);
+                     let w = if load { Use::Read } else { Use::Write };
+-                    let Some(p1) = m.fast_ptr(c, addr, bytes, w) else {
++                    let Some(p1) = m.fast_in(fx, addr, bytes, w) else {
+                         break 'run SLOW;
+                     };
+                     let p2 = if pair {
+-                        match m.fast_ptr(c, a2, bytes, w) {
++                        match m.fast_in(fx, a2, bytes, w) {
+                             Some(p) => p,
+                             None => break 'run SLOW,
+                         }
+@@ -948,7 +1001,7 @@ pub fn hot<B: Fast>(
+                         break 'run SLOW;
+                     }
+                     let (rt, rt2) = ((d & 31) as usize, (o.m & 31) as usize);
+-                    // SAFETY: `fast_ptr` found `bytes` bytes of RAM at each, aligned
++                    // SAFETY: `fast_in` found `bytes` bytes of RAM at each, aligned
+                     // as each access needs (checked).
+                     unsafe {
+                         let ld = |p: *mut u8| -> u128 {
+@@ -1013,8 +1066,8 @@ pub fn hot<B: Fast>(
+                 }
+                 K::MovI => {
+                     wsp(c, d, o.imm);
+-                    // SAFETY: u < end, both in the block's micro-ops.
+-                    let k = (o.x as usize).min(unsafe { end.offset_from(u) } as usize - 1);
++                    // (The block is whole: the run's MovIs are in it.)
++                    let k = o.x as usize;
+                     for j in 1..=k {
+                         // SAFETY: u + j < end.
+                         let b = unsafe { &*u.add(j) };
+@@ -1139,15 +1192,15 @@ pub fn hot<B: Fast>(
+                     };
+                     let bytes = 1 << (o.x & 3);
+                     if o.k == K::St {
+-                        let Some(p) = m.fast_ptr(c, addr, bytes, Use::Write) else {
++                        let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
+                             break 'run SLOW;
+                         };
+-                        // SAFETY: `fast_ptr` found `bytes` bytes of RAM at `p`.
++                        // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
+                         if !unsafe { mem::store_aligned(p, bytes, rd(c, d)) } {
+                             break 'run SLOW;
+                         }
+                     } else {
+-                        let Some(p) = m.fast_ptr(c, addr, bytes, Use::Read) else {
++                        let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
+                             break 'run SLOW;
+                         };
+                         // SAFETY: as for the store.
+@@ -1180,7 +1233,7 @@ pub fn hot<B: Fast>(
+                     let (rt, rt2) = (d, o.m as u32);
+                     let w = if o.k == K::Ldp { Use::Read } else { Use::Write };
+                     let (Some(p1), Some(p2)) =
+-                        (m.fast_ptr(c, addr, size, w), m.fast_ptr(c, a2, size, w))
++                        (m.fast_in(fx, addr, size, w), m.fast_in(fx, a2, size, w))
+                     else {
+                         break 'run SLOW;
+                     };
+@@ -1188,7 +1241,7 @@ pub fn hot<B: Fast>(
+                         break 'run SLOW;
+                     }
+                     if o.k == K::Ldp {
+-                        // SAFETY: `fast_ptr` found RAM at both, aligned (checked).
++                        // SAFETY: `fast_in` found RAM at both, aligned (checked).
+                         let (v1, v2) = unsafe {
+                             (
+                                 mem::load_aligned(p1, size).unwrap_or(0),
+@@ -1233,17 +1286,18 @@ pub fn hot<B: Fast>(
+             break 'run STOP;
+         }
+         let s = &mut dec.slots[slot(k)];
+-        if s.key != k {
++        // (A block that doesn't fit in the steps left runs cut short, by `run`.)
++        if s.key != k || s.len as u64 > left - done {
+             break 'run NEXT;
+         }
+         if s.hits >= s.quota as u16 {
+             break 'run STOP;
+         }
+         s.hits += 1;
+-        let n = (s.len as u64).min(left - done);
+-        // SAFETY: a slotted block's micro-ops are in the arena.
++        let n = s.len as u64;
++        // SAFETY: a slotted block's micro-ops are in the arena, its `End` after them.
+         u = unsafe { arena.add(s.start as usize) };
+-        // SAFETY: n <= its length.
++        // SAFETY: as above.
+         end = unsafe { u.add(n as usize) };
+         done += n;
+         (key, bpc) = (k, next);
+@@ -1255,12 +1309,23 @@ pub fn hot<B: Fast>(
+     status
+ }
+ 
+-/// [`run`] through [`hot`], as `jit::interpret` drives it, for one block (the tests).
++/// [`run`] through [`hot`], as `jit::interpret` drives it, for `left` steps
++/// of one block (the tests).
+ #[cfg(test)]
+-pub fn run_hot(c: &mut Cpu, m: &mut impl Fast, b: &[Uop], pc: u64) -> (u64, Option<Exit>) {
++pub fn run_hot(
++    c: &mut Cpu,
++    m: &mut impl Fast,
++    b: &[Uop],
++    left: usize,
++    pc: u64,
++) -> (u64, Option<Exit>) {
+     let mut dec = Cache::new(1 << 10);
+-    let mut r = Run::new(b.len() as u64);
+-    r.enter(b, 0, pc);
++    let mut r = Run::new(left as u64);
++    // As in the arena: the block, then its `End`.
++    let b = [b, &[END]].concat();
++    if !r.enter(&b[..b.len() - 1], 0, pc) {
++        return r.cut(c, m);
++    }
+     loop {
+         if hot(c, m, &mut dec, |_| false, &mut r) != SLOW {
+             return (r.done, None);
+@@ -1637,13 +1702,13 @@ impl Cache {
+                 let n = self.map.len();
+                 if n >= self.keys
+                     || self.map.capacity() == n && n > crate::jit::grows_past(self.keys)
+-                    || !uops.is_empty() && self.arena.len() + uops.len() > self.budget
++                    || !uops.is_empty() && self.arena.len() + uops.len() + 1 > self.budget
+                 {
+                     self.clear();
+                 }
+                 if self.map.try_reserve(1).is_err()
+                     || self.pages.try_reserve(1).is_err()
+-                    || self.arena.try_reserve(uops.len()).is_err()
++                    || self.arena.try_reserve(uops.len() + 1).is_err()
+                 {
+                     self.rescue();
+                 }
+@@ -1654,6 +1719,7 @@ impl Cache {
+                 }
+                 let start = self.arena.len() as u32;
+                 self.arena.extend_from_slice(&uops);
++                self.arena.push(END);
+                 self.decoded += 1;
+                 self.map.insert(key, (start, uops.len() as u32, 0, 0));
+                 self.pages.entry(key >> 12).or_default().push(key);
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index 05d957d..f3735f3 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -252,7 +252,7 @@ fn blocks_run_as_the_interpreter_runs_them() {
+         assert_eq!(c2, c1, "{}", ctx());
+         // The same through the call-free loop and its slow paths (`jit::interpret`'s).
+         let mut c3 = c0.clone();
+-        let got = run_hot(&mut c3, &mut Flat(&h.mem), &uops[..left], CODE);
++        let got = run_hot(&mut c3, &mut Flat(&h.mem), &uops, left, CODE);
+         assert_eq!(got, want, "hot: {}", ctx());
+         assert_eq!(c3, c1, "hot: {}", ctx());
+         for k in 0..RAM as u64 / 8 {
+@@ -311,7 +311,7 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
+             let mut c1 = c0.clone();
+             let want = interp::steps(&mut c1, &t.mem, None, 1);
+             let mut c2 = c0.clone();
+-            let got = run_hot(&mut c2, &mut Flat(&t.mem), &[u], CODE);
++            let got = run_hot(&mut c2, &mut Flat(&t.mem), &[u], 1, CODE);
+             assert_eq!(got, want, "{w:#010x} el1 {el1}");
+             assert_eq!(c2, c1, "{w:#010x} el1 {el1}");
+             ran += 1;
+@@ -333,7 +333,7 @@ fn a_mov_run_stops_at_the_prefix() {
+     for left in 1..=3 {
+         let mut c = Cpu::default();
+         assert_eq!(
+-            run_hot(&mut c, &mut Flat(&t.mem), &uops[..left], CODE),
++            run_hot(&mut c, &mut Flat(&t.mem), &uops, left, CODE),
+             (left as u64, None)
+         );
+         assert_eq!(
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 2b515e2..297760c 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2108,8 +2108,11 @@ fn interpret<B: Regime>(
+     let pc = cpu.pc;
+     let b = t.dec.get(key, mem)?;
+     let mut r = interp::block::Run::new(left);
+-    r.enter(b, key, pc);
++    let mut whole = r.enter(b, key, pc);
+     let res = loop {
++        if !whole {
++            break r.cut(cpu, m);
++        }
+         let jc = &t.jc;
+         match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
+             STOP => break (r.done, None),
+@@ -2148,7 +2151,7 @@ fn interpret<B: Regime>(
+         let Some(b) = t.dec.get(k, mem) else {
+             break (r.done, None);
+         };
+-        r.enter(b, k, next);
++        whole = r.enter(b, k, next);
+     };
+     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
+     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);

@@ -189,7 +189,11 @@ The table is `core/src/interp/sys.rs`.
   stores. The JIT runs CASP and LDXP/STXP inline with the same lock and CASes ([jit.md](jit.md) "Atomics").
   `tests/baremetal/pairs.c` checks it (CASP and LDXP/STXP against each other and against
   plain stores; passes on QEMU TCG and on the M4 under hvf).
-- `Mem::rmw` is a generic CAS loop (the JIT does the LSE operations as single `atomic.rmw` ops).
+- **LSE's LD<op> and SWP** (`Mem::rmw`, `mem::lse`) are one atomic op each where wasm has one
+  (`atomic.rmw` add, and with the operand inverted for LDCLR, xor, or, xchg), as in the JIT; the min
+  and max ops, and a spill memory's (reached through its imports), are a CAS loop. Measured neutral (the
+  4-vCPU userspace benchmark and the yardstick, `bench/interp/REPORT.md` "M8-INTERP loop 8"): hot
+  atomics are compiled.
 
 ## Floating point (`core/src/fp.rs`)
 
@@ -249,13 +253,18 @@ test it against `tests/steps.txt`.
   common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
   UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, EXTR, RBIT/REV/CLZ,
   ADR/ADRP), every branch, MRS of what `sys::plain` reads at the block's EL (`uop_el`), the LSE
-  LD<op>/SWP of W and X registers (a CAS loop), the SIMD&FP single and pair loads and stores, and
+  LD<op>/SWP of W and X registers (one atomic op, min and max a CAS loop), the SIMD&FP single and pair loads and stores, and
   the integer loads and stores (single register in every addressing form but the unprivileged
   one, pairs, literal) have handlers; the rest is a generic micro-op that runs the interpreter's
   own code with the decoded `Op` (`interp::exec_at_op`). One micro-op is one instruction, so the
   steps and the exits are `interp::steps`'s for the same instructions.
 - **Loads and stores** try the TLB entry inline (`Bus::fast`) and take the interpreter's path on a
-  miss, so faults are the interpreter's.
+  miss, so faults are the interpreter's. What the lookup needs that can't change while `hot` runs (the MMU
+  and alignment check off SCTLR_EL1, the EL's TLB arrays: anything that changes them runs generically,
+  outside the loop) is computed once a call (`Fast::ctx`), not once an access: +2.5% on Alpine's boot, +3.9%
+  with the MMU on. The commonest form, an offset load or store of 4 or 8 bytes with no writeback or
+  extension (`LdO`, `StO`, made at decode), has its own handler without `Ld`'s choices: +4% on the small
+  guests, +1.4% on Alpine's boot (`bench/interp/REPORT.md` "M8-INTERP loop 8").
 - **One call-free loop** (`interp::block::hot`): the blocks run, and chain from one to the next, in a
   loop with no call on any path (no generic micro-op, no slow load or store, no TLB walk, no panic:
   register indexes masked, the slots a fixed-size array), so V8 keeps its state in registers. What
@@ -265,6 +274,8 @@ test it against `tests/steps.txt`.
 - **Runs of MOVs** (MOVZ, MOVN, MOV of a bitmask immediate: `MovI`) go in one dispatch: each carries
   the number of MovIs right after it (`mov_runs`, at decode), and `hot` writes them all, never past
   the prefix (`run` ignores the count). +2-5% (`bench/interp/REPORT.md` "M8-INTERP loop 4").
+  **Pairs of LdOs and StOs** go in one dispatch too (bit 16 of the first's `x`, pairs from the block's
+  start), straight-line: ~+0.7% on Alpine's boot, in two sessions (loop 8).
 - **Chaining:** after a block that ends on a branch or runs out, the next block is found without
   going back to the dispatcher (`jit::interpret`): in the same page from the block's own key (a
   block ends after anything that could change the translation), in another through the
@@ -309,8 +320,8 @@ test it against `tests/steps.txt`.
   `hot` too (`run_hot`).
 - **Its speed** (`bench/interp/REPORT.md` from "M8-INTERP loop 0"; the yardstick is
   `bench/interp/yardstick.sh`: the small guests and the boots under `VmConfig.jit` 4, with
-  `--config liftoff-only` the JIT's reference): on the dev VM 424 MIPS on the user-mode guest,
-  412-416 at EL1, 114 on Buildroot's boot and 172 on Alpine's (from 249, 176-198, 89 and 122);
+  `--config liftoff-only` the JIT's reference): on the dev VM 447 MIPS on the user-mode guest,
+  441-445 at EL1, 123 on Buildroot's boot and 184 on Alpine's (from 249, 176-198, 89 and 122; loop 8 +4-8%);
   on the Mac host (before the MOV runs) 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
   Buildroot at 60, and runs the hot guests at ~1,700-2,600. On the M4 the guest accesses' `ldar`/`stlr` in
   `run` took 0.24% of its cycle samples (with the instruction after); x86_64, where a sequentially consistent store
@@ -318,7 +329,8 @@ test it against `tests/steps.txt`.
 
 ### Tried and not kept
 
-All in `bench/interp/REPORT.md` "M8-INTERP loop 2", the variants' diffs in `results/m8-interp-l2/`:
+In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs in `results/m8-interp-l2/` (and
+`l8/`):
 - **Lazy NZCV in `hot`'s locals** (the JIT's rules: SUBS/ADDS/ANDS keep kind and operands, B.cond,
   CSEL and CCMP read conditions from them): −2% on the user-mode guest, −4% on Alpine's boot. Three
   more loop-carried values, and the conditions' selects cost more than a stored NZCV's bits.
@@ -330,6 +342,14 @@ All in `bench/interp/REPORT.md` "M8-INTERP loop 2", the variants' diffs in `resu
 - **The micro-op copied whole** (`repr(C)`, two loads and the fields extracted, instead of a load a
   field): −25% / −7%.
 - **The literal load inline in `hot`**: −4-5% on the user-mode guest.
+- **An `End` micro-op after each block in the arena** instead of `hot`'s per-micro-op `u == end`
+  test (whose `end` V8 reloads from the stack each time): −2.7% on Alpine's boot, −13% on the MMU
+  guest. The compare was cheap and predicted; the sentinel is one more indirect dispatch a block,
+  and blocks are a few instructions long (loop 8).
+- **Runs of LdOs and StOs in a loop** (as the MOV runs): −8% on the small guests, −0.6% on Alpine's
+  boot; the loop's code slowed `hot` for everything. Straight-line pairs (above) are what's kept;
+  **STP+STP pairs** the same way added nothing (−0.5% on the small guests, +0.2% on Alpine's boot).
+  ADRP+ADD (0.5% of the pairs) wasn't tried (loop 8).
 - **Reports every 255 dispatches in the JIT** (not only where nothing compiles): Buildroot's boot
   +23% (the interpreter beats Liftoff there), but the counts the cache doesn't see delay the
   batches and shrink the forward regions: Alpine's boot interpreted 2.5× the steps and made 19%
