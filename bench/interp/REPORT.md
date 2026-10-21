@@ -986,8 +986,13 @@ path), `jit::steps` 1.3%, `sys::exec` 1.1% (`perf-alpine.txt`). In `run`'s machi
   paths call, and reloaded every iteration (`ldr x8, [sp, #72]` 3.5% at the loop's back edge);
 - every register write is a Rust bounds check on the index (`cmp w25, #0x1f; b.hi` to a panic) and a wasm bounds
   check that reloads the growable memory's size (`ldur x11, [x7, #39]; sub; cmp; b.cs`); loads aren't checked;
-- `ldar`/`stlr` on guest accesses: 24 of them in `run`, 0.24% of its samples with the instruction after. **The
-  atomics don't cost here**, so the memory rules stay.
+- `ldar`/`stlr` on guest accesses: 24 of them in `run`; `perf`'s cycle samples on them plus the instruction after
+  each were 0.24% of `run`'s, on the M4, where acquire/release is nearly free. That's all it shows; what it doesn't cover: x86_64 (the user's desktop and most users), where wasm's
+  sequentially consistent stores compile to `xchg` (or `mov` + `mfence`, ~20+ cycles) and loads to plain `mov`, never
+  measured; the guest accesses outside `run` (the slow paths, the table walker, instruction fetch); and M7 loop 6's
+  history, the interpreter with the MMU on 88.7 → 79.0 MIPS when the accesses became atomics, half alignment test
+  and half ordering, on the M4.
+  The memory rules stay until an x86_64 A/B (handover "Next").
 
 **Mix** (`diag.patch`: a diagnostic core counting each decoded block's instructions, statically per block key and
 dynamically by the block's runs in the interpreter; Alpine's boot in Node, `mix-alpine.txt`; Buildroot's,

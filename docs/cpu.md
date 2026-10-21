@@ -310,8 +310,9 @@ test it against `tests/steps.txt`.
   `--config liftoff-only` the JIT's reference): on the dev VM 424 MIPS on the user-mode guest,
   412-416 at EL1, 114 on Buildroot's boot and 172 on Alpine's (from 249, 176-198, 89 and 122);
   on the Mac host (before the MOV runs) 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
-  Buildroot at 60, and runs the hot guests at ~1,700-2,600. The guest accesses' `ldar`/`stlr`
-  cost nothing measurable in it (0.24% of `run`'s samples).
+  Buildroot at 60, and runs the hot guests at ~1,700-2,600. On the M4 the guest accesses' `ldar`/`stlr` in
+  `run` took 0.24% of its cycle samples (with the instruction after); x86_64, where a sequentially consistent store
+  is an `xchg`, was never measured (backlog "Interpreter").
 
 ### Tried and not kept
 

@@ -32,28 +32,35 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 ## Interpreter
 
 What the block interpreter's speed track (2026-10-21, `bench/interp/REPORT.md` from "M8-INTERP loop 0") left open,
-most promising first.
+most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence and test in full.
 
-- **One decoded-block store the tables share** ([cpu.md](cpu.md) "The block interpreter"): each
-  vCPU's table decodes the same code again (Chromium in Debian on 4 vCPUs: ~2M decodes a warm
-  render with 4M micro-ops a table, ~1.5M of them re-decodes after a full arena). Sharing would
-  give each table the whole 256 MiB and decode once, but readers run micro-ops while another vCPU
-  appends or starts over (an epoch scheme like the code cache's `drops`). The 2× arena gained
-  ~3.5%; a shared one is worth at most a few percent more (more since the floor of 500 doubled the
-  interpreted steps: M8-INTERP loop 7, not started).
-- **The `go build` loop is too noisy to rank compile policies** (1,094-1,489 MIPS at one floor across sessions):
-  a shorter, steadier Go workload, or many more sessions, before it can decide anything
-  (`bench/interp/REPORT.md` "M8-INTERP round 2").
-- **More micro-op handlers:** MRS (the plain registers: 28% of the generic path in Alpine's boot), FP and SIMD
-  loads and stores (memcpy: a Q-register copy runs 7× slower than integer code) and LSE atomics are handlers since
-  2026-10-21 (+3.2% on Alpine's boot under `jit` 4); left: the exclusives, BFM
-  run generically through `exec` (3.5% of the interpreted instructions in Alpine's boot before UMADDL, EXTR and
-  REV/CLZ became handlers). Each handler in the hot loop is code its hot path carries: the literal load inline cost
-  the user-mode guest 4-5%; measure every one on the small guests too. A browser's mix wasn't counted: the diagnostic
-  core crashed Firefox's pages session (its log shim read a heap pointer past 2 GiB as negative; fixed with `p >>> 0`
-  in `bench/interp/results/m8-interp-l0/diag.patch`, not run again). FP
-  itself runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by
-  lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
+- **Confirm round 2 on the Mac host:** the floor of 1000 and the MRS, SIMD&FP and LSE handlers weren't.
+- **What the guest accesses' atomics cost on x86_64** (the user's desktop, most users): wasm's sequentially
+  consistent stores are `xchg` (or `mov` + `mfence`) there, never measured; on the M4 `run`'s `ldar`/`stlr` took
+  0.24% of its cycle samples, and M7 loop 6 measured 88.7 → 79.0 MIPS (MMU on, half alignment, half ordering) when
+  the accesses became atomics. Test: an x86_64 A/B against `bench/interp/results/m8-interp-l0/plain-accesses.patch`
+  (a measuring build: UB under parallel SMP) on the yardstick, on a stable host (the user's desktop by hand, or a
+  cloud session with many rounds). If it costs: plain loads with atomic stores only where another vCPU can observe
+  them, or plain accesses with one vCPU or round-robin and atomics only in parallel SMP (the user's decision).
+- **One decoded-block store the tables share** (M8-INTERP loop 7, designed in the handover): each vCPU's table
+  decodes the same code again (Chromium in Debian on 4 vCPUs: ~1.5M re-decodes a warm render after full arenas;
+  the 2× arena gained ~3.5%). Worth more since the floor of 1000 (Firefox's pages session interprets 3.3 G steps
+  against 1.1 at 50).
+- **Count a browser's instruction mix**, then add the handlers it asks for: the diagnostic core
+  (`bench/interp/results/m8-interp-l0/diag.patch`, its log shim's 2 GiB pointer bug fixed) was never run there.
+- **The floor between 1000 and 2000, with `threshold_max` above it:** 2000 compiled 22% less than 500 in the pages
+  session but lost 2% on Alpine's userspace and boot, in one session each.
+- **A steadier Go workload:** the `go build` loop spread 1,094-1,489 MIPS across sessions at one floor and couldn't
+  rank compile policies.
+- **The exclusives and `DC ZVA` as handlers** (~1% on Buildroot's boot); BFM and the rest still run generically
+  through `exec`. Each handler in the hot loop is code its hot path carries (the literal load inline cost the
+  user-mode guest 4-5%): measure every one on the small guests too. FP itself runs at a sixth of the integer rate
+  (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by lane through `u128`).
+- **Superinstructions beyond the MOV runs** (≤1-2%): `STR+STR`/`LDR+LDR` off one base, `STP+STP`, `ADRP+ADD`.
+- **Fewer IC IVAU exits through a larger `CTR_EL0.IminLine`** (guest-visible, allowed when it pays): Chromium in
+  Debian issues ~4,000 ICs a second, each an exit and a page's decoded blocks dropped.
+- **Re-profile `hot`** (none since loop 1), then register caching or another dispatch shape; tail-call dispatch
+  (`become`) as an A/B on top.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
