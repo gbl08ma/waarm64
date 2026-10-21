@@ -1,0 +1,192 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-21T20:20:29.907Z",
+ "commit": null,
+ "dirty": false,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "153.0.8010.12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_alpine_jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "distro": "alpine",
+    "jit": 1,
+    "steps": 2652899816,
+    "counters": {
+     "steps": 2652899816,
+     "irqs": 42105,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 112147,
+      "0x20": 7295,
+      "0x24": 38734,
+      "0x25": 1809
+     },
+     "tlbMisses": 630361,
+     "tlbWalks": 569850,
+     "tlbFlushes": 38958,
+     "jit": {
+      "blocks": 11263,
+      "modules": 302,
+      "bytes": 15598537,
+      "compileNs": 56710400,
+      "steps": 2548033186,
+      "dispatches": 5111125,
+      "invalidations": 217,
+      "flushes": 0,
+      "inline": 166851,
+      "helpers": 83,
+      "inlineSteps": 2546345249,
+      "flagsStored": 19443,
+      "flagsElided": 912,
+      "condDirect": 10500,
+      "condComputed": 79,
+      "condMemory": 758,
+      "regionBlocks": 31798,
+      "backEdges": 839,
+      "tierUps": 471,
+      "stale": 0,
+      "decSteps": 104034601,
+      "decoded": 138782,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 394784,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 164045056,
+      "emitLockedNs": 164045056,
+      "planNs": 49551360,
+      "prunes": 0,
+      "rescues": 0,
+      "lagFlushes": 0,
+      "decBytes": 20472544,
+      "knownBytes": 278528,
+      "lockSkipped": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    554.0165242639805,
+    551.684659819297,
+    550.8764553503482
+   ],
+   "median": 551.684659819297,
+   "iqr": 1.5700344568160745,
+   "n": 3
+  },
+  {
+   "name": "boot_alpine_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "jit": 1,
+    "steps": 2652899816,
+    "counters": {
+     "steps": 2652899816,
+     "irqs": 42105,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 112147,
+      "0x20": 7295,
+      "0x24": 38734,
+      "0x25": 1809
+     },
+     "tlbMisses": 630361,
+     "tlbWalks": 569850,
+     "tlbFlushes": 38958,
+     "jit": {
+      "blocks": 11263,
+      "modules": 302,
+      "bytes": 15598537,
+      "compileNs": 56710400,
+      "steps": 2548033186,
+      "dispatches": 5111125,
+      "invalidations": 217,
+      "flushes": 0,
+      "inline": 166851,
+      "helpers": 83,
+      "inlineSteps": 2546345249,
+      "flagsStored": 19443,
+      "flagsElided": 912,
+      "condDirect": 10500,
+      "condComputed": 79,
+      "condMemory": 758,
+      "regionBlocks": 31798,
+      "backEdges": 839,
+      "tierUps": 471,
+      "stale": 0,
+      "decSteps": 104034601,
+      "decoded": 138782,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 394784,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 164045056,
+      "emitLockedNs": 164045056,
+      "planNs": 49551360,
+      "prunes": 0,
+      "rescues": 0,
+      "lagFlushes": 0,
+      "decBytes": 20472544,
+      "knownBytes": 278528,
+      "lockSkipped": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    4788.484999656677,
+    4808.72500038147,
+    4815.779999732971
+   ],
+   "median": 4808.72500038147,
+   "iqr": 13.647500038146973,
+   "n": 3
+  }
+ ]
+}

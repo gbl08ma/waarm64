@@ -1,4 +1,4 @@
-# M8 interpreter speed: handover (2026-10-21, after loops 0-6, a second round and loop 8)
+# M8 interpreter speed: handover (2026-10-21, after loops 0-6, a second round, loops 8 and 9)
 
 **The goal is the block interpreter's own speed**, so the compile threshold can rise and less code reaches V8. What
 ran on 2026-10-21 is in `bench/interp/REPORT.md` from "M8-INTERP loop 0" to "M8-INTERP round 2"; how things work now
@@ -11,7 +11,8 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
   user-mode guest 249 → 424 MIPS, EL1 176-198 → ~410, Buildroot's boot 89 → ~114, Alpine's 122 → ~173. Firefox's
   pages session compiled 271 MB of wasm at the old floor of 50, 164 at 1000. Loop 8 (a profile of `hot`, then
   what it pointed at): the access path's invariants once a `hot` call, an `LdO`/`StO` handler, LdO/StO pairs in one
-  dispatch, LSE's common ops as single atomics: Alpine's boot +4-5%, the small guests +4-9%.
+  dispatch, LSE's common ops as single atomics: Alpine's boot +4-5%, the small guests +4-9%. Loop 9: the exclusives,
+  LDAR/STLR, DMB and DC ZVA as handlers, Alpine's boot 185 → 195, Buildroot's 124 → 134.
 - **Tried and not kept:** lazy NZCV, the flag setter + B.cond fusion, pre-linked successors, the micro-op copied
   whole, the literal load inline, reports every 255 in the JIT, floors of 250 and 2000; (loop 8) an `End`
   sentinel per block, LdO/StO runs in a loop, STP+STP pairs.
@@ -22,12 +23,9 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
 
 ## Next, ranked (expected payoff · evidence · how to test)
 
-1. **Settle the floor of 1000 on the Mac host.** Payoff: certainty about the default. Evidence: on the Mac,
-   one round, 1000 against 500 made Alpine's boot under the JIT 2.0% slower and its userspace 0.6% slower (the dev
-   VM: +0.7% and −0.8%); its case is the browser sessions (less wasm, +9% busy MIPS on the dev VM), never run on the
-   Mac (`bench/gpu/sway-mac.sh` runs a desktop guest there). The round-2 handlers were confirmed (+1.4%, +2.7%). Test: `bench/interp/ab-mac.sh
-   r2 1 a0=<b2fdaea's core> h=<main's core>` on the yardstick, and `-- boot_alpine_mips_jit alpine_user_jit
-   boot_mips_jit` with floors 500 and 1000.
+1. **Settle the floor of 1000 on the Mac host.** Done (loop 9): three rounds, Alpine's boot and userspace no
+   different, Buildroot's boot +4.6% at 1000; the floor stays (`bench/interp/REPORT.md` "M8-INTERP loop 9"). The
+   pages session wasn't run there (its case is counts, host-independent).
 2. **Loop 7: one decoded-block store for every table.** Payoff: a few percent on 4-vCPU browser workloads, more now
    that the floor of 1000 interprets more (Firefox's pages session 1.1 G steps at 50, 2.8 at 500, 3.3 at 1000).
    Evidence: Chromium in Debian on 4 vCPUs re-decoded ~1.5M blocks a warm render after full arenas; the 2× arena
@@ -60,9 +58,9 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
 6. **A steadier Go workload.** Payoff: a usable fourth gate. Evidence: the `go build` loop spread 1,094-1,489 MIPS
    across sessions at one floor; 2-3 sessions per arm couldn't tell 50, 500 and 1000 apart. Test: a shorter Go job
    timed by the guest (one package, or `go vet`), ≥5 sessions an arm.
-7. **The exclusives (LDXR/STXR & co) and `DC ZVA` as handlers.** Payoff: ~1% on Buildroot's boot (the exclusives
-   were 28% of its generic path), less on Alpine. Evidence: loop 0's mix. Test: as the round-2 handlers (the monitor
-   stays in the `Cpu`; STXR a CAS as `Mem`'s); the differential test already draws LDXR/STXR.
+7. **The exclusives (LDXR/STXR & co) and `DC ZVA` as handlers.** Done (loop 9), with LDAR/STLR and DMB: +8.7% on
+   Buildroot's boot, +5.7% on Alpine's, far past their ~1% share (a generic micro-op ends the chain). The lesson for
+   Next 3: weigh a class by the chains it breaks too, not only its count. LDXP/STXP and CAS remain.
 8. **Superinstructions beyond the MOV runs.** Done (loop 8): LdO/StO pairs kept (~+0.7% on Alpine's boot, two
    sessions); runs in a loop and STP+STP pairs not; ADRP+ADD untried (docs/backlog.md "`hot`'s cost per micro-op").
 9. **A guest-visible lever: fewer IC IVAU exits.** Done (2026-10-21): `CTR_EL0.IminLine` 9, 2 KiB lines. Debian's

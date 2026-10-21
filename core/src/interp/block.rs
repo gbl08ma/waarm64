@@ -116,6 +116,17 @@ enum K {
     /// LD<op> and SWP of a W or X register: `d` Rt, `n` Rn, `m` Rs; `x` = sf |
     /// op << 1 (bits 15:12); `imm` the word ([`run`] runs it generically).
     Lse,
+    /// LDXR, LDAXR (`x` bit 2: they arm the monitor) and LDAR: `d` Rt, `n`
+    /// Rn; `x` = log2 size | exclusive << 2; `imm` the word ([`run`] runs it
+    /// generically).
+    Ldx,
+    /// STXR, STLXR (`x` bit 2) and STLR: `d` Rt, `n` Rn, `m` Rs; `x` and `imm`
+    /// as `Ldx`'s.
+    Stx,
+    /// DMB: `imm` the word.
+    Dmb,
+    /// DC ZVA of `Xd`'s 64-byte block: `imm` the word.
+    Zva,
     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
     LdLit,
     /// MRS of a register `sys::plain` reads at the block's EL (made by `uop_el`, after
@@ -489,6 +500,18 @@ fn uop_op(w: u32, op: Op) -> Uop {
         {
             u(K::Lse, bit(w, 30) as u32 | bits(w, 15, 12) << 1, w as u64)
         }
+        LDXR | LDAXR | LDAR => u(
+            K::Ldx,
+            bits(w, 31, 30) | ((op != LDAR) as u32) << 2,
+            w as u64,
+        ),
+        STXR | STLXR | STLR => u(
+            K::Stx,
+            bits(w, 31, 30) | ((op != STLR) as u32) << 2,
+            w as u64,
+        ),
+        DMB => u(K::Dmb, 0, w as u64),
+        DC_ZVA => u(K::Zva, 0, w as u64),
         STP_LDP_gen | STNP_LDNP_gen => {
             let (opc, load) = (bits(w, 31, 30), bit(w, 22));
             let (size, signed) = match (opc, load) {
@@ -628,7 +651,7 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
                     return (k as u64, Some(e));
                 }
             }
-            K::Lse => {
+            K::Lse | K::Ldx | K::Stx | K::Dmb | K::Zva => {
                 let w = u.imm as u32;
                 if let Err(e) = super::exec_at_op(c, m, w, pc, crate::decode::decode(w)) {
                     return (k as u64, Some(e));
@@ -944,6 +967,77 @@ pub fn hot<B: Fast>(
                         },
                     };
                     wr(c, d, old);
+                }
+                K::Ldx => {
+                    let base = rsp(c, n);
+                    let size = 1u32 << (o.x & 3);
+                    if n == 31 && base & 15 != 0 || base & (size as u64 - 1) != 0 {
+                        break 'run SLOW;
+                    }
+                    let Some(p) = m.fast_in(fx, base, size, Use::Read) else {
+                        break 'run SLOW;
+                    };
+                    if p as usize & (size as usize - 1) != 0 {
+                        break 'run SLOW;
+                    }
+                    // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
+                    let v = unsafe { load_sc(p, size) };
+                    if o.x & 4 != 0 {
+                        c.monitor = crate::cpu::Monitor {
+                            addr: base,
+                            size: size as u64,
+                            val: [v, 0],
+                        };
+                    }
+                    wr(c, d, v);
+                }
+                K::Stx => {
+                    let base = rsp(c, n);
+                    let size = 1u32 << (o.x & 3);
+                    if n == 31 && base & 15 != 0 || base & (size as u64 - 1) != 0 {
+                        break 'run SLOW;
+                    }
+                    let mon = c.monitor;
+                    let (excl, armed) = (o.x & 4 != 0, mon.addr == base && mon.size == size as u64);
+                    if !excl || armed {
+                        let Some(p) = m.fast_in(fx, base, size, Use::Write) else {
+                            break 'run SLOW;
+                        };
+                        if p as usize & (size as usize - 1) != 0 {
+                            break 'run SLOW;
+                        }
+                        let v = rd(c, d);
+                        // SAFETY: as for `Ldx`.
+                        unsafe {
+                            if excl {
+                                let ok = cas_sc(p, size, mon.val[0], v);
+                                c.monitor.size = 0;
+                                wr(c, o.m as u32, !ok as u64);
+                            } else {
+                                store_sc(p, size, v);
+                            }
+                        }
+                    } else {
+                        // Not armed for it: fails, with no access.
+                        c.monitor.size = 0;
+                        wr(c, o.m as u32, 1);
+                    }
+                }
+                K::Dmb => core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst),
+                K::Zva => {
+                    if c.el() == 0 && c.sctlr_el1 & sctlr::DZE == 0 {
+                        break 'run SLOW;
+                    }
+                    let Some(p) = m.fast_in(fx, rd(c, d) & !63, 64, Use::Write) else {
+                        break 'run SLOW;
+                    };
+                    if p as usize & 7 != 0 {
+                        break 'run SLOW;
+                    }
+                    for k in 0..8 {
+                        // SAFETY: `fast_in` found 64 bytes of RAM at `p`, aligned (checked).
+                        unsafe { mem::store_aligned(p.add(8 * k), 8, 0) };
+                    }
                 }
                 K::Fp => {
                     // FPEN, as `interp::fp_enabled`; then the SP's alignment.
@@ -1285,6 +1379,70 @@ pub fn run_hot(c: &mut Cpu, m: &mut impl Fast, b: &[Uop], pc: u64) -> (u64, Opti
             return (r.done, None);
         }
         r.step();
+    }
+}
+
+/// A sequentially consistent load of `size` bytes (1, 2, 4 or 8) at `p`,
+/// as `mem::load_atomic` without its panic for another size.
+///
+/// # Safety
+/// `p` is `size` bytes of RAM, aligned to `size`.
+#[inline(always)]
+unsafe fn load_sc(p: *mut u8, size: u32) -> u64 {
+    use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering::SeqCst};
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        match size {
+            1 => AtomicU8::from_ptr(p).load(SeqCst) as u64,
+            2 => AtomicU16::from_ptr(p as *mut u16).load(SeqCst) as u64,
+            4 => AtomicU32::from_ptr(p as *mut u32).load(SeqCst) as u64,
+            _ => AtomicU64::from_ptr(p as *mut u64).load(SeqCst),
+        }
+    }
+}
+
+/// [`load_sc`]'s store.
+///
+/// # Safety
+/// As for [`load_sc`].
+#[inline(always)]
+unsafe fn store_sc(p: *mut u8, size: u32, v: u64) {
+    use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering::SeqCst};
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        match size {
+            1 => AtomicU8::from_ptr(p).store(v as u8, SeqCst),
+            2 => AtomicU16::from_ptr(p as *mut u16).store(v as u16, SeqCst),
+            4 => AtomicU32::from_ptr(p as *mut u32).store(v as u32, SeqCst),
+            _ => AtomicU64::from_ptr(p as *mut u64).store(v, SeqCst),
+        }
+    }
+}
+
+/// [`load_sc`]'s compare-and-swap of `size` bytes: whether `p` held `old`
+/// (then it holds `new`).
+///
+/// # Safety
+/// As for [`load_sc`].
+#[inline(always)]
+unsafe fn cas_sc(p: *mut u8, size: u32, old: u64, new: u64) -> bool {
+    use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering::SeqCst};
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        match size {
+            1 => AtomicU8::from_ptr(p)
+                .compare_exchange(old as u8, new as u8, SeqCst, SeqCst)
+                .is_ok(),
+            2 => AtomicU16::from_ptr(p as *mut u16)
+                .compare_exchange(old as u16, new as u16, SeqCst, SeqCst)
+                .is_ok(),
+            4 => AtomicU32::from_ptr(p as *mut u32)
+                .compare_exchange(old as u32, new as u32, SeqCst, SeqCst)
+                .is_ok(),
+            _ => AtomicU64::from_ptr(p as *mut u64)
+                .compare_exchange(old, new, SeqCst, SeqCst)
+                .is_ok(),
+        }
     }
 }
 

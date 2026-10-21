@@ -130,6 +130,12 @@ fn classes() -> Vec<(u32, u32, Op)> {
         SMSUBL,
         LDXR,
         STXR,
+        LDAXR,
+        STLXR,
+        LDAR,
+        STLR,
+        DMB,
+        DC_ZVA,
         LDTR,
         CAS,
         LDADD,
@@ -190,6 +196,8 @@ fn state(r: &mut Rng) -> Cpu {
     }
     // FP enabled mostly (the SIMD&FP loads and stores' inline path), not always.
     c.cpacr_el1 = if r.below(4) == 0 { 0 } else { 3 << 20 };
+    // DC ZVA at EL0 mostly allowed.
+    c.sctlr_el1 = if r.below(4) == 0 { 0 } else { sctlr::DZE };
     for v in &mut c.v {
         *v = (r.next() as u128) << 64 | r.next() as u128;
     }
@@ -224,6 +232,18 @@ fn blocks_run_as_the_interpreter_runs_them() {
         let block = crate::jit::block::form(&b.mem, CODE);
         if block.is_empty() {
             continue;
+        }
+        // The monitor armed half the time, on what a register points at
+        // (what it holds there, so a store-exclusive may succeed).
+        let mut c0 = c0;
+        if r.below(2) == 0 {
+            let size = 1 << r.below(4);
+            let addr = c0.x[r.below(32) as usize] & (DATA - 1) & !(size - 1);
+            c0.monitor = crate::cpu::Monitor {
+                addr,
+                size,
+                val: [a.mem.read(addr, size as u32).unwrap(), 0],
+            };
         }
         let mut uops: Vec<Uop> = block.iter().map(|&w| uop(w)).collect();
         mov_runs(&mut uops);

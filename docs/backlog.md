@@ -75,8 +75,9 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   both: 2000's less wasm and memory where code runs long, 1000's speed on cold code.
 - **A steadier Go workload:** the `go build` loop spread 1,094-1,489 MIPS across sessions at one floor and couldn't
   rank compile policies.
-- **The exclusives and `DC ZVA` as handlers** (~1% on Buildroot's boot); BFM and the rest still run generically
-  through `exec`. Each handler in the hot loop is code its hot path carries (the literal load inline cost the
+- **More handlers.** The exclusives, LDAR/STLR, DMB and DC ZVA became handlers in M8-INTERP loop 9 (+6-9% on the
+  boots, far over their share of the instructions: a block ending on a generic micro-op ends the chain); LDXP/STXP,
+  CAS, BFM, MSR and the rest still run generically through `exec`. Each handler in the hot loop is code its hot path carries (the literal load inline cost the
   user-mode guest 4-5%): measure every one on the small guests too. FP itself runs at a sixth of the integer rate
   (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by lane through `u128`).
 - **`hot`'s cost per micro-op** (profiled 2026-10-21, `bench/interp/REPORT.md` "M8-INTERP loop 8"): ~30% of its

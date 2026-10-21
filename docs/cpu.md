@@ -253,7 +253,9 @@ test it against `tests/steps.txt`.
   common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
   UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, EXTR, RBIT/REV/CLZ,
   ADR/ADRP), every branch, MRS of what `sys::plain` reads at the block's EL (`uop_el`), the LSE
-  LD<op>/SWP of W and X registers (one atomic op, min and max a CAS loop), the SIMD&FP single and pair loads and stores, and
+  LD<op>/SWP of W and X registers (one atomic op, min and max a CAS loop), the exclusives and acquire/release
+  (LDXR/LDAXR/LDAR, STXR/STLXR/STLR: the monitor in the `Cpu`, a store-exclusive a CAS when it's armed for its
+  address), DMB and DC ZVA, the SIMD&FP single and pair loads and stores, and
   the integer loads and stores (single register in every addressing form but the unprivileged
   one, pairs, literal) have handlers; the rest is a generic micro-op that runs the interpreter's
   own code with the decoded `Op` (`interp::exec_at_op`). One micro-op is one instruction, so the
@@ -320,8 +322,9 @@ test it against `tests/steps.txt`.
   `hot` too (`run_hot`).
 - **Its speed** (`bench/interp/REPORT.md` from "M8-INTERP loop 0"; the yardstick is
   `bench/interp/yardstick.sh`: the small guests and the boots under `VmConfig.jit` 4, with
-  `--config liftoff-only` the JIT's reference): on the dev VM 447 MIPS on the user-mode guest,
-  441-445 at EL1, 123 on Buildroot's boot and 184 on Alpine's (from 249, 176-198, 89 and 122; loop 8 +4-8%);
+  `--config liftoff-only` the JIT's reference): on the dev VM 446 MIPS on the user-mode guest,
+  440-446 at EL1, 134 on Buildroot's boot and 195 on Alpine's (from 249, 176-198, 89 and 122; loop 8 +4-8%, loop
+  9's exclusives and barriers +9% and +6% on the boots: a block ending on one no longer ends the chain);
   on the Mac host (before the MOV runs) 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
   Buildroot at 60, and runs the hot guests at ~1,700-2,600. On the M4 the guest accesses' `ldar`/`stlr` in
   `run` took 0.24% of its cycle samples (with the instruction after); x86_64, where a sequentially consistent store

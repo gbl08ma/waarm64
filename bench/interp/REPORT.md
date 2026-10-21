@@ -1303,3 +1303,43 @@ the block interpreter never powers off); LdO/StO always 8 bytes (the differentia
 prefix (only `a_store_pair_stops_at_the_prefix`, new: random blocks rarely end a prefix inside a pair); LDCLR as AND
 (`mem::tests::rmw_ops_are_lse`, new, and `interp::tests::lse`). The context's EL flipped passed the boot: a
 flipped entry mostly misses and takes the slow path, so it isn't a useful plant.
+
+## M8-INTERP loop 9: the floor on the Mac, the exclusives and barriers as handlers
+
+2026-10-21 (21:15-22:00), on main at `17f02ac`; raw data `results/m8-interp-l9/`.
+
+**The floor of 1000 on the Mac host** (Next 1; `mac/`, `bench/interp/ab-mac.sh`, three rounds alternated, 500
+against 1000, Chrome for Testing on macOS 26):
+
+| benchmark | floor 500 (rounds; median) | floor 1000 |
+|---|---|---|
+| Alpine's boot under the JIT, MIPS | 569.3 · 558.6 · 551.7; **558.6** | 559.1 · 553.9 · 553.0; **553.9** (−0.9%) |
+| Alpine's userspace, total ms | 11,911 · 12,080 · 12,215; **12,080** | 12,087 · 12,220 · 12,175; **12,175** (+0.8%) |
+| Buildroot's boot under the JIT, MIPS | 157.9 · 155.2 · 155.8; **155.8** | 164.3 · 161.5 · 162.9; **162.9** (+4.6%) |
+
+Alpine's boot and userspace: the arms' rounds overlap (both drift down over the session), no difference; round 2's
+one-round −2.0% was that drift. Buildroot's boot: 1000 faster in every round, past its ~3% bar. **The floor of
+1000 stays.** Its browser case (less wasm, the pages session's busy MIPS) is counts that don't depend on the host;
+the pages session wasn't run on the Mac.
+
+**LDXR/LDAXR/LDAR, STXR/STLXR/STLR, DMB and DC ZVA as handlers** (Next 7; `excl/`, three rounds alternated on the
+yardstick): `Ldx` and `Stx` (the monitor stays in the `Cpu`; the store-exclusive a CAS on the TLB's pointer when the
+monitor is armed for its address and size, no access when it isn't), `Dmb` (a fence) and `Zva` (eight stores, DZE
+checked at EL0); anything else (a TLB miss, a misaligned address, an SP base off 16) takes the slow path, the
+interpreter's. Against main:
+
+| benchmark (MIPS) | main | **handlers** |
+|---|---|---|
+| `dec_mips` | 446.7 · 447.2 · 447.4 | 446.1 · 446.4 · 445.9 (−0.2%) |
+| `vm_dec_flat_mips` | 444.5 · 445.0 · 443.0 | 446.8 · 444.6 · 446.5 (+0.4%) |
+| `vm_dec_mmu_mips` | 441.3 · 441.6 · 441.2 | 439.9 · 442.1 · 432.9 (−0.3%) |
+| Buildroot's boot | 123.5 · 123.9 · 123.1 | **134.2 · 134.5 · 134.3 (+8.7%)** |
+| Alpine's boot | 185.4 · 184.9 · 185.0 | **195.6 · 195.5 · 195.2 (+5.7%)** |
+
+Loop 0's mix put these at ~1.3% of Buildroot's instructions and ~0.4% of Alpine's, so ~1% was expected. The rest is
+most likely the chain (not measured apart): a block whose last micro-op is generic ends the run of blocks (`Uop::chains`: it may have changed the
+regime), and the kernel's spinlocks, atomics and barriers end their blocks often; as handlers, those blocks chain
+on in `hot` instead of going back to `jit::interpret` and its slot lookup. Planted bugs, each failing the
+differential test (which now draws the eight classes, an armed monitor half the time, on what a register points at,
+and `SCTLR_EL1.DZE` off a quarter of the time): STXR's status inverted, LDXR not arming the monitor, DC ZVA
+zeroing 56 bytes, STLR always 8 bytes, a failed STXR leaving the monitor armed.
