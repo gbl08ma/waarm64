@@ -13,7 +13,7 @@ const US = { KeyQ: 'q', KeyW: 'w', KeyE: 'e', KeyR: 'r', KeyY: 'y', KeyZ: 'z', K
 
 test('layouts: unique ids, XKB names; Match this browser tells them apart', () => {
   assert.equal(new Set(KEYBOARD_LAYOUTS.map((l) => l.id)).size, KEYBOARD_LAYOUTS.length);
-  for (const l of KEYBOARD_LAYOUTS) assert.match(`${l.layout} ${l.variant ?? ''} ${l.model ?? ''}`, /^[a-z]+ [a-z]* [a-z0-9]*$/, l.id);
+  for (const l of KEYBOARD_LAYOUTS) assert.match(`${l.layout} ${l.variant ?? ''} ${l.model ?? ''} ${l.vc}`, /^[a-z]+ [a-z]* [a-z0-9]* [a-zA-Z0-9_-]+$/, l.id);
   assert.equal(detectLayout(map(US))?.id, 'us');
   assert.equal(detectLayout(map({ ...US, KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '+', Minus: 'ß', Equal: '´', Backquote: '^', Backslash: '#', Slash: '-' }))?.id, 'de');
   assert.equal(detectLayout(map({ ...US, Semicolon: 'ç', Quote: 'º', BracketLeft: '+', BracketRight: '´', Backslash: '~', Minus: "'", Equal: '«', Backquote: '\\' }))?.id, 'pt');
@@ -71,6 +71,26 @@ test("the script: Debian's /etc/default/keyboard and /etc/environment set, other
     // Debian 13 without the file: made with the three lines.
     runScript('de', dir, true);
     assert.equal(readFileSync(join(dir, 'keyboard'), 'utf8'), 'XKBMODEL="pc105"\nXKBLAYOUT="de"\nXKBVARIANT=""\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the script elsewhere: localed's X11 keymap and the console's, each named; without that console keymap, the conversion", { skip: !process.env.PATH?.split(':').some((p) => { try { return readFileSync(join(p, 'dash')).length > 0; } catch { return false; } }) && 'no dash' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'webpc-kbd-'));
+  try {
+    const run = (id: string, keymapFails: boolean) => {
+      // localectl a shell function that records its arguments (and refuses set-keymap when the keymap is missing).
+      const script = `localectl() { echo "$*" >>${join(dir, 'log')}; [ "$1" != set-keymap ] || ${keymapFails ? 'false' : 'true'}; }\n` + keyboardScript(keyboardLayout(id)!)
+        .replaceAll('/etc/default/keyboard', join(dir, 'keyboard')).replaceAll('/etc/environment', join(dir, 'environment'))
+        .replaceAll('/usr/share/dbus-1/system.d/systemd-localed-read-only.conf', join(dir, 'none'));
+      writeFileSync(join(dir, 's.sh'), script);
+      rmSync(join(dir, 'log'), { force: true });
+      execFileSync('dash', [join(dir, 's.sh')], { stdio: 'pipe' });
+      return readFileSync(join(dir, 'log'), 'utf8');
+    };
+    assert.equal(run('de', false), 'set-x11-keymap --no-convert de pc105 \nset-keymap --no-convert de-latin1\n');
+    assert.equal(run('ch-fr', true), 'set-x11-keymap --no-convert ch pc105 fr\nset-keymap --no-convert fr_CH-latin1\nset-x11-keymap ch pc105 fr\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

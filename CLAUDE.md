@@ -55,7 +55,7 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
   qemu-hw-display-virtio-gpu (QEMU's virtio-gpu device is a separate package) and edid-decode (graphics oracle);
   for the virgl oracle virglrenderer-test-server (`virgl_test_server`, vtest),
-  Mesa-demo (`eglinfo`, `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug virglrenderer for the oracle, graphics.md §19), sway and foot; qemu-ui-opengl is installed but QEMU's
+  Mesa-demo (`eglinfo`, `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug virglrenderer for the oracle, graphics.md §19), sway and foot; dash (tests/keyboard.test.ts runs the keyboard script under it); qemu-ui-opengl is installed but QEMU's
   `virtio-gpu-gl` can't run (no DRM render node in the VM: graphics.md §18).
   Add what's missing with `sudo zypper in`, and note it here.
 - **USB rigs** (docs/testing.md "USB"): the VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so

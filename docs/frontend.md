@@ -689,15 +689,22 @@ runs the third, a POSIX sh script:
   `localectl set-x11-keymap` even to root): `XKBMODEL`, `XKBLAYOUT`, `XKBVARIANT` in `/etc/default/keyboard`, other
   lines kept, which Xorg, localed (so GNOME and KDE) and console-setup read; `setupcon -k` where console-setup is.
   Debian's cloud image has neither console-setup nor kbd: its consoles stay US, `localectl status` shows the X11 layout.
-- **Elsewhere** (Arch): `localectl set-x11-keymap`, which writes Xorg's `00-keyboard.conf` and converts it to the
-  console's keymap (`/etc/vconsole.conf`; on the desktop guest not checked yet: `M8-KEYBOARD-HANDOVER.md`).
+- **Elsewhere** (Arch): `localectl set-x11-keymap --no-convert` (Xorg's `00-keyboard.conf`) and `localectl
+  set-keymap --no-convert` with the layout's own console keymap (`vc` in the table: `/etc/vconsole.conf`, and localed
+  reloads the console, so the first boot's tty1 has it). Not localed's conversion: it takes the first match in
+  systemd's kbd-model-map, which for `de` is kbd's 7-bit `de` map (`ö` types `[`; `de-latin1` is right), and has no
+  plain match for `ch`, `cz`, Dvorak, Colemak or US international. Without that keymap on the guest, the conversion.
 - **Wayland compositors** that read libxkbcommon's defaults (sway and the other wlroots ones): `XKB_DEFAULT_LAYOUT`,
   `_MODEL` and `_VARIANT` in `/etc/environment`, rewritten only when they differ. pam_env gives them to every login
   (Debian checked: a serial login and root's user manager have them); GNOME and KDE take the X11 layout above.
 
 All of it stays on the guest's disk: turning the setting off leaves the last layout set, as the setting's note says.
-Guests without systemd 256 ignore the strings. `tests/keyboard.test.ts` runs the script under dash on files of its own;
-`tests/page-debian.test.ts` boots with `?keyboard=gb`.
+Guests without systemd 256 ignore the strings. `tests/keyboard.test.ts` runs the script under dash on files of its own
+(and a `localectl` that records its calls); `tests/page-debian.test.ts` boots with `?keyboard=gb`. On the desktop
+guest (`images/arch/desktop.sh`, 2026-10-21) by hand: `?keyboard=de` on a fresh disk types `z` and `ö` for `KeyY` and
+`Semicolon` on tty1 (read from `/dev/vcsu1`; `/dev/vcs1` holds font glyphs, not characters), in foot on sway (whose
+environment has `XKB_DEFAULT_*`) and in Firefox's address bar; the next boot with `?keyboard=pt` types `y` and `ç`
+everywhere, and one without the setting keeps Portuguese (the unit isn't there).
 
 ## Latency
 

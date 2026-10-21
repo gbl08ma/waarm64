@@ -572,8 +572,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
   Phase C, host integration.
-- **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): the desktop
-  guest's sway and Firefox under it not checked yet (`M8-KEYBOARD-HANDOVER.md`); KDE untested; non-Latin layouts (a
+- **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): GNOME and
+  KDE untested; the console keymaps (`vc`) other than `de-latin1` and `pt-latin1` were picked from kbd's files and
+  kbd-model-map, not typed on; non-Latin layouts (a
   second, toggled layout and its `XKBOPTIONS`) not offered; `detectLayout`'s signatures are from the layouts' charts,
   checked against Chromium on one (US) keyboard only; a Mac's ISO keyboard swaps `Backquote` and `IntlBackslash` in
   Chromium's codes, which the guest then sees swapped.
