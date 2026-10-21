@@ -1033,3 +1033,51 @@ the same (40,211,695 and 2,651,936,453). Correctness: the differential test runs
 too (`run_hot`, `jit::interpret`'s driving), against `interp::steps`; a planted carry bug in `hot`'s ADDS/SUBS
 failed it, and a planted same-page chaining bug (the next key's bit 2 dropped) kept the native Buildroot boot
 through the block interpreter from powering off.
+
+**On the Mac host** (`bench/interp/ab-mac.sh`, two rounds, `results/m8-interp-l1/mac/`; no explicit bounds checks
+there): `dec_mips` 261.3 → 326.9 (+25.1%), `vm_dec_mmu_mips` 232.3 → 315.9 (+36.0%), Buildroot's boot 104.4 →
+124.4 (+19.1%), Alpine's 138.2 → 149.9 (+8.5%). (`bench/run-mac.sh` copies `tools/svelte.ts` and the repo's
+`node_modules` now: the server imports the Svelte compiler.)
+
+## M8-INTERP loop 2 (and screens of loops 3-5): what the hot loop left
+
+2026-10-21, the dev VM, Chromium 153.0.8010.52; each screen one round of `dec_mips` (8 placements) and
+`boot_alpine_dec` per arm, with an A/A arm (a copy of the base) in each (`results/m8-interp-l2/scr*`, the variants'
+diffs beside them). With `hot` call-free, what returns to the dispatcher matters: under `jit` 4 a block's quota of
+16 dispatches runs out forever, and each report is a return, the dispatcher, the cache's lock and a sync.
+
+| variant (screen 1, against loop 1: 309.9 / 142.1; A/A 309.9 / 142.0) | `dec_mips` | Alpine boot |
+|---|---|---|
+| `REPORT` 64 | 379.2 (+22.4%) | 157.6 (+10.9%) |
+| `REPORT` 255 (`q255`) | 405.2 (+30.8%) | 163.5 (+15.0%) |
+| no jump-cache check in `hot` (`nojc`: what pre-linked successors with a compiled bit would save at most) | 312.9 (+1.0%) | 144.2 (+1.5%) |
+| lazy NZCV in `hot`'s locals (`lazy.patch`: SUBS/ADDS/ANDS keep kind and operands, B.cond, CSEL and CCMP read conditions from them, materialized at `hot`'s return) | 303.4 (−2.1%) | 136.3 (−4.1%) |
+| flag setter + B.cond fused (`fuse.patch`: a mark on the setter, `hot` takes the branch with it; one dispatch for the pair) | 313.2 (+1.1%) | 143.3 (+0.8%) |
+| lazy NZCV and fused | 285.7 (−7.8%) | 136.4 (−4.0%) |
+| UMADDL & co, EXTR, RBIT/REV/CLZ and the literal load as handlers (`more.patch`) | 296.7 (−4.2%) | 143.7 (+1.1%) |
+
+| variant (screen 2, against `q255`: 405.0 / 163.3; A/A 402.2 / 163.3) | `dec_mips` | Alpine boot |
+|---|---|---|
+| the micro-op copied whole, `repr(C)`, fields extracted (`copy.patch`: two loads instead of one a field) | 302.3 (−25.4%) | 151.9 (−7.0%) |
+| fused setter + B.cond | 409.4 (+1.1%) | 165.4 (+1.2%) |
+| the handlers | 383.9 (−5.2%) | 165.0 (+1.0%) |
+
+**`REPORT` 255 under the JIT** (`scrj`: `boot_mips_jit`, `boot_alpine_mips_jit`, default config, two rounds) moved
+what compiles: Alpine's boot made 26,537 regions of 56,414 blocks (from 22,247 of 56,362), 263 modules, and
+interpreted 72.7M steps (from 29.2M); Buildroot's 5,232 regions (from 4,700) and ran 23% faster (the interpreter is
+faster than Liftoff there), Alpine's +0.6%. The counts a block holds back are counts the cache doesn't see: a queued
+block's steps (`BATCH_STEPS`) and a successor's hits (`warm`, the forward regions' members) come late. So **kept:
+255 only where nothing compiles** (`REPORT_IDLE`: the cache off, or `jit` 4's threshold), and 16 in the JIT, whose
+counters stay identical (`scrj2`: every count the same as loop 1's). Against loop 1, `dec_mips` +30%, Alpine's boot
+under `jit` 4 +16%; this is bookkeeping that only the yardstick and native runs paid, not interpreting.
+
+Screen 3, on `REPORT_IDLE` (402.4 / 165.3; A/A 406.6 / 164.1): the handlers without the literal load
+(`moreH.patch`) 401.7 / 168.9 (+2.2% on the boot), the handlers in `run` only, `hot` sending them to the slow path
+(`moreR.patch`) 406.9 / 165.9.
+
+What lost, and why (none kept): **lazy NZCV** adds three loop-carried values to `hot`, and its conditions'
+selects cost more than `cond_holds` on a stored NZCV; **the copied micro-op** makes TurboFan shuffle 16 bytes
+through registers (the jump table then waits on the extraction); **pre-linked successors** can save at most what
+`nojc` saved, 1-1.5%: the slot and jump-cache lookups are not what a block costs; **fusion** saves a dispatch for
+~6% of the instructions, ~1% (repeated, under the 5% bar); **the literal load inline** slowed the user-mode guest
+(each handler in `hot` is code the hot path carries).

@@ -268,7 +268,11 @@ test it against `tests/steps.txt`.
   cache every 16 (`REPORT`; the cache's lock and map lookup were a third of the time), and the
   dispatch that reaches the compile threshold reports itself (the cache returns how many may be
   counted before it), so a block joins the pending batch exactly when it did with every dispatch
-  reported. Without that, blocks of one path joined different batches, and the forward regions,
+  reported. A cache that never compiles (`VmConfig.jit` 4, or no JIT: natively) has its blocks report
+  every 255 (`REPORT_IDLE`): the block interpreter alone +30% on the user-mode guest, +16% on Alpine's
+  boot. Not in the JIT: reports every 255 there delayed the batches and shrank the regions (the
+  forward regions take the members whose counts the cache has seen), and Alpine's boot interpreted
+  2.5× the steps (`bench/interp/REPORT.md` "M8-INTERP loop 2"). Without that, blocks of one path joined different batches, and the forward regions,
   which take only their batch's blocks, came out 30% more and smaller (Alpine's boot 8% slower): check
   `blocks` against `regionBlocks` in a run's counters whenever the batching changes.
   A slot's count and the quota it had left survive eviction (the map keeps them), so a block put back in its slot

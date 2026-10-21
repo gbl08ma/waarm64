@@ -1,0 +1,188 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-21T01:16:16.424Z",
+ "commit": null,
+ "dirty": false,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "153.0.8010.12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_dec_mips",
+   "unit": "MIPS",
+   "params": {
+    "distro": "buildroot",
+    "jit": 4,
+    "steps": 40211695,
+    "counters": {
+     "steps": 40211695,
+     "irqs": 187,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 348,
+      "0x24": 931,
+      "0x25": 58
+     },
+     "tlbMisses": 62664,
+     "tlbWalks": 60655,
+     "tlbFlushes": 1252,
+     "jit": {
+      "blocks": 0,
+      "modules": 0,
+      "bytes": 0,
+      "compileNs": 0,
+      "steps": 0,
+      "dispatches": 0,
+      "invalidations": 48,
+      "flushes": 0,
+      "inline": 0,
+      "helpers": 0,
+      "inlineSteps": 0,
+      "flagsStored": 0,
+      "flagsElided": 0,
+      "condDirect": 0,
+      "condComputed": 0,
+      "condMemory": 0,
+      "regionBlocks": 0,
+      "backEdges": 0,
+      "tierUps": 0,
+      "stale": 0,
+      "decSteps": 40185677,
+      "decoded": 55445,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 636914,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 0,
+      "emitLockedNs": 0,
+      "planNs": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    105.05720314595222,
+    106.34779108033555,
+    103.49435065616923,
+    104.08234886297915,
+    104.40392836099456,
+    103.55165111954254,
+    106.46182255153107
+   ],
+   "median": 104.40392836099456,
+   "iqr": 1.8854971218830485,
+   "n": 7
+  },
+  {
+   "name": "boot_dec_total",
+   "unit": "ms",
+   "params": {
+    "distro": "buildroot",
+    "jit": 4,
+    "steps": 40211695,
+    "counters": {
+     "steps": 40211695,
+     "irqs": 187,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 348,
+      "0x24": 931,
+      "0x25": 58
+     },
+     "tlbMisses": 62664,
+     "tlbWalks": 60655,
+     "tlbFlushes": 1252,
+     "jit": {
+      "blocks": 0,
+      "modules": 0,
+      "bytes": 0,
+      "compileNs": 0,
+      "steps": 0,
+      "dispatches": 0,
+      "invalidations": 48,
+      "flushes": 0,
+      "inline": 0,
+      "helpers": 0,
+      "inlineSteps": 0,
+      "flagsStored": 0,
+      "flagsElided": 0,
+      "condDirect": 0,
+      "condComputed": 0,
+      "condMemory": 0,
+      "regionBlocks": 0,
+      "backEdges": 0,
+      "tierUps": 0,
+      "stale": 0,
+      "decSteps": 40185677,
+      "decoded": 55445,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 636914,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 0,
+      "emitLockedNs": 0,
+      "planNs": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    382.7599992752075,
+    378.11499977111816,
+    388.539999961853,
+    386.3449993133545,
+    385.1549997329712,
+    388.32500076293945,
+    377.710000038147
+   ],
+   "median": 385.1549997329712,
+   "iqr": 6.897500514984131,
+   "n": 7
+  }
+ ]
+}

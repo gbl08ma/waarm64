@@ -1,0 +1,33 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index ee5014e..d98fa1c 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -103,6 +103,7 @@ enum K {
+ 
+ /// One instruction, decoded.
+ #[derive(Clone, Copy, Debug)]
++#[repr(C, align(16))]
+ pub struct Uop {
+     k: K,
+     d: u8,
+@@ -680,8 +681,9 @@ pub fn hot<B: Fast>(
+             if u == end {
+                 break 'block pc;
+             }
+-            // SAFETY: u < end, in the arena.
+-            let o = unsafe { &*u };
++            // SAFETY: u < end, in the arena. A copy: two loads, the fields
++            // extracted (`repr(C)`), rather than a load each.
++            let o = unsafe { u.read() };
+             let (d, n) = (o.d as u32, o.n as u32);
+             let sf = o.x & 1 != 0;
+             match o.k {
+@@ -1143,7 +1145,7 @@ const SLOTS: usize = 16384;
+ /// them to the JIT's cache (a lock and a map lookup: `jit::Cache::miss`),
+ /// which compiles the block once they reach its threshold (the dispatch that
+ /// reaches it reports: [`Cache::quota`]).
+-pub const REPORT: u32 = 16;
++pub const REPORT: u32 = 255;
+ 
+ #[derive(Clone, Copy)]
+ struct Slot {

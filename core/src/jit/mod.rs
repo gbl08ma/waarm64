@@ -678,7 +678,13 @@ impl Cache {
             }
             self.emit_if_due(t, mem);
         }
-        let report = interp::block::REPORT;
+        // A cache that never compiles (no JIT, or `jit` 4's threshold) needs
+        // no counts: its blocks report as rarely as a slot counts.
+        let report = if self.off || self.threshold == u32::MAX {
+            interp::block::REPORT_IDLE
+        } else {
+            interp::block::REPORT
+        };
         match self.map.get(&key) {
             // The jump cache gets it once the table has installed it ([`Jit::miss`]).
             Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len)), report),

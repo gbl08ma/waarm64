@@ -1145,6 +1145,13 @@ const SLOTS: usize = 16384;
 /// reaches it reports: [`Cache::quota`]).
 pub const REPORT: u32 = 16;
 
+/// [`REPORT`] for a cache that never compiles (no JIT, or `VmConfig.jit` 4):
+/// as many as a slot's quota holds. Only there: in the JIT, counts reported
+/// later than every 16 delay the batches and shrink the regions (forward
+/// regions take members by the counts the cache has seen: Alpine's boot
+/// interpreted 2.5× the steps with 255; bench/interp/REPORT.md "M8-INTERP loop 2").
+pub const REPORT_IDLE: u32 = 255;
+
 #[derive(Clone, Copy)]
 struct Slot {
     key: u64,
@@ -1320,12 +1327,12 @@ impl Cache {
     pub fn quota(&mut self, key: u64, n: u32) {
         let s = &mut self.slots[slot(key)];
         if s.key == key {
-            s.quota = n.min(REPORT) as u8;
+            s.quota = n.min(REPORT_IDLE) as u8;
         } else if let Some(e) = self.map.get_mut(&key)
             && e.1 != 0
         {
             // (Never a key with no instructions: it isn't a block to run.)
-            e.3 = n.min(REPORT) as u8;
+            e.3 = n.min(REPORT_IDLE) as u8;
         }
     }
 
