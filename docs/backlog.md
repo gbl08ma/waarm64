@@ -199,8 +199,13 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
     for the catch-up even when the table is the only one (a lone table could take them instead);
   - a worker installs every module of the epoch, those its vCPU never runs too (an instance and
     table entries each: small, not measured);
-  - a module's bytes stay in the core's heap until every table has it, and a vCPU that never runs
-    (offline) holds them until the next flush (at most the 320 MiB budget);
+  - a vCPU that slept through more than `HELD_MAX` (64 MiB) of modules flushes the whole cache when it next runs
+    ([jit.md](jit.md) "Sharing"; `lagFlushes`, none in the sessions measured, the held bytes peaked at 4-10 MiB). A
+    lagging table could instead recompile only what it runs, or take the compile worker's compiled modules, which
+    need no bytes (`env.jit_install` with a number), if the host kept them for the epoch. Worth it only if
+    `lagFlushes` shows up in real sessions. The held-bytes count in `Cache::install` has no native test (the native
+    cache never logs a module without a JIT host; a planted bug there went unseen): a test hook that logs a module
+    would cover it;
   - **the cache's lock** ([jit.md](jit.md) "Sharing" "What the lock costs") is taken ~60,000 times a second in
     Firefox's pages session (2.4% of them find it held, ~0.7% of the vCPUs' time waiting) and ~2% of the vCPUs' time
     waits on the churn screen (before 2026-10-21's one report from `warm` to the threshold, which halved the
@@ -259,8 +264,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The core's heap in a fixed memory: exact limits for the core module too** (the user, 2026-10-17; [abi.md](abi.md)
   "A fixed-size memory"). One linear memory holds the core's static data, stack and heap, the scratch page, RAM and
   fw_cfg's files; the heap gets what 4 GiB leaves after the rest, capped at 1 GiB and never under `HEAP_FLOOR`
-  (1 GiB: the heap reaches ~540–600 MiB under a Go build on 4 vCPUs and the desktop guest's Firefox,
-  [spill-memories.md](spill-memories.md) "The heap floor"; what fills it isn't broken down). A memory at its final
+  (1 GiB: the heap reaches ~500-570 MiB under a Go build on 4 vCPUs and the desktop guest's Firefox,
+  [spill-memories.md](spill-memories.md) "The heap floor"; broken down in [jit.md](jit.md) "The core's heap": the
+  decoded blocks ~360 MiB, the block map up to ~60, the rest ~50, all bounded since 2026-10-21). A memory at its final
   size is 6–7% faster on Linux arm64 than a growable one (bench/boot/REPORT.md "M8: a fixed-size memory"), but only
   JIT modules import exact limits: the core module still declares 18–65536 pages. **Parked:** the host would create
   the memory at its final size before instantiating the core, and the heap would become an allocator of our own over

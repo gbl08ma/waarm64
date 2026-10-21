@@ -1,0 +1,222 @@
+{
+ "bench/results/local/heap-long/nobound-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 456.25,
+   "flushes": 6,
+   "modules": 141605,
+   "mib": 1864.6,
+   "overdue": 959,
+   "parks": 387131,
+   "locks": 184096261,
+   "interpGsteps": 31.71,
+   "share": 0.93,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 408,
+    "atGsteps": 136.5,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 21976,
+    "mibEmitted": 266.8,
+    "shareBefore": 0.924,
+    "shareAfter": [
+     0.85,
+     0.85,
+     0.856,
+     0.875,
+     0.878,
+     0.893,
+     0.893,
+     0.898,
+     0.9,
+     0.897
+    ],
+    "stepsToNextG": 55.63
+   },
+   {
+    "atS": 523,
+    "atGsteps": 192.13,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 20996,
+    "mibEmitted": 259.7,
+    "shareBefore": 0.922,
+    "shareAfter": [
+     0.878,
+     0.878,
+     0.881,
+     0.882,
+     0.892,
+     0.902,
+     0.903,
+     0.914,
+     0.914,
+     0.897
+    ],
+    "stepsToNextG": 53.29
+   },
+   {
+    "atS": 637,
+    "atGsteps": 245.42,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 21388,
+    "mibEmitted": 263.5,
+    "shareBefore": 0.92,
+    "shareAfter": [
+     0.865,
+     0.865,
+     0.897,
+     0.91,
+     0.91,
+     0.906,
+     0.898,
+     0.898,
+     0.901,
+     0.901
+    ],
+    "stepsToNextG": 54.53
+   },
+   {
+    "atS": 750,
+    "atGsteps": 299.95,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 21023,
+    "mibEmitted": 258.9,
+    "shareBefore": 0.931,
+    "shareAfter": [
+     0.869,
+     0.869,
+     0.875,
+     0.875,
+     0.891,
+     0.892,
+     0.894,
+     0.894,
+     0.896,
+     0.898
+    ],
+    "stepsToNextG": 53.58
+   },
+   {
+    "atS": 863,
+    "atGsteps": 353.52,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 20430,
+    "mibEmitted": 258.1,
+    "shareBefore": 0.929,
+    "shareAfter": [
+     0.85,
+     0.853,
+     0.887,
+     0.887,
+     0.885,
+     0.885,
+     0.894,
+     0.896,
+     0.903,
+     0.91
+    ],
+    "stepsToNextG": 53.4
+   },
+   {
+    "atS": 980,
+    "atGsteps": 406.93,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 18826,
+    "mibEmitted": 239.3,
+    "shareBefore": 0.925,
+    "shareAfter": [
+     0.832,
+     0.857,
+     0.887,
+     0.889,
+     0.893,
+     0.894,
+     0.901,
+     0.906,
+     0.908,
+     0.908
+    ]
+   }
+  ]
+ }
+}

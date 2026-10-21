@@ -311,8 +311,11 @@ pub struct Counters {
     pub cw: [AtomicU64; 4],
     /// The JIT cache's lock (ABI 46, `jit::Stats`): acquisitions, contended
     /// ones, ns waited; ns emitting modules, of those under the lock, ns
-    /// forming batches into regions.
-    pub jx: [AtomicU64; 6],
+    /// forming batches into regions; then (ABI 47) the block map's prunes,
+    /// flushes for a heap without room for a map to grow, and flushes for a
+    /// table that lacked modules whose bytes were dropped; the heap bytes the
+    /// table's decoded blocks and its known blocks take.
+    pub jx: [AtomicU64; 11],
 }
 
 /// Indexes into [`Counters::par`].
@@ -343,7 +346,7 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
-            jx: [const { AtomicU64::new(0) }; 6],
+            jx: [const { AtomicU64::new(0) }; 11],
         }
     }
 }
@@ -1066,7 +1069,7 @@ impl Vm {
         c.tlb_walks.store(walks, Ordering::Relaxed);
         c.tlb_flushes.store(flushes, Ordering::Relaxed);
         if let Some(j) = &self.vcpus[0].jit.cache {
-            publish_jit(c, &j.table.stats);
+            publish_jit(c, &j.table.stats());
         }
     }
 
@@ -1473,6 +1476,11 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         s.emit_ns,
         s.emit_locked_ns,
         s.plan_ns,
+        s.prunes,
+        s.rescues,
+        s.lag_flushes,
+        s.dec_bytes,
+        s.known_bytes,
     ];
     for (a, v) in c.jx.iter().zip(jx) {
         a.store(v, Ordering::Relaxed);

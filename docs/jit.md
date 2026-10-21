@@ -273,7 +273,11 @@ its jump cache and hot words, its helper counts and its counters.
   jump-cache miss that takes the lock (below), when the cache's `drops` moved (an atomic read
   before each block, without the lock), and in `jit_hot`, always before a block runs that could
   use them. Bytes every table has
-  taken are freed. **No V8 compile runs under the lock** (only a table's two miss functions, once):
+  taken are freed (a table's copy to install shares them: `Arc<[u8]>`), and at most `HELD_MAX` (64 MiB) are held
+  for tables that haven't taken them: past it the oldest go, and a table that lacked one (its vCPU offline, or
+  asleep in WFI while the others compiled) can't install it or anything after it, so it interprets what's past its
+  `limit` until its dispatcher next catches up and flushes the cache (`Table::catch_up`, counted as `lagFlushes`).
+  Before, such a vCPU held the epoch's every module, up to the whole byte budget, in the core's heap. **No V8 compile runs under the lock** (only a table's two miss functions, once):
   a worker stalled in `jit_install` holding it kept the other vCPUs from even reaching their DSB
   (`tests/hoststall.test.ts`), and in a browser one worker's compile would hold up every vCPU's
   misses.
@@ -420,6 +424,50 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   four times the machine's JIT budget past 160 MiB, `jitHostGiB`) matches the capped median of that mixed load and
   Firefox's pages session at 160 and 320 MiB (4.6-4.7 and 5.1-5.4 GiB with 2.5 GiB of RAM on 4 vCPUs, the rule's
   4.7 and 5.3); the peaks above it are the GC's lag.
+
+### The core's heap
+
+The core's heap is a fixed reserve (1 GiB, `HEAP_RESERVE` in web/vm.ts; [abi.md](abi.md) "A fixed-size memory"), and
+running it out traps the machine. Everything the JIT keeps there is bounded:
+- **The block map** (`Cache::map`: every block key a vCPU dispatched, compiled or not, with its count; `Info` is 16
+  bytes, 25 a bucket) and its page index. At `MAP_KEYS` (1.5 M keys, counting those an IC removed since the table was
+  last rebuilt, whose tombstones take room) a **prune** (`Cache::prune`) keeps what the cache needs (compiled, queued,
+  tiering or covered blocks) and the keys counted `KEEP_HITS` (16) times that reported since the last prune (on their
+  way to the threshold: they keep their counts), drops the rest, rebuilds the table to fit and the page index and
+  links to match. If that leaves more than half of `MAP_KEYS`, only the needed keys stay; if even those are too many,
+  the cache flushes. So the table never passes 2^21 buckets (50 MiB; the page index adds ~8 B a key). A pruned key
+  that runs again counts from zero. **Why:** the map held every key since the last flush, and with the 320 MiB budget
+  flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
+  and one flush when the table doubled from 2^22 buckets (`rust_oom` in `Jit::miss`, 2026-10-21). JavaScript
+  engines' code that runs a few times, at addresses later reused, is most of those keys.
+- **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 256 MiB shared out
+  among the tables, at most 128 MiB one), and its map and page index, which also start over at `MAX_KEYS` (900,000:
+  2^20 buckets, 21 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, counting the keys an IC dropped (a block of
+  one micro-op, or none, filled the map long before the arena).
+- **A table's known blocks** (`Table::known`): at most a key per slot this epoch.
+- **Module bytes** held for tables that haven't taken them: at most `HELD_MAX` ([Sharing](#sharing)).
+- **The safety net:** before the block map, a table's decoded blocks or its known blocks grow, `try_reserve`; if the
+  heap has no room the cache flushes (or the table's decoded blocks start over) and the maps are freed whole (a clear
+  keeps their tables), counted as `rescues` (counter word 115). `tests/heap.test.ts` runs a guest of 4M `b .+4` in a
+  64 MiB heap through it. An allocation that still fails records its size and the heap's live bytes and mark for the
+  host (the allocation error hook, `diag`: `handle_alloc_error` skips the panic hook, so the crash above came with
+  no message).
+- **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index) and the
+  held bytes, and each table's counters what its decoded and known blocks take (`decBytes`, `knownBytes`); the
+  page's status carries them (`Vm.hostUse`, `stats().jit`).
+
+**What fills it** (Firefox's pages session then 10 minutes of the churn screen, 4 vCPUs, 2.5 GiB, from the warm
+`pages` snapshot, `bench/boot/results/m8-heap/`; MiB at the sample where the heap's live bytes were highest):
+
+| | live | decoded blocks | block map | known | held modules | the rest | mark | keys at most |
+|---|---|---|---|---|---|---|---|---|
+| bounded | 485 | 363 | 62 | 9 | 0 | 51 | 507 | 1.49 M (2 prunes) |
+| unbounded (the same core, the bounds off) | 523 | 349 | 116 | 9 | 0 | 50 | 568 | 1.93 M |
+
+The decoded blocks are most of it (the arenas' 256 MiB, their maps ~100 MiB), at their bound already. The block map
+of the unbounded core had doubled to 2^22 buckets (105 MiB) at 1.6 M keys; the session flushed every ~2 minutes in the
+churn, so it never got further. The rest is the devices' buffers, the jump caches and hot words (~1 MiB each a
+table), the threads' stacks. The held bytes peaked at 4-10 MiB (a vCPU that slept through modules).
 
 ### The page's memory signal
 

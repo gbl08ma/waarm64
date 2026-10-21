@@ -256,6 +256,12 @@ UNKNOWN or IMPLEMENTATION DEFINED reset values and must pick addresses unmapped 
 flash covers `0x0`–`0x0800_0000`). **Rebuild all of them together** when one changes (different clangs build different bytes;
 they were last rebuilt together on the M4 VM in M8 loop 8, when only `timer.bin` changed and the others came out identical).
 
+**The core's heap (`tests/heap.test.ts`, `core/tests/alloc_hook.rs`):** a guest of millions of `b .+4` (every word a
+block run once) in a test-only small heap reserve (`BootOptions.heapReserve`): 8M blocks in 320 MiB through the
+block map's prunes, and 4M in 64 MiB through the safety net's rescues ([jit.md](jit.md) "The core's heap"; the core
+before the bound trapped in both). The allocation error hook's message is checked natively, in a child process that
+aborts.
+
 **Host stalls (`tests/hoststall/`, `tests/hoststall.test.ts`):** `stall.c` builds four 2-vCPU
 guests (`build.sh`: `stall-run|install|idle|waiter.bin`, committed) that cooperate with a test-only
 hook in a vCPU worker (`BootOptions.stall`, web/vm.ts `Stall`) through a word in RAM: vCPU 1 arms it,

@@ -1508,6 +1508,17 @@ pub fn budget(tables: usize) -> usize {
 /// Direct-mapped entries in front of the map.
 const SLOTS: usize = 16384;
 
+/// Micro-ops of a table's budget per key its map holds before it starts
+/// over, at most [`MAX_KEYS`]: blocks of one micro-op (or none: an SVC at a
+/// block's start, kept with length 0) would fill the map long before the
+/// arena, at 21 B a bucket of it and 8-16 of the page index a key.
+pub const KEY_UOPS: usize = 4;
+
+/// The keys a table's map holds at most, counting those dropped since its
+/// table was last rebuilt (their tombstones take room): under the 917,504
+/// that 2^20 buckets hold (21 MiB), so it never doubles past them.
+pub const MAX_KEYS: usize = 900_000;
+
 /// Dispatches a decoded block counts, at most, before the dispatcher reports
 /// them to the JIT's cache (a lock and a map lookup: `jit::Cache::miss`),
 /// which compiles the block once they reach its threshold (the dispatch that
@@ -1557,11 +1568,18 @@ pub struct Cache {
     /// The keys in `map` by physical page, for `IC IVAU`.
     pages: HashMap<u64, Vec<u64>, crate::jit::KeyBuild>,
     arena: Vec<Uop>,
-    /// The micro-ops it holds before it starts over.
+    /// The micro-ops it holds before it starts over, and the keys
+    /// ([`KEY_UOPS`]); keys dropped since the map's table was last rebuilt,
+    /// and its capacity then.
     budget: usize,
-    /// Blocks decoded, and times the cache started over (`jit::Stats`).
+    keys: usize,
+    removed: usize,
+    map_cap: usize,
+    /// Blocks decoded, times the cache started over, and times it freed
+    /// its memory because the heap had no room for it to grow (`jit::Stats`).
     pub decoded: u64,
     pub clears: u64,
+    pub rescues: u64,
 }
 
 #[inline(always)]
@@ -1582,8 +1600,12 @@ impl Cache {
             pages: HashMap::default(),
             arena: Vec::new(),
             budget,
+            keys: (budget / KEY_UOPS).clamp(1, MAX_KEYS),
+            removed: 0,
+            map_cap: 0,
             decoded: 0,
             clears: 0,
+            rescues: 0,
         }
     }
 
@@ -1610,13 +1632,28 @@ impl Cache {
                     uop_el(w, op, key & 1 != 0)
                 });
                 mov_runs(&mut uops);
+                // Full (its micro-ops, or its keys: blocks of one or none
+                // fill the map before the arena), it starts over; with no
+                // room in the heap for it to grow, it frees its memory too.
+                if self.map.capacity() != self.map_cap {
+                    // Grown (rebuilt): no tombstones.
+                    (self.map_cap, self.removed) = (self.map.capacity(), 0);
+                }
+                if self.map.len() + self.removed >= self.keys
+                    || !uops.is_empty() && self.arena.len() + uops.len() > self.budget
+                {
+                    self.clear();
+                }
+                if self.map.try_reserve(1).is_err()
+                    || self.pages.try_reserve(1).is_err()
+                    || self.arena.try_reserve(uops.len()).is_err()
+                {
+                    self.rescue();
+                }
                 if uops.is_empty() {
                     self.map.insert(key, (0, 0, 0, 0));
                     self.pages.entry(key >> 12).or_default().push(key);
                     return None;
-                }
-                if self.arena.len() + uops.len() > self.budget {
-                    self.clear();
                 }
                 let start = self.arena.len() as u32;
                 self.arena.extend_from_slice(&uops);
@@ -1738,12 +1775,34 @@ impl Cache {
     /// Drops the blocks of physical page `page` (`IC IVAU`).
     pub fn drop_page(&mut self, page: u64) {
         for key in self.pages.remove(&page).unwrap_or_default() {
-            self.map.remove(&key);
+            self.removed += self.map.remove(&key).is_some() as usize;
             let s = &mut self.slots[slot(key)];
             if s.key == key {
                 *s = EMPTY;
             }
         }
+    }
+
+    /// The heap bytes it takes: the arena, the map and the page index (its
+    /// lists estimated at a key each).
+    pub fn bytes(&self) -> u64 {
+        use crate::jit::table_bytes;
+        (self.arena.capacity() * size_of::<Uop>()) as u64
+            + table_bytes(self.map.capacity(), 8 + size_of::<(u32, u32, u16, u8)>())
+            + table_bytes(self.pages.capacity(), 8 + size_of::<Vec<u64>>())
+            + 8 * self.map.len() as u64
+    }
+
+    /// Drops every block and frees the memory the maps and the arena hold
+    /// (a clear keeps it).
+    #[cold]
+    #[inline(never)]
+    pub fn rescue(&mut self) {
+        self.clear();
+        self.map = HashMap::default();
+        self.pages = HashMap::default();
+        self.arena = Vec::new();
+        self.rescues += 1;
     }
 
     /// Drops every block.
@@ -1760,6 +1819,7 @@ impl Cache {
         self.pages.clear();
         self.arena.clear();
         self.clears += 1;
+        self.removed = 0;
     }
 }
 

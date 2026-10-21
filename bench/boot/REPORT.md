@@ -2558,3 +2558,44 @@ The gates (`gates/`, three rounds alternating, ms, lower is better): `smp_alpine
 against 9,083 · 9,172 · 9,069 (−1.1%), n2 −2.7%, n4 −2.9%; `smp_user_jit_4` 17,964 · 18,302 · 18,419 against
 17,328 · 17,294 · 17,394 (−5.3%). **Kept:** a quarter of the acquisitions on the pages session and three fifths on
 the churn, the waiting less than half, busy MIPS +7% and +15%, nothing slower.
+
+## M8: the core's heap bounded (2026-10-21)
+
+**The crash** (the user, at 2460115): the desktop guest, 4 vCPUs, 2.5 GiB, the default 320 MiB JIT budget, after
+15 minutes and one flush (Firefox with WebGL, news sites and YouTube, then closed; Chromium in the guest loading
+YouTube): `RuntimeError: unreachable` at `rust_oom` < `RawTable<jit::Info>::reserve_rehash` < `Jit::miss`, and no
+message. The JIT's block map (`Cache::map`) held every key dispatched since the last flush, compiled or not: at 41 B
+a bucket, its doubling from 2^22 buckets needed 328 MiB free beside the old 164 MiB table. Flushes are rare at 320
+MiB, so a session's keys accumulated (JavaScript engines' code, run a few times at addresses later reused).
+
+**Reproduced** (`m8-heap/probe.json`, `tests/heap.test.ts`): a guest of nothing but `b .+4`, every word a block
+run once, in Node. The old core holds ~127 B a block (1.5M blocks: 190 MiB live); 8M blocks trap it in a 1 GiB heap,
+and in a 320 MiB one it traps after 590 ms, first in the decoded blocks' map (`interp::block::Cache`, a key per
+micro-op: it too was bounded only by its arena's micro-ops). The fixed core runs the 8M blocks in a 320 MiB heap with
+a mark of 131 MiB (5 prunes), and in 96, 64 and 24 MiB heaps through the safety net (17, 25 and 110 rescues), where
+the old one traps. Natively, `jit::tests::the_block_map_stays_bounded` (3.2M keys with ICs) saw the old map's table
+reach 7.3M keys' capacity (2^23 buckets).
+
+**The fix** (docs/jit.md "The core's heap"): the block map prunes at 1.5 M keys (tombstones counted) to the needed
+keys and the warm ones that reported lately, so its table stays at 2^21 buckets; `Info` 32 → 16 bytes (the stale
+checker's hash moved to `spans`, `hits` u16, `len` u8): 25 B a bucket; the decoded blocks' map starts over at 900,000
+keys or a key per 4 micro-ops; module bytes held for tables that haven't taken them are capped at 64 MiB (a lagging
+table flushes); `try_reserve` before those maps grow, which flushes and frees them on failure; an allocation that
+fails records a message. ABI 47 exposes the block map's keys and bytes, the held bytes and each table's decoded and
+known bytes.
+
+**A long session** (`m8-heap/long/`: Firefox's pages session then 10 minutes of the churn screen, from the warm
+`pages` snapshot, one session each, `MEMLOG=5`; `unbounded` is the same core with the bounds off; MiB):
+
+| | heap live max | mark | decoded blocks | block map max | known | held max | keys max | prunes | flushes |
+|---|---|---|---|---|---|---|---|---|---|
+| bounded | 485 | 507 | 366 | 62 | 11 | 4 | 1.49 M | 2 | 5 |
+| unbounded | 523 | 568 | 365 | 116 | 9 | 10 | 1.93 M | 0 | 6 |
+
+At the highest sample the bounded core's heap was 363 decoded blocks, 62 block map, 9 known, 51 the rest (devices,
+jump caches and hot words, stacks); the unbounded one's 349, 116, 9, 50. The pages session reached 1.5 M keys at
+212 s (prunes at 212 and 361 s, ~650 K kept); the churn's flushes (every ~2 minutes: the byte budget) emptied the map
+after that, so neither session got near the crash's 3.7 M keys. Unbounded, the table had doubled to 2^22 buckets by
+1.6 M keys. In the pages part (one session each): busy MIPS 196 against 194, wiki and bbc loads 11.5 and 12.3 s
+against 11.9 and 12.1, no stalls ≥ 50 ms. Both sessions ended with the harness's 30 s wait after the churn timing out
+(the same in both; the measurements before it are complete).

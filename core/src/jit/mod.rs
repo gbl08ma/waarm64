@@ -216,6 +216,17 @@ pub struct Stats {
     pub emit_ns: u64,
     pub emit_locked_ns: u64,
     pub plan_ns: u64,
+    /// The core's heap (ABI 47): the block map's prunes ([`MAP_KEYS`]);
+    /// flushes because the heap had no room for a map to grow (the block
+    /// map's, a table's decoded blocks or its known ones); and flushes
+    /// because a table lacked modules whose bytes were dropped ([`HELD_MAX`]).
+    pub prunes: u64,
+    pub rescues: u64,
+    pub lag_flushes: u64,
+    /// The heap bytes the table's decoded blocks (arena, map, page index)
+    /// and its known blocks take, estimated ([`Table::stats`]).
+    pub dec_bytes: u64,
+    pub known_bytes: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -238,27 +249,62 @@ impl Hasher for KeyHasher {
     }
 }
 
-/// A block key's state.
+/// A block key's state: 16 bytes, so 25 a bucket of the map with its key
+/// and control byte (docs/jit.md "Memory": the map holds every key
+/// dispatched since the last prune).
 #[derive(Clone, Copy, Debug, Default)]
 struct Info {
-    /// Dispatches while not compiled.
-    hits: u32,
+    /// Dispatches while not compiled (saturating: a threshold at or past
+    /// `u16::MAX` compiles nothing, as `Config::INTERP`'s).
+    hits: u16,
     /// Table index once compiled (0 is never a JIT block: the table's null entry).
     idx: u32,
-    /// The block's length (0: it would have none, so it's never compiled).
-    len: u32,
-    /// In the pending batch.
-    queued: bool,
-    /// The compiled words' hash, for the stale-code checker.
-    hash: u64,
     /// A loop head compiled alone: its hot word's index + 1 (step 8.3).
     word: u32,
+    /// The block's length (0: it would have none, so it's never compiled;
+    /// at most `block::CAP`).
+    len: u8,
+    /// In the pending batch.
+    queued: bool,
     /// A loop head whose region waits in `Cache::tierq` for the next batch.
     tiering: bool,
     /// A loop head that a region tiered up with it runs the loop of: it
     /// doesn't tier up itself.
     covered: bool,
+    /// Reported since the last prune ([`Cache::prune`]).
+    seen: bool,
 }
+
+impl Info {
+    /// Whether the cache needs it whatever its count: compiled (the jump
+    /// caches, the links and the stale-code checker name it), or in a batch
+    /// or a tier-up on the way. A prune keeps it.
+    fn needed(&self) -> bool {
+        self.idx != 0 || self.queued || self.tiering || self.covered || self.word != 0
+    }
+}
+
+/// Keys the block map holds, compiled or not, before a prune drops the cold
+/// ones ([`Cache::prune`]), counting those an IC removed since its table was
+/// last rebuilt (their tombstones take room until then). Under the 1.835 M
+/// that 2^21 buckets hold (50 MiB at 25 B), so the table never doubles past
+/// them: it held a whole session's keys before, and the desktop guest's
+/// doubling from 2^22 buckets ran the core's 1 GiB heap out (2026-10-21).
+pub const MAP_KEYS: usize = 1_500_000;
+const _: () = assert!(block::CAP <= u8::MAX as usize, "Info::len");
+
+/// The dispatches that keep an uncompiled key, reported since the last
+/// prune, through the next one with its count ([`Cache::prune`]): one that
+/// ran this often and lately is on its way to the threshold, and the cold
+/// ones (run once: JavaScript engines' code, start-up code) lose a few counts.
+pub const KEEP_HITS: u16 = 16;
+
+/// Module bytes the cache holds for tables that haven't taken them yet
+/// (`Cache::held`): past it the oldest go, and a table that still lacked
+/// them flushes the cache at its next dispatch (`Table::lagging`). A vCPU
+/// that never ran (offline, or asleep in WFI) held every module of the
+/// epoch, up to the whole byte budget.
+pub const HELD_MAX: u64 = 64 << 20;
 
 /// A jump cache entry: the compiled block for a key. Blocks read it too
 /// (indirect branches, step 7: `emit::indirect`), so its layout is fixed.
@@ -329,8 +375,9 @@ pub struct Cache {
     pages: Map<Vec<u64>>,
     /// The compiled blocks that chain to a key (step 7), dropped with it.
     linkers: Map<Vec<u64>>,
-    /// Each compiled region's blocks as (PA, length), for the stale-code checker.
-    spans: Map<Vec<(u64, u32)>>,
+    /// Each compiled region's words' hash and its blocks as (PA, length),
+    /// for the stale-code checker.
+    spans: Map<(u64, Vec<(u64, u32)>)>,
     /// The loop regions compiled for heads compiled alone ([`Cache::tier_up`]),
     /// by head: when the head gets hot in another table, it redirects there.
     tiers: Map<Tier>,
@@ -347,6 +394,12 @@ pub struct Cache {
     batch: u64,
     /// The next free slot.
     next: u32,
+    /// Keys an IC removed from `map` since its table was last rebuilt (a
+    /// bound on its tombstones: [`MAP_KEYS`]), and its capacity then.
+    removed: usize,
+    map_cap: usize,
+    /// The bytes of the logged modules not dropped yet ([`HELD_MAX`]).
+    held: u64,
     /// The bytes of the modules installed since the last flush (`Config::max_bytes`).
     live_bytes: u64,
     /// The compile threshold now, and the one it starts from after a flush
@@ -381,7 +434,8 @@ pub struct Cache {
     /// Flushes (and `IC IALLU`s) so far: each starts the slots over.
     epoch: u64,
     /// The modules installed since then, in order; and how many of them
-    /// every table has (their bytes are dropped).
+    /// have their bytes dropped (every table has taken them, or [`HELD_MAX`]
+    /// dropped them).
     log: Vec<Logged>,
     freed: usize,
     /// The next module's number for the host's compile worker (from 1; 0:
@@ -408,7 +462,7 @@ pub struct Cache {
 #[repr(C)]
 #[derive(Default)]
 pub struct Gauge(pub [AtomicU64; GAUGE_WORDS]);
-pub const GAUGE_WORDS: usize = 5;
+pub const GAUGE_WORDS: usize = 8;
 /// The wasm bytes and the modules installed since the last flush: what V8
 /// holds code and metadata for (until its GC collects a flushed epoch's).
 pub const G_LIVE_BYTES: usize = 0;
@@ -423,6 +477,12 @@ pub const G_EPOCHS: usize = 3;
 pub const G_LIMIT: usize = 4;
 /// The least budget the host's limit leaves.
 pub const MIN_LIMIT: u64 = 16 << 20;
+/// (ABI 47) The block map's keys ([`MAP_KEYS`]), the bytes its table takes
+/// in the core's heap (estimated from its capacity), and the module bytes
+/// held for tables that haven't taken them ([`HELD_MAX`]).
+pub const G_KEYS: usize = 5;
+pub const G_KEY_BYTES: usize = 6;
+pub const G_HELD: usize = 7;
 
 /// A module installed since the last flush.
 struct Logged {
@@ -430,8 +490,9 @@ struct Logged {
     /// Its functions, and its number for the compile worker (0: none).
     n: u32,
     seq: u32,
-    /// Emptied once every table has it.
-    bytes: Vec<u8>,
+    /// Emptied once every table has taken it (a table's [`Todo`] shares it
+    /// until that table has installed it).
+    bytes: Arc<[u8]>,
     /// The hot words of its loop heads compiled alone (their slots).
     tiers: Vec<u32>,
 }
@@ -473,6 +534,9 @@ impl Cache {
             pending_steps: 0,
             batch: 0,
             next: MISS_SLOTS,
+            removed: 0,
+            map_cap: 0,
+            held: 0,
             live_bytes: 0,
             threshold: cfg.threshold,
             floor: cfg.threshold,
@@ -511,6 +575,106 @@ impl Cache {
         g[G_LIVE_MODULES].store(self.log.len() as u64, Ordering::Relaxed);
         g[G_BUDGET].store(self.budget(), Ordering::Relaxed);
         g[G_EPOCHS].store(self.epoch, Ordering::Relaxed);
+        g[G_HELD].store(self.held, Ordering::Relaxed);
+        self.publish_keys();
+    }
+
+    /// The block map's words of the [`Gauge`].
+    fn publish_keys(&self) {
+        let g = &self.gauge.0;
+        g[G_KEYS].store(self.map.len() as u64, Ordering::Relaxed);
+        g[G_KEY_BYTES].store(self.map_bytes(), Ordering::Relaxed);
+    }
+
+    /// The bytes the block map's table and its page index take (the
+    /// index's lists estimated at a key each).
+    fn map_bytes(&self) -> u64 {
+        table_bytes(self.map.capacity(), size_of::<(u64, Info)>())
+            + table_bytes(self.pages.capacity(), size_of::<(u64, Vec<u64>)>())
+            + 8 * self.map.len() as u64
+    }
+
+    /// Before a key may join the block map (a miss, from the dispatcher: it
+    /// may flush): a prune at [`MAP_KEYS`], and room for the key. If the
+    /// heap has no room, the cache flushes and frees its maps whole
+    /// ([`Cache::rescue`]).
+    fn room(&mut self, s: &mut Stats) {
+        if self.map.capacity() != self.map_cap {
+            // Grown (rebuilt): no tombstones.
+            (self.map_cap, self.removed) = (self.map.capacity(), 0);
+        }
+        if self.map.len() + self.removed >= MAP_KEYS {
+            self.prune(s);
+        }
+        if self.map.try_reserve(1).is_err() {
+            self.rescue(s);
+        }
+    }
+
+    /// Drops the keys nothing needs ([`Info::needed`]) but those counted
+    /// [`KEEP_HITS`] times that reported since the last prune; all but the
+    /// needed ones if that leaves more than half of [`MAP_KEYS`]; and
+    /// flushes if even that does. Then rebuilds the map's table to fit, and
+    /// the page index and the links to match. A pruned key that runs again
+    /// counts from zero (its decoded blocks report it as new).
+    fn prune(&mut self, s: &mut Stats) {
+        self.map.retain(|_, i| {
+            let warm = i.seen && i.hits >= KEEP_HITS;
+            i.seen = false;
+            warm || i.needed()
+        });
+        if self.map.len() > MAP_KEYS / 2 {
+            self.map.retain(|_, i| i.needed());
+        }
+        s.prunes += 1;
+        if self.map.len() > MAP_KEYS / 2 {
+            self.flush(s);
+            return;
+        }
+        self.map.shrink_to(0);
+        (self.map_cap, self.removed) = (self.map.capacity(), 0);
+        let map = &self.map;
+        self.pages.retain(|_, keys| {
+            keys.retain(|k| map.contains_key(k));
+            keys.sort_unstable();
+            keys.dedup();
+            keys.shrink_to_fit();
+            !keys.is_empty()
+        });
+        self.pages.shrink_to(0);
+        self.linkers.retain(|k, _| map.contains_key(k));
+        self.linkers.shrink_to(0);
+        self.publish();
+    }
+
+    /// The heap had no room for the block map to grow: a flush, and the
+    /// cache's maps freed whole (a flush keeps their tables), so the next
+    /// key finds room (counted in `s`).
+    #[cold]
+    #[inline(never)]
+    fn rescue(&mut self, s: &mut Stats) {
+        self.flush(s);
+        self.map = Map::default();
+        self.pages = Map::default();
+        self.linkers = Map::default();
+        self.spans = Map::default();
+        self.tiers = Map::default();
+        self.log = Vec::new();
+        (self.map_cap, self.removed) = (0, 0);
+        s.rescues += 1;
+        self.publish();
+    }
+
+    /// Drops the oldest logged modules' bytes while more than [`HELD_MAX`]
+    /// are held (never the newest): a table that hasn't taken one by then
+    /// is lagging ([`Table::sync`]).
+    fn shed(&mut self) {
+        while self.held > HELD_MAX && self.freed + 1 < self.log.len() {
+            let l = &mut self.log[self.freed];
+            self.held -= l.bytes.len() as u64;
+            l.bytes = Arc::from([]);
+            self.freed += 1;
+        }
     }
 
     fn gauged(self) -> Cache {
@@ -558,6 +722,7 @@ impl Cache {
     fn drop_all(&mut self) {
         self.drops.fetch_add(1, Ordering::Relaxed);
         self.map.clear();
+        (self.map_cap, self.removed) = (self.map.capacity(), 0);
         self.pages.clear();
         self.linkers.clear();
         self.spans.clear();
@@ -571,7 +736,7 @@ impl Cache {
         self.retune();
         self.epoch += 1;
         self.log.clear();
-        self.freed = 0;
+        (self.freed, self.held) = (0, 0);
         for t in &mut self.tables {
             *t = Seen {
                 ival: t.ival,
@@ -598,7 +763,7 @@ impl Cache {
             // With the blocks that chain to them, transitively: their code
             // calls the dropped functions directly.
             while let Some(k) = keys.pop() {
-                self.map.remove(&k);
+                self.removed += self.map.remove(&k).is_some() as usize;
                 self.spans.remove(&k);
                 self.tiers.remove(&k);
                 for t in self.tables.iter_mut().filter(|t| !t.all) {
@@ -632,11 +797,12 @@ impl Cache {
         if self.tolerant && !self.spans.contains_key(&key) {
             return true;
         }
-        let words: Vec<u32> = self.spans[&key]
+        let (hash, spans) = &self.spans[&key];
+        let words: Vec<u32> = spans
             .iter()
             .flat_map(|&(pa, n)| block::read(mem, pa, n as usize))
             .collect();
-        if block::hash(&words) == self.map[&key].hash {
+        if block::hash(&words) == *hash {
             return true;
         }
         assert!(
@@ -666,18 +832,24 @@ impl Cache {
         n: u32,
         len: Option<u32>,
     ) -> (Result<(u32, u32), u32>, u32) {
+        self.room(&mut t.stats);
+        let keys = self.map.len();
         let info = info(&mut self.map, &mut self.pages, key, || {
             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
         });
+        info.seen = true;
         if info.idx == 0 && !self.off && info.len > 0 {
-            info.hits = info.hits.saturating_add(n);
-            if info.hits > self.threshold && !info.queued {
+            info.hits = info.hits.saturating_add(n.min(u16::MAX as u32) as u16);
+            if info.hits as u32 > self.threshold && !info.queued {
                 info.queued = true;
                 self.pending.push((key, va));
             } else if info.queued {
                 self.pending_steps += info.len as u64 * n as u64;
             }
             self.emit_if_due(t, mem);
+        }
+        if keys != self.map.len() {
+            self.publish_keys();
         }
         // A cache that never compiles (no JIT, or `jit` 4's threshold) needs
         // no counts: its blocks report as rarely as a slot counts.
@@ -688,20 +860,20 @@ impl Cache {
         };
         match self.map.get(&key) {
             // The jump cache gets it once the table has installed it ([`Jit::miss`]).
-            Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len)), report),
+            Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len as u32)), report),
             // Past `warm` (what a forward region's members need the cache to
             // have seen), up to the threshold in one report, at most a slot's
             // quota: the counts in between change nothing the cache decides.
             Some(i) if !i.queued && !self.off => (
-                Err(i.len.max(1)),
-                if i.hits < self.cfg.warm.max(report) {
+                Err(i.len.max(1) as u32),
+                if (i.hits as u32) < self.cfg.warm.max(report) {
                     report
                 } else {
                     interp::block::REPORT_IDLE
                 }
-                .min(self.threshold.saturating_sub(i.hits)),
+                .min(self.threshold.saturating_sub(i.hits as u32)),
             ),
-            Some(i) => (Err(i.len.max(1)), report),
+            Some(i) => (Err(i.len.max(1) as u32), report),
             None => (Err(1), 0), // flushed by the emit
         }
     }
@@ -841,7 +1013,7 @@ impl Cache {
                             let warm = self.cfg.warm;
                             (all || warm > 0
                                 && self.map.get(&k).is_some_and(|i| {
-                                    i.idx == 0 && !i.queued && i.len > 0 && i.hits >= warm
+                                    i.idx == 0 && !i.queued && i.len > 0 && i.hits as u32 >= warm
                                 }))
                                 && !heads_loop(&self.region(k, 0, mem))
                         }
@@ -858,7 +1030,7 @@ impl Cache {
                 }
             }
             if let Some(i) = self.map.get_mut(&key) {
-                (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
+                (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u8));
             }
             if !r.blocks.is_empty() {
                 regions.push(r);
@@ -995,7 +1167,11 @@ impl Cache {
             }
         }
         let map = &self.map;
-        let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
+        let compiled = |k| {
+            map.get(&k)
+                .filter(|i| i.idx != 0)
+                .map(|i| (i.idx, i.len as u32))
+        };
         let ns = now_ns();
         let block::Emitted {
             bytes,
@@ -1026,9 +1202,11 @@ impl Cache {
             slot,
             n,
             seq,
-            bytes,
+            bytes: bytes.into(),
             tiers,
         });
+        self.held += len;
+        self.shed();
         let idx = xmiss + slot;
         self.live_bytes += len;
         self.retune();
@@ -1058,10 +1236,11 @@ impl Cache {
                 0
             };
             let i = self.info(key, || 0);
-            (i.idx, i.len, i.hash, i.word) = (idx + k as u32, len, block::hash(&words), word);
+            (i.idx, i.len, i.word) = (idx + k as u32, len as u8, word);
             if self.cfg.check {
                 let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
-                self.spans.insert(key, spans.collect());
+                self.spans
+                    .insert(key, (block::hash(&words), spans.collect()));
             }
             for t in links {
                 self.linkers.entry(t).or_default().push(key);
@@ -1129,6 +1308,9 @@ pub struct Table {
     /// run ends early for it ([`Jit::park_exit`]).
     parked: u32,
     park_exit: bool,
+    /// It lacks a module whose bytes the cache dropped ([`HELD_MAX`]), as of
+    /// its last catch-up ([`Table::catch_up`]).
+    lagging: bool,
     /// Helper calls by instruction class (step 10: the input to M6), and
     /// the last report of them ([`Table::helper_report`]).
     helper_ops: Vec<u64>,
@@ -1172,6 +1354,7 @@ impl Table {
             todo: Vec::new(),
             parked: 0,
             park_exit: false,
+            lagging: false,
             limit: 0,
             redirects: Vec::new(),
             waiting: 0,
@@ -1252,7 +1435,12 @@ impl Table {
             c.ival_log.pop_front();
             c.ival_base += 1;
         }
-        if self.xmiss {
+        // A table that hasn't taken a module whose bytes are gone
+        // ([`HELD_MAX`]) can't install it, nor any after it (they may import
+        // it): it interprets what's past its `limit` until its dispatcher
+        // flushes the cache ([`Table::catch_up`]).
+        self.lagging = self.installed < c.freed;
+        if self.xmiss && !self.lagging {
             for l in &c.log[self.installed..] {
                 self.todo.push(Todo {
                     slot: l.slot,
@@ -1268,10 +1456,24 @@ impl Table {
         // The modules every table has taken: their bytes aren't needed again.
         let all = c.tables.iter().map(|t| t.installed).min().unwrap_or(0);
         for l in c.log.get_mut(c.freed..all).into_iter().flatten() {
-            l.bytes = Vec::new();
+            c.held -= l.bytes.len() as u64;
+            l.bytes = Arc::from([]);
         }
         c.freed = c.freed.max(all);
+        c.gauge.0[G_HELD].store(c.held, Ordering::Relaxed);
         self.drops = c.drops.load(Ordering::Relaxed);
+    }
+
+    /// [`Table::sync`] from the dispatcher (no JIT code on the stack): a
+    /// table lagging behind the modules' bytes flushes the cache and starts
+    /// the new epoch with the others (counted in its stats).
+    fn catch_up(&mut self, c: &mut Cache, mem: &Mem) {
+        self.sync(c, mem);
+        if self.lagging {
+            c.flush(&mut self.stats);
+            self.stats.lag_flushes += 1;
+            self.sync(c, mem);
+        }
     }
 
     /// Installs the modules of `todo` that the compile worker has compiled
@@ -1409,6 +1611,15 @@ impl Table {
         }
     }
 
+    /// Its counts, with what its maps take in the heap now.
+    pub fn stats(&self) -> Stats {
+        Stats {
+            dec_bytes: self.dec.bytes(),
+            known_bytes: table_bytes(self.known.capacity(), size_of::<(u64, (u32, u32))>()),
+            ..self.stats
+        }
+    }
+
     /// The jump cache and the hot words, for `State::jc` and `State::hot`.
     fn ptrs(&mut self) -> (*mut Jc, *mut u32) {
         (self.jc.as_mut_ptr(), self.hot.as_mut_ptr())
@@ -1533,11 +1744,16 @@ impl Jit {
         let n = self.table.dec.counted(key) + 1;
         let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
         self.table.dec.quota(key, quota);
-        self.table.sync(&mut c, mem);
+        self.table.catch_up(&mut c, mem);
         drop(c);
         self.install();
         match r {
             Ok((idx, len)) if idx < self.table.limit => {
+                if self.table.known.try_reserve(1).is_err() {
+                    // No room in the heap: it starts over (a clear keeps its table).
+                    self.table.known = Map::default();
+                    self.table.stats.rescues += 1;
+                }
                 self.table.known.insert(key, (idx, len));
                 self.table.dec.quota(key, 0);
                 self.table.fill(key, idx, len);
@@ -1591,7 +1807,7 @@ impl Jit {
     #[inline(never)]
     fn sync(&mut self, mem: &Mem) {
         let mut c = lock(&self.cache, &mut self.table.stats);
-        self.table.sync(&mut c, mem);
+        self.table.catch_up(&mut c, mem);
         drop(c);
         self.install();
     }
@@ -1650,6 +1866,17 @@ fn heads_loop(r: &block::Region) -> bool {
     r.blocks.len() > 1 || (r.blocks.len() == 1 && r.looped())
 }
 
+/// The bytes a hash table of `cap` entries of `entry` bytes takes in the
+/// heap (hashbrown's: 7/8 of its buckets usable, a control byte each).
+pub(crate) fn table_bytes(cap: usize, entry: usize) -> u64 {
+    let buckets = match cap as u64 {
+        0 => 0,
+        c if c < 8 => (c + 1).next_power_of_two(),
+        c => (c * 8 / 7).next_power_of_two(),
+    };
+    buckets * (entry as u64 + 1)
+}
+
 /// `Cache::info`, over the fields it needs.
 fn info<'a>(
     map: &'a mut Map<Info>,
@@ -1663,7 +1890,7 @@ fn info<'a>(
         Entry::Vacant(e) => {
             pages.entry(key >> 12).or_default().push(key);
             e.insert(Info {
-                len: len(),
+                len: len() as u8,
                 ..Info::default()
             })
         }
@@ -1879,6 +2106,7 @@ fn interpret<B: Regime>(
     };
     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
+    t.stats.rescues += core::mem::take(&mut t.dec.rescues);
     Some(res)
 }
 
@@ -2048,7 +2276,7 @@ struct Todo {
     slot: u32,
     n: u32,
     seq: u32,
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     /// The hot words of its loop heads compiled alone.
     tiers: Vec<u32>,
 }
@@ -2318,7 +2546,7 @@ mod tests {
             c.pending.push((0x100, 0x100));
             for (k, h) in [0x104, 0x10c, 0x114].into_iter().zip(hits) {
                 let i = c.info(k, || 1);
-                i.hits = h;
+                i.hits = h as u16;
                 if k == 0x10c {
                     i.idx = idx10c;
                 }
@@ -2391,6 +2619,7 @@ mod tests {
         let drops = c.drops.load(Ordering::Relaxed);
         c.invalidate(0x1ab0, s); // IC IVAU on page 1
         assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x2000]);
+        assert_eq!(c.removed, 5, "its tombstones count toward the bound");
         assert!(c.linkers.is_empty() && c.drops.load(Ordering::Relaxed) == drops + 1);
         assert_eq!(c.pending, []);
         assert_eq!(s.invalidations, 1);
@@ -2405,7 +2634,7 @@ mod tests {
         c.invalidate(0x5000, s); // no code there
         assert_eq!(s.invalidations, 1);
         c.invalidate(u64::MAX, s); // IC IALLU: a new epoch
-        assert!(c.map.is_empty() && c.pages.is_empty());
+        assert!(c.map.is_empty() && c.pages.is_empty() && c.removed == 0);
         assert_eq!((s.invalidations, s.flushes), (2, 0));
         u.sync(&mut c, &mem);
         assert!(jc(&u, 0x1000) == u64::MAX && jc(&u, 0x2000) == u64::MAX && u.epoch == c.epoch);
@@ -2634,6 +2863,194 @@ mod tests {
             (emit::REDIRECT | 12, 12)
         );
         assert!(t.redirects.is_empty());
+    }
+
+    /// The block map stays bounded however many blocks the guest runs once
+    /// (the desktop's crash of 2026-10-21: a session's keys, compiled or not,
+    /// grew it past the core's heap), with ICs dropping pages as it goes.
+    #[test]
+    fn the_block_map_stays_bounded() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        let (mut most, mut bytes, mut pages) = (0, 0, 0);
+        // 3.2M keys, 256 a page; an IC on an older page every 16 pages.
+        for k in 0..3_200_000u64 {
+            let key = ((1 << 32) + k * 16) | block::KEY_MMU;
+            let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
+            if k % 4096 == 4095 {
+                c.invalidate(key - (64 << 12), s);
+            }
+            most = most.max(c.map.capacity());
+            bytes = bytes.max(table_bytes(c.map.capacity(), size_of::<(u64, Info)>()));
+            pages = pages.max(c.pages.len());
+        }
+        assert!(most < 2_000_000, "the map grew to hold {most} keys");
+        assert!(bytes <= 50 << 20, "{bytes} bytes");
+        assert!(
+            c.map_bytes() <= 64 << 20,
+            "{} bytes with the page index",
+            c.map_bytes()
+        );
+        assert!(pages <= MAP_KEYS / 256 + 1, "{pages} pages");
+        assert_eq!(
+            c.gauge.0[G_KEYS].load(Ordering::Relaxed),
+            c.map.len() as u64
+        );
+        assert_eq!(
+            c.gauge.0[G_KEY_BYTES].load(Ordering::Relaxed),
+            c.map_bytes()
+        );
+        assert!(t.stats.prunes >= 2 && t.stats.flushes == 0 && s.flushes == 0);
+        assert_eq!(size_of::<(u64, Info)>(), 24);
+    }
+
+    /// A prune keeps what the cache needs (compiled, queued, tiering
+    /// blocks) and the keys counted [`KEEP_HITS`] times that reported since
+    /// the last one, with their counts; the cold ones go, from the page
+    /// index too, so an IC still finds the blocks kept.
+    #[test]
+    fn a_prune_keeps_what_matters() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        let (compiled, queued, tiering, hot, warm, cold) =
+            (0x1000, 0x1004, 0x1008, 0x2000, 0x2004, 0x3000);
+        for k in [compiled, queued, tiering, hot, warm, cold] {
+            let _ = c.miss(&mut t, k, k, &mem, 1, Some(4));
+        }
+        c.info(compiled, || 4).idx = 7;
+        c.info(queued, || 4).queued = true;
+        c.info(tiering, || 4).tiering = true;
+        let _ = c.miss(&mut t, hot, hot, &mem, 600, Some(4));
+        let _ = c.miss(&mut t, warm, warm, &mem, 600, Some(4));
+        c.linkers.insert(compiled, vec![0x5000]);
+        c.linkers.insert(cold, vec![0x5000]);
+        c.prune(s);
+        let keys = |c: &Cache| {
+            let mut k: Vec<u64> = c.map.keys().copied().collect();
+            k.sort();
+            k
+        };
+        assert_eq!(keys(&c), [compiled, queued, tiering, hot, warm]);
+        // Only `hot` reports before the next prune: `warm` goes, with its count.
+        let _ = c.miss(&mut t, hot, hot, &mem, 1, Some(4));
+        c.prune(s);
+        assert_eq!(keys(&c), [compiled, queued, tiering, hot]);
+        assert_eq!(c.map[&hot].hits, 602, "its count kept");
+        assert_eq!(c.pages.len(), 2);
+        assert_eq!(c.pages[&1], [compiled, queued, tiering]);
+        assert_eq!(c.linkers.keys().copied().collect::<Vec<_>>(), [compiled]);
+        assert_eq!(s.prunes, 2);
+        // An IC on page 1 still drops the compiled block.
+        c.invalidate(0x1000, s);
+        assert_eq!(keys(&c), [hot]);
+        // Run again, a pruned key counts from zero.
+        let _ = c.miss(&mut t, cold, cold, &mem, 1, Some(4));
+        assert_eq!(c.map[&cold].hits, 1);
+    }
+
+    /// A prune that would leave more than half of [`MAP_KEYS`] keeps only
+    /// the needed keys, and flushes if even those are too many.
+    #[test]
+    fn a_prune_of_hot_keys_falls_back() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        for k in 0..(MAP_KEYS / 2 + 10) as u64 {
+            let i = c.info(k << 2, || 4);
+            (i.hits, i.seen) = (KEEP_HITS, true);
+        }
+        c.info(1 << 40, || 4).idx = 9;
+        c.prune(s);
+        assert_eq!(c.map.len(), 1, "only the compiled one");
+        assert_eq!(s.flushes, 0);
+        for k in 0..(MAP_KEYS / 2 + 10) as u64 {
+            c.info(k << 2, || 4).idx = 9;
+        }
+        c.prune(s);
+        assert!(c.map.is_empty());
+        assert_eq!((s.flushes, s.prunes), (1, 2));
+    }
+
+    /// Without room in the heap the cache flushes and frees its maps.
+    #[test]
+    fn a_rescue_frees_the_maps() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        for k in 0..10_000u64 {
+            c.info(k << 2, || 4).idx = 9;
+        }
+        c.rescue(s);
+        assert!(c.map.capacity() == 0 && c.pages.capacity() == 0);
+        assert_eq!((s.flushes, s.rescues), (1, 1));
+    }
+
+    /// Module bytes held for tables that haven't taken them stay under
+    /// [`HELD_MAX`]: the oldest go, and a table that lacked them flushes the
+    /// cache when its dispatcher catches up. Bytes every table has taken go
+    /// at once.
+    #[test]
+    fn held_module_bytes_are_capped() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let (mut t, mut u) = (Table::new(&mut c), Table::new(&mut c));
+        (t.xmiss, u.xmiss) = (true, true);
+        let log = |c: &mut Cache, mib: usize| {
+            c.log.push(Logged {
+                slot: MISS_SLOTS,
+                n: 1,
+                seq: 0,
+                bytes: vec![0u8; mib << 20].into(),
+                tiers: Vec::new(),
+            });
+            c.held += (mib as u64) << 20;
+            c.shed();
+        };
+        log(&mut c, 1);
+        t.sync(&mut c, &mem);
+        assert_eq!(c.held, 1 << 20, "u hasn't taken it");
+        u.sync(&mut c, &mem);
+        assert_eq!((c.held, c.freed), (0, 1));
+        assert_eq!(c.gauge.0[G_HELD].load(Ordering::Relaxed), 0);
+        // u falls behind by more than HELD_MAX: the oldest bytes go.
+        log(&mut c, 40);
+        t.sync(&mut c, &mem);
+        log(&mut c, 40);
+        assert_eq!((c.held, c.freed), (40 << 20, 2));
+        t.sync(&mut c, &mem);
+        assert!(!t.lagging && t.installed == 3, "t took both in time");
+        let epoch = c.epoch;
+        u.catch_up(&mut c, &mem);
+        assert_eq!((u.stats.lag_flushes, u.stats.flushes), (1, 1));
+        assert!(!u.lagging && c.epoch == epoch + 1 && c.held == 0 && u.todo.is_empty());
+    }
+
+    /// A table's decoded blocks start over at their key bound too (blocks of
+    /// one micro-op, or none, fill the map before the arena).
+    #[test]
+    fn decoded_keys_are_bounded() {
+        let mut ram = vec![0u128; 0x10000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x10000) };
+        for a in (0..0x10000).step_by(4) {
+            mem.write(a, 4, 0x1400_0001).unwrap(); // b .+4
+        }
+        let mut d = interp::block::Cache::new(1024 * interp::block::KEY_UOPS);
+        for a in (0..0x10000u64).step_by(4) {
+            assert_eq!(d.get(a, &mem).map(<[_]>::len), Some(1));
+        }
+        assert_eq!(d.clears, 0x4000 / 1024 - 1);
+        assert!(d.bytes() > 0);
+        d.rescue();
+        assert_eq!((d.rescues, d.clears, d.bytes()), (1, 0x4000 / 1024, 0));
     }
 
     /// Module numbers wrap (u32), and 0 is a module the worker didn't take.

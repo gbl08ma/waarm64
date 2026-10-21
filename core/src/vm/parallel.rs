@@ -843,7 +843,7 @@ impl Vm {
         k.tlb_walks.store(t.walks, Ordering::Relaxed);
         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
         if let Some(j) = &v.jit.cache {
-            publish_jit(k, &j.table.stats);
+            publish_jit(k, &j.table.stats());
         }
     }
 }

@@ -72,7 +72,9 @@ Design notes for an ABI change go in this file before the code.
   put): the JIT code cache's gauge, `jit::GAUGE_WORDS` u64s read with atomic loads: the wasm bytes and the modules
   installed since the last flush (what V8 holds code and metadata for), the byte budget now, the epochs (flushes and
   `IC IALLU`s), and word 4, the **host's limit** on the budget (bytes, 0: none, at least 16 MiB; the host writes it
-  with an atomic store, and the cache flushes at it: the page's memory signal). `heap_stats(out)` (ABI 45, any instance): writes the core heap's live
+  with an atomic store, and the cache flushes at it: the page's memory signal); words 5–7 (ABI 47): the block map's keys,
+  the heap bytes its table and page index take (estimated), and the module bytes held for tables that haven't taken
+  them ([jit.md](jit.md) "Memory"). `heap_stats(out)` (ABI 45, any instance): writes the core heap's live
   bytes and their high-water mark since `heap_reserve` (the allocator keeps what it frees) to `out[0..2]`; the
   global allocator counts them. Both feed `Vm.hostUse` ([jit.md](jit.md) "The page's memory signal").
 - `vm_snapshot_size(vm)`, `vm_snapshot_save(vm, ptr, len)`, `vm_snapshot_restore(vm, ptr, len)`,
@@ -162,6 +164,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 | 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
 | 108–113 | (46) the JIT cache's lock ([jit.md](jit.md) "Sharing"): acquisitions, those that found it held, ns they waited; ns spent emitting modules, ns of those under the lock (all of them: emission runs under it), ns forming batches into regions (under it) |
+| 114–118 | (47) the core's heap ([jit.md](jit.md) "Memory"): the block map's prunes; flushes because the heap had no room for a map to grow (the block map, a table's decoded or known blocks: those free their tables whole); flushes because a table lacked modules whose bytes were dropped; the heap bytes the table's decoded blocks (arena, map, page index) and its known blocks take, estimated |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -322,7 +325,9 @@ then that many UTF-8 bytes. The hosts read it after catching a trap (`web/vm.ts`
 `withPanic`; the vCPU worker and the round-robin `run`) and put it in the error. A DSB wait that
 times out (10 s of waiting: passes over 100 ms are the waiter's own thread stalling and don't
 count) panics with each waited vCPU's state, queue and progress, and the waiter's own timing
-(`Vm::dsb_report`, core/src/vm/parallel.rs).
+(`Vm::dsb_report`, core/src/vm/parallel.rs). An allocation that fails (the heap is full: `handle_alloc_error`, which
+aborts without the panic hook) records a message through the allocation error hook (ABI 47): the size asked for and the
+heap's live bytes and high-water mark, formatted without the heap.
 
 **Broadcast maintenance in parallel mode** ([platform.md](platform.md) "Broadcast
 maintenance"): `CPU features` gain an internal `FEATURE_PARALLEL`, under which DSB, ISB and ERET
@@ -528,4 +533,5 @@ implemented by this step).
 | 44 | `VmConfig.jit_bytes`: a machine's JIT code cache budget (the page's `?jitmb=`, a stored machine's JIT cache setting) |
 | 45 | the page's memory signal: `vm_jit_gauge` (the JIT cache's state, and the host's limit on its budget), `heap_stats` |
 | 46 | counter words 108–113: the JIT cache's lock and the time emission holds it |
+| 47 | the core's heap bounded: `vm_jit_gauge` words 5–7 (`jit::GAUGE_WORDS` 8), counter words 114–118; an allocation that fails records a `panic_message` |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

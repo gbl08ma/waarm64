@@ -4,6 +4,8 @@
 //! memory and atomics.
 
 #![cfg_attr(target_arch = "wasm32", feature(stdarch_wasm_atomic_wait))]
+// `diag`'s message for an allocation that failed.
+#![feature(alloc_error_hook)]
 
 pub mod boot;
 pub mod cpu;
@@ -32,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 46;
+pub const ABI_VERSION: u32 = 47;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -96,6 +98,14 @@ fn counted(d: isize) {
 
 #[global_allocator]
 static ALLOC: Counting = Counting;
+
+/// The heap's live bytes and their high-water mark ([`heap_stats`]).
+pub(crate) fn heap() -> (usize, usize) {
+    (
+        HEAP_LIVE.load(Ordering::Relaxed),
+        HEAP_PEAK.load(Ordering::Relaxed),
+    )
+}
 
 /// The core's heap (ABI 45): writes the bytes its allocations hold now and
 /// their high-water mark since [`heap_reserve`] (or the start) to `out[0..2]`.
@@ -707,7 +717,9 @@ pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm, i: u32) -> *const vm::Co
 
 /// The JIT code cache's gauge (ABI 45, `jit::Gauge`): `jit::GAUGE_WORDS` u64s
 /// the core updates as it compiles and flushes (the live wasm bytes and
-/// modules, the budget, the epochs), read with atomic loads; null without a JIT.
+/// modules, the budget, the epochs, the host's limit; ABI 47: the block map's
+/// keys and heap bytes, the module bytes held), read with atomic loads; null
+/// without a JIT.
 /// The words stay where they are for the VM's life.
 ///
 /// # Safety

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { ALIVE_STALE_MS, clearAlive, DEAD_MS, estimate, JIT_CODE_PER_BYTE, JIT_META_PER_BYTE, JIT_PER_MODULE, lastCrash, markAlive, Signal, type HostUse } from '../web/app/memory.ts';
 
 const MiB = 2 ** 20;
-const use = (o: Partial<HostUse> = {}): HostUse => ({ ramBytes: 2048 * MiB, heapLive: 100 * MiB, heapPeak: 200 * MiB, jitLiveBytes: 100 * MiB, jitModules: 1000, jitBudget: 320 * MiB, jitEpochs: 0, jitLimit: 0, ...o });
+const use = (o: Partial<HostUse> = {}): HostUse => ({ ramBytes: 2048 * MiB, heapLive: 100 * MiB, heapPeak: 200 * MiB, jitLiveBytes: 100 * MiB, jitModules: 1000, jitBudget: 320 * MiB, jitEpochs: 0, jitLimit: 0, jitKeys: 0, jitKeyBytes: 0, jitHeld: 0, ...o });
 
 test('the estimate: RAM whole, the heap at its high-water mark, the JIT at V8\'s factors, the rest of the tab', () => {
   const { bytes, parts } = estimate(use(), 4);

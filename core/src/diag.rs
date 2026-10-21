@@ -56,11 +56,69 @@ pub fn recorded() -> Option<String> {
     Some(String::from_utf8_lossy(&b).into_owned())
 }
 
+/// A message built without the heap (an allocation failure's).
+pub struct Line {
+    bytes: [u8; 192],
+    len: usize,
+}
+
+impl Default for Line {
+    fn default() -> Line {
+        Line {
+            bytes: [0; 192],
+            len: 0,
+        }
+    }
+}
+
+impl Line {
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("")
+    }
+}
+
+impl core::fmt::Write for Line {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let n = s.len().min(self.bytes.len() - self.len);
+        self.bytes[self.len..self.len + n].copy_from_slice(&s.as_bytes()[..n]);
+        self.len += n;
+        Ok(())
+    }
+}
+
+/// What an allocation of `size` bytes that failed records, with the heap's
+/// live bytes and high-water mark (`heap_stats`).
+pub fn alloc_message(size: usize, live: usize, peak: usize) -> Line {
+    use core::fmt::Write;
+    let mut l = Line::default();
+    let _ = write!(
+        l,
+        "out of memory: an allocation of {size} bytes failed (the core's heap: {} MiB live, {} MiB at most)",
+        live >> 20,
+        peak >> 20
+    );
+    l
+}
+
+/// The allocation error hook: `handle_alloc_error` (an infallible
+/// allocation that failed: the heap is full) aborts without the panic hook,
+/// so a trap from it reached the host with no message (2026-10-21's
+/// `rust_oom` in `jit::Jit::miss`). Records one, without allocating.
+fn alloc_failed(l: std::alloc::Layout) {
+    let (live, peak) = crate::heap();
+    let m = alloc_message(l.size(), live, peak);
+    record(m.as_str());
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("webpc: {}", m.as_str());
+}
+
 /// Installs the hook once (`vm_new` does; the state is in the shared memory,
-/// so every instance's threads see it). Natively the previous hook still runs.
+/// so every instance's threads see it), and the allocation error hook
+/// (`alloc_failed`). Natively the previous panic hook still runs.
 pub fn install_panic_hook() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        std::alloc::set_alloc_error_hook(alloc_failed);
         let prev = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             record(&info.to_string());

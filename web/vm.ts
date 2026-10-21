@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 46;
+export const ABI = 47;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -390,7 +390,10 @@ export const Counter = {
   // ABI 46: the JIT cache's lock (acquisitions, contended ones, ns waited), ns emitting, of those under the lock, ns
   // forming batches into regions.
   JIT_LOCKS: 108, JIT_LOCK_CONTENDED: 109, JIT_LOCK_WAIT_NS: 110, JIT_EMIT_NS: 111, JIT_EMIT_LOCKED_NS: 112, JIT_PLAN_NS: 113,
-  LEN: 114,
+  // ABI 47: the core's heap: the JIT block map's prunes, flushes for a heap with no room for a map to grow, flushes for a
+  // table that lacked modules whose bytes were dropped; the heap bytes a table's decoded blocks and its known blocks take.
+  JIT_PRUNES: 114, JIT_RESCUES: 115, JIT_LAG_FLUSHES: 116, JIT_DEC_BYTES: 117, JIT_KNOWN_BYTES: 118,
+  LEN: 119,
 } as const;
 
 /**
@@ -479,6 +482,11 @@ export type BootOptions = {
    * reserve, the memory grows as the core needs it.
    */
   fixedMemory?: boolean;
+  /**
+   * Tests only: the core's heap reserve in bytes instead of {@link HEAP_RESERVE} (and never under `HEAP_FLOOR`), so a
+   * test runs the heap out in a minute (tests/heap.test.ts).
+   */
+  heapReserve?: number;
   /**
    * Start from a snapshot (ABI 30): `kernel`, `initrd`, `cmdline` and the firmware's flash and
    * files aren't used (RAM and the core's state have what the machine made of them); the rest
@@ -598,6 +606,9 @@ const S_CMDLINE = 4096;
 
 export type Vm = Awaited<ReturnType<typeof bootVm>>;
 
+/** The JIT cache's gauge words (`jit::GAUGE_WORDS`, `vm_jit_gauge`). */
+const GAUGE_WORDS = 8;
+
 /**
  * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
  * buffers, the devices', a vCPU worker's stack and TLS (~540–600 MiB under a heavy 4-vCPU load, docs/spill-memories.md
@@ -610,7 +621,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
   // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
   const rest = 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
-  const pages = (Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest)) + rest) / 65536;
+  const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
   const fixed = o.fixedMemory !== false && pages <= 65536;
   const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
   // The spill memories (docs/spill-memories.md), each at its final size.
@@ -885,16 +896,17 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /**
      * What the machine holds that its host pays for, cheaply (docs/jit.md "The page's memory signal"): the guest's RAM
      * (memory 0's and the spill memories'), the core's heap (`heap_stats`: live bytes and their high-water mark), and
-     * the JIT's cache (`vm_jit_gauge`: the wasm bytes and modules since the last flush, the budget, the epochs).
+     * the JIT's cache (`vm_jit_gauge`: the wasm bytes and modules since the last flush, the budget, the epochs; ABI 47:
+     * the block map's keys and the heap bytes its table takes, the module bytes held for vCPUs that haven't taken them).
      */
     hostUse: () => {
       const h = new BigUint64Array(memory.buffer, scratch + S_HEAP, 2);
       ex.heap_stats(scratch + S_HEAP);
-      const g = (i: number) => (gauge ? Number(Atomics.load(new BigUint64Array(memory.buffer, gauge, 5), i)) : 0);
-      return { ramBytes: o.ramSize + spillSizes.reduce((a, b) => a + b, 0), heapLive: Number(h[0]), heapPeak: Number(h[1]), jitLiveBytes: g(0), jitModules: g(1), jitBudget: g(2), jitEpochs: g(3), jitLimit: g(4) };
+      const g = (i: number) => (gauge ? Number(Atomics.load(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), i)) : 0);
+      return { ramBytes: o.ramSize + spillSizes.reduce((a, b) => a + b, 0), heapLive: Number(h[0]), heapPeak: Number(h[1]), jitLiveBytes: g(0), jitModules: g(1), jitBudget: g(2), jitEpochs: g(3), jitLimit: g(4), jitKeys: g(5), jitKeyBytes: g(6), jitHeld: g(7) };
     },
     /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */
-    setJitLimit: (bytes: number) => { if (gauge) Atomics.store(new BigUint64Array(memory.buffer, gauge, 5), 4, BigInt(Math.max(0, Math.round(bytes)))); },
+    setJitLimit: (bytes: number) => { if (gauge) Atomics.store(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), 4, BigInt(Math.max(0, Math.round(bytes)))); },
     heapUse: () => {
       const w = new Uint32Array(memory.buffer);
       const nonzero = (page: number) => { for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true; return false; };
@@ -1067,6 +1079,8 @@ function stats(n: (i: number) => number) {
       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
       locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
+      prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
+      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
