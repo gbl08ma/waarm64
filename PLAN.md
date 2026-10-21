@@ -271,9 +271,14 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.
 - **The block interpreter's speed** (the user, 2026-10-20; `M8-INTERP-HANDOVER.md`): judged by the interpreter's
   own MIPS, not by what it adds to a JIT run, so that the compile threshold can rise and less code reaches V8 (less
-  memory, later flushes: the JIT cache's flush work found no other lever). Loops 0–7: profile, a call-free hot loop,
-  pre-linked successors, lazy NZCV, superinstructions, specialization and more handlers, the threshold again, one
-  decoded-block store for every table.
+  memory, later flushes: the JIT cache's flush work found no other lever). Loops 0–6 done 2026-10-21
+  (`bench/interp/REPORT.md` from "M8-INTERP loop 0"): a call-free hot loop, reports every 255 where nothing
+  compiles, runs of MOVs in one dispatch and more handlers took the interpreter alone from 249 to 424 MIPS on the
+  user-mode guest and from 122 to 172 on Alpine's boot (the Mac host: 261 → 427, 138 → 182 before the MOV runs), and
+  the threshold's floor rose from 50 to 500 with one report from `warm` to it (Firefox's pages session 36% less
+  wasm at +7% busy MIPS; docs/jit.md "Compile policy"); lazy NZCV, the setter + B.cond fusion and pre-linked
+  successors were measured and not kept (docs/cpu.md). Left: one decoded-block store for every table (loop 7),
+  more handlers.
 
 ### M9 — Backlog
 

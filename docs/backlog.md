@@ -31,32 +31,30 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## Interpreter
 
-The block interpreter's speed is a track of its own (`M8-INTERP-HANDOVER.md`, 2026-10-20), whose loops take up
-the first two items here.
+What the block interpreter's speed track (2026-10-21, `bench/interp/REPORT.md` from "M8-INTERP loop 0") left open,
+most promising first.
 
 - **One decoded-block store the tables share** ([cpu.md](cpu.md) "The block interpreter"): each
   vCPU's table decodes the same code again (Chromium in Debian on 4 vCPUs: ~2M decodes a warm
   render with 4M micro-ops a table, ~1.5M of them re-decodes after a full arena). Sharing would
   give each table the whole 256 MiB and decode once, but readers run micro-ops while another vCPU
   appends or starts over (an epoch scheme like the code cache's `drops`). The 2× arena gained
-  ~3.5%; a shared one is worth at most a few percent more.
-- **More micro-op handlers:** FP and SIMD loads and stores (memcpy), exclusives and LSE atomics,
-  EXTR, BFM run generically through `exec`. Counted on Alpine's userspace benchmark (2026-10-15,
-  `bench/boot/REPORT.md` "M8: the device round trip"; `results/m8-devlat/generic-count.patch`): 2.9%
-  of the interpreted steps (MRS 29% of those, EXTR 10%, UMADDL 5%, FP and SIMD loads and stores
-  ~10%), well under 0.1% of the run, though a Q-register copy runs 7× slower there than integer
-  code; count them in the guest's Chromium (more cold code) before building. FP itself
-  runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes
-  lane by lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top. A
-  faster interpreter also moves the compile policy's trade: the interpreter's speed is what
-  compiling less costs (`bench/apps/REPORT.md` "M8: Chromium in the guest"), so a handler or two
-  can show up as a threshold that stays higher, not only as faster cold steps.
+  ~3.5%; a shared one is worth at most a few percent more (more since the floor of 500 doubled the
+  interpreted steps: M8-INTERP loop 7, not started).
+- **The `go build` loop at the floor of 500** ran 4-6% slower than at 50 (two sessions each, within its spread;
+  with the one report from `warm` to the threshold since, 1,434 against 1,392 MIPS in one session): watch it
+  (`bench/interp/REPORT.md` "M8-INTERP loop 6").
+- **More micro-op handlers:** MRS (the plain registers: 28% of the generic path in Alpine's boot), FP and SIMD
+  loads and stores (memcpy: a Q-register copy runs 7× slower than integer code), exclusives and LSE atomics, BFM
+  run generically through `exec` (3.5% of the interpreted instructions in Alpine's boot before UMADDL, EXTR and
+  REV/CLZ became handlers). Each handler in the hot loop is code its hot path carries: the literal load inline cost
+  the user-mode guest 4-5%; measure every one on the small guests too. A browser's mix wasn't counted (a diagnostic
+  core in Firefox's pages session never got its first command through: `bench/interp/results/m8-interp-l0/diag.patch`). FP
+  itself runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by
+  lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
-- **Run-once code at threshold 50:** the Alpine boot is 7% slower than at a fixed 500 (its code
-  runs 50–500 times, then never; [jit.md](jit.md) "Compile policy"). Counts that decay with time
-  and a higher EL1 threshold didn't help; the Debian boot on the page doesn't show it.
 - `Mem::rmw` is a generic CAS loop; the JIT does LSE as single wasm ops. Matters again for M7's
   contention.
 
@@ -173,9 +171,9 @@ the first two items here.
     (offline) holds them until the next flush (at most the 320 MiB budget);
   - **the cache's lock** ([jit.md](jit.md) "Sharing" "What the lock costs") is taken ~60,000 times a second in
     Firefox's pages session (2.4% of them find it held, ~0.7% of the vCPUs' time waiting) and ~2% of the vCPUs' time
-    waits on the churn screen. What's left is real reports (every 16 dispatches of a block under the threshold),
-    queued blocks' reports and compiled blocks not installed in the table yet; longer reports far from the
-    threshold showed in nothing (Tried and not kept). Not worth a loop alone.
+    waits on the churn screen (before 2026-10-21's one report from `warm` to the threshold, which halved the
+    acquisitions at the floor of 500). What's left is reports below `warm`, queued blocks' reports and compiled
+    blocks not installed in the table yet. Not worth a loop alone.
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
   which every function needs for the table; writing the table from an active element segment

@@ -18,7 +18,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 | Page | Benchmarks (`--only`) |
 |---|---|
 | `bench/interp/index.html` | `interp_mips`, `interp_fp_mips`, `vm_flat_mips`, `vm_mmu_mips` (interpreter: user-mode integer and FP/NEON guests, the integer guest at EL1 with the MMU off/on), `jit_mips`, `jit_fp_mips`, `vm_jit_flat_mips`, `vm_jit_mmu_mips`, `coremark_mips`, `jit_coremark_mips` (also reported as iterations/s); `dec_mips`, `vm_dec_flat_mips`, `vm_dec_mmu_mips` (the block interpreter: the dispatcher never compiling, `VmConfig.jit` 4) |
-| `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `alpine_user_jit` (ms per phase), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime), `gl_llvmpipe_jit` / `_4`, `gl_virgl_jit` / `_4`, `gl_virgl_llvmpipe_jit` / `_4` (ms a frame); I/O: `dd`, `fio`, `p9`, `net` (realtime) |
+| `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `alpine_user_jit` (ms per phase), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime), `gl_llvmpipe_jit` / `_4`, `gl_virgl_jit` / `_4`, `gl_virgl_llvmpipe_jit` / `_4` (ms a frame); `boot_dec`, `boot_alpine_dec` (the Buildroot and Alpine boots as MIPS in the block interpreter alone, `VmConfig.jit` 4), `boot_mips_jit`, `boot_alpine_mips_jit` (the same under the JIT; with `--config liftoff-only` the interpreter's reference); I/O: `dd`, `fio`, `p9`, `net` (realtime) |
 | `bench/io/index.html` | `io` (fio and dd on a chosen `File` disk under a fresh OPFS overlay: reads, writes, `fsync`, reads of written data; realtime, a boot per sample; `node bench/run.ts --page bench/io/index.html --input target/bench/io-raw.img`, the input from `head -c 256M /dev/urandom`), `io_reads` (its base reads alone; a `.qcow2` input is read as one, e.g. `target/bench/io-usr.qcow2`, bench/io/REPORT.md "The inflate pool"), `io_stats` (per-stage timers of the blk device, one boot per workload); `node bench/io/inflate-page.ts` times Debian's boot, import and export on the page |
 | `bench/gpu/index.html` | `webgpu_adapter`, `writebuffer`, `present_canvas2d`, `present_canvas2d_rgba`, `present_webgl2`, `present_webgpu` (G0: ms per frame at 1080p/1440p/4K, full and damaged; needs `--chromium-args`, see `bench/gpu/REPORT.md`; `bench/gpu/run-mac.sh` for the Mac host's real GPU), `flush_cost` (the virtio-gpu backend itself: a transfer, a flush with its draw, on the canvas 2D screen and, `*_raw`/`*_webgl2`, the WebGL2 one; no flags needed). Beside the page: `node bench/gpu/page.ts` (Debian on the page, virtio-gpu against the simple framebuffer: first pixel, `running`, key to glyph on the screen and the terminal) and `node bench/gpu/draw-latency.ts`; `node bench/gpu/sway-load.ts` (a compositor's load: sway and foot on the Arch image, the guest's CPU, frames, the stream and, with `VIRGL_GPU=virgl`, the renderer's time; dev-only), `bench/gpu/sway-mac.sh` (the same on the Mac host's GPU); `node bench/gpu/firefox-load.ts` and `node bench/gpu/gtk4-load.ts` (Firefox and gtk4-demo on the Arch image with Firefox, graphics.md §21), `node bench/gpu/deqp-run.ts` (dEQP on the page; images.md) |
 | `bench/jit/index.html` | `jit_install`, `jit_first_call` |
@@ -224,7 +224,13 @@ Parallel SMP (`bench/boot/REPORT.md` "M7 loop 8"): Alpine to its script 8.4 / 9.
 2 / 4 vCPUs, Debian 42.3 / 33.5 / 29.6 s; the userspace phases with N copies of the work 25.2 /
 27.3 / 31.6 s (compute phases 3.4–3.8× throughput at 4, process churn 1.7×).
 
-Interpreter: ~143 MIPS integer, ~20 FP; Alpine boots in 46.9 s interpreted. I/O (M4 step 7,
+Interpreter: ~143 MIPS integer, ~20 FP; Alpine boots in 46.9 s interpreted. The block interpreter alone (2026-10-21,
+`bench/interp/REPORT.md` "M8-INTERP loop 4"): 424 MIPS on the user-mode guest, 412-416 at EL1, 114 on Buildroot's boot
+and 172 on Alpine's (15.4 s). **Its yardstick** (`bench/interp/yardstick.sh <outdir> <label> [core.wasm] [bench…]`:
+those five, one `bench/run.ts` call each under a cap; `CONFIG=liftoff-only` the reference set); `bench/interp/ab.sh
+<outdir> <rounds> <name>=<core.wasm>… [-- bench…]` alternates core builds on it and `node bench/interp/ab-summary.ts
+<outdir>` sums them up (the arm that sorts first is the base); `bench/interp/ab-mac.sh` does the same on the Mac
+host; `node bench/interp/boot-node.ts [buildroot|alpine] [jit]` boots in Node for `perf`. I/O (M4 step 7,
 interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 full-size pings/s.
 
 ## Workloads still planned
