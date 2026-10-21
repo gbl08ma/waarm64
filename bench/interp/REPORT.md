@@ -1102,3 +1102,51 @@ that also reads the timers, and the screens left no room for it.
 Under the 5% bar, but the third time in a row on the boots (screen 3: +2.2%), with the small guests flat: kept.
 The differential test draws the new classes; a planted EXTR bug (the high word shifted one short) and a planted
 UMSUBL bug (the sign bit read for the subtract) each failed it.
+
+**Loops 2 and 5 on the Mac host** (one round, `results/m8-interp-l5/mac/`, against loop 1): `dec_mips` 326.6 →
+426.7 (+30.6%), `vm_dec_mmu_mips` 314.2 → 403.6 (+28.4%), Buildroot's boot 124.7 → 143.9 (+15.4%), Alpine's 156.5
+→ 182.1 (+16.3%). From the track's start (loop 0's base on the Mac: 261.3, 232.3, 104.4, 138.2): +63%, +74%, +38%,
++32%.
+
+## M8-INTERP loop 6: the compile threshold's floor, 50 → 500
+
+2026-10-21, the dev VM, Chromium 153.0.8010.52, loop 5's core with the pressure-driven threshold's floor
+(`Config::DEFAULT.threshold`) at 50 (the base), 100, 200 and 500, `threshold_max` 1000 as before; raw data
+`results/m8-interp-l6/`. Screens first (one round), then 50 against the winners.
+
+| JIT workload | floor 50 | 100 | 200 | 500 |
+|---|---|---|---|---|
+| Alpine boot, MIPS (`boot_alpine_mips_jit`) | 355.1 | 368.6 (+3.8%) | 379.4 (+6.8%) | 383.8 (+8.1%) |
+| its wasm, MB / regions | 27.6 / 22,247 | 23.9 / 18,475 | 20.6 / 15,129 | 15.8 / 10,903 |
+| Alpine userspace benchmark, total ms | 16,630 | 16,781 (+0.9%) | 16,181 (−2.7%) | 15,934 (−4.2%) |
+| its wasm, MB (boot included) | 32.8 | 28.6 | 25.2 | 21.2 |
+| churn page from the snapshot: wasm MB / modules | 532 (A/A 529) / 23,088 | 478 / 22,599 | 429 / 22,210 | **363** / 21,637 |
+| churn: first flush, s / `doneS` / busy MIPS | 58 / 120.5 / 217 (A/A 57 / 120.5 / 222) | 71 / 120.7 / 224 | 82 / 114.3 / 228 | **99 / 114.1 / 231** |
+| churn: interpreted G steps / lock acquisitions | 2.97 / 40.6M | 3.35 / 44.9M | 3.80 / 49.8M | 4.53 / 58.4M |
+
+Firefox's pages session from the snapshot, two rounds alternating (`pages/`; no flush at 320 MiB in any):
+
+| | floor 50 | 200 | 500 |
+|---|---|---|---|
+| wasm compiled, MB | 271, 270 | 225, 225 (−17%) | 218, 218 (−19%) |
+| V8's wasm code, median MB | 886, 884 | 664, 685 (−24%) | 601, 589 (−33%) |
+| the renderer's RSS, median MB | 4,861, 4,945 | 4,354, 4,385 (−11%) | 4,380, 4,131 (−13%) |
+| modules | 2,802, 2,810 | 2,812, 2,811 | 2,914, 2,894 (+3.5%) |
+| busy MIPS | 181, 180 | 189, 187 (+4%) | 184, 185 (+2.5%) |
+| the wiki page's / BBC's load, s | 14.8 / 13.1, 15.0 / 12.8 | 13.6 / 12.8, 13.6 / 12.1 | 13.7 / 13.3, 13.9 / 12.9 |
+| interpreted, G steps | 1.13, 1.11 | 1.63, 1.64 | 2.13, 2.13 |
+
+Chromium in Debian, 4 vCPUs (`apps/`, one boot each, three renders of `chrome://newtab`): floor 50 32.1, 15.4,
+11.2 s (111.2 MiB of wasm in the first render); 500 29.3, 11.7, 10.8 s (70.4 MiB, −37%). The 4-vCPU `go build`
+loop from `debian-go.webpcsnap` (`go/`, 300 s, MIPS median of the 5 s samples): 50 1,431 and 1,243; 200 1,291
+(one session); 500 1,351 and 1,193: −4 to −6%, inside the loop's session-to-session spread (13% here) but behind
+both times. The gates (`gates/`, one round): `smp_alpine_jit` to the script 5,961 / 5,406 / 5,411 → 5,393 /
+4,861 / 4,859 ms at 1 / 2 / 4 vCPUs (−10%), to power-off −7.5%; `smp_user_jit_4` 17,484 → 16,749 ms (−4.2%), every
+phase faster; Buildroot's boot under the JIT 72.9 → 105.2 MIPS (+44%: the interpreter beats Liftoff there).
+
+**Kept: the floor at 500.** The interpreter's 1.3-1.9× (loops 1, 2, 5) moved the trade the October sweep made
+(`../boot/REPORT.md` "M8: a compile threshold that follows the code cache's pressure": then 500 lost 1.5-6% on the
+userspace phases and Chromium's renders): now every workload but the `go build` loop is faster at 500, and every one
+compiles a fifth to two fifths less code. The cost is in the counting: a block reports 31 times before it compiles
+(lock acquisitions +44% on the churn page, +54% in the pages session), which "longer reports far from the
+threshold" (docs/jit.md "Tried and not kept") would address.

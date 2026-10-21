@@ -89,9 +89,9 @@ pub struct Config {
 
 impl Config {
     pub const DEFAULT: Config = Config {
-        // Since the block interpreter, raised with the cache's pressure
-        // (docs/jit.md "Compile policy").
-        threshold: 50,
+        // Raised with the cache's pressure (docs/jit.md "Compile policy");
+        // 500 since the block interpreter's hot loop (M8-INTERP loop 6).
+        threshold: 500,
         threshold_max: 1000,
         batch: 512,
         capacity: 262_144,
@@ -2192,6 +2192,8 @@ mod tests {
     #[test]
     fn the_threshold_follows_the_pressure() {
         let mut c = Cache::new(Config {
+            threshold: 50,
+            threshold_max: 1000,
             max_bytes: 800,
             ..Config::DEFAULT
         });

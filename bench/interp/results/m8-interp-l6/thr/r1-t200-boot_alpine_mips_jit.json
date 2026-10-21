@@ -1,0 +1,180 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-21T03:15:10.612Z",
+ "commit": "b197c160789a",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_alpine_jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "distro": "alpine",
+    "jit": 1,
+    "steps": 2651936453,
+    "counters": {
+     "steps": 2651936453,
+     "irqs": 42094,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 112134,
+      "0x20": 7236,
+      "0x24": 38710,
+      "0x25": 1753
+     },
+     "tlbMisses": 672618,
+     "tlbWalks": 613751,
+     "tlbFlushes": 38670,
+     "jit": {
+      "blocks": 15129,
+      "modules": 301,
+      "bytes": 20620127,
+      "compileNs": 98993664,
+      "steps": 2590497600,
+      "dispatches": 4080168,
+      "invalidations": 215,
+      "flushes": 0,
+      "inline": 220288,
+      "helpers": 96,
+      "inlineSteps": 2588566994,
+      "flagsStored": 24964,
+      "flagsElided": 1135,
+      "condDirect": 13370,
+      "condComputed": 120,
+      "condMemory": 930,
+      "regionBlocks": 41928,
+      "backEdges": 940,
+      "tierUps": 506,
+      "stale": 0,
+      "decSteps": 60607219,
+      "decoded": 138453,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 1092913,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 254642432,
+      "emitLockedNs": 254642432,
+      "planNs": 70586624
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    380.48059825245025,
+    379.2492562489965,
+    379.3835374799714
+   ],
+   "median": 379.3835374799714,
+   "iqr": 0.6156710017268097,
+   "n": 3
+  },
+  {
+   "name": "boot_alpine_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "jit": 1,
+    "steps": 2651936453,
+    "counters": {
+     "steps": 2651936453,
+     "irqs": 42094,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 112134,
+      "0x20": 7236,
+      "0x24": 38710,
+      "0x25": 1753
+     },
+     "tlbMisses": 672618,
+     "tlbWalks": 613751,
+     "tlbFlushes": 38670,
+     "jit": {
+      "blocks": 15129,
+      "modules": 301,
+      "bytes": 20620127,
+      "compileNs": 98993664,
+      "steps": 2590497600,
+      "dispatches": 4080168,
+      "invalidations": 215,
+      "flushes": 0,
+      "inline": 220288,
+      "helpers": 96,
+      "inlineSteps": 2588566994,
+      "flagsStored": 24964,
+      "flagsElided": 1135,
+      "condDirect": 13370,
+      "condComputed": 120,
+      "condMemory": 930,
+      "regionBlocks": 41928,
+      "backEdges": 940,
+      "tierUps": 506,
+      "stale": 0,
+      "decSteps": 60607219,
+      "decoded": 138453,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0,
+      "locks": 1092913,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "emitNs": 254642432,
+      "emitLockedNs": 254642432,
+      "planNs": 70586624
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    6969.965000003576,
+    6992.594999998808,
+    6990.119999974966
+   ],
+   "median": 6990.119999974966,
+   "iqr": 11.314999997615814,
+   "n": 3
+  }
+ ]
+}

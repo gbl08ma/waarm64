@@ -11,7 +11,7 @@ for (const f of readdirSync(dir).filter((f) => f.startsWith(prefix ? `${prefix}-
   const arm = f.slice(prefix ? prefix.length + 1 : 0).split('-')[1];
   if (!arms.includes(arm)) arms.push(arm);
   for (const r of JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')).results as Result[]) {
-    if (r.name.endsWith('_cold') || r.unit === 'ms') continue;
+    if (r.name.endsWith('_cold') || (r.unit === 'ms' && /^boot\w*_(dec|jit)_total$/.test(r.name))) continue;
     const m = rows.get(r.name) ?? new Map();
     m.set(arm, [...(m.get(arm) ?? []), { median: r.median, iqr: r.iqr }]);
     rows.set(r.name, m);

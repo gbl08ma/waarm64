@@ -1,0 +1,52 @@
+{
+ "bench/results/local/churn/t100-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 74.59,
+   "flushes": 1,
+   "modules": 22633,
+   "mib": 458.4,
+   "overdue": 289,
+   "parks": 65666,
+   "locks": 45086923,
+   "interpGsteps": 3.35,
+   "share": 0.955,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 100,
+    "atGsteps": 48.67,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 8752,
+    "mibEmitted": 160.6,
+    "shareBefore": 0.926,
+    "shareAfter": [
+     0.925,
+     0.93,
+     0.944,
+     0.948,
+     0.956,
+     0.956,
+     0.958,
+     0.958,
+     0.956,
+     0.954
+    ]
+   }
+  ]
+ }
+}

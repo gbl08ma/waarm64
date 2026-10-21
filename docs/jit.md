@@ -84,7 +84,7 @@ the interpreter's own code.
   length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks).
   So a block that keeps running is compiled soon, and blocks that rarely run wait for company.
 - **The threshold follows the code cache's pressure** (`Cache::retune`, set where modules are
-  installed and at flushes, so a dispatch only compares): **50** while the live modules are under
+  installed and at flushes, so a dispatch only compares): **500** while the live modules are under
   two eighths of the byte budget (80 MiB), doubled at each further eighth up to **1000**
   (`Config::threshold`, `threshold_max`, `PRESSURE_KNEE`), and each flush doubles the floor it
   starts from. Code that fits is compiled early; a working set that doesn't fills the rest of the
@@ -181,6 +181,14 @@ the interpreter's own code.
   phases and Chromium for the boot; counts that decay with time and a ×10 threshold for EL1 blocks
   didn't help the boot (`bench/boot/REPORT.md` "M8: a compile threshold that follows the code
   cache's pressure").
+- **The floor is 500 since the block interpreter got faster** (M8-INTERP loop 6, 2026-10-21;
+  `bench/interp/REPORT.md` "M8-INTERP loop 6"): interpreting runs at 1.3-1.9× its old speed, so
+  compiling later pays. Against a floor of 50: Firefox's pages session from the snapshot compiles
+  19% less wasm (V8's code 33% less, the renderer's RSS 13% less) at +2.5% busy MIPS, the wiki
+  page's load 7% faster, the BBC's even; the churn page 32% less wasm, its first flush 99 s in instead of 58; Chromium in Debian's
+  cold render 37% less wasm and 9-24% faster renders; Alpine's boot +8%, its userspace benchmark
+  4% faster; the 4-vCPU `go build` loop 4-6% slower (two sessions each, within its session spread).
+  A floor of 200 sat between (the `go build` loop −10% in its one session).
 
 ## Linking
 

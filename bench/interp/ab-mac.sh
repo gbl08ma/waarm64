@@ -13,7 +13,7 @@ benches=("$@")
 for ((i = 1; i <= rounds; i++)); do
   for a in "${arms[@]}"; do
     for b in "${benches[@]}"; do
-      case $b in boot*) page=bench/boot/index.html ;; *) page=bench/interp/index.html ;; esac
+      case $b in boot* | alpine_* | smp_* | coremark_vm*) page=bench/boot/index.html ;; *) page=bench/interp/index.html ;; esac
       WASM=${a#*=} timeout 590 bench/run-mac.sh "$prefix-r$i-${a%%=*}-$b" --page "$page" --only "$b" 2>&1 |
         grep -E '^[a-z_]+ +[{(].*±|Error' | sed -E 's/ \{.*\}//' || true
     done

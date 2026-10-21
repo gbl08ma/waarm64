@@ -1,0 +1,26 @@
+{
+ "bench/results/local/churn/t50b-1/churn-all.timeline.json": {
+  "seconds": 172,
+  "mips": 426,
+  "busyMips": 222,
+  "busyShare": 0.48,
+  "stallsAtLeastMs": {
+   "20": 1,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 42,
+  "stalledMsPerSecondPerVcpu": 0.06,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

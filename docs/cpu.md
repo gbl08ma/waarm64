@@ -299,4 +299,31 @@ test it against `tests/steps.txt`.
   (`interp::block::tests`), the golden corpus in it on wasm (`tests/corpus-wasm.test.ts`), the
   native boots through it (`linux_boots_through_the_block_interpreter`,
   `alpine_boots_through_the_block_interpreter`; `WEBPC_NATIVE_JIT=1` for every native guest test),
-  and every JIT run's cold code with exact steps.
+  and every JIT run's cold code with exact steps. The differential test drives each block through
+  `hot` too (`run_hot`).
+- **Its speed** (`bench/interp/REPORT.md` from "M8-INTERP loop 0"; the yardstick is
+  `bench/interp/yardstick.sh`: the small guests and the boots under `VmConfig.jit` 4, with
+  `--config liftoff-only` the JIT's reference): on the dev VM 405 MIPS on the user-mode guest,
+  ~390-405 at EL1, 113 on Buildroot's boot and 167 on Alpine's (from 249, 176-198, 89 and 122);
+  on the Mac host 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
+  Buildroot at 60, and runs the hot guests at ~1,700-2,600. The guest accesses' `ldar`/`stlr`
+  cost nothing measurable in it (0.24% of `run`'s samples).
+
+### Tried and not kept
+
+All in `bench/interp/REPORT.md` "M8-INTERP loop 2", the variants' diffs in `results/m8-interp-l2/`:
+- **Lazy NZCV in `hot`'s locals** (the JIT's rules: SUBS/ADDS/ANDS keep kind and operands, B.cond,
+  CSEL and CCMP read conditions from them): −2% on the user-mode guest, −4% on Alpine's boot. Three
+  more loop-carried values, and the conditions' selects cost more than a stored NZCV's bits.
+- **A flag setter fused with its B.cond** (one dispatch for the pair, ~6% of the instructions):
+  +1%, twice; with lazy NZCV −4 to −8%.
+- **Pre-linked successors** (the arena index of each successor and a compiled bit in the slot):
+  dropping the jump-cache check altogether, the most they could save, gave 1-1.5%. A block's cost
+  is its micro-ops and the reports, not the slot and jump-cache lookups.
+- **The micro-op copied whole** (`repr(C)`, two loads and the fields extracted, instead of a load a
+  field): −25% / −7%.
+- **The literal load inline in `hot`**: −4-5% on the user-mode guest.
+- **Reports every 255 dispatches in the JIT** (not only where nothing compiles): Buildroot's boot
+  +23% (the interpreter beats Liftoff there), but the counts the cache doesn't see delay the
+  batches and shrink the forward regions: Alpine's boot interpreted 2.5× the steps and made 19%
+  more regions.
