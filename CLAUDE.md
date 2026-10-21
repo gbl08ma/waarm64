@@ -34,7 +34,8 @@ Firefox's page loads don't flush, and a machine sets its own (the JIT cache in i
 memory signal (docs/jit.md "The page's memory signal": what the tab costs by the emulator's accounting, and a tab
 killed with its machine running is noted at the next start, which offers a smaller cache or less RAM); carrying the
 hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is the current CPU track (`M8-INTERP-HANDOVER.md`: judged by its own MIPS, so the
-compile threshold can rise and less code reaches V8). Loose ends go in
+compile threshold can rise and less code reaches V8). **The JIT cache's lock, round two** (`M8-JITLOCK-HANDOVER.md`: a miss no longer waits for it, built in a cloud
+session, to be measured on the VM; a 2 KiB instruction cache line in CTR_EL0, guest-visible, to do there). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

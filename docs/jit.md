@@ -281,6 +281,15 @@ its jump cache and hot words, its helper counts and its counters.
     compiled blocks not installed yet (15%). Emitting the modules is 3.5 s and 7.2 s of the held time, forming the
     batches 1 s and 2 s: emitting outside the lock and longer reports far from the threshold were tried
     ([Tried and not kept](#tried-and-not-kept)).
+  - **A miss doesn't wait for it** (parallel SMP): with the short acquisitions gone, a wait that remained was 3 to 8
+    times longer than before (18.5 µs on the pages session, 30–35 µs on the churn screen, 50 µs in the `go build`
+    loop, against 5–6 µs), since it sat behind a table emitting a module (~1.25 ms each on the pages session). Nothing
+    at a jump-cache miss needs the cache's answer at once, so a miss that finds the lock held (`try_lock`) runs its
+    block interpreted, its decoded block keeping what it counted, and the next dispatch asks again (counter word 114,
+    `ab-summary`'s `skipped`). Catch-ups, tier-ups, ICs and flushes still wait. With one table (round-robin, Node's
+    deterministic runs) the miss takes the lock as before, so those runs are unchanged. Booting Debian on 3 vCPUs in
+    a cloud session (counts only, timings not comparable), the waiting fell from 7.7 and 7.4 s to 1.8–2.0 s (three runs), with
+    470–630 k misses run interpreted instead.
 - **The compile worker** (parallel SMP; `web/jit-compile-worker.ts`, `env.jit_compile` in
   [abi.md](abi.md)): the vCPU that emits a module hands a copy to one worker of the VM's (number
   `seq`, under the lock), which compiles it (`new WebAssembly.Module`: V8's process-wide module

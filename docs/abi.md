@@ -162,6 +162,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 | 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
 | 108–113 | (46) the JIT cache's lock ([jit.md](jit.md) "Sharing"): acquisitions, those that found it held, ns they waited; ns spent emitting modules, ns of those under the lock (all of them: emission runs under it), ns forming batches into regions (under it) |
+| 114 | (47) jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -528,4 +529,5 @@ implemented by this step).
 | 44 | `VmConfig.jit_bytes`: a machine's JIT code cache budget (the page's `?jitmb=`, a stored machine's JIT cache setting) |
 | 45 | the page's memory signal: `vm_jit_gauge` (the JIT cache's state, and the host's limit on its budget), `heap_stats` |
 | 46 | counter words 108–113: the JIT cache's lock and the time emission holds it |
+| 47 | counter word 114: jump-cache misses that found the JIT cache's lock held and didn't wait |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

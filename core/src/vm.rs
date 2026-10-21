@@ -311,8 +311,9 @@ pub struct Counters {
     pub cw: [AtomicU64; 4],
     /// The JIT cache's lock (ABI 46, `jit::Stats`): acquisitions, contended
     /// ones, ns waited; ns emitting modules, of those under the lock, ns
-    /// forming batches into regions.
-    pub jx: [AtomicU64; 6],
+    /// forming batches into regions; then (ABI 47) the misses that found it
+    /// held and didn't wait.
+    pub jx: [AtomicU64; 7],
 }
 
 /// Indexes into [`Counters::par`].
@@ -343,7 +344,7 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
-            jx: [const { AtomicU64::new(0) }; 6],
+            jx: [const { AtomicU64::new(0) }; 7],
         }
     }
 }
@@ -1473,6 +1474,7 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         s.emit_ns,
         s.emit_locked_ns,
         s.plan_ns,
+        s.lock_skipped,
     ];
     for (a, v) in c.jx.iter().zip(jx) {
         a.store(v, Ordering::Relaxed);

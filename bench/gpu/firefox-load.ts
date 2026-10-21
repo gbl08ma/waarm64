@@ -53,6 +53,12 @@ const s = await openSession({ tailcat: TAILCAT, gpu: mode === 'virgl' ? process.
 const { page, log, onSerial, pasteSerial, rootShell, load, run, runLines } = s;
 times.running = Date.now();
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '', ...(s.restored ? { from: s.restored } : {}), ...(s.coreSha ? { core: s.coreSha } : {}) };
+// The JIT's counters and parallel SMP's (DSB waits, the platform lock), for ab-summary.
+async function takeStats() {
+  const st = (await s.vmStats())?.stats as { jit?: unknown; par?: unknown } | undefined;
+  results.jit = st?.jit;
+  results.par = st?.par;
+}
 /** PROFILE's kernel groups (guest-session.ts `symbolGroups`): the 3D driver's paths in the guest's kernel. */
 const KERNEL_GROUPS = { virtio_gpu: 'virtio_gpu', virtqueue: 'virtqueue|vring', drm: '^(__)?drm_|\\[drm', shmem: 'shmem', dma: 'dma_resv|dma_fence|dma_buf' };
 type During = { start(): Promise<void>; stop(): Promise<void> };
@@ -222,7 +228,7 @@ if (PHASES.includes('pages')) {
   if (process.env.TIMELINE_ALL) {
     await s.timeline.stop();
     results.timelineAll = await s.timelineSummary('pages-all');
-    results.jit = (await s.vmStats())?.stats.jit;
+    await takeStats();
     save();
   }
 }
@@ -262,7 +268,7 @@ if (PHASES.includes('churn')) {
     results.timelineAll = await s.timelineSummary('churn-all');
   }
   results.churn = { query, seconds: Number.isFinite(doneS) ? doneS : secs, doneS, startAt, readyAt, started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), made: +(/made (\d+)/.exec(made)?.[1] ?? NaN), vm: s.vmDelta(v0, v1), fpsAll };
-  results.jit = (await s.vmStats())?.stats.jit;
+  await takeStats();
   log('churn', JSON.stringify({ made: (results.churn as { made: number }).made, jit: results.jit }));
   save();
 }
@@ -294,7 +300,7 @@ if (PHASES.includes('sites')) {
     results.timelineAll = await s.timelineSummary('sites-all');
   }
   results.sites = { urls, dwell, cycles, startAt, readyAt, seconds: Math.round((doneAt - readyAt) / 1000), started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), visits, at: new Date(readyAt).toISOString() };
-  results.jit = (await s.vmStats())?.stats.jit;
+  await takeStats();
   log('sites', JSON.stringify({ visits: visits.length, jit: results.jit }));
   save();
 }
@@ -323,7 +329,7 @@ if (PHASES.includes('support')) {
   log('support', (results.support as string[]).join('\n'));
 }
 // The JIT's counters at the phases' end (the pages session took them at its own end).
-results.jit ??= (await s.vmStats())?.stats.jit;
+if (!results.jit) await takeStats();
 await run('. /root/ff.sh; ffkill', 120_000);
 results.log = await runLines('grep -h -v FFBENCH /tmp/ff-*.log | cut -c1-200 | sort | uniq -c | sort -rn | head -30');
 log('firefox stderr', (results.log as string[]).join('\n'));

@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 46;
+export const ABI = 47;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -390,7 +390,9 @@ export const Counter = {
   // ABI 46: the JIT cache's lock (acquisitions, contended ones, ns waited), ns emitting, of those under the lock, ns
   // forming batches into regions.
   JIT_LOCKS: 108, JIT_LOCK_CONTENDED: 109, JIT_LOCK_WAIT_NS: 110, JIT_EMIT_NS: 111, JIT_EMIT_LOCKED_NS: 112, JIT_PLAN_NS: 113,
-  LEN: 114,
+  // ABI 47: jump-cache misses that found the lock held and ran their block interpreted instead of waiting.
+  JIT_LOCK_SKIPPED: 114,
+  LEN: 115,
 } as const;
 
 /**
@@ -1066,7 +1068,7 @@ function stats(n: (i: number) => number) {
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
       locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
-      emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
+      emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS), lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
