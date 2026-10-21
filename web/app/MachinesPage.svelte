@@ -24,7 +24,7 @@
   import { remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
   import { errorView, type ErrorView } from './usb-ports.ts';
-  import { browserLayout, KEYBOARD_LAYOUTS } from './keyboard.ts';
+  import { browserLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS } from './keyboard.ts';
   import { JIT_CHOICES, JIT_DEFAULT_MIB, MEMORY0_MIB, numaNote, RAM_CHOICES, ramSplitError, ramSplitMiB } from './machine.ts';
 
   let { store, net }: { store: Store; net: PageNetwork } = $props();
@@ -118,6 +118,9 @@
   }
   // The keyboard layout: "Match this browser" picks the one the browser reports (web/app/keyboard.ts), for the user to save.
   let keyboardNote = $state('');
+  /** What this browser reports now, for the note of a machine that follows it. */
+  let browserNow = $state<string | undefined>();
+  browserLayout().then((l) => (browserNow = l?.label), () => {});
   async function matchKeyboard() {
     const l = await browserLayout();
     if (l) { draft!.keyboard = l.id; dirty = true; }
@@ -341,10 +344,10 @@
               </details>
               <label>JIT cache <select bind:value={draft.jitMiB} data-field="jit" title="The most compiled guest code the emulator keeps before it starts over. The browser spends several times this on it: a smaller cache saves memory, a larger one keeps a big guest's code (a web browser's) compiled">{#each [undefined, ...new Set([...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])])].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option value={n}>{n ? `${n} MiB` : `Default (${JIT_DEFAULT_MIB} MiB)`}</option>{/each}</select></label>
               <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
-              <label>Keyboard layout <select bind:value={draft.keyboard} onchange={() => (keyboardNote = '')} data-field="keyboard" title="The layout of your keyboard, for the page to set in the guest">{#each [undefined, ...KEYBOARD_LAYOUTS.map((l) => l.id)] as id}<option value={id}>{id ? KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label : "Don't set it (the guest's own)"}</option>{/each}</select></label>
+              <label>Keyboard layout <select bind:value={draft.keyboard} onchange={() => (keyboardNote = '')} data-field="keyboard" title="The layout of your keyboard, for the page to set in the guest">{#each [undefined, FOLLOW_BROWSER, ...KEYBOARD_LAYOUTS.map((l) => l.id)] as id}<option value={id}>{id === FOLLOW_BROWSER ? "This browser's, at every boot" : id ? KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label : "Don't set it (the guest's own)"}</option>{/each}</select></label>
               <button class="beside" onclick={matchKeyboard} data-action="match-keyboard" title="The layout this browser reports for your keyboard"><Icon name="keyboard" size={16} />Match this browser</button>
               {#if keyboardNote}<p class="note" data-keyboard-match>{keyboardNote}</p>{/if}
-              {#if draft.keyboard}<p class="note" data-keyboard-note>The next time the machine boots, the page changes the guest's own keyboard settings to this layout (console, X11 and Wayland, on a guest with systemd 256 or newer), and again at every boot while it is set. "Don't set it" leaves the last layout set.</p>{/if}
+              {#if draft.keyboard === FOLLOW_BROWSER}<p class="note" data-keyboard-note>At every boot the page changes the guest's own keyboard settings to the layout this browser reports{browserNow ? ` (now ${browserNow})` : ''} (console, X11 and Wayland, on a guest with systemd 256 or newer). Where the browser doesn't say (only Chromium-based browsers do), the guest keeps its last layout; so does "Don't set it".</p>{:else if draft.keyboard}<p class="note" data-keyboard-note>The next time the machine boots, the page changes the guest's own keyboard settings to this layout (console, X11 and Wayland, on a guest with systemd 256 or newer), and again at every boot while it is set. "Don't set it" leaves the last layout set.</p>{/if}
               {@render usbSwitch()}
               {@render saveRow()}
               <p class="note">vCPUs, RAM, the display, the network adapters and the USB controller make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>

@@ -76,8 +76,8 @@ export type MachineRecord = {
    */
   jitMiB?: number;
   /**
-   * The guest's keyboard layout, set by the page at every boot (web/app/keyboard.ts, an id in `KEYBOARD_LAYOUTS`);
-   * absent: the page leaves the guest's own. Not in the shape: only a boot reads it.
+   * The guest's keyboard layout, set by the page at every boot (web/app/keyboard.ts, an id in `KEYBOARD_LAYOUTS`, or
+   * `FOLLOW_BROWSER`: the browser's, looked up at every start; a new machine's); absent: the page leaves the guest's own. Not in the shape: only a boot reads it.
    */
   keyboard?: string;
   display: Display;

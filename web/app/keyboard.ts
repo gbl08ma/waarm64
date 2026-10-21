@@ -49,6 +49,15 @@ const TABLE: (KeyboardLayout & { sig: Record<string, string> })[] = [
 export const KEYBOARD_LAYOUTS: readonly KeyboardLayout[] = TABLE.map(({ sig: _, ...l }) => l);
 export const keyboardLayout = (id: string | undefined) => KEYBOARD_LAYOUTS.find((l) => l.id === id);
 
+/** The setting's value that follows the browser: the layout it reports, looked up at every start (a new machine's default). */
+export const FOLLOW_BROWSER = 'browser';
+/** A value the setting can hold: a layout's id or `FOLLOW_BROWSER`. */
+export const validKeyboard = (id: string) => id === FOLLOW_BROWSER || !!keyboardLayout(id);
+/** The layout a start gives the guest for the setting `id`: `FOLLOW_BROWSER` is the browser's, or none where it doesn't say. */
+export async function resolveKeyboard(id: string | undefined, detect = browserLayout): Promise<KeyboardLayout | undefined> {
+  return id === FOLLOW_BROWSER ? detect() : keyboardLayout(id);
+}
+
 /**
  * The layout whose keys best match `map` (`navigator.keyboard.getLayoutMap()`'s code → character), or undefined
  * when none matches most of its keys. Layouts that differ only past what the map shows (US and its international

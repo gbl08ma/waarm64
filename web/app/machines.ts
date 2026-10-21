@@ -2,6 +2,7 @@
 // detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `webpc-machine:<id>`
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
+import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
 import { adaptersOf, canonical, DEFAULT_MAC, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
 import { machineDir, type Store } from './store.ts';
@@ -21,7 +22,7 @@ export async function needsOff(id: string, what: string) {
 }
 
 /** A new machine (no disks yet), named by default. */
-export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb'>> = {}) {
+export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb' | 'keyboard'>> = {}) {
   const taken = (await store.all('machines')).map((m) => m.name);
   const now = Date.now();
   const m: MachineRecord = {
@@ -32,6 +33,7 @@ export async function createMachine(store: Store, o: Partial<Pick<MachineRecord,
     display: o.display ?? '3d',
     adapters: (o.network ?? true) ? [{ id: newId(), mac: DEFAULT_MAC }] : [],
     usb: o.usb ?? true,
+    keyboard: o.keyboard ?? FOLLOW_BROWSER,
     attachments: [],
     created: now,
     modified: now,

@@ -200,7 +200,7 @@ Duplicate, Export the definition, Delete; then tabs:
   is), **Memory split (advanced)**, closed unless the machine has one: *Set the split myself* starts from the
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
-  **keyboard layout** (off by default; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **Save and restart**
+  **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **Save and restart**
   (asked first), and the USB controller. A change of shape asks first when it orphans snapshots.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
@@ -672,11 +672,15 @@ page writes the context's output latency into the ring's header, and the guest g
 
 ### The keyboard layout
 
-A machine's **Keyboard layout** setting (`MachineRecord.keyboard`, an id in `web/app/keyboard.ts`'s
-`KEYBOARD_LAYOUTS`, in its definition, not its shape; `?keyboard=<id>` on the page; off by default, because it changes
-the guest's own configuration) has the guest set that layout at every boot. **Match this browser** picks it from
-`navigator.keyboard.getLayoutMap()` (Chromium only: a few keys' characters against each layout's, `detectLayout`), for
-the user to save. It takes effect at the next boot, without a restart.
+A machine's **Keyboard layout** setting (`MachineRecord.keyboard`, in its definition, not its shape; `?keyboard=<id>`
+on the page) has the guest set a layout at every boot. Its values: an id in `web/app/keyboard.ts`'s `KEYBOARD_LAYOUTS`;
+`browser` (**This browser's, at every boot**: `FOLLOW_BROWSER`, a new machine's default, so the guest types what the
+user's keys say), the layout `navigator.keyboard.getLayoutMap()` reports, looked up at every start (Chromium only: a
+few keys' characters against each layout's, `detectLayout`; where the browser doesn't say, nothing is set and the
+guest keeps its last); or none (**Don't set it**: the guest's own, and what a machine made before the default or a
+definition without the field has). **Match this browser** picks a fixed layout from the same lookup, for the user to
+save. It takes effect at the next boot, without a restart. Transient machines (`?disk=`, the tests' `?machine=`) set
+none without `?keyboard=`.
 
 What the guest gets: three systemd credentials (256+: `systemd.extra-unit.*`, `systemd.unit-dropin.*`) as SMBIOS
 type 11 strings (base64, `io.systemd.credential.binary:`), which PID 1 imports in a VM with nothing loaded first. The

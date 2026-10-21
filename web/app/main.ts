@@ -4,7 +4,7 @@
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
 // the vCPU count, `?view=screen|terminal|both` the first view (the last one
 // chosen is remembered), `?params=` extra kernel parameters (direct-boot machines), `?credential=name:value` a systemd
-// credential over fw_cfg (firmware machines), `?keyboard=<id>` the guest's keyboard layout (web/app/keyboard.ts; firmware machines), `?disk2=<url>` a read-only second disk, `?disk=<url>` a root
+// credential over fw_cfg (firmware machines), `?keyboard=<id>` the guest's keyboard layout (web/app/keyboard.ts, `browser` the browser's; firmware machines), `?disk2=<url>` a read-only second disk, `?disk=<url>` a root
 // disk of your own ("Open disk…" and a dropped file choose a local one), `?machine=snd` the sound
 // test guest and `?snd=stats[,timer]` the sound's measurements (docs/frontend.md "Sound"), `?avprobe` the screen's
 // flashes for A/V sync (bench/audio/avsync.ts).
@@ -41,6 +41,7 @@ import { diskDir, overlayDir, machineDir, snapshotPath, Store } from './store.ts
 import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay, refreshStored, switchOverlay } from './disks.ts';
 import { bytesText } from './bytes.ts';
 import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunning, knownDisk, machineLock, setAdapterConnection, updateMachine } from './machines.ts';
+import { resolveKeyboard } from './keyboard.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -658,7 +659,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: params.get('keyboard') ?? stored?.record.keyboard, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(params.get('keyboard') ?? stored?.record.keyboard))?.id, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.

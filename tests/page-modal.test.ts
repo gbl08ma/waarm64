@@ -91,8 +91,10 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-field=ram]').selectOption('1024');
   await m.locator('[data-field=jit]').selectOption({ label: '128 MiB' });
   await m.locator('[data-field=display]').selectOption('2d');
-  // The keyboard layout: off by default, its note only with one set; "Match this browser" answers either way.
-  assert.equal(await m.locator('[data-field=keyboard]').inputValue(), await m.locator('[data-field=keyboard] option').first().getAttribute('value') ?? '');
+  // The keyboard layout: a new machine follows the browser, with its note; none set, no note; "Match this browser" answers either way.
+  assert.equal(await m.locator('[data-field=keyboard] option:checked').textContent(), "This browser's, at every boot");
+  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', /^At every boot the page changes the guest's own keyboard settings to the layout this browser reports/);
+  await m.locator('[data-field=keyboard]').selectOption({ index: 0 });
   assert.equal(await m.locator('[data-keyboard-note]').count(), 0);
   await m.locator('[data-action=match-keyboard]').click();
   await m.locator('[data-keyboard-match]').waitFor();

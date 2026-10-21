@@ -320,7 +320,12 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
   const kbd = await exportDefinition(store, (await updateMachine(store, { ...saved, keyboard: 'pt' })).id);
   assert.equal(kbd.machine.keyboard, 'pt');
   assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(kbd)))).machine.keyboard, 'pt');
-  assert.equal('keyboard' in (await exportDefinition(store, plain.id)).machine, false);
+  // A new machine follows the browser (web/app/keyboard.ts FOLLOW_BROWSER), and its definition says so; one set to none carries no field.
+  assert.equal(plain.keyboard, 'browser');
+  const follows = await exportDefinition(store, plain.id);
+  assert.equal(follows.machine.keyboard, 'browser');
+  assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(follows)))).machine.keyboard, 'browser');
+  assert.equal('keyboard' in (await exportDefinition(store, (await updateMachine(store, { ...plain, keyboard: undefined })).id)).machine, false);
   for (const keyboard of ['xx', 7, '']) assert.throws(() => parseDefinition(JSON.stringify({ ...kbd, machine: { ...kbd.machine, keyboard } })), /damaged/, String(keyboard));
   // The rule: 160 MiB is what it was measured with; the default (320) adds 0.625 GiB; smaller saves at most 0.25.
   assert.equal(jitHostGiB(160), 0);

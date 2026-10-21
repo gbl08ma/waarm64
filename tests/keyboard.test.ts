@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { detectLayout, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, oemStrings } from '../web/app/keyboard.ts';
+import { detectLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, oemStrings, resolveKeyboard, validKeyboard } from '../web/app/keyboard.ts';
 
 const map = (o: Record<string, string>) => new Map(Object.entries(o));
 const US = { KeyQ: 'q', KeyW: 'w', KeyE: 'e', KeyR: 'r', KeyY: 'y', KeyZ: 'z', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyM: 'm', KeyI: 'i', Digit0: '0', Digit2: '2', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/', Comma: ',', Period: '.' };
@@ -23,6 +23,17 @@ test('layouts: unique ids, XKB names; Match this browser tells them apart', () =
   // Nothing like any of them, or too few keys: no answer.
   assert.equal(detectLayout(map({ KeyQ: 'й', KeyW: 'ц', KeyE: 'у', Semicolon: 'ж', Quote: 'э', BracketLeft: 'х' })), undefined);
   assert.equal(detectLayout(map({ KeyQ: 'q' })), undefined);
+});
+
+test("the setting's values: a layout, or the browser's at every start (none where it doesn't say)", async () => {
+  assert.ok(validKeyboard('pt') && validKeyboard(FOLLOW_BROWSER) && !validKeyboard('xx') && !validKeyboard(''));
+  const de = async () => keyboardLayout('de');
+  assert.equal((await resolveKeyboard('pt', de))?.id, 'pt');
+  assert.equal((await resolveKeyboard(FOLLOW_BROWSER, de))?.id, 'de');
+  assert.equal(await resolveKeyboard(FOLLOW_BROWSER, async () => undefined), undefined);
+  assert.equal(await resolveKeyboard(undefined, de), undefined);
+  // Node has no Keyboard API: the browser's is none.
+  assert.equal(await resolveKeyboard(FOLLOW_BROWSER), undefined);
 });
 
 test('credentials: a unit, its drop-in on systemd-user-sessions and its script, as base64 SMBIOS strings', () => {
