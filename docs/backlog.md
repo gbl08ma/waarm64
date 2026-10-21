@@ -51,6 +51,28 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   (`bench/interp/results/m8-interp-l0/diag.patch`, its log shim's 2 GiB pointer bug fixed) was never run there.
 - **The floor between 1000 and 2000, with `threshold_max` above it:** 2000 compiled 22% less than 500 in the pages
   session but lost 2% on Alpine's userspace and boot, in one session each.
+- **Compile by expected benefit against cost, not one floor** (the user's idea, 2026-10-21; supersedes tuning the
+  floor alone). 1000 and 2000 each win on different workloads because one dispatch count stands in for a trade-off
+  that varies per block. Three candidate inputs:
+  - **Size.** Cost is the emit, V8's compile and the code's memory, which grow with the region, plus fixed costs:
+    ~8.5 KB per function and ~16 KB per module ([jit.md](jit.md) "Memory"). The benefit per dispatch grows with the
+    block's length too, so the threshold should count **steps** (dispatches × length), not dispatches; the batch
+    already weighs steps (`BATCH_STEPS`). The fixed costs make small regions relatively dearer, so a size-scaled
+    floor may want small regions *higher*, against the first guess. Measure it before assuming either way.
+  - **Instruction mix.** Since M8-INTERP's handlers, the interpreter is near Liftoff on some code (MOV runs, MRS,
+    plain loads and stores) and far on other code (the generic path, SIMD, flag-heavy arithmetic). A per-block
+    speedup estimate, fixed at decode, could scale its threshold.
+  - **Rate.** A boot's code mostly runs once, while a browser's runs for minutes. Promoting by dispatches per
+    interval rather than by total count would compile what is hot *now*.
+
+  **To measure first:**
+  - the cost model: emit ns, V8 compile ns and V8 memory against wasm bytes, regions and modules
+  - the benefit model: interpreted against compiled ns per step, by instruction class (the M8-INTERP mix tooling
+    and the fixed diagnostic core)
+
+  **Then screen,** as lanes do (the churn page, the pages session, Alpine's boot, the gates): steps-weighted,
+  size-scaled, mix-scaled and rate-based thresholds against fixed 1000 and 2000. The aim is a policy that beats
+  both: 2000's less wasm and memory where code runs long, 1000's speed on cold code.
 - **A steadier Go workload:** the `go build` loop spread 1,094-1,489 MIPS across sessions at one floor and couldn't
   rank compile policies.
 - **The exclusives and `DC ZVA` as handlers** (~1% on Buildroot's boot); BFM and the rest still run generically
