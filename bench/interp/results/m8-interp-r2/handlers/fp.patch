@@ -1,0 +1,177 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 4d24fb1..ebfbda8 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -103,6 +103,11 @@ enum K {
+     Extr,
+     /// RBIT, REV16, REV32, REV, CLZ (`x` 0 to 4) | sf << 8.
+     Bit1,
++    /// SIMD&FP LDR/STR (unsigned offset, unscaled, pre- and post-index) and
++    /// LDP/STP: `d` Rt, `n` Rn, `m` Rt2; `x` = log2 bytes | mode << 3 (0 offset,
++    /// 1 pre-index, 2 post-index) | load << 5 | pair << 6; `imm` the offset (low
++    /// 32 bits, signed) and the word (high 32: [`run`] runs it generically).
++    Fp,
+     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
+     LdLit,
+ }
+@@ -375,6 +380,39 @@ fn uop_op(w: u32, op: Op) -> Uop {
+                 imm,
+             )
+         }
++        STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 | STUR_fpsimd | LDUR_fpsimd | STR_imm_fpsimd_1
++        | LDR_imm_fpsimd_1 | STP_LDP_fpsimd | STNP_LDNP_fpsimd => {
++            let pair = matches!(op, STP_LDP_fpsimd | STNP_LDNP_fpsimd);
++            let log = if pair {
++                match bits(w, 31, 30) {
++                    3 => return generic,
++                    opc => 2 + opc,
++                }
++            } else {
++                match (bits(w, 31, 30), bit(w, 23)) {
++                    (0, true) => 4,
++                    (s, false) => s,
++                    _ => return generic,
++                }
++            };
++            let (mode, off) = match op {
++                STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 => (0, (bits(w, 21, 10) as u64) << log),
++                STUR_fpsimd | LDUR_fpsimd => (0, sext(bits(w, 20, 12) as u64, 9)),
++                STR_imm_fpsimd_1 | LDR_imm_fpsimd_1 => {
++                    (if bit(w, 11) { 1 } else { 2 }, sext(bits(w, 20, 12) as u64, 9))
++                }
++                _ => (
++                    match bits(w, 24, 23) {
++                        1 => 2,
++                        3 => 1,
++                        _ => 0,
++                    },
++                    sext(bits(w, 21, 15) as u64, 7) << log,
++                ),
++            };
++            let x = log | mode << 3 | (bit(w, 22) as u32) << 5 | (pair as u32) << 6;
++            Uop::new(K::Fp, rd, rn, bits(w, 14, 10), x, off as u32 as u64 | (w as u64) << 32)
++        }
+         STP_LDP_gen | STNP_LDNP_gen => {
+             let (opc, load) = (bits(w, 31, 30), bit(w, 22));
+             let (size, signed) = match (opc, load) {
+@@ -507,6 +545,12 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
+             }
+             K::Extr => c.set_reg(d, extr(u.x, c.reg(n), c.reg(u.m as u32))),
+             K::Bit1 => c.set_reg(d, bit1(u.x, c.reg(n))),
++            K::Fp => {
++                let w = (u.imm >> 32) as u32;
++                if let Err(e) = super::exec_at_op(c, m, w, pc, crate::decode::decode(w)) {
++                    return (k as u64, Some(e));
++                }
++            }
+             K::Adr => c.set_reg(d, pc.wrapping_add(u.imm)),
+             K::Adrp => c.set_reg(d, (pc & !0xfff).wrapping_add(u.imm)),
+             K::B => return taken(c, b, pc.wrapping_add(u.imm)),
+@@ -741,6 +785,76 @@ pub fn hot<B: Fast>(
+             let sf = o.x & 1 != 0;
+             match o.k {
+                 K::Generic | K::LdLit => break 'run SLOW,
++                K::Fp => {
++                    // FPEN, as `interp::fp_enabled`; then the SP's alignment.
++                    let en = c.cpacr_el1 >> 20 & 3;
++                    if en != 3 && !(en == 1 && c.el() == 1) {
++                        break 'run SLOW;
++                    }
++                    let base = rsp(c, n);
++                    if n == 31 && base & 15 != 0 {
++                        break 'run SLOW;
++                    }
++                    let (log, mode) = (o.x & 7, o.x >> 3 & 3);
++                    let off = o.imm as u32 as i32 as i64 as u64;
++                    let addr = if mode == 2 { base } else { base.wrapping_add(off) };
++                    let (bytes, pair, load) = (1u32 << log, o.x >> 6 & 1 != 0, o.x >> 5 & 1 != 0);
++                    let a2 = addr.wrapping_add(bytes as u64);
++                    let w = if load { Use::Read } else { Use::Write };
++                    let Some(p1) = m.fast_ptr(c, addr, bytes, w) else {
++                        break 'run SLOW;
++                    };
++                    let p2 = if pair {
++                        match m.fast_ptr(c, a2, bytes, w) {
++                            Some(p) => p,
++                            None => break 'run SLOW,
++                        }
++                    } else {
++                        p1
++                    };
++                    // One access, or two of 8 bytes for a Q register, each aligned.
++                    let a = (bytes as usize).min(8) - 1;
++                    if (p1 as usize | p2 as usize) & a != 0 {
++                        break 'run SLOW;
++                    }
++                    let (rt, rt2) = ((d & 31) as usize, (o.m & 31) as usize);
++                    // SAFETY: `fast_ptr` found `bytes` bytes of RAM at each, aligned
++                    // as each access needs (checked).
++                    unsafe {
++                        let ld = |p: *mut u8| -> u128 {
++                            if bytes == 16 {
++                                mem::load_aligned(p, 8).unwrap_or(0) as u128
++                                    | (mem::load_aligned(p.add(8), 8).unwrap_or(0) as u128) << 64
++                            } else {
++                                mem::load_aligned(p, bytes).unwrap_or(0) as u128
++                            }
++                        };
++                        let st = |p: *mut u8, v: u128| {
++                            if bytes == 16 {
++                                mem::store_aligned(p.add(8), 8, (v >> 64) as u64);
++                                mem::store_aligned(p, 8, v as u64);
++                            } else {
++                                mem::store_aligned(p, bytes, v as u64);
++                            }
++                        };
++                        if load {
++                            let v1 = ld(p1);
++                            let v2 = if pair { ld(p2) } else { 0 };
++                            c.v[rt] = v1;
++                            if pair {
++                                c.v[rt2] = v2;
++                            }
++                        } else {
++                            st(p1, c.v[rt]);
++                            if pair {
++                                st(p2, c.v[rt2]);
++                            }
++                        }
++                    }
++                    if mode != 0 {
++                        wsp(c, n, base.wrapping_add(off));
++                    }
++                }
+                 K::Maddl => wr(
+                     c,
+                     d,
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index 6e237d6..adc3d48 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -109,6 +109,14 @@ fn classes() -> Vec<(u32, u32, Op)> {
+         LDRx_reg,
+         STP_LDP_gen,
+         STNP_LDNP_gen,
++        STR_imm_fpsimd_2,
++        LDR_imm_fpsimd_2,
++        STUR_fpsimd,
++        LDUR_fpsimd,
++        STR_imm_fpsimd_1,
++        LDR_imm_fpsimd_1,
++        STP_LDP_fpsimd,
++        STNP_LDNP_fpsimd,
+         EXTR,
+         UDIV,
+         CLZ_int,
+@@ -172,6 +180,11 @@ fn state(r: &mut Rng) -> Cpu {
+             _ => r.below(DATA),
+         };
+     }
++    // FP enabled mostly (the SIMD&FP loads and stores' inline path), not always.
++    c.cpacr_el1 = if r.below(4) == 0 { 0 } else { 3 << 20 };
++    for v in &mut c.v {
++        *v = (r.next() as u128) << 64 | r.next() as u128;
++    }
+     c.x[31] = if r.below(8) == 0 {
+         r.below(DATA)
+     } else {

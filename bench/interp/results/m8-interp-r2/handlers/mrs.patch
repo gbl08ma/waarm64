@@ -1,0 +1,126 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 4d24fb1..9d37a78 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -105,6 +105,10 @@ enum K {
+     Bit1,
+     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
+     LdLit,
++    /// MRS of a register `sys::plain` reads at the block's EL (made by `uop_el`, after
++    /// the kinds the random blocks draw): `x` 0 the u64 at offset `imm` in the `Cpu`,
++    /// 1 the constant `imm`, 2 `pstate & imm`, 3 NZCV.
++    Mrs,
+ }
+ 
+ /// Marks each MovI with the number of MovIs right after it ([`hot`] runs
+@@ -153,6 +157,36 @@ impl Uop {
+     }
+ }
+ 
++/// [`uop_op`] at the block's EL (`el1`): an MRS of a register `sys::plain`
++/// knows at that EL is a [`K::Mrs`] (the rest are as `uop_op` makes them).
++pub(crate) fn uop_el(w: u32, op: Op, el1: bool) -> Uop {
++    use super::sys::Plain;
++    if op == Op::MRS {
++        let (rt, key) = (bits(w, 4, 0), bits(w, 20, 5));
++        let (x, imm) = match super::sys::plain(key, el1) {
++            Some(Plain::Field(off)) => (0, off as u64),
++            Some(Plain::Const(v)) => (1, v),
++            Some(Plain::Pstate(m)) => (2, m),
++            Some(Plain::Nzcv) => (3, 0),
++            _ => return uop_op(w, op),
++        };
++        return Uop::new(K::Mrs, rt, 0, 0, x, imm);
++    }
++    uop_op(w, op)
++}
++
++/// MRS (`K::Mrs`) of what `x` and `imm` say.
++#[inline(always)]
++fn mrs(c: &Cpu, x: u32, imm: u64) -> u64 {
++    match x {
++        // SAFETY: `imm` is the offset of a u64 field of `Cpu` (`sys::plain`).
++        0 => unsafe { (c as *const Cpu as *const u8).add(imm as usize % (core::mem::size_of::<Cpu>() - 7)).cast::<u64>().read_unaligned() },
++        1 => imm,
++        2 => c.pstate & imm,
++        _ => c.nzcv,
++    }
++}
++
+ /// Decodes one instruction (blocks are decoded through `jit::block::form_with`).
+ #[cfg(test)]
+ pub fn uop(w: u32) -> Uop {
+@@ -507,6 +541,7 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
+             }
+             K::Extr => c.set_reg(d, extr(u.x, c.reg(n), c.reg(u.m as u32))),
+             K::Bit1 => c.set_reg(d, bit1(u.x, c.reg(n))),
++            K::Mrs => c.set_reg(d, mrs(c, u.x, u.imm)),
+             K::Adr => c.set_reg(d, pc.wrapping_add(u.imm)),
+             K::Adrp => c.set_reg(d, (pc & !0xfff).wrapping_add(u.imm)),
+             K::B => return taken(c, b, pc.wrapping_add(u.imm)),
+@@ -741,6 +776,7 @@ pub fn hot<B: Fast>(
+             let sf = o.x & 1 != 0;
+             match o.k {
+                 K::Generic | K::LdLit => break 'run SLOW,
++                K::Mrs => wr(c, d, mrs(c, o.x, o.imm)),
+                 K::Maddl => wr(
+                     c,
+                     d,
+@@ -1361,7 +1397,9 @@ impl Cache {
+             Some(e) if e.1 == 0 => return None,
+             Some(_) => {}
+             None => {
+-                let mut uops = crate::jit::block::form_with(mem, key & !3, uop_op);
++                let mut uops = crate::jit::block::form_with(mem, key & !3, |w, op| {
++                    uop_el(w, op, key & 1 != 0)
++                });
+                 mov_runs(&mut uops);
+                 if uops.is_empty() {
+                     self.map.insert(key, (0, 0, 0, 0));
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index 6e237d6..e2bd445 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -260,6 +260,42 @@ fn blocks_run_as_the_interpreter_runs_them() {
+     }
+ }
+ 
++/// An MRS that `sys::plain` knows runs as the interpreter runs it, at EL0 and
++/// EL1, for every such key.
++#[test]
++fn an_mrs_runs_as_the_interpreter_runs_it() {
++    let mut r = Rng(0x2545_f491_4f6c_dd1d);
++    let t = TestRam::new(RAM);
++    let mut ran = 0;
++    for key in 0..1u32 << 16 {
++        for el1 in [false, true] {
++            if crate::interp::sys::plain(key, el1).is_none() {
++                continue;
++            }
++            let w = 0xd530_0000 | key << 5 | r.below(32) as u32;
++            let u = uop_el(w, crate::decode::decode(w), el1);
++            if u.k != K::Mrs {
++                continue;
++            }
++            t.mem.write(CODE, 4, w as u64).unwrap();
++            let mut c0 = state(&mut r);
++            c0.pstate = if el1 { 0b0101 } else { 0 } | (r.next() & 0x3c0);
++            c0.nzcv = r.below(16) << 28;
++            (c0.tpidr_el0, c0.tpidrro_el0, c0.sctlr_el1, c0.ttbr0_el1) = (r.next(), r.next(), r.next() & !1, r.next());
++            (c0.tcr_el1, c0.esr_el1, c0.vbar_el1, c0.tpidr_el1) = (r.next(), r.next(), r.next(), r.next());
++            (c0.spsr_el1, c0.elr_el1, c0.mair_el1, c0.mpidr) = (r.next(), r.next(), r.next(), r.next());
++            let mut c1 = c0.clone();
++            let want = interp::steps(&mut c1, &t.mem, None, 1);
++            let mut c2 = c0.clone();
++            let got = run_hot(&mut c2, &mut Flat(&t.mem), &[u], CODE);
++            assert_eq!(got, want, "{w:#010x} el1 {el1}");
++            assert_eq!(c2, c1, "{w:#010x} el1 {el1}");
++            ran += 1;
++        }
++    }
++    assert!(ran > 25, "{ran}");
++}
++
+ /// A run of MOVs ([`mov_runs`]) stops at the prefix's end, as the steps left say.
+ #[test]
+ fn a_mov_run_stops_at_the_prefix() {

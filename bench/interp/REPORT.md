@@ -1001,7 +1001,8 @@ the first 45 classes. **The generic path is 3.5%** of the instructions: `MRS` 28
 dominant. Buildroot: 9.0M runs, 4.5 instructions a block, generic 4.0% (`MRS` 15%, the exclusives 28%, `DC ZVA`
 8%, `EXTR` 7.5%, `REV` 7%). **Not counted: a browser's decoded blocks**: Firefox's pages session from the snapshot
 with the diagnostic core never got its first guest command through (three tries; the same session with the base
-core runs), and the boots' counts settled the order of the loops.
+core runs), and the boots' counts settled the order of the loops. (Later: the vCPU worker had crashed on the shim,
+a `Uint8Array` at a heap pointer past 2 GiB read as a negative offset; the patch has `p >>> 0` now.)
 
 **What it says for the loops.** Blocks are short, so per-block costs (`interpret`'s 13%, the counting, `run`'s entry
 and exit) weigh as much as per-instruction ones: loop 1 (one call-free loop) and loop 2 (the per-block lookups)
@@ -1203,3 +1204,33 @@ bug (each MOV of a run writing the first one's value) failed the differential te
 didn't (random blocks rarely end a prefix inside a run), so `a_mov_run_stops_at_the_prefix` covers it and fails
 with that bug. **On the Mac host** (one round, `results/m8-interp-l4/mac/`): `dec_mips` 427.1 → 440.8 (+3.2%),
 `vm_dec_mmu_mips` 406.5 → 416.5 (+2.5%), Buildroot's boot 130.9 → 144.8 (+10.6%), Alpine's 175.6 → 185.7 (+5.7%).
+
+## M8-INTERP round 2: the floor's curve, and more handlers
+
+2026-10-21 (08:00-09:40), the dev VM, Chromium 153.0.8010.52, on main at `b2fdaea` (floor 500, one report from
+`warm`); raw data `results/m8-interp-r2/`. The floor at 250, 500, 1000 and 2000 (`threshold_max` the larger of 1000
+and the floor, so at 1000 and 2000 pressure no longer raises it), one round each unless said:
+
+| | 250 | 500 | 1000 | 2000 |
+|---|---|---|---|---|
+| churn: wasm MB / modules | 410 / 22,608 | 368, 362 (A/A) / 22,310 | 335 / 21,978 | **233** / 20,987 |
+| churn: first flush, s / `doneS` / busy MIPS | 91 / 127.9 / 201 | 100, 94 / 121.5, 113.9 / 222, 235 | 104 / 114.2 / 237 | none / 107.8 / 253 |
+| pages: wasm MB / V8 code median MB / RSS median MB | 189 / 596 / 4,239 | 169 / 500 / 4,069 | 164 / 458 / 3,973 | **132 / 361 / 3,684** |
+| pages: busy MIPS / wiki, BBC load s | 179 / 13.7, 13.4 | 179 / 12.3, 13.7 | **196** / 11.4, 11.6 | 195 / 10.8, 12.8 |
+| Alpine boot under the JIT, MIPS (regions) | | 402.6 (11,139) | 405.4 (8,395) | 395.0 (6,189) |
+| Alpine userspace, total ms | | 15,835 | 15,711 (−0.8%) | 16,196 (+2.3%; compress +4.9%) |
+| `smp_user_jit_4`, total ms | | 16,210 | 15,901 (−1.9%) | 15,954 (−1.6%) |
+| `go build` loop, MIPS by session | 50: 1,489, 1,094 | 1,454, 1,370, 1,382 | 1,455, 1,409 | 1,326, 1,370 |
+
+The `go build` loop's sessions spread 1,094-1,489 at one floor, so its earlier "−4 to −6% at 500" is noise: across
+eight sessions in two rounds, 50 gave 1,431, 1,243, 1,489, 1,094 and 500 1,351, 1,193, 1,454, 1,370, 1,382 (the
+first two of each before the report change). **Kept: the floor at 1000.** Against 500 it compiles less (churn −9%,
+pages −3%, V8's code −8%) and is as fast or faster everywhere measured; 2000 compiles least (pages −22%) but loses on
+Alpine's userspace and boot and on the `go build` loop.
+
+**Handlers** (one round, against `b2fdaea`: `dec_mips` / Alpine / Buildroot 424.7 / 171.0 / 112.7; the diffs in
+`handlers/`): MRS of the registers `sys::plain` knows at the block's EL (`uop_el`, the JIT's inline set) 423.4 /
+172.4 / 114.8; the SIMD&FP single and pair loads and stores (B to Q, offset, pre, post) 425.0 / 171.0 / 112.4; LSE
+LD<op> and SWP of W and X registers (a CAS loop inline) 424.9 / 171.8 / 114.3; all three 424.5 / 173.6 / 113.6. At
+most +1.5% on a boot, under the bar, and not kept for lack of time to repeat them (the boots' generic path is
+3.5% of their instructions; the SIMD&FP ones should show in a browser's memcpy, not counted: see loop 0).

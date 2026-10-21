@@ -1,0 +1,21 @@
+[    0 s] log: bench/results/local/fgo/g500-2.jsonl
+[    3 s] restored {"file":"target/snapbench/debian-go.webpcsnap","bytes":180698774,"loadMs":2004,"created":"2026-10-20T21:39:57.839Z","coreVersion":1,"abi":46,"scene":"debian-shell","madeBy":"fae710dd9921dba2","madeAt":"cbaedb1-dirty","core":"5dfdd1a1761f2e56","sameCore":false}
+[    5 s] load started (2 commands); sampling every 5 s for 300 s
+[   34 s] running, 1486 MIPS, interp 0.5%, flushes +0 (0), compiling 7 ms/s, 62 MiB compiled, JIT 44266, status age 117 ms, renderer 2118 MiB, vCPU longest 212 ms
+[   64 s] running, 754 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 84 MiB compiled, JIT 61633, status age 511 ms, renderer 2317 MiB, vCPU longest 212 ms
+[   94 s] running, 1162 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 94 MiB compiled, JIT 70514, status age 906 ms, renderer 2430 MiB, vCPU longest 219 ms
+[  124 s] running, 1491 MIPS, interp 0.2%, flushes +0 (0), compiling 3 ms/s, 101 MiB compiled, JIT 76855, status age 309 ms, renderer 2476 MiB, vCPU longest 219 ms
+[  154 s] running, 1370 MIPS, interp 0.2%, flushes +0 (0), compiling 3 ms/s, 106 MiB compiled, JIT 81098, status age 703 ms, renderer 2545 MiB, vCPU longest 249 ms
+[  184 s] running, 1191 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 110 MiB compiled, JIT 84625, status age 72 ms, renderer 2587 MiB, vCPU longest 249 ms
+[  214 s] running, 1324 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 113 MiB compiled, JIT 87572, status age 491 ms, renderer 2623 MiB, vCPU longest 275 ms
+[  244 s] running, 1527 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 116 MiB compiled, JIT 90458, status age 899 ms, renderer 2646 MiB, vCPU longest 275 ms
+[  274 s] running, 1702 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 119 MiB compiled, JIT 92958, status age 278 ms, renderer 2686 MiB, vCPU longest 275 ms
+[  304 s] running, 1708 MIPS, interp 0.1%, flushes +0 (0), compiling 1 ms/s, 120 MiB compiled, JIT 94307, status age 674 ms, renderer 2705 MiB, vCPU longest 288 ms
+
+samples 61 over 310 s, final page state running
+MIPS median 1380 (first third 1411, last third 1498); JIT blocks 94345
+renderer memory 2545 to 2707 MiB after warm-up, slope 4011 MiB/h
+longest vm_run_cpu / host handling per vCPU (ms): 0: 317/0  1: 312/0  2: 345/0  3: 305/0
+run loop max 64 ms, status gap max 3617 ms, main-thread lag max 51 ms
+guest console probes: 19/19 answered, slowest 1010 ms
+no findings

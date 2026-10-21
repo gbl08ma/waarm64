@@ -1,0 +1,115 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 4d24fb1..6953f8d 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -103,6 +103,9 @@ enum K {
+     Extr,
+     /// RBIT, REV16, REV32, REV, CLZ (`x` 0 to 4) | sf << 8.
+     Bit1,
++    /// LD<op> and SWP of a W or X register: `d` Rt, `n` Rn, `m` Rs; `x` = sf |
++    /// op << 1 (bits 15:12); `imm` the word ([`run`] runs it generically).
++    Lse,
+     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
+     LdLit,
+ }
+@@ -375,6 +378,11 @@ fn uop_op(w: u32, op: Op) -> Uop {
+                 imm,
+             )
+         }
++        LDADD | LDCLR | LDEOR | LDSET | LDSMAX | LDSMIN | LDUMAX | LDUMIN | SWP
++            if bits(w, 31, 30) >= 2 && bits(w, 15, 12) <= 8 =>
++        {
++            u(K::Lse, bit(w, 30) as u32 | bits(w, 15, 12) << 1, w as u64)
++        }
+         STP_LDP_gen | STNP_LDNP_gen => {
+             let (opc, load) = (bits(w, 31, 30), bit(w, 22));
+             let (size, signed) = match (opc, load) {
+@@ -507,6 +515,12 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
+             }
+             K::Extr => c.set_reg(d, extr(u.x, c.reg(n), c.reg(u.m as u32))),
+             K::Bit1 => c.set_reg(d, bit1(u.x, c.reg(n))),
++            K::Lse => {
++                let w = u.imm as u32;
++                if let Err(e) = super::exec_at_op(c, m, w, pc, crate::decode::decode(w)) {
++                    return (k as u64, Some(e));
++                }
++            }
+             K::Adr => c.set_reg(d, pc.wrapping_add(u.imm)),
+             K::Adrp => c.set_reg(d, (pc & !0xfff).wrapping_add(u.imm)),
+             K::B => return taken(c, b, pc.wrapping_add(u.imm)),
+@@ -741,6 +755,56 @@ pub fn hot<B: Fast>(
+             let sf = o.x & 1 != 0;
+             match o.k {
+                 K::Generic | K::LdLit => break 'run SLOW,
++                K::Lse => {
++                    let base = rsp(c, n);
++                    if n == 31 && base & 15 != 0 {
++                        break 'run SLOW;
++                    }
++                    let sf = o.x & 1 != 0;
++                    let size = if sf { 8 } else { 4 };
++                    let Some(p) = m.fast_ptr(c, base, size, Use::Write) else {
++                        break 'run SLOW;
++                    };
++                    if p as usize & (size as usize - 1) != 0 {
++                        break 'run SLOW;
++                    }
++                    let mask = if sf { u64::MAX } else { u32::MAX as u64 };
++                    let v = rd(c, o.m as u32) & mask;
++                    let sx = |x: u64| if sf { x as i64 } else { x as u32 as i32 as i64 };
++                    let f = |old: u64| {
++                        (match o.x >> 1 {
++                            0 => old.wrapping_add(v),
++                            1 => old & !v,
++                            2 => old ^ v,
++                            3 => old | v,
++                            4 => if sx(old) > sx(v) { old } else { v },
++                            5 => if sx(old) < sx(v) { old } else { v },
++                            6 => old.max(v),
++                            7 => old.min(v),
++                            _ => v,
++                        }) & mask
++                    };
++                    const O: core::sync::atomic::Ordering = core::sync::atomic::Ordering::SeqCst;
++                    // SAFETY: `fast_ptr` found `size` bytes of RAM at `p`, aligned (checked).
++                    let old = unsafe {
++                        if sf {
++                            let a = core::sync::atomic::AtomicU64::from_ptr(p as *mut u64);
++                            let mut old = a.load(O);
++                            while let Err(seen) = a.compare_exchange(old, f(old), O, O) {
++                                old = seen;
++                            }
++                            old
++                        } else {
++                            let a = core::sync::atomic::AtomicU32::from_ptr(p as *mut u32);
++                            let mut old = a.load(O) as u64;
++                            while let Err(seen) = a.compare_exchange(old as u32, f(old) as u32, O, O) {
++                                old = seen as u64;
++                            }
++                            old
++                        }
++                    };
++                    wr(c, d, old);
++                }
+                 K::Maddl => wr(
+                     c,
+                     d,
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index 6e237d6..2a0e448 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -125,6 +125,14 @@ fn classes() -> Vec<(u32, u32, Op)> {
+         LDTR,
+         CAS,
+         LDADD,
++        LDCLR,
++        LDEOR,
++        LDSET,
++        LDSMAX,
++        LDSMIN,
++        LDUMAX,
++        LDUMIN,
++        SWP,
+     ];
+     let p: Vec<_> = crate::decode::patterns()
+         .iter()

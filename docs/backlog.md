@@ -41,15 +41,18 @@ most promising first.
   appends or starts over (an epoch scheme like the code cache's `drops`). The 2× arena gained
   ~3.5%; a shared one is worth at most a few percent more (more since the floor of 500 doubled the
   interpreted steps: M8-INTERP loop 7, not started).
-- **The `go build` loop at the floor of 500** ran 4-6% slower than at 50 (two sessions each, within its spread;
-  with the one report from `warm` to the threshold since, 1,434 against 1,392 MIPS in one session): watch it
-  (`bench/interp/REPORT.md` "M8-INTERP loop 6").
+- **The `go build` loop is too noisy to rank compile policies** (1,094-1,489 MIPS at one floor across sessions):
+  a shorter, steadier Go workload, or many more sessions, before it can decide anything
+  (`bench/interp/REPORT.md` "M8-INTERP round 2").
 - **More micro-op handlers:** MRS (the plain registers: 28% of the generic path in Alpine's boot), FP and SIMD
-  loads and stores (memcpy: a Q-register copy runs 7× slower than integer code), exclusives and LSE atomics, BFM
+  loads and stores (memcpy: a Q-register copy runs 7× slower than integer code) and LSE atomics are written and
+  screened (`bench/interp/results/m8-interp-r2/handlers/*.patch`: +0-1.5% on the boots, not repeated, so not kept;
+  the SIMD&FP ones want a browser's count), exclusives, BFM
   run generically through `exec` (3.5% of the interpreted instructions in Alpine's boot before UMADDL, EXTR and
   REV/CLZ became handlers). Each handler in the hot loop is code its hot path carries: the literal load inline cost
-  the user-mode guest 4-5%; measure every one on the small guests too. A browser's mix wasn't counted (a diagnostic
-  core in Firefox's pages session never got its first command through: `bench/interp/results/m8-interp-l0/diag.patch`). FP
+  the user-mode guest 4-5%; measure every one on the small guests too. A browser's mix wasn't counted: the diagnostic
+  core crashed Firefox's pages session (its log shim read a heap pointer past 2 GiB as negative; fixed with `p >>> 0`
+  in `bench/interp/results/m8-interp-l0/diag.patch`, not run again). FP
   itself runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by
   lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each

@@ -215,7 +215,7 @@ index c00bf36..3476ede 100644
    const hooks = stall.map((s) => stallHook(memory, s));
    const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
 -  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
-+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile, diag_log: (p: number, l: number) => console.log(new TextDecoder().decode(new Uint8Array(memory.buffer, p, l).slice())) }, ram: spillImports(spill), jit };
++  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile, diag_log: (p: number, l: number) => console.log(new TextDecoder().decode(new Uint8Array(memory.buffer, p >>> 0, l).slice())) }, ram: spillImports(spill), jit };
  }
  
  /**

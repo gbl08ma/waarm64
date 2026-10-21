@@ -1,0 +1,18 @@
+{
+ "bench/results/local/fpages/f2000-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 90.88,
+   "flushes": 0,
+   "modules": 2941,
+   "mib": 125.7,
+   "overdue": 0,
+   "parks": 10168,
+   "locks": 19453179,
+   "interpGsteps": 4.44,
+   "share": 0.951,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

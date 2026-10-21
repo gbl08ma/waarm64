@@ -1,0 +1,52 @@
+{
+ "bench/results/local/fchurn/f500-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 74.31,
+   "flushes": 1,
+   "modules": 22347,
+   "mib": 352.2,
+   "overdue": 198,
+   "parks": 63759,
+   "locks": 29746257,
+   "interpGsteps": 5.15,
+   "share": 0.931,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 126,
+    "atGsteps": 61.45,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 3577,
+    "mibEmitted": 62.8,
+    "shareBefore": 0.932,
+    "shareAfter": [
+     0.865,
+     0.865,
+     0.869,
+     0.872,
+     0.885,
+     0.882,
+     0.879,
+     0.884,
+     0.888,
+     0.893
+    ]
+   }
+  ]
+ }
+}
