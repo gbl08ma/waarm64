@@ -60,7 +60,9 @@ match it step for step.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after
-  writing code, which is what the JIT's invalidation relies on ([jit.md](jit.md)).
+  writing code, which is what the JIT's invalidation relies on ([jit.md](jit.md)); IminLine = 9
+  (2 KiB lines, the largest: an IC drops its whole page, so guests issue 2 a page, [jit.md](jit.md)
+  "Invalidation and the stale-code checker"); DminLine, CWG and ERG 64 bytes.
 - `DCZID_EL0.BS` = 4: `DC ZVA` zeroes 64 bytes, as on the M4 (QEMU's `max` uses 512).
 - `CLIDR_EL1` = 0 (no caches, so set/way operations are NOPs).
 - The unnamed part of the ID space reads as zero.

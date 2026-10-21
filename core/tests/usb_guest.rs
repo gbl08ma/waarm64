@@ -80,8 +80,8 @@ fn testusb_passes_against_gadget_zero_with_a_hot_unplug() {
 }
 
 /// The step counts at which the host unplugs connector 0 and plugs it in again (tests/usb/guest.ts too).
-pub const USB_UNPLUG: u64 = 80_000_000;
-pub const USB_REPLUG: u64 = 100_000_000;
+pub const USB_UNPLUG: u64 = 95_000_000;
+pub const USB_REPLUG: u64 = 115_000_000;
 
 /// What the guest must have printed (tests/usb/guest.ts `checkUsbGuest`).
 fn check_usb_guest(console: &str) {

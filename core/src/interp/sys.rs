@@ -73,8 +73,10 @@ pub fn mmfr2(features: u64) -> u64 {
     ((features & crate::cpu::FEATURE_E0PD != 0) as u64) << 60
 }
 /// DIC = 0 (guests issue IC IVAU; docs/jit.md), IDC = 1 (no data cache to clean),
-/// CWG, ERG, DminLine = 64 bytes, PIPT I-cache, IminLine = 64 bytes.
-const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 4;
+/// CWG, ERG, DminLine = 64 bytes, PIPT I-cache, IminLine = 2 KiB (the largest
+/// line there is: an IC drops the whole page whatever the line, so a guest that
+/// steps by it issues 2 a page instead of 64; docs/jit.md "Invalidation and the stale-code checker").
+const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 9;
 /// DC ZVA block: BS = 4 (64 bytes, as on the M4).
 pub const DCZID_BS: u64 = 4;
 /// OSLSR_EL1.OSLM = 0b10: the OS lock is implemented (v8.0 requires it). It
@@ -808,6 +810,23 @@ mod tests {
         // At EL0 and EL1. ID_AA64ISAR0_EL1 (M6.5) and ID_AA64PFR0_EL1 (M7) are
         // helpers: they depend on Cpu.features.
         assert_eq!(claimed, 4 + 29);
+    }
+
+    /// CTR_EL0's IminLine reads 9 (2 KiB lines: Linux and libgcc step their
+    /// `IC IVAU`s by it, 2 a page), and the rest stays 64 bytes, DIC 0, IDC 1.
+    #[test]
+    fn ctr_el0_has_2k_icache_lines() {
+        let c = Cpu {
+            pstate: 4, // EL1
+            ..Default::default()
+        };
+        let v = read(&c, 0xd520_0003 | 1 << 21 | CTR << 5, CTR).unwrap();
+        assert_eq!(v & 0xf, 9, "IminLine: 4 << 9 = 2 KiB");
+        assert_eq!(4 << (v & 0xf), 2048);
+        assert_eq!(v >> 16 & 0xf, 4, "DminLine stays 64 bytes");
+        assert_eq!(v >> 24 & 0xf, 4, "CWG stays 64 bytes");
+        assert_eq!(v >> 20 & 0xf, 4, "ERG stays 64 bytes");
+        assert_eq!((v >> 28 & 1, v >> 29 & 1), (1, 0), "IDC 1, DIC 0");
     }
 
     /// The `Cpu` offsets `tests/jit-diff.test.ts` randomizes (SYSREG_FIELDS,

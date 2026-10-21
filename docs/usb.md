@@ -373,9 +373,9 @@ Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest
   `pattern=1`. It runs `testusb -a -c 10 -s 1024 -v 512 -g 16`:
   1. A clean pass: 23 tests per device, the isochronous, interrupt and performance ones skipped by
      usbtest.
-  2. Passes again until the host unplugs connector 0 at step 80M. That lands in pass 2, whose remaining
+  2. Passes again until the host unplugs connector 0 at step 95M. That lands in pass 2, whose remaining
      tests fail with ENODEV.
-  3. The host plugs it in again at step 100M, and the guest enumerates it again.
+  3. The host plugs it in again at step 115M, and the guest enumerates it again.
   4. A clean pass, then it powers off.
 
   It runs in every runner with exact steps (tests/steps.txt):
