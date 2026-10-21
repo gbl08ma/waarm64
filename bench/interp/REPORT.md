@@ -1336,10 +1336,52 @@ interpreter's. Against main:
 | Buildroot's boot | 123.5 · 123.9 · 123.1 | **134.2 · 134.5 · 134.3 (+8.7%)** |
 | Alpine's boot | 185.4 · 184.9 · 185.0 | **195.6 · 195.5 · 195.2 (+5.7%)** |
 
-Loop 0's mix put these at ~1.3% of Buildroot's instructions and ~0.4% of Alpine's, so ~1% was expected. The rest is
-most likely the chain (not measured apart): a block whose last micro-op is generic ends the run of blocks (`Uop::chains`: it may have changed the
-regime), and the kernel's spinlocks, atomics and barriers end their blocks often; as handlers, those blocks chain
-on in `hot` instead of going back to `jit::interpret` and its slot lookup. Planted bugs, each failing the
+Loop 0's mix put these at ~1.3% of Buildroot's instructions and ~0.4% of Alpine's, so ~1% was expected. Not the
+chain: blocks that end on a generic micro-op are rare (0.15% of the block runs in loop 10's browser count). What a
+generic micro-op costs is `hot`'s exit and re-entry around it (its state written back, `run`'s call, the context
+recomputed), many times a handled one's: by these numbers ~14× on Alpine's boot. Planted bugs, each failing the
 differential test (which now draws the eight classes, an armed monitor half the time, on what a register points at,
 and `SCTLR_EL1.DZE` off a quarter of the time): STXR's status inverted, LDXR not arming the monitor, DC ZVA
 zeroing 56 bytes, STLR always 8 bytes, a failed STXR leaving the monitor armed.
+
+## M8-INTERP loop 10: a browser's mix, its handlers, and what decoding costs
+
+2026-10-21 (22:00-23:30), the dev VM, Chromium 153.0.8010.52, on main at `99769f4`; raw data
+`results/m8-interp-l9/` (`mix/`, `fp/`, `pages-fp/`, `decode/`).
+
+**A browser's mix** (Next 3; `mix/`: `diag.patch`, loop 0's diagnostic ported to `hot`, with the generic classes
+that end their block counted too, through Firefox's pages session from `pages.webpcsnap`, 4 vCPUs): 3.36G
+interpreted instructions in 654M block runs; **the generic path is 1.89% of them** (Alpine's boot had 3.46% before
+loops 5-9), spread thin: MRS 8.9% of it (registers `sys::plain` doesn't know at the block's EL), FCMP 8.0%, FMOV
+(general) 7.3%, MOVI 6.8%, FMUL 5.7%, FADD 4.7%, ADD (vector) 3.1%, FCSEL 2.8%, BFM 2.6%, then a long tail of
+scalar FP and NEON under 2% each. Blocks ending on a generic micro-op: 0.95M of the 654M runs (WFE, ISB, SEVL,
+MSR first). The decoded blocks: 12.9M decodes of 5.1M keys over the four tables.
+
+**Its handlers, not kept** (`fp/fp-simd-handlers.patch`): BFM; FMOV immediate, register and general; MOVI/MVNI;
+FCSEL; vector AND/BIC/ORR/ORN/EOR and ADD; DUP (general); the register-offset SIMD&FP loads and stores; FCMP/FCMPE
+(NaNs and FZ to the slow path); FMUL/FDIV/FADD/FSUB of S and D on the JIT's fast-path rules (RNE, IXC already set,
+FZ clear; a result normal above the smallest binade, else the slow path). Planted bugs failed the differential test
+(given edge values: NaNs, infinities, denormals, products near the smallest normal) and a directed test (a product
+that rounds up to the smallest normal is tiny before rounding: UFC). Measured:
+
+| | loop 9 | handlers |
+|---|---|---|
+| `dec_mips` / `vm_dec_flat_mips` / `vm_dec_mmu_mips` (medians of 3 rounds) | 446.6 / 445.3 / 442.1 | 442.0 / 441.5 / 433.5 (−1.0%, −0.9%, −2.0%, disjoint) |
+| Buildroot's / Alpine's boot | 132.8 / 194.7 | 132.4 / 195.1 |
+| pages session: busy MIPS (3 rounds) | 199, 199, 198 | 202, 199, 202 |
+| pages session: wiki, BBC load s | 10.0, 10.1, 10.4; 11.8, 11.8, 11.3 | 11.2, 11.4, 11.3; 11.5, 12.2, 11.9 |
+| pages session: interpreted G steps | 3.36, 3.36, 3.36 | 3.35, 3.37, 3.35 |
+
+The code they add to `hot` costs the integer paths 1-2% (as the literal load did in loop 2), and the browser's
+interpreted share is too small for the 1.9% to pay it back: busy MIPS overlap, the wiki page loaded slower in every
+round (page loads have moved ~1 s between sessions before, so not taken as a loss either). The FP handlers' fast
+paths would pay only where cold FP code runs long in the interpreter, which nothing measured does.
+
+**What decoding costs** (Next 2, loop 7's case; `decode/`, `dect.patch`: each decode timed with `now_ms`):
+Firefox's pages session, the four tables 2.75M, 3.16M, 3.62M and 3.15M decodes (3-4 restarts each) in 1.55, 1.80,
+2.04 and 1.79 s, ~0.6% of each vCPU's 320 s; Chromium in Debian on 4 vCPUs (`bench/apps/chromium.ts`, the boot and
+three renders of the new tab page, now 22.7, 10.4 and 9.7 s), ~1.4-1.8M decodes a table in 0.8-0.95 s, ~1.1% of
+the run. A decode is ~0.55 µs. **Loop 7 not built:** one store for every table saves at most the decodes another
+table already made, under 1% here, for a lock-free shared arena with epochs, a page generation against stale
+inserts and a heap reservation. Since the arenas were sized (2026-10-09: the renders took 45, 28, 26 s), the JIT
+compiles most of what the renders run, and decoding stopped being where their time goes.

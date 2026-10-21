@@ -43,12 +43,6 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   (a measuring build: UB under parallel SMP) on the yardstick, on a stable host (the user's desktop by hand, or a
   cloud session with many rounds). If it costs: plain loads with atomic stores only where another vCPU can observe
   them, or plain accesses with one vCPU or round-robin and atomics only in parallel SMP (the user's decision).
-- **One decoded-block store the tables share** (M8-INTERP loop 7, designed in the handover): each vCPU's table
-  decodes the same code again (Chromium in Debian on 4 vCPUs: ~1.5M re-decodes a warm render after full arenas;
-  the 2× arena gained ~3.5%). Worth more since the floor of 1000 (Firefox's pages session interprets 3.3 G steps
-  against 1.1 at 50).
-- **Count a browser's instruction mix**, then add the handlers it asks for: the diagnostic core
-  (`bench/interp/results/m8-interp-l0/diag.patch`, its log shim's 2 GiB pointer bug fixed) was never run there.
 - **The floor between 1000 and 2000, with `threshold_max` above it:** 2000 compiled 22% less than 500 in the pages
   session but lost 2% on Alpine's userspace and boot, in one session each.
 - **Compile by expected benefit against cost, not one floor** (the user's idea, 2026-10-21; supersedes tuning the
@@ -75,10 +69,11 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   both: 2000's less wasm and memory where code runs long, 1000's speed on cold code.
 - **A steadier Go workload:** the `go build` loop spread 1,094-1,489 MIPS across sessions at one floor and couldn't
   rank compile policies.
-- **More handlers.** The exclusives, LDAR/STLR, DMB and DC ZVA became handlers in M8-INTERP loop 9 (+6-9% on the
-  boots, far over their share of the instructions: a block ending on a generic micro-op ends the chain); LDXP/STXP,
-  CAS, BFM, MSR and the rest still run generically through `exec`. Each handler in the hot loop is code its hot path carries (the literal load inline cost the
-  user-mode guest 4-5%): measure every one on the small guests too. FP itself runs at a sixth of the integer rate
+- **More handlers, by workload.** The boots' generic path is now LDXP/STXP, CAS, MSR and the rest; a browser's
+  (Firefox's pages session, `bench/interp/REPORT.md` "M8-INTERP loop 10") 1.9% of its interpreted instructions,
+  scalar FP and NEON spread over dozens of classes, whose handlers cost `hot` 1-2% on integer code and gained
+  nothing measurable (`results/m8-interp-l9/fp/`). A handler pays where a class is common in code that stays
+  interpreted: weigh it against the small guests every time. FP itself runs at a sixth of the integer rate
   (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by lane through `u128`).
 - **`hot`'s cost per micro-op** (profiled 2026-10-21, `bench/interp/REPORT.md` "M8-INTERP loop 8"): ~30% of its
   time whatever the kind runs: V8's interrupt check at the loop head, four field loads, the jump table, and the

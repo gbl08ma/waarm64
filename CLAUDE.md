@@ -39,7 +39,9 @@ the threshold's floor at 1000 with one report from `warm` to it, a third less wa
 interpreter"), loop 8 done (`hot` re-profiled: the access path's invariants once a call, offset loads and stores
 with their own handler and in pairs, LSE's common ops as single atomics; +4-5% on the boots, +5-8% on the small
 guests), loop 9 done (the exclusives, LDAR/STLR, DMB and DC ZVA as handlers: +6-9% on the boots; the floor of 1000
-confirmed on the Mac), loop 7 (one decoded-block store for every table) and a browser's handlers left. **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
+confirmed on the Mac), loop 10 done (a browser's mix counted: its FP and NEON handlers not kept; one decoded-block
+store for every table not built, decoding being ~1% of a vCPU), the floor between 1000 and 2000 and a steadier Go
+gate left. **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
 cache lines, so guests issue 2 ICs a page; docs/jit.md "Sharing", bench/boot/REPORT.md). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 

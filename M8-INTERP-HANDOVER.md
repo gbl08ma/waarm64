@@ -26,17 +26,11 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
 1. **Settle the floor of 1000 on the Mac host.** Done (loop 9): three rounds, Alpine's boot and userspace no
    different, Buildroot's boot +4.6% at 1000; the floor stays (`bench/interp/REPORT.md` "M8-INTERP loop 9"). The
    pages session wasn't run there (its case is counts, host-independent).
-2. **Loop 7: one decoded-block store for every table.** Payoff: a few percent on 4-vCPU browser workloads, more now
-   that the floor of 1000 interprets more (Firefox's pages session 1.1 G steps at 50, 2.8 at 500, 3.3 at 1000).
-   Evidence: Chromium in Debian on 4 vCPUs re-decoded ~1.5M blocks a warm render after full arenas; the 2× arena
-   gained ~3.5% (`bench/apps/REPORT.md` "M8: the decoded blocks' arenas"). Test: the 4-vCPU Chromium renders
-   (`bench/apps/chromium.ts`, ≥4 pairs), the pages session, and the yardstick (`hot` mustn't slow). Design below.
-3. **Count a browser's mix, then add the handlers it asks for.** Payoff: unknown; the boots' generic path is now a
-   few percent of their instructions, a browser's may differ (NEON and FP arithmetic, the exclusives, `DC ZVA`).
-   Evidence: the boots' counts only (`bench/interp/results/m8-interp-l0/mix-*.txt`). Test: apply
-   `bench/interp/results/m8-interp-l0/diag.patch` (its log shim now reads heap pointers past 2 GiB as unsigned:
-   reading them as negative crashed the first try's vCPU worker), run the pages session from the snapshot with that
-   core (`bench/gpu/ab.sh`), then `node bench/interp/results/m8-interp-l0/diag.ts <session>/results.json`.
+2. **Loop 7: one decoded-block store for every table.** Closed by measurement (loop 10): decoding is ~0.6% of a
+   vCPU in Firefox's pages session and ~1.1% in Chromium's renders on 4 vCPUs; not built (`bench/interp/REPORT.md`
+   "M8-INTERP loop 10"; the design is in git history, this file before loop 10).
+3. **Count a browser's mix, then add the handlers it asks for.** Done (loop 10): 1.9% generic, spread over scalar FP
+   and NEON; their handlers cost the small guests 1-2% and gained nothing in the pages session; not kept.
 4. **What the guest accesses' atomics cost on x86_64.** Payoff: unknown, possibly the largest here for most users.
    Evidence: on the M4, perf's cycle samples on `run`'s 24 `ldar`/`stlr` plus the instruction after were 0.24% of
    `run`'s (acquire/release is nearly free there); what it doesn't cover: x86_64 (the user's desktop and most users), where wasm's
@@ -73,24 +67,6 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
 Dropped by argument, not measurement: threaded dispatch through tail calls (a `call_indirect` is 2.5 ns on the M4,
 more than a predicted jump-table branch; there's no PMU in the VM to count mispredicts), and the reference
 interpreter's speed (only tests use it).
-
-## Loop 7's design (not built)
-
-- **What's shared and what isn't.** The micro-ops and the key → (start, len) map are shared (one `Arc`, beside the
-  JIT `Cache`); each table keeps its own slots (key, start, len, quota, hits): the counting stays per table, as
-  `Cache::miss` expects, and `hot` reads only the slot and the arena, so its loop doesn't change.
-- **Appends without a lock on the read side.** The arena is one fixed allocation of the VM's whole budget (16M
-  micro-ops, 256 MiB), never moved; a writer reserves its range with an atomic `fetch_add` on the fill, writes the
-  micro-ops, then publishes (start, len) in the shared map under a mutex (decodes are rare: ~140K in Alpine's boot).
-  A table that misses its slot looks in the shared map before it decodes. Two tables decoding one key at once both
-  append; the second insert loses and its range is garbage until the arena starts over (counted, bounded).
-- **Starting over: an epoch, as the code cache's `drops`.** At the budget the writer bumps an epoch, and every table
-  clears its slots when it passes `Jit::fresh` with the new one (as the `drops` path does for compiled code); with
-  two halves, a table still on the old epoch reads micro-ops that stay valid until the epoch after.
-- **Invalidation** (`IC IVAU`) stays per table: each drops its slots for the page when it catches up with the
-  `ival_log`; the shared map drops the page's keys under its mutex.
-- **Check first:** the shared map's mutex on every slot miss (~2M misses a warm Chromium render on 4 tables); if it
-  shows, an open-addressed table of (key, start|len) words written with a CAS.
 
 ## Not to do
 

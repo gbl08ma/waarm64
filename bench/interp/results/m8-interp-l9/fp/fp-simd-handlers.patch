@@ -1,0 +1,507 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index baea502..5a64490 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -109,8 +109,9 @@ enum K {
+     /// RBIT, REV16, REV32, REV, CLZ (`x` 0 to 4) | sf << 8.
+     Bit1,
+     /// SIMD&FP LDR/STR (unsigned offset, unscaled, pre- and post-index) and
+-    /// LDP/STP: `d` Rt, `n` Rn, `m` Rt2; `x` = log2 bytes | mode << 3 (0 offset,
+-    /// 1 pre-index, 2 post-index) | load << 5 | pair << 6; `imm` the offset (low
++    /// LDP/STP: `d` Rt, `n` Rn, `m` Rt2 (Rm in mode 3); `x` = log2 bytes | mode << 3
++    /// (0 offset, 1 pre-index, 2 post-index, 3 register offset) | load << 5 | pair << 6
++    /// | option << 8 | S << 11 (mode 3); `imm` the offset (low
+     /// 32 bits, signed) and the word (high 32: [`run`] runs it generically).
+     Fp,
+     /// LD<op> and SWP of a W or X register: `d` Rt, `n` Rn, `m` Rs; `x` = sf |
+@@ -127,6 +128,26 @@ enum K {
+     Dmb,
+     /// DC ZVA of `Xd`'s 64-byte block: `imm` the word.
+     Zva,
++    /// BFM: `Xd = Xd & !imm | ROR(Xn, m) & imm` (`imm` wmask & tmask, `x` sf).
++    Bfm,
++    /// `Vd = imm`, the high half `imm` too if `x` (FMOV immediate, MOVI, MVNI).
++    VImm,
++    /// FMOV between a general register and S or D: `x` = double | to V << 1.
++    FmovG,
++    /// FCSEL (FMOV register: cond AL): `Vd = cond ? Vn : Vm`, low S or D;
++    /// `x` = cond | double << 4.
++    Fsel,
++    /// AND, BIC, ORR, ORN, EOR (vector): `x` = op (0 to 4) | Q << 3.
++    VLog,
++    /// ADD (vector): `x` = size | Q << 2.
++    VAdd,
++    /// DUP (general): `imm` the replicating multiplier, `x` = the element's
++    /// mask's bits | Q << 7.
++    DupG,
++    /// FCMP/FCMPE of S or D: `x` = double | with zero << 1 | E << 2.
++    Fcmp,
++    /// FMUL, FDIV, FADD, FSUB of S or D: `x` = double | op << 1 (that order).
++    Farith,
+     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
+     LdLit,
+     /// MRS of a register `sys::plain` reads at the block's EL (made by `uop_el`, after
+@@ -326,7 +347,7 @@ fn uop_op(w: u32, op: Op) -> Uop {
+             }
+         }
+ 
+-        SBFM | UBFM | ASR_1 | ASR_2 | SXTB_1 | SXTB_2 | SXTH_1 | SXTH_2 | SXTW => {
++        SBFM | BFM | UBFM | ASR_1 | ASR_2 | SXTB_1 | SXTB_2 | SXTH_1 | SXTH_2 | SXTW => {
+             let (n, immr, imms) = (bits(w, 22, 22), bits(w, 21, 16), bits(w, 15, 10));
+             if (sf && n != 1) || (!sf && (n != 0 || immr >= 32 || imms >= 32)) {
+                 return generic;
+@@ -336,6 +357,7 @@ fn uop_op(w: u32, op: Op) -> Uop {
+             };
+             match bits(w, 30, 29) {
+                 0 => Uop::new(K::Sbfm, rd, rn, immr, imms | (sf as u32) << 8, 0),
++                1 => Uop::new(K::Bfm, rd, rn, immr, sf as u32, wmask & tmask),
+                 2 => Uop::new(K::Ubfm, rd, rn, immr, sf as u32, wmask & tmask),
+                 _ => generic,
+             }
+@@ -495,6 +517,20 @@ fn uop_op(w: u32, op: Op) -> Uop {
+                 off as u32 as u64 | (w as u64) << 32,
+             )
+         }
++        STR_reg_fpsimd | LDR_reg_fpsimd => {
++            let log = match (bits(w, 31, 30), bit(w, 23)) {
++                (0, true) => 4,
++                (s, false) => s,
++                _ => return generic,
++            };
++            let option = bits(w, 15, 13);
++            if option & 2 == 0 {
++                return generic;
++            }
++            let x =
++                log | 3 << 3 | (bit(w, 22) as u32) << 5 | option << 8 | (bit(w, 12) as u32) << 11;
++            Uop::new(K::Fp, rd, rn, rm, x, (w as u64) << 32)
++        }
+         LDADD | LDCLR | LDEOR | LDSET | LDSMAX | LDSMIN | LDUMAX | LDUMIN | SWP
+             if bits(w, 31, 30) >= 2 && bits(w, 15, 12) <= 8 =>
+         {
+@@ -511,6 +547,78 @@ fn uop_op(w: u32, op: Op) -> Uop {
+             w as u64,
+         ),
+         DMB => u(K::Dmb, 0, w as u64),
++        FMOV_float_imm | FMOV_float | FCSEL_float | FCMP_float | FCMPE_float | FMUL_float
++        | FDIV_float | FADD_float | FSUB_float
++            if bits(w, 23, 22) < 2 =>
++        {
++            let dbl = bits(w, 23, 22);
++            match op {
++                FMOV_float_imm => {
++                    let n = if dbl == 1 { 64 } else { 32 };
++                    u(K::VImm, 0, super::simd::vfp_expand_imm(bits(w, 20, 13), n))
++                }
++                FMOV_float => u(K::Fsel, 14 | dbl << 4, w as u64),
++                FCSEL_float => u(K::Fsel, bits(w, 15, 12) | dbl << 4, w as u64),
++                FCMP_float | FCMPE_float => u(
++                    K::Fcmp,
++                    dbl | (bit(w, 3) as u32) << 1 | ((op == FCMPE_float) as u32) << 2,
++                    w as u64,
++                ),
++                _ => {
++                    let k = match op {
++                        FMUL_float => 0,
++                        FDIV_float => 1,
++                        FADD_float => 2,
++                        _ => 3,
++                    };
++                    u(K::Farith, dbl | k << 1, w as u64)
++                }
++            }
++        }
++        MOVI | FMOV_2 => {
++            let (op1, cmode, q) = (bit(w, 29), bits(w, 15, 12), bit(w, 30));
++            if cmode & 1 == 1 && cmode < 12 {
++                return generic; // ORR, BIC: they read Vd
++            }
++            let imm8 = bits(w, 18, 16) << 5 | bits(w, 9, 5);
++            match super::simd::adv_simd_expand_imm(op1, cmode, imm8, q) {
++                Ok(imm) if op1 && cmode < 14 => u(K::VImm, q as u32, !imm),
++                Ok(imm) => u(K::VImm, q as u32, imm),
++                Err(_) => generic,
++            }
++        }
++        FMOV_float_gen => match (sf, bits(w, 23, 22), bits(w, 20, 19)) {
++            (false, 0, 0) | (true, 1, 0) => {
++                u(K::FmovG, sf as u32 | (bit(w, 16) as u32) << 1, w as u64)
++            }
++            _ => generic,
++        },
++        AND_asimd | BIC_asimd_reg | ORR_asimd_reg | ORN_asimd | EOR_asimd => {
++            let k = match op {
++                AND_asimd => 0,
++                BIC_asimd_reg => 1,
++                ORR_asimd_reg => 2,
++                ORN_asimd => 3,
++                _ => 4,
++            };
++            u(K::VLog, k | (bit(w, 30) as u32) << 3, w as u64)
++        }
++        ADD_vector => {
++            let (size, q) = (bits(w, 23, 22), bit(w, 30));
++            if size == 3 && !q {
++                return generic;
++            }
++            u(K::VAdd, size | (q as u32) << 2, w as u64)
++        }
++        DUP_gen => {
++            let (size, q) = (bits(w, 20, 16).trailing_zeros(), bit(w, 30));
++            if size > 3 || size == 3 && !q {
++                return generic;
++            }
++            let esize = 8u32 << size;
++            let mult = u64::MAX / (u64::MAX >> (64 - esize));
++            u(K::DupG, esize | (q as u32) << 7, mult)
++        }
+         DC_ZVA => u(K::Zva, 0, w as u64),
+         STP_LDP_gen | STNP_LDNP_gen => {
+             let (opc, load) = (bits(w, 31, 30), bit(w, 22));
+@@ -651,7 +759,35 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
+                     return (k as u64, Some(e));
+                 }
+             }
+-            K::Lse | K::Ldx | K::Stx | K::Dmb | K::Zva => {
++            K::Bfm => {
++                let src = ror(trunc(c.reg(n), sf), u.m as u32, sf) & u.imm;
++                c.set_reg(d, trunc(c.reg(d) & !u.imm | src, sf));
++            }
++            K::VImm | K::DupG => {
++                if let Err(e) = super::fp_enabled(c) {
++                    c.pc = pc;
++                    return (k as u64, Some(e));
++                }
++                let v = if u.k == K::VImm {
++                    (u.imm, u.x != 0)
++                } else {
++                    let esize = u.x & 127;
++                    let e = c.reg(n) & u64::MAX >> (64 - esize);
++                    (e.wrapping_mul(u.imm), u.x >> 7 != 0)
++                };
++                c.v[d as usize] = v.0 as u128 | if v.1 { (v.0 as u128) << 64 } else { 0 };
++            }
++            K::Lse
++            | K::Ldx
++            | K::Stx
++            | K::Dmb
++            | K::Zva
++            | K::FmovG
++            | K::Fsel
++            | K::VLog
++            | K::VAdd
++            | K::Fcmp
++            | K::Farith => {
+                 let w = u.imm as u32;
+                 if let Err(e) = super::exec_at_op(c, m, w, pc, crate::decode::decode(w)) {
+                     return (k as u64, Some(e));
+@@ -1039,10 +1175,147 @@ pub fn hot<B: Fast>(
+                         unsafe { mem::store_aligned(p.add(8 * k), 8, 0) };
+                     }
+                 }
++                K::Bfm => {
++                    let src = ror(trunc(rd(c, n), sf), o.m as u32 & 63, sf) & o.imm;
++                    wr(c, d, trunc(rd(c, d) & !o.imm | src, sf));
++                }
++                K::VImm | K::DupG | K::FmovG | K::Fsel | K::VLog | K::VAdd if !fp_on(c) => {
++                    break 'run SLOW;
++                }
++                K::VImm => {
++                    let q = if o.x != 0 { (o.imm as u128) << 64 } else { 0 };
++                    c.v[(d & 31) as usize] = o.imm as u128 | q;
++                }
++                K::DupG => {
++                    let esize = o.x & 127;
++                    let e = (rd(c, n) & u64::MAX >> (64 - esize & 63)).wrapping_mul(o.imm);
++                    let q = if o.x >> 7 != 0 { (e as u128) << 64 } else { 0 };
++                    c.v[(d & 31) as usize] = e as u128 | q;
++                }
++                K::FmovG => {
++                    let mask = if sf { u64::MAX } else { u32::MAX as u64 };
++                    if o.x & 2 != 0 {
++                        c.v[(d & 31) as usize] = (rd(c, n) & mask) as u128;
++                    } else {
++                        wr(c, d, c.v[(n & 31) as usize] as u64 & mask);
++                    }
++                }
++                K::Fsel => {
++                    let r = if cond_holds(c.nzcv, o.x & 15) {
++                        n
++                    } else {
++                        o.m as u32
++                    };
++                    let mask = if o.x >> 4 & 1 != 0 {
++                        u64::MAX
++                    } else {
++                        u32::MAX as u64
++                    };
++                    c.v[(d & 31) as usize] = (c.v[(r & 31) as usize] as u64 & mask) as u128;
++                }
++                K::VLog => {
++                    let (a, b) = (c.v[(n & 31) as usize], c.v[(o.m & 31) as usize]);
++                    let r = match o.x & 7 {
++                        0 => a & b,
++                        1 => a & !b,
++                        2 => a | b,
++                        3 => a | !b,
++                        _ => a ^ b,
++                    };
++                    c.v[(d & 31) as usize] = if o.x & 8 != 0 { r } else { r as u64 as u128 };
++                }
++                K::VAdd => {
++                    let (a, b) = (c.v[(n & 31) as usize], c.v[(o.m & 31) as usize]);
++                    // Each lane's top bit apart, so no carry crosses lanes.
++                    let h = match o.x & 3 {
++                        0 => 0x8080_8080_8080_8080u64,
++                        1 => 0x8000_8000_8000_8000,
++                        2 => 0x8000_0000_8000_0000,
++                        _ => 0,
++                    };
++                    let add = |a: u64, b: u64| ((a & !h).wrapping_add(b & !h)) ^ ((a ^ b) & h);
++                    let lo = add(a as u64, b as u64);
++                    let hi = if o.x & 4 != 0 {
++                        add((a >> 64) as u64, (b >> 64) as u64)
++                    } else {
++                        0
++                    };
++                    c.v[(d & 31) as usize] = lo as u128 | (hi as u128) << 64;
++                }
++                K::Fcmp => {
++                    // NaNs (IOC, unordered) and FZ (denormals flushed, IDC): the slow path.
++                    if !fp_on(c) || c.fpcr & FZ != 0 {
++                        break 'run SLOW;
++                    }
++                    let (a, b) = (
++                        c.v[(n & 31) as usize] as u64,
++                        c.v[(o.m & 31) as usize] as u64,
++                    );
++                    let b = if o.x & 2 != 0 { 0 } else { b };
++                    let (lt, eq) = if sf {
++                        let (x, y) = (f64::from_bits(a), f64::from_bits(b));
++                        if x.is_nan() || y.is_nan() {
++                            break 'run SLOW;
++                        }
++                        (x < y, x == y)
++                    } else {
++                        let (x, y) = (f32::from_bits(a as u32), f32::from_bits(b as u32));
++                        if x.is_nan() || y.is_nan() {
++                            break 'run SLOW;
++                        }
++                        (x < y, x == y)
++                    };
++                    c.nzcv = if eq {
++                        0b0110 << 28
++                    } else if lt {
++                        0b1000 << 28
++                    } else {
++                        0b0010 << 28
++                    };
++                }
++                K::Farith => {
++                    // As the JIT's fast paths (docs/jit.md "Floating point"): in
++                    // RNE with IXC set and FZ clear, a result normal above the
++                    // smallest binade is exact and raises nothing new.
++                    if !fp_on(c) || c.fpcr & (RMODE | FZ) != 0 || c.fpsr & IXC == 0 {
++                        break 'run SLOW;
++                    }
++                    let (a, b) = (
++                        c.v[(n & 31) as usize] as u64,
++                        c.v[(o.m & 31) as usize] as u64,
++                    );
++                    let r = if sf {
++                        let (x, y) = (f64::from_bits(a), f64::from_bits(b));
++                        let r = match o.x >> 1 & 3 {
++                            0 => x * y,
++                            1 => x / y,
++                            2 => x + y,
++                            _ => x - y,
++                        }
++                        .to_bits();
++                        if (r >> 52 & 0x7ff).wrapping_sub(2) >= 0x7fd {
++                            break 'run SLOW;
++                        }
++                        r
++                    } else {
++                        let (x, y) = (f32::from_bits(a as u32), f32::from_bits(b as u32));
++                        let r = match o.x >> 1 & 3 {
++                            0 => x * y,
++                            1 => x / y,
++                            2 => x + y,
++                            _ => x - y,
++                        }
++                        .to_bits();
++                        if (r >> 23 & 0xff).wrapping_sub(2) >= 0xfd {
++                            break 'run SLOW;
++                        }
++                        r as u64
++                    };
++                    c.v[(d & 31) as usize] = r as u128;
++                }
+                 K::Fp => {
+                     // FPEN, as `interp::fp_enabled`; then the SP's alignment.
+-                    let en = c.cpacr_el1 >> 20 & 3;
+-                    if en != 3 && !(en == 1 && c.el() == 1) {
++                    if !fp_on(c) {
+                         break 'run SLOW;
+                     }
+                     let base = rsp(c, n);
+@@ -1051,10 +1324,13 @@ pub fn hot<B: Fast>(
+                     }
+                     let (log, mode) = (o.x & 7, o.x >> 3 & 3);
+                     let off = o.imm as u32 as i32 as i64 as u64;
+-                    let addr = if mode == 2 {
+-                        base
+-                    } else {
+-                        base.wrapping_add(off)
++                    let addr = match mode {
++                        2 => base,
++                        3 => {
++                            let amt = if o.x >> 11 & 1 != 0 { o.x & 7 } else { 0 };
++                            base.wrapping_add(extend(rd(c, o.m as u32), o.x >> 8 & 7, amt))
++                        }
++                        _ => base.wrapping_add(off),
+                     };
+                     let (bytes, pair, load) = (1u32 << log, o.x >> 6 & 1 != 0, o.x >> 5 & 1 != 0);
+                     let a2 = addr.wrapping_add(bytes as u64);
+@@ -1109,7 +1385,7 @@ pub fn hot<B: Fast>(
+                             }
+                         }
+                     }
+-                    if mode != 0 {
++                    if mode == 1 || mode == 2 {
+                         wsp(c, n, base.wrapping_add(off));
+                     }
+                 }
+@@ -1382,6 +1658,19 @@ pub fn run_hot(c: &mut Cpu, m: &mut impl Fast, b: &[Uop], pc: u64) -> (u64, Opti
+     }
+ }
+ 
++/// FPCR's rounding mode and flush-to-zero bits, and FPSR's cumulative Inexact.
++const RMODE: u64 = 3 << 22;
++const FZ: u64 = 1 << 24;
++const IXC: u64 = 1 << 4;
++
++/// FP and AdvSIMD enabled at the current EL (`CPACR_EL1.FPEN`), as
++/// `interp::fp_enabled`.
++#[inline(always)]
++fn fp_on(c: &Cpu) -> bool {
++    let en = c.cpacr_el1 >> 20 & 3;
++    en == 3 || en == 1 && c.el() == 1
++}
++
+ /// A sequentially consistent load of `size` bytes (1, 2, 4 or 8) at `p`,
+ /// as `mem::load_atomic` without its panic for another size.
+ ///
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index ccee008..c26ce34 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -136,6 +136,27 @@ fn classes() -> Vec<(u32, u32, Op)> {
+         STLR,
+         DMB,
+         DC_ZVA,
++        FMOV_float_imm,
++        FMOV_float,
++        FCSEL_float,
++        FCMP_float,
++        FCMPE_float,
++        FMUL_float,
++        FDIV_float,
++        FADD_float,
++        FSUB_float,
++        MOVI,
++        FMOV_2,
++        FMOV_float_gen,
++        AND_asimd,
++        BIC_asimd_reg,
++        ORR_asimd_reg,
++        ORN_asimd,
++        EOR_asimd,
++        ADD_vector,
++        DUP_gen,
++        LDR_reg_fpsimd,
++        STR_reg_fpsimd,
+         LDTR,
+         CAS,
+         LDADD,
+@@ -200,7 +221,39 @@ fn state(r: &mut Rng) -> Cpu {
+     c.sctlr_el1 = if r.below(4) == 0 { 0 } else { sctlr::DZE };
+     for v in &mut c.v {
+         *v = (r.next() as u128) << 64 | r.next() as u128;
++        // Half the time, FP values whose results stay normal (the fast paths).
++        let f =
++            |r: &mut Rng| (r.below(1 << 20) as f64 - (1 << 19) as f64) / (1 + r.below(4096)) as f64;
++        // And edge values: products near the smallest normal, NaNs, infinities, zeros, denormals.
++        let edge = |r: &mut Rng, dbl: bool| {
++            let (bias, man) = if dbl { (1023u64, 52) } else { (127, 23) };
++            let frac = r.next() & ((1 << man) - 1);
++            let sign = r.below(2) << (man + if dbl { 11 } else { 8 });
++            let exp = match r.below(6) {
++                0 => bias / 2 + r.below(24) - 12,
++                1 => 0,
++                2 => (2 * bias + 1) * (frac & 1),
++                3 => 2 * bias + 1,
++                _ => 1 + r.below(3),
++            };
++            sign | exp << man | if exp == 0 && r.below(2) == 0 { 0 } else { frac }
++        };
++        match r.below(6) {
++            0 => *v = *v & !(u64::MAX as u128) | f(r).to_bits() as u128,
++            1 => *v = *v & !(u32::MAX as u128) | (f(r) as f32).to_bits() as u128,
++            2 => *v = *v & !(u64::MAX as u128) | edge(r, true) as u128,
++            3 => *v = *v & !(u32::MAX as u128) | edge(r, false) as u128,
++            _ => {}
++        }
+     }
++    // FPCR mostly round-to-nearest with FZ and DN clear; FPSR.IXC set half the time.
++    c.fpcr = match r.below(8) {
++        0 => r.below(4) << 22,
++        1 => 1 << 24,
++        2 => 1 << 25,
++        _ => 0,
++    };
++    c.fpsr = if r.below(2) == 0 { 1 << 4 } else { 0 };
+     c.x[31] = if r.below(8) == 0 {
+         r.below(DATA)
+     } else {
+@@ -473,3 +526,40 @@ fn an_empty_block_is_remembered_until_its_page_goes() {
+     assert_eq!(c.get(CODE, &t.mem).map(<[Uop]>::len), Some(2));
+     assert_eq!(c.decoded, 1);
+ }
++
++/// A product that rounds up to the smallest normal is tiny before rounding
++/// (UFC): the fast path's result check must leave the smallest binade to
++/// the slow path, which random operands rarely reach.
++#[test]
++fn a_result_rounded_up_to_the_smallest_normal_underflows() {
++    // FMUL d0, d1, d2 and FMUL s0, s1, s2.
++    for (w, x, y) in [
++        (
++            0x1e62_0820u32,
++            (1.0f64 - f64::EPSILON / 2.0).to_bits(),
++            f64::MIN_POSITIVE.to_bits(),
++        ),
++        (
++            0x1e22_0820,
++            (1.0f32 - f32::EPSILON / 2.0).to_bits() as u64,
++            f32::MIN_POSITIVE.to_bits() as u64,
++        ),
++    ] {
++        let t = TestRam::new(RAM);
++        t.mem.write(CODE, 4, w as u64).unwrap();
++        let mut c0 = Cpu {
++            pc: CODE,
++            cpacr_el1: 3 << 20,
++            fpsr: IXC,
++            ..Cpu::default()
++        };
++        (c0.v[1], c0.v[2]) = (x as u128, y as u128);
++        let mut want = c0.clone();
++        interp::steps(&mut want, &t.mem, None, 1);
++        assert_ne!(want.fpsr & 8, 0, "the interpreter's UFC");
++        let u = [uop(w)];
++        let mut got = c0.clone();
++        run_hot(&mut got, &mut Flat(&t.mem), &u, CODE);
++        assert_eq!(got, want, "{w:#x}");
++    }
++}

@@ -280,7 +280,10 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   successors were measured and not kept (docs/cpu.md). Loop 8 (2026-10-21) re-profiled `hot` and took the
   interpreter alone to 447 MIPS on the user-mode guest and 184 on Alpine's boot (+5.1%, +4.5%): the access path's
   invariants once a call, offset loads and stores with their own handler and in pairs, LSE's common ops as single
-  atomics. Left: one decoded-block store for every table (loop 7), more handlers.
+  atomics. Loop 9 made the exclusives, LDAR/STLR, DMB and DC ZVA handlers (Alpine's boot 195, Buildroot's 134: a
+  generic micro-op costs `hot`'s exit and re-entry); loop 10 counted a browser's mix (1.9% generic, FP and NEON:
+  their handlers not kept) and measured decoding at ~1% of a vCPU, so one decoded-block store for every table
+  wasn't built. Left: the floor between 1000 and 2000, a steadier Go gate.
 
 ### M9 — Backlog
 

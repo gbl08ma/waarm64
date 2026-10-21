@@ -1,0 +1,23 @@
+# console: webpc-slow dect 8052bce0 decoded 1 clears 0 ms 0
+# console: webpc-slow dect 809c88f0 decoded 1 clears 1 ms 0
+# console: webpc-slow dect 80c0a6c0 decoded 1 clears 1 ms 0
+# console: webpc-slow dect 80e4c490 decoded 1 clears 1 ms 0
+# console: webpc-slow dect 8052bce0 decoded 144724 clears 8 ms 67
+# logged in at 32.6 s
+# console: webpc-slow dect 809c88f0 decoded 264635 clears 6 ms 142
+# console: webpc-slow dect 80c0a6c0 decoded 223554 clears 5 ms 119
+# console: webpc-slow dect 80e4c490 decoded 208397 clears 4 ms 115
+# console: webpc-slow dect 8052bce0 decoded 399107 clears 8 ms 208
+# console: webpc-slow dect 809c88f0 decoded 1022528 clears 7 ms 570
+# console: webpc-slow dect 80c0a6c0 decoded 823575 clears 5 ms 459
+# console: webpc-slow dect 80e4c490 decoded 678246 clears 4 ms 399
+# 6e2089e98626e256c201a00b9cfa2b7f /tmp/s0.png[603:603:1021/214645.926989:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedeskt24159 bytes written to file /tmp/s0.png[603:603:1021/214658.065164:ERROR:chrome/browser/ui/webui/ntp/new_tab_ui.cc:54] Requested load of chrome://newtab/ for incorrect profile type. total used free shared buff/cache availableMem: 1963 216 1443 5 375 1746
+0 chrome://newtab: rc 0, 22664 ms (guest), png 24159 B, guest CPU busy 58% of 4 (user 35, sys 23, iowait 11), major faults 2312, 7.97 G steps at 347 MIPS, interpreted 10.09% (804 M), compiling 220 ms, 39.0 MiB wasm, 23388 blocks, flushes 0, invalidations 50, dispatches 29.7 M, TLB misses 14.4 M, exceptions 0.25 M, DSB wait 0.3 s, out of core 37.6 s
+# console: webpc-slow dect 8052bce0 decoded 1393780 clears 9 ms 763
+# 6e2089e98626e256c201a00b9cfa2b7f /tmp/s1.png[756:756:1021/214701.522030:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedeskt24159 bytes written to file /tmp/s1.png[756:756:1021/214709.160135:ERROR:chrome/browser/ui/webui/ntp/new_tab_ui.cc:54] Requested load of chrome://newtab/ for incorrect profile type. total used free shared buff/cache availableMem: 1963 217 1441 5 375 1745
+1 chrome://newtab: rc 0, 10427 ms (guest), png 24159 B, guest CPU busy 83% of 4 (user 53, sys 31, iowait 0), major faults 2, 6.38 G steps at 639 MIPS, interpreted 4.71% (301 M), compiling 31 ms, 4.1 MiB wasm, 2696 blocks, flushes 0, invalidations 41, dispatches 17.4 M, TLB misses 12.2 M, exceptions 0.21 M, DSB wait 0.2 s, out of core 6.8 s
+# console: webpc-slow dect 809c88f0 decoded 1583149 clears 7 ms 868
+# console: webpc-slow dect 80c0a6c0 decoded 1761234 clears 7 ms 947
+# console: webpc-slow dect 80e4c490 decoded 1495833 clears 5 ms 828
+# 6e2089e98626e256c201a00b9cfa2b7f /tmp/s2.png[903:903:1021/214711.878259:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedeskt24159 bytes written to file /tmp/s2.png[903:903:1021/214719.244749:ERROR:chrome/browser/ui/webui/ntp/new_tab_ui.cc:54] Requested load of chrome://newtab/ for incorrect profile type. total used free shared buff/cache availableMem: 1963 195 1463 5 375 1767
+2 chrome://newtab: rc 0, 9740 ms (guest), png 24159 B, guest CPU busy 85% of 4 (user 53, sys 31, iowait 0), major faults 0, 6.15 G steps at 683 MIPS, interpreted 3.91% (240 M), compiling 45 ms, 12.8 MiB wasm, 7667 blocks, flushes 0, invalidations 107, dispatches 15.3 M, TLB misses 11.7 M, exceptions 0.20 M, DSB wait 0.2 s, out of core 4.8 s

@@ -1,0 +1,219 @@
+diff --git a/core/src/interp.rs b/core/src/interp.rs
+index b2a815c..f45bb1f 100644
+--- a/core/src/interp.rs
++++ b/core/src/interp.rs
+@@ -5,6 +5,7 @@
+ //! takes them into EL1 the way hardware does.
+ 
+ pub(crate) mod block;
++pub mod diag;
+ mod float;
+ mod ldst;
+ mod ldst_fp;
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index baea502..21240f7 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -1350,6 +1350,7 @@ pub fn hot<B: Fast>(
+         // SAFETY: n <= its length.
+         end = unsafe { u.add(n as usize) };
+         done += n;
++        dec.diag.ran(k);
+         (key, bpc) = (k, next);
+     };
+     (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, done);
+@@ -1825,6 +1826,7 @@ pub struct Cache {
+     pub decoded: u64,
+     pub clears: u64,
+     pub rescues: u64,
++    pub diag: super::diag::Diag,
+ }
+ 
+ #[inline(always)]
+@@ -1849,6 +1851,7 @@ impl Cache {
+             decoded: 0,
+             clears: 0,
+             rescues: 0,
++            diag: Default::default(),
+         }
+     }
+ 
+@@ -1871,9 +1874,13 @@ impl Cache {
+             Some(e) if e.1 == 0 => return None,
+             Some(_) => {}
+             None => {
++                let mut ops = Vec::new();
+                 let mut uops = crate::jit::block::form_with(mem, key & !3, |w, op| {
+-                    uop_el(w, op, key & 1 != 0)
++                    let u = uop_el(w, op, key & 1 != 0);
++                    ops.push(op as u16 | if u.k == K::Generic { super::diag::GENERIC } else { 0 });
++                    u
+                 });
++                self.diag.decoded(key, ops);
+                 mov_runs(&mut uops);
+                 // Full (its micro-ops, or its keys: blocks of one or none
+                 // fill the map before the arena), it starts over; with no
+diff --git a/core/src/interp/diag.rs b/core/src/interp/diag.rs
+new file mode 100644
+index 0000000..3c48dd9
+--- /dev/null
++++ b/core/src/interp/diag.rs
+@@ -0,0 +1,125 @@
++//! DIAGNOSTIC (M8-INTERP loop 0; not for commit): the decoded blocks' instruction mix, statically
++//! (each block key once) and dynamically (weighted by the block's runs in the block interpreter),
++//! the generic path's share by class, and adjacent pairs and triples. Dumped as `webpc-slow diag`
++//! lines (every second for the first minute, then every 20 s).
++use crate::decode::Op;
++use std::collections::HashMap;
++
++pub const GENERIC: u16 = 0x8000;
++
++#[derive(Default)]
++pub struct Diag {
++    map: HashMap<u64, (Vec<u16>, u64), crate::jit::KeyBuild>,
++    runs: u64,
++    t0: f64,
++    last: f64,
++    decodes: u64,
++}
++
++fn now() -> f64 {
++    #[cfg(target_arch = "wasm32")]
++    // SAFETY: a host function with no preconditions.
++    return unsafe { crate::vm::now_ms() };
++    #[cfg(not(target_arch = "wasm32"))]
++    {
++        use std::sync::OnceLock;
++        static T: OnceLock<std::time::Instant> = OnceLock::new();
++        T.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1e3
++    }
++}
++
++#[cfg(target_arch = "wasm32")]
++#[link(wasm_import_module = "env")]
++unsafe extern "C" {
++    fn diag_log(ptr: *const u8, len: usize);
++}
++
++fn name(o: u16) -> String {
++    let g = if o & GENERIC != 0 { "*" } else { "" };
++    format!("{:?}{g}", Op::ALL[(o & 0x7fff) as usize])
++}
++
++impl Diag {
++    pub fn decoded(&mut self, key: u64, ops: Vec<u16>) {
++        self.decodes += 1;
++        let e = self.map.entry(key).or_insert((Vec::new(), 0));
++        e.0 = ops;
++    }
++
++    #[inline(always)]
++    pub fn ran(&mut self, key: u64) {
++        if let Some(e) = self.map.get_mut(&key) {
++            e.1 += 1;
++        }
++        self.runs += 1;
++        if self.runs & 0xffff == 0 {
++            let t = now();
++            if self.t0 == 0.0 {
++                self.t0 = t;
++            }
++            let period = 20_000.0;
++            if t - self.last >= period {
++                self.last = t;
++                self.dump();
++            }
++        }
++    }
++
++    pub fn dump(&self) {
++        let id = self as *const _ as usize;
++        let mut s = format!("webpc-slow diag {id:x} runs {} decodes {} keys {}", self.runs, self.decodes, self.map.len());
++        type M = HashMap<u64, u64>;
++        let (mut st, mut dy, mut sp, mut dp, mut stt, mut dt) =
++            (M::new(), M::new(), M::new(), M::new(), M::new(), M::new());
++        let (mut insns_s, mut insns_d) = (0u64, 0u64);
++        let mut dl = M::new();
++        for (ops, n) in self.map.values() {
++            let n = *n;
++            if let Some(&l) = ops.last()
++                && l & GENERIC != 0
++            {
++                *dl.entry(l as u64).or_default() += n;
++            }
++            insns_s += ops.len() as u64;
++            insns_d += ops.len() as u64 * n;
++            for (i, &o) in ops.iter().enumerate() {
++                let o = o as u64;
++                *st.entry(o).or_default() += 1;
++                *dy.entry(o).or_default() += n;
++                if i + 1 < ops.len() {
++                    let p = o << 16 | ops[i + 1] as u64;
++                    *sp.entry(p).or_default() += 1;
++                    *dp.entry(p).or_default() += n;
++                    if i + 2 < ops.len() {
++                        let p = p << 16 | ops[i + 2] as u64;
++                        *stt.entry(p).or_default() += 1;
++                        *dt.entry(p).or_default() += n;
++                    }
++                }
++            }
++        }
++        s += &format!(" insns_s {insns_s} insns_d {insns_d}");
++        let top = |s: &mut String, tag: &str, m: &M, k: usize, w: usize| {
++            let mut v: Vec<_> = m.iter().collect();
++            v.sort_by_key(|a| core::cmp::Reverse(*a.1));
++            for (&key, n) in v.into_iter().take(k) {
++                let names: Vec<String> = (0..w).rev().map(|j| name((key >> (16 * j)) as u16)).collect();
++                *s += &format!(" {tag}:{}={n}", names.join("+"));
++            }
++        };
++        top(&mut s, "S", &st, 400, 1);
++        top(&mut s, "D", &dy, 400, 1);
++        top(&mut s, "DL", &dl, 60, 1);
++        top(&mut s, "SP", &sp, 150, 2);
++        top(&mut s, "DP", &dp, 150, 2);
++        top(&mut s, "ST", &stt, 100, 3);
++        top(&mut s, "DT", &dt, 100, 3);
++        #[cfg(target_arch = "wasm32")]
++        // SAFETY: a host function reading `s`.
++        unsafe {
++            diag_log(s.as_ptr(), s.len())
++        };
++        #[cfg(not(target_arch = "wasm32"))]
++        println!("{s}");
++    }
++}
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 2b515e2..3586a88 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2109,6 +2109,7 @@ fn interpret<B: Regime>(
+     let b = t.dec.get(key, mem)?;
+     let mut r = interp::block::Run::new(left);
+     r.enter(b, key, pc);
++    t.dec.diag.ran(key);
+     let res = loop {
+         let jc = &t.jc;
+         match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
+@@ -2149,6 +2150,7 @@ fn interpret<B: Regime>(
+             break (r.done, None);
+         };
+         r.enter(b, k, next);
++        t.dec.diag.ran(k);
+     };
+     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
+     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
+diff --git a/web/vm.ts b/web/vm.ts
+index 4c7780f..71ea7b6 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -81,7 +81,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
+   const jit = jitHost(memory, compile);
+   const hooks = stall.map((s) => stallHook(memory, s));
+   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
+-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
++  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile, diag_log: (p: number, l: number) => console.log(new TextDecoder().decode(new Uint8Array(memory.buffer, p >>> 0, l).slice())) }, ram: spillImports(spill), jit };
+ }
+ 
+ /**
