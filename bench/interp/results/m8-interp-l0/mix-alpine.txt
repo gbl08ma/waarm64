@@ -1,0 +1,341 @@
+tables 1 {
+  runs: 501266588,
+  decodes: 138354,
+  keys: 125229,
+  insns_s: 698492,
+  insns_d: 2656911437
+}
+
+== dynamic mix
+ 13.60%  13.6%  STRx_LDRx_imm_2
+  9.99%  23.6%  MOVZ
+  8.11%  31.7%  B_cond
+  6.70%  38.4%  STP_LDP_gen
+  6.09%  44.5%  ORR_shift
+  5.62%  50.1%  ADD_imm
+  3.79%  53.9%  SUBS_shift
+  3.55%  57.5%  SUBS_imm
+  3.52%  61.0%  ADD_shift
+  2.58%  63.6%  CBZ
+  2.38%  65.9%  LDRx_reg
+  1.88%  67.8%  UBFM
+  1.78%  69.6%  SUB_shift
+  1.76%  71.4%  RET
+  1.64%  73.0%  BL
+  1.47%  74.5%  AND_imm
+  1.31%  75.8%  CBNZ
+  1.31%  77.1%  B_uncond
+  1.27%  78.4%  SUB_imm
+  1.10%  79.5%  NOP
+  1.10%  80.6%  EOR_shift
+  1.03%  81.6%  ANDS_imm
+  1.02%  82.6%  ADRP
+  0.98%  83.6%  MRS*
+  0.97%  84.6%  TBNZ
+  0.91%  85.5%  STRx_reg
+  0.91%  86.4%  STRx_LDRx_imm_1
+  0.88%  87.3%  AND_shift
+  0.80%  88.1%  LSLV
+  0.72%  88.8%  TBZ
+  0.67%  89.5%  AUTIA_2
+  0.67%  90.1%  PACIA_2
+  0.65%  90.8%  LSRV
+  0.64%  91.4%  STURx_LDURx
+  0.61%  92.0%  CCMP_reg
+  0.58%  92.6%  UMADDL*
+  0.50%  93.1%  CSEL
+  0.46%  93.6%  CSINC
+  0.43%  94.0%  ORR_imm
+  0.41%  94.4%  CCMP_imm
+  0.39%  94.8%  MOVK
+  0.37%  95.2%  MOVN
+  0.35%  95.5%  ADD_ext
+  0.31%  95.8%  SXTW
+  0.27%  96.1%  DC_ZVA*
+-- generic: 3.46% of the instructions; by class:
+ 28.25% of generic  MRS*
+ 16.69% of generic  UMADDL*
+  7.95% of generic  DC_ZVA*
+  4.08% of generic  EXTR*
+  3.49% of generic  REV*
+  3.45% of generic  DMB*
+  2.43% of generic  LDADD*
+  2.16% of generic  CLZ_int*
+  2.05% of generic  MSR_reg*
+  1.94% of generic  CAS*
+  1.82% of generic  ORR_asimd_reg*
+  1.82% of generic  ADD_vector*
+  1.62% of generic  SHA256H2*
+  1.62% of generic  SHA256H*
+  1.46% of generic  STLR*
+  1.43% of generic  MSR_imm*
+  1.26% of generic  STP_LDP_fpsimd*
+  1.22% of generic  STR_imm_fpsimd_2*
+  1.21% of generic  SHA256SU0*
+  1.21% of generic  SHA256SU1*
+  1.10% of generic  STTR*
+  1.10% of generic  UDIV*
+  0.98% of generic  ADC*
+  0.90% of generic  LDAR*
+  0.82% of generic  STUR_fpsimd*
+
+== static mix
+ 16.16%  16.2%  STRx_LDRx_imm_2
+ 15.70%  31.9%  MOVZ
+  8.54%  40.4%  STP_LDP_gen
+  7.63%  48.0%  ORR_shift
+  6.79%  54.8%  ADD_imm
+  4.71%  59.5%  BL
+  3.96%  63.5%  B_cond
+  2.64%  66.1%  MOVK
+  2.60%  68.7%  ADRP
+  2.41%  71.1%  ADD_shift
+  2.30%  73.4%  CBZ
+  2.11%  75.5%  RET
+  2.06%  77.6%  SUBS_shift
+  1.63%  79.2%  EOR_shift
+  1.58%  80.8%  SUBS_imm
+  1.55%  82.4%  B_uncond
+  1.27%  83.6%  CBNZ
+  1.23%  84.9%  AUTIA_2
+  1.06%  85.9%  PACIA_2
+  1.02%  86.9%  SUB_imm
+  0.92%  87.9%  MRS*
+  0.84%  88.7%  AND_imm
+  0.82%  89.5%  EXTR*
+  0.81%  90.3%  NOP
+  0.72%  91.1%  TBZ
+  0.71%  91.8%  TBNZ
+  0.69%  92.4%  UBFM
+  0.59%  93.0%  LDRx_reg
+  0.53%  93.6%  SUB_shift
+  0.43%  94.0%  STURx_LDURx
+  0.43%  94.4%  CSEL
+  0.42%  94.9%  MOVN
+  0.32%  95.2%  ORR_imm
+  0.29%  95.5%  AND_shift
+  0.27%  95.7%  ANDS_imm
+  0.24%  96.0%  STRx_reg
+  0.22%  96.2%  CSINC
+  0.22%  96.4%  ADDS_imm
+  0.22%  96.6%  SXTW
+  0.18%  96.8%  STRx_LDRx_imm_1
+  0.18%  97.0%  ADD_ext
+  0.16%  97.2%  BR
+  0.15%  97.3%  LSLV
+  0.15%  97.5%  CCMP_imm
+  0.14%  97.6%  BLR
+-- generic: 3.17% of the instructions; by class:
+ 28.96% of generic  MRS*
+ 26.02% of generic  EXTR*
+  4.05% of generic  LDADD*
+  3.23% of generic  DMB*
+  2.35% of generic  UMADDL*
+  2.29% of generic  ADD_vector*
+  2.23% of generic  STP_LDP_fpsimd*
+  2.20% of generic  ORR_asimd_reg*
+  2.14% of generic  SHA256H2*
+  2.11% of generic  SHA256H*
+  1.57% of generic  SHA256SU1*
+  1.49% of generic  SHA256SU0*
+  1.42% of generic  STLR*
+  1.25% of generic  CLZ_int*
+  1.22% of generic  BFM*
+  1.16% of generic  UDIV*
+  1.07% of generic  CAS*
+  0.96% of generic  STR_imm_fpsimd_2*
+  0.95% of generic  LDSET*
+  0.95% of generic  MSR_reg*
+  0.82% of generic  LDAR*
+  0.79% of generic  LDXR*
+  0.79% of generic  MSR_imm*
+  0.76% of generic  REV*
+  0.75% of generic  SMADDL*
+
+== dynamic pairs
+  6.69%   6.7%  MOVZ+MOVZ
+  3.19%   9.9%  STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  2.79%  12.7%  SUBS_shift+B_cond
+  2.67%  15.3%  SUBS_imm+B_cond
+  2.41%  17.8%  STP_LDP_gen+STP_LDP_gen
+  1.29%  19.0%  ORR_shift+ORR_shift
+  1.23%  20.3%  MOVZ+RET
+  1.09%  21.4%  STRx_LDRx_imm_2+CBZ
+  1.05%  22.4%  STRx_LDRx_imm_2+ADD_imm
+  1.04%  23.5%  ADD_imm+STRx_LDRx_imm_2
+  0.92%  24.4%  STP_LDP_gen+ORR_shift
+  0.79%  25.2%  ANDS_imm+B_cond
+  0.79%  26.0%  STRx_LDRx_imm_2+SUBS_shift
+  0.76%  26.7%  STRx_LDRx_imm_2+ORR_shift
+  0.72%  27.4%  ORR_shift+STRx_LDRx_imm_2
+  0.71%  28.1%  ADD_imm+SUBS_shift
+  0.70%  28.9%  STP_LDP_gen+ADD_imm
+  0.64%  29.5%  AUTIA_2+MOVZ
+  0.64%  30.1%  STRx_LDRx_imm_2+SUB_shift
+  0.59%  30.7%  CCMP_reg+B_cond
+  0.59%  31.3%  STRx_LDRx_imm_2+CBNZ
+  0.58%  31.9%  ORR_shift+BL
+  0.58%  32.5%  STRx_LDRx_imm_2+STP_LDP_gen
+  0.57%  33.0%  STP_LDP_gen+AUTIA_2
+  0.57%  33.6%  ADD_shift+LDRx_reg
+  0.56%  34.2%  ADD_imm+ADD_imm
+  0.56%  34.7%  PACIA_2+STP_LDP_gen
+  0.56%  35.3%  ORR_shift+ADD_imm
+  0.55%  35.8%  STRx_LDRx_imm_2+SUBS_imm
+  0.53%  36.4%  STRx_LDRx_imm_2+MOVZ
+  0.52%  36.9%  MRS*+STRx_LDRx_imm_2
+  0.51%  37.4%  EOR_shift+EOR_shift
+  0.51%  37.9%  ORR_shift+STP_LDP_gen
+  0.50%  38.4%  LDRx_reg+STRx_LDRx_imm_2
+  0.50%  38.9%  ADD_imm+STP_LDP_gen
+  0.48%  39.4%  UBFM+ADD_shift
+  0.46%  39.9%  ADRP+ADD_imm
+  0.45%  40.3%  ADD_shift+ADD_shift
+  0.42%  40.7%  STP_LDP_gen+STRx_LDRx_imm_2
+  0.40%  41.1%  UMADDL*+UMADDL*
+  0.39%  41.5%  SUB_shift+LSRV
+  0.39%  41.9%  ADD_shift+STRx_LDRx_imm_2
+  0.38%  42.3%  CCMP_imm+B_cond
+  0.38%  42.7%  NOP+NOP
+  0.38%  43.0%  LDRx_reg+STRx_reg
+
+== static pairs
+  9.22%   9.2%  MOVZ+MOVZ
+  4.15%  13.4%  STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  2.45%  15.8%  STP_LDP_gen+STP_LDP_gen
+  1.74%  17.6%  MOVZ+RET
+  1.49%  19.1%  SUBS_shift+B_cond
+  1.42%  20.5%  ORR_shift+ORR_shift
+  1.41%  21.9%  ORR_shift+BL
+  1.29%  23.2%  STP_LDP_gen+ORR_shift
+  1.27%  24.4%  ADD_imm+STRx_LDRx_imm_2
+  1.26%  25.7%  STP_LDP_gen+ADD_imm
+  1.24%  26.9%  MOVK+MOVK
+  1.24%  28.2%  ADRP+ADD_imm
+  1.20%  29.4%  STRx_LDRx_imm_2+ORR_shift
+  1.19%  30.6%  AUTIA_2+MOVZ
+  1.13%  31.7%  SUBS_imm+B_cond
+  1.05%  32.8%  STRx_LDRx_imm_2+CBZ
+  1.05%  33.8%  STRx_LDRx_imm_2+MOVZ
+  1.04%  34.9%  STRx_LDRx_imm_2+ADD_imm
+  1.03%  35.9%  ORR_shift+STRx_LDRx_imm_2
+  0.99%  36.9%  ADD_imm+STP_LDP_gen
+  0.96%  37.8%  STP_LDP_gen+AUTIA_2
+  0.93%  38.8%  MOVZ+STRx_LDRx_imm_2
+  0.92%  39.7%  ADD_imm+BL
+  0.90%  40.6%  STRx_LDRx_imm_2+BL
+  0.86%  41.4%  STRx_LDRx_imm_2+SUBS_shift
+  0.86%  42.3%  STRx_LDRx_imm_2+STP_LDP_gen
+  0.81%  43.1%  ORR_shift+STP_LDP_gen
+  0.81%  43.9%  PACIA_2+STP_LDP_gen
+  0.64%  44.6%  STP_LDP_gen+STRx_LDRx_imm_2
+  0.63%  45.2%  ADRP+STRx_LDRx_imm_2
+  0.63%  45.8%  ADD_imm+ADD_imm
+  0.60%  46.4%  MOVZ+MOVK
+  0.58%  47.0%  EOR_shift+EOR_shift
+  0.57%  47.6%  ORR_shift+MOVZ
+  0.55%  48.1%  MOVZ+BL
+  0.50%  48.6%  STRx_LDRx_imm_2+CBNZ
+  0.50%  49.1%  MRS*+STRx_LDRx_imm_2
+  0.48%  49.6%  EXTR*+ADD_shift
+  0.45%  50.0%  STP_LDP_gen+ADRP
+  0.43%  50.5%  ORR_shift+ADD_imm
+  0.42%  50.9%  ADD_shift+STRx_LDRx_imm_2
+  0.42%  51.3%  ADD_imm+ORR_shift
+  0.41%  51.7%  STRx_LDRx_imm_2+SUBS_imm
+  0.40%  52.1%  ADD_shift+EXTR*
+  0.40%  52.5%  MOVZ+ADD_imm
+
+== dynamic triples
+  5.41%   5.4%  MOVZ+MOVZ+MOVZ
+  1.47%   6.9%  STP_LDP_gen+STP_LDP_gen+STP_LDP_gen
+  1.13%   8.0%  MOVZ+MOVZ+RET
+  0.89%   8.9%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.69%   9.6%  ADD_imm+SUBS_shift+B_cond
+  0.64%  10.2%  AUTIA_2+MOVZ+MOVZ
+  0.61%  10.8%  STRx_LDRx_imm_2+SUBS_shift+B_cond
+  0.54%  11.4%  STP_LDP_gen+AUTIA_2+MOVZ
+  0.44%  11.8%  ORR_shift+ORR_shift+ORR_shift
+  0.43%  12.3%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+SUB_shift
+  0.40%  12.7%  ADD_shift+LDRx_reg+STRx_LDRx_imm_2
+  0.39%  13.1%  LDRx_reg+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.39%  13.4%  UBFM+ADD_shift+LDRx_reg
+  0.38%  13.8%  STRx_LDRx_imm_2+SUB_shift+LSRV
+  0.38%  14.2%  STRx_LDRx_imm_2+ADD_imm+STRx_LDRx_imm_2
+  0.37%  14.6%  EOR_shift+EOR_shift+EOR_shift
+  0.34%  14.9%  PACIA_2+STP_LDP_gen+ADD_imm
+  0.33%  15.2%  STP_LDP_gen+ADD_imm+STP_LDP_gen
+  0.33%  15.6%  ORR_shift+ADD_imm+SUBS_shift
+  0.33%  15.9%  STRx_reg+ORR_shift+ADD_imm
+  0.33%  16.2%  LDRx_reg+STRx_reg+ORR_shift
+  0.33%  16.6%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+SUBS_shift
+  0.31%  16.9%  SUBS_shift+CCMP_reg+B_cond
+  0.29%  17.2%  ADD_imm+STP_LDP_gen+ORR_shift
+  0.28%  17.5%  STRx_LDRx_imm_2+SUBS_imm+B_cond
+  0.27%  17.7%  ADD_imm+SUBS_imm+B_cond
+  0.27%  18.0%  SUB_shift+LSRV+CBZ
+  0.27%  18.3%  AND_shift+UBFM+ADD_shift
+  0.26%  18.5%  UMADDL*+UMADDL*+UMADDL*
+  0.26%  18.8%  STP_LDP_gen+STP_LDP_gen+AUTIA_2
+  0.26%  19.0%  ADD_imm+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.25%  19.3%  STRx_LDRx_imm_2+SUB_imm+STRx_LDRx_imm_2
+  0.24%  19.5%  ADD_shift+SUBS_shift+B_cond
+  0.24%  19.8%  STP_LDP_gen+ORR_shift+ORR_shift
+  0.24%  20.0%  AND_imm+CCMP_imm+B_cond
+  0.24%  20.2%  NOP+NOP+NOP
+  0.23%  20.5%  STRx_LDRx_imm_2+STP_LDP_gen+STP_LDP_gen
+  0.23%  20.7%  SUBS_imm+CCMP_reg+B_cond
+  0.22%  20.9%  ORR_shift+ORR_shift+BL
+  0.21%  21.1%  AND_imm+SUBS_shift+B_cond
+  0.21%  21.3%  STRx_LDRx_imm_1+SUBS_shift+CCMP_reg
+  0.20%  21.5%  SUB_shift+SUBS_shift+B_cond
+  0.20%  21.7%  STP_LDP_gen+ORR_shift+STP_LDP_gen
+  0.20%  21.9%  STRx_LDRx_imm_2+ADD_imm+ADD_imm
+  0.19%  22.1%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+CBZ
+
+== static triples
+  6.99%   7.0%  MOVZ+MOVZ+MOVZ
+  1.66%   8.7%  MOVZ+MOVZ+RET
+  1.27%   9.9%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  1.19%  11.1%  AUTIA_2+MOVZ+MOVZ
+  1.12%  12.2%  STP_LDP_gen+STP_LDP_gen+STP_LDP_gen
+  0.93%  13.2%  STP_LDP_gen+AUTIA_2+MOVZ
+  0.64%  13.8%  MOVK+MOVK+MOVK
+  0.59%  14.4%  STP_LDP_gen+ADD_imm+STP_LDP_gen
+  0.56%  15.0%  STP_LDP_gen+STP_LDP_gen+AUTIA_2
+  0.49%  15.4%  STRx_LDRx_imm_2+SUBS_shift+B_cond
+  0.48%  15.9%  ADD_imm+STP_LDP_gen+ORR_shift
+  0.47%  16.4%  PACIA_2+STP_LDP_gen+ADD_imm
+  0.43%  16.8%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+SUBS_shift
+  0.41%  17.2%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+MOVZ
+  0.39%  17.6%  ORR_shift+ORR_shift+ORR_shift
+  0.37%  18.0%  ORR_shift+ORR_shift+BL
+  0.37%  18.4%  ADD_shift+EXTR*+ADD_shift
+  0.35%  18.7%  ADD_imm+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.35%  19.0%  STRx_LDRx_imm_2+STP_LDP_gen+STP_LDP_gen
+  0.34%  19.4%  STRx_LDRx_imm_2+ADD_imm+STRx_LDRx_imm_2
+  0.34%  19.7%  EOR_shift+EOR_shift+EOR_shift
+  0.33%  20.1%  STP_LDP_gen+ORR_shift+STP_LDP_gen
+  0.33%  20.4%  ORR_shift+STP_LDP_gen+STP_LDP_gen
+  0.32%  20.7%  SUBS_shift+MOVZ+B_cond
+  0.32%  21.0%  STRx_LDRx_imm_2+SUBS_shift+MOVZ
+  0.31%  21.3%  EXTR*+ADD_shift+EXTR*
+  0.31%  21.7%  MOVZ+MOVK+MOVK
+  0.30%  22.0%  MRS*+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.30%  22.3%  STRx_LDRx_imm_2+SUBS_imm+B_cond
+  0.29%  22.5%  STRx_LDRx_imm_2+MOVZ+STRx_LDRx_imm_2
+  0.29%  22.8%  ORR_shift+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.29%  23.1%  STP_LDP_gen+ORR_shift+ORR_shift
+  0.28%  23.4%  MOVK+MOVK+EOR_shift
+  0.27%  23.7%  STRx_LDRx_imm_2+ORR_shift+BL
+  0.27%  23.9%  ADRP+ADD_imm+ADD_imm
+  0.25%  24.2%  ADRP+ADD_imm+STRx_LDRx_imm_2
+  0.25%  24.4%  STP_LDP_gen+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.24%  24.7%  ADD_imm+AUTIA_2+MOVZ
+  0.24%  24.9%  STP_LDP_gen+STP_LDP_gen+ADD_imm
+  0.24%  25.2%  STRx_LDRx_imm_2+STRx_LDRx_imm_2+CBZ
+  0.23%  25.4%  STRx_LDRx_imm_2+ORR_shift+STRx_LDRx_imm_2
+  0.23%  25.6%  STP_LDP_gen+ADD_imm+AUTIA_2
+  0.23%  25.9%  ADRP+ADD_imm+BL
+  0.22%  26.1%  MOVZ+STRx_LDRx_imm_2+STRx_LDRx_imm_2
+  0.21%  26.3%  STP_LDP_gen+ADD_imm+STRx_LDRx_imm_2

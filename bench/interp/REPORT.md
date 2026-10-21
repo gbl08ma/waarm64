@@ -953,3 +953,58 @@ in the guest (`scripts/ci-fp.sh`), and planted bugs (each range test's bound one
 vector single and double, scalar; the scalar zero clause always true; its FZ test reading Vn twice;
 the FZ arm dropping the operand test; the by-element product from a stale local), each failing
 2–6 of the differential test's FP and NEON tests.
+
+## M8-INTERP loop 0: the block interpreter's yardstick, profile and mix
+
+2026-10-21, the dev VM, Chromium 153.0.8010.52, at `a6dcd65`; raw data `results/m8-interp-l0/`. The track's
+yardstick (`M8-INTERP-HANDOVER.md`) is the block interpreter alone (`VmConfig.jit` 4 / `jit_new` never compiling):
+the small guests, and now the boots as MIPS (`bench/boot` `boot_dec`, `boot_alpine_dec`: steps over the whole boot,
+the steps checked against each other; one warm-up boot, then 7 and 3). The reference is the same guests under the
+JIT on Liftoff alone (`--config liftoff-only`; `boot_mips_jit`, `boot_alpine_mips_jit`: compiling included).
+`bench/interp/yardstick.sh` runs either set, `bench/interp/ab.sh` alternates core builds on it.
+
+| | block interpreter | Liftoff (JIT, compile included) | |
+|---|---|---|---|
+| `dec_mips` / `jit_mips` (user mode, 8 placements) | 248.9 ±2.8 | 2627 ±43 | 0.09× |
+| `vm_dec_flat_mips` / `vm_jit_flat_mips` (EL1, MMU off) | 198.4 ±1.7 | 1770 ±22 | 0.11× |
+| `vm_dec_mmu_mips` / `vm_jit_mmu_mips` (EL1, MMU on) | 176.4 ±1.3 | 1725 ±20 | 0.10× |
+| Buildroot boot (40,211,695 steps) | **89.5 ±1.6** (449 ms) | 60.2 ±0.4 (668 ms) | 1.49× |
+| Alpine boot (2,651,936,453 steps) | **122.0 ±0.4** (21.7 s) | 244.4 ±0.1 (10.9 s) | 0.50× |
+
+So the 1.5-2× gap to Liftoff the handover counted on is the boots' (cold code, compiling included); in a hot loop
+Liftoff's code is ten times the interpreter's. On Buildroot's boot the interpreter alone already beats Liftoff.
+
+**Profile** (`perf` with `--perf-prof` in Node, Alpine's boot under `jit` 4, `bench/interp/boot-node.ts`; 124.8
+MIPS there): `run` (MMU) 67.1%, `jit::interpret` 13.3%, `Jit::miss` 2.5% and `Table::sync` 2.2% (with
+`Cache::slot_in`, `count_out` and `counted`, 1.6%: a block reports its dispatches every 16, and under `jit` 4 it never
+stops reporting), `Bus::write_el` 2.1% (stores whose inline TLB probe missed), `exec_at_op` 1.8% (the generic
+path), `jit::steps` 1.3%, `sys::exec` 1.1% (`perf-alpine.txt`). In `run`'s machine code (`perf annotate`):
+- the dispatch is a jump table (`cmp`, `ldrsw`, `br`) behind four loads of the micro-op's fields; the handlers'
+  first instructions take ~20% of `run`'s samples, the indirect branch's redirect (the VM has no PMU to say how
+  much of it is mispredicts);
+- the loop's index, length and PC live on the stack: spilled at definition because the generic arm and the slow
+  paths call, and reloaded every iteration (`ldr x8, [sp, #72]` 3.5% at the loop's back edge);
+- every register write is a Rust bounds check on the index (`cmp w25, #0x1f; b.hi` to a panic) and a wasm bounds
+  check that reloads the growable memory's size (`ldur x11, [x7, #39]; sub; cmp; b.cs`); loads aren't checked;
+- `ldar`/`stlr` on guest accesses: 24 of them in `run`, 0.24% of its samples with the instruction after. **The
+  atomics don't cost here**, so the memory rules stay.
+
+**Mix** (`diag.patch`: a diagnostic core counting each decoded block's instructions, statically per block key and
+dynamically by the block's runs in the interpreter; Alpine's boot in Node, `mix-alpine.txt`; Buildroot's,
+`mix-buildroot.txt`). Alpine: 501M block runs, **5.3 instructions a block**, 125K blocks. Dynamically
+`STR/LDR` (unsigned offset) 13.6%, `MOVZ` 10.0%, `B.cond` 8.1%, `STP/LDP` 6.7%, `ORR` (shifted, mostly `MOV`)
+6.1%, `ADD` imm 5.6%, `SUBS` shifted 3.8% and imm 3.6%, `ADD` shifted 3.5%, `CBZ` 2.6%; 96% of the dynamic mix in
+the first 45 classes. **The generic path is 3.5%** of the instructions: `MRS` 28% of it, `UMADDL` 17%, `DC ZVA`
+8%, `EXTR` 4%, `REV` 3.5%, `DMB` 3.5%, `LDADD` 2.4%, `CLZ` 2.2%. The top pairs: `MOVZ+MOVZ` 6.7% (runs of
+`MOV xN, #0`: `MOVZ+MOVZ+MOVZ` 5.4%), `STR+STR` 3.2%, `SUBS+B.cond` 2.8% (shifted) and 2.7% (imm), `STP+STP` 2.4%,
+`ANDS+B.cond` 0.8%, `CCMP+B.cond` 0.6%, `ADRP+ADD` 0.5%: the compare-and-branch pairs together ~7%, no pair
+dominant. Buildroot: 9.0M runs, 4.5 instructions a block, generic 4.0% (`MRS` 15%, the exclusives 28%, `DC ZVA`
+8%, `EXTR` 7.5%, `REV` 7%). **Not counted: a browser's decoded blocks**: Firefox's pages session from the snapshot
+with the diagnostic core never got its first guest command through (three tries; the same session with the base
+core runs), and the boots' counts settled the order of the loops.
+
+**What it says for the loops.** Blocks are short, so per-block costs (`interpret`'s 13%, the counting, `run`'s entry
+and exit) weigh as much as per-instruction ones: loop 1 (one call-free loop) and loop 2 (the per-block lookups)
+first; superinstructions (loop 4) have no dominant pair to fuse; the generic path (loop 5) is 3.5% of the
+instructions, `MRS` and `UMADDL` first; lazy flags (loop 3) touch ~10% of the instructions (the flag setters and
+their branches).

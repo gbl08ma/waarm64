@@ -35,7 +35,7 @@ async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 /** `jit`: `VmConfig.jit` (0 interpreter, 1 JIT). */
-type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean; jit?: 0 | 1 };
+type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean; jit?: 0 | 1 | 4 };
 
 export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<ArrayBuffer> }> {
   const [wasm, kernel] = await Promise.all([
@@ -160,6 +160,39 @@ async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
   const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.52-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test', jit }, { cold: 3, warmup: 1, warm: 5 });
   const pre = jit ? 'alpine_jit' : 'alpine';
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
+}
+
+/**
+ * A boot's speed as MIPS (steps over the whole boot, power-off included), and its steps, which match
+ * tests/steps.txt: `jit` 4 runs it all in the block interpreter (the dispatcher never compiling: the
+ * interpreter's yardstick, M8-INTERP), `jit` 1 under the JIT (with `--config liftoff-only`, the reference
+ * the interpreter closes in on). One warm-up boot, then `n` timed, each after a GC; one compiled core.
+ */
+async function bootMips(o: Options, distro: 'buildroot' | 'alpine', jit: 1 | 4): Promise<Sample[]> {
+  const base = await images();
+  let img: Img & { wasm: Uint8Array<ArrayBuffer> } = { ...base, jit };
+  if (distro === 'alpine') {
+    const a = DISTROS.alpine;
+    const [initrd, kernel] = await Promise.all([get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
+    img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
+  }
+  const module = await WebAssembly.compile(img.wasm);
+  const n = o.quick ? 2 : distro === 'alpine' ? 3 : 7;
+  const mips: number[] = [], ms: number[] = [];
+  let stats;
+  for (let i = 0; i <= n; i++) {
+    fresh();
+    const r = await boot(module, img);
+    if (stats && r.stats.steps !== stats.steps) throw new Error(`steps ${r.stats.steps}, before ${stats.steps}`);
+    stats = r.stats;
+    o.log?.(`${distro} jit ${jit}: ${r.stats.steps} steps in ${r.total.toFixed(0)} ms, ${(r.stats.steps / r.total / 1000).toFixed(1)} MIPS${i ? '' : ' (warm-up)'}`);
+    if (i === 0) continue;
+    ms.push(r.total);
+    mips.push(r.stats.steps / r.total / 1000);
+  }
+  const name = `${distro === 'alpine' ? 'boot_alpine' : 'boot'}_${jit === 4 ? 'dec' : 'jit'}`;
+  const params = { distro, jit, steps: stats!.steps, counters: stats };
+  return [{ name: `${name}_mips`, unit: 'MIPS', params, samples: mips }, { name: `${name}_total`, unit: 'ms', params, samples: ms }];
 }
 
 /** The userspace phases after Alpine's boot, under the JIT (M6's end; docs/benchmarking.md). */
@@ -462,6 +495,10 @@ export const suite = {
   gl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1), gl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4),
   gl_virgl_jit: (o: Options) => glLlvmpipe(o, 1, 'virgl'), gl_virgl_jit_4: (o: Options) => glLlvmpipe(o, 4, 'virgl'),
   gl_virgl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1, 'virgl-llvmpipe'), gl_virgl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4, 'virgl-llvmpipe'),
+  // MIPS over a boot: in the block interpreter alone (`jit` 4) and under the JIT (M8-INTERP's yardstick and,
+  // with `--config liftoff-only`, its reference).
+  boot_dec: (o: Options) => bootMips(o, 'buildroot', 4), boot_alpine_dec: (o: Options) => bootMips(o, 'alpine', 4),
+  boot_mips_jit: (o: Options) => bootMips(o, 'buildroot', 1), boot_alpine_mips_jit: (o: Options) => bootMips(o, 'alpine', 1),
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
