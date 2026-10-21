@@ -35,7 +35,7 @@ memory signal (docs/jit.md "The page's memory signal": what the tab costs by the
 killed with its machine running is noted at the next start, which offers a smaller cache or less RAM); carrying the
 hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is the current CPU track (`M8-INTERP-HANDOVER.md`: judged by its own MIPS, so the
 compile threshold can rise and less code reaches V8): loops 0–6 done (a call-free hot loop, 1.3–1.9× the interpreter;
-the threshold's floor at 500 with one report from `warm` to it, a third less wasm in Firefox; docs/cpu.md "The block
+the threshold's floor at 1000 with one report from `warm` to it, a third less wasm in Firefox; docs/cpu.md "The block
 interpreter"), loop 7 (one decoded-block store for every table) and more handlers left. Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 

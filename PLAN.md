@@ -275,7 +275,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   (`bench/interp/REPORT.md` from "M8-INTERP loop 0"): a call-free hot loop, reports every 255 where nothing
   compiles, runs of MOVs in one dispatch and more handlers took the interpreter alone from 249 to 424 MIPS on the
   user-mode guest and from 122 to 172 on Alpine's boot (the Mac host: 261 → 427, 138 → 182 before the MOV runs), and
-  the threshold's floor rose from 50 to 500 with one report from `warm` to it (Firefox's pages session 36% less
+  the threshold's floor rose from 50 to 1000 (round 2's curve) with one report from `warm` to it (Firefox's pages session 36% less
   wasm at +7% busy MIPS; docs/jit.md "Compile policy"); lazy NZCV, the setter + B.cond fusion and pre-linked
   successors were measured and not kept (docs/cpu.md). Left: one decoded-block store for every table (loop 7),
   more handlers.
