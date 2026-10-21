@@ -64,12 +64,10 @@ in docs/cpu.md "The block interpreter" (with "Its speed" and "Tried and not kept
    beside the MOV runs. Candidates from the mix: `STR+STR`/`LDR+LDR` off one base (3.2% as pairs), `STP+STP` (2.4%),
    `ADRP+ADD` (0.5%). Test: one variant each on the yardstick; watch the user-mode guest, which any code in `hot` can
    slow.
-9. **A guest-visible lever: fewer IC IVAU exits.** Payoff: unknown, possibly large for JIT-heavy guests. Evidence:
-   Chromium in Debian issues ~4,000 ICs a second warm (docs/jit.md "Sharing"), each an exit and a page's decoded
-   blocks dropped; Linux's `__flush_icache_range` steps by `CTR_EL0.IminLine`, so a larger IminLine means fewer ICs
-   per flush (DIC isn't an option: the invalidation relies on the ICs). The user allows guest-visible changes that pay
-   (2026-10-21): `tests/steps.txt` moves once, in that commit, and the corpus and kvm-unit-tests are checked. Test:
-   the IC count and the renders in `bench/apps/chromium.ts`, the pages session.
+9. **A guest-visible lever: fewer IC IVAU exits.** Done (2026-10-21): `CTR_EL0.IminLine` 9, 2 KiB lines. Debian's
+   boot issues 1/17 of the ICs, the `go build` loop 1/32 (bench/boot/REPORT.md "M8: a miss doesn't wait for the JIT
+   cache's lock, and 2 KiB instruction cache lines"). Not measured: Chromium in Debian (`bench/apps/chromium.ts`'s
+   renders and IC count).
 10. **Re-profile `hot`, then register caching or another dispatch shape.** Payoff: unclear. Evidence: no profile was
    taken after loop 1; before it, every register write paid a wasm bounds check with the growable memory's size
    reloaded (backlog "The core's heap in a fixed memory", stage 2, would remove that), and the handlers' entries took

@@ -80,8 +80,6 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
   user-mode guest 4-5%): measure every one on the small guests too. FP itself runs at a sixth of the integer rate
   (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by lane through `u128`).
 - **Superinstructions beyond the MOV runs** (≤1-2%): `STR+STR`/`LDR+LDR` off one base, `STP+STP`, `ADRP+ADD`.
-- **Fewer IC IVAU exits through a larger `CTR_EL0.IminLine`** (guest-visible, allowed when it pays): Chromium in
-  Debian issues ~4,000 ICs a second, each an exit and a page's decoded blocks dropped.
 - **Re-profile `hot`** (none since loop 1), then register caching or another dispatch shape; tail-call dispatch
   (`become`) as an A/B on top.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
@@ -229,14 +227,18 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
     `lagFlushes` shows up in real sessions. The held-bytes count in `Cache::install` has no native test (the native
     cache never logs a module without a JIT host; a planted bug there went unseen): a test hook that logs a module
     would cover it;
-  - **the cache's lock** ([jit.md](jit.md) "Sharing" "What the lock costs") is taken ~60,000 times a second in
-    Firefox's pages session (2.4% of them find it held, ~0.7% of the vCPUs' time waiting) and ~2% of the vCPUs' time
-    waits on the churn screen (before 2026-10-21's one report from `warm` to the threshold, which halved the
-    acquisitions at the floor of 500). What's left is reports below `warm`, queued blocks' reports and compiled
-    blocks not installed in the table yet. Not worth a loop alone. Since a miss no longer waits for it
-    (jit.md "A miss doesn't wait for it"), what waits is catch-ups, tier-ups, flushes and ICs. A Debian boot takes it
-    for ~2.15 M `IC IVAU`s, a third of its acquisitions, which drop compiled blocks a few hundred times
-    (`M8-JITLOCK-HANDOVER.md`).
+  - **the cache's lock** ([jit.md](jit.md) "Sharing" "What the lock costs"): since a miss no longer waits for it and
+    a guest issues 2 ICs a page (2 KiB lines), the waiting is ~1.8 s over Firefox's pages session (0.7% of the
+    acquisitions found it held), ~2.9 s on the churn screen and ~0.4 s in 300 s of the `go build` loop
+    (`bench/boot/REPORT.md` "M8: a miss doesn't wait for the JIT cache's lock, and 2 KiB instruction cache lines").
+    What still waits is catch-ups, tier-ups, flushes and ICs. Not worth a loop alone. Unscreened, by evidence:
+    - **Firefox's own ICs:** in the pages and churn sessions a Firefox started before the change keeps 64-byte steps
+      (it reads CTR_EL0 once), so those sessions' ICs fell by only a third (1.07 M → 0.71 M on the churn). Make the
+      warm snapshots again (`bench/gpu/warm-snapshots.sh firefox debian`, ~6 min) so later A/Bs start from a guest that
+      read 2 KiB; then count `ics` on the churn screen again (expect a few times fewer).
+    - **Coalescing ICs per page** until the next context synchronization (not guest-visible): only for a guest that
+      steps by its own line regardless of CTR_EL0; none seen.
+    - **Allocations under the lock** (dlmalloc behind std's global spin lock): count them before doing anything.
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
   which every function needs for the table; writing the table from an active element segment
@@ -488,7 +490,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   targets, and all-ASID or kernel-range TLBIs) wait for the target's chunk boundary. A 4096-step
   chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,
   before the ASID filter made both moot; ending a target's chunk from outside would need a memory
-  check in the JIT's hot path.
+  check in the JIT's hot path. In 300 s of the `go build` loop on 4 vCPUs they're 4.4–4.9 s, about the JIT lock's
+  waiting before the no-wait miss: `bench/boot/results/m8-devlat/kick/kick.patch` (a run ends early, between two
+  dispatches, when an interrupt or another vCPU's request is due) was never measured on them. It predates the
+  dispatcher's current shape and needs porting; test it as `run.sh go` in `bench/boot/results/m8-lock2/tools/` (two
+  sessions per arm, `dsbMs` and the MIPS, whose spread there is wide) and the gates.
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).

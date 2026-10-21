@@ -2637,3 +2637,107 @@ Keeping only the warm keys (counted 16 times) made the bbc load ~0.8 s slower (m
 code, reported a few times, counted from zero again, and each key coming back was formed again under the lock. A
 prune now also keeps every key reported in the last 262,144 keys added to the map (its clock, `Cache::tick`, a byte
 in `Info`'s spare room): bbc 11.8 and 11.9, busy MIPS 197 and 199. **Kept:** the heap bounded at no measured cost.
+
+## M8: a miss doesn't wait for the JIT cache's lock, and 2 KiB instruction cache lines (2026-10-21)
+
+Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB), on main at 3295fbf (the core's heap
+bounded). Four cores, all ABI 48:
+- **base:** this lane's tree with the `try_lock` turned off (`strong_count > usize::MAX`). That is main's blocking
+  miss with the new counter word; main's own ABI 47 core won't load under this host.
+- **base2:** a copy of base, the A/A.
+- **lock2:** a miss that finds the lock held runs its block interpreted (docs/jit.md "Sharing" "A miss doesn't wait
+  for it").
+- **imin:** lock2 with `CTR_EL0.IminLine` 9, 2 KiB lines. This one is guest-visible.
+
+Data in `bench/boot/results/m8-lock2/`; `tools/run.sh` ran them all:
+- `churn/` and `pages/`: `bench/gpu/ab.sh` from `target/snapbench/pages.webpcsnap`, one session per arm, with
+  `summary.json` from `ab-summary --json`.
+- `go/`: the `go build` loop, 300 s from `debian-go.webpcsnap`, two sessions per arm, with `summary.jsonl` from
+  `tools/gosum.ts`.
+- `boot/`: Debian's boot and login on 4 vCPUs from cold (`bench/stress/stress.ts`), the counts at the login.
+- `gates/`.
+
+**The churn screen** (`rate=60&total=4000`):
+
+| | base · base2 | lock2 | imin |
+|---|---|---|---|
+| waiting for the lock | 10.1 · 9.9 s | 3.4 s | 2.9 s |
+| found it held | 1.34 · 1.44% | 0.49% | 0.30% |
+| misses that didn't wait | – | 3.23 M | 3.09 M |
+| `doneS` | 114.0 · 107.9 | 108.0 | 108.2 |
+| busy MIPS | 240 · 252 | 254 | 256 |
+| Gsteps interpreted | 5.33 · 5.27 | 5.36 | 5.41 |
+| ICs | 1.064 · 1.072 M | 1.071 M | 0.713 M |
+| DSB waits; platform lock | 373 · 412 ms; 1,171 · 1,106 ms | 397 ms; 1,392 ms | 495 ms; 1,098 ms |
+| stalls ≥ 20 / 50 ms | 1 · 2 / 0 · 0 | 2 / 0 | 1 / 0 |
+
+**The pages session:**
+
+| | base · base2 | lock2 | imin |
+|---|---|---|---|
+| waiting for the lock | 7.0 · 6.9 s | 2.2 s | 1.8 s |
+| found it held | 3.1 · 3.0% | 1.1% | 0.7% |
+| misses that didn't wait | – | 2.41 M | 2.43 M |
+| busy MIPS | 197 · 189 | 195 | 194 |
+| wiki / bbc load | 11.0 · 11.5 / 12.3 · 13.1 s | 11.3 / 11.9 s | 11.2 / 12.3 s |
+| Gsteps interpreted | 3.36 · 3.32 | 3.36 | 3.35 |
+| modules | 2,932 · 2,923 | 2,938 | 2,923 |
+| ICs | 817 · 828 k | 814 k | 512 k |
+| DSB waits; platform lock | 1,745 · 1,783 ms; 2,106 · 2,264 ms | 1,728 ms; 2,105 ms | 1,764 ms; 2,163 ms |
+| stalls ≥ 20 / 50 ms | 2 · 4 / 0 · 0 | 3 / 0 | 3 / 0 |
+| renderer RSS max | 4,166 · 4,211 MiB | 4,136 MiB | 4,114 MiB |
+
+**The `go build` loop** (MIPS per 5 s sample, median of each session). Lane 13 found this loop's spread at one
+setting to be 1,094–1,489 MIPS, so its MIPS can't rank differences this small:
+
+| | base | lock2 | imin |
+|---|---|---|---|
+| MIPS (two sessions) | 1,330, 1,493 | 1,396, 1,395 | 1,421, 1,326 |
+| waiting for the lock | 4.1, 4.2 s | 0.54, 0.55 s | 0.38, 0.39 s |
+| acquisitions | 4.66, 4.70 M | 4.71, 4.70 M | 4.13, 4.10 M |
+| ICs | 286,400 | 286,400 | 8,950 |
+| DSB waits | 4.6, 4.4 s | 4.8, 4.9 s | 4.9, 4.7 s |
+
+**Debian's boot to the login** (~35 s, one run per arm):
+
+| | base | lock2 | imin |
+|---|---|---|---|
+| ICs | 2,124,307 | 2,124,300 | 121,781 |
+| lock acquisitions | 6.65 M | 6.67 M | 2.51 M |
+| waiting for the lock | 1.41 s | 0.54 s | 0.12 s |
+
+**The gates** (three rounds alternating, ms; each arm's median of rounds against base):
+
+| | base | lock2 | imin |
+|---|---|---|---|
+| `smp_alpine_jit` n1 | 8,102 · 8,230 · 8,102 | 8,252 · 8,264 · 8,250 (+1.8%) | 8,120 · 8,197 · 8,027 (+0.2%) |
+| n2 | 7,567 · 7,709 · 7,565 | 7,674 · 7,705 · 7,672 (+1.4%) | 7,561 · 7,620 · 7,489 (−0.1%) |
+| n4 | 7,587 · 7,686 · 7,600 | 7,687 · 7,669 · 7,671 (+0.9%) | 7,542 · 7,582 · 7,467 (−0.8%) |
+| `smp_user_jit_4` | 15,840 · 16,007 · 16,035 | 16,046 · 15,962 · 16,146 (+0.2%) | 15,952 · 16,019 · 15,844 (−0.3%) |
+
+lock2 is 1–2% slower on `smp_alpine_jit` at n1 too, where one vCPU has one table and takes the lock exactly as
+base does. imin runs the same code with one constant changed and is even. So the difference comes from the build
+(code placement), not from the no-wait miss. It's under the 5% the rules call noise, but it held in all three rounds,
+so it's noted here.
+
+**Both are kept.**
+- **The no-wait miss:**
+  - The waiting fell by about 70% on every workload: pages 7.0 · 6.9 → 2.2 s, churn 10.1 · 9.9 → 3.4 s, the
+    `go build` loop 4.1 · 4.2 → 0.5 s, Debian's boot 1.41 → 0.54 s. Instead, 2–3 M misses ran interpreted.
+  - `interpG`, `doneS`, busy MIPS, the pages' loads and the stalls stayed within the A/A. The DSB waits and the
+    platform lock didn't move.
+  - A first run of the churn and pages sessions, on main before the heap's bound, read the same: waiting 9.9 · 10.7
+    → 3.5 s and 6.9 → 2.1 s.
+- **2 KiB lines:**
+  - Debian's boot issues 1/17 of the ICs and 38% of the acquisitions. The `go build` loop issues 1/32 of the ICs
+    (the kernel syncing each executable page).
+  - The snapshot sessions issue only a third fewer. Firefox read CTR_EL0 when it started, before the snapshot was
+    saved, and keeps stepping by 64 bytes; content processes started afterwards read 2 KiB.
+  - Nothing got slower.
+
+**Steps:**
+- Every count in `tests/steps.txt` moved, once, in the IminLine commit: Linux's IC loops step by the line now.
+- The USB guest's unplug and replug moved from steps 80M and 100M to 95M and 115M. With 2 KiB lines its first
+  `testusb` pass ran past 80M, so the unplug fell in pass 1 and pass 2 never saw it.
+- kvm-unit-tests' `cache` test passes; it reads CTR_EL0 and checks code it patches. Nothing in the golden corpus
+  reads CTR_EL0.

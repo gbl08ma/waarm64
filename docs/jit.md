@@ -310,9 +310,11 @@ its jump cache and hot words, its helper counts and its counters.
     at a jump-cache miss needs the cache's answer at once, so a miss that finds the lock held (`try_lock`) runs its
     block interpreted, its decoded block keeping what it counted, and the next dispatch asks again (counter word 119,
     `ab-summary`'s `skipped`). Catch-ups, tier-ups, ICs and flushes still wait. With one table (round-robin, Node's
-    deterministic runs) the miss takes the lock as before, so those runs are unchanged. Booting Debian on 3 vCPUs in
-    a cloud session (counts only, timings not comparable), the waiting fell from 7.7 and 7.4 s to 1.8–2.0 s (three runs), with
-    470–630 k misses run interpreted instead.
+    deterministic runs) the miss takes the lock as before, so those runs are unchanged. On the dev VM the waiting fell
+    by about 70% (the pages session 7.0 · 6.9 s → 2.2 s, the churn screen 10.1 · 9.9 s → 3.4 s, the `go build` loop
+    4.1 · 4.2 s → 0.5 · 0.6 s), with 1.8–3.2 M misses run interpreted instead, and busy MIPS, `doneS`, the pages'
+    loads and the stalls stayed within the A/A (`bench/boot/REPORT.md` "M8: a miss doesn't wait for the JIT cache's
+    lock, and 2 KiB instruction cache lines").
 - **The compile worker** (parallel SMP; `web/jit-compile-worker.ts`, `env.jit_compile` in
   [abi.md](abi.md)): the vCPU that emits a module hands a copy to one worker of the VM's (number
   `seq`, under the lock), which compiles it (`new WebAssembly.Module`: V8's process-wide module
@@ -519,7 +521,12 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
 
 ## Invalidation and the stale-code checker
 
-- `CTR_EL0.DIC = 0`, so guests issue `IC IVAU`/`IC IALLU(IS)`. Those leave the interpreter with
+- `CTR_EL0.DIC = 0`, so guests issue `IC IVAU`/`IC IALLU(IS)`, and **IminLine is 9 (2 KiB lines)**: an IC drops
+  the whole page whatever the line, and Linux, libgcc's `__clear_cache` and the JITs' own loops step by the line,
+  so a page takes 2 ICs instead of 64. Each IC takes the JIT cache's lock, ends the chunk and adds to the tables'
+  invalidation log: Debian's boot to a login issued 2.12 M with 64-byte lines and 122 k with 2 KiB, its lock
+  acquisitions 6.65 M → 2.51 M (with a miss not waiting too); the `go build` loop 286 k → 9 k (1/32). A process
+  that read CTR_EL0 before (Firefox in a snapshot) keeps its old line until it starts again. Those leave the interpreter with
   `Exit::Invalidate(pa)` (`u64::MAX` for IALLU), and the run loop drops the blocks of that
   physical page (a map from page to the keys filed under it, so IVAU on a page without code costs
   one lookup) or all of them. Invalidation is per 4 KiB page; a forward region with blocks in

@@ -1,0 +1,13 @@
+[    0 s] log: bench/results/local/lock2/boot/lock2-1.jsonl
+(node:2081148) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[   35 s] logged in
+[   35 s] load started (0 commands); sampling every 5 s for 10 s
+
+samples 2 over 45 s, final page state running
+MIPS median 5 (first third -, last third -); JIT blocks 25135
+renderer memory - to - MiB after warm-up, slope 0 MiB/h
+longest vm_run_cpu / host handling per vCPU (ms): 0: 337/2  1: 69/0  2: 94/4  3: 100/0
+run loop max 65 ms, status gap max 1579 ms, main-thread lag max 10 ms
+guest console probes: 0/0 answered, slowest 0 ms
+no findings

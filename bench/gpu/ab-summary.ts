@@ -73,14 +73,14 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
         ...(res.jit.lockSkipped !== undefined ? { skipped: res.jit.lockSkipped } : {}),
       } : {}),
       // Parallel SMP's other waits: DSB waits for TLBI IS, and the platform lock's (ms).
-      ...(res.par?.dsbWaitNs !== undefined ? { dsbMs: Math.round(res.par.dsbWaitNs / 1e6), platMs: Math.round(res.par.lockWaitNs / 1e6) } : {}),
+      ...(res.par?.dsbWaitNs !== undefined ? { dsbMs: Math.round(res.par.dsbWaitNs / 1e6), platMs: Math.round(res.par.lockWaitNs / 1e6), ics: res.par.ic } : {}),
       overdue: res.jit?.overdue ?? NaN,
       ...rssOf(`${d}/rss.txt`, from, to),
     };
     rows.push(row);
   }
 }
-const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
+const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'ics', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
 const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); const i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
 const arms: Record<string, Record<string, { median: number; iqr: number; n: number; all: number[] }>> = {};
 for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {
@@ -92,7 +92,7 @@ for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {
 }
 if (json) console.log(JSON.stringify({ sessions: rows, arms }, null, 1));
 else {
-  const cols = ['session', 'exit', ...KEYS.slice(0, 28), 'pagesFps', ...KEYS.slice(28)];
+  const cols = ['session', 'exit', ...KEYS.slice(0, 29), 'pagesFps', ...KEYS.slice(29)];
   console.log(cols.join('\t'));
   for (const r of rows) console.log(cols.map((c) => r[c] ?? '').join('\t'));
   console.log();
