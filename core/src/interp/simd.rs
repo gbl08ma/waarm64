@@ -6,17 +6,28 @@ use super::{Exit, R, bit, bits, sext};
 use crate::cpu::Cpu;
 use crate::decode::Op;
 
-/// Element `e` of `esize` bits.
+/// Element `e` of `esize` bits (at most 64: an element is within one 64-bit
+/// half, so no `u128` shift by a variable, a call to compiler-rt in wasm).
 #[inline]
 pub(super) fn elem(v: u128, e: u32, esize: u32) -> u64 {
-    (v >> (e * esize)) as u64 & (u64::MAX >> (64 - esize))
+    let sh = e * esize;
+    let half = if sh >= 64 { (v >> 64) as u64 } else { v as u64 };
+    (half >> (sh & 63)) & (u64::MAX >> (64 - esize))
 }
 
-/// `v` with element `e` of `esize` bits replaced by the low bits of `x`.
+/// `v` with element `e` of `esize` bits replaced by the low bits of `x` (as
+/// [`elem`], within one half).
 #[inline]
 pub(super) fn set_elem(v: u128, e: u32, esize: u32, x: u64) -> u128 {
-    let m = (u64::MAX >> (64 - esize)) as u128;
-    (v & !(m << (e * esize))) | ((x as u128 & m) << (e * esize))
+    let (m, sh) = (u64::MAX >> (64 - esize), e * esize);
+    let (lo, hi) = (v as u64, (v >> 64) as u64);
+    let put = |h: u64| (h & !(m << (sh & 63))) | ((x & m) << (sh & 63));
+    let (lo, hi) = if sh >= 64 {
+        (lo, put(hi))
+    } else {
+        (put(lo), hi)
+    };
+    lo as u128 | (hi as u128) << 64
 }
 
 /// `x` replicated across `bytes` bytes, from an `esize`-bit element.

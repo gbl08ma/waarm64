@@ -229,43 +229,24 @@ fn min_max_compare() {
     );
 }
 
-/// The JIT's inline double FMA (jit/emit/float.rs), op for op: `None` where
-/// its guard sends the instruction to the helper.
-fn fma_inline(c: u64, a: u64, b: u64) -> Option<u64> {
-    let e = |x: u64| (x >> 52) & 0x7ff;
-    let (ea, eb, ec) = (e(a), e(b), e(c));
-    // No denormal operand, a zero factor or a product from 2^-900 up (its
-    // error exact). An overflow anywhere ends in an infinite or NaN z.
-    let noz = |e: u64, x: u64| (e.wrapping_sub(1) < 0x7fe) | (x << 1 == 0);
-    let ok =
-        noz(ea, a) & noz(eb, b) & noz(ec, c) & ((ea + eb >= 1146) | (a << 1 == 0) | (b << 1 == 0));
-    let (a, b, c) = (f64::from_bits(a), f64::from_bits(b), f64::from_bits(c));
-    let split = |x: f64| {
-        let g = 134217729.0 * x;
-        let h = g - (g - x);
-        (h, x - h)
-    };
-    let two_sum = |x: f64, y: f64| {
-        let s = x + y;
-        let bb = s - x;
-        (s, (x - (s - bb)) + (y - bb))
-    };
-    let ((ah, al), (bh, bl)) = (split(a), split(b));
-    let p = a * b;
-    let pl = ((ah * bh - p) + ah * bl + al * bh) + al * bl;
-    let (th, tl) = two_sum(c, p);
-    // v = tl + pl rounded to odd: RN's result, or its other neighbour when
-    // inexact and even (toward the error).
-    let (s, err) = two_sum(tl, pl);
-    let sb = s.to_bits();
-    let fix = (err.abs() > 0.0) & (sb & 1 == 0);
-    let v = f64::from_bits(if fix {
-        sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64)
-    } else {
-        sb
-    });
-    let z = (th + v).to_bits();
-    (ok & (e(z).wrapping_sub(2) < 0x7fd)).then_some(z)
+/// The software FMA's result where the fast one applies: it raises nothing
+/// but IXC there (the fast path relies on that), and the fast path itself,
+/// with IXC set, agrees.
+fn slow(f: Fmt, c: u64, a: u64, b: u64) -> u64 {
+    let (want, flags) = run(RN, |u| u.muladd(f, c, a, b));
+    assert_eq!(
+        flags & !IXC,
+        0,
+        "{a:#x} * {b:#x} + {c:#x}: flags {flags:#x}"
+    );
+    let mut u = Fpu::with_fpsr(RN, IXC);
+    assert_eq!(
+        u.muladd(f, c, a, b),
+        want,
+        "{a:#x} * {b:#x} + {c:#x}: with IXC"
+    );
+    assert_eq!(u.flags, IXC);
+    want
 }
 
 #[test]
@@ -309,13 +290,9 @@ fn inline_fma_is_correctly_rounded() {
                     (a, b & 1 << 63)
                 };
                 n += 1;
-                if let Some(z) = fma_inline(c, a, b) {
+                if let Some(z) = fma64_fast(c, a, b) {
                     fast += 1;
-                    assert_eq!(
-                        z,
-                        run(RN, |f| f.muladd(D, c, a, b)).0,
-                        "{a:#x} * {b:#x} + {c:#x}"
-                    );
+                    assert_eq!(z, slow(D, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
                 }
                 continue;
             }
@@ -329,50 +306,22 @@ fn inline_fma_is_correctly_rounded() {
                 let b = s(r2) | ((1.0 - 2f64.powi(-(m as i32))) * 2f64.powi(k as i32)).to_bits();
                 let c = s(r3) | ((1023 + k + 53) as u64) << 52 | r3 & ((1 << 52) - 1);
                 n += 1;
-                if let Some(z) = fma_inline(c, a, b) {
+                if let Some(z) = fma64_fast(c, a, b) {
                     fast += 1;
-                    assert_eq!(
-                        z,
-                        run(RN, |f| f.muladd(D, c, a, b)).0,
-                        "{a:#x} * {b:#x} + {c:#x}"
-                    );
+                    assert_eq!(z, slow(D, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
                 }
                 continue;
             }
             _ => {}
         }
         n += 1;
-        if let Some(z) = fma_inline(c, a, b) {
+        if let Some(z) = fma64_fast(c, a, b) {
             fast += 1;
-            let (want, _) = run(RN, |f| f.muladd(D, c, a, b));
+            let want = slow(D, c, a, b);
             assert_eq!(z, want, "{a:#x} * {b:#x} + {c:#x}");
         }
     }
     assert!(fast > n / 3, "{fast} of {n} on the fast path");
-}
-
-/// The JIT's inline single FMA: the product exact in double, the sum rounded
-/// to nearest in double, then to single: correct unless the double sum is a
-/// single midpoint (its low 29 bits 1 << 28), where the sum is rounded to odd
-/// instead (correct: 53 ≥ 24 + 2 bits). Also says whether it was a midpoint.
-fn fma32_inline(c: u32, a: u32, b: u32) -> Option<(u32, bool)> {
-    let e = |x: u32| (x >> 23) & 0xff;
-    let noz = |x: u32| (e(x).wrapping_sub(1) < 0xfe) | (x << 1 == 0);
-    let ok = noz(a) & noz(b) & noz(c);
-    let f = |x: u32| f32::from_bits(x) as f64;
-    let (p, c) = (f(a) * f(b), f(c));
-    let mut s = p + c;
-    let mid = s.to_bits() & ((1 << 29) - 1) == 1 << 28;
-    if mid {
-        let bb = s - p;
-        let err = (p - (s - bb)) + (c - bb);
-        let sb = s.to_bits();
-        if (err.abs() > 0.0) & (sb & 1 == 0) {
-            s = f64::from_bits(sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64));
-        }
-    }
-    let z = (s as f32).to_bits();
-    (ok & (e(z).wrapping_sub(2) < 0xfd)).then_some((z, mid))
 }
 
 #[test]
@@ -422,14 +371,10 @@ fn inline_fma32_is_correctly_rounded() {
 /// Compares the inline single FMA with the interpreter's where it applies.
 fn check32(n: &mut u32, fast: &mut u32, mid: &mut u32, c: u32, a: u32, b: u32) {
     *n += 1;
-    if let Some((z, m)) = fma32_inline(c, a, b) {
+    if let Some((z, m)) = fma32_fast(c, a, b) {
         *fast += 1;
         *mid += m as u32;
         let (c, a, b) = (c as u64, a as u64, b as u64);
-        assert_eq!(
-            z as u64,
-            run(RN, |f| f.muladd(S, c, a, b)).0,
-            "{a:#x} * {b:#x} + {c:#x}"
-        );
+        assert_eq!(z as u64, slow(S, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
     }
 }

@@ -65,10 +65,11 @@ fn regs(i: u32) -> (usize, usize, usize) {
 
 /// Writes lanes `v` (a 64-bit result clears the top half) and the flags.
 fn finish(c: &mut Cpu, rd: usize, v: u128, bits: u32, fpu: Fpu) {
-    c.v[rd] = if bits == 128 {
-        v
-    } else {
-        v & ((1u128 << bits) - 1)
+    // (Bits of 16, 32, 64 or 128: no u128 shift by a variable, a call in wasm.)
+    c.v[rd] = match bits {
+        128 => v,
+        64 => v as u64 as u128,
+        _ => (v as u64 & (u64::MAX >> (64 - bits))) as u128,
     };
     c.fpsr |= fpu.flags;
 }
@@ -117,7 +118,7 @@ fn three_same(c: &mut Cpu, i: u32) -> R {
     let pairwise = key.0 && matches!(key.2, 24 | 26 | 30) && !(key.1 && key.2 == 26);
     let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
     let w = f.bits();
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let mut r = 0u128;
     for e in 0..n {
         let (x, y) = if pairwise {
@@ -140,7 +141,7 @@ fn two_misc(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, _) = regs(i);
     let (u, a2, opc) = (bit(i, 29), bit(i, 23), bits(i, 16, 12));
     let w = f.bits();
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let fpcr_rm = fpu.rounding();
     let src = c.v[rn];
     if matches!((u, a2, opc), (_, true, 28)) && f == D {
@@ -197,7 +198,7 @@ fn two_misc(c: &mut Cpu, i: u32) -> R {
 fn convert(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, _) = regs(i);
     let (q, scalar, sz, opc) = (bit(i, 30), bit(i, 28), bit(i, 22), bits(i, 16, 12));
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let rm = fpu.rounding();
     let a = c.v[rn];
     let (big, small) = if sz { (D, S) } else { (S, H) };
@@ -238,7 +239,7 @@ fn pair(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, _) = regs(i);
     let w = f.bits();
     let (x, y) = (elem(c.v[rn], 0, w), elem(c.v[rn], 1, w));
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let min = bit(i, 23);
     let v = match bits(i, 16, 12) {
         0b01100 => fpu.maxnum(f, x, y, !min),
@@ -256,7 +257,7 @@ fn across(c: &mut Cpu, i: u32) -> R {
     }
     let (rd, rn, _) = regs(i);
     let a = c.v[rn];
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let (nm, is_max) = (bits(i, 16, 12) == 0b01100, !bit(i, 23));
     let mut op = |x, y| {
         if nm {
@@ -288,7 +289,7 @@ fn by_element(c: &mut Cpu, i: u32) -> R {
     let w = f.bits();
     let y = elem(c.v[bits(i, 20, 16) as usize], index, w);
     let (a, d) = (c.v[rn], c.v[rd]);
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let mut r = 0u128;
     for e in 0..n {
         let x = elem(a, e, w);
@@ -326,7 +327,7 @@ fn fixed(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, _) = regs(i);
     let u = bit(i, 29);
     let a = c.v[rn];
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let rm = fpu.rounding();
     let mut r = 0u128;
     for e in 0..n {

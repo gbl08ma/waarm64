@@ -170,6 +170,15 @@ impl Fpu {
         Fpu { fpcr, flags: 0 }
     }
 
+    /// [`Fpu::new`] with FPSR's IXC among its flags (it's cumulative: ORed
+    /// back, it changes nothing): the FMA's fast path needs it set.
+    pub fn with_fpsr(fpcr: u64, fpsr: u64) -> Fpu {
+        Fpu {
+            fpcr,
+            flags: fpsr & IXC,
+        }
+    }
+
     /// FPCR.RMode.
     pub fn rounding(&self) -> Rounding {
         match (self.fpcr >> 22) & 3 {
@@ -503,6 +512,20 @@ impl Fpu {
 
     /// FPMulAdd: `addend + a × b` with a single rounding.
     pub fn muladd(&mut self, f: Fmt, addend: u64, a: u64, b: u64) -> u64 {
+        // The JIT's algorithms where they apply (RNE, IXC set, normal or zero
+        // operands, a normal result): no flag to raise.
+        if self.fast() && self.flags & IXC != 0 {
+            let z = if f == D {
+                fma64_fast(addend, a, b)
+            } else if f == S {
+                fma32_fast(addend as u32, a as u32, b as u32).map(|(z, _)| z as u64)
+            } else {
+                None
+            };
+            if let Some(z) = z {
+                return z;
+            }
+        }
         let (vc, va, vb) = (self.unpack(f, addend), self.unpack(f, a), self.unpack(f, b));
         let (ia, ib) = (va.class == Class::Inf, vb.class == Class::Inf);
         let (za, zb) = (va.class == Class::Zero, vb.class == Class::Zero);
@@ -1201,6 +1224,71 @@ impl Fpu {
         }
         Some(r)
     }
+}
+
+/// The JIT's inline double FMA (jit/emit/float.rs), op for op, as [`Fpu::muladd`]'s
+/// fast path: `None` where its guard sends the instruction to the helper. Only
+/// for round to nearest even with IXC already set: it doesn't say whether the
+/// result is exact.
+pub(crate) fn fma64_fast(c: u64, a: u64, b: u64) -> Option<u64> {
+    let e = |x: u64| (x >> 52) & 0x7ff;
+    let (ea, eb, ec) = (e(a), e(b), e(c));
+    // No denormal operand, a zero factor or a product from 2^-900 up (its
+    // error exact). An overflow anywhere ends in an infinite or NaN z.
+    let noz = |e: u64, x: u64| (e.wrapping_sub(1) < 0x7fe) | (x << 1 == 0);
+    let ok =
+        noz(ea, a) & noz(eb, b) & noz(ec, c) & ((ea + eb >= 1146) | (a << 1 == 0) | (b << 1 == 0));
+    let (a, b, c) = (f64::from_bits(a), f64::from_bits(b), f64::from_bits(c));
+    let split = |x: f64| {
+        let g = 134217729.0 * x;
+        let h = g - (g - x);
+        (h, x - h)
+    };
+    let two_sum = |x: f64, y: f64| {
+        let s = x + y;
+        let bb = s - x;
+        (s, (x - (s - bb)) + (y - bb))
+    };
+    let ((ah, al), (bh, bl)) = (split(a), split(b));
+    let p = a * b;
+    let pl = ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+    let (th, tl) = two_sum(c, p);
+    // v = tl + pl rounded to odd: RN's result, or its other neighbour when
+    // inexact and even (toward the error).
+    let (s, err) = two_sum(tl, pl);
+    let sb = s.to_bits();
+    let fix = (err.abs() > 0.0) & (sb & 1 == 0);
+    let v = f64::from_bits(if fix {
+        sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64)
+    } else {
+        sb
+    });
+    let z = (th + v).to_bits();
+    (ok & (e(z).wrapping_sub(2) < 0x7fd)).then_some(z)
+}
+
+/// The JIT's inline single FMA, as [`Fpu::muladd`]'s fast path (as [`fma64_fast`]'s): the product exact in double, the sum rounded
+/// to nearest in double, then to single: correct unless the double sum is a
+/// single midpoint (its low 29 bits 1 << 28), where the sum is rounded to odd
+/// instead (correct: 53 ≥ 24 + 2 bits). Also says whether it was a midpoint.
+pub(crate) fn fma32_fast(c: u32, a: u32, b: u32) -> Option<(u32, bool)> {
+    let e = |x: u32| (x >> 23) & 0xff;
+    let noz = |x: u32| (e(x).wrapping_sub(1) < 0xfe) | (x << 1 == 0);
+    let ok = noz(a) & noz(b) & noz(c);
+    let f = |x: u32| f32::from_bits(x) as f64;
+    let (p, c) = (f(a) * f(b), f(c));
+    let mut s = p + c;
+    let mid = s.to_bits() & ((1 << 29) - 1) == 1 << 28;
+    if mid {
+        let bb = s - p;
+        let err = (p - (s - bb)) + (c - bb);
+        let sb = s.to_bits();
+        if (err.abs() > 0.0) & (sb & 1 == 0) {
+            s = f64::from_bits(sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64));
+        }
+    }
+    let z = (s as f32).to_bits();
+    (ok & (e(z).wrapping_sub(2) < 0xfd)).then_some((z, mid))
 }
 
 #[cfg(test)]

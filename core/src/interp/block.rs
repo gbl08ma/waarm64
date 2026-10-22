@@ -127,12 +127,29 @@ enum K {
     Dmb,
     /// DC ZVA of `Xd`'s 64-byte block: `imm` the word.
     Zva,
+    /// CAS, CASB, CASH and their acquire/release forms: `d` Rt, `n` Rn, `m` Rs;
+    /// `imm` the word (the size in it; [`run`] runs it generically).
+    Cas,
+    /// ADC/ADCS/SBC/SBCS: `x` = sf | S << 1 | sub << 2.
+    Adc,
+    /// UDIV/SDIV: `x` = sf | signed << 1.
+    Div,
+    /// UMULH/SMULH: `x` = signed.
+    Mulh,
+    /// BFM: `m` immr, `x` = imms | sf << 8.
+    Bfm,
     /// LDR (literal) of `x` bytes (bit 4: LDRSW).
     LdLit,
     /// MRS of a register `sys::plain` reads at the block's EL (made by `uop_el`, after
     /// the kinds the random blocks draw): `x` 0 the u64 at offset `imm` in the `Cpu`,
-    /// 1 the constant `imm`, 2 `pstate & imm`, 3 NZCV.
+    /// 1 the constant `imm`, 2 `pstate & imm`, 3 NZCV, 4 SP_EL0 (`sp_other` while
+    /// SPSel is 1).
     Mrs,
+    /// MSR of what `sys::plain_write` writes at the block's EL, and DAIFSet at EL1
+    /// (made by `uop_el`): `d` Rt; `x` 0 the u64 at offset `imm >> 32` in the `Cpu`,
+    /// 1 SP_EL0 while SPSel is 1, 2 DAIF unless it unmasks IRQs, 3 DAIFSet (`imm >>
+    /// 32` the mask); `imm`'s low half the word ([`run`] runs it generically).
+    Msr,
 }
 
 /// Marks each MovI with the number of MovIs right after it, and each LdO or
@@ -146,6 +163,19 @@ pub fn mov_runs(b: &mut [Wide]) {
             n += 1;
         } else {
             n = 0;
+        }
+    }
+    // A compare (CMP and SUBS & co, immediate or shifted register; TST and
+    // ANDS) right before its B.cond: the compare's handler branches too.
+    for k in 0..b.len().saturating_sub(1) {
+        if b[k + 1].k == K::Bcond {
+            match b[k].k {
+                K::AddsI => b[k].x |= 4,
+                K::AddR if b[k].x >> 9 & 1 != 0 => b[k].x |= 1 << 11,
+                K::LogI if b[k].x & 3 == 3 => b[k].x |= 8,
+                K::LogR if b[k].x >> 8 & 3 == 3 => b[k].x |= 1 << 12,
+                _ => {}
+            }
         }
     }
     let o = |u: &Wide| matches!(u.k, K::LdO | K::StO);
@@ -258,7 +288,12 @@ impl Uop {
             | K::Bit1
             | K::Mov
             | K::Br
-            | K::Blr => (d, n, m, w, 0),
+            | K::Blr
+            | K::Adc
+            | K::Div
+            | K::Mulh
+            | K::Bfm => (d, n, m, w, 0),
+            K::Cas => (d, n, m, 0, w as u64),
             K::MovI => (
                 d,
                 0,
@@ -284,7 +319,18 @@ impl Uop {
             }
             K::Lse => (d, n, m, w >> 30 & 1 | (w >> 12 & 15) << 1, w as u64),
             K::Ldx | K::Stx => (d, n, m, w >> 30 | ((w >> 23 & 1) ^ 1) << 2, w as u64),
-            K::Mrs => (d, 0, 0, n, if n == 0 || n == 3 { w as u64 } else { c() }),
+            K::Mrs => (
+                d,
+                0,
+                0,
+                n,
+                if matches!(n, 0 | 3 | 4) {
+                    w as u64
+                } else {
+                    c()
+                },
+            ),
+            K::Msr => (d & 31, 0, 0, d >> 5, w as u64 | ((n | m << 8) as u64) << 32),
         };
         Wide::new(k, d, n, m, x, imm)
     }
@@ -437,7 +483,11 @@ pub fn pack(b: &[Wide]) -> Vec<Uop> {
             | K::Bit1
             | K::Mov
             | K::Br
-            | K::Blr => p(d, n, m, u.x),
+            | K::Blr
+            | K::Adc
+            | K::Div
+            | K::Mulh
+            | K::Bfm => p(d, n, m, u.x),
             K::Csel | K::Ccmp => p(d, n, m, u.x | (cond_mask(u.x & 15) as u32) << 16),
             K::MovI => {
                 let run = u.x.min(255) as u8;
@@ -473,9 +523,13 @@ pub fn pack(b: &[Wide]) -> Vec<Uop> {
                     kv(u.imm >> 32 | (u.x as u64) << 32 | (off as u64) << 40),
                 )
             }
-            K::Lse | K::Ldx | K::Stx => p(d, n, m, u.imm as u32),
+            K::Lse | K::Ldx | K::Stx | K::Cas => p(d, n, m, u.imm as u32),
+            K::Msr => {
+                let a = u.imm >> 32;
+                p(d | (u.x as u8) << 5, a as u8, (a >> 8) as u8, u.imm as u32)
+            }
             K::Mrs => match u.x {
-                0 | 3 => p(d, u.x as u8, 0, u.imm as u32),
+                0 | 3 | 4 => p(d, u.x as u8, 0, u.imm as u32),
                 x => p(d, x as u8, 0, kv(u.imm)),
             },
         });
@@ -495,9 +549,25 @@ pub(crate) fn uop_el(w: u32, op: Op, el1: bool) -> Wide {
             Some(Plain::Const(v)) => (1, v),
             Some(Plain::Pstate(m)) => (2, m),
             Some(Plain::Nzcv) => (3, 0),
+            Some(Plain::SpEl0) => (4, 0),
             _ => return uop_op(w, op),
         };
         return Wide::new(K::Mrs, rt, 0, 0, x, imm);
+    }
+    if op == Op::MSR_reg {
+        use super::sys::PlainWrite;
+        let (rt, key) = (bits(w, 4, 0), bits(w, 20, 5));
+        let (x, a) = match super::sys::plain_write(key, el1) {
+            Some(PlainWrite::Field(off)) => (0, off as u64),
+            Some(PlainWrite::SpEl0) => (1, 0),
+            Some(PlainWrite::Daif) => (2, 0),
+            None => return uop_op(w, op),
+        };
+        return Wide::new(K::Msr, rt, 0, 0, x, w as u64 | a << 32);
+    }
+    // DAIFSet: it only masks.
+    if op == Op::MSR_imm && el1 && (bits(w, 18, 16), bits(w, 7, 5)) == (3, 6) {
+        return Wide::new(K::Msr, 0, 0, 0, 3, w as u64 | (bits(w, 11, 8) as u64) << 38);
     }
     uop_op(w, op)
 }
@@ -515,7 +585,8 @@ fn mrs(c: &Cpu, x: u32, imm: u64) -> u64 {
         },
         1 => imm,
         2 => c.pstate & imm,
-        _ => c.nzcv,
+        3 => c.nzcv,
+        _ => c.sp_other,
     }
 }
 
@@ -618,7 +689,7 @@ fn uop_op(w: u32, op: Op) -> Wide {
             }
         }
 
-        SBFM | UBFM | ASR_1 | ASR_2 | SXTB_1 | SXTB_2 | SXTH_1 | SXTH_2 | SXTW => {
+        SBFM | BFM | UBFM | ASR_1 | ASR_2 | SXTB_1 | SXTB_2 | SXTH_1 | SXTH_2 | SXTW => {
             let (n, immr, imms) = (bits(w, 22, 22), bits(w, 21, 16), bits(w, 15, 10));
             if (sf && n != 1) || (!sf && (n != 0 || immr >= 32 || imms >= 32)) {
                 return generic;
@@ -628,6 +699,7 @@ fn uop_op(w: u32, op: Op) -> Wide {
             };
             match bits(w, 30, 29) {
                 0 => Wide::new(K::Sbfm, rd, rn, immr, imms | (sf as u32) << 8, 0),
+                1 => Wide::new(K::Bfm, rd, rn, immr, imms | (sf as u32) << 8, 0),
                 2 => Wide::new(K::Ubfm, rd, rn, immr, sf as u32, wmask & tmask),
                 _ => generic,
             }
@@ -803,6 +875,14 @@ fn uop_op(w: u32, op: Op) -> Wide {
             w as u64,
         ),
         DMB => u(K::Dmb, 0, w as u64),
+        CAS | CASB | CASH => u(K::Cas, 0, w as u64),
+        ADC | ADCS | SBC | SBCS => u(
+            K::Adc,
+            sf as u32 | (bit(w, 29) as u32) << 1 | (bit(w, 30) as u32) << 2,
+            0,
+        ),
+        UDIV | SDIV => u(K::Div, sf as u32 | ((op == SDIV) as u32) << 1, 0),
+        UMULH | SMULH => u(K::Mulh, (op == SMULH) as u32, 0),
         DC_ZVA => u(K::Zva, 0, w as u64),
         STP_LDP_gen | STNP_LDNP_gen => {
             let (opc, load) = (bits(w, 31, 30), bit(w, 22));
@@ -830,19 +910,25 @@ fn uop_op(w: u32, op: Op) -> Wide {
 pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], len: usize, pc: u64) -> (u64, Option<Exit>) {
     let mut pc = pc;
     for k in 0..len {
+        // A generic one first, without unpacking it (the word and its `Op`).
+        let g = &b[k];
+        if g.kind() == K::Generic {
+            let op = Op::ALL[(g.d as u16 | (g.n as u16) << 8) as usize];
+            if let Err(e) = super::exec_at_op(c, m, g.w, pc, op) {
+                return (k as u64, Some(e));
+            }
+            if k + 1 == len {
+                // It may have branched (ERET, an MSR's exit): the PC is its.
+                return (len as u64, None);
+            }
+            pc = pc.wrapping_add(4);
+            continue;
+        }
         let u = &Uop::wide(b, k);
         let (d, n) = (u.d as u32, u.n as u32);
         let sf = u.x & 1 != 0;
         match u.k {
-            K::Generic => {
-                if let Err(e) = super::exec_at_op(c, m, u.x, pc, Op::ALL[u.imm as usize]) {
-                    return (k as u64, Some(e));
-                }
-                if k + 1 == len {
-                    // It may have branched (ERET, an MSR's exit): the PC is its.
-                    return (len as u64, None);
-                }
-            }
+            K::Generic => unreachable!("run above"),
             K::Nop => {}
             K::AddI64 => c.x[d as usize] = c.x[n as usize].wrapping_add(u.imm),
             K::AddI32 => c.x[d as usize] = c.x[n as usize].wrapping_add(u.imm) as u32 as u64,
@@ -938,6 +1024,13 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], len: usize, pc: u64) -> (u6
             }
             K::Extr => c.set_reg(d, extr(u.x, c.reg(n), c.reg(u.m as u32))),
             K::Bit1 => c.set_reg(d, bit1(u.x, c.reg(n))),
+            // SP_EL0 with SPSel 0 is UNDEFINED: the interpreter's MRS (its word).
+            K::Mrs if u.x == 4 && c.pstate & 1 == 0 => {
+                let w = 0xd538_4100 | d;
+                if let Err(e) = super::exec_at_op(c, m, w, pc, crate::decode::decode(w)) {
+                    return (k as u64, Some(e));
+                }
+            }
             K::Mrs => c.set_reg(d, mrs(c, u.x, u.imm)),
             K::Fp => {
                 let w = (u.imm >> 32) as u32;
@@ -945,7 +1038,14 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], len: usize, pc: u64) -> (u6
                     return (k as u64, Some(e));
                 }
             }
-            K::Lse | K::Ldx | K::Stx | K::Dmb | K::Zva => {
+            K::Adc => {
+                let v = adc(c, u.x, c.reg(n), c.reg(u.m as u32));
+                c.set_reg(d, v)
+            }
+            K::Div => c.set_reg(d, div(u.x, c.reg(n), c.reg(u.m as u32))),
+            K::Mulh => c.set_reg(d, mulh(u.x, c.reg(n), c.reg(u.m as u32))),
+            K::Bfm => c.set_reg(d, bfm(u.m as u32, u.x, c.reg(d), c.reg(n))),
+            K::Lse | K::Ldx | K::Stx | K::Dmb | K::Zva | K::Msr | K::Cas => {
                 let w = u.imm as u32;
                 if let Err(e) = super::exec_at_op(c, m, w, pc, crate::decode::decode(w)) {
                     return (k as u64, Some(e));
@@ -1137,11 +1237,22 @@ impl Run {
         self.done - (unsafe { self.end.offset_from(self.u) }) as u64
     }
 
-    /// The micro-op [`hot`] stopped at ([`SLOW`]), and whether it's its
-    /// block prefix's last.
-    pub fn uop(&self) -> (Uop, bool) {
-        // SAFETY: `u` < `end`, into the arena, which nothing changed since.
-        (unsafe { *self.u }, unsafe { self.u.add(1) } == self.end)
+    /// What the slow path runs where [`hot`] stopped ([`SLOW`]): that
+    /// micro-op and the ones right after it in the prefix that `hot` never
+    /// runs (generic, literal loads), so a run of them costs one exit from
+    /// `hot`, not one each. Their number, the last of them, and whether it's
+    /// the prefix's last.
+    pub fn stretch(&self) -> (usize, Uop, bool) {
+        let mut n = 1;
+        // SAFETY: `u` + `n` <= `end`, into the arena, which nothing changed since.
+        unsafe {
+            while self.u.add(n) != self.end
+                && matches!((*self.u.add(n)).kind(), K::Generic | K::LdLit)
+            {
+                n += 1;
+            }
+            (n, *self.u.add(n - 1), self.u.add(n) == self.end)
+        }
     }
 
     /// The micro-op [`hot`] stopped at, as an index of `arena` (its).
@@ -1150,17 +1261,18 @@ impl Run {
         (unsafe { self.u.offset_from(arena.as_ptr()) }) as usize
     }
 
-    /// Past the micro-op [`hot`] stopped at, which retired (not its block's last).
-    pub fn step(&mut self) {
-        // SAFETY: `u` < `end`.
-        self.u = unsafe { self.u.add(1) };
-        self.pc = self.pc.wrapping_add(4);
+    /// Past the `n` micro-ops of a [`Run::stretch`], which retired (not its
+    /// prefix's last).
+    pub fn step(&mut self, n: usize) {
+        // SAFETY: `u` + `n` < `end`.
+        self.u = unsafe { self.u.add(n) };
+        self.pc = self.pc.wrapping_add(4 * n as u64);
     }
 }
 
 /// [`hot`] stopped: the run ends here, `c.pc` set.
 pub const STOP: u32 = 0;
-/// [`hot`] stopped at a micro-op it can't run inline ([`Run::uop`] at
+/// [`hot`] stopped at a micro-op it can't run inline ([`Run::stretch`] at
 /// [`Run::pc`], `c.pc` not set): a generic one, a literal load, or a load or
 /// store whose fast path missed.
 pub const SLOW: u32 = 1;
@@ -1189,6 +1301,24 @@ fn rsp(c: &Cpu, n: u32) -> u64 {
 #[inline(always)]
 fn wsp(c: &mut Cpu, n: u32, v: u64) {
     c.x[(n & 31) as usize] = v;
+}
+
+/// In [`hot`], after a flag setter whose B.cond follows it ([`mov_runs`]):
+/// that B.cond too, if it's in the block's prefix (`$u` < `$end`), with the
+/// flags `$nzcv`; it ends the block (`$l`).
+macro_rules! and_bcond {
+    ($l:lifetime, $u:ident, $end:ident, $pc:ident, $nzcv:expr) => {
+        // SAFETY: $u < $end.
+        if unsafe { $u.add(1) } != $end {
+            // SAFETY: $u + 1 < $end, a B.cond.
+            $u = unsafe { $u.add(1) };
+            $pc = $pc.wrapping_add(4);
+            let b = unsafe { &*$u };
+            let t = holds(b.n as u32 | (b.m as u32) << 8, $nzcv);
+            // SAFETY: as above.
+            break $l $pc.wrapping_add(if t { unsafe { taken_imm($u) } } else { 4 });
+        }
+    };
 }
 
 /// Runs decoded blocks from `r` as [`run`] does, chaining from each to the
@@ -1419,17 +1549,74 @@ pub fn hot<B: Fast>(
                     }
                 }
                 K::Mrs => {
-                    let imm = if n == 0 || n == 3 {
+                    let imm = if matches!(n, 0 | 3 | 4) {
                         w as u64
                     } else {
                         // SAFETY: its `w` is its constant's distance.
                         unsafe { konst(u) }
                     };
+                    if n == 4 && c.pstate & 1 == 0 {
+                        break 'run SLOW;
+                    }
                     wr(c, d, mrs(c, n, imm))
+                }
+                K::Msr => {
+                    let (rt, a) = (d & 31, n | (o.m as u32) << 8);
+                    let v = rd(c, rt);
+                    match d >> 5 {
+                        // SAFETY: `a` is the offset of a u64 field of `Cpu` (`sys::plain_write`).
+                        0 => unsafe {
+                            (c as *mut Cpu as *mut u8)
+                                .add(a as usize % (core::mem::size_of::<Cpu>() - 7))
+                                .cast::<u64>()
+                                .write_unaligned(v)
+                        },
+                        1 => {
+                            if c.pstate & 1 == 0 {
+                                break 'run SLOW;
+                            }
+                            c.sp_other = v;
+                        }
+                        2 => {
+                            let p = c.pstate & !crate::cpu::DAIF | v & crate::cpu::DAIF;
+                            // Unmasking IRQs leaves (`Exit::Resync`): the interpreter's.
+                            if c.pstate & !p & crate::cpu::PSTATE_I != 0 {
+                                break 'run SLOW;
+                            }
+                            c.pstate = p;
+                        }
+                        _ => c.pstate |= a as u64,
+                    }
                 }
                 K::Maddl => wr(c, d, maddl(w, rd(c, n), rd(c, o.m as u32), rd(c, w & 31))),
                 K::Extr => wr(c, d, extr(w, rd(c, n), rd(c, o.m as u32))),
                 K::Bit1 => wr(c, d, bit1(w, rd(c, n))),
+                K::Adc => {
+                    let v = adc(c, w, rd(c, n), rd(c, o.m as u32));
+                    wr(c, d, v)
+                }
+                K::Div => wr(c, d, div(w, rd(c, n), rd(c, o.m as u32))),
+                K::Mulh => wr(c, d, mulh(w, rd(c, n), rd(c, o.m as u32))),
+                K::Bfm => wr(c, d, bfm(o.m as u32, w, rd(c, d), rd(c, n))),
+                K::Cas => {
+                    let base = rsp(c, n);
+                    let size = 1u32 << (w >> 30);
+                    if n == 31 && base & 15 != 0 || base & (size as u64 - 1) != 0 {
+                        break 'run SLOW;
+                    }
+                    let Some(p) = m.fast_in(fx, base, size, Use::Write) else {
+                        break 'run SLOW;
+                    };
+                    if p as usize & (size as usize - 1) != 0 {
+                        break 'run SLOW;
+                    }
+                    let mask = u64::MAX >> (64 - 8 * size);
+                    let (rs, rt) = (o.m as u32, d);
+                    let (old, new) = (rd(c, rs) & mask, rd(c, rt) & mask);
+                    // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
+                    let seen = unsafe { cas_old(p, size, old, new) };
+                    wr(c, rs, seen);
+                }
                 K::Nop => {}
                 K::AddI64 => wsp(c, d, rsp(c, n).wrapping_add(w as i32 as i64 as u64)),
                 K::AddI32 => wsp(
@@ -1442,11 +1629,17 @@ pub fn hot<B: Fast>(
                     let (v, f) = add_with_carry(rsp(c, n), imm, x & 2 != 0, x & 1 != 0);
                     c.nzcv = f;
                     wr(c, d, v);
+                    if x & 4 != 0 {
+                        and_bcond!('block, u, end, pc, f);
+                    }
                 }
                 K::AddR => {
                     let sf = w >> 8 & 1 != 0;
                     let y = shift(rd(c, o.m as u32), w & 3, w >> 2 & 63, sf);
                     addsub_h(c, w, d, rd(c, n), y, sf, false);
+                    if w & 1 << 11 != 0 {
+                        and_bcond!('block, u, end, pc, c.nzcv);
+                    }
                 }
                 K::AddX => {
                     let sf = w >> 8 & 1 != 0;
@@ -1478,6 +1671,9 @@ pub fn hot<B: Fast>(
                     // SAFETY: a LogI's `w` is its constant's distance.
                     let imm = unsafe { konst(u) };
                     logical_h(c, opc, d, op(opc, rd(c, n), imm), x & 4 != 0, true);
+                    if x & 8 != 0 {
+                        and_bcond!('block, u, end, pc, c.nzcv);
+                    }
                 }
                 K::LogR => {
                     let sf = w >> 11 & 1 != 0;
@@ -1485,6 +1681,9 @@ pub fn hot<B: Fast>(
                     let y = if w >> 10 & 1 != 0 { !y } else { y };
                     let opc = w >> 8 & 3;
                     logical_h(c, opc, d, op(opc, rd(c, n), y), sf, false);
+                    if w & 1 << 12 != 0 {
+                        and_bcond!('block, u, end, pc, c.nzcv);
+                    }
                 }
                 K::Ubfm => {
                     let sf = w & 1 != 0;
@@ -1709,16 +1908,16 @@ pub fn run_hot(
         if hot(c, m, &mut dec, |_| false, &mut r) != SLOW {
             return (r.done, None);
         }
-        let (_, last) = r.uop();
+        let (n, _, last) = r.stretch();
         let before = r.retired();
-        let (k, e) = run(c, m, &dec.arena[r.at(&dec.arena)..], 1, r.pc);
+        let (k, e) = run(c, m, &dec.arena[r.at(&dec.arena)..], n, r.pc);
         if e.is_some() {
             return (before + k, e);
         }
         if last {
             return (r.done, None);
         }
-        r.step();
+        r.step(n);
     }
 }
 
@@ -1782,6 +1981,40 @@ unsafe fn cas_sc(p: *mut u8, size: u32, old: u64, new: u64) -> bool {
             _ => AtomicU64::from_ptr(p as *mut u64)
                 .compare_exchange(old, new, SeqCst, SeqCst)
                 .is_ok(),
+        }
+    }
+}
+
+/// [`cas_sc`] that returns the value it found (`old` if it swapped).
+///
+/// # Safety
+/// As for [`load_sc`].
+#[inline(always)]
+unsafe fn cas_old(p: *mut u8, size: u32, old: u64, new: u64) -> u64 {
+    use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering::SeqCst};
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        match size {
+            1 => match AtomicU8::from_ptr(p).compare_exchange(old as u8, new as u8, SeqCst, SeqCst)
+            {
+                Ok(v) | Err(v) => v as u64,
+            },
+            2 => match AtomicU16::from_ptr(p as *mut u16)
+                .compare_exchange(old as u16, new as u16, SeqCst, SeqCst)
+            {
+                Ok(v) | Err(v) => v as u64,
+            },
+            4 => match AtomicU32::from_ptr(p as *mut u32)
+                .compare_exchange(old as u32, new as u32, SeqCst, SeqCst)
+            {
+                Ok(v) | Err(v) => v as u64,
+            },
+            _ => {
+                match AtomicU64::from_ptr(p as *mut u64).compare_exchange(old, new, SeqCst, SeqCst)
+                {
+                    Ok(v) | Err(v) => v,
+                }
+            }
         }
     }
 }
@@ -1945,6 +2178,62 @@ fn bit1(f: u32, x: u64) -> u64 {
         _ if sf => x.leading_zeros() as u64,
         _ => (x as u32).leading_zeros() as u64,
     }
+}
+
+/// ADC & co (`K::Adc`, `f` its `x`) of `x` and `y`: the result (the flags set if S).
+#[inline(always)]
+fn adc(c: &mut Cpu, f: u32, x: u64, y: u64) -> u64 {
+    let y = if f & 4 != 0 { !y } else { y };
+    let (r, fl) = add_with_carry(x, y, c.nzcv >> 29 & 1 != 0, f & 1 != 0);
+    if f & 2 != 0 {
+        c.nzcv = fl;
+    }
+    r
+}
+
+/// UDIV/SDIV (`K::Div`, `f` its `x`): 0 for a divisor of 0.
+#[inline(always)]
+fn div(f: u32, x: u64, y: u64) -> u64 {
+    let sf = f & 1 != 0;
+    let (x, y) = (trunc(x, sf), trunc(y, sf));
+    match (f >> 1 & 1 != 0, sf) {
+        _ if y == 0 => 0,
+        (false, _) => x / y,
+        (true, true) => (x as i64).wrapping_div(y as i64) as u64,
+        (true, false) => (x as u32 as i32).wrapping_div(y as u32 as i32) as u32 as u64,
+    }
+}
+
+/// UMULH/SMULH (`K::Mulh`, `f` its `x`), in 32-bit halves (a u128 product is
+/// a call to compiler-rt in wasm).
+#[inline(always)]
+fn mulh(f: u32, x: u64, y: u64) -> u64 {
+    let (x0, x1, y0, y1) = (x & 0xffff_ffff, x >> 32, y & 0xffff_ffff, y >> 32);
+    let (p00, p01, p10) = (x0 * y0, x0 * y1, x1 * y0);
+    let mid = (p00 >> 32) + (p01 & 0xffff_ffff) + (p10 & 0xffff_ffff);
+    let hi = (x1 * y1)
+        .wrapping_add(p01 >> 32)
+        .wrapping_add(p10 >> 32)
+        .wrapping_add(mid >> 32);
+    if f & 1 == 0 {
+        hi
+    } else {
+        // Signed: less the other operand for each negative one.
+        hi.wrapping_sub(if (x as i64) < 0 { y } else { 0 })
+            .wrapping_sub(if (y as i64) < 0 { x } else { 0 })
+    }
+}
+
+/// BFM (`K::Bfm`): `r` immr, `f` its `x`, into `dst` from `src` (the masks
+/// `bit_masks` makes, over the datasize: the result is truncated to it).
+#[inline(always)]
+fn bfm(r: u32, f: u32, dst: u64, src: u64) -> u64 {
+    let (r, s, sf) = (r & 63, f & 63, f >> 8 & 1 != 0);
+    let ones = |k: u32| if k >= 64 { u64::MAX } else { (1u64 << k) - 1 };
+    let wmask = ror(ones(s + 1), r, sf);
+    let tmask = ones((s.wrapping_sub(r) & if sf { 63 } else { 31 }) + 1);
+    let bot = ror(trunc(src, sf), r, sf) & wmask;
+    trunc((dst & !tmask) | (((dst & !wmask) | bot) & tmask), sf)
 }
 
 /// A branch (always a block's last instruction) to `to`.

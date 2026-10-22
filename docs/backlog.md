@@ -66,18 +66,25 @@ left open, most promising first.
   part of that (loop 11: floor 1000, maximum 2000 from 3/8 of the cache, −13% wasm and +6% busy MIPS in Firefox's
   pages session, the boots unchanged); a per-block policy has to beat it, judged by the gates of docs/benchmarking.md
   "Screening an A/B" (the `go build` loop by its build times).
-- **More handlers, by workload.** The boots' generic path is now LDXP/STXP, CAS, MSR and the rest; a browser's
-  (Firefox's pages session, `bench/interp/REPORT.md` "M8-INTERP loop 10") 1.9% of its interpreted instructions,
-  scalar FP and NEON spread over dozens of classes, whose handlers cost `hot` 1-2% on integer code and gained
-  nothing measurable (`results/m8-interp-l9/fp/`). A handler pays where a class is common in code that stays
-  interpreted: weigh it against the small guests every time. FP itself runs at a sixth of the integer rate
-  (`FMLA`/`FMADD` always take the software FMA, vector FP goes lane by lane through `u128`).
-- **`hot`'s cost per micro-op** (profiled 2026-10-21, `bench/interp/REPORT.md` "M8-INTERP loop 8"): ~30% of its
-  time whatever the kind runs: V8's interrupt check at the loop head, four field loads, the jump table, and the
-  handler's first instruction (the indirect branch's redirect, 15-20% between them). Untried: tail-call dispatch
-  (`become`) as an A/B; register caching; ADRP+ADD as a pair (0.5% of the pairs). A sentinel instead of the
-  `u == end` test and LdO/StO runs in a loop lost (docs/cpu.md "Tried and not kept"): any code in `hot` moves V8's
-  register allocation for all of it, so measure on the small guests too.
+- **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
+  Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
+  MSRs that change the regime and DAIFClr; ISB and DSB leave with `Exit::Resync` under parallel SMP anyway. A
+  browser's (loop 10, before loop 13): scalar FP and NEON over dozens of classes, whose handlers cost `hot` 1-2% on
+  integer code; since loop 13 a run of them leaves `hot` once (`Run::stretch`) and the FP core's FMA and lane
+  accesses are 3× faster, so the case for handlers is weaker. Untried: those handlers in a second copy of `hot` (a
+  const generic), entered for blocks with FP, so integer code's `hot` stays as it is. Weigh any handler against the
+  small guests (loop 13's cost them 0.6-0.9%).
+- **`hot`'s cost per micro-op** (profiled 2026-10-21 and 22, `bench/interp/REPORT.md` "M8-INTERP loop 8" and "loop
+  12"): the dispatch is V8's interrupt check at the loop head, the micro-op's field loads, the jump table's bounds
+  check and the handler's first instruction (the indirect branch's redirect). Every store to wasm memory carries an
+  explicit bounds check on arm64 (V8 reloads the memory's size: shared memory can grow; loads use the trap
+  handler), so a register write costs four more instructions; x86_64 wasn't looked at. Untried: register caching;
+  ADRP+ADD as a pair (0.5% of the pairs). Not tried, settled by a measurement: tail-call dispatch (`become`), since
+  V8's `return_call_indirect` costs ~15 ns an entry even among 16 functions (`bench/boot/REPORT.md` "M8: where a busy
+  vCPU's time goes in Firefox"), several times a whole micro-op now. Lost before: a sentinel instead of the `u ==
+  end` test, LdO/StO runs in a loop (docs/cpu.md "Tried and not kept"). Any code in `hot` moves V8's register
+  allocation for all of it, and a guest branch must stay a host branch (loop 12: a `select` there cost 30%): measure
+  on the small guests too.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.

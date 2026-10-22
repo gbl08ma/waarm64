@@ -145,6 +145,13 @@ fn classes() -> Vec<(u32, u32, Op)> {
         DC_ZVA,
         LDTR,
         CAS,
+        ADC,
+        ADCS,
+        SBC,
+        SBCS,
+        SDIV,
+        UMULH,
+        SMULH,
         LDADD,
         LDCLR,
         LDEOR,
@@ -315,7 +322,8 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
     let t = TestRam::new(RAM);
     let mut ran = 0;
     for key in 0..1u32 << 16 {
-        for el1 in [false, true] {
+        // Each a few times: the states' choices (SPSel) matter to some.
+        for el1 in [false, true, false, true, false, true, false, true] {
             if crate::interp::sys::plain(key, el1).is_none() {
                 continue;
             }
@@ -326,7 +334,9 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
             }
             t.mem.write(CODE, 4, w as u64).unwrap();
             let mut c0 = state(&mut r);
-            c0.pstate = if el1 { 0b0101 } else { 0 } | (r.next() & 0x3c0);
+            // EL1h or EL1t (SP_EL0 is UNDEFINED with SPSel 0).
+            c0.pstate = if el1 { 0b0100 | r.below(2) } else { 0 } | (r.next() & 0x3c0);
+            c0.sp_other = r.next();
             c0.nzcv = r.below(16) << 28;
             (c0.tpidr_el0, c0.tpidrro_el0, c0.sctlr_el1, c0.ttbr0_el1) =
                 (r.next(), r.next(), r.next() & !1, r.next());
@@ -344,6 +354,46 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
         }
     }
     assert!(ran > 25, "{ran}");
+}
+
+/// An MSR that `sys::plain_write` knows, and DAIFSet, run as the interpreter
+/// runs them, at EL0 and EL1 (SPSel either way, IRQs masked or not).
+#[test]
+fn an_msr_runs_as_the_interpreter_runs_it() {
+    let mut r = Rng(0x9e37_79b9_7f4a_7c15);
+    let t = TestRam::new(RAM);
+    let mut words = vec![];
+    for key in 0..1u32 << 16 {
+        if crate::interp::sys::plain_write(key, true).is_some() {
+            words.push(0xd500_0000 | key << 5);
+        }
+    }
+    words.extend((0..16).map(|crm| 0xd503_40df | crm << 8));
+    let mut ran = 0;
+    for &w0 in &words {
+        for el1 in [false, true] {
+            for _ in 0..8 {
+                let w = w0 | if w0 & 31 == 31 { 0 } else { r.below(32) as u32 };
+                let u = uop_el(w, crate::decode::decode(w), el1);
+                if u.k != K::Msr {
+                    continue;
+                }
+                t.mem.write(CODE, 4, w as u64).unwrap();
+                let mut c0 = state(&mut r);
+                c0.pstate = if el1 { 0b0100 | r.below(2) } else { 0 } | (r.next() & 0x3c0);
+                (c0.sp_other, c0.tpidr_el0, c0.spsr_el1, c0.elr_el1) =
+                    (r.next(), r.next(), r.next(), r.next());
+                let mut c1 = c0.clone();
+                let want = interp::steps(&mut c1, &t.mem, None, 1);
+                let mut c2 = c0.clone();
+                let got = run_hot(&mut c2, &mut Flat(&t.mem), &pack(&[u]), 1, CODE);
+                assert_eq!(got, want, "{w:#010x} el1 {el1}");
+                assert_eq!(c2, c1, "{w:#010x} el1 {el1}");
+                ran += 1;
+            }
+        }
+    }
+    assert!(ran > 100, "{ran}");
 }
 
 /// A pair of LdOs and StOs ([`mov_runs`]) stops at the prefix's end, as the steps left say.
@@ -366,6 +416,33 @@ fn a_store_pair_stops_at_the_prefix() {
             Ok(if left == 2 { 0x22 } else { 0 })
         );
         assert_eq!(c.pc, CODE + 4 * left as u64);
+    }
+}
+
+/// A compare or a TST and its B.cond ([`mov_runs`]) stop at the prefix's end, as the steps left say.
+#[test]
+fn a_compare_and_branch_stops_at_the_prefix() {
+    // cmp x0, #1; b.eq .+8; cmp x0, x1; b.ne .+8; tst x0, #1; b.ne .+8; tst x0, x1; b.eq .+8
+    for (words, x, nzcv) in [
+        ([0xf100_041f, 0x5400_0040], 4, 0b0110),
+        ([0xeb01_001f, 0x5400_0041], 1 << 11, 0b1000),
+        ([0xf240_001f, 0x5400_0041], 8, 0b0000),
+        ([0xea01_001f, 0x5400_0040], 1 << 12, 0b0100),
+    ] {
+        let uops = packed(&words);
+        assert_eq!(Uop::wide(&uops, 0).x & x, x);
+        let t = TestRam::new(RAM);
+        for left in 1..=2 {
+            let mut c = Cpu::default();
+            (c.x[0], c.x[1]) = (1, 2);
+            assert_eq!(
+                run_hot(&mut c, &mut Flat(&t.mem), &uops, left, CODE),
+                (left as u64, None)
+            );
+            assert_eq!(c.nzcv >> 28, nzcv);
+            // Both taken.
+            assert_eq!(c.pc, CODE + if left == 2 { 12 } else { 4 });
+        }
     }
 }
 

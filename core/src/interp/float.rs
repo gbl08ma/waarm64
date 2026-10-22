@@ -41,7 +41,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
         bits(i, 20, 16) as usize,
         bits(i, 14, 10) as usize,
     );
-    let mut fpu = Fpu::new(c.fpcr);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let rmode = fpu.rounding();
     let f = &mut fpu;
     match op {

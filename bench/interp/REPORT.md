@@ -1463,3 +1463,57 @@ as twice its length (for its constants) and restarted the arenas 15 times agains
 the committed one counts its micro-ops and constants exactly. Planted bugs: a condition mask with one NZCV value
 flipped, and Ubfm's mask a bit short, each failing the differential test (which also caught, during the work, the
 W forms' replicated Ubfm masks).
+
+## M8-INTERP loop 13: compares with their B.cond, more handlers, slow-path stretches, the FP core's FMA and lanes
+
+2026-10-22, the dev VM, Chromium 153.0.8010.52, Node 26.7.0, on main at `8d30c39`; raw data `results/m8-interp-l13/`
+(`fusion/` three rounds, `handlers/` and `total/` two, alternated on the yardstick).
+
+**A compare and its B.cond in one dispatch** (backlog "`hot`'s cost per micro-op"; tried in loop 2 at +1%, when B.cond
+was `cond_holds`' jump table): CMP/CMN/SUBS/ADDS immediate or shifted register and TST/ANDS immediate or register,
+marked at decode when a B.cond follows; the handler tests the B.cond's mask and branches (`and_bcond!`). Against loop
+12, three rounds: Alpine's boot 197.1 → 199.1 MIPS (+1.0%), Buildroot's 132.0 → 133.3 (+0.9%), `dec_mips` 470.0 →
+474.1 (+0.9%), the EL1 guests +0.2-0.3%; some arms' rounds overlap, none is slower.
+
+**What the slow path still ran** (a temporary counter in `run`, Alpine's native boot through the block interpreter):
+22.9M micro-ops, 0.86% of the steps, at ~14× a handled one ~12% of the time. Integer: CAS 7.8%, UDIV 4.4%, STTR 4.4%,
+ADC 3.9%, BFM 3.0%, UMULH 2.2%, ISB 2.2%, CASP 1.3%, LDTR 0.9%, SBC 0.8%, DSB 0.6%, DAIFClr 0.6%, SDIV 0.4%; the
+handled kinds' own slow paths (TLB misses: Ld 7.0%, Ldp 5.8%); and ~42% SIMD (the SHA-256 forms, vector ORR, ADD,
+DUP, REV32, MOVI: a hot loop the yardstick interprets only because it never compiles). **Handlers** for CAS of every
+size and ordering (a CAS on the TLB's pointer), ADC/SBC(S), UDIV/SDIV, UMULH/SMULH (in 32-bit halves: a u128
+product is a compiler-rt call in wasm), BFM, MSR of what `sys::plain_write` writes (a `Cpu` field, SP_EL0 while
+SPSel is 1, DAIF unless it unmasks IRQs) and DAIFSet, and MRS of SP_EL0 (Linux's `current`). Not ISB and DSB: under
+parallel SMP, what users run, they leave with `Exit::Resync` anyway. Not CASP (a 128-bit atomic), STTR/LDTR (the
+EL0 TLB array from EL1). Against the fusion, two rounds: Alpine's boot +3.8%, Buildroot's +1.6%, the small guests
+−0.6 to −0.9% (more code in `hot`); kept for the boots.
+
+**Stretches:** `jit::interpret` ran one micro-op through `run` per `SLOW` and re-entered `hot`; now `run` takes the
+micro-op and the generic ones right after it in the prefix (`Run::stretch`), and runs a generic one without unpacking
+it. In Node: Alpine's boot 215.9 → 218.4 MIPS, the FP guest through the block interpreter 16.6 → 20.2-21.5.
+
+**The FP core** (that guest at 16.6 MIPS against the integer one's 470; the reference interpreter 18.4: the FP core
+itself, not the exits). Its profile: `add_exact` 15%, `round_with` 13%, `muladd` 9%, and compiler-rt's `__lshrti3`
+and `__ashlti3` 15%. `Fpu::muladd` now runs the JIT's inline FMA (moved from `fp/tests.rs`'s models into `fp.rs`)
+where it applies: RNE, FPSR.IXC already set (`Fpu::with_fpsr` seeds it), normal or zero operands, a normal result;
+the models' tests now also check that the software FMA raises nothing but IXC wherever the fast path applies, and
+that the fast path agrees with IXC set. Then `simd::elem`/`set_elem` and `simd_fp::finish` without a `u128` shift by a
+variable (an element is within one 64-bit half). In Node, each step in one invocation: 20.3 → 29.5 (FMA), 35.5 → 44.4
+(lanes), 44.5-47.5 → 50.2-52.8 (generic without unpacking).
+
+**All of it against loop 12** (two rounds):
+
+| (MIPS) | loop 12 | **loop 13** | |
+|---|---|---|---|
+| Alpine's boot | 197.5 | **210.5** | +6.6% |
+| Buildroot's boot | 133.1 | **136.2** | +2.3% |
+| `dec_mips` | 470.1 | 467.2 | −0.6% |
+| `vm_dec_flat_mips` | 467.1 | 466.0 | −0.2% |
+| `vm_dec_mmu_mips` | 462.7 | 469.1 | +1.4% |
+| `interp_fp_mips` (the reference interpreter) | 19.3 | **57.4** | 3.0× |
+| `jit_fp_mips` | 1414.4 | 1415.2 | 0 |
+
+Planted bugs, each failing the differential test or the directed ones: SMULH without its signed correction, BFM's
+tmask a bit long, ADC ignoring the carry, a division by zero giving 1, CAS writing back the new value, DAIF writes
+that unmask IRQs inline, MRS SP_EL0 with SPSel 0 inline (caught once the MRS test tried each key 8 times; it tried
+each once, so SPSel 0 was a coin flip); the new flags check, asserted with one more flag, failed both FMA
+models' tests.

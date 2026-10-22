@@ -2114,15 +2114,15 @@ fn interpret<B: Regime>(
         match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
             STOP => break (r.done, None),
             SLOW => {
-                let (u, last) = r.uop();
+                let (n, u, last) = r.stretch();
                 let before = r.retired();
                 let a = t.dec.arena();
-                let (k, e) = interp::block::run(cpu, m, &a[r.at(a)..], 1, r.pc);
+                let (k, e) = interp::block::run(cpu, m, &a[r.at(a)..], n, r.pc);
                 if e.is_some() {
                     break (before + k, e);
                 }
                 if !last {
-                    r.step();
+                    r.step(n);
                     continue;
                 }
                 // The block's prefix ran: the PC is the next instruction's

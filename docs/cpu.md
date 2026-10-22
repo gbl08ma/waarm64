@@ -205,7 +205,14 @@ FMA, so:
 - **Fast paths:** single and double add/sub/mul/div/sqrt use host arithmetic in RNE when inputs
   are normal and the result is normal above the smallest binade, with Inexact computed exactly.
 - NaNs are fixed up to ARM propagation rules (or the default NaN with `FPCR.DN`) after each op.
-- `FMADD` and friends use the exact software FMA.
+- `FMADD` and friends use the exact software FMA, except where the JIT's inline FMA applies (round to
+  nearest even, FPSR.IXC already set, normal or zero operands and a normal result): then `Fpu::muladd` runs
+  the same algorithm (`fp::fma64_fast`, `fp::fma32_fast`; [jit.md](jit.md) "Floating point", FMA), which
+  raises no flag there. The interpreter's `Fpu` starts with FPSR's IXC for it (`Fpu::with_fpsr`).
+- **No `u128` shift by a variable amount on the vector paths:** in wasm it's a call to compiler-rt
+  (`__lshrti3`, `__ashlti3`). A vector element is at most 64 bits and within one half of the register,
+  so `simd::elem` and `set_elem` pick the half and shift a `u64` (the FP guest +25% through the block
+  interpreter; `bench/interp/REPORT.md` "M8-INTERP loop 13").
 - FPCR RMode/FZ/DN/AHP and the FPSR cumulative flags and QC are implemented.
 - **Validation:** TestFloat 3e (`scripts/testfloat.sh`, 51.2M cases under every FZ/DN
   combination) and the golden corpus natively and on wasm (host float behavior is where native
@@ -257,8 +264,10 @@ test it against `tests/steps.txt`.
   Decoding makes the wide form (`Wide`: flags and a 64-bit immediate apart), which the slow path (`run`)
   unpacks a micro-op back into. The
   common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
-  UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, EXTR, RBIT/REV/CLZ,
-  ADR/ADRP), every branch, MRS of what `sys::plain` reads at the block's EL (`uop_el`), the LSE
+  UBFM/SBFM/BFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, UMULH/SMULH,
+  UDIV/SDIV, ADC/SBC(S), EXTR, RBIT/REV/CLZ, ADR/ADRP), every branch, MRS of what `sys::plain` reads at
+  the block's EL (`uop_el`; SP_EL0 while SPSel is 1), MSR of what `sys::plain_write` writes there (a
+  `Cpu` field, SP_EL0, DAIF unless it unmasks IRQs) and DAIFSet, CAS of any size, the LSE
   LD<op>/SWP of W and X registers (one atomic op, min and max a CAS loop), the exclusives and acquire/release
   (LDXR/LDAXR/LDAR, STXR/STLXR/STLR: the monitor in the `Cpu`, a store-exclusive a CAS when it's armed for its
   address), DMB and DC ZVA, the SIMD&FP single and pair loads and stores, and
@@ -286,6 +295,13 @@ test it against `tests/steps.txt`.
   made at decode (`cond_mask`; B.cond's in its spare register bytes, CSEL's and CCMP's in the `u32`'s top half), so
   testing it is a shift, not `cond_holds`' jump table: the small guests +6%, the boots +1.3%
   (`bench/interp/REPORT.md` "M8-INTERP loop 12").
+- **A compare and its B.cond** (CMP/CMN/SUBS/ADDS immediate or shifted register, TST/ANDS immediate or
+  register, then a B.cond: marked at decode, `mov_runs`) go in one dispatch: the compare's handler tests the
+  B.cond's mask and branches (+0.9-1.0% on the boots and the user-mode guest, loop 13).
+- **What `hot` can't run goes to the slow path a stretch at a time:** the micro-op it stopped at and the
+  generic ones (and literal loads) right after it in the prefix, in one `run` (`Run::stretch`), so a run of
+  SIMD or FP instructions costs one exit from `hot`, not one each; a generic micro-op runs without being
+  unpacked. The FP guest +22-29% through the block interpreter, Alpine's boot +1.2% (loop 13).
 - **Runs of MOVs** (MOVZ, MOVN, MOV of a bitmask immediate: `MovI`) go in one dispatch: each carries
   the number of MovIs right after it (`mov_runs`, at decode), and `hot` writes them all, never past
   the prefix (`run` ignores the count). +2-5% (`bench/interp/REPORT.md` "M8-INTERP loop 4").
