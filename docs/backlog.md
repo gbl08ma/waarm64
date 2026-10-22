@@ -223,7 +223,7 @@ left open, most promising first.
   - **The user's own session wasn't replayed:** no Chromium in the desktop image and no real sites offline; the
     run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
     flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and
-    Chromium in the guest (add it to `images/arch/desktop.sh`).
+    Chromium in the guest (in `images/arch/desktop.sh` since 2026-10-22).
 - **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
   - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
     for the catch-up even when the table is the only one (a lone table could take them instead);
@@ -398,6 +398,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
   samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
   unmodified guests: not built (a full compare per refresh; build it if GL compositors become fast enough to use).
+- **Chromium in the guest still steps back one frame now and then** (graphics.md §24): after the queue's fix,
+  `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
+  `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
+  scanout. Also from the user's report, not looked at: a thin green or pink stripe left of videos in Chromium and mpv
+  (not Firefox) with host decoding, gone on `?gpu=2d`.
 - **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md §21 loop 5): GTK hands sway the GL area's
   texture as a dmabuf, and Mesa's virgl backs a texture that isn't shared with a 1-byte staging BO (the host copies
   transfers both ways), so the dmabuf is smaller than stride × height and the compositor disconnects the client. A

@@ -867,13 +867,22 @@ export class VirglRenderer {
     return n;
   }
 
-  /** What may see a pending picture (the GPU worker's `CallQueue`): a context with one's plane attached, the plane itself. */
+  /** What may see a pending picture (the GPU worker's `CallQueue`): a context with one's plane attached, the plane itself;
+   * and what contexts share (what a context waiting for one draws, another may sample). */
   readonly videoPending = {
     ctx: (id: number) => {
       const c = this.contexts.get(id);
       return !!c && this.pendingPlanes().some((r) => c.attached.has(r));
     },
     res: (id: number) => this.pendingPlanes().includes(id),
+    shared: (a: number, b: number) => {
+      const x = this.contexts.get(a)?.attached, y = this.contexts.get(b)?.attached;
+      if (!x || !y) return false;
+      const [small, big] = x.size <= y.size ? [x, y] : [y, x];
+      for (const r of small) if (big.has(r)) return true;
+      return false;
+    },
+    holds: (ctx: number, res: number) => !!this.contexts.get(ctx)?.attached.has(res),
   };
 
   private pendingPlanes() {

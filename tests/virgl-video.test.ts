@@ -429,6 +429,14 @@ test('VideoContext: an AV1 frame waiting for the next one\'s map goes out when t
 const submit = (ctx: number, ...cmds: number[]): WorkerCall => ({ t: 'submit', ctx, words: new Uint32Array(cmds.flatMap((c) => [(1 << 16) | c, 0])) });
 const name = (m: WorkerCall) => m.t === 'submit' ? `${m.ctx}:${[...m.words].filter((_, k) => !(k & 1)).map((w) => w & 0xff).join(',')}` : m.t === 'fence' ? `fence${m.id}` : m.t;
 
+/** The queue's view of a renderer whose pending pictures' planes are `pending`, with what each context has attached. */
+const pendingOf = (pending: Set<number>, attached: Map<number, Set<number>>) => ({
+  ctx: (id: number) => [...attached.get(id) ?? []].some((r) => pending.has(r)),
+  res: (id: number) => pending.has(id),
+  shared: (a: number, b: number) => [...attached.get(a) ?? []].some((r) => attached.get(b)?.has(r)),
+  holds: (ctx: number, res: number) => !!attached.get(ctx)?.has(res),
+});
+
 test('CallQueue: a call waits only if it could see a pending picture; the rest runs, in order', () => {
   // The renderer as the queue sees it: the pending pictures' planes, and what each context has attached (as calls ran).
   const pending = new Set<number>(), attached = new Map<number, Set<number>>();
@@ -445,7 +453,7 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   };
   const q = new CallQueue<WorkerCall>({
     run,
-    pending: { ctx: (id) => [...attached.get(id) ?? []].some((r) => pending.has(r)), res: (id) => pending.has(id) },
+    pending: pendingOf(pending, attached),
     nudge: () => nudges++,
     drain: () => drains++,
     giveUp: () => { giveUps++; pending.clear(); },
@@ -514,5 +522,31 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   assert.equal(giveUps, 1);
   assert.equal(nudges, 1);
   assert.deepEqual(ran.slice(24), ['1:8', 'unref', '5:8']);
+  assert.ok(!q.stalled);
+});
+
+test('CallQueue: a context sharing a resource with a waiting one waits behind it (a compositor sampling a client)', () => {
+  // The decoder (1) and the browser's compositor (2) share a picture's plane (31); the compositor draws into its window
+  // buffer (50), which the desktop's compositor (6) samples. Context 7 shares nothing.
+  const pending = new Set<number>(), attached = new Map<number, Set<number>>([[1, new Set([31])], [2, new Set([31, 50])], [6, new Set([50, 60])], [7, new Set([70])]]);
+  const ran: string[] = [];
+  const q = new CallQueue<WorkerCall>({
+    run: (m) => void ran.push(m.t === 'transfer' ? `transfer${m.res}` : name(m)),
+    pending: pendingOf(pending, attached),
+    drain: () => {}, giveUp: () => {},
+  });
+  const transfer = (ctx: number, res: number): WorkerCall => ({ t: 'transfer', ctx, res, level: 0, box: { x: 0, y: 0, z: 0, w: 1, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: true });
+  pending.add(31);
+  q.push(submit(2, 8), 0); // the browser draws the picture into its window buffer: waits
+  q.push(submit(6, 8), 0); // the desktop samples that buffer: must not see it before the browser's draw
+  q.push(submit(7, 8), 0); // an unrelated context: runs ahead
+  q.push(transfer(7, 50), 0); // a transfer of the browser's buffer: waits
+  q.push(transfer(7, 70), 0); // behind its context's waiting transfer: waits
+  q.push(submit(1, 57, 59, 61), 0); // the decoder's next picture: runs, though it shares the plane
+  q.push(submit(1, 8), 0); // the decoder's context drawing: waits (it has the pending plane)
+  assert.deepEqual(ran, ['7:8', '1:57,59,61']);
+  pending.clear();
+  q.progress(5);
+  assert.deepEqual(ran.slice(2), ['2:8', '6:8', 'transfer50', 'transfer70', '1:8']);
   assert.ok(!q.stalled);
 });

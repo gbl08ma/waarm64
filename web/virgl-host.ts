@@ -121,7 +121,10 @@ const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58
  * context only the resources attached to it), unless the submit only decodes (`decodeOnly`: the decoder gets the
  * later pictures it may be waiting for), and one that names a pending plane. The rest runs, in order: a call that an
  * earlier waiting one must precede waits too (the same context, the same resource; a fence, a read, the screen and
- * what ends a resource's life wait for every earlier waiting call). If nothing comes out for `nudgeMs` while calls
+ * what ends a resource's life wait for every earlier waiting call). That includes another context's call that could
+ * see what a waiting one draws, a submit of a context sharing an attached resource with it or a transfer of one of
+ * its resources: the guest has no sync between contexts beyond the host running their commands in order (a
+ * compositor samples a client's buffer right after the client's draws into it were sent; graphics.md §24). If nothing comes out for `nudgeMs` while calls
  * wait, frames held for the next one are sent (`nudge`: AV1's, web/video-av1.ts); after `drainMs`, the decoders that
  * hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up (`giveUp`; the guest sees
  * the buffers' old planes rather than hanging).
@@ -130,8 +133,11 @@ export class CallQueue<M extends WorkerCall> {
   private q: M[] = [];
   private readonly o: {
     run(m: M): void;
-    /** Whether a pending picture's plane is attached to a context, and whether a resource is one. */
-    pending: { ctx(id: number): boolean; res(id: number): boolean };
+    /**
+     * Whether a pending picture's plane is attached to a context, whether a resource is one, whether two contexts have
+     * a resource attached in common and whether a context has a resource attached.
+     */
+    pending: { ctx(id: number): boolean; res(id: number): boolean; shared(a: number, b: number): boolean; holds(ctx: number, res: number): boolean };
     nudge?(): void; drain(): void; giveUp(): void; nudgeMs?: number; drainMs?: number; giveUpMs?: number;
   };
   /** Since when nothing has come out while calls wait (undefined: none wait). */
@@ -196,13 +202,16 @@ export class CallQueue<M extends WorkerCall> {
     const p = this.o.pending;
     // What the waiting calls so far hold back: their contexts and the resources they name.
     const busy = new Set<number>(), named = new Set<number>();
+    // Whether a call of `ctx` could see what a waiting context draws (through a resource they share).
+    const sees = (ctx: number) => { for (const b of busy) if (p.shared(ctx, b)) return true; return false; };
+    const held = (res: number) => { for (const b of busy) if (p.holds(b, res)) return true; return false; };
     let waits = false, ran = false;
     for (let k = 0; k < this.q.length;) {
       const m = this.q[k];
       let go: boolean;
       switch (m.t) {
         case 'submit':
-          go = !busy.has(m.ctx) && (!p.ctx(m.ctx) || decodeOnly(m.words));
+          go = !busy.has(m.ctx) && (decodeOnly(m.words) || (!p.ctx(m.ctx) && !sees(m.ctx)));
           if (!go) busy.add(m.ctx);
           break;
         case 'res':
@@ -221,7 +230,7 @@ export class CallQueue<M extends WorkerCall> {
           if (!go) busy.add(m.id);
           break;
         case 'transfer':
-          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res);
+          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res) && !held(m.res);
           if (!go) {
             busy.add(m.ctx);
             named.add(m.res);

@@ -1,0 +1,80 @@
+{
+ "gpu": "virgl",
+ "chromium": "153.0.8010.52",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "flags": "",
+ "info": "chromium 153.0.8010.36-1 mesa 1:26.2.5-1 sway 1:1.12-4",
+ "sway": "",
+ "startS": 11.94,
+ "frames": 1005,
+ "clean": 1005,
+ "counted": 880,
+ "back": 1,
+ "maxBack": 1,
+ "split": 0,
+ "examples": [
+  "back 1: A 1350 after 1351"
+ ],
+ "display": {
+  "seconds": 31,
+  "requests": 285.0967741935484,
+  "commands": {
+   "SET_SCANOUT": 38.35483870967743,
+   "RESOURCE_FLUSH": 38.35483870967743,
+   "SUBMIT_3D": 207.90322580645162,
+   "RESOURCE_UNREF": 0.06451612903225806,
+   "ATTACH_BACKING": 0.0967741935483871,
+   "CTX_ATTACH_RESOURCE": 0.16129032258064516,
+   "CTX_DETACH_RESOURCE": 0.06451612903225806,
+   "RESOURCE_CREATE_3D": 0.0967741935483871
+  },
+  "fences": {
+   "n": 145.74193548387098,
+   "meanMs": 11.599092518916537,
+   "maxMs": 77.05000001192093,
+   "heldMs": 2553.21080650245,
+   "behindMs": 637.5608064705326,
+   "fullMs": 12.32629031904282,
+   "heldMax": 16,
+   "toGpuMs": 11.303763508742135,
+   "toGpuMaxMs": 76.989990234375,
+   "backMs": 0.2834149839078073,
+   "backMaxMs": 27.425048828125
+  },
+  "flushes": 38.354838709677416,
+  "submits": 207.90322580645162,
+  "submitKB": 897.511214717742,
+  "transfers": 0,
+  "Mpx": 0,
+  "requestMs": 14.436612846389894,
+  "draws": 38.354838709677416,
+  "renderer": {
+   "seconds": 30,
+   "busyMs": 22.005499875545503,
+   "submitMs": 20.323499888181686,
+   "drawMs": 1.367166632413864,
+   "presents": 33.266666666666666,
+   "glDraws": 330.2,
+   "commands": 3392.766666666667,
+   "uploadKB": 33634.992578125,
+   "readbacks": 0,
+   "readbackKB": 0,
+   "compileMs": 0.10683333476384481,
+   "programs": 38,
+   "errors": 0,
+   "video": {
+    "frames": 23.9,
+    "decoded": 23.9,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 10.862043235092482,
+    "latencyMaxMs": 49.69499999284744,
+    "writeMs": 0.0724686191338043,
+    "ahead": 8.466666666666667,
+    "maxWaitMs": 32.75499999523163
+   }
+  }
+ },
+ "log": "1",
+ "warnings": {}
+}

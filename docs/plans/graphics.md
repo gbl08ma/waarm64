@@ -1245,7 +1245,7 @@ the repo's: `images/deqp/build.sh` makes `target/deqp/guest.qcow2` (Arch Linux w
 - **Cost** (loop 6): no shader cache needed (steady phases compile nothing); the PC sampler publishes every 256
   steps while it runs (ABI 34), which showed the guest kernel's submit path isn't a cost: these applications wait on
   the emulator's speed.
-- **Not tried:** Chromium's GPU process in the guest, KDE or GNOME (KWin, Mutter), Xorg. **Not measured:** dEQP on a
+- **Not tried:** Chromium's GPU process in the guest (since run: §24), KDE or GNOME (KWin, Mutter), Xorg. **Not measured:** dEQP on a
   real GPU (every run was on SwiftShader).
 
 **G5, proposed** (for the user's kickoff): (1) **snapshots while 3D is in use** (decision 4): the renderer's state
@@ -1437,7 +1437,47 @@ No cap we advertise is beyond Metal: no `NotSupported` count moved and no case f
 `scripts/ci-deqp.sh` stay as they are (CI runs SwiftShader). Still open: the other WebGL2 stacks users have
 (docs/backlog.md "dEQP on more platforms").
 
-## 24. Working notes for 3D (carried from the graphics handover, 2026-10-19)
+## 24. Chromium in the guest showed older frames (2026-10-22, fixed)
+
+**What the user saw** (their x86_64 desktop's NVIDIA GPU, the desktop guest with Arch's Chromium 153 on Wayland, ANGLE
+on virgl, `VaapiVideoDecoder` through webpc-va): on pages playing video (YouTube), parts of Chromium's window, its tab
+strip and address bar too, flickered between a later and an earlier frame, the regions out of step with each other,
+until a navigation; the video's own frames jumped back and forth too. `--ui-disable-partial-swap` left only whole-page
+jumps back while scrolling; `?gpu=2d` (llvmpipe) none. Firefox never showed it.
+
+**Why:** the GPU worker's `CallQueue` (devices.md "virgl", plans/video.md §7) holds a context's calls while it may see
+a picture being decoded, and let every other context's run ahead. The guest has no sync between virtio-gpu contexts:
+a compositor samples a client's buffer right after the client's draws into it were sent, trusting the host to run
+them in order (virglrenderer runs every context's commands as they come). So sway composited Chromium's window
+buffer before Chromium's held draws into it had run, and showed what that buffer held a few frames back. Chromium's
+partial redraws (only what changed since the buffer was last drawn) make a stale region show whatever frame last drew
+it into that buffer: regions from different times. Firefox waits on its fences before handing sway a frame, so it
+never gave sway a buffer with draws still held. **Fixed:** a call also waits behind a held context when it could see
+what that context draws (a submit of a context sharing an attached resource with it, a transfer of one of its
+resources); video's decode-only submits still pass (`tests/virgl-video.test.ts`, the compositor case; each half of
+the rule planted back fails it).
+
+**Measured** (`bench/gpu/chromium-flicker.ts`: the desktop image with Chromium, sway on 3D, Chromium in kiosk mode on a
+page playing sintel-silent.webm beside a frame counter in two rows of blocks, the second the first over 16; the host
+reads the screen through Chromium's screencast, 30 s after 20 s of warm-up; the dev VM, SwiftShader, Chromium
+153.0.8010.52; JSON in `bench/gpu/results/2026-10-22-chromium-flicker/`). "Back": frames whose counter is below one
+already shown; "split": the two rows from different frames.
+
+| Run | Frames read | Back (most frames back) | Split | Calls run ahead a second |
+|---|---|---|---|---|
+| old rule | 986 | 1 (2) | 0 | 12.9 |
+| old rule, counting the hazard | 1,012 | 4 (7) | 1 | 9.9 of them shared a resource with the held context |
+| new rule | 1,005 | 1 (1) | 0 | 8.5 (none sharing) |
+| old rule, decoder slowed to ~50 ms, two rounds | 960, 920 | 20 (8), 22 (8) | 2, 3 | 23.5, – |
+| new rule, decoder slowed, two rounds | 917, 972 | 0, 1 (1) | 0, 0 | 13.8, – |
+| `?gpu=2d` (no virgl) | 653 | 0 | 0 | – |
+
+The dev VM's software VP9 decodes a picture in ~9 ms, so calls are held briefly and the old rule shows few stale
+frames; the slowed decoder (an experiment: each picture's output delayed 40 ms, as a hardware decoder that holds
+frames would) makes it plain. The page's frame rate didn't move (counted frames 778–880 in every 3D run). Left: a single
+one-frame step back in two of the new rule's four runs (none in the 2D run), not traced (docs/backlog.md).
+
+## 25. Working notes for 3D (carried from the graphics handover, 2026-10-19)
 
 The tools, what the guests do and what was learned, kept from `M8-GRAPHICS-HANDOVER.md` when it was retired (G5's
 items done or in docs/backlog.md).

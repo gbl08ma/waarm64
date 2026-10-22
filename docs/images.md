@@ -113,7 +113,7 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   surfaces only and AV1 film grain decoded into the shown surface, `LIBVA_DRIVER_NAME=webpc` for every session
   ([plans/video.md](plans/video.md)). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
   Result `target/arch/pkg/webpc-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
-- **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox,
+- **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md §24),
   htop, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`),
   gtk4-demos (`gtk4-demo`, for `bench/gpu/gtk4-load.ts`), mesa-utils (`eglinfo`, `glxgears`) and `webpc-va`; sound is the kernel's own `virtio_snd` (udev loads it); Firefox's policies allow autoplay with sound and
   skip the first-run pages. A **20 GiB root**, mostly free, for packages installed by hand. `images/arch/media.sh`

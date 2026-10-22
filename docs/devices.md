@@ -439,8 +439,11 @@ mode (and natively in realtime mode: std has no CSPRNG).
   Mesa's `end_frame` makes no fence, so the GPU worker's `CallQueue` (`web/virgl-host.ts`) holds a call while it
   could see a pending picture: a call of a context that has a pending picture's plane attached (unless the submit
   only decodes) or one naming a plane, and what must follow a held call (its context, its resources; fences, reads,
-  the screen and a resource's end wait for every held call). The rest runs, so a decoder that holds pictures stalls
-  only the context that shows them (Firefox's compositor attaches the planes per frame). The SPS's reorder depth is
+  the screen and a resource's end wait for every held call; and another context's call that could see what a held one
+  draws: a submit of a context sharing an attached resource with it, a transfer of one of its resources). The rest
+  runs, so a decoder that holds pictures stalls only the context that shows them (Firefox's compositor attaches the
+  planes per frame) and the contexts that read what it draws (sway, sampling its window): the guest has no sync
+  between contexts but the host's order (graphics.md §24). The SPS's reorder depth is
   0 for a hardware decoder; in software (which outputs in display order) the larger of the stream's reference count
   and the depth learned from the POCs (`H264Stream` `'stream'`): FFmpeg drops a picture that comes after one it has
   shown, and a pending picture of a lesser POC than one that comes out is given up at once. If calls wait 200 ms and

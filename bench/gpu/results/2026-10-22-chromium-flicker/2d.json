@@ -1,0 +1,47 @@
+{
+ "gpu": "2d",
+ "chromium": "153.0.8010.52",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "flags": "",
+ "info": "chromium 153.0.8010.36-1 mesa 1:26.2.5-1 sway 1:1.12-4",
+ "sway": "MESA-EGL: warning: egl: failed to create dri2 screen00:00:00.643 [ERROR] [wlr] [EGL] command: eglInitialize, error: EGL_NOT_INITIALIZED (0x3001), message: \"DRI2: failed to create screen\"MESA-EGL: warning: egl: failed to create dri2 screen00:00:00.669 [ERROR] [wlr] [EGL] command: eglInitialize, error: EGL_NOT_INITIALIZED (0x3001), message: \"DRI2: failed to create screen\"",
+ "startS": 9.944,
+ "frames": 653,
+ "clean": 653,
+ "counted": 554,
+ "back": 0,
+ "maxBack": 0,
+ "split": 0,
+ "examples": [],
+ "display": {
+  "seconds": 30,
+  "requests": 65.4,
+  "commands": {
+   "SET_SCANOUT": 21.799999999999997,
+   "RESOURCE_FLUSH": 21.799999999999997,
+   "TRANSFER_TO_HOST_2D": 21.799999999999997
+  },
+  "fences": {
+   "n": 0,
+   "meanMs": 0,
+   "maxMs": 0,
+   "heldMs": 0.10899999936421713,
+   "behindMs": 0,
+   "fullMs": 0,
+   "heldMax": 1,
+   "toGpuMs": 0,
+   "toGpuMaxMs": 0,
+   "backMs": 0,
+   "backMaxMs": 0
+  },
+  "flushes": 21.8,
+  "submits": 0,
+  "submitKB": 0,
+  "transfers": 21.8,
+  "Mpx": 22.8575616,
+  "requestMs": 25.490999988714854,
+  "draws": 21.8
+ },
+ "log": "4",
+ "warnings": {}
+}

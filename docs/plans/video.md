@@ -258,7 +258,10 @@ on the M4, its software decoders FFmpeg's; `*-devvm`, `mpv-*`: the dev VM's Chro
   waits only if it could see a pending picture: its context has a pending picture's plane attached (the renderer
   refuses a context a resource it hasn't attached; Firefox's compositor and mpv attach the planes to show a frame,
   ~2 a frame) or it names one; decode-only submits still pass. With that alone Firefox played H.264 through OpenH264
-  on the dev VM with no call ever waiting, every picture decoded, 117-176 ms from END_FRAME to written.
+  on the dev VM with no call ever waiting, every picture decoded, 117-176 ms from END_FRAME to written. *Too fine:*
+  other contexts ran ahead of a held one they share resources with, so sway composited a client's window before the
+  client's held draws into it (Chromium in the guest showed older frames; graphics.md §24). They wait too since
+  2026-10-22.
 - **FFmpeg (Chrome's software decoder) drops what it reorders too late.** Told no depth it guesses, dropping a
   picture while it learns (V1's replay: 1 of 130); that picture never came out, the compositor waited on it, the
   drain followed, and the trailer lost 19 pictures a second (`mac-swvideo`). So the SPS says the larger of the
