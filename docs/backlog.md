@@ -16,7 +16,12 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   bit, and the rule: advertise only if faster than what guests do without it.
 - **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
   (the registers are RAZ/WI). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single
-  step (kvm-unit-tests `debug-*`).
+  step (kvm-unit-tests `debug-*`). Planned at no cost when unarmed (the debug interpreter takes over
+  while debug is armed for the EL): [plans/self-hosted-debug.md](plans/self-hosted-debug.md).
+- **Hardware breakpoints and watchpoints at JIT speed** (after self-hosted debug): a debugged task
+  with one armed runs interpreted; pages holding a breakpoint could stay uncompiled and watched
+  pages out of the TLB instead (plans/self-hosted-debug.md "Cost while debugging"). Only if
+  performance becomes a concern.
 - **Spectre-BHB reporting:** Linux says `spectre_v2` "Mitigation: CSV2, but not BHB" (and installs no
   BHB mitigation: MIDR 0 has no loop count). Only `ID_AA64PFR0_EL1.CSV2` = 3 clears it, which needs
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).

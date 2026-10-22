@@ -35,3 +35,4 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/remote-disks.md](plans/remote-disks.md) | disks from a remote server: today's HTTP reader, where to host an image (Cloudflare R2 and Pages), a chunked format, caching, concurrency (proposed) |
 | [plans/machines.md](plans/machines.md) | machines as the unit (M8 phase D's start): stored machines, up to 16 disks and their sources (blank, ramdisk, a copy in OPFS that can be merged into or written in place), overlays as named variants per base, snapshots per machine checked by its shape, the Machines page (confirmed; M8 phase D) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
+| [plans/self-hosted-debug.md](plans/self-hosted-debug.md) | breakpoints, watchpoints and single step at no cost when unarmed: a debug interpreter the dispatcher picks while debug is armed for the EL (proposed, not scheduled) |
