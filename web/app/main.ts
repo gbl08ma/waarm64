@@ -12,7 +12,7 @@ import { Terminal } from '@xterm/xterm';
 import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { ask } from './ask.svelte.ts';
-import { remember, settings } from './settings.ts';
+import { leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
@@ -280,6 +280,7 @@ mount(App, { target: document.body, props: { store, audio, net } });
 flushSync();
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
+const lockCursor = $<HTMLCanvasElement>('screen-cursor');
 const loadSnapshotInput = $<HTMLInputElement>('load-snapshot-input');
 
 // The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`); the firmware's console is 80×25 (images/build.sh edk2 offers no other mode), so the terminal has 25 rows.
@@ -318,13 +319,14 @@ function fit() {
 // The guest's cursor (virtio-gpu's cursor queue) is the canvas's CSS cursor: the tablet is absolute, so the host's pointer is the
 // guest's and moves at the host's rate. Drawn at the canvas's scale (a guest pixel is `scale` device pixels), crisp when the scale is
 // whole; Chromium takes cursor images up to 128×128 device pixels, so a bigger one is capped. `none` is the guest hiding it.
-type GuestCursor = { image: ArrayBuffer | null | undefined; hotX: number; hotY: number };
+type GuestCursor = { image: ArrayBuffer | null | undefined; hotX: number; hotY: number; x: number; y: number };
 let guestCursor: GuestCursor | undefined;
 let cursorUrls: string[] = [];
 let cursorToken = 0;
 function showCursor() {
   const token = ++cursorToken;
   const c = guestCursor;
+  drawLockCursor();
   if (!c || c.image === undefined) { canvas.style.cursor = ''; return; }
   if (c.image === null) { canvas.style.cursor = 'none'; return; }
   const scale = Number(canvas.dataset.scale) || 1;
@@ -354,7 +356,33 @@ function showCursor() {
     canvas.style.cursor = [one(big), little && one(little), 'none'].filter(Boolean).join(', ');
   }, () => {});
 }
-new ResizeObserver(() => { fit(); scheduleSize(); }).observe(screenBox);
+
+// While the screen holds the mouse (docs/frontend.md "Mouse lock") the browser hides the pointer, the CSS cursor with
+// it: the guest's cursor is drawn over the screen where the guest says it is (virtio-gpu's cursor position, the
+// image's top-left corner, in guest pixels), at the canvas's scale.
+function drawLockCursor() {
+  const c = guestCursor;
+  if (c?.image) lockCursor.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(c.image.slice(0)), 64, 64), 0, 0);
+  placeCursor();
+}
+function placeCursor() {
+  const c = guestCursor;
+  lockCursor.hidden = !ui.mouseLocked || !c?.image;
+  if (lockCursor.hidden || !c) return;
+  const k = canvas.clientWidth / fb.width; // CSS pixels per guest pixel
+  lockCursor.style.width = lockCursor.style.height = `${64 * k}px`;
+  lockCursor.style.imageRendering = canvas.style.imageRendering;
+  lockCursor.style.transform = `translate(${(c.x | 0) * k}px, ${(c.y | 0) * k}px)`;
+}
+const setMouseLock = (on: boolean) => {
+  ui.mouseLock = on;
+  remember({ mouseLock: on });
+  run?.input.mouseLock(on);
+  if (on) canvas.focus();
+};
+ui.mouseLock = settings().mouseLock ?? false;
+
+new ResizeObserver(() => { fit(); scheduleSize(); placeCursor(); }).observe(screenBox);
 matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => { fit(); scheduleSize(); }); // moved to a screen with another density
 
 // The size the guest is asked for (virtio-gpu machines): the screen's box in CSS pixels (device pixels with HiDPI on) or a fixed size,
@@ -531,6 +559,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
     if (run?.display !== display.port1) return;
     if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
+    if (e.data.type === 'cursor-at') { if (guestCursor) [guestCursor.x, guestCursor.y] = [e.data.x, e.data.y]; placeCursor(); return; }
     if ((e.data as { type: string }).type === 'draw-stats') {
       ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
       ((window as unknown as { __devEvents?: number[] }).__devEvents ??= []).push(...((e.data as { busy: { events?: number[] } }).busy.events ?? []));
@@ -553,7 +582,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const sound = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
   const usb = usbOn() ? new MessageChannel() : undefined;
-  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }), serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
+  // A relative mouse (the pointer while the screen holds the mouse) and a touchscreen, on machines that have them.
+  const mouse = pointerOn('mouse') ? new MessageChannel() : undefined;
+  const touch = pointerOn('touch') ? new MessageChannel() : undefined;
+  const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
+  const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
+  input.mouseLock(ui.mouseLock);
+  const r: Run = { worker, input, serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
   run = r;
   keyboardLive = false;
   last = undefined;
@@ -662,7 +697,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(params.get('keyboard') ?? stored?.record.keyboard))?.id, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(params.get('keyboard') ?? stored?.record.keyboard))?.id, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -1452,6 +1487,16 @@ function fullscreen() {
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) keyboardLock?.unlock(); });
 
+// Leaving the page while the machine runs stops it like pulling the plug: the browser asks first (Preferences, on the
+// Machines page, turns it off). The browser words the question itself. Not under automation (the tests navigate away
+// from running machines) unless `?leavewarning=1`.
+window.addEventListener('beforeunload', (e) => {
+  if (!['running', 'booting', 'rebooting'].includes(ui.state) || !leaveWarning()) return;
+  if (navigator.webdriver && params.get('leavewarning') !== '1') return;
+  e.preventDefault();
+  e.returnValue = ''; // older Chromium asks only with this set
+});
+
 const hms = (ms: number) => {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -1599,6 +1644,8 @@ if (params.has('snd')) (window as unknown as { __audio?: PageAudio }).__audio = 
 // runs, by their identities: the device worker opens them (web/usb-device.ts). A device is one machine's at a time (its
 // Web Lock, web/app/usb-live.ts); Snapshot and Suspend empty the ports first.
 const usbOn = () => (stored ? !!stored.record.usb : params.get('usb') === '1');
+/** A relative mouse or a touchscreen: a stored machine's `mouse`, `touch`; a transient one's `?mouse=1`, `?touch=1`. */
+const pointerOn = (kind: 'mouse' | 'touch') => (stored ? !!stored.record[kind] : params.get(kind) === '1');
 /** A transient machine's remembered devices: this page's only, for its session. */
 let transientUsb: UsbEntry[] = [];
 const usbEntries = (): UsbEntry[] => (stored ? stored.record.usbDevices ?? [] : transientUsb);
@@ -1929,6 +1976,7 @@ Object.assign(page, {
   setView: (v: View) => setView(v),
   showLog: () => { setView(ui.view === 'screen' ? 'both' : ui.view, false); term.focus(); },
   fullscreen,
+  setMouseLock,
   chord: (keys: string[]) => { canvas.focus(); run?.input.chord(...keys); },
   screenSize: () => { fit(); scheduleSize(); },
   openMachines,

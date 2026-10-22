@@ -125,6 +125,19 @@ test('virtio-input config answers', () => {
   assert.deepEqual([...new Uint32Array(inputConfig('tablet', 0x12, 1).slice().buffer)], [0, 32767, 0, 0, 0]);
   assert.equal(inputConfig('tablet', 0x12, 2).length, 0);
   assert.equal(inputConfig('keyboard', 0x11, 3).length, 0);
+  // The pointers' buttons: left, right, middle, side and extra (0x110-0x114).
+  assert.deepEqual([...inputConfig('tablet', 0x11, 1)].slice(0x110 >> 3), [0x1f]);
+  assert.deepEqual([...inputConfig('mouse', 0x11, 1)].slice(0x110 >> 3), [0x1f]);
+  assert.deepEqual([...inputConfig('mouse', 0x11, 2)], [3, 1]); // REL_X, REL_Y, REL_WHEEL
+  assert.equal(inputConfig('mouse', 0x11, 3).length, 0);
+  assert.equal(new TextDecoder().decode(inputConfig('touch', 1, 0)), 'webpc touchscreen');
+  assert.deepEqual([...inputConfig('touch', 0x10, 0)], [2]); // INPUT_PROP_DIRECT
+  assert.equal(inputConfig('tablet', 0x10, 0).length, 0);
+  const abs = inputConfig('touch', 0x11, 3);
+  for (const a of [0, 1, 0x2f, 0x35, 0x36, 0x39]) assert.ok(abs[a >> 3] & (1 << (a & 7)), `ABS ${a}`);
+  assert.deepEqual([...new Int32Array(inputConfig('touch', 0x12, 0x2f).slice().buffer)], [0, 9, 0, 0, 0]);
+  assert.deepEqual([...new Int32Array(inputConfig('touch', 0x12, 0x35).slice().buffer)], [0, 32767, 0, 0, 0]);
+  assert.equal(inputConfig('touch', 0x12, 2).length, 0);
 });
 
 test('changeConfig: the generation goes odd around the write, even after it, and the signal word is set', () => {

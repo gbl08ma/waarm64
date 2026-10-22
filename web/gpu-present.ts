@@ -15,8 +15,14 @@ import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
 /** Page ⇄ backend over the display port. */
 export type DisplayToPage =
   | { type: 'mode'; width: number; height: number }
-  /** The guest's cursor: its 64×64 RGBA and hotspot, `null` when the guest hid it, `undefined` when it never set one (the page's own pointer). The position isn't sent: the tablet is absolute, the host's pointer is the guest's. */
-  | { type: 'cursor'; image: ArrayBuffer | null | undefined; hotX: number; hotY: number }
+  /**
+   * The guest's cursor: its 64×64 RGBA and hotspot, `null` when the guest hid it, `undefined` when it never set one (the
+   * page's own pointer), and where it is (guest pixels). The tablet is absolute, so the host's pointer is the guest's;
+   * the position is for the page's own drawing of it while the screen holds the mouse (docs/frontend.md "Mouse lock").
+   */
+  | { type: 'cursor'; image: ArrayBuffer | null | undefined; hotX: number; hotY: number; x: number; y: number }
+  /** The guest moved its cursor (the image as it was). */
+  | { type: 'cursor-at'; x: number; y: number }
   /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
   /** A virgl trace's record (the spec's `capture`, web/virgl-trace.ts). */
   | { type: 'capture'; record: Uint8Array }
@@ -24,6 +30,23 @@ export type DisplayToPage =
   | { type: 'flash'; t: number }
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { events?: number[]; request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
+
+/** The guest's cursor to the page: its image when it changes (`cursor`), else its position when that changes and there is an image (`cursor-at`). */
+function cursorSender(port?: MessagePort) {
+  let cursorImage: Uint8Array | null | undefined;
+  let cursorHot = '';
+  let cursorAt = '';
+  return (image: Uint8Array | null | undefined, hotX: number, hotY: number, x: number, y: number) => {
+    const [hot, where] = [`${hotX},${hotY}`, `${x},${y}`];
+    if (image === cursorImage && hot === cursorHot) {
+      if (where !== cursorAt && image) port?.postMessage({ type: 'cursor-at', x, y } satisfies DisplayToPage); // a hidden cursor's moves aren't drawn
+      cursorAt = where;
+      return;
+    }
+    [cursorImage, cursorHot, cursorAt] = [image, hot, where];
+    port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY, x, y } satisfies DisplayToPage);
+  };
+}
 
 /** Which screen a 2D machine gets: WebGL2 unless it is software (`auto`), or the one named (the page's `?gpu=canvas2d` or `gl2d`: tests and measurements). */
 export type Screen2d = 'auto' | 'canvas2d' | 'webgl2';
@@ -119,18 +142,11 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     }
     setTimeout(frame, Math.max(0, lastDraw + FRAME_MS - performance.now()));
   };
-  let cursorImage: Uint8Array | null | undefined;
-  let cursorHot = '';
-  const sendCursor = (image: Uint8Array | null | undefined, hotX: number, hotY: number) => {
-    const hot = `${hotX},${hotY}`;
-    if (image === cursorImage && hot === cursorHot) return; // a move: the page's pointer already is the guest's
-    [cursorImage, cursorHot] = [image, hot];
-    port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY } satisfies DisplayToPage);
-  };
+  const sendCursor = cursorSender(port);
   return {
     raw: !!gl,
-    cursor: (image, hotX, hotY) => sendCursor(image, hotX, hotY),
-    cursorReset: () => sendCursor(undefined, 0, 0),
+    cursor: sendCursor,
+    cursorReset: () => sendCursor(undefined, 0, 0, 0, 0),
     scanout(width, height, source) {
       src = source;
       img = source && !gl ? new ImageData(new Uint8ClampedArray(source.pixels.buffer as ArrayBuffer, source.pixels.byteOffset, source.pixels.length), source.width, source.height) : undefined;
@@ -182,17 +198,10 @@ export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
       lag = 0;
     }, 1000);
   }
-  let cursorImage: Uint8Array | null | undefined;
-  let cursorHot = '';
-  const sendCursor = (image: Uint8Array | null | undefined, hotX: number, hotY: number) => {
-    const hot = `${hotX},${hotY}`;
-    if (image === cursorImage && hot === cursorHot) return;
-    [cursorImage, cursorHot] = [image, hot];
-    port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY } satisfies DisplayToPage);
-  };
+  const sendCursor = cursorSender(port);
   return {
-    cursor: (image, hotX, hotY) => sendCursor(image, hotX, hotY),
-    cursorReset: () => sendCursor(undefined, 0, 0),
+    cursor: sendCursor,
+    cursorReset: () => sendCursor(undefined, 0, 0, 0, 0),
     scanout(w, h) {
       if (w === width && h === height) return;
       [width, height] = [w, h];

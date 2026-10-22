@@ -22,7 +22,7 @@ export async function needsOff(id: string, what: string) {
 }
 
 /** A new machine (no disks yet), named by default. */
-export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb' | 'keyboard'>> = {}) {
+export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb' | 'mouse' | 'touch' | 'keyboard'>> = {}) {
   const taken = (await store.all('machines')).map((m) => m.name);
   const now = Date.now();
   const m: MachineRecord = {
@@ -33,6 +33,8 @@ export async function createMachine(store: Store, o: Partial<Pick<MachineRecord,
     display: o.display ?? '3d',
     adapters: (o.network ?? true) ? [{ id: newId(), mac: DEFAULT_MAC }] : [],
     usb: o.usb ?? true,
+    mouse: o.mouse ?? true,
+    touch: o.touch ?? true,
     keyboard: o.keyboard ?? FOLLOW_BROWSER,
     attachments: [],
     created: now,
@@ -94,12 +96,12 @@ export async function deleteMachine(store: Store, id: string) {
   await store.deleteMachine(id);
 }
 
-/** Saves the machine's settings (name, vCPUs, RAM, the JIT's budget, display, network, the USB controller): they're set at its start, so it must be off. */
+/** Saves the machine's settings (name, vCPUs, RAM, the JIT's budget, display, network, the USB controller, the mouse, the touchscreen): they're set at its start, so it must be off. */
 export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw new Error('that machine is gone');
   // What takes a restart: the shape, and the JIT's budget (set when the machine starts; not the guest's).
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb, x.jitMiB ?? 0]);
+  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb, !!x.mouse, !!x.touch, x.jitMiB ?? 0]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'Changing its processors, memory or devices');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;

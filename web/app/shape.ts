@@ -95,6 +95,16 @@ export type MachineRecord = {
   usb?: boolean;
   /** The USB devices the machine remembers (hot-plugged: not in the shape). */
   usbDevices?: UsbEntry[];
+  /**
+   * A relative mouse (virtio-input), the pointer while the screen holds the mouse (docs/frontend.md "Mouse lock"). Absent
+   * on machines made before it: off (the lock moves the tablet instead), their shape as it was. New machines have it.
+   */
+  mouse?: boolean;
+  /**
+   * A touchscreen (virtio-input, multitouch): the page's touches go to it (without one they move the tablet). Absent on
+   * machines made before it: off, their shape as it was. New machines have it.
+   */
+  touch?: boolean;
   /** In slot order (the guest's vda, vdb…). */
   attachments: Attachment[];
   created: number;
@@ -149,7 +159,7 @@ export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
-export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'blk';
+export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'blk';
 /** The vCPUs' optional features (`BootOptions.rng`, `e0pd`). */
 export type CpuFeature = 'rng' | 'e0pd';
 export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
@@ -160,12 +170,14 @@ export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
  * that have it. The network adapters are where the one card was (network-adapters.md §4). `attachment` is the disk's
  * index in the machine's list, `adapter` the adapter's.
  */
-export function slots(m: { nets: number; display?: Display | 'none'; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
+export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boolean; touch?: boolean; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
     { kind: 'rng' }, { kind: 'keyboard' }, { kind: 'tablet' },
     ...Array.from({ length: m.nets }, (_, i) => ({ kind: 'net' as const, adapter: i })),
     ...(m.display === 'none' ? [] : [{ kind: 'gpu' as const }]),
     { kind: 'snd' },
+    ...(m.mouse ? [{ kind: 'mouse' as const }] : []),
+    ...(m.touch ? [{ kind: 'touch' as const }] : []),
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
   ];
 }
@@ -210,7 +222,7 @@ const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined });
 export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { cpu?: CpuFeature[]; display?: Display | 'none' } = {}): Shape {
   const display = opts.display ?? m.display;
   const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
-  const list = slots({ nets: macs.length, display, attachments: m.attachments });
+  const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, attachments: m.attachments });
   return {
     version: SHAPE_VERSION,
     ncpus: m.ncpus,
@@ -267,6 +279,9 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
   if (macsWas.length !== macsNow.length) out.push(`network adapters: ${macsWas.length} then, ${macsNow.length} now`);
   else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(`network adapter ${i + 1}: MAC ${macsWas[i]} then, ${macsNow[i]} now`);
   if (!!was.usb !== !!now.usb) out.push(was.usb ? 'it had a USB controller' : 'it had no USB controller');
+  for (const [k, name] of [['mouse', 'a relative mouse'], ['touch', 'a touchscreen']] as const) {
+    if (was.devices.includes(k) !== now.devices.includes(k)) out.push(was.devices.includes(k) ? `it had ${name}` : `it had no ${name.replace(/^an? /, '')}`);
+  }
   if (was.disks.length !== now.disks.length) out.push(`disks: ${was.disks.length} then, ${now.disks.length} now`);
   for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {
     const [a, b] = [was.disks[i], now.disks[i]];

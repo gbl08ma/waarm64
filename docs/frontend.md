@@ -100,7 +100,8 @@ docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
   change (`onChange`, a BroadcastChannel).
 - **A machine** has a name (generated: "Brisk Heron"), vCPUs, RAM, the display (2D or 3D), a network card, and up
   to 16 attachments in slot order: a disk, read-only or not, the overlay chosen, written in place (a stored disk).
-  Its transports are the other devices first (rng, keyboard, tablet, net, gpu, snd), then the disks
+  Its transports are the other devices first (rng, keyboard, tablet, net, gpu, snd, then the mouse and the
+  touchscreen where it has them), then the disks
   (`shape.ts` `slots`); a disk's serial is its attachment's (`webpc-<id>`: `/dev/disk/by-id/virtio-webpc-…`).
 - **The shape** (`shapeOf`, `shapeHash`): what the guest sees (vCPUs, RAM, display, CPU features, devices, each
   disk's size, read-only flag, serial and base identity), canonical JSON hashed with SHA-256; names, the overlay
@@ -160,7 +161,8 @@ separators; the main gates also have their names. Left to right: **Machines** (t
 **Snapshot** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
 five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
-(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Full screen**,
+(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Mouse lock** (a toggle,
+remembered per browser: "Input", "Mouse lock"), **Full screen**,
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
 offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item,
@@ -202,7 +204,9 @@ Duplicate, Export the definition, Delete; then tabs:
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
   **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **Save and restart**
-  (asked first), and the USB controller. A change of shape asks first when it orphans snapshots.
+  (asked first), the USB controller, the **Mouse** (for the mouse lock) and the **Touchscreen**. A change of shape
+  asks first when it orphans snapshots. The three are peripherals the guest sees: absent on machines made before
+  them (off, so their shapes and snapshots stay as they were), on for new ones.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
   whole disk as qcow2 or raw, compressed or not; a machine on this page running from it stops while the file is
@@ -220,7 +224,7 @@ Duplicate, Export the definition, Delete; then tabs:
   off, and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
   **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape). **Connections** (in the list of machines) is the
-  browser's connections. A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
+  browser's connections; **Preferences** under it is the page's, per browser (below, "Leaving the page"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **USB** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
@@ -414,7 +418,7 @@ isn't asking now: bash printed them as `;1R;80R`).
 | `label` | the machine's label, for messages |
 | `ncpus` | vCPUs the machine ran with |
 | `disk` | the display name of the disk it was on when that was a chosen disk (file name, or a URL's last segment); `null` for the machine's own |
-| `devices` | the device kinds in slot order (`shape.ts` `slots`: `rng`, `keyboard`, `tablet`, `net`, `gpu`, `snd`, then a `blk` per disk); a restore refuses one whose list isn't the machine's now, naming both |
+| `devices` | the device kinds in slot order (`shape.ts` `slots`: `rng`, `keyboard`, `tablet`, `net`, `gpu`, `snd`, `mouse`, `touch`, then a `blk` per disk); a restore refuses one whose list isn't the machine's now, naming both |
 | `cpu` | the vCPUs' optional features, of `rng` and `e0pd` (docs/cpu.md); a restore gives the machine the same, and a snapshot without the field (before ABI 35) none |
 | `serial` | the last ~4 KiB of serial output the worker posted, cut at a line start |
 | `name`, `shape`, `shapeHash`, `urls` | a stored machine's (format 2): its name, its shape and the shape's hash (a restore onto a machine whose hash is another is refused), and its URL disks' URLs by slot (a machine like it can be made again) |
@@ -586,7 +590,7 @@ starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 `tests/page-debian.test.ts` covers it on Debian.
 
 **The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
-they change (not on moves: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
+they change (`cursor`; its moves as `cursor-at`, which the page uses only under the mouse lock: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
 a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels, followed by the same cursor cut to its top-left 32 CSS pixels: Chromium skips a cursor over 32×32 where its image would reach past the page's edge, which made the guest's cursor vanish in the last 64 pixels), again whenever the scale changes. A cursor the guest
 never set leaves the page's own pointer; one it hid is `none`. docs/plans/graphics.md §14.
 
@@ -664,7 +668,29 @@ page writes the context's output latency into the ring's header, and the guest g
   prompt goes to its line editor as commands). No clipboard for the screen yet (phase C, host
   integration).
 - **The tablet** maps a pointer to 0–32767 across the canvas's box as laid out
-  (`getBoundingClientRect`), so it follows the CSS scaling, integer or not.
+  (`getBoundingClientRect`), so it follows the CSS scaling, integer or not. Its buttons come from the event's
+  `buttons` mask (a second button pressed while one is held is a `pointermove`, not a `pointerdown`): left, right,
+  middle, and a mouse's **back and forward** as `BTN_SIDE` and `BTN_EXTRA`, whose browser navigation is cancelled on
+  the screen (Chromium navigates on an uncancelled `mouseup`; `tests/page-pointers.test.ts` sees it navigate without).
+- **Mouse lock** (the toolbar's toggle, `webpc.settings` `mouseLock`): a click on the screen takes the mouse (Pointer
+  Lock, with `unadjustedMovement` where the platform has it: the mouse's own counts, the guest accelerates) and isn't
+  the guest's; Esc (the browser's) or the toggle lets it go. While locked the motion goes to the machine's relative
+  **mouse** (a virtio-input of its own: `MachineRecord.mouse`, `?mouse=1` for a transient machine), unbounded by the
+  screen, for games that read raw motion; a machine without one moves the tablet from the motion instead, a cursor
+  of the page's kept in the screen. The browser hides the pointer, CSS cursor and all, so the page draws the guest's
+  cursor over the screen (`#screen-cursor`) where the guest puts it (virtio-gpu's cursor position, `cursor-at`). The
+  buttons move to the mouse with the lock (held ones are released first). Nothing drifts: the tablet is absolute, so
+  after the lock the guest's pointer goes to the host's at its first move (where it was when the lock was taken;
+  pointer lock can't place the host's pointer). Not on the firmware's screens (no driver for either device there).
+- **Touch** (`MachineRecord.touch`, `?touch=1`): a machine with a touchscreen (virtio-input, `INPUT_PROP_DIRECT`, 10
+  multitouch slots, 0–32767) gets the screen's touches as touches: a slot per finger (`ABS_MT_SLOT`,
+  `ABS_MT_TRACKING_ID`, positions), the primary finger also as `ABS_X/Y`, `BTN_TOUCH` from the first finger down to
+  the last up; fingers past ten are dropped. Without one a touch moves the tablet and presses its left button. The
+  screen has `touch-action: none`, so the page doesn't pan or zoom under them.
+- **Leaving the page** while the machine runs (booting, running, rebooting) stops it like pulling the plug, so the
+  page asks the browser to ask first (`beforeunload`; the browser words the question itself, the page's text isn't
+  shown). **Preferences** on the Machines page turns it off (`webpc.settings` `leaveWarning`, on unless set). Under
+  automation (`navigator.webdriver`) it doesn't ask unless `?leavewarning=1`: the tests leave running machines.
 - Keys are mapped by `KeyboardEvent.code`: a key's position on a PC keyboard (the US one's keys, ISO's
   `IntlBackslash`, ABNT2's `IntlRo`, JIS's `IntlYen` and its conversion keys), whatever the host's layout prints on it.
   The guest's keymap says what the key types (a US one unless it is told otherwise: "The keyboard layout"). A

@@ -45,6 +45,10 @@ export const ui = $state({
   hasGpu: false,
   /** The machine has a network card (the Network menu). */
   hasNetwork: false,
+  /** The toolbar's mouse lock (remembered): a click on the screen takes the mouse (docs/frontend.md "Mouse lock"). */
+  mouseLock: false,
+  /** The screen holds the mouse now. */
+  mouseLocked: false,
   /** The page can't run here (no cross-origin isolation): no Start. */
   cantRun: false,
   /** Bumped when the network's state changes (the Network menu, the wizard and the Network tab redraw). */
@@ -113,6 +117,8 @@ export type Page = {
   setView(v: View): void;
   showLog(): void;
   fullscreen(): void;
+  /** The toolbar's mouse lock on or off (off lets go of a held mouse). */
+  setMouseLock(on: boolean): void;
   chord(keys: string[]): void;
   screenSize(): void;
   openMachines(tab?: MachinesTab, id?: string): void;

@@ -21,7 +21,7 @@
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
-  import { remember, settings } from './settings.ts';
+  import { leaveWarning, remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
   import { errorView, type ErrorView } from './usb-ports.ts';
   import { browserLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS } from './keyboard.ts';
@@ -44,6 +44,9 @@
   /** The page's own machine (transient) is chosen: `ui.machinesSelected` is `page`; the connections: `connections`. */
   const PAGE = 'page';
   const CONNECTIONS = 'connections';
+  /** The page's preferences (this browser's, for every machine). */
+  const PREFERENCES = 'preferences';
+  let warnOnLeave = $state(leaveWarning());
 
   const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
 
@@ -54,7 +57,7 @@
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
     suspended = new Set((await Promise.all(machines.map(async (m) => ((await suspendedCopy(machineDir(m.id)).catch(() => undefined)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
-    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
+    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);
     // The draft follows the record, unless the user is editing its settings.
     if (!m || !draft || draft.id !== m.id || !dirty) draft = m ? structuredClone($state.snapshot(m)) as MachineRecord : undefined;
@@ -99,7 +102,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch;
   /** What takes a restart: the shape, and the JIT's budget (the guest doesn't see it: no snapshot is orphaned). */
   const restartChanged = (a: MachineRecord, b: MachineRecord) => shapeChanged(a, b) || (a.jitMiB ?? 0) !== (b.jitMiB ?? 0);
   async function saveSettings() {
@@ -196,6 +199,15 @@
   {/if}
 {/snippet}
 
+{#snippet pointerSwitches()}
+  {#if draft}
+    {@const rec = machines.find((x) => x.id === draft?.id)}
+    <label class="check" title="A relative mouse (virtio-input) for the toolbar's mouse lock: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), with the guest's own acceleration. Without it the lock moves the tablet. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.mouse} data-field="mouse"> Mouse (for the mouse lock)</label>
+    <label class="check" title="A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.touch} data-field="touch"> Touchscreen</label>
+    {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch}<p class="note warn" data-pointer-orphans>Adding or removing the mouse or the touchscreen changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+  {/if}
+{/snippet}
+
 {#snippet saveRow()}
   <div class="row"><button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty || !!splitProblem}>{restartsToSave ? 'Save and restart' : 'Save'}</button>
     {#if dirty}<button onclick={() => { dirty = false; void reread(); }}>Revert</button>{/if}</div>
@@ -236,10 +248,22 @@
       </div>
       <div class="new">
         <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title="The network connections this browser keeps (tailnets, tailcat), for any machine's adapters"><Icon name="network" size={16} />Connections ({conns.length})</button>
+        <button class:chosen={ui.machinesSelected === PREFERENCES} onclick={() => choose(PREFERENCES)} data-machine={PREFERENCES} title="How the page behaves in this browser, for every machine"><Icon name="adjustments-horizontal" size={16} />Preferences</button>
       </div>
     </nav>
 
-    {#if ui.machinesSelected === CONNECTIONS}
+    {#if ui.machinesSelected === PREFERENCES}
+      <section class="machine" data-selected={PREFERENCES}>
+        <div class="head">
+          <span class="title"><h3>Preferences</h3>
+          <span class="meta">Kept by this browser, for every machine.</span></span>
+        </div>
+        <div class="tab settings">
+          <label class="check"><input type="checkbox" bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} data-field="leave-warning"> Ask before leaving the page while a machine runs</label>
+          <p class="note">Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.</p>
+        </div>
+      </section>
+    {:else if ui.machinesSelected === CONNECTIONS}
       <section class="machine" data-selected={CONNECTIONS}>
         <div class="head">
           <span class="title"><h3>Connections</h3>
@@ -349,8 +373,9 @@
               {#if keyboardNote}<p class="note" data-keyboard-match>{keyboardNote}</p>{/if}
               {#if draft.keyboard === FOLLOW_BROWSER}<p class="note" data-keyboard-note>At every boot the page changes the guest's own keyboard settings to the layout this browser reports{browserNow ? ` (now ${browserNow})` : ''} (console, X11 and Wayland, on a guest with systemd 256 or newer). Where the browser doesn't say (only Chromium-based browsers do), the guest keeps its last layout; so does "Don't set it".</p>{:else if draft.keyboard}<p class="note" data-keyboard-note>The next time the machine boots, the page changes the guest's own keyboard settings to this layout (console, X11 and Wayland, on a guest with systemd 256 or newer), and again at every boot while it is set. "Don't set it" leaves the last layout set.</p>{/if}
               {@render usbSwitch()}
+              {@render pointerSwitches()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display, the network adapters and the USB controller make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
+              <p class="note">vCPUs, RAM, the display, the network adapters, the USB controller, the mouse and the touchscreen make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">
@@ -435,7 +460,7 @@
   .head .title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
   .head .grow { flex: 1; }
   .head button, .row button, .settings button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .tabs { display: flex; gap: 2px; padding: 0 16px; box-shadow: inset 0 -1px var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tabs { flex: none; display: flex; gap: 2px; padding: 0 16px; box-shadow: inset 0 -1px var(--line); overflow-x: auto; scrollbar-width: none; }
   .tabs button { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: 0; color: var(--dim); }
   .tabs button[aria-selected=true] { color: var(--text); background: var(--bg); border-color: var(--line); border-bottom: 1px solid var(--bg); }
   .tab { padding: 16px; }

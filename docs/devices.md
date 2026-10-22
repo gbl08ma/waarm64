@@ -270,16 +270,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   whole-second timestamps.
 
 ### input (ID 18)
-- `{type: 'input', kind: 'keyboard' | 'tablet', port?}`; eventq and statusq of 64. The keyboard has
-  keys 1–248, the Num/Caps/Scroll Lock LEDs and `EV_REP`; the tablet `BTN_LEFT/RIGHT/MIDDLE`,
-  `REL_WHEEL` and `ABS_X/Y` over 0–32767.
+- `{type: 'input', kind: 'keyboard' | 'tablet' | 'mouse' | 'touch', port?}`; eventq and statusq of 64. The keyboard
+  has keys 1–248, the Num/Caps/Scroll Lock LEDs and `EV_REP`; the tablet `BTN_LEFT/RIGHT/MIDDLE/SIDE/EXTRA`,
+  `REL_WHEEL` and `ABS_X/Y` over 0–32767; the mouse the same buttons, `REL_X/Y` and `REL_WHEEL`; the touchscreen
+  `INPUT_PROP_DIRECT`, `BTN_TOUCH`, `ABS_X/Y` and `ABS_MT_SLOT` (10 slots), `ABS_MT_POSITION_X/Y` (0–32767) and
+  `ABS_MT_TRACKING_ID` (Linux's virtio_input makes the slots from `ABS_MT_SLOT`'s range).
 - **A config write (`select`/`subsel`) is a `DEVICE` exit that waits for the device worker even
   in realtime mode**: the driver reads `size` right after.
 - Events come from the port as [type, code, value] arrays (`web/input.ts` `attachInput` makes
   them from DOM keyboard, pointer and wheel events, keys by `KeyboardEvent.code`, a US PC
   layout; what's held is released when the element or the window loses the focus, and `chord`
   sends combinations the browser keeps, docs/frontend.md "Input"); they wait for event buffers
-  (oldest dropped past 1024). LED status events go to the port. No pointer lock or multitouch.
+  (oldest dropped past 1024). LED status events go to the port. The page's mouse lock and touches: docs/frontend.md "Input".
 
 ### virtio-gpu (ID 16): 2D, and 3D through virgl
 - `{type: 'gpu', width, height, dpi?}` (`web/gpu.ts`; the native twin is `core/tests/common/gpu.rs`

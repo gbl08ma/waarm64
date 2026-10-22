@@ -141,7 +141,7 @@ type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 
 /** The machine's transports in slot order (web/app/shape.ts `slots`): the kinds a snapshot's header lists, so a restore makes the same. */
 const layout = (m: StartMessage, machine: Machine): Slot[] =>
-  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
+  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', mouse: !!m.mouse, touch: !!m.touch, attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
 
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
 function blkSpec(d: StartDisk): DeviceSpec {
@@ -157,6 +157,8 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'blk': return blkSpec(slot.disk!);
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
+    case 'mouse': return { type: 'input', kind: 'mouse', port: m.mouse };
+    case 'touch': return { type: 'input', kind: 'touch', port: m.touch };
     case 'gpu': {
       const tuning = gpuTuning();
       return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };

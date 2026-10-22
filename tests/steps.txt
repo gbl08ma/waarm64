@@ -6,12 +6,14 @@
 # message (docs/testing.md "Step counts").
 # Since "virtio: offer EVENT_IDX": every Linux guest with a virtio device negotiates it (EDK2 doesn't).
 buildroot 40054752
-# devices: virtio-net offers its offloads (web/offload.ts), receive merging and MRG_RXBUF included, which the guest's driver negotiates.
-devices 112980505
+# devices: virtio-net offers its offloads (web/offload.ts), receive merging and MRG_RXBUF included, which the guest's driver negotiates;
+# the tablet has a mouse's back and forward buttons (BTN_SIDE, BTN_EXTRA).
+devices 113097398
 ltp 2721725891
 crypto 4367540335
-# alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates.
-alpine 2652899816
+# alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates, and the tablet
+# with a mouse's back and forward buttons.
+alpine 2653142856
 alpine-user 10615125762
 # Alpine's userspace benchmark saved and restored into a new VM at a quarter, half (+1) and three
 # quarters (+2) of alpine-user's steps: a restored VM's TLBs are empty, which Linux can tell (it clears

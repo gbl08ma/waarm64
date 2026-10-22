@@ -78,12 +78,14 @@ export const SEVERAL_ADAPTERS = { leaseSeconds: 120, renewSeconds: 10 };
 /** virtio-9p (web/9p.ts): an in-memory tree, mounted by the guest by `tag`, starting with `files` (path → contents). */
 export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
 /**
- * virtio-input: a keyboard or a tablet (absolute pointer, 0–32767 on both
- * axes). Events for the guest come from `port` as arrays of [type, code,
- * value] (Linux input-event-codes; web/input.ts makes them from DOM events);
- * the guest's status events (LEDs) go to it as one [type, code, value] each.
+ * virtio-input: a keyboard, a tablet (absolute pointer, 0–32767 on both
+ * axes), a mouse (relative: the pointer while the page holds the mouse) or a
+ * touchscreen (direct, multitouch: 10 slots, 0–32767 on both axes). Events for
+ * the guest come from `port` as arrays of [type, code, value] (Linux
+ * input-event-codes; web/input.ts makes them from DOM events); the guest's
+ * status events (LEDs) go to it as one [type, code, value] each.
  */
-export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet'; port?: MessagePort };
+export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet' | 'mouse' | 'touch'; port?: MessagePort };
 
 /**
  * virtio-gpu, 2D and, with `virgl`, 3D (web/gpu.ts; rendered by `renderer`, or on a null renderer without one): the display's size, the EDID's DPI, and a test hook that changes the
@@ -436,6 +438,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
 // virtio-input config selectors (virtio 1.2 §5.8.2) and the event types we use.
 const CFG_ID_NAME = 1;
 const CFG_ID_DEVIDS = 3;
+const CFG_PROP_BITS = 0x10;
 const CFG_EV_BITS = 0x11;
 const CFG_ABS_INFO = 0x12;
 const EV_KEY = 1;
@@ -443,6 +446,12 @@ const EV_REL = 2;
 const EV_ABS = 3;
 const EV_LED = 0x11;
 const EV_REP = 0x14;
+const INPUT_PROP_DIRECT = 1;
+const ABS_MT_SLOT = 0x2f, ABS_MT_POSITION_X = 0x35, ABS_MT_POSITION_Y = 0x36, ABS_MT_TRACKING_ID = 0x39;
+/** The touchscreen's slots (fingers at once). */
+export const TOUCH_SLOTS = 10;
+/** BTN_LEFT, RIGHT, MIDDLE, SIDE, EXTRA (a mouse's back and forward). */
+const POINTER_BUTTONS = [0x110, 0x111, 0x112, 0x113, 0x114];
 
 /** A bitmap with `bits` set, as the config space carries it. */
 function bitmap(bits: number[]) {
@@ -451,22 +460,49 @@ function bitmap(bits: number[]) {
   return b;
 }
 
-/** The answer to a config query (select, subsel) about a keyboard or a tablet. */
+/** An axis's range as ABS_INFO carries it: min, max, fuzz, flat, res. */
+const absInfo = (min: number, max: number) => new Uint8Array(new Int32Array([min, max, 0, 0, 0]).buffer);
+
+/** What each kind is called and its product id (BUS_VIRTUAL, vendor 0). */
+const INPUT_IDS = { keyboard: ['webpc keyboard', 1], tablet: ['webpc tablet', 2], mouse: ['webpc mouse', 3], touch: ['webpc touchscreen', 4] } as const;
+
+/** The answer to a config query (select, subsel) about an input device of `kind`. */
 export function inputConfig(kind: InputSpec['kind'], select: number, subsel: number): Uint8Array {
-  const kbd = kind === 'keyboard';
+  const none = new Uint8Array(0);
   switch (select) {
-    case CFG_ID_NAME: return new TextEncoder().encode(kbd ? 'webpc keyboard' : 'webpc tablet');
-    case CFG_ID_DEVIDS: return new Uint8Array(new Uint16Array([6, 0, kbd ? 1 : 2, 1]).buffer); // BUS_VIRTUAL, vendor, product, version
+    case CFG_ID_NAME: return new TextEncoder().encode(INPUT_IDS[kind][0]);
+    case CFG_ID_DEVIDS: return new Uint8Array(new Uint16Array([6, 0, INPUT_IDS[kind][1], 1]).buffer); // BUS_VIRTUAL, vendor, product, version
+    case CFG_PROP_BITS: return kind === 'touch' && subsel === 0 ? bitmap([INPUT_PROP_DIRECT]) : none;
     case CFG_EV_BITS:
-      if (kbd && subsel === EV_KEY) return bitmap(Array.from({ length: 248 }, (_, k) => k + 1)); // KEY_ESC to KEY_MICMUTE
-      if (kbd && subsel === EV_LED) return bitmap([0, 1, 2]); // Num, Caps, Scroll Lock
-      if (kbd && subsel === EV_REP) return new Uint8Array(1); // autorepeat (the kernel's)
-      if (!kbd && subsel === EV_KEY) return bitmap([0x110, 0x111, 0x112]); // BTN_LEFT, RIGHT, MIDDLE
-      if (!kbd && subsel === EV_REL) return bitmap([8]); // REL_WHEEL
-      if (!kbd && subsel === EV_ABS) return bitmap([0, 1]); // ABS_X, ABS_Y
-      return new Uint8Array(0);
-    case CFG_ABS_INFO: return !kbd && subsel <= 1 ? new Uint8Array(new Uint32Array([0, 32767, 0, 0, 0]).buffer) : new Uint8Array(0); // min, max, fuzz, flat, res
-    default: return new Uint8Array(0);
+      switch (kind) {
+        case 'keyboard':
+          if (subsel === EV_KEY) return bitmap(Array.from({ length: 248 }, (_, k) => k + 1)); // KEY_ESC to KEY_MICMUTE
+          if (subsel === EV_LED) return bitmap([0, 1, 2]); // Num, Caps, Scroll Lock
+          if (subsel === EV_REP) return new Uint8Array(1); // autorepeat (the kernel's)
+          return none;
+        case 'tablet':
+          if (subsel === EV_KEY) return bitmap(POINTER_BUTTONS);
+          if (subsel === EV_REL) return bitmap([8]); // REL_WHEEL
+          if (subsel === EV_ABS) return bitmap([0, 1]); // ABS_X, ABS_Y
+          return none;
+        case 'mouse':
+          if (subsel === EV_KEY) return bitmap(POINTER_BUTTONS);
+          if (subsel === EV_REL) return bitmap([0, 1, 8]); // REL_X, REL_Y, REL_WHEEL
+          return none;
+        case 'touch':
+          if (subsel === EV_KEY) return bitmap([0x14a]); // BTN_TOUCH
+          if (subsel === EV_ABS) return bitmap([0, 1, ABS_MT_SLOT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID]);
+          return none;
+      }
+      return none;
+    case CFG_ABS_INFO:
+      if ((kind === 'tablet' || kind === 'touch') && subsel <= 1) return absInfo(0, 32767);
+      if (kind !== 'touch') return none;
+      if (subsel === ABS_MT_POSITION_X || subsel === ABS_MT_POSITION_Y) return absInfo(0, 32767);
+      if (subsel === ABS_MT_SLOT) return absInfo(0, TOUCH_SLOTS - 1);
+      if (subsel === ABS_MT_TRACKING_ID) return absInfo(0, 65535);
+      return none;
+    default: return none;
   }
 }
 

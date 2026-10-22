@@ -203,7 +203,8 @@ This replaces Suspend's discipline of dropping the copy before any machine runs 
 - **The shape** is a canonical JSON of what the guest sees: vCPUs, RAM, the display (2D or 3D: different devices),
   the transports in slot order, each disk's size, read-only or not, serial and base identity, the CPU features
   (`cpu`), whether there's a network card, and `usb: true` when there's a USB controller (left out when there isn't, so
-  machines made before it keep their hash). It also carries the machine's JIT cache budget (`jitMiB`, only when set),
+  machines made before it keep their hash; the relative mouse and the touchscreen likewise join only as transports,
+  `mouse` and `touch` after `snd`, on machines that have them: docs/frontend.md "Input"). It also carries the machine's JIT cache budget (`jitMiB`, only when set),
   so a snapshot's machine is made with it, but **outside the hash**: the guest doesn't see it and a state restores
   under any budget (abi.md "Snapshots"), so lowering it after a crash orphans no snapshot or suspended state. Its SHA-256 is the **shape hash**; the header carries the whole shape, so a
   snapshot file can make its machine (§5.2).

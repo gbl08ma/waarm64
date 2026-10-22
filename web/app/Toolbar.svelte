@@ -120,6 +120,7 @@
       {/each}
     </div>
   </Menu>
+  <button id="mouse-lock" class="tool" aria-pressed={ui.mouseLock} aria-label="Mouse lock" title={ui.mouseLock ? `Mouse lock is on: a click on the screen gives the machine the mouse, every button and all its motion${ui.mouseLocked ? ' (it has it now)' : ''}; Esc lets it go. Click to turn it off` : 'Mouse lock: a click on the screen gives the machine the mouse (every button, and motion unbounded by the screen, for games); Esc lets it go'} onclick={() => page.setMouseLock(!ui.mouseLock)}><Icon name="mouse" /></button>
   <button id="fullscreen" class="tool" aria-label="Full screen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave" onclick={() => page.fullscreen()}><Icon name="maximize" /></button>
   <span class="sep"></span>
   <Sound {audio} />

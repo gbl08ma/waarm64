@@ -45,6 +45,9 @@ export type ToWorker =
     /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */
     keyboard: MessagePort;
     tablet: MessagePort;
+    /** A relative mouse's and a touchscreen's ports, for a machine that has them (a stored machine's `mouse` and `touch`, a transient one's `?mouse=1`, `?touch=1`). */
+    mouse?: MessagePort;
+    touch?: MessagePort;
     /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
     serial: MessagePort;
     /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */

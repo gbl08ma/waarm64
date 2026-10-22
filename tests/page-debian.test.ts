@@ -225,8 +225,8 @@ const flashWritten = (page: Page) => page.waitForFunction(async () => {
 for (let run = 1; run <= RUNS; run++) {
   test(`the page runs Debian: a key on the screen stops GRUB; root logs in on the screen and on the serial terminal; the platform is the firmware's; the page's size reaches the guest; the disk persists over a reload; a snapshot loads in a fresh profile, suspends and resumes${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
     // The UK layout: the screen's typing below is the same on it (Debian's image has no console keymaps anyway).
-    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&keyboard=gb&${unattendedQuery()}`;
-    const context = await browser.newContext({ viewport: { width: 1400, height: 900 } }); // a fresh profile: an empty OPFS
+    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&keyboard=gb&mouse=1&touch=1&${unattendedQuery()}`;
+    const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, hasTouch: true }); // a fresh profile: an empty OPFS
     const page = await context.newPage();
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
     const errors: string[] = [];
@@ -287,6 +287,27 @@ for (let run = 1; run <= RUNS; run++) {
     // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
     await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');
     await shows(page, /==ssb Not affected/);
+    // The pointing devices (`?mouse=1&touch=1`, docs/frontend.md "Mouse lock", "Touch"): the tablet with the side buttons,
+    // the relative mouse, the multitouch screen (direct); a touch on the page's screen reaches the touchscreen's events.
+    await onSerial(page, 'clear; for d in /sys/class/input/input*; do case "$(cat $d/name)" in webpc\\ t*|webpc\\ m*) echo "==$(tr " " _ <$d/name):p=$(cat $d/properties):r=$(cat $d/capabilities/rel):a=$(cat $d/capabilities/abs):k=$(cat $d/capabilities/key | tr " " .)";; esac; done; echo ==in""put\n');
+    await shows(page, /==input/);
+    const devices = (await terminal(page)).replace(/\s+/g, ' ');
+    for (const want of ['==webpc_tablet:p=0:r=100:a=3:k=1f0000.0.0.0.0', '==webpc_mouse:p=0:r=103:a=0:k=1f0000.0.0.0.0', '==webpc_touchscreen:p=2:r=0:a=260800000000003:k=400.0.0.0.0.0']) {
+      assert.ok(devices.includes(want), `missing ${want}: ${devices}`);
+    }
+    await onSerial(page, 'clear; e=$(grep -l touchscreen /sys/class/input/event*/device/name | cut -d/ -f5); (timeout 8 cat /dev/input/$e | wc -c >/tmp/touch.n &); sleep 1; echo ==touch""-wait\n');
+    await shows(page, /==touch-wait/);
+    {
+      const cdp = await context.newCDPSession(page);
+      const box = (await page.locator('#screen').boundingBox())!;
+      const [x, y] = [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)];
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 20, y, id: 1 }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await cdp.detach();
+    }
+    await onSerial(page, 'clear; sleep 8; echo ==touch $(cat /tmp/touch.n).\n');
+    await shows(page, /==touch [1-9]\d*\./, 30_000);
     // The page's sound device (audio S2): Debian autoloads virtio_snd for it and has the card.
     await onSerial(page, 'clear; cat /proc/asound/cards; echo so""und-read\n');
     await shows(page, /VirtIO SoundCard[^]*sound-read/);

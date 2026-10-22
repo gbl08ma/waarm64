@@ -42,7 +42,7 @@ export type RestorePlan = {
  * runs with (`effectiveDisplay`).
  */
 export async function planRestore(store: Store, m: MachineRecord, disks: Map<string, DiskRecord>, snap: { name: string; key: string; pins: SnapshotDisk[] }, display: Display | 'none' = m.display): Promise<RestorePlan> {
-  const bySlot = slots({ nets: adaptersOf(m).length, display, attachments: m.attachments }); // as the machine runs on the page (its shape's display): the slots the pins name
+  const bySlot = slots({ nets: adaptersOf(m).length, display, mouse: m.mouse, touch: m.touch, attachments: m.attachments }); // as the machine runs on the page (its shape's display): the slots the pins name
   type Step = { slot: number; attachment: string; disk: DiskRecord; action: 'keep' | 'reuse' | 'fork' | 'fork-whole'; reuse?: string; replaceable?: { overlay: string; name: string; bytes: number } };
   const steps: Step[] = [];
   const kept: string[] = [];
@@ -138,6 +138,8 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     display: snap.shape.display === '3d' ? '3d' : '2d',
     adapters: macsOf(snap.shape).map((mac) => ({ id: newId(), mac })),
     usb: snap.shape.usb === true,
+    mouse: snap.shape.devices.includes('mouse'),
+    touch: snap.shape.devices.includes('touch'),
     ...(snap.shape.jitMiB ? { jitMiB: snap.shape.jitMiB } : {}),
     attachments,
     created: now,
