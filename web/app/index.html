@@ -31,7 +31,7 @@
   .tool { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-width: 32px; padding: 0 6px; border: 1px solid transparent; border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; list-style: none; }
   .tool.labelled { padding: 0 10px 0 7px; }
   .tool:hover { background: var(--hover); }
-  .tool[aria-pressed=true], details.menu[open] > .tool { background: var(--pressed); border-color: #3a4d6a; }
+  .tool[aria-pressed=true], details.menu[open] > .tool, details.menu[data-on] > .tool { background: var(--pressed); border-color: #3a4d6a; }
   .tool:disabled, .tool[aria-disabled=true] { opacity: .4; cursor: default; background: transparent; }
   .tool .label { font-size: 13px; }
   .tool::-webkit-details-marker { display: none; }

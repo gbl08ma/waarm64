@@ -120,7 +120,12 @@
       {/each}
     </div>
   </Menu>
-  <button id="mouse-lock" class="tool" aria-pressed={ui.mouseLock} aria-label="Mouse lock" title={ui.mouseLock ? `Mouse lock is on: a click on the screen gives the machine the mouse, every button and all its motion${ui.mouseLocked ? ' (it has it now)' : ''}; Esc lets it go. Click to turn it off` : 'Mouse lock: a click on the screen gives the machine the mouse (every button, and motion unbounded by the screen, for games); Esc lets it go'} onclick={() => page.setMouseLock(!ui.mouseLock)}><Icon name="mouse" /></button>
+  <Menu id="mouse-lock" icon="mouse" title={ui.mouseLocked ? 'Mouse lock: the machine has the mouse (Esc lets it go)' : ui.mouseLock ? 'Mouse lock is on: a click on the screen gives the machine the mouse' : 'Mouse lock: a click on the screen gives the machine the mouse, every button included'} data-on={ui.mouseLock || undefined} panel>
+    <label class="row" title="A click on the screen gives the machine the mouse: every button reaches it, the back and forward ones too, and the browser hides its pointer; Esc lets it go"><input id="mouse-lock-on" type="checkbox" checked={ui.mouseLock} onchange={(e) => page.setMouseLock(e.currentTarget.checked)}> Lock the mouse on a click</label>
+    <label class="row" title="The pointer moves as it does unlocked, at the host's speed, and stays in the screen"><input type="radio" name="mouse-lock-mode" value="pointer" data-mode="pointer" checked={ui.mouseLockMode === 'pointer'} onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}> Pointer: the same speed as unlocked</label>
+    <label class="row" title={ui.hasMouse ? "The mouse's own motion to the machine's relative mouse, unbounded by the screen (games that turn with the mouse); the guest's settings set its speed" : "This machine has no relative mouse (its Settings, Mouse): the lock moves the pointer"}><input type="radio" name="mouse-lock-mode" value="raw" data-mode="raw" checked={ui.mouseLockMode === 'raw'} disabled={!ui.hasMouse} onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}> Raw: unbounded, for games</label>
+    <p class="hint">Esc lets the mouse go. In Raw the guest's own mouse settings set the speed.{ui.hasMouse ? '' : " Raw needs the machine's Mouse (its Settings)."}</p>
+  </Menu>
   <button id="fullscreen" class="tool" aria-label="Full screen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave" onclick={() => page.fullscreen()}><Icon name="maximize" /></button>
   <span class="sep"></span>
   <Sound {audio} />

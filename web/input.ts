@@ -37,14 +37,24 @@ export type Input = {
   detach(): void;
   /** Presses keys (`KeyboardEvent.code` names) in order and releases them in reverse: a chord the browser won't pass, e.g. `ControlLeft AltLeft Delete`. */
   chord(...codes: string[]): void;
-  /** The mouse lock: on, a click on the element takes the mouse (Pointer Lock); off, it is let go. */
-  mouseLock(on: boolean): void;
+  /**
+   * The mouse lock: on, a click on the element takes the mouse (Pointer Lock); off, it is let go (as it is when the
+   * mode changes: the next click takes it in the new one).
+   */
+  mouseLock(on: boolean, mode?: LockMode): void;
 };
 
 /**
+ * How the locked mouse moves the guest (docs/frontend.md "Mouse lock"): `pointer`, the tablet by the host's pointer
+ * motion (accelerated as the host's pointer is, in CSS pixels: the same speed as unlocked), a cursor kept in the
+ * screen; `raw`, the relative mouse by the mouse's own counts (unadjusted where the platform has it; the guest
+ * accelerates), unbounded by the screen, for games. `raw` on a machine without a mouse is `pointer`.
+ */
+export type LockMode = 'pointer' | 'raw';
+
+/**
  * The pointing devices besides the tablet (docs/frontend.md "Mouse lock"): `mouse`, a relative mouse's port, which
- * takes the motion while the element holds the mouse (without one the lock moves the tablet: a cursor of the page's,
- * kept in the screen); `touch`, a touchscreen's port, which takes the touches (without one a touch moves the tablet and
+ * takes the motion while the element holds the mouse in the `raw` mode; `touch`, a touchscreen's port, which takes the touches (without one a touch moves the tablet and
  * presses its left button). `locked` is told when the element takes the mouse or lets it go.
  */
 export type Pointers = { mouse?: MessagePort; touch?: MessagePort; locked?: (on: boolean) => void };
@@ -118,7 +128,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     sendKey(code, e.repeat && keys.has(code) ? 2 : down);
   };
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
-  /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked without a mouse device, the page's cursor. */
+  /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
   const spot = { x: 16384, y: 16384 };
   const abs = (e: MouseEvent) => {
     const r = el.getBoundingClientRect();
@@ -127,15 +137,19 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
   };
   const { mouse, touch } = pointers;
   const locked = () => document.pointerLockElement === el;
+  let lockOn = false;
+  let lockMode: LockMode = 'pointer';
+  /** The locked mouse is the relative mouse's. */
+  const raw = () => locked() && lockMode === 'raw' && !!mouse;
   // The buttons as the guest sees them, and the port they were pressed on (the tablet, or the mouse while locked).
   const buttons = new Set<number>();
   let buttonsOn: MessagePort | undefined;
   /** Buttons held from before the lock (the click that took it): not the guest's until released. */
   let ignored = 0;
-  /** What a pointer event moves: the tablet to the pointer; while locked, the mouse by the motion, or without one the tablet by it. */
+  /** What a pointer event moves: the tablet to the pointer; while locked, the tablet by the motion (`pointer`) or the mouse (`raw`). */
   const motion = (e: PointerEvent): { port?: MessagePort; events: number[][] } => {
     if (!locked()) return { port: tablet, events: abs(e) };
-    if (mouse) return { port: mouse, events: [...(e.movementX ? [[EV_REL, 0, e.movementX]] : []), ...(e.movementY ? [[EV_REL, 1, e.movementY]] : [])] };
+    if (raw()) return { port: mouse, events: [...(e.movementX ? [[EV_REL, 0, e.movementX]] : []), ...(e.movementY ? [[EV_REL, 1, e.movementY]] : [])] };
     const r = el.getBoundingClientRect();
     spot.x = Math.max(0, Math.min(32767, Math.round(spot.x + (e.movementX / r.width) * 32767)));
     spot.y = Math.max(0, Math.min(32767, Math.round(spot.y + (e.movementY / r.height) * 32767)));
@@ -195,14 +209,17 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     fingers.clear();
   };
   const touched = (e: PointerEvent) => !!touch && e.pointerType === 'touch';
-  let lockOn = false;
   const takeMouse = () => {
-    // Unadjusted: the mouse's own counts, without the host's acceleration (the guest has its own); not every platform has it.
+    // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
+    // A refusal (the browser's: too soon after Esc, no gesture) leaves the mouse the page's: the next click asks again.
+    const ask = () => Promise.resolve(el.requestPointerLock()).catch(() => {});
+    if (lockMode !== 'raw' || !mouse) return void ask();
+    // Raw, unadjusted: the mouse's own counts, without the host's acceleration (the guest has its own); not every platform has it.
     const req = el.requestPointerLock as (o?: { unadjustedMovement?: boolean }) => Promise<void> | undefined;
     try {
-      req.call(el, { unadjustedMovement: true })?.catch(() => el.requestPointerLock());
+      req.call(el, { unadjustedMovement: true })?.catch(ask);
     } catch {
-      el.requestPointerLock();
+      void ask();
     }
   };
   const releaseAll = () => {
@@ -237,7 +254,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     on(el, 'mouseup', sideButton),
     on(el, 'auxclick', sideButton),
     on(el, 'wheel', (e: WheelEvent) => {
-      const port = locked() && mouse ? mouse : tablet;
+      const port = raw() ? mouse : tablet;
       if (!port || !e.deltaY) return;
       e.preventDefault();
       port.postMessage([[EV_REL, 8, e.deltaY < 0 ? 1 : -1], [EV_SYN, 0, 0]]);
@@ -259,9 +276,9 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
       off.forEach((f) => f());
       pointers.locked?.(false); // its pointerlockchange comes after the listener is gone
     },
-    mouseLock(on: boolean) {
-      lockOn = on;
-      if (!on && locked()) document.exitPointerLock();
+    mouseLock(on: boolean, mode = lockMode) {
+      if (locked() && (!on || mode !== lockMode)) document.exitPointerLock();
+      [lockOn, lockMode] = [on, mode];
     },
     chord(...codes: string[]) {
       if (text && !text.live() && text.usb && codes.every((c) => text.usb!(c, true))) {

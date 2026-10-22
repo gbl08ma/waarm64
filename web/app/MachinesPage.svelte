@@ -202,7 +202,7 @@
 {#snippet pointerSwitches()}
   {#if draft}
     {@const rec = machines.find((x) => x.id === draft?.id)}
-    <label class="check" title="A relative mouse (virtio-input) for the toolbar's mouse lock: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), with the guest's own acceleration. Without it the lock moves the tablet. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.mouse} data-field="mouse"> Mouse (for the mouse lock)</label>
+    <label class="check" title="A relative mouse (virtio-input) for the mouse lock's Raw mode: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), at the guest's own mouse speed. Without it the lock has the Pointer mode only. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.mouse} data-field="mouse"> Mouse (the mouse lock's Raw mode)</label>
     <label class="check" title="A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.touch} data-field="touch"> Touchscreen</label>
     {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch}<p class="note warn" data-pointer-orphans>Adding or removing the mouse or the touchscreen changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
   {/if}

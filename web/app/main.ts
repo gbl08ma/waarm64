@@ -16,7 +16,7 @@ import { leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
-import { attachInput, type Input } from '../input.ts';
+import { attachInput, type Input, type LockMode } from '../input.ts';
 import { PageAudio } from '../audio.ts';
 import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
@@ -374,13 +374,14 @@ function placeCursor() {
   lockCursor.style.imageRendering = canvas.style.imageRendering;
   lockCursor.style.transform = `translate(${(c.x | 0) * k}px, ${(c.y | 0) * k}px)`;
 }
-const setMouseLock = (on: boolean) => {
-  ui.mouseLock = on;
-  remember({ mouseLock: on });
-  run?.input.mouseLock(on);
+const setMouseLock = (on: boolean, mode: LockMode = ui.mouseLockMode) => {
+  [ui.mouseLock, ui.mouseLockMode] = [on, mode];
+  remember({ mouseLock: on, mouseLockMode: mode });
+  run?.input.mouseLock(on, mode);
   if (on) canvas.focus();
 };
 ui.mouseLock = settings().mouseLock ?? false;
+ui.mouseLockMode = settings().mouseLockMode === 'raw' ? 'raw' : 'pointer';
 
 new ResizeObserver(() => { fit(); scheduleSize(); placeCursor(); }).observe(screenBox);
 matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => { fit(); scheduleSize(); }); // moved to a screen with another density
@@ -587,7 +588,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const touch = pointerOn('touch') ? new MessageChannel() : undefined;
   const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
-  input.mouseLock(ui.mouseLock);
+  input.mouseLock(ui.mouseLock, ui.mouseLockMode);
+  ui.hasMouse = !!mouse;
   const r: Run = { worker, input, serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
   run = r;
   keyboardLive = false;

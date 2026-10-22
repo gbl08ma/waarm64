@@ -161,8 +161,8 @@ separators; the main gates also have their names. Left to right: **Machines** (t
 **Snapshot** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
 five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
-(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Mouse lock** (a toggle,
-remembered per browser: "Input", "Mouse lock"), **Full screen**,
+(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Mouse lock** (a menu: on or
+off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "Mouse lock"), **Full screen**,
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
 offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item,
@@ -204,7 +204,7 @@ Duplicate, Export the definition, Delete; then tabs:
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
   **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **Save and restart**
-  (asked first), the USB controller, the **Mouse** (for the mouse lock) and the **Touchscreen**. A change of shape
+  (asked first), the USB controller, the **Mouse** (the mouse lock's Raw mode) and the **Touchscreen**. A change of shape
   asks first when it orphans snapshots. The three are peripherals the guest sees: absent on machines made before
   them (off, so their shapes and snapshots stay as they were), on for new ones.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
@@ -672,16 +672,24 @@ page writes the context's output latency into the ring's header, and the guest g
   `buttons` mask (a second button pressed while one is held is a `pointermove`, not a `pointerdown`): left, right,
   middle, and a mouse's **back and forward** as `BTN_SIDE` and `BTN_EXTRA`, whose browser navigation is cancelled on
   the screen (Chromium navigates on an uncancelled `mouseup`; `tests/page-pointers.test.ts` sees it navigate without).
-- **Mouse lock** (the toolbar's toggle, `webpc.settings` `mouseLock`): a click on the screen takes the mouse (Pointer
-  Lock, with `unadjustedMovement` where the platform has it: the mouse's own counts, the guest accelerates) and isn't
-  the guest's; Esc (the browser's) or the toggle lets it go. While locked the motion goes to the machine's relative
-  **mouse** (a virtio-input of its own: `MachineRecord.mouse`, `?mouse=1` for a transient machine), unbounded by the
-  screen, for games that read raw motion; a machine without one moves the tablet from the motion instead, a cursor
-  of the page's kept in the screen. The browser hides the pointer, CSS cursor and all, so the page draws the guest's
-  cursor over the screen (`#screen-cursor`) where the guest puts it (virtio-gpu's cursor position, `cursor-at`). The
-  buttons move to the mouse with the lock (held ones are released first). Nothing drifts: the tablet is absolute, so
-  after the lock the guest's pointer goes to the host's at its first move (where it was when the lock was taken;
-  pointer lock can't place the host's pointer). Not on the firmware's screens (no driver for either device there).
+- **Mouse lock** (the toolbar's menu, `webpc.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
+  the mouse (Pointer Lock) and isn't the guest's; every button reaches the guest then, the back and forward ones too.
+  Esc (the browser's) or the menu lets it go, and so does a change of mode (the next click takes it in the new one).
+  Two modes (`web/input.ts` `LockMode`):
+  - **Pointer** (the default): the motion moves the tablet, from where the pointer was, by the browser's
+    `movementX/Y` (CSS pixels, accelerated as the host's pointer is) across the canvas's box: the same speed as
+    unlocked, whatever the guest's mouse settings; the cursor is kept in the screen.
+  - **Raw**: the motion goes to the machine's relative **mouse** (a virtio-input of its own: `MachineRecord.mouse`,
+    `?mouse=1` for a transient machine), unbounded by the screen, for games that turn with the mouse; the lock asks
+    for `unadjustedMovement` (the mouse's own counts, without the host's acceleration: the guest's mouse settings set
+    the speed) and takes a plain lock where the platform refuses it. The buttons and the wheel move to the mouse with
+    the lock (held ones are released first). A machine without a mouse has Raw disabled.
+
+  The browser hides the pointer, CSS cursor and all, so the page draws the guest's cursor over the screen
+  (`#screen-cursor`) where the guest puts it (virtio-gpu's cursor position, `cursor-at`). Nothing drifts: the tablet is
+  absolute, so after the lock the guest's pointer goes to the host's at its first move (where it was when the lock was
+  taken; pointer lock can't place the host's pointer). Raw does nothing on the firmware's screens (no driver there for
+  the mouse, nor for the tablet).
 - **Touch** (`MachineRecord.touch`, `?touch=1`): a machine with a touchscreen (virtio-input, `INPUT_PROP_DIRECT`, 10
   multitouch slots, 0–32767) gets the screen's touches as touches: a slot per finger (`ABS_MT_SLOT`,
   `ABS_MT_TRACKING_ID`, positions), the primary finger also as `ABS_X/Y`, `BTN_TOUCH` from the first finger down to

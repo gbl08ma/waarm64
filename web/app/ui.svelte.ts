@@ -6,6 +6,7 @@ import type { PowerState } from './protocol.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
 import type { ProblemWords } from './usb-ports.ts';
+import type { LockMode } from '../input.ts';
 
 export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
@@ -47,8 +48,12 @@ export const ui = $state({
   hasNetwork: false,
   /** The toolbar's mouse lock (remembered): a click on the screen takes the mouse (docs/frontend.md "Mouse lock"). */
   mouseLock: false,
+  /** How the locked mouse moves the guest (web/input.ts `LockMode`; remembered): `pointer` by default. */
+  mouseLockMode: 'pointer' as LockMode,
   /** The screen holds the mouse now. */
   mouseLocked: false,
+  /** The machine has a relative mouse (the lock's `raw` mode). */
+  hasMouse: false,
   /** The page can't run here (no cross-origin isolation): no Start. */
   cantRun: false,
   /** Bumped when the network's state changes (the Network menu, the wizard and the Network tab redraw). */
@@ -117,8 +122,8 @@ export type Page = {
   setView(v: View): void;
   showLog(): void;
   fullscreen(): void;
-  /** The toolbar's mouse lock on or off (off lets go of a held mouse). */
-  setMouseLock(on: boolean): void;
+  /** The toolbar's mouse lock on or off (off lets go of a held mouse), and its mode. */
+  setMouseLock(on: boolean, mode?: LockMode): void;
   chord(keys: string[]): void;
   screenSize(): void;
   openMachines(tab?: MachinesTab, id?: string): void;

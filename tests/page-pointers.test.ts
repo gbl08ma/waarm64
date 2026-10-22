@@ -125,22 +125,63 @@ test('touches go to the touchscreen, one slot each', { skip, timeout: 120_000 },
   await context.close();
 });
 
-test('the mouse lock: a click takes the mouse, its motion goes to the mouse, the page draws the guest cursor', { skip, timeout: 120_000 }, async () => {
+/** The toolbar's mouse lock on, in `mode`, and its menu closed. */
+async function lockOn(page: Page, mode: 'pointer' | 'raw') {
+  await page.click('#mouse-lock > summary');
+  await page.check('#mouse-lock-on');
+  await page.check(`#mouse-lock [data-mode=${mode}]`);
+  await page.click('#mouse-lock > summary');
+  assert.equal(await page.getAttribute('#mouse-lock', 'data-on'), 'true');
+}
+
+test('the mouse lock, pointer mode (the default): the motion moves the tablet as unlocked, kept in the screen', { skip, timeout: 120_000 }, async () => {
   const { context, page, errors, cdp, at } = await open();
-  await page.click('#mouse-lock');
-  assert.equal(await page.getAttribute('#mouse-lock', 'aria-pressed'), 'true');
+  await page.click('#mouse-lock > summary');
+  assert.equal(await page.isChecked('#mouse-lock [data-mode=pointer]'), true, 'the default');
+  await page.click('#mouse-lock > summary');
+  await lockOn(page, 'pointer');
   const p = at(0.5, 0.5);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...p });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...p, button: 'left', buttons: 1, clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...p, button: 'left', buttons: 0, clickCount: 1 });
   await page.waitForFunction(() => document.pointerLockElement?.id === 'screen', null, { timeout: 5000 });
+  await page.waitForTimeout(200); // what was posted before the lock (the click's release may come first) arrives before the clear
+  await clear(page);
+  const width = (await page.locator('#screen').boundingBox())!.width;
+  // A quarter of the screen's width right: the tablet goes from the middle to three quarters, as an unlocked pointer would.
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x + Math.round(width / 4), y: p.y });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x + Math.round(width / 4), y: p.y, button: 'right', buttons: 2, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x + Math.round(width / 4), y: p.y, button: 'right', buttons: 0, clickCount: 1 });
+  // Far past the right edge: the tablet stays at it.
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x + Math.round(width * 2), y: p.y });
+  await page.waitForTimeout(300);
+  const e = await events(page);
+  assert.equal(e.mouse.length, 0, 'the relative mouse is still');
+  const xs = flat(e.tablet).filter((x) => x[0] === EV_ABS && x[1] === 0).map((x) => x[2]);
+  const moved = xs.find((x) => x !== 16384)!; // a move without motion (the lock's) leaves it in the middle
+  assert.ok(Math.abs(moved - 24575) < 200, `a quarter of the screen: ${xs}`);
+  assert.equal(xs.at(-1), 32767, `kept in the screen: ${xs}`);
+  assert.deepEqual(keys(e.tablet), [[EV_KEY, 0x111, 1], [EV_KEY, 0x111, 0]], "the click that took the mouse wasn't the guest's; the next one is the tablet's");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the mouse lock, raw mode: a click takes the mouse, its motion goes to the mouse, the page draws the guest cursor', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors, cdp, at } = await open();
+  await lockOn(page, 'raw');
+  const p = at(0.5, 0.5);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...p });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...p, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...p, button: 'left', buttons: 0, clickCount: 1 });
+  await page.waitForFunction(() => document.pointerLockElement?.id === 'screen', null, { timeout: 5000 });
+  await page.waitForTimeout(200); // what was posted before the lock (the click's release may come first) arrives before the clear
   await clear(page);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x + 30, y: p.y - 20 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x + 30, y: p.y - 20, button: 'right', buttons: 2, clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x + 30, y: p.y - 20, button: 'right', buttons: 0, clickCount: 1 });
   await page.waitForTimeout(300);
   let e = await events(page);
-  assert.equal(e.tablet.length, 0, 'locked, the tablet is still');
+  assert.equal(e.tablet.length, 0, `locked, the tablet is still: ${JSON.stringify(e.tablet)}`);
   const rel = flat(e.mouse).filter((x) => x[0] === EV_REL);
   assert.ok(rel.length > 0 && rel.every((x) => x[1] === 0 || x[1] === 1), `relative motion: ${JSON.stringify(rel)}`);
   assert.deepEqual(keys(e.mouse), [[EV_KEY, 0x111, 1], [EV_KEY, 0x111, 0]], "the click that took the mouse wasn't the guest's; the next one is the mouse's");
@@ -160,7 +201,7 @@ test('the mouse lock: a click takes the mouse, its motion goes to the mouse, the
   const [tx, ty] = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform)!.slice(1).map(Number);
   assert.ok(Math.abs(tx - 120 * k) < 0.01 && Math.abs(ty - 60 * k) < 0.01, `at the guest's position: ${transform} (scale ${k})`);
   // Turning the lock off lets go of the mouse; the pointer is the tablet's again.
-  await page.evaluate(() => document.getElementById('mouse-lock')!.click());
+  await page.evaluate(() => document.getElementById('mouse-lock-on')!.click());
   await page.waitForFunction(() => document.pointerLockElement === null, null, { timeout: 5000 });
   assert.equal(await lock.isVisible(), false, 'hidden once let go');
   await clear(page);
