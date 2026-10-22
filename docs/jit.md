@@ -455,7 +455,7 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   to match. If that leaves more than half of `MAP_KEYS`, the needed and the recent keys stay; then only the needed;
   if even those are too many, the cache flushes. **Why recent ones too:** with only the warm ones kept, the prune
   (which lands in the pages session's bbc load, 210-240 s in) made that load 0.5-1 s slower: its code, reported a
-  few times, counted from zero again, and each key coming back is formed again under the lock. So the table never passes 2^21 buckets (50 MiB; the page index adds ~8 B a key). A pruned key
+  few times, counted from zero again, and each key coming back is formed again under the lock. So the table never passes 2^21 buckets (50 MiB). A pruned key
   that runs again counts from zero. **Why:** the map held every key since the last flush, and with the 320 MiB budget
   flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
   and one flush when the table doubled from 2^22 buckets (`rust_oom` in `Jit::miss`, 2026-10-21). JavaScript
@@ -471,7 +471,14 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   keeps their tables), counted as `rescues` (counter word 115). `tests/heap.test.ts` runs a guest of 4M `b .+4` in a
   64 MiB heap through it. An allocation that still fails records its size and the heap's live bytes and mark for the
   host (the allocation error hook, `diag`: `handle_alloc_error` skips the panic hook, so the crash above came with
-  no message).
+  no message); `tests/heap.test.ts` runs one out through `heap_probe` (ABI 50) on the exact core and the growable one.
+- **The block map's page index** (`PageIndex`, for `IC IVAU`): a page's own keys by their low 12 bits (offset and
+  regime bits; the page is the rest), 2 bytes a key, and the regions filed under a page other than their head's by
+  the head's whole key. Its byte count is exact (the lists' capacities, the tables, 8 bytes of allocator a list). It
+  held whole keys before (8 bytes a key, a list's smallest allocation 32 bytes): tests/heap.test.ts's guest, 1024 keys
+  a page, 0.9 M keys: the heap's live bytes 86 → 81 MiB, its mark 111 → 106 MiB.
+- **A prune** over 1.5 M keys takes 6-11 ms natively and ~19 ms in wasm (Node; counter word 120, `pruneNs`), all of it
+  under the cache's lock.
 - **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index) and the
   held bytes, and each table's counters what its decoded and known blocks take (`decBytes`, `knownBytes`); the
   page's status carries them (`Vm.hostUse`, `stats().jit`).

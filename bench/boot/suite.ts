@@ -9,6 +9,7 @@
 // 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
 // `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
+// `--query=growcore`: the core imports the memory growable (web/vm.ts `exactCore`), for an A/B.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
 // `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7).
@@ -24,7 +25,7 @@
 // `--only net`: /bench-net.sh, ping-pong with the loopback adapter.
 import type { Options, Sample } from '../spike/benchmarks.ts';
 import type { DeviceSpec } from '../../web/devices.ts';
-import { bootVm, DISTROS, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF, testDevices } from '../../web/vm.ts';
+import { bootVm, compileCore, DISTROS, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF, testDevices } from '../../web/vm.ts';
 
 const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
 
@@ -53,7 +54,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), exactCore: !new URLSearchParams(globalThis.location?.search).has('growcore'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -109,13 +110,13 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
   for (let i = 0; i < n.cold; i++) {
     fresh();
     const t = performance.now();
-    const module = await WebAssembly.compile(img.wasm);
+    const module = await compileCore(img.wasm);
     const r = await boot(module, img);
     // Cold includes compiling the core: it's part of a first boot.
     cold.init.push(r.marks[first] + (performance.now() - t - r.total));
     cold.total.push(performance.now() - t);
   }
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   for (let i = 0; i < n.warmup; i++) await boot(module, img);
   for (let i = 0; i < n.warm; i++) {
     fresh();
@@ -138,7 +139,7 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
 /** Realtime sequential read of /dev/vda (the 32 MiB root image) over the synchronous-XHR block backend. */
 async function dd(o: Options): Promise<Sample[]> {
   const img = await images();
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   const size = Number((await fetch(img.disk, { method: 'HEAD' })).headers.get('content-length'));
   const cmdline = `${CMDLINE} -- /bench-dd.sh`;
   const mibs: number[] = [];
@@ -176,7 +177,7 @@ async function bootMips(o: Options, distro: 'buildroot' | 'alpine', jit: 1 | 4):
     const [initrd, kernel] = await Promise.all([get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
     img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
   }
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   const n = o.quick ? 2 : distro === 'alpine' ? 3 : 7;
   const mips: number[] = [], ms: number[] = [];
   let stats;
@@ -208,7 +209,7 @@ async function alpineUser(o: Options): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
   const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   const phases: Record<string, number[]> = Object.fromEntries([...USER_PHASES, 'total'].map((p) => [p, []]));
   let stats;
   for (let i = 0; i < (o.quick ? 1 : 3); i++) {
@@ -236,7 +237,7 @@ async function alpineCrypto(o: Options, extra = '', crypto = false): Promise<Sam
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
   const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
   const cmdline = `${a.cmdline} webpc.phase=crypto${extra && ` ${extra}`}`;
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   const out = new Map<string, Sample>();
   const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1, crypto };
   let helpers: { op: string; calls: number }[] = [];
@@ -285,7 +286,7 @@ async function glLlvmpipe(o: Options, ncpus: number, renderer: 'llvmpipe' | 'vir
   const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${disk}`, import.meta.url).href, cmdline, ramSize: 1 << 30, jit: 1 as const };
   // The display the page's machine has for the same size (G2: a virtio-gpu with virgl on the null renderer).
   const devices: DeviceSpec[] | undefined = virgl ? [...guestDevices(img.disk), { type: 'gpu', width: 1376, height: 762, virgl: true }] : undefined;
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   const parallel = ncpus > 1;
   const name = `gl_${renderer.replace('-', '_')}_jit${parallel ? `_${ncpus}` : ''}`;
   const out = { frame: [] as number[], warm: [] as number[], steps: [] as number[] };
@@ -324,7 +325,7 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${d.initrd}`), get(`../../target/images/${d.kernel}`)]);
   const disk = what === 'user' ? '../../target/images/alpine-user/rootfs-user.ext4' : `../../target/images/${d.disk}`;
   const img = { ...base, kernel, initrd, disk: new URL(disk, import.meta.url).href, cmdline: d.cmdline, ramSize: 1 << 30, test: what !== 'user', jit: 1 as const };
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   // Boots: also to the distro's first marker (its local.d script), since realtime power-off includes busybox init's 2 s of sleeps.
   const phases = what === 'user' ? [...USER_PHASES, 'total'] : ['script', 'total'];
   const out = new Map<string, Sample>();
@@ -377,7 +378,7 @@ function cpio(entries: [string, number, Uint8Array?, [number, number]?][]): Uint
 async function coremarkVm(o: Options): Promise<Sample[]> {
   const [base, cm] = await Promise.all([images(), get('../../target/bench/coremark-linux')]);
   const initrd = cpio([['dev', 0o40755], ['dev/console', 0o20600, undefined, [5, 1]], ['init', 0o100755, cm]]);
-  const module = await WebAssembly.compile(base.wasm);
+  const module = await compileCore(base.wasm);
   const cmdline = 'console=ttyAMA0 panic=-1 rdinit=/init';
   const samples: number[] = [];
   for (let i = 0; i < (o.quick ? 1 : 3); i++) {
@@ -414,7 +415,7 @@ async function scriptBoots(o: Options, script: string, n: number) {
   const chunk = q.has('chunk') ? Number(q.get('chunk')) : undefined;
   const base = await images();
   const img = { ...base, test: true, jit, disk: q.has('disk') ? new URL(q.get('disk')!, location.href).href : base.disk };
-  const module = await WebAssembly.compile(img.wasm);
+  const module = await compileCore(img.wasm);
   const cmdline = `${CMDLINE} -- ${q.get('script') ?? script}`;
   const runs = [];
   const onVm = chunk ? (vm: Awaited<ReturnType<typeof bootVm>>) => vm.setChunk(chunk) : undefined;

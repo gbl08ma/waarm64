@@ -2798,3 +2798,30 @@ its A rounds spread over 2,144-2,399: not looked into). The modules' size didn't
 boots and 31.6-32.5 KB in the userspace run on both arms (`counters.jit.bytes` / `modules`): only a module with a
 counter read imports the clock, and few blocks have one. Kept for the guest's clock reads, which the benchmarks barely
 make.
+
+## M8: the core with exact memory limits (2026-10-22)
+
+The core module declares its memory import 18–65536 pages, so its own code reloads the memory's size after calls
+before a checked access, where JIT modules (exact limits since "M8: a fixed-size memory") load it once a function.
+Now `bootVm` keeps instance 0, which lays the memory out and grows it, for that alone, and runs everything else on a
+copy of the module whose import declares the memory's final size both ways (docs/abi.md "A fixed-size memory"): an
+instance on its own thread and every vCPU worker's. A/B: the same build, `?growcore` (`exactCore: false`) for the
+growable import, alternated in one session (the dev VM, Chromium 153.0.8010.52; JSON and `ab.sh` in
+`results/m8-exactcore/`). Medians of each round's samples:
+
+| ms | exact | growable | |
+|---|---|---|---|
+| `alpine_user_jit_total` (6 rounds × 3) | 14,609 · 14,845 · 14,619 · 14,808 · 14,885 · 14,790 | 14,862 · 14,936 · 14,735 · 14,890 · 14,851 · 15,079 | −0.5% |
+| its compress, Lua, churn, SQLite (rounds 1–3 pooled) | 1956, 3073, 1527, 2305 | 1966, 3098, 1526, 2296 | ±1% |
+| `boot_alpine_jit_total` (3 rounds × 5) | 6188 · 6135 · 6262 | 6146 · 6237 · 6159 | +0.3% |
+| the same, cold (3 rounds × 3) | 6237 pooled | 6289 pooled | −0.8% |
+
+- **No difference**: the rounds overlap on every row. The exact core won five of six userspace pairs, by 0.2-1.9%;
+  that's the noise's size here.
+- **Why so little:** the block interpreter's hot function (`interp::block::run::<Mmu>`, TurboFan in Node,
+  `--print-wasm-code-function-index`) is 20,208 → 20,074 instructions (−0.7%). In this V8 build loads through a base
+  go unchecked and stores are checked (docs/v8.md "Bounds checks"), and the core's code is 8-19% of the hot phases:
+  the reloads it drops are a sliver of a sliver. The prune of the block map (hash-table work, tests/heap.test.ts's
+  guest in Node) took 19.3-19.5 ms either way.
+- **Kept:** no cost measured (the second module compiles while instance 0 lays the memory out; boots no slower), and
+  the core's code matches the JIT's assumption that the memory never grows.

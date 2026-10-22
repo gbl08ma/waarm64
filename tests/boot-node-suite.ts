@@ -165,14 +165,16 @@ test('bare-metal smp.bin with 2.5 GiB of RAM, round-robin (JIT-check) and parall
 });
 
 // A fixed-size memory (ABI 32): `bootVm` makes the memory its final size with the core's heap
-// reserved in it, and JIT modules import it with exact limits; `fixedMemory: false` keeps the
-// growable one. smp.bin on 4 vCPUs under JIT-check (every block compiled, each in a module of its
-// own) runs the same either way.
+// reserved in it, and JIT modules and the core import it with exact limits; `fixedMemory: false`
+// keeps the growable one, `exactCore: false` the core's growable import. smp.bin on 4 vCPUs under
+// JIT-check (every block compiled, each in a module of its own) runs the same each way.
 test('bare-metal smp.bin in a fixed and a growable memory (JIT-check): the same run', async () => {
   const o = { ramSize: 16 << 20, kernel: readFileSync(new URL('smp.bin', BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: 4, jit: 3 as const };
-  const runs = await Promise.all([true, false].map(async (fixedMemory) => {
+  const runs = await Promise.all([[true, true], [true, false], [false, true]].map(async ([fixedMemory, exactCore]) => {
     let grows = false;
-    const r = await runToPowerOff(WASM, { ...o, fixedMemory }, 50e6, (vm) => {
+    let exact = false;
+    const r = await runToPowerOff(WASM, { ...o, fixedMemory, exactCore }, 50e6, (vm) => {
+      exact = vm.exactCore;
       try {
         vm.memory.grow(1);
         grows = true;
@@ -182,9 +184,11 @@ test('bare-metal smp.bin in a fixed and a growable memory (JIT-check): the same 
     });
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
-    return { grows, steps: r.steps, console: r.console };
+    return { grows, exact, steps: r.steps, console: r.console };
   }));
-  assert.deepEqual(runs.map((r) => r.grows), [false, true]);
+  assert.deepEqual(runs.map((r) => [r.grows, r.exact]), [[false, true], [false, false], [true, false]]);
+  assert.equal(runs[0].steps, runs[2].steps);
+  assert.equal(runs[0].console, runs[2].console);
   assert.equal(runs[0].steps, runs[1].steps);
   assert.equal(runs[0].console, runs[1].console);
 });

@@ -13,7 +13,7 @@ import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { openOverlay, overlay, overlayMeta, removeOverlay, writeMeta, type WritableDisk } from './overlay.ts';
 import { isZero } from './qcow2-write.ts';
-import { ABI, bootVm, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
+import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
 /**
  * Each memory's first RAM chunk in the file, for memories of `sizes` bytes (memory 0's RAM, then the spill memories,
@@ -276,7 +276,7 @@ function describe(identity: string) {
  * each snapshot's size and the ms it took to write and to start from.
  */
 export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Module, o: BootOptions, at: number[], maxSteps = 20e9, input?: ConsoleInput, options?: (k: number) => Partial<BootOptions>) {
-  const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
+  const module = wasm instanceof WebAssembly.Module ? wasm : await compileCore(wasm);
   const codec = await lzCodec(module);
   let vm = await bootVm(module, o);
   const points = [...at];

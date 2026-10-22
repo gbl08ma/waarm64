@@ -41,13 +41,17 @@ Design notes for an ABI change go in this file before the code.
   come from that block and never grow the memory; its pages cost nothing until used. The host
   grows the last page or two and passes the size in `VmConfig.mem_pages`, and JIT modules import
   the memory with those exact limits. `heap_reserve` returns 0 if `pages` leaves no room (natively,
-  always). The core module itself still declares 18–65536 pages: exact limits need the memory at
-  its final size before the core is instantiated, so the heap would need its own allocator over a
-  region the host gives it. Running out of the reserve traps (the core's allocations fail); the
+  always). **The core runs with exact limits too:** the core module declares 18–65536 pages, so the instance that
+  lays the memory out (instance 0, the only one that can grow it) stays on it, and once the memory is at its size
+  everything else runs on a copy of the module whose memory import declares `pages` both (`memoryLimits` in
+  `web/vm.ts` rewrites the import section; `exactCore`, compiled once a size, while instance 0 works): a second
+  instance on `bootVm`'s thread (a stack and TLS of its own, as a worker's) and every vCPU worker's. Instance 0 isn't
+  called again. It needs the core's bytes, so a host compiles the core with `compileCore` (a module compiled
+  otherwise boots on the growable import); `exactCore: false` keeps that too. Measured neutral on this host
+  (bench/boot/REPORT.md "M8: the core with exact memory limits"). Running out of the reserve traps (the core's allocations fail); the
   heap measured ~27 MB through the userspace benchmark and ~150 MB under a heavy 4-vCPU load
   ([jit.md](jit.md) "Memory"). `fixedMemory: false`, or a RAM size that leaves no room for the
-  reserve in 4 GiB, keeps the growable memory (0 in `mem_pages`). Sizing the reserve to what's left of 4 GiB, and
-  exact limits for the core module: [backlog.md](backlog.md) "The core's heap in a fixed memory".
+  reserve in 4 GiB, keeps the growable memory (0 in `mem_pages`).
 
 ## Whole-VM exports
 
@@ -166,6 +170,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 108–113 | (46) the JIT cache's lock ([jit.md](jit.md) "Sharing"): acquisitions, those that found it held, ns they waited; ns spent emitting modules, ns of those under the lock (all of them: emission runs under it), ns forming batches into regions (under it) |
 | 114–118 | (47) the core's heap ([jit.md](jit.md) "Memory"): the block map's prunes; flushes because the heap had no room for a map to grow (the block map, a table's decoded or known blocks: those free their tables whole); flushes because a table lacked modules whose bytes were dropped; the heap bytes the table's decoded blocks (arena, map, page index) and its known blocks take, estimated |
 | 119 | (48) jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
+| 120 | (50) the ns the JIT block map's prunes took, under the cache's lock ([jit.md](jit.md) "The core's heap"; 0 natively) |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -537,4 +542,5 @@ implemented by this step).
 | 47 | the core's heap bounded: `vm_jit_gauge` words 5–7 (`jit::GAUGE_WORDS` 8), counter words 114–118; an allocation that fails records a `panic_message` |
 | 48 | counter word 119: jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
 | 49 | the host's type 11 strings: fw_cfg's `opt/webpc/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
+| 50 | counter word 120: the ns the block map's prunes took; `heap_probe(size)`: an infallible allocation of `size` bytes, freed at once, so a test can run the heap out through the allocation error hook (tests/heap.test.ts) |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

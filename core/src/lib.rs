@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 49;
+pub const ABI_VERSION: u32 = 50;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -169,6 +169,14 @@ pub extern "C" fn heap_reserve(pages: u32) -> u32 {
         let _ = pages;
         0
     }
+}
+
+/// Allocates `size` bytes infallibly and frees them (ABI 50; tests/heap.test.ts): a size the heap can't hold
+/// reaches the allocation error hook, which records its message and traps, as a full heap does.
+#[unsafe(no_mangle)]
+pub extern "C" fn heap_probe(size: usize) {
+    // Opaque, or LLVM drops an allocation nothing uses.
+    core::hint::black_box(Vec::<u8>::with_capacity(size));
 }
 
 /// Counts calls in a thread-local: each instance's first call returns 1 when

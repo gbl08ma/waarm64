@@ -10,9 +10,9 @@ import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapsho
 import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
 import { crc32, SnapshotError } from '../web/snapshot-file.ts';
 import { STEPS } from './steps.ts';
-import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
+import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, compileCore, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
 
-const WASM = await WebAssembly.compile(readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)));
+const WASM = await compileCore(readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)));
 const IMAGES = new URL('../target/images/', import.meta.url);
 const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const skip = !existsSync(new URL('linux/Image', IMAGES)) && 'SKIPPED: run images/build.sh';
@@ -195,7 +195,7 @@ function reheaded(file: Uint8Array, f: (h: Record<string, unknown>) => void) {
 // so a core that differs only in its JIT loads it and the guest runs on exactly; another layout is refused.
 test('a snapshot loads into another build of the core (a JIT-only change), and not into another state layout', { skip }, async () => {
   const bytes = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
-  const other = await WebAssembly.compile(otherBuild(bytes, 'webpc-other-jit'));
+  const other = await compileCore(otherBuild(bytes, 'webpc-other-jit'));
   const [codec, otherCodec] = [await lzCodec(WASM), await lzCodec(other)];
   const o = buildroot();
   const whole = await runToPowerOff(WASM, o);

@@ -262,6 +262,9 @@ pub struct Stats {
     /// Jump-cache misses that found the lock held and ran their block
     /// interpreted instead of waiting (ABI 48, [`Jit::miss`]).
     pub lock_skipped: u64,
+    /// The ns the block map's prunes took, under the cache's lock (ABI 50;
+    /// 0 natively, which has no clock here).
+    pub prune_ns: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -417,7 +420,7 @@ pub struct Cache {
     pub features: u64,
     map: Map<Info>,
     /// The keys in `map` by physical page, for `IC IVAU`.
-    pages: Map<Vec<u64>>,
+    pages: PageIndex,
     /// The compiled blocks that chain to a key (step 7), dropped with it.
     linkers: Map<Vec<u64>>,
     /// Each compiled region's words' hash and its blocks as (PA, length),
@@ -568,7 +571,7 @@ impl Cache {
             cfg,
             features: crate::cpu::FEATURES,
             map: HashMap::default(),
-            pages: HashMap::default(),
+            pages: PageIndex::default(),
             linkers: HashMap::default(),
             spans: HashMap::default(),
             tiers: HashMap::default(),
@@ -628,12 +631,9 @@ impl Cache {
         g[G_KEY_BYTES].store(self.map_bytes(), Ordering::Relaxed);
     }
 
-    /// The bytes the block map's table and its page index take (the
-    /// index's lists estimated at a key each).
+    /// The bytes the block map's table and its page index take.
     fn map_bytes(&self) -> u64 {
-        table_bytes(self.map.capacity(), size_of::<(u64, Info)>())
-            + table_bytes(self.pages.capacity(), size_of::<(u64, Vec<u64>)>())
-            + 8 * self.map.len() as u64
+        table_bytes(self.map.capacity(), size_of::<(u64, Info)>()) + self.pages.bytes()
     }
 
     /// Before a key may join the block map (a miss, from the dispatcher: it
@@ -667,6 +667,13 @@ impl Cache {
     /// the page index and the links to match. A pruned key that runs again
     /// counts from zero (its decoded blocks report it as new).
     fn prune(&mut self, s: &mut Stats) {
+        let t0 = now_ns();
+        self.prune_keys(s);
+        s.prune_ns += now_ns().saturating_sub(t0);
+    }
+
+    /// [`Cache::prune`] without its clock.
+    fn prune_keys(&mut self, s: &mut Stats) {
         let tick = self.tick();
         let since = move |i: &Info| tick.wrapping_sub(i.age);
         self.map.retain(|_, i| {
@@ -687,14 +694,7 @@ impl Cache {
         }
         self.map.shrink_to(0);
         let map = &self.map;
-        self.pages.retain(|_, keys| {
-            keys.retain(|k| map.contains_key(k));
-            keys.sort_unstable();
-            keys.dedup();
-            keys.shrink_to_fit();
-            !keys.is_empty()
-        });
-        self.pages.shrink_to(0);
+        self.pages.retain(|k| map.contains_key(&k));
         self.linkers.retain(|k, _| map.contains_key(k));
         self.linkers.shrink_to(0);
         self.publish();
@@ -708,7 +708,7 @@ impl Cache {
     fn rescue(&mut self, s: &mut Stats) {
         self.flush(s);
         self.map = Map::default();
-        self.pages = Map::default();
+        self.pages = PageIndex::default();
         self.linkers = Map::default();
         self.spans = Map::default();
         self.tiers = Map::default();
@@ -810,7 +810,7 @@ impl Cache {
         self.ivals.store(end, Ordering::Relaxed);
         if pa == u64::MAX {
             self.drop_all();
-        } else if let Some(mut keys) = self.pages.remove(&(pa >> 12)) {
+        } else if let Some(mut keys) = self.pages.take(pa >> 12) {
             // With the blocks that chain to them, transitively: their code
             // calls the dropped functions directly.
             while let Some(k) = keys.pop() {
@@ -1300,10 +1300,7 @@ impl Cache {
             // A region goes with any of its pages (`invalidate`).
             for b in r.blocks.iter().skip(1) {
                 if (b.key ^ key) >> 12 != 0 {
-                    let keys = self.pages.entry(b.key >> 12).or_default();
-                    if !keys.contains(&key) {
-                        keys.push(key);
-                    }
+                    self.pages.file_head(b.key >> 12, key);
                 }
             }
         }
@@ -1955,10 +1952,97 @@ pub(crate) fn table_bytes(cap: usize, entry: usize) -> u64 {
     buckets * (entry as u64 + 1)
 }
 
+/// The block map's keys by physical page, for `IC IVAU`: a page's own keys by
+/// their bits 11:0 (the PA's offset and the regime bits: bits 63:12 are the
+/// page), 2 bytes a key where whole keys took 8; and the regions filed under a
+/// page other than their head's, by their heads' keys. Kept to the map's keys
+/// by [`Cache::prune`]; between prunes a list may hold keys the map dropped.
+#[derive(Default)]
+struct PageIndex {
+    own: Map<Vec<u16>>,
+    heads: Map<Vec<u64>>,
+    /// The lists' capacities in bytes.
+    lists: u64,
+}
+
+impl PageIndex {
+    /// Files a new key under its page.
+    fn file(&mut self, key: u64) {
+        let l = self.own.entry(key >> 12).or_default();
+        let cap = l.capacity();
+        l.push((key & 0xfff) as u16);
+        self.lists += 2 * (l.capacity() - cap) as u64;
+    }
+
+    /// Files a region's head under another page the region covers.
+    fn file_head(&mut self, page: u64, head: u64) {
+        let l = self.heads.entry(page).or_default();
+        if !l.contains(&head) {
+            let cap = l.capacity();
+            l.push(head);
+            self.lists += 8 * (l.capacity() - cap) as u64;
+        }
+    }
+
+    /// Takes the keys filed under `page`: its own and the region heads.
+    fn take(&mut self, page: u64) -> Option<Vec<u64>> {
+        let own = self.own.remove(&page);
+        let heads = self.heads.remove(&page);
+        if own.is_none() && heads.is_none() {
+            return None;
+        }
+        let own = own.unwrap_or_default();
+        let mut keys = heads.unwrap_or_default();
+        self.lists -= 2 * own.capacity() as u64 + 8 * keys.capacity() as u64;
+        keys.extend(own.iter().map(|&o| page << 12 | o as u64));
+        Some(keys)
+    }
+
+    /// Keeps the keys `keep` says, without duplicates, the lists and tables shrunk to fit.
+    fn retain(&mut self, keep: impl Fn(u64) -> bool) {
+        let mut lists = 0;
+        self.own.retain(|&page, l| {
+            l.retain(|&o| keep(page << 12 | o as u64));
+            l.sort_unstable();
+            l.dedup();
+            l.shrink_to_fit();
+            lists += 2 * l.capacity() as u64;
+            !l.is_empty()
+        });
+        self.heads.retain(|_, l| {
+            l.retain(|&k| keep(k));
+            l.sort_unstable();
+            l.dedup();
+            l.shrink_to_fit();
+            lists += 8 * l.capacity() as u64;
+            !l.is_empty()
+        });
+        self.own.shrink_to(0);
+        self.heads.shrink_to(0);
+        self.lists = lists;
+    }
+
+    /// Empties it, keeping the tables.
+    fn clear(&mut self) {
+        self.own.clear();
+        self.heads.clear();
+        self.lists = 0;
+    }
+
+    /// The heap bytes it takes: the tables, the lists, and the allocator's
+    /// 8 bytes a list.
+    fn bytes(&self) -> u64 {
+        table_bytes(self.own.capacity(), size_of::<(u64, Vec<u16>)>())
+            + table_bytes(self.heads.capacity(), size_of::<(u64, Vec<u64>)>())
+            + self.lists
+            + 8 * (self.own.len() + self.heads.len()) as u64
+    }
+}
+
 /// `Cache::info`, over the fields it needs.
 fn info<'a>(
     map: &'a mut Map<Info>,
-    pages: &mut Map<Vec<u64>>,
+    pages: &mut PageIndex,
     key: u64,
     len: impl FnOnce() -> u32,
 ) -> &'a mut Info {
@@ -1966,7 +2050,7 @@ fn info<'a>(
     match map.entry(key) {
         Entry::Occupied(e) => e.into_mut(),
         Entry::Vacant(e) => {
-            pages.entry(key >> 12).or_default().push(key);
+            pages.file(key);
             e.insert(Info {
                 len: len() as u8,
                 ..Info::default()
@@ -2730,7 +2814,7 @@ mod tests {
         c.invalidate(0x5000, s); // no code there
         assert_eq!(s.invalidations, 1);
         c.invalidate(u64::MAX, s); // IC IALLU: a new epoch
-        assert!(c.map.is_empty() && c.pages.is_empty());
+        assert!(c.map.is_empty() && c.pages.own.is_empty() && c.pages.lists == 0);
         assert_eq!((s.invalidations, s.flushes), (2, 0));
         u.sync(&mut c, &mem);
         assert!(jc(&u, 0x1000) == u64::MAX && jc(&u, 0x2000) == u64::MAX && u.epoch == c.epoch);
@@ -3015,7 +3099,7 @@ mod tests {
             }
             most = most.max(c.map.capacity());
             bytes = bytes.max(table_bytes(c.map.capacity(), size_of::<(u64, Info)>()));
-            pages = pages.max(c.pages.len());
+            pages = pages.max(c.pages.own.len());
         }
         assert!(most < 2_000_000, "the map grew to hold {most} keys");
         assert!(bytes <= 50 << 20, "{bytes} bytes");
@@ -3112,8 +3196,9 @@ mod tests {
         c.prune(s);
         assert_eq!(keys(&c), [compiled, queued, tiering, hot, now]);
         assert_eq!(c.map[&hot].hits, 602, "its count kept");
-        assert_eq!(c.pages.len(), 2);
-        assert_eq!(c.pages[&1], [compiled, queued, tiering]);
+        assert_eq!(c.pages.own.len(), 2);
+        assert_eq!(c.pages.own[&1], [0, 4, 8], "compiled, queued, tiering");
+        assert_eq!(c.pages.lists, 2 * 3 + 2 * 2, "shrunk to fit");
         assert_eq!(c.linkers.keys().copied().collect::<Vec<_>>(), [compiled]);
         assert_eq!(s.prunes, 3);
         // An IC on page 1 still drops the compiled block.
@@ -3164,7 +3249,7 @@ mod tests {
             c.info(k << 2, || 4).idx = 9;
         }
         c.rescue(s);
-        assert!(c.map.capacity() == 0 && c.pages.capacity() == 0);
+        assert!(c.map.capacity() == 0 && c.pages.own.capacity() == 0 && c.pages.bytes() == 0);
         assert_eq!((s.flushes, s.rescues), (1, 1));
     }
 

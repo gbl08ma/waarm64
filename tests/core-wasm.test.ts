@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports, MAX_MEMORY0_RAM, panicMessage, POINTERS, splitError, splitRam, withPanic } from '../web/vm.ts';
+import { coreImports, MAX_MEMORY0_RAM, memoryLimits, panicMessage, POINTERS, splitError, splitRam, withPanic } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 49);
+  assert.equal(ex.abi_version(), 50);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -50,6 +50,30 @@ test('heap_reserve makes the core\'s heap the rest of a fixed-size memory', () =
   }
   assert.equal(mem.buffer.byteLength, end);
   assert.equal(ex.thread_alloc(64 << 20, 16), 0, 'past the reserve');
+});
+
+// The core that runs a fixed memory (web/vm.ts `memoryLimits`): only its memory import's limits change. A module of an
+// import before and after the memory's (a function, a table, a global) and a long name, made to declare 200 pages
+// (two LEB bytes, where it had one): it instantiates on a memory of exactly 200, not on one of 199 or with room to grow.
+test('memoryLimits gives the memory import exact limits and keeps the rest', () => {
+  const str = (t: string) => [t.length, ...new TextEncoder().encode(t)];
+  const section = (id: number, body: number[]) => [id, body.length, ...body];
+  const types = section(1, [1, 0x60, 0, 1, 0x7f]); // () -> i32
+  const imports = section(2, [4, ...str('env'), ...str('f'), 0, 0, ...str('env'), ...str('t'.repeat(40)), 1, 0x70, 0, 1,
+    ...str('env'), ...str('memory'), 2, 3, 1, 0x80, 0x80, 0x04, ...str('env'), ...str('g'), 3, 0x7f, 0]);
+  const funcs = section(3, [1, 0]);
+  const exps = section(7, [1, ...str('size'), 0, 1]);
+  const code = section(10, [1, 4, 0, 0x3f, 0, 0x0b]); // memory.size
+  const wasm = new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, ...types, ...imports, ...funcs, ...exps, ...code]);
+  const exact = new WebAssembly.Module(memoryLimits(wasm, 200));
+  assert.deepEqual(WebAssembly.Module.imports(exact), WebAssembly.Module.imports(new WebAssembly.Module(wasm)));
+  const env = (memory: WebAssembly.Memory) => ({ env: { f: () => 0, ['t'.repeat(40)]: new WebAssembly.Table({ initial: 1, element: 'anyfunc' }), memory, g: new WebAssembly.Global({ value: 'i32' }, 0) } });
+  const shared = (initial: number, maximum: number) => new WebAssembly.Memory({ initial, maximum, shared: true });
+  const i = new WebAssembly.Instance(exact, env(shared(200, 200)));
+  assert.equal((i.exports.size as () => number)(), 200);
+  assert.throws(() => new WebAssembly.Instance(exact, env(shared(199, 199))), WebAssembly.LinkError);
+  assert.throws(() => new WebAssembly.Instance(exact, env(shared(200, 201))), WebAssembly.LinkError);
+  assert.throws(() => memoryLimits(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, ...types]), 200), /no import section/);
 });
 
 test('interpreter runs the integer benchmark guest through the vCPU exports', async () => {

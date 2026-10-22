@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 49;
+export const ABI = 50;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -49,6 +49,7 @@ type Exports = {
   thread_alloc(size: number, align: number): number;
   heap_reserve(pages: number): number;
   heap_stats(out: number): void;
+  heap_probe(size: number): void;
   vm_jit_gauge(vm: number): number;
   vm_snapshot_size(vm: number): bigint;
   vm_snapshot_save(vm: number, ptr: number, len: number): bigint;
@@ -155,6 +156,110 @@ export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
     if (typeof f === 'function') ex[name] = (...args: unknown[]) => (f as (...a: unknown[]) => number)(...args) >>> 0;
   }
   return ex;
+}
+
+/** The bytes behind each core module {@link compileCore} compiled, and its copies with exact memory limits by size. */
+const coreBytes = new WeakMap<WebAssembly.Module, { bytes: Uint8Array; exact: Map<number, Promise<WebAssembly.Module>> }>();
+
+/**
+ * Compiles the core and keeps its bytes, so that `bootVm` can make the copy that runs a fixed-size memory
+ * ({@link exactCore}). A module compiled otherwise still boots, without that copy.
+ */
+export async function compileCore(wasm: BufferSource): Promise<WebAssembly.Module> {
+  const bytes = new Uint8Array(ArrayBuffer.isView(wasm) ? wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) : wasm.slice(0));
+  const module = await WebAssembly.compile(bytes);
+  coreBytes.set(module, { bytes, exact: new Map() });
+  return module;
+}
+
+/**
+ * The core declaring its memory import with exact limits, `pages` both (docs/abi.md "A fixed-size memory"), compiled
+ * once a size; undefined for a module not from {@link compileCore}.
+ */
+function exactCore(module: WebAssembly.Module, pages: number): Promise<WebAssembly.Module> | undefined {
+  const c = coreBytes.get(module);
+  if (!c) return undefined;
+  let m = c.exact.get(pages);
+  if (!m) c.exact.set(pages, (m = WebAssembly.compile(memoryLimits(c.bytes, pages))));
+  return m;
+}
+
+/**
+ * A copy of the module `wasm` whose one imported memory declares `min` = `max` = `pages` (shared kept): its import
+ * section rewritten, the rest copied. Throws on a module without exactly one imported memory.
+ */
+export function memoryLimits(wasm: Uint8Array, pages: number): Uint8Array<ArrayBuffer> {
+  let at = 8;
+  const leb = () => {
+    let v = 0;
+    for (let shift = 0; ; shift += 7) {
+      const b = wasm[at++];
+      v += (b & 0x7f) * 2 ** shift;
+      if (!(b & 0x80)) return v;
+    }
+  };
+  const enc = (v: number) => {
+    const out: number[] = [];
+    do {
+      const b = v % 128;
+      v = Math.floor(v / 128);
+      out.push(v ? b | 0x80 : b);
+    } while (v);
+    return out;
+  };
+  while (at < wasm.length) {
+    const sectionAt = at;
+    const id = wasm[at++];
+    const size = leb();
+    const start = at;
+    if (id !== 2) {
+      at = start + size;
+      continue;
+    }
+    const out: number[] = [];
+    const n = leb();
+    out.push(...enc(n));
+    let found = 0;
+    for (let k = 0; k < n; k++) {
+      const from = at;
+      for (let s = 0; s < 2; s++) {
+        const len = leb(); // the module and field names
+        at += len;
+      }
+      const kind = wasm[at++];
+      out.push(...wasm.subarray(from, at));
+      if (kind === 2) {
+        const flags = wasm[at++];
+        if (flags & ~3) throw new Error(`memory import limits 0x${flags.toString(16)}: not a 32-bit memory`);
+        leb();
+        if (flags & 1) leb();
+        out.push(flags | 1, ...enc(pages), ...enc(pages));
+        found++;
+        continue;
+      }
+      const desc = at;
+      if (kind === 0) leb(); // a function's type
+      else if (kind === 1) {
+        at++; // the element type, then the limits
+        const flags = wasm[at++];
+        leb();
+        if (flags & 1) leb();
+      } else if (kind === 3) at += 2; // a global's type and mutability
+      else if (kind === 4) {
+        at++;
+        leb();
+      } else throw new Error(`import kind ${kind}`);
+      out.push(...wasm.subarray(desc, at));
+    }
+    if (at !== start + size || found !== 1) throw new Error(`the import section: ${found} memories, ${at - start} of ${size} bytes`);
+    const section = [2, ...enc(out.length), ...out];
+    const r = new Uint8Array(sectionAt + section.length + wasm.length - at);
+    r.set(wasm.subarray(0, sectionAt));
+    r.set(section, sectionAt);
+    r.set(wasm.subarray(at), sectionAt + section.length);
+    return r;
+  }
+  throw new Error('no import section');
 }
 
 /**
@@ -396,7 +501,9 @@ export const Counter = {
   JIT_PRUNES: 114, JIT_RESCUES: 115, JIT_LAG_FLUSHES: 116, JIT_DEC_BYTES: 117, JIT_KNOWN_BYTES: 118,
   // ABI 48: jump-cache misses that found the lock held and ran their block interpreted instead of waiting.
   JIT_LOCK_SKIPPED: 119,
-  LEN: 120,
+  // ABI 50: ns the block map's prunes took (under the cache's lock).
+  JIT_PRUNE_NS: 120,
+  LEN: 121,
 } as const;
 
 /**
@@ -490,6 +597,11 @@ export type BootOptions = {
    * test runs the heap out in a minute (tests/heap.test.ts).
    */
   heapReserve?: number;
+  /**
+   * With a fixed memory, the core itself runs a copy that imports the memory with exact limits (docs/abi.md "A
+   * fixed-size memory"), unless false, or `wasm` is a module not from {@link compileCore}.
+   */
+  exactCore?: boolean;
   /**
    * Start from a snapshot (ABI 30): `kernel`, `initrd`, `cmdline` and the firmware's flash and
    * files aren't used (RAM and the core's state have what the machine made of them); the rest
@@ -631,11 +743,15 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const spillSizes = o.spill ?? [];
   if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES)) throw new RangeError(`spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`);
   const spill = spillSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
-  const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
+  const first = wasm instanceof WebAssembly.Module ? wasm : await compileCore(wasm);
+  // The core that runs a fixed memory declares its exact size: compiled while the first instance lays the memory out.
+  const exact = fixed && o.exactCore !== false ? exactCore(first, pages) : undefined;
+  exact?.catch(() => {});
   const imports = coreImports(memory, undefined, undefined, undefined, spill);
-  const instance = await WebAssembly.instantiate(module, imports);
+  let module = first;
+  let instance = await WebAssembly.instantiate(first, imports);
   imports.jit.bind(instance);
-  const ex = unsigned(instance.exports) as unknown as Exports;
+  let ex = unsigned(instance.exports) as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
   // Scratch page for VmConfig and the command line, then RAM.
@@ -682,6 +798,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     // A RangeError, as a failed grow is (the page's "couldn't reserve" message).
     if (!ex.heap_reserve(pages)) throw new RangeError(`the core's heap reserve: no memory to grow ${pages} pages into`);
     memory.grow(pages - memory.buffer.byteLength / 65536);
+    // The memory is at its size: the rest runs on the exact core, here and in every worker. The first instance only
+    // laid the memory out (it can grow it; the exact one can't) and isn't called again.
+    if (exact) {
+      module = await exact;
+      instance = instantiateThread(module, memory, threadAlloc(instance.exports), undefined, undefined, undefined, spill);
+      ex = unsigned(instance.exports) as unknown as Exports;
+    }
   }
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
@@ -823,6 +946,19 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   let seenHead = 0;
   return {
     memory,
+    /** The core runs the copy that imports the memory with exact limits (`BootOptions.exactCore`). */
+    exactCore: module !== first,
+    /**
+     * Tests only: an infallible allocation of `size` bytes on this thread's core (ABI 50); one the heap can't hold
+     * traps, with the allocation error hook's message.
+     */
+    heapProbe: (size: number) => {
+      try {
+        ex.heap_probe(size);
+      } catch (err) {
+        throw withPanic(err, ex, memory);
+      }
+    },
     /** The xHCI's connectors when `BootOptions.usb` has no port of the caller's: attach or detach, resolving with the device worker's `usb-state`. */
     usb,
     /** Bytes of guest RAM (at `ram`). */
@@ -1083,7 +1219,7 @@ function stats(n: (i: number) => number) {
       locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
       prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
-      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
+      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED), pruneNs: n(Counter.JIT_PRUNE_NS),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

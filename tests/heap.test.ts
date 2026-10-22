@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { Exit, PSCI_SYSTEM_OFF, runToPowerOff, type Vm } from '../web/vm.ts';
+import { bootVm, Exit, PSCI_SYSTEM_OFF, runToPowerOff, type Vm } from '../web/vm.ts';
 
 const WASM = readFileSync(process.env.WEBPC_WASM ?? new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const MiB = 1 << 20;
@@ -29,7 +29,7 @@ test('8M blocks run once fit a 320 MiB heap', { timeout: 240_000 }, async () => 
   assert.equal(r.steps, blocks + 3);
   const use = vm!.hostUse();
   const j = r.stats.jit;
-  console.log(`heap ${(use.heapLive / MiB).toFixed(0)} MiB live, ${(use.heapPeak / MiB).toFixed(0)} at most; ${use.jitKeys} keys (${(use.jitKeyBytes / MiB).toFixed(0)} MiB); ${j.prunes} prunes, ${j.decClears} decoded starts over, ${j.rescues} rescues, ${j.flushes} flushes`);
+  console.log(`heap ${(use.heapLive / MiB).toFixed(0)} MiB live, ${(use.heapPeak / MiB).toFixed(0)} at most; ${use.jitKeys} keys (${(use.jitKeyBytes / MiB).toFixed(0)} MiB); ${j.prunes} prunes (${(j.pruneNs / 1e6 / Math.max(1, j.prunes)).toFixed(1)} ms each), ${j.decClears} decoded starts over, ${j.rescues} rescues, ${j.flushes} flushes`);
   assert.ok(j.prunes >= 4, `${j.prunes} prunes`);
   assert.ok(use.jitKeyBytes <= 64 * MiB, `${use.jitKeyBytes} bytes of keys`); // the table (50 MiB at most) and its page index
   assert.equal(j.rescues, 0);
@@ -44,4 +44,20 @@ test('in a 64 MiB heap the maps give their memory back', { timeout: 240_000 }, a
   assert.equal(r.kind, Exit.PSCI, r.console);
   assert.equal(r.steps, blocks + 3);
   assert.ok(r.stats.jit.rescues > 0 && r.stats.jit.flushes > 0, `${r.stats.jit.rescues} rescues`);
+});
+
+// The allocation error hook (core/src/diag.rs) in wasm: an allocation the heap can't hold traps with the hook's
+// message, on the core that imports the fixed memory with exact limits (its grow can't succeed) and on the growable
+// import's.
+test('an allocation the heap cannot hold traps with its size and the heap\'s', async () => {
+  for (const exactCore of [true, false]) {
+    const vm = await bootVm(WASM, { ramSize: 64 * MiB, kernel: branches(1), cmdline: '', jit: 1, heapReserve: 64 * MiB, exactCore });
+    try {
+      assert.equal(vm.exactCore, exactCore);
+      vm.heapProbe(16 * MiB);
+      assert.throws(() => vm.heapProbe(1536 * MiB), (e: unknown) => /core panic: out of memory: an allocation of 1610612736 bytes failed \(the core's heap: \d+ MiB live, \d+ MiB at most\)/.test(String(e)) || assert.fail(String(e)));
+    } finally {
+      vm.close();
+    }
+  }
 });

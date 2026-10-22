@@ -9,7 +9,7 @@ import type { DeviceSpec } from '../web/devices.ts';
 import { lzCodec } from '../web/lz.ts';
 import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
-import { bootVm, type BootOptions } from '../web/vm.ts';
+import { bootVm, compileCore, type BootOptions } from '../web/vm.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const KERNEL = readFileSync(new URL('baremetal/uart.bin', import.meta.url));
@@ -33,7 +33,7 @@ async function byteAt(name: string, b: number) {
 }
 
 test('a snapshot pins generations and carries the ramdisk; a restore keeps, forks or replaces by plan', async () => {
-  const module = await WebAssembly.compile(WASM);
+  const module = await compileCore(WASM);
   const codec = await lzCodec(module);
   const name = `plan-${process.pid}`;
   await scribble(name, [1, 2], 0x11); // generation 1
@@ -93,7 +93,7 @@ test("a snapshot carries the spill memories' RAM, and restores only onto the sam
   const { ramStarts } = await import('../web/snapshot.ts');
   const { SnapshotError } = await import('../web/snapshot-file.ts');
   assert.deepEqual(ramStarts([16 << 20, 0x18_0000, 2 << 20]), [0, 16, 18]);
-  const module = await WebAssembly.compile(WASM);
+  const module = await compileCore(WASM);
   const codec = await lzCodec(module);
   const spill = [0x18_0000, 2 << 20];
   const o: BootOptions = { ramSize: 16 << 20, spill, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };

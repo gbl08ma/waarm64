@@ -7,7 +7,7 @@
 // port straight to the VM, and the keyboard and tablet ports go to the device
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
-import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, splitError, splitRam, type Restore, type Vm } from '../vm.ts';
+import { bootVm, compileCore, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, splitError, splitRam, type Restore, type Vm } from '../vm.ts';
 import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
@@ -350,7 +350,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;
-  core = await WebAssembly.compile(wasm);
+  core = await compileCore(wasm);
   // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
   const credentials = [...(m.nets?.length && machine.network ? machine.network.credentials : []), ...(m.credentials ?? [])];
   savedFlash = await flash;

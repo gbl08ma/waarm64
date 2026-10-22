@@ -204,22 +204,24 @@ left open, most promising first.
     page index of one key a page (`bench/interp/REPORT.md` "M8-INTERP loop 12") the pages session's were 233 MB. A
     budget that follows the heap's room would give back more where the arenas never fill. Test with `MEMLOG=5`
     sessions and `m8-heap/long/tools/heapsum.ts`, and the block interpreter's yardstick for its speed.
-  - **The page index takes a good part of the bound** (the gauge's ~60 MiB at 1.5 M keys is the map's 50 and an
-    estimate of the index), and its lists are `Vec<u64>`s of at least 4 entries plus the allocator's overhead, more than the gauge's estimate of a
-    key's 8 B: a page-keyed index of small inline arrays, or none (an IC scanning the map, ~1.5 M entries, a few ms)
-    would halve the bound.
+  - **The page index without lists** ([jit.md](jit.md) "The core's heap": since 2026-10-22 2 bytes a key, a list's
+    smallest allocation 8 bytes where it was 32): what's left of it is the table of pages (33 B a bucket) and a list
+    header (24 B) a page, which matter where pages hold a key or two. No real session measured with it (the gauge's
+    `jitKeyBytes` now counts the lists exactly: read it in a pages session before going further). Dropping the index
+    (an IC scanning the map) costs a scan of ~1.5 M entries per IC on a page with code, and a guest issues ~1 M ICs
+    in the churn screen: not without a cheap test of whether the page has keys.
   - **Not tuned:** `KEEP_HITS` (16), `RECENT_TICKS` (the last 262,144 keys), `WARM_TICKS`, the prune's target (half
     of `MAP_KEYS`) and `MAX_KEYS` were set from the heap's budget and one A/B (keeping only the warm keys cost the
     pages session's bbc load ~0.8 s; with the recent ones nothing measured: `bench/boot/REPORT.md` "M8: the core's
     heap bounded"). A smaller bound (say 2^20 buckets) would save ~25 MiB more and prune twice as often: try it with
-    the pages session and the run-once churn if the heap gets tight. A prune takes 6-11 ms natively (release, 1.5 M keys, under the cache's lock),
-    not measured in wasm (time `Cache::prune` over 1.5 M keys in a wasm build).
+    the pages session and the run-once churn if the heap gets tight. A prune takes 6-11 ms natively (release, 1.5 M keys,
+    under the cache's lock) and 19 ms in wasm (Node, tests/heap.test.ts's guest; counter word 120, `pruneNs`), all of it
+    under the cache's lock, which other vCPUs' catch-ups and tier-ups wait that long for; the session of Firefox's
+    pages and the churn screen had two prunes. Read `pruneNs` in a 4-vCPU session before splitting it.
   - **The user's own session wasn't replayed:** no Chromium in the desktop image and no real sites offline; the
     run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
     flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and
     Chromium in the guest (add it to `images/arch/desktop.sh`).
-  - **The allocation error hook is checked only natively** (`core/tests/alloc_hook.rs`): a wasm test would need an
-    export that allocates infallibly on request.
 - **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
   - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
     for the catch-up even when the table is the only one (a lone table could take them instead);
@@ -255,7 +257,6 @@ left open, most promising first.
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
-- **The core's own memory is growable**: "The core's heap in a fixed memory: exact limits for the core module too" (Platform and devices).
 - Helpers still on real paths: unmasking MSRs, ISB, LSE min/max. None worth a
   loop alone. (The NEON ones, structures and CRC32 are inline since 2026-10-18: the item at this section's top.)
 - MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
@@ -294,19 +295,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **The core's heap in a fixed memory: exact limits for the core module too** (the user, 2026-10-17; [abi.md](abi.md)
-  "A fixed-size memory"). One linear memory holds the core's static data, stack and heap, the scratch page, RAM and
-  fw_cfg's files; the heap gets what 4 GiB leaves after the rest, capped at 1 GiB and never under `HEAP_FLOOR`
-  (1 GiB: the heap reaches ~500-570 MiB under a Go build on 4 vCPUs and the desktop guest's Firefox,
-  [spill-memories.md](spill-memories.md) "The heap floor"; broken down in [jit.md](jit.md) "The core's heap": the
-  decoded blocks ~360 MiB, the block map up to ~60, the rest ~50, all bounded since 2026-10-21). A memory at its final
-  size is 6–7% faster on Linux arm64 than a growable one (bench/boot/REPORT.md "M8: a fixed-size memory"), but only
-  JIT modules import exact limits: the core module still declares 18–65536 pages. **Parked:** the host would create
-  the memory at its final size before instantiating the core, and the heap would become an allocator of our own over
-  the region the rule gives it (the reserve block's trick in `heap_reserve` no longer applies). Worth a few percent of
-  a phase at most, and only where bounds checks are explicit (Linux arm64): the core's code is 8 to 19% of the
-  userspace benchmark's hot phases (`bench/boot/REPORT.md` "M8: the core's share of the userspace profile"). Take it
-  up when a real workload's core share is well above that.
 - **Spill memories** ([spill-memories.md](spill-memories.md); the numbers in `bench/boot/results/m8-spill/`):
   - **The JIT's inline second path for spill pages, not built.** A spill access leaves JIT code for the interpreter
     (`jit_exec_mmu`): Debian's workloads bound to node 1 ran 2.2× (`cat`) to 19× (`gzip -1`) slower than on node 0,
