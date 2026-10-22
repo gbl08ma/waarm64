@@ -35,8 +35,9 @@ memory signal (docs/jit.md "The page's memory signal": what the tab costs by the
 killed with its machine running is noted at the next start, which offers a smaller cache or less RAM); carrying the
 hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is done (2026-10-22; judged by its own MIPS, so the compile threshold can rise
 and less code reaches V8; docs/cpu.md "The block interpreter", bench/interp/REPORT.md "M8-INTERP loop 0" to "loop
-11"): a call-free hot loop with handlers for the common integer, load/store, exclusive and barrier forms (the
-interpreter alone 249 → 446 MIPS on the user-mode guest, 122 → 195 on Alpine's boot), the threshold's floor at 1000
+13"): a call-free hot loop over 8-byte micro-ops with handlers for the common integer, load/store, exclusive, barrier
+and plain system forms (the interpreter alone 249 → 467 MIPS on the user-mode guest, 122 → 210 on Alpine's boot; the
+decoded blocks of Firefox's pages session 381 → 208 MB), the threshold's floor at 1000
 and its maximum at 2000 under the cache's pressure; a browser's FP handlers and one decoded-block store for every
 table measured and not kept; what x86_64's atomics cost and a per-block compile policy in docs/backlog.md
 "Interpreter". **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction

@@ -285,8 +285,13 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   their handlers not kept) and measured decoding at ~1% of a vCPU, so one decoded-block store for every table
   wasn't built. Loop 11 (2026-10-22) made the `go build` loop a gate by its build times (sessions within 0.3%) and
   raised the threshold's maximum to 2000 (from 3/8 of the cache: Firefox's pages session 13% less wasm at +6% busy
-  MIPS, the boots unchanged). What the x86_64 atomics cost (no x86_64 host to hand) and a per-block compile policy
-  are in docs/backlog.md "Interpreter".
+  MIPS, the boots unchanged). A final pass, loops 12-13 (2026-10-22): 8-byte micro-ops (the pages session's
+  decoded blocks 381 → 208 MB, the renderer's RSS −208 MB), guest branches kept as host branches (a `select` there
+  cost 30%), conditions as NZCV masks, a compare and its B.cond in one dispatch, handlers for CAS, ADC, the
+  divisions, UMULH, BFM and the plain MSRs, the slow path a stretch at a time, and the FP core's FMA and vector
+  lanes without compiler-rt calls: the interpreter alone 467 MIPS on the user-mode guest, 210 on Alpine's boot, the
+  FP guest 3× on the reference interpreter; the pages session's busy MIPS +3%. What the x86_64 atomics cost (no
+  x86_64 host to hand) and a per-block compile policy are in docs/backlog.md "Interpreter".
 
 ### M9 — Backlog
 
