@@ -15,7 +15,7 @@
 import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
-import { VideoContext, type DecodedPicture, type DecoderFactory, type VideoStats } from './virgl-video.ts';
+import { padPlane, VideoContext, type DecodedPicture, type DecoderFactory, type VideoStats } from './virgl-video.ts';
 import { bytes, type Ram, type Segment } from './ram.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
@@ -843,20 +843,23 @@ export class VirglRenderer {
    */
   private writePicture(planes: number[], pic: DecodedPicture) {
     const cw = (pic.width + 1) >> 1, ch = (pic.height + 1) >> 1;
-    const put = (res: number, data: Uint8Array, w: number, h: number, stride: number) => {
+    // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`).
+    const put = (res: number, data: Uint8Array, w: number, h: number, bpp: number) => {
       const r = this.resources.get(res);
-      if (r) this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(w, r.width), h: Math.min(h, r.height), d: 1 }, data, stride, 0);
+      if (!r) return;
+      const p = padPlane(data, w, h, bpp, r.width, r.height);
+      this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(p.w, r.width), h: Math.min(p.h, r.height), d: 1 }, p.data, p.w * bpp, 0);
     };
-    put(planes[0], pic.y, pic.width, pic.height, pic.width);
-    if (planes.length === 2) put(planes[1], pic.uv, cw, ch, cw * 2);
+    put(planes[0], pic.y, pic.width, pic.height, 1);
+    if (planes.length === 2) put(planes[1], pic.uv, cw, ch, 2);
     else if (planes.length === 3) {
       const u = new Uint8Array(cw * ch), v = new Uint8Array(cw * ch);
       for (let k = 0; k < u.length; k++) {
         u[k] = pic.uv[2 * k];
         v[k] = pic.uv[2 * k + 1];
       }
-      put(planes[1], u, cw, ch, cw);
-      put(planes[2], v, cw, ch, cw);
+      put(planes[1], u, cw, ch, 1);
+      put(planes[2], v, cw, ch, 1);
     }
   }
 

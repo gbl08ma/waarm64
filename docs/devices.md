@@ -435,7 +435,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   resources, R8 and RG8) and reads each picture's parameters and data from the guest's staging buffers. `VideoContext`
   makes a chunk of each END_FRAME (H.264 rebuilt as Annex B with our SPS and PPS by `H264Stream`, `web/video-h264.ts`;
   VP9 as sent) for one `VideoDecoder` per codec (`optimizeForLatency`; recreated at the next key picture after an
-  error), and writes each frame's Y and interleaved U/V into the buffer's planes (`VirglRenderer.writePicture`).
+  error), and writes each frame's Y and interleaved U/V into the buffer's planes (`VirglRenderer.writePicture`), each
+  plane filled to its texture's size with the picture's last column and row repeated (`padPlane`: the planes are the
+  coded size, whole blocks, and Chromium and mpv show its width: unwritten, the padding was a green edge).
   Mesa's `end_frame` makes no fence, so the GPU worker's `CallQueue` (`web/virgl-host.ts`) holds a call while it
   could see a pending picture: a call of a context that has a pending picture's plane attached (unless the submit
   only decodes) or one naming a plane, and what must follow a held call (its context, its resources; fences, reads,

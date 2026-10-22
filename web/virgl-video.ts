@@ -522,6 +522,24 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
   };
 };
 
+/**
+ * A plane's rows (`w` texels of `bpp` bytes, `h` of them) widened to at least `tw`×`th` texels, the last column and the
+ * last row repeated. The planes are the coded size (whole blocks: 864×480 for an 854×480 video) and a picture is its
+ * visible part; a guest that shows the coded width (Chromium, mpv) would otherwise show what the rest held, zeros (luma
+ * and chroma 0: a green edge). A hardware decoder leaves the blocks' own pixels there.
+ */
+export function padPlane(data: Uint8Array, w: number, h: number, bpp: number, tw: number, th: number): { data: Uint8Array; w: number; h: number } {
+  if (!w || !h || (tw <= w && th <= h)) return { data, w, h };
+  const W = Math.max(w, tw), H = Math.max(h, th), out = new Uint8Array(W * H * bpp);
+  for (let r = 0; r < h; r++) {
+    const o = r * W * bpp;
+    out.set(data.subarray(r * w * bpp, (r + 1) * w * bpp), o);
+    for (let x = w; x < W; x++) out.copyWithin(o + x * bpp, o + (w - 1) * bpp, o + w * bpp);
+  }
+  for (let r = h; r < H; r++) out.copyWithin(r * W * bpp, (h - 1) * W * bpp, h * W * bpp);
+  return { data: out, w: W, h: H };
+}
+
 /** A frame's visible rectangle as luma and interleaved chroma (from I420 or NV12, the formats the decoders give). */
 export async function copyPicture(f: VideoFrame): Promise<DecodedPicture> {
   if (f.format !== 'I420' && f.format !== 'NV12') throw new Error(`frame format ${f.format}`);

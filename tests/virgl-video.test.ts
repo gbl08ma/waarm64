@@ -7,7 +7,7 @@ import { decodeCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl, withVideo } from '../web/virgl-caps.ts';
 import { CallQueue, type WorkerCall } from '../web/virgl-host.ts';
 import { VirglRenderer } from '../web/virgl-renderer.ts';
-import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, PROFILE, probeVideo, VideoContext, type DecodedPicture, type DecoderConfig, type DecoderFactory, type VideoStats } from '../web/virgl-video.ts';
+import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, padPlane, PROFILE, probeVideo, VideoContext, type DecodedPicture, type DecoderConfig, type DecoderFactory, type VideoStats } from '../web/virgl-video.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
 const H264 = { profile: PROFILE.AVC_HIGH, maxLevel: 51, maxWidth: 4096, maxHeight: 2304 };
@@ -344,8 +344,8 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
     r.createResource({ id, target, format, bind: target ? 0xa : 0x20000, width, height, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
     r.attach(1, id);
   };
-  res(10, 64, 4, 2); // R8_UNORM luma
-  res(11, 65, 2, 1); // R8G8_UNORM chroma
+  res(10, 64, 6, 4); // R8_UNORM luma, wider and taller than the 4×2 picture (coded size: whole blocks)
+  res(11, 65, 3, 2); // R8G8_UNORM chroma
   res(7, 64, 400, 1, 0); // the picture's desc
   res(8, 64, 16, 1, 0); // its data
   r.attachBacking(7, [{ off: 0, len: 400, mem: 0 }]);
@@ -366,7 +366,10 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   const before = gl.log.filter(([n]) => n === 'texSubImage2D').length;
   made[0].out(0);
   assert.deepEqual(errors, []);
-  assert.equal(gl.log.filter(([n]) => n === 'texSubImage2D').length - before, 2, 'both planes uploaded');
+  const ups = gl.log.filter(([n]) => n === 'texSubImage2D').slice(before);
+  assert.equal(ups.length, 2, 'both planes uploaded');
+  // Each plane whole (its padding the picture's edges, not what the texture held): x, y, width, height.
+  assert.deepEqual(ups.map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 3, 2]]);
   assert.equal(r.videoStats.decoded, 1);
 });
 
@@ -549,4 +552,17 @@ test('CallQueue: a context sharing a resource with a waiting one waits behind it
   q.progress(5);
   assert.deepEqual(ran.slice(2), ['2:8', '6:8', 'transfer50', 'transfer70', '1:8']);
   assert.ok(!q.stalled);
+});
+
+test('padPlane: a picture widened to its plane, the last column and row repeated', () => {
+  // 3×2 luma into a 5×3 plane.
+  const y = padPlane(new Uint8Array([1, 2, 3, 4, 5, 6]), 3, 2, 1, 5, 3);
+  assert.deepEqual({ w: y.w, h: y.h, data: [...y.data] }, { w: 5, h: 3, data: [1, 2, 3, 3, 3, 4, 5, 6, 6, 6, 4, 5, 6, 6, 6] });
+  // Interleaved chroma (2 bytes a texel): 2×1 into 3×2.
+  const uv = padPlane(new Uint8Array([10, 20, 30, 40]), 2, 1, 2, 3, 2);
+  assert.deepEqual([...uv.data], [10, 20, 30, 40, 30, 40, 10, 20, 30, 40, 30, 40]);
+  // Already the plane's size, or larger: as it was.
+  const same = new Uint8Array(4);
+  assert.equal(padPlane(same, 2, 2, 1, 2, 2).data, same);
+  assert.equal(padPlane(same, 2, 2, 1, 1, 1).data, same);
 });

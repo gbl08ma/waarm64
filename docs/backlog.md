@@ -401,8 +401,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Chromium in the guest still steps back one frame now and then** (graphics.md §24): after the queue's fix,
   `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
   `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
-  scanout. Also from the user's report, not looked at: a thin green or pink stripe left of videos in Chromium and mpv
-  (not Firefox) with host decoding, gone on `?gpu=2d`.
+  scanout.
 - **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md §21 loop 5): GTK hands sway the GL area's
   texture as a dmabuf, and Mesa's virgl backs a texture that isn't shared with a 1-byte staging BO (the host copies
   transfers both ways), so the dmabuf is smaller than stride × height and the compositor disconnects the client. A

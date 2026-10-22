@@ -1477,6 +1477,12 @@ frames; the slowed decoder (an experiment: each picture's output delayed 40 ms, 
 frames would) makes it plain. The page's frame rate didn't move (counted frames 778–880 in every 3D run). Left: a single
 one-frame step back in two of the new rule's four runs (none in the 2D run), not traced (docs/backlog.md).
 
+**The green stripe** the user also saw beside videos in Chromium and mpv (not Firefox): every 3D run's screenshot had
+one down the video's right edge. The planes are the coded size (864×480 for the 854×480 trailer) and the host wrote
+only the visible picture, so the 10 columns past it kept zeros (luma and chroma 0: green), which Chromium and mpv show
+and Firefox crops. Now each plane is filled to its texture's size with the picture's edge repeated (`padPlane`,
+web/virgl-video.ts; the stripe gone in the same scene, `bench/results/local/chromium-flicker/padded`).
+
 ## 25. Working notes for 3D (carried from the graphics handover, 2026-10-19)
 
 The tools, what the guests do and what was learned, kept from `M8-GRAPHICS-HANDOVER.md` when it was retired (G5's
