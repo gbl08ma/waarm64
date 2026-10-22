@@ -163,9 +163,13 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
    tab, `DWELL_S` (20) each, `CYCLES` times; `results.sites` has the URLs and each visit's time. Real sites change
    daily: an A/A in the same run as each A/B, arms close in time. Six sites at 20 s each didn't flush at 320 MiB (264
    MB in 130 s, against the churn's 424 MB in 120 s): longer runs or more cycles to see a flush.
-4. **The `go build` loop** from `debian-go.webpcsnap`: `bench/stress/stress.ts --from-snapshot … --disk2
-   target/images/stress/goroot.ext4 --no-load --guest-cmd '<the loop>'` (the command in
-   `bench/boot/results/m8-replay/r2/go/*.log`'s meta).
+4. **The `go build` loop** from `debian-go.webpcsnap`: `bench/stress/go-ab.sh <outdir> <rounds> <arm>=<core>…` (4
+   vCPUs building `/work/hello` from goroot.ext4 over and over, 420 s a session, each build timed by the guest in
+   ms), then `node bench/stress/gobuild.ts <outdir>/[!w]*.jsonl`: per session the median build after the first three
+   (the cold ones), per arm the sessions' medians. Judge by the build times, never the MIPS samples (those spread
+   1,094-1,489 across sessions of one core; the build times of three sessions agreed within 0.3%). The run's first
+   session built 6.6% slower than the rest, so the driver runs a warm-up session first and drops it
+   (`bench/interp/REPORT.md` "M8-INTERP loop 11").
 
 ## Rules
 

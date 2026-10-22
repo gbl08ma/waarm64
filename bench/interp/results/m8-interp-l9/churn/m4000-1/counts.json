@@ -1,0 +1,18 @@
+{
+ "bench/results/local/interp-l9/churn/m4000-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 71.7,
+   "flushes": 0,
+   "modules": 21197,
+   "mib": 223.8,
+   "overdue": 0,
+   "parks": 53681,
+   "locks": 28906635,
+   "interpGsteps": 6.87,
+   "share": 0.904,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

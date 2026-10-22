@@ -85,8 +85,8 @@ the interpreter's own code.
   So a block that keeps running is compiled soon, and blocks that rarely run wait for company.
 - **The threshold follows the code cache's pressure** (`Cache::retune`, set where modules are
   installed and at flushes, so a dispatch only compares): the mechanism doubles a floor at each eighth
-  of the byte budget past two (80 MiB) up to `threshold_max`; since 2026-10-21 floor and maximum are both
-  **1000**, so it stays there
+  of the byte budget past two (80 MiB) up to `threshold_max`: the floor is **1000** and the maximum **2000**, so
+  cold code (a boot compiles ~60 MiB) meets 1000 and a browser's working set 2000 once the cache holds 3/8 of it (120 MiB)
   (`Config::threshold`, `threshold_max`, `PRESSURE_KNEE`), and each flush doubles the floor it
   starts from. Code that fits is compiled early; a working set that doesn't fills the rest of the
   budget with the code that runs most. JIT-stress, JIT-check, the dispatcher-only mode and the
@@ -195,6 +195,11 @@ the interpreter's own code.
   +0.7%, its userspace −0.8%, `smp_user_jit_4` −1.9%; 2000 compiled least (pages −22%) but lost on Alpine's
   userspace (+2.3%) and boot (−1.9%). The `go build` loop's sessions spread too much (1,094-1,489 MIPS at one
   floor) to tell 50, 500 and 1000 apart.
+- **The maximum is 2000** (`bench/interp/REPORT.md` "M8-INTERP loop 11": floors 1000 and 1500 with maxima 1000 to
+  4000): the floor of 1000 with a maximum of 2000 compiled as little as a floor of 1500 on the churn page (−22%, no
+  flush) and in Firefox's pages session 13% less wasm, V8's code −10%, the tab's RSS −100 MB, busy MIPS +6%;
+  Alpine's boot and userspace and `smp_user_jit_4` unchanged (cold code stays under the knee). A maximum of 4000
+  compiled no less in the pages session (pressure never takes the threshold past 2000 there).
 - **A block reports every 16 dispatches until it has run `warm`, then once at the threshold** (at most 255 at a
   time, a slot's quota; queued blocks every 16 for `BATCH_STEPS`): what a forward region's members need is the
   count up to `warm`, and the batch the crossing. At the floor of 500 it halves the cache's lock acquisitions,

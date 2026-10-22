@@ -175,10 +175,10 @@ const pump = async () => {
   if (d) {
     serial = (serial + d).slice(-200_000);
     serialTotal += d.length;
-    // Guest lines a load prints to be counted (images/stress: `GOBUILD rc=<status> <seconds>s` per `go build`).
+    // Guest lines a load prints to be counted (images/stress: `GOBUILD rc=<status> <seconds>s`, or `<ms>ms`, per `go build`).
     scan += d;
     let end = Math.max(0, scan.length - 40);
-    for (const m of scan.matchAll(/GOBUILD rc=(\d+) (\d+)s/g)) { emit({ type: 'event', t: secs(), kind: 'gobuild', text: `rc=${m[1]} ${m[2]}s` }); end = m.index! + m[0].length; }
+    for (const m of scan.matchAll(/GOBUILD rc=(\d+) (\d+)(m?s)\b/g)) { emit({ type: 'event', t: secs(), kind: 'gobuild', text: `rc=${m[1]} ${m[2]}${m[3]}` }); end = m.index! + m[0].length; }
     scan = scan.slice(end);
   }
   return d ?? '';

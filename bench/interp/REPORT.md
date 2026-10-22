@@ -1385,3 +1385,41 @@ the run. A decode is ~0.55 µs. **Loop 7 not built:** one store for every table 
 table already made, under 1% here, for a lock-free shared arena with epochs, a page generation against stale
 inserts and a heap reservation. Since the arenas were sized (2026-10-09: the renders took 45, 28, 26 s), the JIT
 compiles most of what the renders run, and decoding stopped being where their time goes.
+
+## M8-INTERP loop 11: a steadier Go gate, and the threshold's maximum at 2000
+
+2026-10-21/22 (23:00-01:40), the dev VM, Chromium 153.0.8010.52, on main at `1e1ac79`; raw data
+`results/m8-interp-l9/` (`go-aa/`, `churn/`, `pages-max/`, `gates/`, `go-max/`).
+
+**The `go build` loop as a gate** (Next 6): judged by its build times, not its MIPS samples. `bench/stress/go-ab.sh`
+alternates cores through 420 s sessions from `debian-go.webpcsnap`, the guest timing each build of `/work/hello` in
+ms; `bench/stress/gobuild.ts` takes each session's median build after the first three (the cold ones). The builds
+in round 2's earlier boot sessions, at 1 s resolution, already agreed: 38, 38, 38, 38, 36, 37, 39, 39 s, where the
+same sessions' MIPS samples had spread 1,094-1,489. An A/A of main (`go-aa/`, two copies, two rounds each): 33.81,
+31.80, 31.71, 31.81 s: the run's first session 6.6% slower, the three after it within 0.3%. The driver runs a
+warm-up session first and drops it (the next run's warm-up wasn't slower: 32.29 s against 31.94-32.51).
+
+**The floor and the maximum** (Next 5; floor/maximum, the churn page from `pages.webpcsnap`, one round):
+
+| | 1000/1000 (main) | A/A | 1500/1500 | **1000/2000** | 1000/4000 | 1500/3000 |
+|---|---|---|---|---|---|---|
+| churn: flushes / wasm MB | 1 / 339 | 1 / 339 | 0 / 265 | **0 / 264** | 0 / 234 | 0 / 226 |
+| churn: compiled share / `doneS` | 0.924 / 102.1 | 0.924 / 108.4 | 0.914 / 102.0 | 0.914 / 102.0 | 0.904 / 108.0 | 0.902 / 107.9 |
+
+The maximum does under pressure what a higher floor does (the threshold doubles from 3/8 of the cache, 120 MiB, so
+a boot's ~60 MiB never meets it), and keeps 1000 for cold code. Firefox's pages session, two rounds alternated:
+
+| | 1000/1000 | **1000/2000** | 1000/4000 |
+|---|---|---|---|
+| wasm MB | 158, 158 | **138, 138** (−13%) | 137, 138 |
+| V8's code, median MB | 463, 472 | **427, 420** (−10%) | 429, 419 |
+| the renderer's RSS, median MB | 3,951, 3,943 | 3,845, 3,843 | 3,839, 3,793 |
+| busy MIPS | 190, 192 | **203, 201** (+6%) | 191, 202 |
+| wiki, BBC load s | 11.2, 11.1; 12.5, 13.4 | 10.9, 11.4; 11.4, 11.7 | 10.9, 11.3; 13.2, 12.6 |
+| interpreted G steps | 3.37, 3.37 | 3.55, 3.57 | 3.53, 3.56 |
+
+4000 compiled no less than 2000 here (pressure never takes the threshold past 2000 in this session). The gates,
+1000/2000 against main (`gates/`, three rounds alternated): Alpine's boot under the JIT 418.8 → 417.0 MIPS (−0.4%),
+its userspace 14,975 → 14,925 ms (−0.3%), `smp_user_jit_4` 15,801 → 15,715 ms (−0.5%), every phase's rounds
+overlapping; the `go build` loop (`go-max/`, two rounds after a warm-up) 32.51, 31.94 → 32.06, 32.03 s.
+**Kept: `threshold_max` 2000** (`jit::Config::DEFAULT`).

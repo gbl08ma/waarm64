@@ -91,9 +91,9 @@ impl Config {
     pub const DEFAULT: Config = Config {
         // Raised with the cache's pressure (docs/jit.md "Compile policy");
         // 1000 since the block interpreter's hot loop (M8-INTERP loop 6 and
-        // its second round): the floor is the maximum, so it no longer rises.
+        // its second round), up to 2000 past the knee (loop 11).
         threshold: 1000,
-        threshold_max: 1000,
+        threshold_max: 2000,
         batch: 512,
         capacity: 262_144,
         max_bytes: MAX_BYTES,

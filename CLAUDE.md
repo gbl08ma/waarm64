@@ -33,15 +33,13 @@ are done; of the C tracks, networking is done up to its loose ends ([docs/plans/
 Firefox's page loads don't flush, and a machine sets its own (the JIT cache in its Settings, `?jitmb=`); the page keeps a
 memory signal (docs/jit.md "The page's memory signal": what the tab costs by the emulator's accounting, and a tab
 killed with its machine running is noted at the next start, which offers a smaller cache or less RAM); carrying the
-hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is the current CPU track (`M8-INTERP-HANDOVER.md`: judged by its own MIPS, so the
-compile threshold can rise and less code reaches V8): loops 0–6 done (a call-free hot loop, 1.3–1.9× the interpreter;
-the threshold's floor at 1000 with one report from `warm` to it, a third less wasm in Firefox; docs/cpu.md "The block
-interpreter"), loop 8 done (`hot` re-profiled: the access path's invariants once a call, offset loads and stores
-with their own handler and in pairs, LSE's common ops as single atomics; +4-5% on the boots, +5-8% on the small
-guests), loop 9 done (the exclusives, LDAR/STLR, DMB and DC ZVA as handlers: +6-9% on the boots; the floor of 1000
-confirmed on the Mac), loop 10 done (a browser's mix counted: its FP and NEON handlers not kept; one decoded-block
-store for every table not built, decoding being ~1% of a vCPU), the floor between 1000 and 2000 and a steadier Go
-gate left. **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
+hot set across a flush and an adaptive budget were tried and not kept (docs/jit.md). **The block interpreter's speed** is done (2026-10-22; judged by its own MIPS, so the compile threshold can rise
+and less code reaches V8; docs/cpu.md "The block interpreter", bench/interp/REPORT.md "M8-INTERP loop 0" to "loop
+11"): a call-free hot loop with handlers for the common integer, load/store, exclusive and barrier forms (the
+interpreter alone 249 → 446 MIPS on the user-mode guest, 122 → 195 on Alpine's boot), the threshold's floor at 1000
+and its maximum at 2000 under the cache's pressure; a browser's FP handlers and one decoded-block store for every
+table measured and not kept; what x86_64's atomics cost and a per-block compile policy in docs/backlog.md
+"Interpreter". **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
 cache lines, so guests issue 2 ICs a page; docs/jit.md "Sharing", bench/boot/REPORT.md). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 

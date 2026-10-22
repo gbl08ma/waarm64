@@ -31,20 +31,16 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## Interpreter
 
-What the block interpreter's speed track (2026-10-21, `bench/interp/REPORT.md` from "M8-INTERP loop 0") left open,
-most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence and test in full.
+What the block interpreter's speed track (2026-10-21/22, `bench/interp/REPORT.md` "M8-INTERP loop 0" to "loop 11")
+left open, most promising first.
 
-- **Settle the floor of 1000 on the Mac host:** there, one round, Alpine's boot under the JIT was 2.0% slower than
-  at 500 and its userspace 0.6% slower; the browser sessions that made the case for 1000 weren't run on the Mac.
 - **What the guest accesses' atomics cost on x86_64** (the user's desktop, most users): wasm's sequentially
   consistent stores are `xchg` (or `mov` + `mfence`) there, never measured; on the M4 `run`'s `ldar`/`stlr` took
   0.24% of its cycle samples, and M7 loop 6 measured 88.7 → 79.0 MIPS (MMU on, half alignment, half ordering) when
   the accesses became atomics. Test: an x86_64 A/B against `bench/interp/results/m8-interp-l0/plain-accesses.patch`
-  (a measuring build: UB under parallel SMP) on the yardstick, on a stable host (the user's desktop by hand, or a
-  cloud session with many rounds). If it costs: plain loads with atomic stores only where another vCPU can observe
+  (a measuring build, UB under parallel SMP, written at loop 0: port it to `mem.rs` as it stands) on the yardstick,
+  on a stable host (the user's desktop by hand, or a cloud session with many rounds). If it costs: plain loads with atomic stores only where another vCPU can observe
   them, or plain accesses with one vCPU or round-robin and atomics only in parallel SMP (the user's decision).
-- **The floor between 1000 and 2000, with `threshold_max` above it:** 2000 compiled 22% less than 500 in the pages
-  session but lost 2% on Alpine's userspace and boot, in one session each.
 - **Compile by expected benefit against cost, not one floor** (the user's idea, 2026-10-21; supersedes tuning the
   floor alone). 1000 and 2000 each win on different workloads because one dispatch count stands in for a trade-off
   that varies per block. Three candidate inputs:
@@ -66,9 +62,10 @@ most promising first; `M8-INTERP-HANDOVER.md` "Next" has each item's evidence an
 
   **Then screen,** as lanes do (the churn page, the pages session, Alpine's boot, the gates): steps-weighted,
   size-scaled, mix-scaled and rate-based thresholds against fixed 1000 and 2000. The aim is a policy that beats
-  both: 2000's less wasm and memory where code runs long, 1000's speed on cold code.
-- **A steadier Go workload:** the `go build` loop spread 1,094-1,489 MIPS across sessions at one floor and couldn't
-  rank compile policies.
+  both: 2000's less wasm and memory where code runs long, 1000's speed on cold code. The pressure rule already gives
+  part of that (loop 11: floor 1000, maximum 2000 from 3/8 of the cache, −13% wasm and +6% busy MIPS in Firefox's
+  pages session, the boots unchanged); a per-block policy has to beat it, judged by the gates of docs/benchmarking.md
+  "Screening an A/B" (the `go build` loop by its build times).
 - **More handlers, by workload.** The boots' generic path is now LDXP/STXP, CAS, MSR and the rest; a browser's
   (Firefox's pages session, `bench/interp/REPORT.md` "M8-INTERP loop 10") 1.9% of its interpreted instructions,
   scalar FP and NEON spread over dozens of classes, whose handlers cost `hot` 1-2% on integer code and gained

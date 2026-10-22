@@ -269,7 +269,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   on node 1, so the JIT's inline second path waits in the backlog; the heap floor stays 1 GiB (the heap reaches
   ~600 MiB).
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.
-- **The block interpreter's speed** (the user, 2026-10-20; `M8-INTERP-HANDOVER.md`): judged by the interpreter's
+- **The block interpreter's speed** (the user, 2026-10-20; done 2026-10-22): judged by the interpreter's
   own MIPS, not by what it adds to a JIT run, so that the compile threshold can rise and less code reaches V8 (less
   memory, later flushes: the JIT cache's flush work found no other lever). Loops 0–6 done 2026-10-21
   (`bench/interp/REPORT.md` from "M8-INTERP loop 0"): a call-free hot loop, reports every 255 where nothing
@@ -283,7 +283,10 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   atomics. Loop 9 made the exclusives, LDAR/STLR, DMB and DC ZVA handlers (Alpine's boot 195, Buildroot's 134: a
   generic micro-op costs `hot`'s exit and re-entry); loop 10 counted a browser's mix (1.9% generic, FP and NEON:
   their handlers not kept) and measured decoding at ~1% of a vCPU, so one decoded-block store for every table
-  wasn't built. Left: the floor between 1000 and 2000, a steadier Go gate.
+  wasn't built. Loop 11 (2026-10-22) made the `go build` loop a gate by its build times (sessions within 0.3%) and
+  raised the threshold's maximum to 2000 (from 3/8 of the cache: Firefox's pages session 13% less wasm at +6% busy
+  MIPS, the boots unchanged). What the x86_64 atomics cost (no x86_64 host to hand) and a per-block compile policy
+  are in docs/backlog.md "Interpreter".
 
 ### M9 — Backlog
 
