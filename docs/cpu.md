@@ -249,7 +249,13 @@ dispatcher hasn't compiled (`jit::steps`; [jit.md](jit.md) "Dispatch"): every bl
 test it against `tests/steps.txt`.
 
 - **A block is the JIT's** (`jit::block::form`, the same key: PA and regime bits), decoded once into
-  16-byte micro-ops with their operand fields pulled out and kept in the vCPU table's cache. The
+  8-byte micro-ops with their operand fields pulled out and kept in the vCPU table's cache: a kind, three
+  register bytes and a `u32` that holds the kind's flags and immediate (`interp::block::pack` says what goes where
+  per kind). A 64-bit immediate that doesn't fit (a logical immediate's mask, an MRS constant, a SIMD&FP access's
+  word and offset, a MOV immediate that isn't a rotated 32-bit value) is an 8-byte slot after its block's
+  micro-ops, the `u32` its distance from the micro-op, so `hot` reaches it from the micro-op's pointer it holds.
+  Decoding makes the wide form (`Wide`: flags and a 64-bit immediate apart), which the slow path (`run`)
+  unpacks a micro-op back into. The
   common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
   UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, UMADDL & co, EXTR, RBIT/REV/CLZ,
   ADR/ADRP), every branch, MRS of what `sys::plain` reads at the block's EL (`uop_el`), the LSE
@@ -273,6 +279,13 @@ test it against `tests/steps.txt`.
   needs a call returns a status to `jit::interpret`, which runs that one micro-op through `run` (the
   slow path) or finds the next block, and calls `hot` again. +26% on the user-mode guest, +56-68% at
   EL1, +13% and +18% on the Buildroot and Alpine boots (`bench/interp/REPORT.md` "M8-INTERP loop 1").
+- **A guest branch stays a host branch.** B.cond, CBZ and TBZ read their offset where the branch is taken, through
+  a load LLVM can't hoist (`taken_imm`); with the offset already in a register LLVM made the choice a `select`
+  (a `csel` in V8's code), and the next block's lookup waited for the condition instead of going on down the path
+  the host predicted: the small guests 30% slower. A condition is a 16-bit mask of the NZCV values it holds for,
+  made at decode (`cond_mask`; B.cond's in its spare register bytes, CSEL's and CCMP's in the `u32`'s top half), so
+  testing it is a shift, not `cond_holds`' jump table: the small guests +6%, the boots +1.3%
+  (`bench/interp/REPORT.md` "M8-INTERP loop 12").
 - **Runs of MOVs** (MOVZ, MOVN, MOV of a bitmask immediate: `MovI`) go in one dispatch: each carries
   the number of MovIs right after it (`mov_runs`, at decode), and `hot` writes them all, never past
   the prefix (`run` ignores the count). +2-5% (`bench/interp/REPORT.md` "M8-INTERP loop 4").
@@ -301,11 +314,11 @@ test it against `tests/steps.txt`.
   about it once ([jit.md](jit.md) "Sharing").
 - **The cache** (per JIT table, so per vCPU in parallel SMP): 16,384 direct-mapped slots, a map,
   and the micro-ops in one arena, which starts over when full. **The arenas share 16M micro-ops
-  (256 MiB) among a VM's tables, at most 8M a table** (`interp::block::budget`, through
+  (128 MiB, with the blocks' constants among them) among a VM's tables, at most 8M a table** (`interp::block::budget`, through
   `jit::Config::decoded`): 8M on one or two vCPUs, 4M on four, 2M on eight; they grow as they
   fill (Alpine decodes ~1M). At 2M a table, Chromium in Debian on 4 vCPUs re-decoded ~3.5M blocks
   a render; 4M halved that and made the warm renders ~3.5% faster; 8M ran the core's 1 GiB heap
-  out. Evicting instead of starting over (keeping the newer half, or the blocks that ran in the
+  out (micro-ops were 16 bytes then). Evicting instead of starting over (keeping the newer half, or the blocks that ran in the
   last half of the arena's fill, compacted) won half of that at 2M and nothing at 4M: what fills
   the arena is code that runs again, not dead blocks (`bench/apps/REPORT.md` "M8: the decoded
   blocks' arenas"). **Invalidation is by
@@ -314,6 +327,9 @@ test it against `tests/steps.txt`.
   blocks when it catches up, before its vCPU runs another block. Flushes of the code cache and the
   links between compiled blocks don't touch decoded ones: tying them to the JIT's dropped keys
   (which follow links transitively) emptied the caches a few dozen times per Chromium render.
+  The map holds 8 bytes a block (where its micro-ops are, the dispatches it counted out of its slot, and the next
+  key of its page by the key's low 12 bits), and the page index a page's last key: an IC's page walks that list.
+  (It was 12 bytes a block and a `Vec<u64>` of keys a page.)
 - **Tests:** a native differential test of random blocks against `interp::steps`
   (`interp::block::tests`), the golden corpus in it on wasm (`tests/corpus-wasm.test.ts`), the
   native boots through it (`linux_boots_through_the_block_interpreter`,

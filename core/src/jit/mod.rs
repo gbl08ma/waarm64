@@ -2116,7 +2116,8 @@ fn interpret<B: Regime>(
             SLOW => {
                 let (u, last) = r.uop();
                 let before = r.retired();
-                let (k, e) = interp::block::run(cpu, m, core::slice::from_ref(&u), r.pc);
+                let a = t.dec.arena();
+                let (k, e) = interp::block::run(cpu, m, &a[r.at(a)..], 1, r.pc);
                 if e.is_some() {
                     break (before + k, e);
                 }

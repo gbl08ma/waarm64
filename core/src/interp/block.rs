@@ -138,7 +138,7 @@ enum K {
 /// Marks each MovI with the number of MovIs right after it, and each LdO or
 /// StO followed by another with bit 16 of `x` (pairs from the block's
 /// start): [`hot`] runs them in its dispatch; [`run`] ignores the marks.
-pub fn mov_runs(b: &mut [Uop]) {
+pub fn mov_runs(b: &mut [Wide]) {
     let mut n = 0;
     for k in (0..b.len()).rev() {
         if b[k].k == K::MovI {
@@ -148,7 +148,7 @@ pub fn mov_runs(b: &mut [Uop]) {
             n = 0;
         }
     }
-    let o = |u: &Uop| matches!(u.k, K::LdO | K::StO);
+    let o = |u: &Wide| matches!(u.k, K::LdO | K::StO);
     let mut k = 0;
     while k + 1 < b.len() {
         if o(&b[k]) && o(&b[k + 1]) {
@@ -160,9 +160,10 @@ pub fn mov_runs(b: &mut [Uop]) {
     }
 }
 
-/// One instruction, decoded.
+/// One instruction, decoded: what [`uop_el`] makes, and [`run`] runs
+/// ([`pack`] stores it as a [`Uop`]).
 #[derive(Clone, Copy, Debug)]
-pub struct Uop {
+pub struct Wide {
     k: K,
     d: u8,
     n: u8,
@@ -171,17 +172,9 @@ pub struct Uop {
     imm: u64,
 }
 
-impl Uop {
-    /// Whether the block may go on to its successor after this, its last
-    /// instruction, retired: anything but an instruction run generically
-    /// (which may have changed the regime: an MSR, ERET).
-    #[inline(always)]
-    pub fn chains(&self) -> bool {
-        self.k != K::Generic
-    }
-
-    fn new(k: K, d: u32, n: u32, m: u32, x: u32, imm: u64) -> Uop {
-        Uop {
+impl Wide {
+    fn new(k: K, d: u32, n: u32, m: u32, x: u32, imm: u64) -> Wide {
+        Wide {
             k,
             d: d as u8,
             n: n as u8,
@@ -192,9 +185,308 @@ impl Uop {
     }
 }
 
+/// One instruction as a block holds it: a [`Wide`] in 8 bytes, its `x` and
+/// `imm` packed into `w` and the register bytes its kind doesn't use, as
+/// [`pack`] says. A 64-bit immediate that doesn't fit (a bitmask, an MRS
+/// constant, an FP access's word and offset) is a slot of the same array
+/// after its block's micro-ops, `w` its distance from the micro-op
+/// ([`konst`]: [`hot`] holds the micro-op's pointer, not the arena's).
+#[derive(Clone, Copy, Debug)]
+#[repr(C, align(8))]
+pub struct Uop {
+    w: u32,
+    d: u8,
+    n: u8,
+    m: u8,
+    /// A [`K`] (a constant's slot is never run as a micro-op).
+    k: u8,
+}
+
+impl Uop {
+    /// Whether the block may go on to its successor after this, its last
+    /// instruction, retired: anything but an instruction run generically
+    /// (which may have changed the regime: an MSR, ERET).
+    #[inline(always)]
+    pub fn chains(&self) -> bool {
+        self.k != K::Generic as u8
+    }
+
+    #[inline(always)]
+    fn kind(&self) -> K {
+        // SAFETY: a micro-op's `k` is a `K` (`pack`); constants' slots are
+        // past their block's micro-ops, never run.
+        unsafe { core::mem::transmute::<u8, K>(self.k) }
+    }
+
+    /// A constant's slot.
+    fn of(v: u64) -> Uop {
+        // SAFETY: 8 bytes, every one of their values valid (`k` is a u8).
+        unsafe { core::mem::transmute::<u64, Uop>(v) }
+    }
+
+    /// A constant's value.
+    fn bits(&self) -> u64 {
+        // SAFETY: as in `of`.
+        unsafe { core::mem::transmute::<Uop, u64>(*self) }
+    }
+
+    /// The [`Wide`] that `b[i]` packs (its constant further on in `b`).
+    fn wide(b: &[Uop], i: usize) -> Wide {
+        let u = &b[i];
+        let k = u.kind();
+        let (d, n, m, w) = (u.d as u32, u.n as u32, u.m as u32, u.w);
+        let s = w as i32 as i64 as u64;
+        let c = || b[i + w as usize].bits();
+        let off16 = (w as i32 >> 16) as i64 as u64;
+        let (d, n, m, x, imm) = match k {
+            K::Generic => (0, 0, 0, w, (d | n << 8) as u64),
+            K::Nop | K::Dmb | K::Zva => (d, n, m, 0, w as u64),
+            K::AddI64 | K::AddI32 | K::Adr | K::B | K::Bl => (d, n, m, 0, s),
+            K::Bcond => (d, 0, 0, 0, s),
+            K::Csel | K::Ccmp => (d, n, m, w & 0xffff, 0),
+            K::AddsI | K::Cbz | K::LdLit => (d, n, 0, m, s),
+            K::Adrp => (d, n, m, 0, s << 12),
+            K::Tbz => (d, 0, m, n, s),
+            K::AddR
+            | K::AddX
+            | K::LogR
+            | K::Sbfm
+            | K::ShiftV
+            | K::Madd
+            | K::Maddl
+            | K::Extr
+            | K::Bit1
+            | K::Mov
+            | K::Br
+            | K::Blr => (d, n, m, w, 0),
+            K::MovI => (
+                d,
+                0,
+                0,
+                n,
+                if m & 0x80 != 0 { c() } else { rot_val(u.m, w) },
+            ),
+            K::Movk => (d, 0, m, n, (w as u64) << (m & 63)),
+            K::LogI => (d, n, 0, m, c()),
+            K::Ubfm => (d, n, m, w & 1, ubfm_mask(w)),
+            K::Ld | K::St | K::LdO | K::StO => (d, n, m, w & 0x7fff | (w >> 15 & 1) << 16, off16),
+            K::Ldp | K::Stp => (d, n, m, w & 0xffff, off16),
+            K::Fp => {
+                let v = c();
+                let off = ((v as i64) >> 40) as u64;
+                (
+                    d,
+                    n,
+                    m,
+                    (v >> 32) as u8 as u32,
+                    off as u32 as u64 | (v as u32 as u64) << 32,
+                )
+            }
+            K::Lse => (d, n, m, w >> 30 & 1 | (w >> 12 & 15) << 1, w as u64),
+            K::Ldx | K::Stx => (d, n, m, w >> 30 | ((w >> 23 & 1) ^ 1) << 2, w as u64),
+            K::Mrs => (d, 0, 0, n, if n == 0 || n == 3 { w as u64 } else { c() }),
+        };
+        Wide::new(k, d, n, m, x, imm)
+    }
+}
+
+/// The constant of the micro-op at `u` (its `w`).
+///
+/// # Safety
+/// `u` is in an arena (or a [`pack`]ed block) and its `w` the distance to
+/// its constant there.
+#[inline(always)]
+unsafe fn konst(u: *const Uop) -> u64 {
+    // SAFETY: guaranteed by the caller (8-byte slots, aligned).
+    unsafe { (u.add((*u).w as usize) as *const u64).read() }
+}
+
+/// The value of the MovI at `u` in [`hot`].
+///
+/// # Safety
+/// As for [`konst`].
+#[inline(always)]
+unsafe fn movi(u: *const Uop) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let o = &*u;
+        if o.m & 0x80 != 0 {
+            konst(u)
+        } else {
+            rot_val(o.m, o.w)
+        }
+    }
+}
+
+/// `v` as `ror(ext(w), rot)`: the `m` byte (`rot | zero-extended << 6`) and
+/// `w`; covers MOVZ and MOVN at every shift and most bitmasks.
+fn rot_form(v: u64) -> Option<(u8, u32)> {
+    (0..64).find_map(|r| {
+        let c = v.rotate_left(r);
+        if c >> 32 == 0 {
+            Some((r as u8 | 0x40, c as u32))
+        } else if c as i32 as i64 as u64 == c {
+            Some((r as u8, c as u32))
+        } else {
+            None
+        }
+    })
+}
+
+/// Condition `cond` as a mask of the NZCV values (bit `nzcv`) it holds for.
+fn cond_mask(cond: u32) -> u16 {
+    (0..16).fold(0, |a, f| {
+        a | (cond_holds((f as u64) << 28, cond) as u16) << f
+    })
+}
+
+/// Whether NZCV `nzcv` (bits 31:28) is in condition mask `mask` ([`cond_mask`]).
+#[inline(always)]
+fn holds(mask: u32, nzcv: u64) -> bool {
+    mask >> (nzcv >> 28 & 15) & 1 != 0
+}
+
+/// A branch's offset (`w`, sign-extended) in [`hot`], read where it's taken:
+/// a load LLVM can't hoist keeps the guest's branch a host branch, which the
+/// host predicts, rather than a select that makes the next block's lookup
+/// wait for the condition (−30% on the small guests as a select).
+///
+/// # Safety
+/// `u` is a micro-op.
+#[inline(always)]
+unsafe fn taken_imm(u: *const Uop) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    (unsafe { core::ptr::read_volatile(&(*u).w) }) as i32 as i64 as u64
+}
+
+/// [`rot_form`]'s value.
+#[inline(always)]
+fn rot_val(m: u8, w: u32) -> u64 {
+    let e = if m & 0x40 != 0 {
+        w as u64
+    } else {
+        w as i32 as i64 as u64
+    };
+    e.rotate_right((m & 63) as u32)
+}
+
+/// An Ubfm's mask, a run of ones (`w` bits 1-7 its length, 8-13 its lowest bit).
+#[inline(always)]
+fn ubfm_mask(w: u32) -> u64 {
+    let (len, lsb) = (w >> 1 & 127, w >> 8 & 63);
+    (u64::MAX >> ((64 - len) & 63)) << lsb
+}
+
+/// Packs a block's micro-ops: its [`Uop`]s, then the constants they need. Per kind, what goes where (the
+/// rest as in [`Wide`]):
+/// - `w` the immediate (sign-extended): ADD/SUB immediate, ADR, B, BL, B.cond;
+///   ADRP's shifted right 12; AddsI, CBZ, LdLit with `x` in `m`; TBZ with `x` in `n`;
+/// - `w` = `x`: the register forms, Ubfm (its mask's length and lowest bit
+///   in bits 1-13), Sbfm, Mov, BR, BLR;
+/// - MovI: `n` its run, `m` and `w` [`rot_form`] or a constant;
+///   Movk: `n` sf, `w` the 16 bits; LogI: `m` its `x`, `w` the mask's constant;
+/// - loads and stores: `x` in bits 0-15 (bit 15 the LdO/StO pair), the offset
+///   in 16-31; LDP/STP likewise;
+/// - Fp: a constant (the word, `x` << 32, the offset << 40);
+/// - Lse, Ldx, Stx, DMB, DC ZVA: `w` the word (their `x` is in it); Generic:
+///   the word, and `d` and `n` its `Op`; Mrs: `n` its `x`, `w` the offset or
+///   a constant.
+pub fn pack(b: &[Wide]) -> Vec<Uop> {
+    let mut out = Vec::with_capacity(b.len());
+    let mut consts = Vec::new();
+    for (i, u) in b.iter().enumerate() {
+        let mut kv = |v: u64| {
+            consts.push(v);
+            (b.len() + consts.len() - 1 - i) as u32
+        };
+        let p = |d: u8, n: u8, m: u8, w: u32| Uop {
+            k: u.k as u8,
+            d,
+            n,
+            m,
+            w,
+        };
+        let i32w = |v: u64| {
+            debug_assert_eq!(v as i32 as i64 as u64, v, "{u:?}");
+            v as u32
+        };
+        let i16w = |v: u64| {
+            debug_assert_eq!(v as i16 as i64 as u64, v, "{u:?}");
+            (v as u16 as u32) << 16
+        };
+        let (d, n, m) = (u.d, u.n, u.m);
+        out.push(match u.k {
+            K::Generic => p(u.imm as u8, (u.imm >> 8) as u8, 0, u.x),
+            K::Nop | K::Dmb | K::Zva => p(d, n, m, u.imm as u32),
+            K::AddI64 | K::AddI32 | K::Adr | K::B | K::Bl => p(d, n, m, i32w(u.imm)),
+            K::Bcond => {
+                let mask = cond_mask(d as u32);
+                p(d, mask as u8, (mask >> 8) as u8, i32w(u.imm))
+            }
+            K::AddsI | K::Cbz | K::LdLit => p(d, n, u.x as u8, i32w(u.imm)),
+            K::Adrp => p(d, n, m, i32w((u.imm as i64 >> 12) as u64)),
+            K::Tbz => p(d, u.x as u8, m, i32w(u.imm)),
+            K::AddR
+            | K::AddX
+            | K::LogR
+            | K::Sbfm
+            | K::ShiftV
+            | K::Madd
+            | K::Maddl
+            | K::Extr
+            | K::Bit1
+            | K::Mov
+            | K::Br
+            | K::Blr => p(d, n, m, u.x),
+            K::Csel | K::Ccmp => p(d, n, m, u.x | (cond_mask(u.x & 15) as u32) << 16),
+            K::MovI => {
+                let run = u.x.min(255) as u8;
+                match rot_form(u.imm) {
+                    Some((r, w)) => p(d, run, r, w),
+                    None => p(d, run, 0x80, kv(u.imm)),
+                }
+            }
+            K::Movk => p(d, u.x as u8, m, (u.imm >> (m & 63)) as u32),
+            K::LogI => p(d, n, u.x as u8, kv(u.imm)),
+            K::Ubfm => {
+                // (A W form's mask is replicated: its low half is the run.)
+                let mask = if u.x & 1 != 0 {
+                    u.imm
+                } else {
+                    u.imm as u32 as u64
+                };
+                let (len, lsb) = (mask.count_ones(), mask.trailing_zeros());
+                debug_assert!(len > 0 && ubfm_mask(len << 1 | lsb << 8) == mask, "{u:?}");
+                p(d, n, m, u.x | len << 1 | lsb << 8)
+            }
+            K::Ld | K::St | K::LdO | K::StO => {
+                p(d, n, m, u.x & 0x7fff | (u.x >> 16 & 1) << 15 | i16w(u.imm))
+            }
+            K::Ldp | K::Stp => p(d, n, m, u.x & 0xffff | i16w(u.imm)),
+            K::Fp => {
+                let off = u.imm as u32 as i32 as i64;
+                debug_assert!((-1 << 23..1 << 23).contains(&off), "{u:?}");
+                p(
+                    d,
+                    n,
+                    m,
+                    kv(u.imm >> 32 | (u.x as u64) << 32 | (off as u64) << 40),
+                )
+            }
+            K::Lse | K::Ldx | K::Stx => p(d, n, m, u.imm as u32),
+            K::Mrs => match u.x {
+                0 | 3 => p(d, u.x as u8, 0, u.imm as u32),
+                x => p(d, x as u8, 0, kv(u.imm)),
+            },
+        });
+    }
+    out.extend(consts.into_iter().map(Uop::of));
+    out
+}
+
 /// [`uop_op`] at the block's EL (`el1`): an MRS of a register `sys::plain`
 /// knows at that EL is a [`K::Mrs`] (the rest are as `uop_op` makes them).
-pub(crate) fn uop_el(w: u32, op: Op, el1: bool) -> Uop {
+pub(crate) fn uop_el(w: u32, op: Op, el1: bool) -> Wide {
     use super::sys::Plain;
     if op == Op::MRS {
         let (rt, key) = (bits(w, 4, 0), bits(w, 20, 5));
@@ -205,7 +497,7 @@ pub(crate) fn uop_el(w: u32, op: Op, el1: bool) -> Uop {
             Some(Plain::Nzcv) => (3, 0),
             _ => return uop_op(w, op),
         };
-        return Uop::new(K::Mrs, rt, 0, 0, x, imm);
+        return Wide::new(K::Mrs, rt, 0, 0, x, imm);
     }
     uop_op(w, op)
 }
@@ -229,17 +521,17 @@ fn mrs(c: &Cpu, x: u32, imm: u64) -> u64 {
 
 /// Decodes one instruction (blocks are decoded through `jit::block::form_with`).
 #[cfg(test)]
-pub fn uop(w: u32) -> Uop {
+pub fn uop(w: u32) -> Wide {
     uop_op(w, crate::decode::decode(w))
 }
 
 /// [`uop`] of `w`, whose class is `op`.
-fn uop_op(w: u32, op: Op) -> Uop {
+fn uop_op(w: u32, op: Op) -> Wide {
     use Op::*;
     let (rd, rn, rm) = (bits(w, 4, 0), bits(w, 9, 5), bits(w, 20, 16));
     let sf = bit(w, 31);
-    let generic = Uop::new(K::Generic, 0, 0, 0, w, op as u16 as u64);
-    let u = |k, x, imm| Uop::new(k, rd, rn, rm, x, imm);
+    let generic = Wide::new(K::Generic, 0, 0, 0, w, op as u16 as u64);
+    let u = |k, x, imm| Wide::new(k, rd, rn, rm, x, imm);
     let branch = |hi, lo, n| sext((bits(w, hi, lo) << 2) as u64, n);
     match op {
         ADR => u(K::Adr, 0, super::adr_imm(w)),
@@ -319,7 +611,7 @@ fn uop_op(w: u32, op: Op) -> Uop {
             }
             let (sh, imm) = (hw * 16, bits(w, 20, 5) as u64);
             match op {
-                MOVK => Uop::new(K::Movk, rd, 0, sh, sf as u32, imm << sh),
+                MOVK => Wide::new(K::Movk, rd, 0, sh, sf as u32, imm << sh),
                 _ if rd == 31 => u(K::Nop, 0, 0),
                 MOVN => u(K::MovI, 0, trunc(!(imm << sh), sf)),
                 _ => u(K::MovI, 0, imm << sh),
@@ -335,8 +627,8 @@ fn uop_op(w: u32, op: Op) -> Uop {
                 return generic;
             };
             match bits(w, 30, 29) {
-                0 => Uop::new(K::Sbfm, rd, rn, immr, imms | (sf as u32) << 8, 0),
-                2 => Uop::new(K::Ubfm, rd, rn, immr, sf as u32, wmask & tmask),
+                0 => Wide::new(K::Sbfm, rd, rn, immr, imms | (sf as u32) << 8, 0),
+                2 => Wide::new(K::Ubfm, rd, rn, immr, sf as u32, wmask & tmask),
                 _ => generic,
             }
         }
@@ -391,7 +683,7 @@ fn uop_op(w: u32, op: Op) -> Uop {
 
         B_uncond => u(K::B, 0, branch(25, 0, 28)),
         BL => u(K::Bl, 0, branch(25, 0, 28)),
-        B_cond => Uop::new(K::Bcond, bits(w, 3, 0), 0, 0, 0, branch(23, 5, 21)),
+        B_cond => Wide::new(K::Bcond, bits(w, 3, 0), 0, 0, 0, branch(23, 5, 21)),
         CBZ | CBNZ => u(
             K::Cbz,
             sf as u32 | ((op == CBNZ) as u32) << 1,
@@ -399,7 +691,7 @@ fn uop_op(w: u32, op: Op) -> Uop {
         ),
         TBZ | TBNZ => {
             let b = bits(w, 31, 31) << 5 | bits(w, 23, 19);
-            Uop::new(K::Tbz, rd, 0, b, (op == TBNZ) as u32, branch(18, 5, 16))
+            Wide::new(K::Tbz, rd, 0, b, (op == TBNZ) as u32, branch(18, 5, 16))
         }
         BR | RET => u(K::Br, 0, 0),
         BLR => u(K::Blr, 0, 0),
@@ -486,7 +778,7 @@ fn uop_op(w: u32, op: Op) -> Uop {
                 ),
             };
             let x = log | mode << 3 | (bit(w, 22) as u32) << 5 | (pair as u32) << 6;
-            Uop::new(
+            Wide::new(
                 K::Fp,
                 rd,
                 rn,
@@ -523,20 +815,22 @@ fn uop_op(w: u32, op: Op) -> Uop {
             let imm = sext(bits(w, 21, 15) as u64, 7).wrapping_mul(size as u64);
             let k = if load { K::Ldp } else { K::Stp };
             let x = size | (signed as u32) << 4 | bits(w, 24, 23) << 8;
-            Uop::new(k, rd, rn, bits(w, 14, 10), x, imm)
+            Wide::new(k, rd, rn, bits(w, 14, 10), x, imm)
         }
         _ => generic,
     }
 }
 
-/// Runs `b` (a prefix of a block: at most what's left of the chunk) at `pc`.
+/// Runs the first `len` micro-ops of `b` (a prefix of a block: at most what's
+/// left of the chunk; `b` goes on past them to their constants) at `pc`.
 /// Returns what [`super::steps`] would for those instructions: how many
 /// retired before one that didn't (or that retired with an internal exit),
 /// and that exit.
 #[inline(never)]
-pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Exit>) {
+pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], len: usize, pc: u64) -> (u64, Option<Exit>) {
     let mut pc = pc;
-    for (k, u) in b.iter().enumerate() {
+    for k in 0..len {
+        let u = &Uop::wide(b, k);
         let (d, n) = (u.d as u32, u.n as u32);
         let sf = u.x & 1 != 0;
         match u.k {
@@ -544,9 +838,9 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
                 if let Err(e) = super::exec_at_op(c, m, u.x, pc, Op::ALL[u.imm as usize]) {
                     return (k as u64, Some(e));
                 }
-                if k + 1 == b.len() {
+                if k + 1 == len {
                     // It may have branched (ERET, an MSR's exit): the PC is its.
-                    return (b.len() as u64, None);
+                    return (len as u64, None);
                 }
             }
             K::Nop => {}
@@ -659,28 +953,28 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
             }
             K::Adr => c.set_reg(d, pc.wrapping_add(u.imm)),
             K::Adrp => c.set_reg(d, (pc & !0xfff).wrapping_add(u.imm)),
-            K::B => return taken(c, b, pc.wrapping_add(u.imm)),
+            K::B => return taken(c, len, pc.wrapping_add(u.imm)),
             K::Bl => {
                 c.x[30] = pc.wrapping_add(4);
-                return taken(c, b, pc.wrapping_add(u.imm));
+                return taken(c, len, pc.wrapping_add(u.imm));
             }
             K::Bcond => {
                 let t = cond_holds(c.nzcv, d);
-                return taken(c, b, pc.wrapping_add(if t { u.imm } else { 4 }));
+                return taken(c, len, pc.wrapping_add(if t { u.imm } else { 4 }));
             }
             K::Cbz => {
                 let t = (trunc(c.reg(d), sf) != 0) == (u.x & 2 != 0);
-                return taken(c, b, pc.wrapping_add(if t { u.imm } else { 4 }));
+                return taken(c, len, pc.wrapping_add(if t { u.imm } else { 4 }));
             }
             K::Tbz => {
                 let t = (c.reg(d) >> u.m & 1 != 0) == (u.x != 0);
-                return taken(c, b, pc.wrapping_add(if t { u.imm } else { 4 }));
+                return taken(c, len, pc.wrapping_add(if t { u.imm } else { 4 }));
             }
-            K::Br => return taken(c, b, c.reg(n)),
+            K::Br => return taken(c, len, c.reg(n)),
             K::Blr => {
                 let to = c.reg(n);
                 c.x[30] = pc.wrapping_add(4);
-                return taken(c, b, to);
+                return taken(c, len, to);
             }
             K::Ld | K::St | K::LdO | K::StO => {
                 if let Err(e) = single(c, m, u) {
@@ -708,7 +1002,7 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], pc: u64) -> (u64, Option<Ex
         pc = pc.wrapping_add(4);
     }
     c.pc = pc;
-    (b.len() as u64, None)
+    (len as u64, None)
 }
 
 /// A bus's inline paths for [`hot`]: no call and no panic on any path, so
@@ -850,6 +1144,12 @@ impl Run {
         (unsafe { *self.u }, unsafe { self.u.add(1) } == self.end)
     }
 
+    /// The micro-op [`hot`] stopped at, as an index of `arena` (its).
+    pub fn at(&self, arena: &[Uop]) -> usize {
+        // SAFETY: `u` is in `arena`.
+        (unsafe { self.u.offset_from(arena.as_ptr()) }) as usize
+    }
+
     /// Past the micro-op [`hot`] stopped at, which retired (not its block's last).
     pub fn step(&mut self) {
         // SAFETY: `u` < `end`.
@@ -906,9 +1206,9 @@ pub fn hot<B: Fast>(
     compiled: impl Fn(u64) -> bool,
     r: &mut Run,
 ) -> u32 {
-    let (mut u, mut end, mut pc, mut key, mut bpc, mut done) =
-        (r.u, r.end, r.pc, r.key, r.bpc, r.done);
-    let left = r.left;
+    let (mut u, mut end, mut pc, mut key, mut bpc) = (r.u, r.end, r.pc, r.key, r.bpc);
+    // The steps it may still enter blocks for (one value live, not two).
+    let mut rest = r.left - r.done;
     let arena = dec.arena.as_ptr();
     let fx = m.ctx(c);
     let status = 'run: loop {
@@ -919,16 +1219,15 @@ pub fn hot<B: Fast>(
             }
             // SAFETY: u < end, in the arena.
             let o = unsafe { &*u };
-            let (d, n) = (o.d as u32, o.n as u32);
-            let sf = o.x & 1 != 0;
-            match o.k {
+            let (d, n, w) = (o.d as u32, o.n as u32, o.w);
+            match o.kind() {
                 K::Generic | K::LdLit => break 'run SLOW,
                 K::Lse => {
                     let base = rsp(c, n);
                     if n == 31 && base & 15 != 0 {
                         break 'run SLOW;
                     }
-                    let sf = o.x & 1 != 0;
+                    let sf = w >> 30 & 1 != 0;
                     let size = if sf { 8 } else { 4 };
                     let Some(p) = m.fast_in(fx, base, size, Use::Write) else {
                         break 'run SLOW;
@@ -937,7 +1236,7 @@ pub fn hot<B: Fast>(
                         break 'run SLOW;
                     }
                     let v = rd(c, o.m as u32) & if sf { u64::MAX } else { u32::MAX as u64 };
-                    let op = o.x >> 1;
+                    let op = w >> 12 & 15;
                     // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
                     let old = match unsafe { mem::rmw(p, size, op, v) } {
                         Some(old) => old,
@@ -970,7 +1269,7 @@ pub fn hot<B: Fast>(
                 }
                 K::Ldx => {
                     let base = rsp(c, n);
-                    let size = 1u32 << (o.x & 3);
+                    let size = 1u32 << (w >> 30);
                     if n == 31 && base & 15 != 0 || base & (size as u64 - 1) != 0 {
                         break 'run SLOW;
                     }
@@ -982,7 +1281,7 @@ pub fn hot<B: Fast>(
                     }
                     // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
                     let v = unsafe { load_sc(p, size) };
-                    if o.x & 4 != 0 {
+                    if w >> 23 & 1 == 0 {
                         c.monitor = crate::cpu::Monitor {
                             addr: base,
                             size: size as u64,
@@ -993,12 +1292,15 @@ pub fn hot<B: Fast>(
                 }
                 K::Stx => {
                     let base = rsp(c, n);
-                    let size = 1u32 << (o.x & 3);
+                    let size = 1u32 << (w >> 30);
                     if n == 31 && base & 15 != 0 || base & (size as u64 - 1) != 0 {
                         break 'run SLOW;
                     }
                     let mon = c.monitor;
-                    let (excl, armed) = (o.x & 4 != 0, mon.addr == base && mon.size == size as u64);
+                    let (excl, armed) = (
+                        w >> 23 & 1 == 0,
+                        mon.addr == base && mon.size == size as u64,
+                    );
                     if !excl || armed {
                         let Some(p) = m.fast_in(fx, base, size, Use::Write) else {
                             break 'run SLOW;
@@ -1049,14 +1351,17 @@ pub fn hot<B: Fast>(
                     if n == 31 && base & 15 != 0 {
                         break 'run SLOW;
                     }
-                    let (log, mode) = (o.x & 7, o.x >> 3 & 3);
-                    let off = o.imm as u32 as i32 as i64 as u64;
+                    // SAFETY: an Fp's `w` is its constant's distance.
+                    let kv = unsafe { konst(u) };
+                    let x = (kv >> 32) as u32 & 0xff;
+                    let (log, mode) = (x & 7, x >> 3 & 3);
+                    let off = ((kv as i64) >> 40) as u64;
                     let addr = if mode == 2 {
                         base
                     } else {
                         base.wrapping_add(off)
                     };
-                    let (bytes, pair, load) = (1u32 << log, o.x >> 6 & 1 != 0, o.x >> 5 & 1 != 0);
+                    let (bytes, pair, load) = (1u32 << log, x >> 6 & 1 != 0, x >> 5 & 1 != 0);
                     let a2 = addr.wrapping_add(bytes as u64);
                     let w = if load { Use::Read } else { Use::Write };
                     let Some(p1) = m.fast_in(fx, addr, bytes, w) else {
@@ -1113,64 +1418,84 @@ pub fn hot<B: Fast>(
                         wsp(c, n, base.wrapping_add(off));
                     }
                 }
-                K::Mrs => wr(c, d, mrs(c, o.x, o.imm)),
-                K::Maddl => wr(
+                K::Mrs => {
+                    let imm = if n == 0 || n == 3 {
+                        w as u64
+                    } else {
+                        // SAFETY: its `w` is its constant's distance.
+                        unsafe { konst(u) }
+                    };
+                    wr(c, d, mrs(c, n, imm))
+                }
+                K::Maddl => wr(c, d, maddl(w, rd(c, n), rd(c, o.m as u32), rd(c, w & 31))),
+                K::Extr => wr(c, d, extr(w, rd(c, n), rd(c, o.m as u32))),
+                K::Bit1 => wr(c, d, bit1(w, rd(c, n))),
+                K::Nop => {}
+                K::AddI64 => wsp(c, d, rsp(c, n).wrapping_add(w as i32 as i64 as u64)),
+                K::AddI32 => wsp(
                     c,
                     d,
-                    maddl(o.x, rd(c, n), rd(c, o.m as u32), rd(c, o.x & 31)),
+                    rsp(c, n).wrapping_add(w as i32 as i64 as u64) as u32 as u64,
                 ),
-                K::Extr => wr(c, d, extr(o.x, rd(c, n), rd(c, o.m as u32))),
-                K::Bit1 => wr(c, d, bit1(o.x, rd(c, n))),
-                K::Nop => {}
-                K::AddI64 => wsp(c, d, rsp(c, n).wrapping_add(o.imm)),
-                K::AddI32 => wsp(c, d, rsp(c, n).wrapping_add(o.imm) as u32 as u64),
                 K::AddsI => {
-                    let (v, f) = add_with_carry(rsp(c, n), o.imm, o.x & 2 != 0, sf);
+                    let (x, imm) = (o.m as u32, w as i32 as i64 as u64);
+                    let (v, f) = add_with_carry(rsp(c, n), imm, x & 2 != 0, x & 1 != 0);
                     c.nzcv = f;
                     wr(c, d, v);
                 }
                 K::AddR => {
-                    let sf = o.x >> 8 & 1 != 0;
-                    let y = shift(rd(c, o.m as u32), o.x & 3, o.x >> 2 & 63, sf);
-                    addsub_h(c, o.x, d, rd(c, n), y, sf, false);
+                    let sf = w >> 8 & 1 != 0;
+                    let y = shift(rd(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+                    addsub_h(c, w, d, rd(c, n), y, sf, false);
                 }
                 K::AddX => {
-                    let sf = o.x >> 8 & 1 != 0;
-                    let y = extend(rd(c, o.m as u32), o.x & 7, o.x >> 3 & 7);
-                    addsub_h(c, o.x, d, rsp(c, n), y, sf, true);
+                    let sf = w >> 8 & 1 != 0;
+                    let y = extend(rd(c, o.m as u32), w & 7, w >> 3 & 7);
+                    addsub_h(c, w, d, rsp(c, n), y, sf, true);
                 }
                 K::MovI => {
-                    wsp(c, d, o.imm);
+                    // SAFETY: a MovI's `w` is its constant's distance if `m` says so.
+                    wsp(c, d, unsafe { movi(u) });
                     // SAFETY: u < end, both in the block's micro-ops.
-                    let k = (o.x as usize).min(unsafe { end.offset_from(u) } as usize - 1);
+                    let k = (n as usize).min(unsafe { end.offset_from(u) } as usize - 1);
                     for j in 1..=k {
-                        // SAFETY: u + j < end.
-                        let b = unsafe { &*u.add(j) };
-                        wsp(c, b.d as u32, b.imm);
+                        // SAFETY: u + j < end, a MovI.
+                        unsafe { wsp(c, (*u.add(j)).d as u32, movi(u.add(j))) };
                     }
                     // SAFETY: as above.
                     u = unsafe { u.add(k) };
                     pc = pc.wrapping_add(4 * k as u64);
                 }
                 K::Movk => {
-                    let v = (rd(c, d) & !(0xffff << (o.m & 63))) | o.imm;
-                    wr(c, d, trunc(v, sf));
+                    let sh = o.m & 63;
+                    let v = (rd(c, d) & !(0xffff << sh)) | (w as u64) << sh;
+                    wr(c, d, trunc(v, n & 1 != 0));
                 }
-                K::Mov => wsp(c, d, trunc(rd(c, o.m as u32), sf)),
+                K::Mov => wsp(c, d, trunc(rd(c, o.m as u32), w & 1 != 0)),
                 K::LogI => {
-                    let opc = o.x & 3;
-                    logical_h(c, opc, d, op(opc, rd(c, n), o.imm), o.x & 4 != 0, true);
+                    let x = o.m as u32;
+                    let opc = x & 3;
+                    // SAFETY: a LogI's `w` is its constant's distance.
+                    let imm = unsafe { konst(u) };
+                    logical_h(c, opc, d, op(opc, rd(c, n), imm), x & 4 != 0, true);
                 }
                 K::LogR => {
-                    let sf = o.x >> 11 & 1 != 0;
-                    let y = shift(rd(c, o.m as u32), o.x & 3, o.x >> 2 & 63, sf);
-                    let y = if o.x >> 10 & 1 != 0 { !y } else { y };
-                    let opc = o.x >> 8 & 3;
+                    let sf = w >> 11 & 1 != 0;
+                    let y = shift(rd(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+                    let y = if w >> 10 & 1 != 0 { !y } else { y };
+                    let opc = w >> 8 & 3;
                     logical_h(c, opc, d, op(opc, rd(c, n), y), sf, false);
                 }
-                K::Ubfm => wr(c, d, ror(trunc(rd(c, n), sf), o.m as u32 & 63, sf) & o.imm),
+                K::Ubfm => {
+                    let sf = w & 1 != 0;
+                    wr(
+                        c,
+                        d,
+                        ror(trunc(rd(c, n), sf), o.m as u32 & 63, sf) & ubfm_mask(w),
+                    )
+                }
                 K::Sbfm => {
-                    let (rr, s, sf) = (o.m as u32 & 63, o.x & 63, o.x >> 8 & 1 != 0);
+                    let (rr, s, sf) = (o.m as u32 & 63, w & 63, w >> 8 & 1 != 0);
                     let src = rd(c, n);
                     let v = if s >= rr {
                         sext(src >> rr, s - rr + 1)
@@ -1180,67 +1505,73 @@ pub fn hot<B: Fast>(
                     wr(c, d, trunc(v, sf));
                 }
                 K::ShiftV => {
-                    let sf = o.x & 4 != 0;
+                    let sf = w & 4 != 0;
                     let amt = (rd(c, o.m as u32) & if sf { 63 } else { 31 }) as u32;
-                    wr(c, d, shift(rd(c, n), o.x & 3, amt, sf));
+                    wr(c, d, shift(rd(c, n), w & 3, amt, sf));
                 }
                 K::Csel => {
-                    let v = if cond_holds(c.nzcv, o.x & 15) {
+                    let v = if holds(w >> 16, c.nzcv) {
                         rd(c, n)
                     } else {
                         let y = rd(c, o.m as u32);
-                        match o.x >> 4 & 3 {
+                        match w >> 4 & 3 {
                             0 => y,
                             1 => y.wrapping_add(1),
                             2 => !y,
                             _ => y.wrapping_neg(),
                         }
                     };
-                    wr(c, d, trunc(v, o.x >> 6 & 1 != 0));
+                    wr(c, d, trunc(v, w >> 6 & 1 != 0));
                 }
                 K::Ccmp => {
-                    c.nzcv = if cond_holds(c.nzcv, o.x & 15) {
-                        let y = if o.x >> 4 & 1 != 0 {
+                    c.nzcv = if holds(w >> 16, c.nzcv) {
+                        let y = if w >> 4 & 1 != 0 {
                             o.m as u64
                         } else {
                             rd(c, o.m as u32)
                         };
-                        let sub = o.x >> 5 & 1 != 0;
+                        let sub = w >> 5 & 1 != 0;
                         let y = if sub { !y } else { y };
-                        add_with_carry(rd(c, n), y, sub, o.x >> 6 & 1 != 0).1
+                        add_with_carry(rd(c, n), y, sub, w >> 6 & 1 != 0).1
                     } else {
-                        ((o.x >> 8 & 15) as u64) << 28
+                        ((w >> 8 & 15) as u64) << 28
                     };
                 }
                 K::Madd => {
                     let p = rd(c, n).wrapping_mul(rd(c, o.m as u32));
-                    let a = rd(c, o.x & 31);
-                    let v = if o.x >> 5 & 1 != 0 {
+                    let a = rd(c, w & 31);
+                    let v = if w >> 5 & 1 != 0 {
                         a.wrapping_sub(p)
                     } else {
                         a.wrapping_add(p)
                     };
-                    wr(c, d, trunc(v, o.x >> 6 & 1 != 0));
+                    wr(c, d, trunc(v, w >> 6 & 1 != 0));
                 }
-                K::Adr => wr(c, d, pc.wrapping_add(o.imm)),
-                K::Adrp => wr(c, d, (pc & !0xfff).wrapping_add(o.imm)),
+                K::Adr => wr(c, d, pc.wrapping_add(w as i32 as i64 as u64)),
+                K::Adrp => wr(
+                    c,
+                    d,
+                    (pc & !0xfff).wrapping_add((w as i32 as i64 as u64) << 12),
+                ),
                 // Branches end their block.
-                K::B => break 'block pc.wrapping_add(o.imm),
+                K::B => break 'block pc.wrapping_add(w as i32 as i64 as u64),
                 K::Bl => {
                     c.x[30] = pc.wrapping_add(4);
-                    break 'block pc.wrapping_add(o.imm);
+                    break 'block pc.wrapping_add(w as i32 as i64 as u64);
                 }
+                // SAFETY (the three): `u` is the micro-op.
                 K::Bcond => {
-                    let t = cond_holds(c.nzcv, d);
-                    break 'block pc.wrapping_add(if t { o.imm } else { 4 });
+                    let t = holds(n | (o.m as u32) << 8, c.nzcv);
+                    break 'block pc.wrapping_add(if t { unsafe { taken_imm(u) } } else { 4 });
                 }
                 K::Cbz => {
-                    let t = (trunc(rd(c, d), sf) != 0) == (o.x & 2 != 0);
-                    break 'block pc.wrapping_add(if t { o.imm } else { 4 });
+                    let x = o.m;
+                    let t = (trunc(rd(c, d), x & 1 != 0) != 0) == (x & 2 != 0);
+                    break 'block pc.wrapping_add(if t { unsafe { taken_imm(u) } } else { 4 });
                 }
                 K::Tbz => {
-                    let t = (rd(c, d) >> (o.m & 63) & 1 != 0) == (o.x != 0);
-                    break 'block pc.wrapping_add(if t { o.imm } else { 4 });
+                    let t = (rd(c, d) >> (o.m & 63) & 1 != 0) == (n != 0);
+                    break 'block pc.wrapping_add(if t { unsafe { taken_imm(u) } } else { 4 });
                 }
                 K::Br => break 'block rd(c, n),
                 K::Blr => {
@@ -1254,7 +1585,7 @@ pub fn hot<B: Fast>(
                     }
                     // Its pair, if in the prefix.
                     // SAFETY: u < end.
-                    if o.x >> 16 != 0 && unsafe { u.add(1) } != end {
+                    if w & 0x8000 != 0 && unsafe { u.add(1) } != end {
                         // SAFETY: u + 1 < end.
                         u = unsafe { u.add(1) };
                         pc = pc.wrapping_add(4);
@@ -1269,20 +1600,21 @@ pub fn hot<B: Fast>(
                     if n == 31 && base & 15 != 0 {
                         break 'run SLOW;
                     }
-                    let (addr, wb) = match o.x >> 2 & 3 {
-                        0 => (base.wrapping_add(o.imm), None),
+                    let imm = (w as i32 >> 16) as i64 as u64;
+                    let (addr, wb) = match w >> 2 & 3 {
+                        0 => (base.wrapping_add(imm), None),
                         1 => {
-                            let a = base.wrapping_add(o.imm);
+                            let a = base.wrapping_add(imm);
                             (a, Some(a))
                         }
-                        2 => (base, Some(base.wrapping_add(o.imm))),
+                        2 => (base, Some(base.wrapping_add(imm))),
                         _ => {
-                            let off = extend(rd(c, o.m as u32), o.x >> 8 & 7, o.x >> 12 & 7);
+                            let off = extend(rd(c, o.m as u32), w >> 8 & 7, w >> 12 & 7);
                             (base.wrapping_add(off), None)
                         }
                     };
-                    let bytes = 1 << (o.x & 3);
-                    if o.k == K::St {
+                    let bytes = 1 << (w & 3);
+                    if o.k == K::St as u8 {
                         let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
                             break 'run SLOW;
                         };
@@ -1298,7 +1630,7 @@ pub fn hot<B: Fast>(
                         let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
                             break 'run SLOW;
                         };
-                        let v = match o.x >> 4 & 3 {
+                        let v = match w >> 4 & 3 {
                             0 => v,
                             1 => sext(v, 8 * bytes),
                             _ => sext(v, 8 * bytes) as u32 as u64,
@@ -1321,7 +1653,7 @@ pub fn hot<B: Fast>(
         };
         // The block's prefix ran: on to the next, as `jit::interpret` goes.
         (pc, u) = (next, end);
-        if done >= left {
+        if rest == 0 {
             break 'run STOP;
         }
         let k = if (next ^ bpc) < 0x1000 && next & 3 == 0 {
@@ -1344,34 +1676,42 @@ pub fn hot<B: Fast>(
             break 'run STOP;
         }
         s.hits += 1;
-        let n = (s.len as u64).min(left - done);
+        let n = (s.len as u64).min(rest);
         // SAFETY: a slotted block's micro-ops are in the arena.
         u = unsafe { arena.add(s.start as usize) };
         // SAFETY: n <= its length.
         end = unsafe { u.add(n as usize) };
-        done += n;
+        rest -= n;
         (key, bpc) = (k, next);
     };
-    (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, done);
+    (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, r.left - rest);
     if status != SLOW {
         c.pc = pc;
     }
     status
 }
 
-/// [`run`] through [`hot`], as `jit::interpret` drives it, for one block (the tests).
+/// [`run`] through [`hot`], as `jit::interpret` drives it, for the first `n`
+/// micro-ops of `all` (a block [`pack`]ed at 0: its constants after it; the tests).
 #[cfg(test)]
-pub fn run_hot(c: &mut Cpu, m: &mut impl Fast, b: &[Uop], pc: u64) -> (u64, Option<Exit>) {
+pub fn run_hot(
+    c: &mut Cpu,
+    m: &mut impl Fast,
+    all: &[Uop],
+    n: usize,
+    pc: u64,
+) -> (u64, Option<Exit>) {
     let mut dec = Cache::new(1 << 10);
-    let mut r = Run::new(b.len() as u64);
-    r.enter(b, 0, pc);
+    dec.arena = all.to_vec();
+    let mut r = Run::new(n as u64);
+    r.enter(&dec.arena[..n], 0, pc);
     loop {
         if hot(c, m, &mut dec, |_| false, &mut r) != SLOW {
             return (r.done, None);
         }
-        let (u, last) = r.uop();
+        let (_, last) = r.uop();
         let before = r.retired();
-        let (k, e) = run(c, m, core::slice::from_ref(&u), r.pc);
+        let (k, e) = run(c, m, &dec.arena[r.at(&dec.arena)..], 1, r.pc);
         if e.is_some() {
             return (before + k, e);
         }
@@ -1455,9 +1795,9 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
     if n == 31 && base & 15 != 0 {
         return false;
     }
-    let addr = base.wrapping_add(o.imm);
-    let bytes = 4 << (o.x & 1);
-    if o.k == K::StO {
+    let addr = base.wrapping_add((o.w as i32 >> 16) as i64 as u64);
+    let bytes = 4 << (o.w & 1);
+    if o.k == K::StO as u8 {
         let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
             return false;
         };
@@ -1485,22 +1825,24 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
     if n == 31 && base & 15 != 0 {
         return false;
     }
-    let (size, mode) = (o.x & 15, o.x >> 8 & 3);
+    let (size, mode) = (o.w & 15, o.w >> 8 & 3);
+    let imm = (o.w as i32 >> 16) as i64 as u64;
     let addr = if mode == 1 {
         base
     } else {
-        base.wrapping_add(o.imm)
+        base.wrapping_add(imm)
     };
     let a2 = addr.wrapping_add(size as u64);
     let (rt, rt2) = (d, o.m as u32);
-    let w = if o.k == K::Ldp { Use::Read } else { Use::Write };
+    let ldp = o.k == K::Ldp as u8;
+    let w = if ldp { Use::Read } else { Use::Write };
     let (Some(p1), Some(p2)) = (m.fast_in(fx, addr, size, w), m.fast_in(fx, a2, size, w)) else {
         return false;
     };
     if (p1 as usize | p2 as usize) & (size as usize - 1) != 0 {
         return false;
     }
-    if o.k == K::Ldp {
+    if ldp {
         // SAFETY: `fast_in` found RAM at both, aligned (checked).
         let (v1, v2) = unsafe {
             (
@@ -1508,7 +1850,7 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
                 mem::load_aligned(p2, size).unwrap_or(0),
             )
         };
-        let ext = |v: u64| if o.x & 16 != 0 { v as i32 as u64 } else { v };
+        let ext = |v: u64| if o.w & 16 != 0 { v as i32 as u64 } else { v };
         wr(c, rt, ext(v1));
         wr(c, rt2, ext(v2));
     } else {
@@ -1520,7 +1862,7 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         }
     }
     if mode & 1 == 1 {
-        wsp(c, n, base.wrapping_add(o.imm));
+        wsp(c, n, base.wrapping_add(imm));
     }
     true
 }
@@ -1607,9 +1949,9 @@ fn bit1(f: u32, x: u64) -> u64 {
 
 /// A branch (always a block's last instruction) to `to`.
 #[inline(always)]
-fn taken(c: &mut Cpu, b: &[Uop], to: u64) -> (u64, Option<Exit>) {
+fn taken(c: &mut Cpu, n: usize, to: u64) -> (u64, Option<Exit>) {
     c.pc = to;
-    (b.len() as u64, None)
+    (n as u64, None)
 }
 
 /// AND, ORR, EOR, AND by `opc`.
@@ -1679,7 +2021,7 @@ fn store(c: &Cpu, m: &mut impl Bus, va: u64, size: u32, v: u64) -> Result<(), cr
 
 /// A single-register load or store (`K::Ld`, `K::St`), as `ldst::single`.
 #[inline(always)]
-fn single(c: &mut Cpu, m: &mut impl Bus, u: &Uop) -> R {
+fn single(c: &mut Cpu, m: &mut impl Bus, u: &Wide) -> R {
     let base = base_reg(c, u.n as u32)?;
     let (size, mode) = (u.x & 3, u.x >> 2 & 3);
     let (addr, wb) = match mode {
@@ -1714,7 +2056,7 @@ fn single(c: &mut Cpu, m: &mut impl Bus, u: &Uop) -> R {
 
 /// LDP/STP and the non-temporal pairs, as `ldst::exec`.
 #[inline(always)]
-fn pair(c: &mut Cpu, m: &mut impl Bus, u: &Uop) -> R {
+fn pair(c: &mut Cpu, m: &mut impl Bus, u: &Wide) -> R {
     let base = base_reg(c, u.n as u32)?;
     let (size, mode) = (u.x & 15, u.x >> 8 & 3);
     let addr = if mode == 1 {
@@ -1739,7 +2081,8 @@ fn pair(c: &mut Cpu, m: &mut impl Bus, u: &Uop) -> R {
     Ok(())
 }
 
-/// Micro-ops the tables' caches of a VM hold in all (16 bytes each: 256 MiB),
+/// Micro-ops the tables' caches of a VM hold in all (8 bytes each, and their
+/// blocks' constants: 128 MiB),
 /// shared out among them up to [`MAX_BUDGET`] a table: each starts over when
 /// its share is full (`jit::Config::decoded`). 2M micro-ops a table, four
 /// tables re-decoded ~3.5M blocks a Chromium render; 4M made the warm renders
@@ -1758,13 +2101,13 @@ const SLOTS: usize = 16384;
 /// Micro-ops of a table's budget per key its map holds before it starts
 /// over, at most [`MAX_KEYS`]: blocks of one micro-op (or none: an SVC at a
 /// block's start, kept with length 0) would fill the map long before the
-/// arena, at 21 B a bucket of it and 8-16 of the page index a key.
+/// arena, at 17 B a bucket of it (and 17 a page of the page index).
 pub const KEY_UOPS: usize = 4;
 
 /// The keys a table's map holds at most (and it starts over when it would
 /// double past the table that holds them, `jit::grows_past`: an IC's
 /// tombstones fill it): under the
-/// 917,504 that 2^20 buckets hold (21 MiB), so it never doubles past them.
+/// 917,504 that 2^20 buckets hold (17 MiB), so it never doubles past them.
 pub const MAX_KEYS: usize = 900_000;
 
 /// Dispatches a decoded block counts, at most, before the dispatcher reports
@@ -1791,6 +2134,39 @@ struct Slot {
     hits: u16,
 }
 
+/// A decoded block in [`Cache`]'s map: where its micro-ops are (start << 6 |
+/// length), the dispatches it counted and the quota it had while out of the
+/// slots (one put back counts on: a report takes the JIT cache's lock), and
+/// the next key of its page by its low 12 bits ([`Cache`]'s `pages`; its own
+/// at the list's end).
+#[derive(Clone, Copy)]
+struct Known {
+    at: u32,
+    next: u16,
+    hits: u8,
+    quota: u8,
+}
+
+impl Known {
+    fn new(start: u32, len: u32, next: u16) -> Known {
+        debug_assert!(start < 1 << 26 && len < 64);
+        Known {
+            at: start << 6 | len,
+            next,
+            hits: 0,
+            quota: 0,
+        }
+    }
+
+    fn start(&self) -> u32 {
+        self.at >> 6
+    }
+
+    fn len(&self) -> u32 {
+        self.at & 63
+    }
+}
+
 const EMPTY: Slot = Slot {
     key: u64::MAX,
     start: 0,
@@ -1808,13 +2184,13 @@ pub struct Cache {
     /// The slots filled since the last clear (up to `SLOTS / 16`; past it,
     /// all of them are cleared): JIT-stress flushes every few compiles.
     used: Vec<u32>,
-    /// Every block: its micro-ops in `arena` (start, length), and the
-    /// dispatches it counted and the quota it had while out of the slots
-    /// (one put back counts on: a report takes the JIT cache's lock). A key
-    /// with no instructions is kept too, with length 0 (never a block to run).
-    map: HashMap<u64, (u32, u32, u16, u8), crate::jit::KeyBuild>,
-    /// The keys in `map` by physical page, for `IC IVAU`.
-    pages: HashMap<u64, Vec<u64>, crate::jit::KeyBuild>,
+    /// Every block. A key with no instructions is kept too, with length 0
+    /// (never a block to run).
+    map: HashMap<u64, Known, crate::jit::KeyBuild>,
+    /// The keys in `map` by physical page, for `IC IVAU`: the low 12 bits
+    /// of the page's last key inserted, the head of its list through
+    /// [`Known::next`].
+    pages: HashMap<u64, u16, crate::jit::KeyBuild>,
     arena: Vec<Uop>,
     /// The micro-ops it holds before it starts over, and the keys
     /// ([`KEY_UOPS`]).
@@ -1868,13 +2244,16 @@ impl Cache {
     #[inline(never)]
     fn miss(&mut self, key: u64, mem: &Mem) -> Option<(u32, u32)> {
         match self.map.get(&key) {
-            Some(e) if e.1 == 0 => return None,
+            Some(e) if e.len() == 0 => return None,
             Some(_) => {}
             None => {
-                let mut uops = crate::jit::block::form_with(mem, key & !3, |w, op| {
+                let mut wide = crate::jit::block::form_with(mem, key & !3, |w, op| {
                     uop_el(w, op, key & 1 != 0)
                 });
-                mov_runs(&mut uops);
+                mov_runs(&mut wide);
+                let len = wide.len();
+                // Its micro-ops, then its constants.
+                let uops = pack(&wide);
                 // Full (its micro-ops, or its keys: blocks of one or none
                 // fill the map before the arena), it starts over; with no
                 // room in the heap for it to grow, it frees its memory too.
@@ -1884,7 +2263,7 @@ impl Cache {
                 let n = self.map.len();
                 if n >= self.keys
                     || self.map.capacity() == n && n > crate::jit::grows_past(self.keys)
-                    || !uops.is_empty() && self.arena.len() + uops.len() > self.budget
+                    || len != 0 && self.arena.len() + uops.len() > self.budget
                 {
                     self.clear();
                 }
@@ -1894,16 +2273,16 @@ impl Cache {
                 {
                     self.rescue();
                 }
-                if uops.is_empty() {
-                    self.map.insert(key, (0, 0, 0, 0));
-                    self.pages.entry(key >> 12).or_default().push(key);
+                let low = (key & 0xfff) as u16;
+                let next = self.pages.insert(key >> 12, low).unwrap_or(low);
+                if len == 0 {
+                    self.map.insert(key, Known::new(0, 0, next));
                     return None;
                 }
                 let start = self.arena.len() as u32;
-                self.arena.extend_from_slice(&uops);
+                self.arena.extend(uops);
                 self.decoded += 1;
-                self.map.insert(key, (start, uops.len() as u32, 0, 0));
-                self.pages.entry(key >> 12).or_default().push(key);
+                self.map.insert(key, Known::new(start, len as u32, next));
             }
         }
         Some(self.slot_in(key))
@@ -1914,14 +2293,15 @@ impl Cache {
     /// replaces keeps its own in the map.
     fn slot_in(&mut self, key: u64) -> (u32, u32) {
         let e = self.map.get_mut(&key).expect("decoded");
-        let hits = core::mem::take(&mut e.2);
-        let quota = core::mem::take(&mut e.3);
-        let (start, len) = (e.0, e.1);
+        let hits = core::mem::take(&mut e.hits) as u16;
+        let quota = core::mem::take(&mut e.quota);
+        let (start, len) = (e.start(), e.len());
         let old = self.slots[slot(key)];
         if (old.hits != 0 || old.quota != 0)
             && let Some(e) = self.map.get_mut(&old.key)
         {
-            (e.2, e.3) = (old.hits, old.quota);
+            // (Never more than its quota, a u8.)
+            (e.hits, e.quota) = (old.hits as u8, old.quota);
         }
         self.slots[slot(key)] = Slot {
             key,
@@ -1966,7 +2346,7 @@ impl Cache {
     #[inline(never)]
     fn count_out(&mut self, key: u64) -> bool {
         match self.map.get(&key) {
-            Some(e) if e.1 != 0 && e.2 < e.3 as u16 => {}
+            Some(e) if e.len() != 0 && e.hits < e.quota => {}
             _ => return false,
         }
         self.slot_in(key);
@@ -1982,10 +2362,10 @@ impl Cache {
         if s.key == key {
             s.quota = n.min(REPORT_IDLE) as u8;
         } else if let Some(e) = self.map.get_mut(&key)
-            && e.1 != 0
+            && e.len() != 0
         {
             // (Never a key with no instructions: it isn't a block to run.)
-            e.3 = n.min(REPORT_IDLE) as u8;
+            e.quota = n.min(REPORT_IDLE) as u8;
         }
     }
 
@@ -1998,12 +2378,18 @@ impl Cache {
         }
         self.map
             .get_mut(&key)
-            .map_or(0, |e| core::mem::take(&mut e.2) as u32)
+            .map_or(0, |e| core::mem::take(&mut e.hits) as u32)
     }
 
     /// Whether `key` was decoded and has no instructions.
     pub fn empty(&self, key: u64) -> bool {
-        self.map.get(&key).is_some_and(|e| e.1 == 0)
+        self.map.get(&key).is_some_and(|e| e.len() == 0)
+    }
+
+    /// Every block's micro-ops and constants (the slow path's [`run`] reads
+    /// the constants).
+    pub fn arena(&self) -> &[Uop] {
+        &self.arena
     }
 
     #[cfg(test)]
@@ -2023,23 +2409,29 @@ impl Cache {
 
     /// Drops the blocks of physical page `page` (`IC IVAU`).
     pub fn drop_page(&mut self, page: u64) {
-        for key in self.pages.remove(&page).unwrap_or_default() {
-            self.map.remove(&key);
+        let Some(mut low) = self.pages.remove(&page) else {
+            return;
+        };
+        loop {
+            let key = page << 12 | low as u64;
+            let next = self.map.remove(&key).expect("a page's key").next;
             let s = &mut self.slots[slot(key)];
             if s.key == key {
                 *s = EMPTY;
             }
+            if next == low {
+                break;
+            }
+            low = next;
         }
     }
 
-    /// The heap bytes it takes: the arena, the map and the page index (its
-    /// lists estimated at a key each).
+    /// The heap bytes it takes: the arena, the map and the page index.
     pub fn bytes(&self) -> u64 {
         use crate::jit::table_bytes;
         (self.arena.capacity() * size_of::<Uop>()) as u64
-            + table_bytes(self.map.capacity(), 8 + size_of::<(u32, u32, u16, u8)>())
-            + table_bytes(self.pages.capacity(), 8 + size_of::<Vec<u64>>())
-            + 8 * self.map.len() as u64
+            + table_bytes(self.map.capacity(), size_of::<(u64, Known)>())
+            + table_bytes(self.pages.capacity(), size_of::<(u64, u16)>())
     }
 
     /// Drops every block and frees the memory the maps and the arena hold

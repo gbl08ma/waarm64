@@ -294,9 +294,13 @@ test("the overlay's hand-over: a second opener waits for the holder to close it,
     const name = 'webpc-test-handover';
     const [a, b] = [spawn(), spawn()];
     const opened = await ask(a, { type: 'open', name });
-    const waiting = ask(b, { type: 'open', name }); // at once: it waits for `a`
+    // At once: it waits for `a`, so it answers only after `a` was asked to close (the lock goes inside close()).
+    let closing = false;
+    let early = false;
+    const waiting = ask(b, { type: 'open', name }).then((x) => ((early = !closing), x));
     await new Promise((resolve) => setTimeout(resolve, 300));
-    const closed = await ask(a, { type: 'close' });
+    closing = true;
+    await ask(a, { type: 'close' });
     const second = await waiting;
     // Terminated while it holds the overlay (a machine worker that didn't answer `stop`): the next opens it at once.
     const terminated: Answer[] = [];
@@ -320,10 +324,9 @@ test("the overlay's hand-over: a second opener waits for the holder to close it,
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    // It waited: it opened only once the first had held it for the 300 ms (not "after `closed`": the lock goes
-    // inside close(), before the closer reads its clock, so the second can stamp an earlier time).
-    void closed;
-    return { opened: opened.type, second: second.type, waited: second.at - opened.at >= 250, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
+    // It waited. (Not by the workers' stamps, `second.at - opened.at`: under load the first stamps late, and the
+    // difference fell under the 300 ms it held the overlay; CI, 2026-10-22.)
+    return { opened: opened.type, second: second.type, waited: !early, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
   });
   assert.deepEqual(r, { opened: 'opened', second: 'opened', waited: true, terminated: [], busy: 'Error: overlay webpc-test-handover is in use: another machine held it for 0.3 s' });
   await page.close();

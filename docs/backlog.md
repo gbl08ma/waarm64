@@ -188,11 +188,10 @@ left open, most promising first.
   a call to the shared miss function, a TLBI by VA a 16 KiB scan (the boot ~1% slower with it).
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
-  - **The decoded blocks are most of it:** ~350-365 MiB on 4 vCPUs in every session measured (the arenas' 256 MiB
-    budget, their maps and page indexes ~100 MiB). A micro-op is 16 bytes; a smaller one, or a budget that follows the
-    heap's room, would give back 100-200 MiB of the 1 GiB. Payoff only if the heap runs short again (or `HEAP_FLOOR`
-    is to come down); test with `MEMLOG=5` sessions and `m8-heap/long/tools/heapsum.ts`, and the block interpreter's
-    gates (bench/interp/REPORT.md) for its speed.
+  - **The decoded blocks** were ~350-365 MiB on 4 vCPUs; since 8-byte micro-ops, a smaller block map entry and a
+    page index of one key a page (`bench/interp/REPORT.md` "M8-INTERP loop 12") the pages session's were 233 MB. A
+    budget that follows the heap's room would give back more where the arenas never fill. Test with `MEMLOG=5`
+    sessions and `m8-heap/long/tools/heapsum.ts`, and the block interpreter's yardstick for its speed.
   - **The page index takes a good part of the bound** (the gauge's ~60 MiB at 1.5 M keys is the map's 50 and an
     estimate of the index), and its lists are `Vec<u64>`s of at least 4 entries plus the allocator's overhead, more than the gauge's estimate of a
     key's 8 B: a page-keyed index of small inline arrays, or none (an IC scanning the map, ~1.5 M entries, a few ms)

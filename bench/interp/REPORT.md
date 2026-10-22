@@ -1423,3 +1423,43 @@ a boot's ~60 MiB never meets it), and keeps 1000 for cold code. Firefox's pages 
 its userspace 14,975 → 14,925 ms (−0.3%), `smp_user_jit_4` 15,801 → 15,715 ms (−0.5%), every phase's rounds
 overlapping; the `go build` loop (`go-max/`, two rounds after a warm-up) 32.51, 31.94 → 32.06, 32.03 s.
 **Kept: `threshold_max` 2000** (`jit::Config::DEFAULT`).
+
+## M8-INTERP loop 12: 8-byte micro-ops, guest branches as host branches, conditions as masks
+
+2026-10-22, the dev VM, Chromium 153.0.8010.52, Node 26.7.0, on main at `b853a4e`; raw data `results/m8-interp-l12/`
+(`ab/` one round each on the yardstick, `pages/` one Firefox pages session each from `pages.webpcsnap`).
+
+**The micro-op from 16 bytes to 8** (backlog "The core's heap": the decoded blocks were ~350-365 MiB of the 1 GiB on
+4 vCPUs): a kind, three register bytes and a `u32` with the kind's flags and immediate (`interp::block::pack`). What
+doesn't fit (a logical immediate's mask, an MRS constant, a SIMD&FP access's word and offset, a MOV immediate that
+isn't a rotated 32-bit value) is an 8-byte slot after the block's micro-ops, addressed from the micro-op. Decoding
+still makes the wide form, which the slow path unpacks. The block map's entries went from 12 bytes to 8, and the page
+index from a `Vec<u64>` of keys a page to a page's last key, the rest of the list threaded through the map's entries.
+
+**First measured at −30% on the small guests and −11% on the boots**, with the same work (the guest's registers
+equal after 100M steps) and `hot`'s dispatch code instruction for instruction the same. Not the stride (padded to
+16 bytes: as slow), not the field order, not the arena's alignment (shifted by 1-3 slots), not the kind's
+`transmute`, and not a spill of `done` it caused (a countdown instead: +1%). Bisected by building the new micro-op
+with the old fields beside it and taking the old handlers' text back by groups: **B.cond alone** (305 → 437 MIPS
+in Node). Its old target was `if t { o.imm } else { 4 }`, the immediate loaded only where taken, so LLVM kept a
+branch; with the offset already in a register LLVM made it a `select`, a `csel` in V8's code, and the next block's
+lookup waited for the condition instead of following the host's prediction of the guest's branch. Now B.cond, CBZ
+and TBZ read the offset where taken through a load LLVM can't hoist (`taken_imm`, a volatile read), and a condition
+is a 16-bit mask of the NZCV values it holds for, made at decode (`cond_mask`; B.cond's in its spare register bytes,
+CSEL's and CCMP's in the `u32`'s top half): the old `cond_holds` was a second jump table.
+
+| (MIPS, one round each) | base | **loop 12** | |
+|---|---|---|---|
+| `dec_mips` | 446.3 | **472.1** | +5.8% |
+| `vm_dec_flat_mips` | 444.3 | **468.2** | +5.4% |
+| `vm_dec_mmu_mips` | 441.0 | **469.0** | +6.3% |
+| Buildroot's boot | 132.8 | 134.4 | +1.3% |
+| Alpine's boot | 197.3 | 199.8 | +1.3% |
+
+Firefox's pages session (4 vCPUs, one session each): **the decoded blocks 376 → 233 MB** (`decBytes`), the renderer's
+median RSS 3,874 → 3,684 MB, busy MIPS 199 → 201, interpreted 3.58 → 3.60 G steps, wiki and BBC loads 10.9, 11.3 →
+11.5, 11.7 s (one round; these have moved ~1 s between sessions). That build counted a block's room in the arena
+as twice its length (for its constants) and restarted the arenas 15 times against 13 (13.4M decodes against 12.6M);
+the committed one counts its micro-ops and constants exactly. Planted bugs: a condition mask with one NZCV value
+flipped, and Ubfm's mask a bit short, each failing the differential test (which also caught, during the work, the
+W forms' replicated Ubfm masks).

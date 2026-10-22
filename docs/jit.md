@@ -460,9 +460,9 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
   and one flush when the table doubled from 2^22 buckets (`rust_oom` in `Jit::miss`, 2026-10-21). JavaScript
   engines' code that runs a few times, at addresses later reused, is most of those keys.
-- **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 256 MiB shared out
-  among the tables, at most 128 MiB one), and its map and page index, which also start over at `MAX_KEYS` (900,000:
-  2^20 buckets, 21 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full table would double past the one that holds them (a block of
+- **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 16M micro-ops of 8 bytes,
+  128 MiB, shared out among the tables, at most 64 MiB one), and its map and page index, which also start over at
+  `MAX_KEYS` (900,000: 2^20 buckets, 17 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full table would double past the one that holds them (a block of
   one micro-op, or none, filled the map long before the arena).
 - **A table's known blocks** (`Table::known`): at most a key per slot this epoch.
 - **Module bytes** held for tables that haven't taken them: at most `HELD_MAX` ([Sharing](#sharing)).

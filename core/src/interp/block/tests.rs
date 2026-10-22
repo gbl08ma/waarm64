@@ -14,6 +14,13 @@ const RAM: usize = 0x4000;
 const DATA: u64 = 0x2000;
 const CODE: u64 = 0x3000;
 
+/// A block's words as the cache holds them: packed at 0, its constants after it.
+fn packed(words: &[u32]) -> Vec<Uop> {
+    let mut wide: Vec<Wide> = words.iter().map(|&w| uop(w)).collect();
+    mov_runs(&mut wide);
+    pack(&wide)
+}
+
 struct Rng(u64);
 
 impl Rng {
@@ -245,8 +252,7 @@ fn blocks_run_as_the_interpreter_runs_them() {
                 val: [a.mem.read(addr, size as u32).unwrap(), 0],
             };
         }
-        let mut uops: Vec<Uop> = block.iter().map(|&w| uop(w)).collect();
-        mov_runs(&mut uops);
+        let uops = packed(&block);
         let left = 1 + r.below(block.len() as u64) as usize;
         let left = if r.below(2) == 0 { block.len() } else { left };
 
@@ -260,7 +266,7 @@ fn blocks_run_as_the_interpreter_runs_them() {
             continue;
         }
         let mut c2 = c0.clone();
-        let got = run(&mut c2, &mut Flat(&b.mem), &uops[..left], CODE);
+        let got = run(&mut c2, &mut Flat(&b.mem), &uops, left, CODE);
         let ctx = || {
             let dis: Vec<String> = block
                 .iter()
@@ -272,7 +278,7 @@ fn blocks_run_as_the_interpreter_runs_them() {
         assert_eq!(c2, c1, "{}", ctx());
         // The same through the call-free loop and its slow paths (`jit::interpret`'s).
         let mut c3 = c0.clone();
-        let got = run_hot(&mut c3, &mut Flat(&h.mem), &uops[..left], CODE);
+        let got = run_hot(&mut c3, &mut Flat(&h.mem), &uops, left, CODE);
         assert_eq!(got, want, "hot: {}", ctx());
         assert_eq!(c3, c1, "hot: {}", ctx());
         for k in 0..RAM as u64 / 8 {
@@ -331,7 +337,7 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
             let mut c1 = c0.clone();
             let want = interp::steps(&mut c1, &t.mem, None, 1);
             let mut c2 = c0.clone();
-            let got = run_hot(&mut c2, &mut Flat(&t.mem), &[u], CODE);
+            let got = run_hot(&mut c2, &mut Flat(&t.mem), &pack(&[u]), 1, CODE);
             assert_eq!(got, want, "{w:#010x} el1 {el1}");
             assert_eq!(c2, c1, "{w:#010x} el1 {el1}");
             ran += 1;
@@ -344,18 +350,14 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
 #[test]
 fn a_store_pair_stops_at_the_prefix() {
     // str w1, [x0]; str w2, [x0, #4]; ret
-    let mut uops: Vec<Uop> = [0xb900_0001, 0xb900_0402, 0xd65f_03c0]
-        .into_iter()
-        .map(uop)
-        .collect();
-    mov_runs(&mut uops);
-    assert_eq!((uops[0].k, uops[0].x >> 16), (K::StO, 1));
+    let uops = packed(&[0xb900_0001, 0xb900_0402, 0xd65f_03c0]);
+    assert_eq!((uops[0].kind(), uops[0].w >> 15 & 1), (K::StO, 1));
     for left in 1..=2 {
         let t = TestRam::new(RAM);
         let mut c = Cpu::default();
         (c.x[0], c.x[1], c.x[2]) = (DATA, 0x11, 0x22);
         assert_eq!(
-            run_hot(&mut c, &mut Flat(&t.mem), &uops[..left], CODE),
+            run_hot(&mut c, &mut Flat(&t.mem), &uops, left, CODE),
             (left as u64, None)
         );
         assert_eq!(t.mem.read(DATA, 4), Ok(0x11));
@@ -371,16 +373,12 @@ fn a_store_pair_stops_at_the_prefix() {
 #[test]
 fn a_mov_run_stops_at_the_prefix() {
     // movz x0, #1; movz x1, #2; movz x2, #3; ret
-    let mut uops: Vec<Uop> = [0xd280_0020, 0xd280_0041, 0xd280_0062, 0xd65f_03c0]
-        .into_iter()
-        .map(uop)
-        .collect();
-    mov_runs(&mut uops);
+    let uops = packed(&[0xd280_0020, 0xd280_0041, 0xd280_0062, 0xd65f_03c0]);
     let t = TestRam::new(RAM);
     for left in 1..=3 {
         let mut c = Cpu::default();
         assert_eq!(
-            run_hot(&mut c, &mut Flat(&t.mem), &uops[..left], CODE),
+            run_hot(&mut c, &mut Flat(&t.mem), &uops, left, CODE),
             (left as u64, None)
         );
         assert_eq!(
@@ -401,9 +399,9 @@ fn the_cache_drops_and_starts_over() {
     assert_eq!(c.get(CODE, &t.mem).map(<[Uop]>::len), Some(2));
     // Changed without an IC: the cache keeps the words it decoded.
     t.mem.write(CODE, 4, 0xd503_201f).unwrap();
-    assert_eq!(c.get(CODE, &t.mem).unwrap()[0].k, K::AddI64);
+    assert_eq!(c.get(CODE, &t.mem).unwrap()[0].kind(), K::AddI64);
     c.drop_page(CODE >> 12);
-    assert_eq!(c.get(CODE, &t.mem).unwrap()[0].k, K::Nop);
+    assert_eq!(c.get(CODE, &t.mem).unwrap()[0].kind(), K::Nop);
     assert_eq!(c.decoded, 2);
     // No instructions (an SVC first): no block.
     t.mem.write(CODE + 8, 4, 0xd400_0001).unwrap();
