@@ -354,10 +354,10 @@ test it against `tests/steps.txt`.
   `hot` too (`run_hot`).
 - **Its speed** (`bench/interp/REPORT.md` from "M8-INTERP loop 0"; the yardstick is
   `bench/interp/yardstick.sh`: the small guests and the boots under `VmConfig.jit` 4, with
-  `--config liftoff-only` the JIT's reference): on the dev VM 446 MIPS on the user-mode guest,
-  440-446 at EL1, 134 on Buildroot's boot and 195 on Alpine's (from 249, 176-198, 89 and 122; loop 8 +4-8%, loop
+  `--config liftoff-only` the JIT's reference): on the dev VM 467 MIPS on the user-mode guest,
+  466-469 at EL1, 136 on Buildroot's boot and 210 on Alpine's (from 249, 176-198, 89 and 122; loop 8 +4-8%, loop
   9's exclusives and barriers +9% and +6% on the boots: a generic micro-op costs `hot`'s exit and re-entry, ~14×
-  a handled one);
+  a handled one; loops 12-13 +6-7% on the boots, `bench/interp/REPORT.md`);
   on the Mac host (before the MOV runs) 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
   Buildroot at 60, and runs the hot guests at ~1,700-2,600. On the M4 the guest accesses' `ldar`/`stlr` in
   `run` took 0.24% of its cycle samples (with the instruction after); x86_64, where a sequentially consistent store
@@ -390,6 +390,8 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   FADD/FSUB/FMUL/FDIV on the JIT's fast-path rules; loop 10): the small guests −1-2%, Firefox's pages session no
   faster. Its generic path is 1.9% of what it interprets, spread over dozens of classes; the code costs `hot` more
   than it wins there.
+- **LDTR and STTR as handlers** (EL0's TLB array taken in the single-register handler; loop 13): Alpine's boot
+  1-4% slower in Node, the branch costing more than the uaccess loads it took off the slow path.
 - **One decoded-block store for every table** (loop 7's design, not built): decoding is ~0.6% of a vCPU in Firefox's
   pages session and ~1.1% in Chromium's renders on 4 vCPUs (~0.55 µs a block), so sharing could win under 1%
   (loop 10).

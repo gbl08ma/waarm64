@@ -1,0 +1,18 @@
+{
+ "bench/results/local/fin/pages2/base-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 90.74,
+   "flushes": 0,
+   "modules": 2795,
+   "mib": 130.6,
+   "overdue": 0,
+   "parks": 9352,
+   "locks": 18137248,
+   "interpGsteps": 3.52,
+   "share": 0.961,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

@@ -1517,3 +1517,23 @@ tmask a bit long, ADC ignoring the carry, a division by zero giving 1, CAS writi
 that unmask IRQs inline, MRS SP_EL0 with SPSel 0 inline (caught once the MRS test tried each key 8 times; it tried
 each once, so SPSel 0 was a coin flip); the new flags check, asserted with one more flag, failed both FMA
 models' tests.
+
+**Loops 12 and 13 against the track's base (`b853a4e`)**, the gates under the JIT (two rounds alternated,
+`results/m8-interp-l13/gates/`): Alpine's userspace 14,850 → 14,692 ms (−1.1%; its churn phase −1.9%), Alpine's boot
+423.2 → 427.2 MIPS (+1.0%, the rounds overlapping), Buildroot's 125.3 → 126.3 (+0.8%). Firefox's pages session, three
+rounds alternated (`results/m8-interp-l13/pages/`):
+
+| | base | **loops 12-13** |
+|---|---|---|
+| busy MIPS | 198, 199, 186 | **202, 204, 206** (+3%, disjoint) |
+| BBC load s | 12.0, 12.2, 13.4 | 11.0, 11.1, 12.0 |
+| wiki load s | 11.3, 11.1, 11.1 | 11.3, 11.8, 10.7 |
+| the renderer's median RSS, MB | 3,828, 3,864, 3,856 | **3,648, 3,662, 3,643** (−208) |
+| decoded blocks, MB (`decBytes`) | 379, 381, 382 | **208, 208, 208** (−45%) |
+| decodes, M | 13.0, 12.4, 12.5 | 13.5, 13.3, 13.2 |
+| interpreted G steps | 3.51, 3.55, 3.57 | 3.50, 3.56, 3.55 |
+
+**Not kept: LDTR and STTR as `Ld`/`St` with EL0's TLB array** (`ldtr.patch`, with a directed MMU test: a page EL1
+may read but EL0 may not, its EL1 entry cached, faults as the interpreter faults; a plant using EL1's context failed
+it). Alpine's boot in Node 217.3, 218.7 → 214.9, 208.9 MIPS: the branch in the single-register handler cost more
+than the uaccess loads it took off the slow path.
