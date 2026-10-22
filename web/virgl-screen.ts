@@ -56,6 +56,8 @@ export class Screen {
   /** Presents since the last read (`?displaystats`), and the time spent drawing them. */
   presents = 0;
   drawMs = 0;
+  /** Each present's time since the last read (epoch ms; `?displaystats`: bench/imgdecode/desktop.ts times rounds to the last one). */
+  presentAt?: number[];
   /** Called after a present (a stats hook). */
   onPresent?: () => void;
   /** `?avprobe` (a `flashProbe`): fed the centre pixel after each present, read back (a stall: measurements only). */
@@ -184,6 +186,7 @@ export class Screen {
     gl.drawArrays(E.TRIANGLE_STRIP, 0, 4);
     this.presents++;
     this.lastDraw = performance.now();
+    this.presentAt?.push(performance.timeOrigin + this.lastDraw);
     this.drawMs += this.lastDraw - t0;
     if (this.probe) {
       gl.readPixels(s.rect.w >> 1, s.rect.h >> 1, 1, 1, E.RGBA, E.UNSIGNED_BYTE, this.px);

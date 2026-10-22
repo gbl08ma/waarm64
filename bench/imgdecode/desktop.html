@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><title>imgdecode</title>
+<style>body{margin:0;background:#fff;font:14px sans-serif}#g{display:flex;flex-wrap:wrap}#g img{display:block}#s{position:fixed;right:4px;bottom:4px}</style>
+<body><div id="g"></div><div id="s">0</div>
+<script>
+// The desktop guest's image rounds (README.md "On the desktop guest"). Each `n` key (sent by the host) replaces the
+// grid with ?n= images (a `0` key: none, only the round's number changes: the key-to-screen baseline) of ?fmt= at ?size= px, shown ?w= CSS px wide, from fresh URLs (new decodes); the host times the
+// round to the last frame its screen presents. Nothing here waits for decodes: Firefox signals no paint of an image,
+// and img.decode() decodes at the intrinsic size where the page shows a smaller one (a second decode).
+// `?auto=<ms>` starts a round every that many ms instead (no host). Lines to stdout (dump): `IMG round <k> <ms>` at
+// the key, `IMG loaded <k> <ms>` when every image's load event has fired (performance.now(), then Date.now()).
+const q = new URLSearchParams(location.search);
+const fmt = q.get('fmt') || 'webp', size = q.get('size') || '480', w = +(q.get('w') || 320), n = +(q.get('n') ?? 16);
+const g = document.getElementById('g'), s = document.getElementById('s');
+let round = 0;
+function go(n) {
+  const k = ++round;
+  dump(`IMG round ${k} ${performance.now().toFixed(1)} ${Date.now()}\n`);
+  g.textContent = '';
+  let left = n;
+  for (let i = 0; i < n; i++) {
+    const im = new Image(w, Math.round(w * 9 / 16));
+    im.onload = im.onerror = () => { if (--left === 0) dump(`IMG loaded ${k} ${performance.now().toFixed(1)} ${Date.now()}\n`); };
+    im.src = `img/${size}/${i}.${fmt}?r=${k}`;
+    g.appendChild(im);
+  }
+  s.textContent = k;
+}
+addEventListener('keydown', (e) => { if (e.key === 'n') go(n); else if (e.key === '0') go(0); });
+if (q.get('auto')) setInterval(() => go(n), +q.get('auto'));
+dump('FFBENCH imgdecode ready\n');
+</script>

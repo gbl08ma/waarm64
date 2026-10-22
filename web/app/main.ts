@@ -531,7 +531,10 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
     if (run?.display !== display.port1) return;
     if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
-    if ((e.data as { type: string }).type === 'draw-stats') ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
+    if ((e.data as { type: string }).type === 'draw-stats') {
+      ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
+      ((window as unknown as { __devEvents?: number[] }).__devEvents ??= []).push(...((e.data as { busy: { events?: number[] } }).busy.events ?? []));
+    }
     if (e.data.type === 'capture') ((window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ??= []).push(e.data.record);
     if (e.data.type === 'flash') return flashed(e.data.t);
     if (e.data?.type !== 'mode' || !(e.data.width > 0 && e.data.height > 0)) return;
@@ -687,7 +690,10 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       } else if (m.type === 'snapshotBytes') {
         bytesAsked.get(m.id)?.(m.bytes);
         bytesAsked.delete(m.id);
-      } else if (m.type === 'render-stats') ((window as unknown as { __renderStats?: unknown[] }).__renderStats ??= []).push(m);
+      } else if (m.type === 'render-stats') {
+        ((window as unknown as { __renderStats?: unknown[] }).__renderStats ??= []).push(m);
+        ((window as unknown as { __presents?: number[] }).__presents ??= []).push(...m.presentAt);
+      }
       else if (m.type === 'flash') flashed(m.t);
     };
     gpu.onerror = (e) => {

@@ -5,7 +5,7 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, echoLease, gateway, gatewayOf, portBackend } from './gateway.ts';
-import { gpuBackend, type GpuOptions } from './gpu.ts';
+import { busy, gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
@@ -493,6 +493,7 @@ function input(ctx: Ctx, d: InputSpec): Backend {
     }
   };
   const inject = (e: number[][]) => {
+    if (e.some((x) => x[0] === 1)) busy.events?.push(performance.timeOrigin + performance.now(), 1);
     events.push(...e);
     events.splice(0, Math.max(0, events.length - INPUT_QUEUE));
     deliver();

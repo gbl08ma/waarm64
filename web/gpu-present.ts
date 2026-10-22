@@ -22,7 +22,7 @@ export type DisplayToPage =
   | { type: 'capture'; record: Uint8Array }
   /** With `probe` (`?avprobe`): a draw turned the screen's centre bright, at `t` (ms since the epoch: `performance.timeOrigin + now`). */
   | { type: 'flash'; t: number }
-  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
+  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { events?: number[]; request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
 /** Which screen a 2D machine gets: WebGL2 unless it is software (`auto`), or the one named (the page's `?gpu=canvas2d` or `gl2d`: tests and measurements). */
@@ -171,10 +171,15 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
 export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
   let width = 0, height = 0;
   if (stats && port) {
+    busy.events = [];
+    // The device worker's event loop, as canvasPresenter's: the longest a 4 ms timer was late in the second.
+    let lag = 0, tick = performance.now();
+    setInterval(() => { const n = performance.now(); lag = Math.max(lag, n - tick - 4); tick = n; }, 4);
     setInterval(() => {
-      port.postMessage({ type: 'draw-stats', n: busy.flushes, median: 0, max: 0, lag: 0, busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: 0 } } satisfies DisplayToPage);
+      port.postMessage({ type: 'draw-stats', n: busy.flushes, median: 0, max: 0, lag, busy: { ...busy, events: busy.events!.splice(0), commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: 0 } } satisfies DisplayToPage);
       Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 });
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
+      lag = 0;
     }, 1000);
   }
   let cursorImage: Uint8Array | null | undefined;

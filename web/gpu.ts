@@ -172,7 +172,9 @@ export function hashRgba(words: Uint32Array[], opaque: boolean) {
 }
 
 /** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them; the control commands by type (hex). */
-export const busy = { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {} as Record<string, number>, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 };
+/** `events` (bench/imgdecode/desktop.ts, `?displaystats` only): [epoch ms, what] pairs, flat: a control command's
+ * arrival (its type), a held reply's release (0x10000 + its type), a key injected into virtio-input (1). */
+export const busy = { events: undefined as number[] | undefined, request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {} as Record<string, number>, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 };
 
 export class Gpu {
   readonly resources = new Map<number, Resource>();
@@ -981,7 +983,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   });
   // Replies not sent yet, in order: a fenced command's waits for the host (`ready` once it has run), and with
   // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
-  type Held = { w0: number; len: number; flush: boolean; ready: boolean; behind: boolean; at: number };
+  type Held = { w0: number; len: number; flush: boolean; ready: boolean; behind: boolean; at: number; type: number };
   let held: Held[] = [];
   // The stats' queue occupancy (`?displaystats`): the most replies held at once, and the time QUEUE_FULL of them were
   // (the page's queue size: the guest's ring had no free entry, so its next command waited).
@@ -1014,6 +1016,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       busy.heldMs += performance.now() - h.at;
       if (h.behind) busy.behindMs += performance.now() - h.at;
       occupancy();
+      busy.events?.push(performance.timeOrigin + performance.now(), 0x10000 + h.type);
       ctx.complete(h.w0, h.len);
     }
   };
@@ -1029,16 +1032,18 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       }
       const room = r.write.reduce((n, s) => n + s.len, 0);
       const t0 = performance.now();
+      const type = cmd.length >= 4 ? new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) : 0;
+      busy.events?.push(performance.timeOrigin + t0, type);
       const reply = gpu.control(cmd, room);
       scatter(ram, r.write, reply);
       busy.request += performance.now() - t0;
       busy.requests++;
       const wait = gpu.takeWait();
-      const flush = !!o.paceFlushes && cmd.length >= 4 && new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) === RESOURCE_FLUSH;
+      const flush = !!o.paceFlushes && type === RESOURCE_FLUSH;
       const now = performance.now();
       if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
         // `behind`: neither fenced nor a paced flush, held only for the replies before it.
-        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now };
+        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now, type };
         held.push(h);
         occupancy();
         if (wait) {

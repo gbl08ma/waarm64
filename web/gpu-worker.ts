@@ -22,7 +22,7 @@ export type FromGpuWorker =
   /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
   | { type: 'flash'; t: number }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
+  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
 
 let ram: Uint8Array[] = [];
 let snapshotBytes = () => 0;
@@ -138,9 +138,10 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   };
   if (stats) {
     let last = { ...renderer.stats };
+    screen.presentAt = [];
     setInterval(() => {
       const s = renderer.stats;
-      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs } });
+      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, presentAt: screen.presentAt!.splice(0), drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs } });
       fences = fenceMs = fenceMaxMs = 0;
       queue.maxWaitMs = 0;
       renderer.videoStats.latencyMaxMs = 0;

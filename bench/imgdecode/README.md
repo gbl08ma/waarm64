@@ -31,3 +31,39 @@ For an A/B, the rate is the measure (`rate` in the JSON): images a second betwee
 that end in the window. The count alone moves by a round of 24 images, 25-33% of a 30 s window's count; use
 `WINDOW=60` (6-10 rounds) for a rate good to about 1%, and `WARM=15` is enough after the three rounds. Run both sides in one session,
 alternating, on the dev VM, with the PC sampler on for both (it runs during the window).
+
+## On the desktop guest (2026-10-22)
+
+What a user sees: Firefox in sway on a 3D machine, images decoded, scaled, uploaded by WebRender through virgl and
+drawn on the page's canvas. Mozilla's own linux-aarch64 build, because its symbols are on symbols.mozilla.org (the
+Arch port publishes no debug packages); the findings are in docs/jit.md ("Fast completions", "What an exit to the
+run loop costs").
+
+- `desktop-disk.sh <photos dir>`: the second disk, `target/imgpipe/disk.ext4`: Mozilla's Firefox (Terms of Use
+  skipped by policy, bench/gpu/firefox's autoconfig plus `profiler.cfg`), `desktop.html`, `photos.py`'s images (each
+  photo cropped to 16:9 at 320, 480 and 1024 px in JPEG, WebP, PNG and AVIF), perf and the decoders' tools as
+  packages (`target/imgpipe/pkg*`), `decoders.sh` and anything in `target/imgpipe/bin`; and `libxul.funcs` (the
+  symbols as `addr size name`). The photos used were the 16 of BBC News' front page in `target/ffpages` (local only:
+  other people's). Needs Pillow (a venv).
+- `desktop.ts [fmt:size:width:n ...]`: boots `target/arch/desktop.qcow2`, starts sway and Firefox on `desktop.html`.
+  The host presses `0` (the page changes a number: the key-to-screen baseline) and `n` (a round: n images from fresh
+  URLs) on the screen and times each to the last frame the screen presents. Every time is the page's
+  `performance.timeOrigin + now()` and its workers': the dev VM's wall clock drifts ~1% from it, and the first
+  rounds timed against `Date.now()` grew 11 ms a second of session. `?displaystats` gives each present's time
+  (`__presents`) and the device's events (`__devEvents`: keys injected, control commands, held replies). Options in
+  its header: the PC sampler (`PROFILE`, slows the guest 3.5×), `PERF=1` (`perf record -a -g` in the guest, fetched
+  through the serial console), `GECKO=1` (Firefox's own profiler: markers per thread), `GUEST_CMD`.
+- `perfsym.py`, `compare.py`, `gecko.py`: perf's data with libxul named, guest against native per function, and
+  Firefox's markers by round. Perf in the guest over-counts code near exits (a timer tick in a compiled loop is
+  delivered at the next exit), and the PC sampler can't name libxul's PCs: its processes map it at bases up to 8 MB
+  apart and a PC carries no process. Uprobes kill the process (no single step in the core; docs/backlog.md).
+- `decoders.sh <img dir> [R]`: Arch's `dwebp`, `djpeg`, `avifdec` and `tjbench` on the 1024 px images, per image, in
+  the guest (`GUEST_CMD`) and natively (the arch-base container).
+
+**What it showed** (4 vCPUs, the dev VM, SwiftShader): the key-to-screen baseline is ~160 ms; 16 photos at 1024 px
+shown at 320 add ~270 ms (JPEG), ~380 (WebP), ~430 (PNG), ~800 (AVIF). Firefox's own markers put a WebP round's
+decodes done by ~0.5 s and its last texture upload right after; the host renderer is busy ~3 ms a second. The
+decoders run 6.9× native in a warm process (tjbench) and 12-17× as one-shot tools (`djpeg` 14×, `dwebp` 12×,
+`avifdec` 17×, start-up subtracted: fresh buffers' page faults, ~10× native, and cold process state); a 4 KiB page
+fault costs 4.4 µs (0.42 natively), memcpy 10 GB/s (52). Nothing image-specific stood out; the guest's clock reads
+(660 ns a `clock_gettime`, 49× native) and context synchronization exits did, and are what changed.
