@@ -1455,7 +1455,8 @@ it into that buffer: regions from different times. Firefox waits on its fences b
 never gave sway a buffer with draws still held. **Fixed:** a call also waits behind a held context when it could see
 what that context draws (a submit of a context sharing an attached resource with it, a transfer of one of its
 resources); video's decode-only submits still pass (`tests/virgl-video.test.ts`, the compositor case; each half of
-the rule planted back fails it).
+the rule planted back fails it). Checked by the user on their desktop (NVIDIA): YouTube in the guest's Chromium no longer
+flickers; the green stripes at videos' right and bottom edges are gone too (below).
 
 **Measured** (`bench/gpu/chromium-flicker.ts`: the desktop image with Chromium, sway on 3D, Chromium in kiosk mode on a
 page playing sintel-silent.webm beside a frame counter in two rows of blocks, the second the first over 16; the host
