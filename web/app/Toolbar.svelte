@@ -79,7 +79,7 @@
   </button>
   <span class="sep"></span>
   <button id="save-snapshot" class="tool labelled" disabled={!canSnapshot} title={ui.current ? 'Take a snapshot: the running machine as it is, kept with it in this browser (it pauses for a moment, then runs on)' : 'Take a snapshot: the running machine as it is, to a file (it pauses for a moment, then runs on)'} onclick={() => page.takeSnapshot()}>
-    <Icon name="camera" /><span class="label">Snapshot</span>
+    <Icon name="history-toggle" /><span class="label">Snapshot</span>
   </button>
   <Menu id="load-snapshot" icon="history" title="Load a snapshot: the machine as it was when it was taken" bind:open={loadOpen} disabled={ui.busy}>
     {#if ui.current}

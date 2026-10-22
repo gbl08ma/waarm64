@@ -86,7 +86,7 @@
     <ul>
       {#each kept as s (s.id)}
         <li data-snapshot={s.id} class:orphaned={orphaned(s)}>
-          <Icon name="camera" size={18} />
+          <Icon name="history" size={18} />
           <div class="what">
             <strong>{s.name}</strong>
             <span class="meta">{new Date(s.created).toLocaleString()} · {bytesText(s.bytes)}</span>

@@ -296,7 +296,7 @@
         <div class="head"><span class="title"><h3>{ui.transient.label}</h3><span class="meta">This page's machine, from its address: its size is in the toolbar's Machine menu.</span></span></div>
         <div class="tabs" role="tablist">
           <button role="tab" aria-selected={ui.machinesTab !== 'snapshots'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="camera" size={16} />Snapshots</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />Snapshots</button>
         </div>
         {#if ui.machinesTab !== 'snapshots'}
           <div class="tab">
@@ -345,7 +345,7 @@
           <button role="tab" aria-selected={ui.machinesTab === 'disks'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks ({m.attachments.length})</button>
           <button role="tab" aria-selected={ui.machinesTab === 'network'} onclick={() => tab('network')} data-tab="network"><Icon name="network" size={16} />Network</button>
           <button role="tab" aria-selected={ui.machinesTab === 'usb'} onclick={() => tab('usb')} data-tab="usb"><Icon name="usb" size={16} />USB{m.usbDevices?.length ? ` (${m.usbDevices.length})` : ''}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="camera" size={16} />Snapshots</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />Snapshots</button>
         </div>
         <div class="tab">
           {#if ui.machinesTab === 'settings'}

@@ -7,8 +7,8 @@ import { join } from 'node:path';
 
 export const VERSION = '3.49.0';
 const ICONS = [
-  'arrow-down', 'arrow-left', 'arrow-up', 'aspect-ratio', 'bolt', 'camera', 'chevron-down', 'copy', 'cpu', 'database',
-  'database-import', 'device-desktop', 'device-gamepad-2', 'download', 'file', 'file-export', 'file-import', 'file-plus', 'git-merge', 'history',
+  'arrow-down', 'arrow-left', 'arrow-up', 'aspect-ratio', 'bolt', 'chevron-down', 'copy', 'cpu', 'database',
+  'database-import', 'device-desktop', 'device-gamepad-2', 'download', 'file', 'file-export', 'file-import', 'file-plus', 'git-merge', 'history', 'history-toggle',
   'keyboard', 'layout-columns', 'maximize', 'microphone', 'network', 'pencil', 'player-pause', 'player-play', 'player-stop', 'plug', 'plug-connected', 'plus',
   'adjustments-horizontal', 'mouse', 'refresh', 'server-2', 'settings', 'square-dashed', 'terminal-2', 'trash', 'upload', 'usb', 'volume', 'volume-off', 'world-www', 'x', 'zzz',
 ];
