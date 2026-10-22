@@ -206,8 +206,9 @@ left open, most promising first.
     sessions and `m8-heap/long/tools/heapsum.ts`, and the block interpreter's yardstick for its speed.
   - **The page index without lists** ([jit.md](jit.md) "The core's heap": since 2026-10-22 2 bytes a key, a list's
     smallest allocation 8 bytes where it was 32): what's left of it is the table of pages (33 B a bucket) and a list
-    header (24 B) a page, which matter where pages hold a key or two. No real session measured with it (the gauge's
-    `jitKeyBytes` now counts the lists exactly: read it in a pages session before going further). Dropping the index
+    header (24 B) a page, which matter where pages hold a key or two. Firefox's pages session: the block map and index 55 MiB at 1.45 M
+    keys (exact), the heap 11 MiB smaller than with whole keys (bench/boot/REPORT.md "M8: the core with exact memory
+    limits"). Dropping the index
     (an IC scanning the map) costs a scan of ~1.5 M entries per IC on a page with code, and a guest issues ~1 M ICs
     in the churn screen: not without a cheap test of whether the page has keys.
   - **Not tuned:** `KEEP_HITS` (16), `RECENT_TICKS` (the last 262,144 keys), `WARM_TICKS`, the prune's target (half
@@ -215,9 +216,10 @@ left open, most promising first.
     pages session's bbc load ~0.8 s; with the recent ones nothing measured: `bench/boot/REPORT.md` "M8: the core's
     heap bounded"). A smaller bound (say 2^20 buckets) would save ~25 MiB more and prune twice as often: try it with
     the pages session and the run-once churn if the heap gets tight. A prune takes 6-11 ms natively (release, 1.5 M keys,
-    under the cache's lock) and 19 ms in wasm (Node, tests/heap.test.ts's guest; counter word 120, `pruneNs`), all of it
-    under the cache's lock, which other vCPUs' catch-ups and tier-ups wait that long for; the session of Firefox's
-    pages and the churn screen had two prunes. Read `pruneNs` in a 4-vCPU session before splitting it.
+    under the cache's lock), 19 ms in wasm (Node, tests/heap.test.ts's guest; counter word 120, `pruneNs`) and ~35 ms
+    in Firefox's pages session on 4 vCPUs, all of it under the cache's lock, which other vCPUs' catch-ups and tier-ups
+    wait that long for. That session prunes once (in the bbc load, no slower for it), with the churn screen after it
+    twice: splitting a prune isn't worth it at that rate.
   - **The user's own session wasn't replayed:** no Chromium in the desktop image and no real sites offline; the
     run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
     flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and

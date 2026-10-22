@@ -2825,3 +2825,26 @@ growable import, alternated in one session (the dev VM, Chromium 153.0.8010.52; 
   guest in Node) took 19.3-19.5 ms either way.
 - **Kept:** no cost measured (the second module compiles while instance 0 lays the memory out; boots no slower), and
   the core's code matches the JIT's assumption that the memory never grows.
+
+**Firefox's pages session**, with the block map's page index of 2 bytes a key (docs/jit.md "The core's heap") in the
+same change: old = the core with the index of whole keys (the previous `mod.rs` with the prune's clock added, ABI 50)
+on the growable import (`?growcore`), new = this commit's core; `bench/gpu/ab.sh` from `pages.webpcsnap`, `MEMLOG=5`,
+three rounds alternating (`results/m8-exactcore/pages/`, `run.sh`). Each session's value:
+
+| | old | new |
+|---|---|---|
+| busy MIPS | 214 · 216 · 215 | 216 · 215 · 212 |
+| wiki / bbc load (s) | 10.9 · 10.7 · 10.2 / 11.2 · 10.3 · 10.9 | 11.1 · 10.8 · 10.7 / 10.8 · 10.7 · 10.8 |
+| waiting for the lock (ms) | 1687 · 1418 · 1578 | 1697 · 1666 · 1641 |
+| stalls ≥ 20 / 50 ms | 3 · 3 · 1 / 0 | 3 · 2 · 1 / 0 |
+| heap live at most, mark (MiB) | 294 · 294 · 294, 313 | 283 · 284 · 283, 307 |
+| the block map's keys at most | 1.455 · 1.464 · 1.446 M | 1.451 · 1.446 · 1.451 M |
+| the prune (one a session, ms) | 35.1 · 35.4 · 35.2 | 35.2 · 35.3 · 36.4 |
+
+- **No regression:** speed, loads and stalls within each other's spread. The lock waits ~90 ms more on new's median, inside the
+  270 ms that old's own three rounds spread over (1418-1687; new's 1641-1697).
+- **The heap 11 MiB smaller** live, 6 MiB at its mark. The gauge's block map is 55 MiB on new, exact; old's 62 was its
+  estimate of 8 B a key, and the heap's "rest" beside it (26 against 21 MiB) is what the estimate missed: the old
+  index's lists took ~5 MiB more than it said, ~12 MiB more than the new one in all.
+- **A prune in a 4-vCPU session takes ~35 ms** under the cache's lock (19 ms in tests/heap.test.ts's guest in Node): it
+  happens once, in the bbc load, which was no slower for it.

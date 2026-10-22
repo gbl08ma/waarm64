@@ -44,7 +44,8 @@ test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloa
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
 worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
 `bench/audio/snd-page.ts`), `?jit=nocw` (the JIT without its compile worker: each vCPU compiles what it installs,
-for A/B measurements; docs/jit.md "Sharing"), `?jitmb=MiB` (the JIT's code cache budget, over a stored machine's
+for A/B measurements; docs/jit.md "Sharing"), `?growcore` (the core on the memory's growable import instead of its
+exact-limits copy, for A/B measurements: [abi.md](abi.md) "A fixed-size memory"), `?jitmb=MiB` (the JIT's code cache budget, over a stored machine's
 own: `VmConfig.jit_bytes`, docs/jit.md "Memory"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
 its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page").
 

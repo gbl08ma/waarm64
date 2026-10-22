@@ -476,9 +476,11 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   regime bits; the page is the rest), 2 bytes a key, and the regions filed under a page other than their head's by
   the head's whole key. Its byte count is exact (the lists' capacities, the tables, 8 bytes of allocator a list). It
   held whole keys before (8 bytes a key, a list's smallest allocation 32 bytes): tests/heap.test.ts's guest, 1024 keys
-  a page, 0.9 M keys: the heap's live bytes 86 → 81 MiB, its mark 111 → 106 MiB.
-- **A prune** over 1.5 M keys takes 6-11 ms natively and ~19 ms in wasm (Node; counter word 120, `pruneNs`), all of it
-  under the cache's lock.
+  a page, 0.9 M keys: the heap's live bytes 86 → 81 MiB, its mark 111 → 106 MiB; Firefox's pages session, 1.45 M
+  keys: 294 → 283 MiB live, the mark 313 → 307, its speed the same (bench/boot/REPORT.md "M8: the core with exact
+  memory limits").
+- **A prune** over 1.5 M keys takes 6-11 ms natively, ~19 ms in wasm (Node; counter word 120, `pruneNs`) and ~35 ms
+  in Firefox's pages session on 4 vCPUs, all of it under the cache's lock.
 - **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index) and the
   held bytes, and each table's counters what its decoded and known blocks take (`decBytes`, `knownBytes`); the
   page's status carries them (`Vm.hostUse`, `stats().jit`).
