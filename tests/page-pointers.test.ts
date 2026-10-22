@@ -200,6 +200,16 @@ test('the mouse lock, raw mode: a click takes the mouse, its motion goes to the 
   });
   const [tx, ty] = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform)!.slice(1).map(Number);
   assert.ok(Math.abs(tx - 120 * k) < 0.01 && Math.abs(ty - 60 * k) < 0.01, `at the guest's position: ${transform} (scale ${k})`);
+  // At the screen's bottom-right corner the cursor is clipped to the screen, as a cursor is: the page doesn't overflow.
+  const before = await page.locator('#screen').boundingBox();
+  await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('#screen')!;
+    (window as unknown as { __display: MessagePort }).__display.postMessage({ type: 'cursor-at', x: c.width - 2, y: c.height - 2 });
+  });
+  await page.waitForTimeout(300);
+  const overflow = await page.evaluate(() => { const d = document.documentElement; return [d.scrollWidth - d.clientWidth, d.scrollHeight - d.clientHeight]; });
+  assert.deepEqual(overflow, [0, 0], 'no overflow with the cursor at the corner');
+  assert.deepEqual(await page.locator('#screen').boundingBox(), before, 'the screen keeps its size');
   // Turning the lock off lets go of the mouse; the pointer is the tablet's again.
   await page.evaluate(() => document.getElementById('mouse-lock-on')!.click());
   await page.waitForFunction(() => document.pointerLockElement === null, null, { timeout: 5000 });

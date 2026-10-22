@@ -359,7 +359,8 @@ function showCursor() {
 
 // While the screen holds the mouse (docs/frontend.md "Mouse lock") the browser hides the pointer, the CSS cursor with
 // it: the guest's cursor is drawn over the screen where the guest says it is (virtio-gpu's cursor position, the
-// image's top-left corner, in guest pixels), at the canvas's scale.
+// image's top-left corner, in guest pixels), as the CSS cursor is (`showCursor`): at the canvas's scale up to 128
+// device pixels, the hotspot where the guest's pointer is, smoothed unless the scale is whole, clipped to the screen.
 function drawLockCursor() {
   const c = guestCursor;
   if (c?.image) lockCursor.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(c.image.slice(0)), 64, 64), 0, 0);
@@ -370,9 +371,13 @@ function placeCursor() {
   lockCursor.hidden = !ui.mouseLocked || !c?.image;
   if (lockCursor.hidden || !c) return;
   const k = canvas.clientWidth / fb.width; // CSS pixels per guest pixel
-  lockCursor.style.width = lockCursor.style.height = `${64 * k}px`;
-  lockCursor.style.imageRendering = canvas.style.imageRendering;
-  lockCursor.style.transform = `translate(${(c.x | 0) * k}px, ${(c.y | 0) * k}px)`;
+  const scale = Number(canvas.dataset.scale) || 1;
+  const size = Math.min(128, Math.max(1, Math.round(64 * scale))) / devicePixelRatio; // CSS pixels, as showCursor's
+  const hot = size / 64; // CSS pixels per cursor pixel
+  lockCursor.style.width = lockCursor.style.height = `${size}px`;
+  lockCursor.style.imageRendering = Number.isInteger(size * devicePixelRatio / 64) ? 'pixelated' : 'auto';
+  // The guest's pointer (its hotspot) at the guest's place, the image around it at the cursor's own scale.
+  lockCursor.style.transform = `translate(${((c.x | 0) + c.hotX) * k - c.hotX * hot}px, ${((c.y | 0) + c.hotY) * k - c.hotY * hot}px)`;
 }
 const setMouseLock = (on: boolean, mode: LockMode = ui.mouseLockMode) => {
   [ui.mouseLock, ui.mouseLockMode] = [on, mode];

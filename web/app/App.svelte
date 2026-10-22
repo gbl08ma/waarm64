@@ -37,7 +37,7 @@
   <div id="screen-view">
     <div id="screen-frame">
       <canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">{ui.mouseLock ? 'Click to type and take the mouse (Esc lets it go)' : 'Click to type'}</div>
-      <canvas id="screen-cursor" width="64" height="64" hidden></canvas>
+      <div id="screen-cursor-clip"><canvas id="screen-cursor" width="64" height="64" hidden></canvas></div>
       <div id="boot" hidden={!ui.boot.shown}>
         <div id="boot-title">{ui.boot.title}</div>
         {#if ui.boot.progress === undefined}<progress id="boot-progress"></progress>{:else}<progress id="boot-progress" value={ui.boot.progress}></progress>{/if}

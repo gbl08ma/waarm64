@@ -686,7 +686,9 @@ page writes the context's output latency into the ring's header, and the guest g
     the lock (held ones are released first). A machine without a mouse has Raw disabled.
 
   The browser hides the pointer, CSS cursor and all, so the page draws the guest's cursor over the screen
-  (`#screen-cursor`) where the guest puts it (virtio-gpu's cursor position, `cursor-at`). Nothing drifts: the tablet is
+  (`#screen-cursor`) where the guest puts it (virtio-gpu's cursor position, `cursor-at`), as the CSS cursor is drawn
+  (its scale, Chromium's 128-device-pixel cap, the hotspot at the guest's pointer) and clipped to the screen as a
+  cursor is (`#screen-cursor-clip`: at an edge it would otherwise make the page overflow). Nothing drifts: the tablet is
   absolute, so after the lock the guest's pointer goes to the host's at its first move (where it was when the lock was
   taken; pointer lock can't place the host's pointer). Raw does nothing on the firmware's screens (no driver there for
   the mouse, nor for the tablet).
