@@ -554,6 +554,17 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   still end the chunk. In the desktop guest (2026-10-22, `bench/imgdecode/README.md`) a vDSO `clock_gettime` went
   from 660 to ~250 ns (13.5 natively) and `isb; mrs cntvct_el0` from 613 to ~200 ns; Firefox showing images reads
   the counter ~12K times a second and takes ~37K such resyncs.
+- **Counter reads compiled inline** (parallel SMP in realtime mode, `emit::counter`): a block with an `MRS` of
+  CNTVCT_EL0 or CNTPCT_EL0 imports the host clock (`env.now_ms`, web/vm.ts's `jitHost` passes the core's own) and
+  computes `Vm::now`'s reading from the vCPU's `jit::State::counter` (the clock's start, ticks a ms, the ticks it
+  had then and the address of the VM's last reading, which a CAS loop raises, so no vCPU sees it go back), without
+  the helper's call into the core; `Vm::now` computes it the same way, so both agree to the tick. The helper reads
+  it while the run loop hasn't set the counter (`last` 0: deterministic mode, the clock not started) and at EL0
+  without CNTKCTL_EL1's enable (it traps). In the desktop guest `mrs cntvct_el0` went from ~178 to ~115 ns (the
+  host clock call ~115 of it: nothing cheaper than `performance.now()` exists in a worker) and `isb; mrs
+  cntvct_el0` from ~200 to ~135; the boots, the userspace benchmark and the modules' size didn't move
+  (bench/boot/REPORT.md "M8: counter reads compiled inline"). tests/baremetal/timer.c reads the counter for 50 ms
+  at EL1 and EL0 so the compiled reads run (checks 45-47).
 - **What an exit to the run loop costs** (`mrs cntfrq_el0`, which still exits, in a loop in the desktop guest): 413
   ns, then 372 with the JIT's ~40 counter words published every 64K steps instead of at every chunk's end
   (`JIT_PUBLISH`; the steps and the PC, the PC sampler's, still at every one), then 258 with the timers checked

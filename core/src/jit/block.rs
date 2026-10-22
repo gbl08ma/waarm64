@@ -8,7 +8,7 @@
 
 use super::Config;
 use super::emit;
-use super::wasm::{I32, I64, Module};
+use super::wasm::{F64, I32, I64, Module};
 use crate::decode::{Op, decode};
 use crate::mem::Mem;
 use std::collections::HashMap;
@@ -560,6 +560,17 @@ pub fn module(
             *x = Some(m.import_func("t", &(idx + el as u32).to_string(), bt));
         }
     }
+    // The host clock, for a counter read (parallel SMP).
+    let clock = (parallel
+        && regions.iter().flat_map(|r| &r.blocks).any(|b| {
+            b.words
+                .iter()
+                .any(|&w| crate::interp::sys::is_counter_mrs(w))
+        }))
+    .then(|| {
+        let t = m.ty(&[], &[F64]);
+        m.import_func("env", "now_ms", t)
+    });
     m.import_core_memory(cfg.pages);
     if parallel {
         let z = m.zero_global();
@@ -593,6 +604,7 @@ pub fn module(
                 crypto,
                 parallel,
                 pair_locks,
+                clock,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -603,6 +615,7 @@ pub fn module(
                 crypto,
                 parallel,
                 pair_locks,
+                clock,
             }
         };
         let env = Env {

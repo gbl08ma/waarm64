@@ -441,6 +441,10 @@ impl Vm {
                 ctx: (self as *const Vm).cast(),
                 cpu: c,
             });
+            #[cfg(target_arch = "wasm32")]
+            if self.realtime() {
+                v.jit.counter = self.counter();
+            }
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }

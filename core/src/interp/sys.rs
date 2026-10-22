@@ -150,7 +150,7 @@ const RMR: u32 = sr(3, 0, 12, 0, 2);
 const CNTKCTL: u32 = sr(3, 0, 14, 1, 0);
 const CNTFRQ: u32 = sr(3, 3, 14, 0, 0);
 const CNTPCT: u32 = sr(3, 3, 14, 0, 1);
-const CNTVCT: u32 = sr(3, 3, 14, 0, 2);
+pub(crate) const CNTVCT: u32 = sr(3, 3, 14, 0, 2);
 const CNTP_TVAL: u32 = sr(3, 3, 14, 2, 0);
 const CNTP_CTL: u32 = sr(3, 3, 14, 2, 1);
 const CNTP_CVAL: u32 = sr(3, 3, 14, 2, 2);
@@ -609,6 +609,12 @@ pub fn is_rndr(i: u32) -> bool {
 /// (parallel SMP's run loop lets the JIT's helpers complete it in place).
 pub fn is_counter_read(i: u32) -> bool {
     bit(i, 21) && matches!(bits(i, 20, 5), CNTVCT | CNTPCT)
+}
+
+/// Whether the word `w` is an MRS of CNTVCT_EL0 or CNTPCT_EL0 (the JIT
+/// compiles those as reads of the host clock in parallel SMP).
+pub fn is_counter_mrs(w: u32) -> bool {
+    w & 0xfff0_0000 == 0xd530_0000 && is_counter_read(w)
 }
 
 /// Whether the [`Exit::Platform`] access `i` can show a timer's interrupt

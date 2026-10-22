@@ -52,6 +52,22 @@ pub struct State {
     /// the run loop would do nothing more with is finished in place, and the
     /// block goes on.
     pub fast: Option<Fast>,
+    /// The counter as compiled code reads it (`emit::mrs`): set by parallel
+    /// SMP's realtime run loop before each chunk, zero (`last` 0) elsewhere.
+    pub counter: Counter,
+}
+
+/// [`State::counter`]: CNTVCT = `base` + the host clock's ms since `t0`
+/// times `scale`, made at least what any vCPU last read through `last` (the
+/// wasm address of `Vm::last`; 0: a helper call reads it instead). `Vm::now`
+/// computes it the same way, so both agree to the tick.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct Counter {
+    pub t0: f64,
+    pub scale: f64,
+    pub base: u64,
+    pub last: u32,
 }
 
 /// [`State::fast`]: `f(ctx, cpu, vcpu, insn, exit)` finishes `exit`, which

@@ -78,10 +78,11 @@ export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8
  * accessor over `spill`, memory 1 first (web/spill.ts).
  */
 export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = [], compile?: MessagePort, spill: WebAssembly.Memory[] = []) {
-  const jit = jitHost(memory, compile);
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
+  const now_ms = wrap('clock', () => clock + performance.now());
+  const jit = jitHost(memory, now_ms, compile);
+  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
 }
 
 /**
@@ -266,12 +267,12 @@ function collect() {
  * The host half of the JIT: compiles a module the core generated,
  * synchronously, and puts its exports f0, f1, … into the core's function table
  * at JIT slot `slot` on (after the core's own entries). The modules import the
- * memory, the table and the core's exports (its helpers) from `env`, and
+ * memory, the table, the core's exports (its helpers) and the host clock (`now_ms`) from `env`, and
  * already-installed blocks they chain to from `t`, by table index. With a
  * port to the compile worker (`compile`), the core hands it each module it
  * emits first, and installs it once compiled there: a hit in V8's module cache.
  */
-function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
+function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: MessagePort) {
   let table: WebAssembly.Table | undefined;
   let base = 0;
   let imports: WebAssembly.Imports = {};
@@ -297,7 +298,7 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
     bind(core: WebAssembly.Instance) {
       table = core.exports.__indirect_function_table as WebAssembly.Table;
       base = table.length;
-      imports = { env: { ...core.exports, memory, table } };
+      imports = { env: { ...core.exports, memory, table, now_ms } };
     },
     install(ptr: number, len: number, slot: number, seq: number): number {
       if (!table) return -1;

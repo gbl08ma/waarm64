@@ -113,5 +113,22 @@ int main(void) {
   set_sysreg(cntkctl_el1, 2 | 1 << 8); // and EL0VTEN
   run_el0(user_cntv_ctl, (u64)user_stack_top);
   check(n_trap == 2, 44);
+
+  // The same for 50 ms of the counter, long enough for the JIT to compile
+  // these reads (in parallel SMP inline, from the host clock): never going
+  // back, at EL1 or EL0, and EL0's trapping whenever EL0VCTEN is clear.
+  u64 end = sysreg(CNTVCT_EL0) + frq / 20, prev = 0;
+  for (;;) {
+    u64 t = sysreg(CNTVCT_EL0);
+    check(t >= prev, 45);
+    u64 traps = n_trap;
+    set_sysreg(cntkctl_el1, 0);
+    run_el0(user_cntvct, (u64)user_stack_top);
+    check(n_trap == traps + 1 && NO_RT(last_trap) == TRAP_MRS(0, 2), 46);
+    set_sysreg(cntkctl_el1, 2);
+    prev = run_el0(user_cntvct, (u64)user_stack_top);
+    check(prev >= t && n_trap == traps + 1, 47);
+    if (prev >= end) break;
+  }
   return 0;
 }

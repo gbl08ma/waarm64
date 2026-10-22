@@ -1150,6 +1150,9 @@ pub struct Ctx {
     /// The wasm address of the RAM's pair locks ([`crate::mem::Mem::pair_locks`]),
     /// which CASP takes in parallel SMP.
     pub pair_locks: u32,
+    /// The host clock (`env.now_ms`, imported by a parallel SMP module with a
+    /// counter read): CNTVCT and CNTPCT read inline ([`counter`]).
+    pub clock: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2748,8 +2751,14 @@ fn fallback_chain(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, writt
 /// MRS of a register [`sys::plain`] reads inline at the block's EL (M6 loop
 /// 1); false for the rest (timers, `ISR_EL1`, traps: helper calls).
 fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
-    use crate::interp::sys::{Plain, plain};
+    use crate::interp::sys::{Plain, is_counter_mrs, plain};
     let (rt, key) = (bits(i, 4, 0), bits(i, 20, 5));
+    if let Some(now) = cx.clock
+        && is_counter_mrs(i)
+    {
+        counter(c, cx, now, i, k);
+        return true;
+    }
     let Some(p) = plain(key, cx.el1) else {
         return false;
     };
@@ -2783,6 +2792,60 @@ fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
         }
     }
     true
+}
+
+/// MRS of CNTVCT_EL0 or CNTPCT_EL0 with the host clock `now` (parallel SMP):
+/// `Vm::now`'s reading from the vCPU's [`Counter`](super::Counter), without
+/// the helper's call into the core. The helper reads it while the counter is
+/// off (`last` 0) and at EL0 without CNTKCTL_EL1's enable (it traps).
+fn counter(c: &mut Func, cx: &Ctx, now: u32, i: u32, k: usize) {
+    use super::{Counter, State};
+    const K: usize = offset_of!(Vcpu, jit) + offset_of!(State, counter);
+    const T0: u32 = (K + offset_of!(Counter, t0)) as u32;
+    const SCALE: u32 = (K + offset_of!(Counter, scale)) as u32;
+    const BASE: u32 = (K + offset_of!(Counter, base)) as u32;
+    const LAST: u32 = (K + offset_of!(Counter, last)) as u32;
+    const F64_LOAD: u8 = 0x2b;
+    let rt = bits(i, 4, 0);
+    // Scratch: the reading (i64 2), the last one (i64 3), `last`'s address (i32 6).
+    let (t, old, last) = (2, 3, 6);
+    c.local_get(VCPU).i32_load(LAST).local_tee(last);
+    c.op(EQZ).op(EQZ);
+    if !cx.el1 {
+        // EL0VCTEN (bit 1) for CNTVCT, EL0PCTEN (bit 0) for CNTPCT.
+        let en = if bits(i, 20, 5) == crate::interp::sys::CNTVCT {
+            2
+        } else {
+            1
+        };
+        c.local_get(VCPU)
+            .i64_load(offset_of!(Cpu, cntkctl_el1) as u32);
+        c.i64_const(en).i64_and().op(EQZ + WC).op(EQZ).op(AND);
+    }
+    c.hint(true).if_();
+    let before = c.regs;
+    c.call(now).local_get(VCPU).memarg(F64_LOAD, 3, T0).op(0xa1); // f64.sub
+    c.local_get(VCPU).memarg(F64_LOAD, 3, SCALE).op(0xa2); // f64.mul
+    c.op(0xfc).op(7); // i64.trunc_sat_f64_u
+    c.local_get(VCPU).i64_load(BASE).op(ADD + W).local_set(t);
+    // Raise `last` to it, or read the later reading another vCPU left there.
+    c.block().loop_();
+    c.local_get(last)
+        .atomic(ATOMIC_LOAD[3], 3, 0)
+        .local_tee(old)
+        .local_get(t)
+        .op(GE_U + WC)
+        .if_();
+    c.local_get(old).local_set(t).br(2);
+    c.end();
+    c.local_get(last).local_get(old).local_get(t);
+    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, 0);
+    c.local_get(old).op(NE + WC).hint(false).br_if(0);
+    c.end().end();
+    set(c, true, rt, |c| {
+        c.local_get(t);
+    });
+    fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
 }
 
 /// MSR of a register [`sys::plain_write`] names, and DAIFSet, inline at the
@@ -3434,6 +3497,7 @@ mod tests {
         crypto: true,
         parallel: false,
         pair_locks: 0x100,
+        clock: None,
     };
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
@@ -3459,6 +3523,33 @@ mod tests {
     /// `needle` occurs in `hay`.
     fn has(hay: &[u8], needle: &[u8]) -> bool {
         hay.windows(needle.len()).any(|w| w == needle)
+    }
+
+    #[test]
+    fn counter_reads_inline_with_the_clock() {
+        use crate::jit::wasm::uleb;
+        // MRS X3, CNTVCT_EL0: a helper call without the clock (`emit_in` None).
+        let mrs = 0xd53be043;
+        assert!(emit_in(mrs, 0, &FLAT).is_none());
+        let par = Ctx {
+            clock: Some(9),
+            parallel: true,
+            ..FLAT
+        };
+        let has = |b: &[u8], w: &[u8]| b.windows(w.len()).any(|x| x == w);
+        // CNTKCTL_EL1's offset, as the EL0 check loads it.
+        let mut kctl = vec![0x29, 3];
+        uleb(&mut kctl, offset_of!(Cpu, cntkctl_el1) as u64);
+        let el0 = emit_in(mrs, 0, &par).unwrap();
+        assert!(has(&el0, &[0x10, 9]), "the clock's call");
+        assert!(has(&el0, &kctl), "EL0 checks EL0VCTEN");
+        let el1 = emit_in(mrs, 0, &Ctx { el1: true, ..par }).unwrap();
+        assert!(has(&el1, &[0x10, 9]) && !has(&el1, &kctl));
+        // CNTFRQ_EL0 isn't the counter.
+        assert!(!has(
+            &emit_in(0xd53be003, 0, &par).unwrap_or_default(),
+            &[0x10, 9]
+        ));
     }
 
     #[test]
@@ -3917,6 +4008,7 @@ mod tests {
             crypto: true,
             parallel: false,
             pair_locks: 0x100,
+            clock: None,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

@@ -2772,3 +2772,29 @@ Medians of each round:
 
 Every total 2.0-2.6% faster with the arms' rounds apart; compress 1.0% slower with its rounds apart too (at the noise
 floor; not looked into).
+
+## M8: counter reads compiled inline (2026-10-22)
+
+The step after "exits finished in place": a block's `mrs cntvct_el0` (or `cntpct_el0`) in parallel SMP calls the host
+clock import itself and computes the counter inline (docs/jit.md "Counter reads compiled inline"), where it called the
+helper, which ran the instruction through the interpreter and the fast completion into `Vm::now`. In the guest
+(`target/imgpipe/clk`, the desktop guest on the dev VM): `mrs cntvct_el0` ~178 → ~115 ns, `isb; mrs cntvct_el0` ~200 →
+~135, `clock_gettime` ~250 → ~237 (one run against this report's earlier ones). The host clock call is ~115 ns of
+what's left.
+
+**A/B** (the dev VM, Chromium 153.0.8010.52; A = `c4deed6`, B = this change; one session, A B B A A B, three rounds a
+side; JSON and the script in `results/m8-clock/`). Medians of each round:
+
+| ms | A | B | B/A |
+|---|---|---|---|
+| `smp_alpine_jit_n1_total` | 7,596 · 7,581 · 7,677 | 7,618 · 7,640 · 7,569 | 1.003 |
+| `smp_alpine_jit_n2_total` | 7,147 · 7,105 · 7,244 | 7,163 · 7,180 · 7,101 | 1.002 |
+| `smp_alpine_jit_n4_total` | 7,155 · 7,138 · 7,262 | 7,186 · 7,222 · 7,150 | 1.004 |
+| `smp_user_jit_n4_total` | 15,399 · 15,302 · 15,238 | 15,333 · 15,465 · 15,367 | 1.004 |
+| of it: SQLite | 2,103 · 2,130 · 2,116 | 2,160 · 2,236 · 2,155 | 1.021 |
+
+Every total within the noise with the rounds overlapping; SQLite 2.1% slower with its rounds apart (the last A/B had
+its A rounds spread over 2,144-2,399: not looked into). The modules' size didn't move: 36.6-40.5 KB a module in the
+boots and 31.6-32.5 KB in the userspace run on both arms (`counters.jit.bytes` / `modules`): only a module with a
+counter read imports the clock, and few blocks have one. Kept for the guest's clock reads, which the benchmarks barely
+make.

@@ -870,6 +870,13 @@ impl Vm {
     /// The counter value (CNTPCT = CNTVCT), the same for every vCPU.
     pub fn now(&self) -> u64 {
         if self.realtime() {
+            #[cfg(target_arch = "wasm32")]
+            let t = match self.counter() {
+                k if k.last == 0 => k.base,
+                // SAFETY: a host function with no preconditions.
+                k => k.base + ((unsafe { now_ms() } - k.t0) * k.scale) as u64,
+            };
+            #[cfg(not(target_arch = "wasm32"))]
             let t = (self.clock.ns() as u128 * self.cfg.cntfrq as u128 / 1_000_000_000) as u64;
             if self.parallel() {
                 // Threads read the clock at different times: never let one
@@ -879,6 +886,28 @@ impl Vm {
             return t;
         }
         self.steps * self.cfg.ticks_per_insn + self.skipped
+    }
+
+    /// The realtime counter's parameters, as compiled code reads it
+    /// (`jit::Counter`; `last` 0 while the clock isn't counting).
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn counter(&self) -> crate::jit::Counter {
+        let frq = self.cfg.cntfrq;
+        let t0 = self.clock.t0.load(Ordering::Acquire);
+        let base = self.clock.base.load(Ordering::Relaxed);
+        let base = (base as u128 * frq as u128 / 1_000_000_000) as u64;
+        if t0 == Clock::UNSTARTED {
+            return crate::jit::Counter {
+                base,
+                ..Default::default()
+            };
+        }
+        crate::jit::Counter {
+            t0: f64::from_bits(t0),
+            scale: frq as f64 / 1e3,
+            base,
+            last: self.last.as_ptr() as usize as u32,
+        }
     }
 
     /// Runs at most `budget` steps of all vCPUs; returns the exit kind, with
