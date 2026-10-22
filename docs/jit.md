@@ -546,6 +546,25 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
 - **Parallel SMP** also compiles DSB as a helper call (the interpreter's DSB ends the chunk under
   `cpu::FEATURE_PARALLEL`, where the run loop completes this vCPU's TLBI IS broadcasts); ISB and
   ERET were helper calls already and end the chunk the same way.
+- **Fast completions** (parallel SMP in realtime mode, `jit::State::fast`, set by the run loop before each chunk
+  while the vCPU has no TLBI IS of its own to wait for): the helpers finish in place, and the block goes on, the
+  exits the run loop would only complete. A CNTVCT_EL0/CNTPCT_EL0 read takes the VM's counter (`Vm::now`). ISB, DSB,
+  ERET and DAIF writes retire when nothing is queued for the vCPU (`CpuPar::pending`), its ASID is published, and
+  no IRQ is signalled while IRQs are unmasked; any of those, and an SCTLR write that switches the interpreter copy,
+  still end the chunk. In the desktop guest (2026-10-22, `bench/imgdecode/README.md`) a vDSO `clock_gettime` went
+  from 660 to ~250 ns (13.5 natively) and `isb; mrs cntvct_el0` from 613 to ~200 ns; Firefox showing images reads
+  the counter ~12K times a second and takes ~37K such resyncs.
+- **What an exit to the run loop costs** (`mrs cntfrq_el0`, which still exits, in a loop in the desktop guest): 413
+  ns, then 372 with the JIT's ~40 counter words published every 64K steps instead of at every chunk's end
+  (`JIT_PUBLISH`; the steps and the PC, the PC sampler's, still at every one), then 258 with the timers checked
+  against the clock every 4096 steps or when their registers change (`TIMER_STEPS`) instead of at every iteration
+  (~240 ns at the end; the boots and the userspace benchmark 2.0-2.6% faster, bench/boot/REPORT.md "M8: exits
+  finished in place"):
+  the host clock (`env.now_ms`, `performance.now()` through an import) costs ~115 ns a call. A timer that comes due
+  is then taken up to 4096 steps late, as one inside a chunk always was, but a guest that looks sees it at once:
+  every platform access other than a counter read (a timer's ISTATUS, ISR_EL1, the GIC's registers) drives the
+  timer lines first (`drive_timers`; tests/baremetal/timer.c's check 12 polls ISTATUS and then reads ISR_EL1). What's left is in [backlog.md](backlog.md)
+  "Parallel SMP".
 
 ## Emission (`emit.rs`)
 

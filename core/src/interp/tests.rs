@@ -1559,3 +1559,23 @@ fn crypto_feature_gate() {
         2 << 20 | 1 << 16 | 1 << 12 | 1 << 8 | 2 << 4
     );
 }
+
+#[test]
+fn fast_completion_classes() {
+    // mrs x1, cntvct_el0; mrs x1, cntpct_el0: counter reads; msr cntv_cval_el0, x1 and mrs x1, cntfrq_el0 aren't.
+    assert!(sys::is_counter_read(0xd53be041));
+    assert!(sys::is_counter_read(0xd53be021));
+    assert!(!sys::is_counter_read(0xd51be341));
+    assert!(!sys::is_counter_read(0xd53be001));
+    // The counter and CNTFRQ show no timer state; mrs x1, cntv_ctl_el0 and mrs x1, isr_el1 do.
+    assert!(!sys::shows_timers(0xd53be041));
+    assert!(!sys::shows_timers(0xd53be001));
+    assert!(sys::shows_timers(0xd53be321));
+    assert!(sys::shows_timers(0xd538c101));
+    // msr daifclr, #2; msr daifset, #2; msr daif, x1: DAIF writes; mrs x1, daif and msr sctlr_el1, x1 aren't.
+    assert!(sys::is_daif_write(0xd50342ff));
+    assert!(sys::is_daif_write(0xd50342df));
+    assert!(sys::is_daif_write(0xd51b4221));
+    assert!(!sys::is_daif_write(0xd53b4221));
+    assert!(!sys::is_daif_write(0xd5181001));
+}

@@ -605,6 +605,31 @@ pub fn is_rndr(i: u32) -> bool {
     matches!(bits(i, 20, 5), RNDR | RNDRRS)
 }
 
+/// Whether the [`Exit::Platform`] access `i` reads CNTVCT_EL0 or CNTPCT_EL0
+/// (parallel SMP's run loop lets the JIT's helpers complete it in place).
+pub fn is_counter_read(i: u32) -> bool {
+    bit(i, 21) && matches!(bits(i, 20, 5), CNTVCT | CNTPCT)
+}
+
+/// Whether the [`Exit::Platform`] access `i` can show a timer's interrupt
+/// state (its ISTATUS, ISR_EL1, the GIC's registers): everything but the
+/// counter reads and CNTFRQ_EL0.
+pub fn shows_timers(i: u32) -> bool {
+    !is_counter_read(i) && bits(i, 20, 5) != CNTFRQ
+}
+
+/// Whether `i` writes DAIF: MSR DAIFSet or DAIFClr, or MSR DAIF, Xt (the
+/// writes whose `Exit::Resync` only asks the run loop to look for an IRQ).
+pub fn is_daif_write(i: u32) -> bool {
+    if bit(i, 21) {
+        return false; // MRS
+    }
+    if bits(i, 20, 19) == 0 {
+        return bits(i, 18, 16) == 3 && matches!(bits(i, 7, 5), 6 | 7);
+    }
+    bits(i, 20, 5) == DAIF_R
+}
+
 /// Completes an `RNDR` or `RNDRRS` read (`i`) with `value`: it never fails,
 /// so NZCV is 0000 (a failure would set Z). The caller retires the instruction.
 pub fn rndr(c: &mut Cpu, i: u32, value: u64) {

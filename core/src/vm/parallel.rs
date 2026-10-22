@@ -115,6 +115,24 @@ pub(super) struct CpuPar {
     asid: AtomicU64,
 }
 
+/// [`jit::Fast::f`] for a [`Vm`] in parallel mode ([`Vm::fast`]).
+///
+/// # Safety
+/// `ctx` is the `Vm` whose run loop set the hook, running vCPU `c` as `v`.
+unsafe fn fast_exit(ctx: *const (), c: usize, v: &mut Vcpu, insn: u32, e: Exit) -> bool {
+    // SAFETY: guaranteed by the caller.
+    let vm = unsafe { &*ctx.cast::<Vm>() };
+    vm.fast(c, v, insn, e)
+}
+
+/// Steps between two publications of a running vCPU's JIT and TLB counters
+/// (`publish_cpu`): ~0.1 ms of guest code at the JIT's speed.
+const JIT_PUBLISH: u64 = 1 << 16;
+
+/// Steps between two checks of a running vCPU's timers against the clock
+/// (`run_loop`), unless their registers change: a few µs of guest code.
+const TIMER_STEPS: u64 = 4096;
+
 /// `CpuPar::asid` when a TLBI IS must wait for the vCPU whatever its ASID
 /// (`mmu::Tlb::miss` stores it too).
 const ANY: u64 = u64::MAX;
@@ -186,6 +204,13 @@ pub(super) struct Own {
     wfi: bool,
     /// When its last run ended (clock ns), if it ran.
     out: Option<u64>,
+    /// `steps` when its JIT's counters were last published (`publish_cpu`).
+    jit_at: u64,
+    /// `steps` when its timers were last checked against the clock, and
+    /// their registers then (CNTV_CTL, CNTV_CVAL, CNTP_CTL, CNTP_CVAL; `None`:
+    /// not checked yet, as after a restore).
+    timer_at: u64,
+    timer_regs: Option<[u64; 4]>,
 }
 
 /// Waits while `word` holds `expected`, at most `ns` nanoseconds (or until a
@@ -249,7 +274,7 @@ impl Vm {
         let _ = p
             .state
             .compare_exchange(RUN, OUT, Ordering::SeqCst, Ordering::SeqCst);
-        self.publish_cpu(c, v, own);
+        self.publish_cpu(c, v, own, true);
         own.out = Some(self.clock.ns());
         own.exit.kind = kind as u64;
         own.exit.retired = own.steps - start;
@@ -331,14 +356,20 @@ impl Vm {
             if own.steps - start >= budget {
                 return exit::BUDGET;
             }
-            let now = self.now();
-            let ppi = timers(&v.cpu, now);
-            if ppi != own.ppi {
-                let mut pl = self.plat_of(c);
-                pl.gic.set_level(c, IRQ_VTIMER, ppi.0);
-                pl.gic.set_level(c, IRQ_PTIMER, ppi.1);
-                self.refresh(&mut pl);
-                own.ppi = ppi;
+            // The timers against the clock (a host call) when TIMER_STEPS steps passed since they last were,
+            // their registers changed, or the vCPU waits in WFI; a timer that comes due between is seen
+            // that many steps late at most (and at once by a guest that looks: `Exit::Platform`).
+            let regs = [
+                v.cpu.cntv_ctl_el0,
+                v.cpu.cntv_cval_el0,
+                v.cpu.cntp_ctl_el0,
+                v.cpu.cntp_cval_el0,
+            ];
+            let check =
+                own.wfi || own.timer_regs != Some(regs) || own.steps - own.timer_at >= TIMER_STEPS;
+            let now = if check { self.now() } else { 0 };
+            if check {
+                self.drive_timers(c, v, own, now);
             }
             // The xHCI's completions once their latency passed. An idle vCPU waits for that too
             // (below): another one may be what keeps the machine busy.
@@ -404,14 +435,21 @@ impl Vm {
                 k => k.min(CHUNK),
             };
             let n = chunk.min(budget - (own.steps - start));
+            // The helpers' fast completions (`fast`): realtime only, as the counter they read is the host's clock.
+            v.jit.fast = (self.realtime() && own.waits.is_empty()).then_some(jit::Fast {
+                f: fast_exit,
+                ctx: (self as *const Vm).cast(),
+                cpu: c,
+            });
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }
             } else {
                 interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n)
             };
+            v.jit.fast = None;
             own.steps += k;
-            self.publish_cpu(c, v, own);
+            self.publish_cpu(c, v, own, false);
             if let Some(e) = e
                 && let Some(kind) = self.handle_par(c, v, own, e)
             {
@@ -422,6 +460,71 @@ impl Vm {
             if v.jit.cache.as_mut().is_some_and(|j| j.park_exit()) {
                 return exit::BUDGET;
             }
+        }
+    }
+
+    /// Finishes in place, for the JIT's helper, an exit of vCPU `c` that the run
+    /// loop would only complete and go on from: a counter read, and the
+    /// context synchronization of ISB, DSB, ERET and DAIF writes when this
+    /// vCPU has nothing queued to drain, no TLBI IS of its own to wait for (the
+    /// hook is set only then), its ASID published, and no IRQ to take. A timer
+    /// that comes due meanwhile is seen at the chunk's end, as anywhere else
+    /// in a chunk. Returns false (nothing changed) otherwise.
+    fn fast(&self, c: usize, v: &mut Vcpu, insn: u32, e: Exit) -> bool {
+        use crate::decode::{Op, decode};
+        match e {
+            Exit::Platform(i) if sys::is_counter_read(i) => {
+                v.cpu.set_reg(i & 31, self.now());
+                v.cpu.pc = v.cpu.pc.wrapping_add(4);
+                true
+            }
+            Exit::Resync => {
+                let op = decode(insn);
+                let sync = matches!(op, Op::ISB | Op::DSB | Op::ERET)
+                    || matches!(op, Op::MSR_imm | Op::MSR_reg) && sys::is_daif_write(insn);
+                let p = &self.shared.cpus[c].par;
+                if !sync || p.pending.load(Ordering::SeqCst) {
+                    return false;
+                }
+                if v.cpu.pstate & PSTATE_I == 0 && p.irq.load(Ordering::SeqCst) {
+                    return false;
+                }
+                if self.vcpus.len() > 1 {
+                    // As the run loop publishes it before a chunk (`broadcast`).
+                    let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 && !v.tlb.low_global {
+                        crate::mmu::asid(&v.cpu)
+                    } else {
+                        ANY
+                    };
+                    if p.asid.load(Ordering::Relaxed) != asid {
+                        return false;
+                    }
+                }
+                fence(Ordering::SeqCst);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Drives vCPU `c`'s timer lines into the GIC as of counter value `now`
+    /// (`run_loop` every [`TIMER_STEPS`] steps or when they may have changed,
+    /// and before a platform access that can show them).
+    fn drive_timers(&self, c: usize, v: &Vcpu, own: &mut Own, now: u64) {
+        own.timer_at = own.steps;
+        own.timer_regs = Some([
+            v.cpu.cntv_ctl_el0,
+            v.cpu.cntv_cval_el0,
+            v.cpu.cntp_ctl_el0,
+            v.cpu.cntp_cval_el0,
+        ]);
+        let ppi = timers(&v.cpu, now);
+        if ppi != own.ppi {
+            let mut pl = self.plat_of(c);
+            pl.gic.set_level(c, IRQ_VTIMER, ppi.0);
+            pl.gic.set_level(c, IRQ_PTIMER, ppi.1);
+            self.refresh(&mut pl);
+            own.ppi = ppi;
         }
     }
 
@@ -477,6 +580,11 @@ impl Vm {
                 return Some(exit::UNIMPLEMENTED);
             }
             Exit::Platform(i) => {
+                // A guest reading a timer's ISTATUS, ISR_EL1 or the GIC sees its lines as of now.
+                let now = self.now();
+                if sys::shows_timers(i) {
+                    self.drive_timers(c, v, own, now);
+                }
                 let cpu = &mut v.cpu;
                 if let Some(r) = sys::icc(cpu.features, i >> 5 & 0xffff) {
                     let (rt, read) = (i & 31, i & 1 << 21 != 0);
@@ -491,7 +599,7 @@ impl Vm {
                     sys::rndr(cpu, i, v.rng.draw());
                 } else {
                     let irq = self.shared.cpus[c].par.irq.load(Ordering::SeqCst);
-                    platform(cpu, i, self.now(), self.cfg.cntfrq, irq);
+                    platform(cpu, i, now, self.cfg.cntfrq, irq);
                 }
                 v.cpu.pc = v.cpu.pc.wrapping_add(4);
                 own.steps += 1;
@@ -834,10 +942,19 @@ impl Vm {
     }
 
     /// Publishes vCPU `c`'s counts in its counters block.
-    fn publish_cpu(&self, c: usize, v: &Vcpu, own: &Own) {
+    /// Publishes vCPU `c`'s counters: the steps and PC at every chunk's end
+    /// (the PC sampler's), the rest (the JIT's ~40 words) every
+    /// [`JIT_PUBLISH`] steps, or always with `all` (the run's end): an exit
+    /// that ends a chunk shouldn't pay for words the host reads a few times a
+    /// second.
+    fn publish_cpu(&self, c: usize, v: &Vcpu, own: &mut Own, all: bool) {
         let k = &self.shared.cpus[c].counters;
         k.retired.store(own.steps, Ordering::Relaxed);
         k.pc.store(v.cpu.pc, Ordering::Relaxed);
+        if !all && own.steps - own.jit_at < JIT_PUBLISH {
+            return;
+        }
+        own.jit_at = own.steps;
         let t = &v.tlb.stats;
         k.tlb_misses.store(t.misses, Ordering::Relaxed);
         k.tlb_walks.store(t.walks, Ordering::Relaxed);

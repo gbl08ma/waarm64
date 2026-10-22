@@ -47,6 +47,22 @@ pub struct State {
     pub jc: *mut Jc,
     pub hot: *mut u32,
     pub cache: Option<Box<Jit>>,
+    /// Parallel SMP's fast completions (`vm::parallel`, set by its run loop
+    /// before each chunk; `None` elsewhere): an exit a helper call raised that
+    /// the run loop would do nothing more with is finished in place, and the
+    /// block goes on.
+    pub fast: Option<Fast>,
+}
+
+/// [`State::fast`]: `f(ctx, cpu, vcpu, insn, exit)` finishes `exit`, which
+/// the helper raised for `insn` (its PC is the interpreter's: on the
+/// instruction unless the exit retired it), and returns true, or returns false
+/// and changes nothing.
+#[derive(Clone, Copy)]
+pub struct Fast {
+    pub f: unsafe fn(*const (), usize, &mut Vcpu, u32, Exit) -> bool,
+    pub ctx: *const (),
+    pub cpu: usize,
 }
 
 /// Compile policy (the knobs docs/jit.md "Compile policy" describes).
@@ -2202,6 +2218,8 @@ pub unsafe extern "C" fn jit_exec_flat(v: *mut Vcpu, insn: u32, pc: u64) -> u32 
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
     let r = interp::exec_at(&mut v.cpu, &mut Flat(mem), insn, pc);
     count(&mut v.jit, insn);
+    // SAFETY: guaranteed by the caller.
+    let r = unsafe { finish(v, insn, r) };
     status(&mut v.jit, r)
 }
 
@@ -2216,7 +2234,23 @@ pub unsafe extern "C" fn jit_exec_mmu(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     let mut m = Mmu::new(mem, Some(&mut v.tlb));
     let r = interp::exec_at(&mut v.cpu, &mut m, insn, pc);
     count(&mut v.jit, insn);
+    // SAFETY: guaranteed by the caller.
+    let r = unsafe { finish(v, insn, r) };
     status(&mut v.jit, r)
+}
+
+/// A helper's exit through [`State::fast`], if it has one and that finishes it.
+///
+/// # Safety
+/// As for [`jit_exec_flat`]: `v` is the running vCPU.
+unsafe fn finish(v: &mut Vcpu, insn: u32, r: Result<(), Exit>) -> Result<(), Exit> {
+    if let (Err(e), Some(f)) = (r, v.jit.fast)
+        // SAFETY: the run loop that set `fast` is running this vCPU.
+        && unsafe { (f.f)(f.ctx, f.cpu, v, insn, e) }
+    {
+        return Ok(());
+    }
+    r
 }
 
 /// Counts a helper call by instruction class.

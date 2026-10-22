@@ -2741,3 +2741,34 @@ so it's noted here.
   `testusb` pass ran past 80M, so the unplug fell in pass 1 and pass 2 never saw it.
 - kvm-unit-tests' `cache` test passes; it reads CTR_EL0 and checks code it patches. Nothing in the golden corpus
   reads CTR_EL0.
+
+## M8: exits finished in place, and a cheaper run-loop round trip (2026-10-22)
+
+From the image-decoding investigation on the desktop guest (`bench/imgdecode/README.md` "On the desktop guest"): a
+vDSO `clock_gettime` cost 660 ns in the guest (13.5 natively) because `mrs cntvct_el0` left compiled code for the run
+loop (~380 ns) and its `isb` did too (~230 ns); Firefox showing images makes ~12K counter reads and ~37K such resyncs
+(ISB, DSB, ERET, DAIF writes) a second. Three changes, docs/jit.md "Fast completions" and "What an exit to the run
+loop costs": the JIT's helpers finish counter reads and resyncs with nothing to do in place (`jit::State::fast`), the
+JIT's counter words are published every 64K steps, and the timers are checked against the host clock every 4096
+steps or when their registers change (and before any platform access that shows them).
+
+In the guest, per iteration (`target/imgpipe/clk`, a static binary; the dev VM): `clock_gettime` 660 → 250 ns,
+`isb; mrs cntvct_el0` 613 → 195, `mrs cntvct_el0` 382 → 175, an always-exiting `mrs cntfrq_el0` 413 → 240.
+
+**A/B** (the dev VM, Chromium 153.0.8010.52; A = `432cf45`, B = this change; one session, A B B A A B, three rounds
+a side; `bench/run.ts --page bench/boot/index.html --only <bench>`; JSON and the script in `results/m8-fast/`).
+Medians of each round:
+
+| ms | A | B | B/A |
+|---|---|---|---|
+| `smp_alpine_jit_n1_total` | 7,927 · 7,951 · 7,935 | 7,669 · 7,728 · 7,772 | 0.974 |
+| `smp_alpine_jit_n2_total` | 7,385 · 7,394 · 7,429 | 7,180 · 7,215 · 7,295 | 0.976 |
+| `smp_alpine_jit_n4_total` | 7,356 · 7,383 · 7,383 | 7,200 · 7,235 · 7,297 | 0.980 |
+| `smp_user_jit_n4_total` | 15,827 · 15,777 · 15,817 | 15,284 · 15,406 · 15,445 | 0.974 |
+| of it: churn | 1,797 · 1,855 · 1,829 | 1,760 · 1,767 · 1,741 | 0.962 |
+| SQLite | 2,399 · 2,144 · 2,268 | 2,084 · 2,121 · 2,146 | 0.935 |
+| Lua | 2,886 · 2,930 · 2,966 | 2,868 · 2,922 · 2,908 | 0.992 |
+| compress | 1,662 · 1,634 · 1,651 | 1,682 · 1,666 · 1,667 | 1.010 |
+
+Every total 2.0-2.6% faster with the arms' rounds apart; compress 1.0% slower with its rounds apart too (at the noise
+floor; not looked into).

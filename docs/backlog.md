@@ -500,6 +500,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   dispatches, when an interrupt or another vCPU's request is due) was never measured on them. It predates the
   dispatcher's current shape and needs porting; test it as `run.sh go` in `bench/boot/results/m8-lock2/tools/` (two
   sessions per arm, `dsbMs` and the MIPS, whose spread there is wide) and the gates.
+- **An exit's remaining cost** (~240 ns in the desktop guest after the fast completions and the throttled timer
+  check and counters, [jit.md](jit.md) "What an exit to the run loop costs"): what's left is unmeasured part by
+  part: the run loop's per-iteration atomics (the signal and wake words, `pending`, the IRQ line, the ASID's SeqCst
+  fence) and `jit::steps`' re-entry (`key`'s translation of the PC, `Cache::enter`'s lookup, `fresh`). Profile it
+  with perf and V8's `--perf-prof` on a loop of an always-exiting instruction (`mrs cntfrq_el0`) before changing
+  any of it. The exits that remain frequent in a browser are syscalls (SVC), faults and IRQs.
+- **The counter read's floor:** ~180 ns, ~115 of it the host clock import. Compiling `MRS CNTVCT_EL0` to a direct
+  call of `env.now_ms` from the block (no helper, no interpreter) would save the rest; a clock cheaper than
+  `performance.now()` doesn't exist in a worker.
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).
