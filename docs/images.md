@@ -214,6 +214,16 @@ futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
   any fragment line didn't take effect. The tarball is pinned by sha256. Check Kconfig names
   against the pinned kernel when adding options (self-tests and lib/crypto's KUnit suites were
   reorganized recently).
+- **The dev VM's clock steps backwards** (~110 ms, as often as every 10 s: `lima-guestagent`'s
+  SyncTime sets it from the host while chronyd steers it too; the journal's "Time jumped
+  backwards"), and make trusts mtimes: a Buildroot stamp can come out older than the one before it
+  (busybox's `.stamp_patched` 22 ms before its `.stamp_extracted`), and a later `make` runs that
+  step again. `build_ltp`'s second `make` (after the kselftests) rechecks every stamp, so `ltp`
+  is the exposed one: on 2026-10-23 three of nine `ltp` builds failed (twice busybox's patches
+  applied again, "duplicate filename"; once glibc's parallel `make install` remaking
+  `linkobj/libc_pic.a` and racing itself, most likely the same cause), none of three `buildroot`
+  builds. A failed build leaves the previous image: run it again. One time sync in the VM, not
+  two, would end it; the kselftests in a post-build script (one `make`) would shrink it.
 - Debian's published image is 95% compressed qcow2 clusters: it's served as is (deflate in the
   blk backend) rather than converted.
 - Debian isn't built but prepared, so its `.inputs` key covers `images/debian.json` and
