@@ -1,8 +1,8 @@
 // Whether an adapter's IPv6 reaches the internet (docs/network-adapters.md §4 "IPv6 out"). A backend whose far end
 // may have no IPv6 route out (a tailcat exit node on a machine without one accepts the guest's IPv6 connections and
-// closes them empty, so a client that tries IPv6 first never falls back to IPv4) asks a resolver over IPv6, from the
-// guest's own address, through the backend: at the start, every minute, and when the browser's network changes. While
-// it answers, the lease is the backend's; while it doesn't, the lease has no IPv6 default route and no IPv6
+// closes them empty, so a client that tries IPv6 first never falls back to IPv4) asks public resolvers over IPv6, from
+// the guest's own address, through the backend: at the start, every minute, and when the browser's network changes. While
+// one answers, the lease is the backend's; while it doesn't, the lease has no IPv6 default route and no IPv6
 // resolvers (`unreached6`), so the guest's IPv6 to the internet fails at once and its clients use IPv4. The prober
 // lives in the backend's worker, between the backend's packets and the guest's: it sends as the guest and takes its
 // answers out of the packets to the guest. Any backend that carries the guest's IPv6 can use it.
@@ -10,8 +10,8 @@ import { udp6 } from './ip6.ts';
 import type { Lease, Prefix } from './gateway.ts';
 
 export type Reach6Options = {
-  /** The resolver asked (IPv6 text; default Cloudflare's `2606:4700:4700::1111`) and its port (53). Any answer counts. */
-  to?: string;
+  /** The resolvers asked, all at once (IPv6 text; default `PROBE_TARGETS`), and their port (53). Any answer counts. */
+  to?: string[];
   port?: number;
   /** A probe this often while nothing changes (default a minute). */
   everyMs?: number;
@@ -22,7 +22,7 @@ export type Reach6Options = {
 };
 
 export type Reach6 = {
-  /** Probes from `source` (the lease's IPv6 address) from now on, the first at once. */
+  /** Probes from `source` (the lease's IPv6 address) from now on, the first at once; the same source again changes nothing. */
   start(source: number[]): void;
   /** Stops probing (the backend's connection ended); what was found is kept for the next `start`. */
   stop(): void;
@@ -33,6 +33,12 @@ export type Reach6 = {
   /** Whether IPv6 reaches the internet, as far as the probes tell (false until the first answer). */
   reached(): boolean;
 };
+
+/**
+ * Public resolvers of three operators (Cloudflare, Google, Quad9): one blocked where the guest's traffic leaves (a
+ * country's court order, a network's policy) mustn't make IPv6 as a whole count as out.
+ */
+export const PROBE_TARGETS = ['2606:4700:4700::1111', '2001:4860:4860::8888', '2620:fe::fe'];
 
 /** IPv6 text (`2606:4700:4700::1111`) as 16 bytes, or undefined. */
 export function parse6(s: string): number[] | undefined {
@@ -59,12 +65,15 @@ const eq = (a: Uint8Array, at: number, b: number[]) => b.every((v, k) => a[at + 
 
 /**
  * A prober: `send` puts a packet on the backend as if the guest had sent it, and `onChange` hears when the answer to
- * "does IPv6 reach the internet" changes. The probe is a DNS query for the root's NS records from a port above
- * Linux's ephemeral range (61000–65535, picked once), matched by its ID.
+ * "does IPv6 reach the internet" changes. A probe is a DNS query for the root's NS records to each resolver, from a
+ * port above Linux's ephemeral range (61000–65535, picked once), matched by its ID: lost when none answers.
  */
 export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: boolean) => void, o: Reach6Options = {}): Reach6 {
-  const to = parse6(o.to ?? '2606:4700:4700::1111');
-  if (!to) throw new Error(`not an IPv6 address: ${o.to}`);
+  const to = (o.to ?? PROBE_TARGETS).map((t) => {
+    const a = parse6(t);
+    if (!a) throw new Error(`not an IPv6 address: ${t}`);
+    return a;
+  });
   const port = o.port ?? 53;
   const everyMs = o.everyMs ?? 60_000;
   const timeoutMs = o.timeoutMs ?? 3000;
@@ -99,7 +108,7 @@ export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: b
       schedule(lost >= misses ? everyMs : 0);
     }, timeoutMs);
     pending = { id, timer };
-    send(udp6(source, to!, sport, port, query));
+    for (const t of to) send(udp6(source, t, sport, port, query));
   }
   const changed = () => {
     lost = 0;
@@ -110,6 +119,7 @@ export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: b
   return {
     start(s) {
       const watching = !!source;
+      if (watching && source!.every((b, k) => b === s[k])) return;
       source = s;
       lost = 0;
       // Not at once: `start` may run in the backend's own event, which `send` mustn't re-enter.
@@ -129,9 +139,9 @@ export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: b
     },
     probe: changed,
     take(p) {
-      // IPv6, UDP (no extension headers: an answer has none), from the resolver's port to ours, to our source.
+      // IPv6, UDP (no extension headers: an answer has none), from a resolver's port to ours, to our source.
       if (p.length < 48 + 12 || p[0] >> 4 !== 6 || p[6] !== 17 || !source) return false;
-      if (((p[42] << 8) | p[43]) !== sport || ((p[40] << 8) | p[41]) !== port || !eq(p, 8, to) || !eq(p, 24, source)) return false;
+      if (((p[42] << 8) | p[43]) !== sport || ((p[40] << 8) | p[41]) !== port || !to.some((t) => eq(p, 8, t)) || !eq(p, 24, source)) return false;
       const id = (p[48] << 8) | p[49];
       if (pending && pending.id === id && p[50] & 0x80) {
         clearTimeout(pending.timer);

@@ -734,15 +734,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   connection runs on this page, and deleting a kept tailnet connection forgets the node without logging it out (it
   stays on the tailnet until it expires or an admin removes it).
 - **IPv6 out's loose ends** ([network-adapters.md](network-adapters.md) §4 "IPv6 out", web/reach6.ts):
-  - **Tailscale exit nodes**: one on a machine without IPv6 still advertises `::/0`, so the guest may meet the same
-    accept-then-close; the worker (web/tailnet-worker.ts) could run the same probe while an exit node is in use.
-    Unchecked whether Tailscale's exit nodes do (they forward packets rather than proxy flows, so they may answer with
-    an ICMPv6 unreachable, which curl takes).
   - **A primary per family**: with tailcat as the primary and its IPv6 out, a second adapter whose IPv6 reaches out
     (a tailnet's exit node) could carry IPv6's default; `primaryOf` picks one adapter for both.
-  - The real probe target (Cloudflare's resolver) never answered in a test: the dev VM has no IPv6 (the up case runs
-    against `tests/net/resolver.ts` on a temporary address, testing.md). By hand: an exit node on a machine with
-    IPv6 (the Mac), the guest's `ip -6 route` showing the default within a second of connecting.
+  - The real probe targets answering is checked by hand only (an exit node on the Mac, testing.md): the dev VM has
+    no IPv6, so the tests' up case runs against `tests/net/resolver.ts` on a temporary address, and a Tailscale exit
+    node reaching IPv6 out isn't tested at all (the Podman peer has none).
+  - tailcat's lease names Cloudflare's resolvers only (1.1.1.1, 1.0.0.1, 2606:4700:4700::1111): where Cloudflare is
+    blocked the guest has no DNS, though the probe now asks three operators. A second operator's in the lease would do.
   - The Network menu doesn't say a connection is IPv4-only.
   - `bench/gpu/firefox-load.ts`'s tailcat mode still drops the guest's IPv6 default and pins resolv.conf and
     gai.conf by hand; no longer needed, drop it at its next run.
@@ -755,8 +753,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   uses is, with a web server in the guest); keeping the client's key when going online through a server (so a
   server can `--allow` it) isn't offered: serving uses the kept key, going online alone a fresh one.
 - **tailcat loose ends**: an address that names only a region (tailcat's public relays) fetches
-  `https://tailcat.dev/derpmap.json`, parsed in unit tests but never run against the real map (opt-in by hand:
-  `tailcat serve exit-node` with no `--key` on a machine with the internet); the relay's loss while running is
+  `https://tailcat.dev/derpmap.json`, run against the real map once by hand (2026-10-23: `tailcat serve exit-node`
+  with no `--key` on the Mac, region 303 Frankfurt, the page's Debian through it), never in a test; the relay's loss while running is
   covered natively (`relay_loss_while_running`), not in a browser (kill derper mid-test); a guest spraying UDP flows
   (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
   `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,

@@ -179,6 +179,19 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         assert.doesNotMatch(before, /status=[1-5]\d\d/, `without an exit node the tailnet has no route to ${INTERNET_IP}: ${before}`);
         assert.equal(await harness<string>(page, `setExitNode(${JSON.stringify(exit.id)})`), '', 'the client takes the exit node');
         await page.waitForFunction((id) => (window as never as { harness: { tailscale(): { netmap: { exitNode: string } } } }).harness.tailscale().netmap.exitNode === id, exit.id, { timeout: 30_000, polling: 250 });
+        // IPv6 through the exit node (web/reach6.ts): a new exit node counts as out until the probe answers, so the
+        // default goes at once; it comes back only if the peer's machine reaches the internet over IPv6, which
+        // rootless Podman's network doesn't give it.
+        const peer6 = /^default /m.test(podman('exec', 'webpc-peer', 'ip', '-6', 'route'));
+        let routes6 = '';
+        const default6 = async () => /^default /m.test(routes6 = await run('ip -6 route'));
+        let has6 = await default6();
+        for (let k = 0; k < 30 && has6 !== peer6; k++) {
+          await page.waitForTimeout(1000);
+          has6 = await default6();
+        }
+        assert.equal(has6, peer6, `the guest's IPv6 default through the exit node ${peer6 ? 'is' : "isn't"} there as the peer's IPv6 route out: ${routes6}`);
+        console.log(`# IPv6 through the exit node: the peer ${peer6 ? 'has' : 'has no'} IPv6 route out, the guest's default ${has6 ? 'is there' : 'is gone'}`);
         let via = '';
         for (let k = 0; k < 6 && !/status=[1-5]\d\d/.test(via); k++) via = await probe(INTERNET_IP);
         assert.match(via, /status=[1-5]\d\d/, `through the exit node the guest reaches ${INTERNET_IP}${await context()}; the peer: ${podman('exec', 'webpc-peer', 'tailscale', '--socket=/tmp/ts.sock', 'metrics', 'print').split('\n').filter((l) => /dropped_packets_total\{/.test(l)).join(' ')}`);
@@ -192,6 +205,12 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         assert.equal(await harness<string>(page, "setExitNode('')"), '');
         const after = await probe(INTERNET_IP);
         assert.doesNotMatch(after, /status=[1-5]\d\d/, 'and stops when the exit node is cleared');
+        let back6 = await default6();
+        for (let k = 0; k < 10 && !back6; k++) {
+          await page.waitForTimeout(1000);
+          back6 = await default6();
+        }
+        assert.ok(back6, `no exit node, no probe: the lease's IPv6 default is back: ${routes6}`);
       }
     } finally {
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
@@ -231,7 +250,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
       try {
         await page.goto(`${base}/tests/browser/core.html`);
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: resolver.to, port: resolver.port } : {}) })}`);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port } : {}) })}`);
         await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
           .catch(async (e) => { throw new Error(`${e}${await context()}`); });
         const [tn, tc] = await views();

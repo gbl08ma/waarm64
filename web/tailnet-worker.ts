@@ -1,12 +1,15 @@
 // The Tailscale backend's worker (docs/tailnet.md "Tailscale"): the tailnet client (net/ts,
 // target/net/ts.wasm) logged in to a control server, its packets on the gateway's IP port
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`). With `persist`, the node is kept in the Go
-// client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node.
+// client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node. While an exit
+// node is in use, it checks whether the exit node's machine reaches the internet over IPv6 (web/reach6.ts), and leases
+// the guest no IPv6 default route while it doesn't.
 import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, type FromTailscale, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
 import { routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
+import { reach6, unreached6, type Reach6, type Reach6Options } from './reach6.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
@@ -15,8 +18,25 @@ let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
 /** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
-const offered = () => routedLease(lease, primary, TAILNET_ROUTES);
 let client: TsClient | undefined;
+/** While an exit node is in use (`reachVia`, its stable ID): whether its machine's IPv6 reaches the internet. */
+let reach: Reach6 | undefined;
+let reachVia = '';
+let probe6: Reach6Options | undefined;
+const offered = () => {
+  const l = routedLease(lease, primary, TAILNET_ROUTES);
+  return reach && !reach.reached() ? unreached6(l, TAILNET_ROUTES.v6) : l;
+};
+
+/** The exit node in use (''); another one is probed from scratch (out until it answers). */
+function probeVia(id: string) {
+  if (id !== reachVia) {
+    reach?.stop();
+    reach = id ? reach6((p) => client?.guest(p), () => ip?.postMessage({ type: 'lease', lease: offered() }), probe6) : undefined;
+    reachVia = id;
+  }
+  if (lease?.address6) reach?.start(lease.address6);
+}
 let state: Awaited<ReturnType<typeof openState>> | undefined;
 
 function attach(port: MessagePort) {
@@ -39,6 +59,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   }
   if (m.type === 'detach') {
     lease = null;
+    probeVia('');
     ip?.postMessage({ type: 'lease', lease: null });
     if (ip) ip.onmessage = null;
     post({ type: 'detached', ip }, ip ? [ip] : []);
@@ -63,12 +84,13 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     post({ type: 'loaded', ms: performance.now() - t0 });
     if (m.persist) state = await openState(m.persist);
     if (!ip) return; // detached meanwhile
+    probe6 = m.probe6;
     client = new TsClient(mod, {
       control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'webpc', ephemeral: !m.persist },
       state: state?.entries() ?? {},
       exitNode: m.exitNode ?? '',
     }, {
-      packet: (p) => send?.(p),
+      packet: (p) => { if (!reach?.take(p)) send?.(p); },
       event(ev) {
         switch (ev.type) {
           case 'log': return console.log('tailnet:', ev.msg);
@@ -78,6 +100,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
           case 'loggedout': return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
           case 'netmap':
             lease = leaseFrom(ev.netmap);
+            probeVia(ev.netmap.exitNode ?? '');
             ip?.postMessage({ type: 'lease', lease: offered() });
             return post({ type: 'netmap', netmap: ev.netmap });
           case 'state':

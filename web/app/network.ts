@@ -145,7 +145,7 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
 
 /**
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
- * `tailcatServe` (`probe6`: how it checks the server's IPv6 reach, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
+ * `tailcatServe` (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
  * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts).
  */
 export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; probe6?: Reach6Options };
@@ -216,7 +216,7 @@ export function createNetwork(
       tailcat = !!(c.tailcat || c.tailcatServe);
       const t = tailcat
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, probe6: c.probe6, ip }, onEvent)
-        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.persist }, onEvent);
+        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
       client = t;
       if (!primary) t.setPrimary(false);
       t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });

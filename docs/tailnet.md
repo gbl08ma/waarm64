@@ -158,7 +158,8 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
 - **The data plane:** a `ts_tunnel` peer per netmap peer, each reached through its home region. Routes
   by longest prefix over each peer's addresses and, for the selected exit node only, the default
   routes (`ts_exit_node`, the peer's stable ID; other AllowedIPs, subnet routes included, aren't
-  installed). What comes in passes `ts_packetfilter` (with the sender's node attributes), except TCP
+  installed); while one is in use the worker probes its IPv6 reach and leases no IPv6 default without it
+  (web/reach6.ts, docs/network-adapters.md §4 "IPv6 out"). What comes in passes `ts_packetfilter` (with the sender's node attributes), except TCP
   that isn't a new connection (Go's rule) and replies to the guest's own UDP flows and pings (a flow
   table, 2 min, 8,192 flows): the guest is a node, and the tailnet's ACLs apply to it.
 - **MagicDNS** at 100.100.100.100 and `fd7a:115c:a1e0::53` (UDP): A and AAAA for the netmap's names

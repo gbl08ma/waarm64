@@ -112,7 +112,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, serve: '', overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: resolver.to, port: resolver.port, everyMs: 5000 } : {}) })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, serve: '', overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port, everyMs: 5000 } : {}) })}`);
       await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().netmap', null, { timeout: 60_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
       const ts = await harness<{ netmap: { addresses: string[]; serving?: string }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');

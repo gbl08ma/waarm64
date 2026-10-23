@@ -5,6 +5,7 @@
 // worker sends `{type: 'lease', lease}` on that port whenever the node's address
 // changes, so the guest's DHCP gets the address the client reports.
 import type { Lease } from './gateway.ts';
+import type { Reach6Options } from './reach6.ts';
 
 /** What the client reports of the node's network map (net/ts/src/netmap.rs). */
 export type NetMap = {
@@ -42,11 +43,13 @@ export type TailscaleConfig = {
    * same node, with the same address and no new login. Not for an auth key's ephemeral node.
    */
   persist?: string;
+  /** How an exit node's IPv6 reach is checked (web/reach6.ts). */
+  probe6?: Reach6Options;
 };
 
 /** Messages to the worker. */
 export type ToTailscale =
-  | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; ip: MessagePort; persist?: string }
+  | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; ip: MessagePort; persist?: string; probe6?: Reach6Options }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
   /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/network-adapters.md §4). */
@@ -164,7 +167,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   });
   running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(
-    { type: 'start', wasm: config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, ip: port1, persist: config.persist } satisfies ToTailscale,
+    { type: 'start', wasm: config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, ip: port1, persist: config.persist, probe6: config.probe6 } satisfies ToTailscale,
     [port1],
   );
   return {

@@ -2,7 +2,7 @@
 // the guest's packets, when it counts IPv6 as out and back, and the lease it makes then. On mocked timers.
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { parse6, reach6, unreached6 } from '../web/reach6.ts';
+import { parse6, PROBE_TARGETS, reach6, unreached6, type Reach6Options } from '../web/reach6.ts';
 import { sum6, udp6 } from '../web/ip6.ts';
 import { ECHO_LEASE, TAILCAT_ROUTES } from '../web/gateway.ts';
 
@@ -30,8 +30,8 @@ test('unreached6: the address stays, routed through the network only, with no IP
   assert.equal(unreached6(v4only, []), v4only);
 });
 
-/** A prober on mocked timers, the probes it sent, the changes it reported, and an answer to its last probe. */
-function rig(o = {}) {
+/** A prober on mocked timers (one resolver, unless `o` says otherwise), the probes it sent, the changes it reported, and an answer to its last probe. */
+function rig(o: Reach6Options = { to: ['2606:4700:4700::1111'] }) {
   const sent: Uint8Array[] = [];
   const changes: boolean[] = [];
   const r = reach6((p) => sent.push(p), (ok) => changes.push(ok), o);
@@ -44,11 +44,27 @@ function rig(o = {}) {
   return { r, sent, changes, answer };
 }
 
-test('a probe: a DNS query from the guest\'s address to the resolver, sent after start returns', (t) => {
+test('a probe: a DNS query from the guest\'s address to each resolver, sent after start returns; any answer counts', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { r, sent, changes, answer } = rig({});
+  r.start(SRC);
+  assert.equal(sent.length, 0, 'not inside start (it may run in the backend\'s own event)');
+  t.mock.timers.tick(0);
+  assert.deepEqual(sent.map((p) => [...p.subarray(24, 40)]), PROBE_TARGETS.map(parse6), 'three operators\' resolvers at once');
+  assert.ok(sent.every((p) => p[48] === sent[0][48] && p[49] === sent[0][49] && p[40] === sent[0][40] && p[41] === sent[0][41]), 'one query ID, one source port');
+  const stranger = answer(sent[1]);
+  stranger.set(parse6('2001:db8::1')!, 8);
+  assert.equal(r.take(stranger), false, 'not from a resolver asked: the guest\'s');
+  assert.equal(r.take(answer(sent[1])), true, 'Google answers, Cloudflare doesn\'t (blocked)');
+  assert.equal(r.reached(), true);
+  assert.deepEqual(changes, [true]);
+  r.stop();
+});
+
+test('a probe\'s bytes', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { r, sent } = rig();
   r.start(SRC);
-  assert.equal(sent.length, 0, 'not inside start (it may run in the backend\'s own event)');
   t.mock.timers.tick(0);
   assert.equal(sent.length, 1);
   const p = sent[0];
@@ -113,9 +129,9 @@ test('IPv6 counts as out after three lost probes in a row, and comes back with o
   r.stop();
 });
 
-test('probe(): at once (the browser\'s network changed); stop() ends the probes', (t) => {
+test('probe(): at once (the browser\'s network changed); start() with the same source changes nothing; stop() ends the probes', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { r, sent, answer } = rig({ to: '64:ff9b::7f00:1', port: 5353, everyMs: 10_000 });
+  const { r, sent, answer } = rig({ to: ['64:ff9b::7f00:1'], port: 5353, everyMs: 10_000 });
   r.probe();
   t.mock.timers.tick(0);
   assert.equal(sent.length, 0, 'nothing before start');
@@ -124,6 +140,9 @@ test('probe(): at once (the browser\'s network changed); stop() ends the probes'
   assert.deepEqual([...sent[0].subarray(24, 40)], parse6('64:ff9b::7f00:1'));
   assert.equal((sent[0][42] << 8) | sent[0][43], 5353);
   r.take(answer());
+  r.start([...SRC]);
+  t.mock.timers.tick(0);
+  assert.equal(sent.length, 1, 'the same source again: nothing (a tailnet sends its netmap often)');
   r.probe();
   t.mock.timers.tick(0);
   assert.equal(sent.length, 2, 'at once, not after everyMs');
