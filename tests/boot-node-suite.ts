@@ -228,6 +228,9 @@ const KUT: [string, string, string[], number?][] = [
   ['gic', 'active', [], 4],
   ['timer', '', []],
   ['cache', '', []],
+  ['debug', 'bp', []],
+  ['debug', 'wp', []],
+  ['debug', 'ss', []],
 ];
 // psci's environment (an initrd) enables its concurrent cpu-on check.
 const PSCI_ENV = new TextEncoder().encode('ERRATA_6c7a5dce22b3=y\n');
@@ -238,7 +241,7 @@ for (const [file, args, fails, ncpus] of KUT) {
     assert.deepEqual(lines.filter((l) => l.startsWith('FAIL: ')).map((l) => l.slice(6)), fails, r.console);
     assert.ok(lines.includes(`EXIT: STATUS=${fails.length ? 3 : 1}`), r.console);
     assert.ok(!lines.some((l) => l.startsWith('SKIP: ')), r.console);
-  }, { skip: !has(`kvm-unit-tests/${file}.flat`) && 'SKIPPED: run images/build.sh kvm-unit-tests', max: 5e9, stress: STRESS || file === 'cache' });
+  }, { skip: !has(`kvm-unit-tests/${file}.flat`) && 'SKIPPED: run images/build.sh kvm-unit-tests', max: 5e9, stress: STRESS || file === 'cache' || file === 'debug' });
 }
 
 // kvm-unit-tests' SMP set in parallel (M7 loop 5).
@@ -370,10 +373,11 @@ guest('LTP and kselftests', () => ({
   poweredOff(r);
   assert.match(r.console, /webpc: test ok\r?\n/);
   // Every test passes or skips (ltp.rs has which, and why).
-  const failed = [...r.console.matchAll(/^(ltp|kselftest): (\S+) (\d+)\r?$/gm)]
+  const failed = [...r.console.matchAll(/^(ltp|kselftest|webpc): (\S+) (\d+)\r?$/gm)]
     .filter(([, suite, , code]) => !(code === '0' || code === (suite === 'ltp' ? '32' : '4')));
   assert.deepEqual(failed.map((m) => m[0].trim()), []);
   assert.ok(r.console.split('\n').filter((l) => /^(ltp|kselftest): /.test(l)).length > 100, 'too few results');
+  assert.match(r.console, /^webpc: debug 0\r?$/m);
 }, { skip: ltp, stress: STRESS, max: 200e9, steps: STEPS.ltp, interp: false });
 
 // The crypto extensions' test kernel (images/build.sh linux-crypto)

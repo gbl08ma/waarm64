@@ -8,7 +8,7 @@
 import { coreImports, threadAlloc } from '../web/vm.ts';
 import type { Job, Result } from './threads-worker.ts';
 
-const RAM = 16 << 20, LOAD = 0x10000, CPU_BYTES = 1072;
+const RAM = 16 << 20, LOAD = 0x10000, CPU_BYTES = 1152;
 /** jit_new's arguments: the JIT's default policy (bench/interp/suite.ts `JIT_DEFAULT`). */
 const JIT: number[] = [50, 32, 16384, 0, 1000];
 

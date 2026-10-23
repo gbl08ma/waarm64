@@ -64,9 +64,38 @@ pub struct Cpu {
     /// come from `VmConfig.features`, a user-mode vCPU (`Default`) has them all.
     pub features: u64,
     /// MPIDR_EL1 (M7: each vCPU its own, `gicv3::mpidr`; 1 << 31 for one CPU).
-    /// In the padding after `features`, so `Cpu` stays 1072 bytes.
     pub mpidr: u64,
+    /// Self-hosted debug (docs/cpu.md "Self-hosted debug"): the breakpoint and
+    /// watchpoint value and control registers, 2 of each (`ID_AA64DFR0_EL1`);
+    /// breakpoint 1 is the context-aware one.
+    pub dbgbvr: [u64; 2],
+    pub dbgbcr: [u64; 2],
+    pub dbgwvr: [u64; 2],
+    pub dbgwcr: [u64; 2],
+    /// The Software Step exception's ISV and EX bits for the instruction just
+    /// stepped (0 when the step is pending from an ERET).
+    pub step_syn: u64,
+    /// Per EL (0, 1), why the JIT's dispatcher leaves it to an interpreter:
+    /// [`INTERP_ALIGN`], [`INTERP_DEBUG`]. Derived ([`crate::interp::debug::arm`]), not saved.
+    pub interp_only: [u8; 2],
+    /// What the JIT's dispatcher tests, for the current EL: [`DISPATCH_INTERP`]
+    /// and [`DISPATCH_MMU`]. One byte at a fixed offset, two bit tests, as
+    /// SCTLR_EL1's A and M were. Derived (`debug::arm`, [`Cpu::set_pstate`]), not saved.
+    pub dispatch: u8,
+    pub reserved: [u8; 5],
 }
+
+/// `Cpu::interp_only`: `SCTLR_EL1.A` is set (the JIT doesn't check alignment).
+pub const INTERP_ALIGN: u8 = 1;
+/// `Cpu::interp_only`: debug is armed for the EL (the debug interpreter runs it).
+pub const INTERP_DEBUG: u8 = 2;
+/// `Cpu::dispatch`: the current EL's `interp_only` isn't 0.
+pub const DISPATCH_INTERP: u8 = 1;
+/// `Cpu::dispatch`: `SCTLR_EL1.M`.
+pub const DISPATCH_MMU: u8 = 2;
+/// PSTATE.SS (bit 21, as in SPSR) and PSTATE.D.
+pub const PSTATE_SS: u64 = 1 << 21;
+pub const PSTATE_D: u64 = 1 << 9;
 
 /// FEAT_AES (with PMULL), FEAT_SHA1 and FEAT_SHA256 (M6.5): advertised in
 /// ID_AA64ISAR0_EL1, and UNDEFINED without it.
@@ -192,6 +221,23 @@ impl Cpu {
         }
         self.v.iter().for_each(|&v| w.u128(v));
         self.system().into_iter().for_each(|v| w.u64(v));
+        self.debug().into_iter().for_each(|v| w.u64(v));
+    }
+
+    /// The debug registers, in order (snapshot version 2).
+    fn debug(&self) -> [u64; 9] {
+        let [b0, b1, w0, w1] = [self.dbgbvr, self.dbgbcr, self.dbgwvr, self.dbgwcr];
+        [
+            b0[0],
+            b0[1],
+            b1[0],
+            b1[1],
+            w0[0],
+            w0[1],
+            w1[0],
+            w1[1],
+            self.step_syn,
+        ]
     }
 
     /// The fields after `v`, in order (but `features` and `mpidr`).
@@ -252,6 +298,11 @@ impl Cpu {
         for v in &mut s {
             *v = r.u64()?;
         }
+        let mut d = [0; 9];
+        for v in &mut d {
+            *v = r.u64()?;
+        }
+        let [bv0, bv1, bc0, bc1, wv0, wv1, wc0, wc1, step_syn] = d;
         let [
             fpcr,
             fpsr,
@@ -284,7 +335,7 @@ impl Cpu {
             cntv_ctl_el0,
             cntv_cval_el0,
         ] = s;
-        if !matches!(pstate & !DAIF, M_EL0T | M_EL1T | M_EL1H)
+        if !matches!(pstate & !(DAIF | PSTATE_SS), M_EL0T | M_EL1T | M_EL1H)
             || !matches!(self.monitor.size, 0 | 1 | 2 | 4 | 8 | 16)
         {
             return Err(snapshot::Error::Corrupt);
@@ -320,8 +371,14 @@ impl Cpu {
             cntp_cval_el0,
             cntv_ctl_el0: cntv_ctl_el0 & 3,
             cntv_cval_el0,
+            dbgbvr: [bv0, bv1],
+            dbgbcr: [bc0, bc1].map(|v| v & crate::interp::debug::BCR_MASK),
+            dbgwvr: [wv0, wv1],
+            dbgwcr: [wc0, wc1].map(|v| v & crate::interp::debug::WCR_MASK),
+            step_syn: step_syn & crate::interp::debug::STEP_SYN,
             ..self.clone()
         };
+        crate::interp::debug::arm(self);
         Ok(())
     }
 
@@ -331,13 +388,16 @@ impl Cpu {
         (self.pstate >> 2) & 3
     }
 
-    /// Sets PSTATE (M and DAIF) and swaps the stack pointers when the selected one changes.
+    /// Sets PSTATE (M and DAIF) and swaps the stack pointers when the selected
+    /// one changes; `dispatch` follows the EL.
     pub fn set_pstate(&mut self, p: u64) {
         let el1h = |p: u64| p & 0xf == M_EL1H;
         if el1h(p) != el1h(self.pstate) {
             core::mem::swap(&mut self.x[31], &mut self.sp_other);
         }
         self.pstate = p;
+        let interp = (self.interp_only[(p >> 2 & 1) as usize] != 0) as u8;
+        self.dispatch = self.dispatch & DISPATCH_MMU | interp;
     }
 
     /// Register `n` where 31 encodes XZR.
@@ -397,7 +457,7 @@ mod tests {
     fn save_and_restore_keep_every_register_but_the_vms() {
         // Every byte of the struct distinct, then what a guest couldn't have written fixed up.
         let mut c = Cpu::reset();
-        // SAFETY: `Cpu` is plain integers without padding (1072 bytes of u64s and u128s).
+        // SAFETY: `Cpu` is plain integers without padding (1152 bytes of u64s, u128s and bytes).
         let b = unsafe {
             core::slice::from_raw_parts_mut(&mut c as *mut Cpu as *mut u8, size_of::<Cpu>())
         };
@@ -414,10 +474,15 @@ mod tests {
         c.cpacr_el1 &= 3 << 20;
         (c.os_lock, c.cntkctl_el1) = (2, c.cntkctl_el1 & 0x3ff);
         (c.cntp_ctl_el0, c.cntv_ctl_el0) = (1, 3);
+        c.dbgbcr = c.dbgbcr.map(|v| v & crate::interp::debug::BCR_MASK);
+        c.dbgwcr = c.dbgwcr.map(|v| v & crate::interp::debug::WCR_MASK);
+        c.step_syn &= crate::interp::debug::STEP_SYN;
+        c.reserved = [0; 5];
+        crate::interp::debug::arm(&mut c);
         let mut w = Writer::default();
         c.save(&mut w);
-        // 32 X, PC, NZCV, the monitor, 32 V, 30 system registers.
-        assert_eq!(w.0.len(), 8 * (32 + 2 + 4 + 30) + 16 * 32);
+        // 32 X, PC, NZCV, the monitor, 32 V, 30 system and 9 debug registers.
+        assert_eq!(w.0.len(), 8 * (32 + 2 + 4 + 30 + 9) + 16 * 32);
         let mut d = Cpu {
             features: 5,
             mpidr: 9,
@@ -440,7 +505,7 @@ mod tests {
         assert_eq!(refused(&|c| c.pstate = 0b1001), corrupt, "EL2h");
         assert_eq!(refused(&|c| c.pstate = 0b0001), corrupt, "EL0h");
         assert_eq!(refused(&|c| c.pstate = M_EL1H | 1 << 4), corrupt, "AArch32");
-        assert_eq!(refused(&|c| c.pstate = M_EL1H | 1 << 21), corrupt, "SS");
+        assert_eq!(refused(&|c| c.pstate = M_EL0T | PSTATE_SS), Ok(()), "SS");
         assert_eq!(refused(&|c| c.monitor.size = 3), corrupt);
         assert_eq!(refused(&|c| c.cntv_ctl_el0 = 7), Ok(()));
         assert_eq!(

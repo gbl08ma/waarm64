@@ -56,7 +56,8 @@ run loop costs").
 - `perfsym.py`, `compare.py`, `gecko.py`: perf's data with libxul named, guest against native per function, and
   Firefox's markers by round. Perf in the guest over-counts code near exits (a timer tick in a compiled loop is
   delivered at the next exit), and the PC sampler can't name libxul's PCs: its processes map it at bases up to 8 MB
-  apart and a PC carries no process. Uprobes kill the process (no single step in the core; docs/backlog.md).
+  apart and a PC carries no process. Uprobes killed the process while the core had no single step (it has since 2026-10-23, docs/cpu.md
+  "Self-hosted debug"; not retried).
 - `decoders.sh <img dir> [R]`: Arch's `dwebp`, `djpeg`, `avifdec` and `tjbench` on the 1024 px images, per image, in
   the guest (`GUEST_CMD`) and natively (the arch-base container).
 

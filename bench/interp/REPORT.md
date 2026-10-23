@@ -1537,3 +1537,43 @@ rounds alternated (`results/m8-interp-l13/pages/`):
 may read but EL0 may not, its EL1 entry cached, faults as the interpreter faults; a plant using EL1's context failed
 it). Alpine's boot in Node 217.3, 218.7 → 214.9, 208.9 MIPS: the branch in the single-register handler cost more
 than the uaccess loads it took off the slow path.
+
+## Self-hosted debug: what it costs when nobody debugs
+
+2026-10-23, the dev VM, Chromium 153.0.8010.52, Node 26.7.0; base `5e1af53` against the same tree with self-hosted
+debug (docs/cpu.md "Self-hosted debug"); raw data `results/m8-debug/` (`main/` three rounds of the six gate
+benchmarks and the two block-interpreter ones; `dec/` three more of those two, debug first; `pad/` a control; `fixed/`
+the export fixes found by CI after the measurement). The gate, agreed beforehand: any difference past noise on Alpine's
+boot, Alpine's userspace or the small guests and the feature doesn't land.
+
+**V8's code:** the dispatcher's test is `ldrb [#1146]; tbnz #0; …; tbnz #1` where it was `ldr [#888]; tbnz #1; …;
+tbnz #0` (one byte with "interpreter only" and a copy of SCTLR_EL1.M, where it tested SCTLR_EL1's A and M); the rest
+of `jit::steps`' TurboFan code differs in register allocation and the debug interpreter's cold call. The block
+interpreter's hot functions (`jit::interpret`, `block::hot`, `block::run`, with and without the MMU) and
+`interp::steps` are the same wasm but for constants: static data 24-32 bytes on, and `size_of::<Cpu>()` (1072 → 1152).
+
+**Three rounds, alternated** (medians of rounds; ms for Alpine, MIPS for the rest):
+
+| benchmark | base | debug | |
+|---|---|---|---|
+| Alpine's boot, total | 5680 · 5625 · 5657 | 5654 · 5658 · 5678 | +0.0% |
+| Alpine's userspace, total | 14454 · 14209 · 14139 | 14100 · 14241 · 14118 | −0.6% (faster) |
+| `jit_mips` | 5587 · 5579 · 5598 | 5594 · 5559 · 5563 | −0.4% |
+| `vm_jit_flat_mips` | 5480 · 5548 · 5472 | 5487 · 5502 · 5495 | +0.3% |
+| `vm_jit_mmu_mips` | 4849 · 4831 · 4814 | 4773 · 4819 · 4825 | −0.2% |
+| `boot_mips_jit` | 154.9 · 157.3 · 155.9 | 155.2 · 154.7 · 156.7 | −0.5% |
+| `vm_dec_mmu_mips` | 467.5 · 467.8 · 470.5 | 467.2 · 468.8 · 472.1 | +0.2% |
+| `dec_mips` | 470.0 · 467.4 · 470.7 | 465.6 · 469.1 · 465.1 | −0.9% |
+
+Every row's rounds overlap. **`dec_mips` alone leans:** three more rounds with debug first, 470.0 · 469.8 · 468.2
+against 465.7 · 464.3 · 467.0 (−0.9%, apart), and a third session 465.6 · 468.6 · 468.0 against 465.6 · 466.6 ·
+464.7 (−0.5%): over nine rounds 468.6 against 465.6, −0.6%, the same at each of the eight placements. Its hot code is
+the same wasm, and `jit::steps` (the changed dispatcher) runs only at a chunk's end there (`jit::interpret` loops on
+its own), so it reads as layout: the static data and the heap behind a larger `Cpu` moved, which the placements
+(guest RAM only) don't vary. The control, base with `Cpu` padded to 1152 bytes, was 467.8 · 458.8 · 467.4:
+inconclusive. Accepted by the user (2026-10-23): ≤1% on that small guest, nothing on the long workloads, for the
+profiling the feature allows.
+
+**After the export fixes** (`jit_run`, `interp_run` and their `_exit` twins derive the dispatch bytes; `interp::run`
+and `run_system` take the debug interpreter while an EL is armed; every hot function is the same wasm as measured):
+`dec_mips` +0.3%, `interp_mips` −0.2%, `jit_mips` +1.5%, rounds overlapping.

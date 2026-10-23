@@ -42,6 +42,8 @@ pub enum FaultKind {
     Permission(u8),
     /// External abort on a translation table walk.
     WalkBus(u8),
+    /// A watchpoint matched (`interp::debug`): taken as a Watchpoint exception.
+    Watch,
 }
 
 impl FaultKind {
@@ -55,6 +57,7 @@ impl FaultKind {
             FaultKind::AccessFlag(l) => 0x08 | l as u32,
             FaultKind::Permission(l) => 0x0c | l as u32,
             FaultKind::WalkBus(l) => 0x14 | l as u32,
+            FaultKind::Watch => 0x22,
         }
     }
 }

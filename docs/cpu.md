@@ -38,11 +38,9 @@ match it step for step.
   (FP16, BF16, FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS, LSE2, RCpc, FlagM, SB, DIT, SHA512,
   SHA3, SM3/SM4, LOR, MOPS, HBC) is UNDEFINED and unadvertised. Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
-- **Rule: ID registers advertise exactly what's implemented.** One deliberate exception:
-  `ID_AA64DFR0_EL1` advertises the architectural minimum for self-hosted debug (v8.0 debug, 2
-  breakpoints, 2 watchpoints, 1 context comparator), because ARMv8.0 doesn't allow less; the
-  breakpoint and watchpoint registers are RAZ/WI, the OS lock is only state, and no debug
-  exceptions are raised (backlog: self-hosted debug).
+- **Rule: ID registers advertise exactly what's implemented.** `ID_AA64DFR0_EL1` advertises
+  v8.0 self-hosted debug with the architectural minimum (2 breakpoints, 2 watchpoints, 1 context
+  comparator), all implemented: "Self-hosted debug" below.
 
 ### ID registers and identification
 
@@ -92,6 +90,74 @@ match it step for step.
   (nothing to wait for); with more, in round-robin it ends the vCPU's quantum unless an event
   (SEV, SEVL) is pending, and SEV/SEVL set events; in parallel SMP it's a yield (it ends the
   chunk) and SEV does nothing ([platform.md](platform.md) "The run loop").
+
+## Self-hosted debug (`core/src/interp/debug.rs`)
+
+v8.0's breakpoints, watchpoints and software step, taken to EL1 (EL_D) with their syndromes:
+what in-guest `gdb` (`stepi`, `hbreak`, `watch`), `ptrace` single step and perf's `mem:` events
+use, and kvm-unit-tests' `debug-*`.
+
+- **Registers:** `DBGBVR/BCR0-1`, `DBGWVR/WCR0-1` (`Cpu::dbgbvr` …, the control registers'
+  v8.0 fields kept), `MDSCR_EL1` (SS, KDE, MDE), the OS lock (`OSLAR`/`OSLSR`); the OS double
+  lock, DCC and save/restore registers stay RAZ/WI. Breakpoint 1 is the context-aware one. They're
+  in snapshots (`snapshot::VERSION` 2, with the step's syndrome and `PSTATE.SS`).
+- **What raises what:** debug exceptions need the OS lock clear, and from EL1 `MDSCR_EL1.KDE` and
+  `PSTATE.D` clear (`AArch64.GenerateDebugExceptionsFrom`). Breakpoints (MDE): unlinked and linked
+  address match on the instruction about to run (BAS non-zero), unlinked context ID match, PMC and
+  SSC (no Secure state), EC 0x30/0x31 with ELR on the instruction. Watchpoints (MDE): BAS byte
+  selection (on a doubleword, or a word with `WVR[2]`), MASK ranges, LSC, PAC (LDTR/STTR as EL0),
+  linked context; plain and exclusive accesses, atomics, `DC ZVA`; EC 0x34/0x35, WnR, FAR the first
+  watched byte the access touches (QEMU's too), taken before the access. Software step (`MDSCR_EL1.SS`):
+  `PSTATE.SS` is bit 21 of `pstate`; an instruction that completes clears it, and the step
+  exception (EC 0x32/0x33) is taken before the next one, with ISV and EX (a load-exclusive was
+  stepped); an exception the instruction raises leaves it set (SPSR.SS = 1, the instruction runs
+  again), SVC and HVC complete it; ERET restores `SPSR.SS` only while step is on at its target, and
+  the step that leaves pending reports no ISV. An IRQ is taken before a pending step exception.
+- **Order:** a pending step, then the PC alignment fault and the instruction abort, then a
+  breakpoint, as the architecture prioritizes them.
+- **Not checked:** watchpoints on device accesses (the MMIO path runs the instruction again
+  without them), and a `DC ZVA` or pair store hit part-way leaves the bytes before it written
+  (the architecture allows that for multi-access instructions).
+
+**At no measured cost when nobody debugs** (bench/interp/REPORT.md "Self-hosted debug": Alpine's
+boot and userspace and the JIT's small guests unchanged; the block interpreter's flat small guest
+−0.6%, with its hot code the same: layout). The fast tiers never look at debug state; only the
+dispatcher does, and what it tests costs what `SCTLR_EL1.A`'s test cost before:
+- `debug::arm` recomputes, per EL, whether an exception could be raised there (`Cpu::interp_only`:
+  step on, or MDE and an enabled comparator for that EL; EL1 also needs KDE; coarse on purpose,
+  `PSTATE.D` is left to the exact checks), on the writes that can change it (`MDSCR_EL1`, a
+  comparator's control, `OSLAR_EL1`, `SCTLR_EL1`) and a restore. `Cpu::dispatch` is the current
+  EL's: one byte with "interpreter only" (that, or `SCTLR_EL1.A`) and a copy of `SCTLR_EL1.M`,
+  which `Cpu::set_pstate` keeps as the EL changes. `jit::key()` loads it and tests two bits where
+  it loaded SCTLR_EL1 and tested A and M: the same three instructions in V8's code for the
+  dispatcher (`ldrb; tbnz; …; tbnz` for `ldr; tbnz; …; tbnz`).
+- Arming changes only through an MSR none of `msr_continues` names, so it ends its JIT block and
+  the block interpreter's run, and when it changes an EL's arming it returns `Exit::Resync`, which
+  ends an interpreter chunk too. The EL changes only in the run loop (exceptions, IRQs) or by
+  ERET, which ends its block. A new path that changes the EL or enters compiled code must go
+  through `set_pstate` and the dispatcher; a debug register's MSR must never join `msr_continues`
+  or `plain_write`.
+- An armed EL runs in the **debug interpreter**: `step_bus`'s loop with the checks, over a `Watch`
+  bus (an `Mmu` that checks each data access against the watchpoints first, and has no `fast`
+  path): its own monomorphized copy of the interpreter (~110 KB of wasm), cold and never inlined,
+  so `interp::steps` and the block interpreter are as they were. Without a JIT, the run loops
+  (`Vm`'s chunk, `interp::run`, `run_system`) pick it for the whole chunk while any EL is armed.
+  The user-mode exports, whose host writes `Cpu` fields directly, derive the dispatch bytes before
+  each run ([abi.md](abi.md) "User-mode exports").
+- What it costs while debugging: a stepped task runs a few hundred kernel instructions per step in
+  the JIT and one instruction interpreted; a task with a hardware breakpoint or watchpoint runs at
+  the step interpreter's speed while it's on the CPU, the kernel and other tasks in the JIT. Linux
+  arms only then (MDSCR's SS on the return to a stepped task, MDE and a comparator's E while a task
+  that has one runs; a boot writes zeros and `TDCC`). Breakpoints and watchpoints at JIT speed are
+  in [backlog.md](backlog.md) "CPU".
+
+Checked by kvm-unit-tests' `debug-bp`, `debug-wp`, `debug-sstep` and their migration variants
+(through snapshots), the bare-metal `debug` test (the step machine's edges, breakpoint and
+watchpoint matching, against QEMU's TCG; QEMU 11.1 steps and breaks with the OS lock set and has
+no unlinked context breakpoints, so the oracle build leaves those out), and the LTP guest's
+`breakpoint_test_arm64` and `webpc-debug` (ptrace single step through an SVC, perf breakpoint and
+watchpoint counts; its expectations checked on the M4: two stops after a stepped SVC, Linux's
+syscall-exit report and then the pending step).
 
 ## System registers
 

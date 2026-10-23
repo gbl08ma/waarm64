@@ -1,0 +1,105 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-23T19:39:54.366Z",
+ "commit": "a1750be43281",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_jit_flat_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 7318.52,
+     "interpretedPct": 13.642,
+     "blocks": 10,
+     "modules": 4,
+     "bytes": 9908,
+     "compileMs": 0.49,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 15,
+     "condDirect": 13,
+     "condComputed": 0,
+     "condMemory": 1,
+     "blocksPerRegion": 1.5,
+     "backEdges": 7,
+     "tierUps": 1
+    }
+   },
+   "samples": [
+    146.84287806900136
+   ],
+   "median": 146.84287806900136,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_flat_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 14412.11,
+     "interpretedPct": 0.095,
+     "blocks": 12,
+     "modules": 4,
+     "bytes": 16311,
+     "compileMs": 0.45,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 4,
+     "flagsStored": 41,
+     "condDirect": 28,
+     "condComputed": 0,
+     "condMemory": 5,
+     "blocksPerRegion": 1.78,
+     "backEdges": 9,
+     "tierUps": 2,
+     "helpers": []
+    }
+   },
+   "samples": [
+    4968.944128812139,
+    4219.4092742110915,
+    5354.752322195356,
+    5524.861871175527,
+    5502.063288162796,
+    5602.240907582731,
+    5494.505516098772,
+    4739.336460759833,
+    5578.80059127143,
+    5633.802797983053,
+    5555.555518762565,
+    5128.205159555369,
+    5722.460650275588,
+    5689.9004498989125,
+    5457.025888923582
+   ],
+   "median": 5502.063288162796,
+   "iqr": 349.0420085517171,
+   "n": 15
+  }
+ ]
+}

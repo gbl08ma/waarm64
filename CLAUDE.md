@@ -41,7 +41,9 @@ decoded blocks of Firefox's pages session 381 → 208 MB), the threshold's floor
 and its maximum at 2000 under the cache's pressure; a browser's FP handlers and one decoded-block store for every
 table measured and not kept; what x86_64's atomics cost and a per-block compile policy in docs/backlog.md
 "Interpreter". **The JIT cache's lock, round two** is done (a miss no longer waits for it, and CTR_EL0 reports 2 KiB instruction
-cache lines, so guests issue 2 ICs a page; docs/jit.md "Sharing", bench/boot/REPORT.md). Loose ends go in
+cache lines, so guests issue 2 ICs a page; docs/jit.md "Sharing", bench/boot/REPORT.md). **Self-hosted debug** is
+done (2026-10-23; docs/cpu.md "Self-hosted debug": breakpoints, watchpoints and single step in a debug interpreter the
+dispatcher picks for an armed EL, its test the same instructions as before; kvm-unit-tests' `debug-*` pass). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

@@ -14,14 +14,13 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   "M8: the device round trip"). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
-- **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
-  (the registers are RAZ/WI). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single
-  step (kvm-unit-tests `debug-*`). Planned at no cost when unarmed (the debug interpreter takes over
-  while debug is armed for the EL): [plans/self-hosted-debug.md](plans/self-hosted-debug.md).
-- **Hardware breakpoints and watchpoints at JIT speed** (after self-hosted debug): a debugged task
-  with one armed runs interpreted; pages holding a breakpoint could stay uncompiled and watched
-  pages out of the TLB instead (plans/self-hosted-debug.md "Cost while debugging"). Only if
-  performance becomes a concern.
+- **Hardware breakpoints and watchpoints at JIT speed:** a task with one armed runs in the debug
+  interpreter while it's on the CPU ([cpu.md](cpu.md) "Self-hosted debug"); pages holding a
+  breakpoint could stay uncompiled and watched pages out of the TLB instead, so their accesses take
+  the slow path, which would check the comparators. Only if a debugged program's speed becomes a
+  concern: unarmed code doesn't pay either way.
+- **Self-hosted debug's loose ends:** watchpoints on device (MMIO) accesses aren't checked (the
+  MMIO path runs the instruction again on the `Io` bus, without the `Watch` wrapper).
 - **Spectre-BHB reporting:** Linux says `spectre_v2` "Mitigation: CSV2, but not BHB" (and installs no
   BHB mitigation: MIDR 0 has no loop count). Only `ID_AA64PFR0_EL1.CSV2` = 3 clears it, which needs
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).

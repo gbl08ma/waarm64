@@ -239,6 +239,7 @@ pub unsafe extern "C" fn mem_new(base: *mut u8, size: u64) -> *mut mem::Mem {
 pub unsafe extern "C" fn interp_run(cpu: *mut cpu::Cpu, mem: *const mem::Mem, n: u64) -> u64 {
     // SAFETY: guaranteed by the caller.
     let (cpu, mem) = unsafe { (&mut *cpu, &*mem) };
+    interp::debug::arm(cpu); // as `rearm`
     interp::run(cpu, mem, n).0
 }
 
@@ -259,6 +260,7 @@ pub unsafe extern "C" fn interp_run_exit(
 ) -> u64 {
     // SAFETY: guaranteed by the caller.
     let (cpu, mem, exit) = unsafe { (&mut *cpu, &*mem, &mut *exit) };
+    interp::debug::arm(cpu); // as `rearm`
     let (done, r) = interp::run(cpu, mem, n);
     *exit = exit_code(r);
     done
@@ -333,7 +335,21 @@ pub extern "C" fn jit_new(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_run(v: *mut mmu::Vcpu, mem: *const mem::Mem, n: u64) -> u64 {
     // SAFETY: guaranteed by the caller.
+    unsafe { rearm(v) };
+    // SAFETY: guaranteed by the caller.
     unsafe { jit::run(v, &*mem, n) }.0
+}
+
+/// The dispatcher's state derived again (`interp::debug::arm`): the host
+/// writes `Cpu` fields such as SCTLR_EL1 and PSTATE directly between runs
+/// (`interp_run` and `interp_run_exit` too, so the differential tests'
+/// `Cpu`s agree).
+///
+/// # Safety
+/// As for [`jit_run`].
+unsafe fn rearm(v: *mut mmu::Vcpu) {
+    // SAFETY: guaranteed by the caller.
+    interp::debug::arm(unsafe { &mut (*v).cpu });
 }
 
 /// [`interp_run_exit`] through the JIT.
@@ -347,6 +363,8 @@ pub unsafe extern "C" fn jit_run_exit(
     n: u64,
     exit: *mut [u64; 2],
 ) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { rearm(v) };
     // SAFETY: guaranteed by the caller.
     let (done, r) = unsafe { jit::run(v, &*mem, n) };
     // SAFETY: guaranteed by the caller.

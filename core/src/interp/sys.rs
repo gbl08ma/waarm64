@@ -7,9 +7,9 @@
 //! maintenance); everything else there is UNDEFINED. Unknown registers are
 //! UNDEFINED at EL1 too, except the ID space, which reads as zero.
 
-use super::{Exit, R, bit, bits};
+use super::{Exit, R, bit, bits, debug};
 use crate::cpu::{
-    Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_I, SPSR_IL, sctlr,
+    Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_I, PSTATE_SS, SPSR_IL, sctlr,
 };
 use crate::decode::Op;
 use crate::mem::{Access, Fault, FaultKind};
@@ -48,9 +48,7 @@ pub fn icc(features: u64, key: u32) -> Option<crate::gicv3::Icc> {
     crate::gicv3::Icc::decode(key >> 7 & 0xf, key >> 3 & 0xf, key & 7)
 }
 /// DebugVer v8.0, 2 breakpoints, 2 watchpoints, 1 context comparator (the
-/// architectural minimum), no PMU.
-// ponytail: the debug registers are RAZ/WI and no debug exceptions are raised
-// (breakpoints, watchpoints, MDSCR_EL1.SS); M9 lists it.
+/// architectural minimum), no PMU. Self-hosted debug is `debug`'s.
 const ID_AA64DFR0: u64 = 1 << 20 | 1 << 12 | 6;
 /// LSE atomics (2) and CRC32; nothing past v8.1. AES (2: with PMULL), SHA1
 /// and SHA2 with `FEATURE_CRYPTO`, RNDR with `FEATURE_RNG` (`isar0`).
@@ -79,8 +77,8 @@ pub fn mmfr2(features: u64) -> u64 {
 const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 9;
 /// DC ZVA block: BS = 4 (64 bytes, as on the M4).
 pub const DCZID_BS: u64 = 4;
-/// OSLSR_EL1.OSLM = 0b10: the OS lock is implemented (v8.0 requires it). It
-/// only gates debug exceptions, which we don't raise, so it's just state.
+/// OSLSR_EL1.OSLM = 0b10: the OS lock is implemented (v8.0 requires it); it
+/// disables the debug exceptions (`debug`) while set.
 const OSLM: u64 = 0b1000;
 
 const NZCV: u32 = sr(3, 3, 4, 2, 0);
@@ -160,8 +158,8 @@ const CNTV_CVAL: u32 = sr(3, 3, 14, 3, 2);
 
 /// Registers that read as zero and ignore writes: IMPLEMENTATION DEFINED ones
 /// with nothing to control (ACTLR, AMAIR, AFSR0/1), CSSELR (CLIDR reports no
-/// caches), and the debug registers (see `ID_AA64DFR0`), including the OS
-/// save/restore and debug communications channel ones.
+/// caches), and the debug registers but the comparators, MDSCR_EL1 and the OS
+/// lock: the OS double lock, save/restore and debug communications channel ones.
 fn raz_wi(key: u32) -> bool {
     matches!(
         key,
@@ -180,7 +178,13 @@ fn raz_wi(key: u32) -> bool {
             | OSECCR
             | DBGDTR
             | DBGDTRRXTX
-    ) || key & !0b1011 == sr(2, 0, 0, 0, 4) // DBGB{V,C}R<n>, DBGW{V,C}R<n>, n = 0, 1
+    )
+}
+
+/// DBGBVR<n>_EL1, DBGBCR<n>_EL1, DBGWVR<n>_EL1, DBGWCR<n>_EL1 (n = 0, 1): the
+/// register, in the order of op2 (4 to 7), and n.
+fn comparator(key: u32) -> Option<(u32, usize)> {
+    (key & !0b1011 == sr(2, 0, 0, 0, 4)).then_some((key & 3, (key >> 3 & 1) as usize))
 }
 
 pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
@@ -384,6 +388,10 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         CCSIDR | CLIDR => 0, // no caches
         AIDR => 0,
         k if raz_wi(k) => 0,
+        k if comparator(k).is_some() => {
+            let (r, n) = comparator(k).expect("a comparator");
+            [c.dbgbvr, c.dbgbcr, c.dbgwvr, c.dbgwcr][r as usize][n]
+        }
         // Read-only: no debug ROM (MDRAR.Valid = 0), no debug authentication
         // signals, no DCC traffic; RVBAR (EL1 is the highest EL) is IMPLEMENTATION
         // DEFINED; RMR's AA64 is RAO (AArch64 only).
@@ -535,7 +543,10 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         ELR_EL1 => c.elr_el1 = v,
         SP_EL0 if c.pstate & 1 == 1 => c.sp_other = v,
         SPSEL => c.set_pstate(c.pstate & !1 | v & 1),
-        SCTLR => c.sctlr_el1 = (v | sctlr::RES1) & !sctlr::ENDIAN,
+        SCTLR => {
+            c.sctlr_el1 = (v | sctlr::RES1) & !sctlr::ENDIAN;
+            debug::arm(c);
+        }
         CPACR => c.cpacr_el1 = v & 3 << 20,
         TTBR0 => c.ttbr0_el1 = v,
         TTBR1 => c.ttbr1_el1 = v,
@@ -547,8 +558,24 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         VBAR => c.vbar_el1 = v & !0x7ff,
         CONTEXTIDR => c.contextidr_el1 = v as u32 as u64,
         TPIDR_EL1 => c.tpidr_el1 = v,
-        MDSCR => c.mdscr_el1 = v,
-        OSLAR => c.os_lock = (v & 1) << 1,
+        MDSCR => {
+            c.mdscr_el1 = v;
+            return rearm(c);
+        }
+        OSLAR => {
+            c.os_lock = (v & 1) << 1;
+            return rearm(c);
+        }
+        k if comparator(k).is_some() => {
+            let (r, n) = comparator(k).expect("a comparator");
+            match r {
+                0 => c.dbgbvr[n] = v,
+                1 => c.dbgbcr[n] = v & debug::BCR_MASK,
+                2 => c.dbgwvr[n] = v,
+                _ => c.dbgwcr[n] = v & debug::WCR_MASK,
+            }
+            return rearm(c);
+        }
         k if raz_wi(k) => {}
         RMR => {} // a warm reset request (RR) isn't honored
         k if icc(c.features, k).is_some_and(|r| r.writable()) => return Err(Exit::Platform(i)),
@@ -563,6 +590,18 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         return Err(Exit::Resync); // retired; the run loop switches interpreter copy
     }
     unmasked(pstate, c)
+}
+
+/// After a write to a debug register: `Exit::Resync` (retired) if it armed or
+/// disarmed an EL (`debug::arm`), so a run loop without a JIT changes
+/// interpreter at once (with one, the MSR has ended its block already).
+fn rearm(c: &mut Cpu) -> R {
+    let before = c.interp_only;
+    debug::arm(c);
+    if c.interp_only != before {
+        return Err(Exit::Resync);
+    }
+    Ok(())
 }
 
 /// After a DAIF write: if it cleared PSTATE.I, `Exit::Resync` (retired) makes
@@ -688,7 +727,14 @@ fn eret(c: &mut Cpu) {
     let legal = matches!(m, M_EL0T | M_EL1T | M_EL1H);
     c.nzcv = spsr & 0xf000_0000;
     c.monitor.size = 0;
-    c.set_pstate(if legal { m } else { c.pstate & 0xf } | spsr & DAIF);
+    let mut p = if legal { m } else { c.pstate & 0xf } | spsr & DAIF;
+    // PSTATE.SS comes back only while software step is on at the target; the
+    // step it leaves pending reports no ISV.
+    if c.mdscr_el1 & debug::MDSCR_SS != 0 && legal && debug::enabled_for(c, p) {
+        p |= spsr & PSTATE_SS;
+        c.step_syn = 0;
+    }
+    c.set_pstate(p);
     c.pc = target;
     if !legal || spsr & SPSR_IL != 0 {
         enter(c, 0x0e << 26, None, target, SPSR_IL);
@@ -717,6 +763,7 @@ pub fn take_exception(c: &mut Cpu, e: Exit) {
         Exit::Svc(imm) => (0x15 << 26 | imm as u32, None, pc.wrapping_add(4)),
         Exit::Brk(imm) => (0x3c << 26 | imm as u32, None, pc),
         Exit::Trap(esr) => (esr, None, pc),
+        Exit::Fault(f) if f.kind == FaultKind::Watch => (abort(0x34, f), Some(f.addr), pc),
         Exit::Fault(f) => (abort(0x24, f), Some(f.addr), pc),
         Exit::Fetch(Fault {
             kind: FaultKind::Align,
@@ -900,6 +947,6 @@ mod tests {
             ),
             (832, 888, 272)
         );
-        assert_eq!(size_of::<Cpu>(), 1072);
+        assert_eq!(size_of::<Cpu>(), 1152);
     }
 }

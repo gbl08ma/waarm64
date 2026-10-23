@@ -68,7 +68,7 @@ Design notes for an ABI change go in this file before the code.
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
   at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
-  1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
+  1056; `Cpu` is 1152 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
   flash bank's bytes, null without one; ABI 29), `vm_xhci(vm)` (the xHCI's shared block, null without one;
   ABI 38, "USB" below).
@@ -255,7 +255,10 @@ HVC kinds and the EL1 state at the end of `Cpu`), and their JIT twins over a per
 `jit_new(threshold, batch, capacity, check, region_after)`, `jit_run`, `jit_run_exit`,
 `jit_flush` (for hosts that rewrite guest code between runs: drops compiled and decoded blocks),
 `jit_stats`. These vCPUs always
-have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing test.
+have every optional feature. The host writes their `Cpu` fields directly between runs (an EL1 test
+sets SCTLR_EL1.M), so the run exports (`interp_run`, `jit_run` and their `_exit` twins) derive the
+dispatcher's bytes (`Cpu.dispatch`, `interp_only`) again before each run; the core derives them
+itself on every other path. `jit_add_install`/`jit_call` are the JIT plumbing test.
 
 ## M7 (SMP): design note for ABI 20 onward
 

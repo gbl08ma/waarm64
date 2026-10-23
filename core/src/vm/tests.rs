@@ -617,7 +617,8 @@ fn a_state_is_refused_by_another_version_or_machine() {
         b"WPC",
         b"WPCS",
         b"XPCS\x01\0\0\0",
-        b"WPCS\x02\0\0\0",
+        b"WPCS\x01\0\0\0",
+        b"WPCS\x03\0\0\0",
     ] {
         assert_eq!(restore(bad, cfg, &[DEV]), Err(Error::Format), "{bad:?}");
     }
@@ -728,10 +729,10 @@ fn the_saved_bytes_are_pinned_to_the_version() {
     t.vm.shared.console.rx.push(b'k');
     assert_eq!(t.vm.run(5), exit::BUDGET);
     let state = t.save();
-    assert_eq!(snapshot::VERSION, 1);
+    assert_eq!(snapshot::VERSION, 2);
     assert_eq!(
         (state.len(), hash(&state)),
-        (266_473, 6_318_216_817_579_332_712),
+        (266_617, 13_739_998_675_332_078_785),
         "the layout moved"
     );
 }

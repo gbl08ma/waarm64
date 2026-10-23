@@ -34,6 +34,12 @@ const RUN: &[Test] = &[
     ("gicv3-active", "gic", "active", 4, &[]),
     ("timer", "timer", "", 1, &[]),
     ("cache", "cache", "", 1, &[]),
+    ("debug-bp", "debug", "bp", 1, &[]),
+    ("debug-bp-migration", "debug", "bp-migration", 1, &[]),
+    ("debug-wp", "debug", "wp", 1, &[]),
+    ("debug-wp-migration", "debug", "wp-migration", 1, &[]),
+    ("debug-sstep", "debug", "ss", 1, &[]),
+    ("debug-sstep-migration", "debug", "ss-migration", 1, &[]),
 ];
 
 /// Skipped: (name or prefix, reason).
@@ -47,10 +53,6 @@ pub const SKIP: &[(&str, &str)] = &[
     ("pci-test", "no PCI"),
     ("micro-bench", "accel = kvm only"),
     ("fpu-context", "accel = kvm only, and SMP"),
-    (
-        "debug-",
-        "no debug exceptions (docs/backlog.md, self-hosted debug)",
-    ),
     ("mte-", "no MTE (docs/cpu.md)"),
 ];
 
@@ -76,11 +78,35 @@ fn kvm_unit_tests() {
     let env = b"ERRATA_6c7a5dce22b3=y\n";
     for (name, file, args, ncpus, expect_fail) in RUN {
         let flat = common::image(&format!("kvm-unit-tests/{file}.flat"));
-        let r = common::boot(&common::Boot {
+        let boot = || common::Boot {
             max_steps: 5_000_000_000,
             ncpus: *ncpus,
             initrd: (*name == "psci").then_some(&env[..]),
             ..common::Boot::new(&flat, args)
+        };
+        // A migration test waits for a key after "Now migrate the VM": it's
+        // queued from the start, and the VM is saved and restored at points
+        // spread over a run of the same test (deterministic: the same steps),
+        // and close together toward its end, where the debug tests arm.
+        let migrate = name.ends_with("-migration");
+        let at: Vec<u64> = if migrate {
+            let steps = common::boot(&common::Boot {
+                input: Some((0, b"\n")),
+                ..boot()
+            })
+            .steps;
+            let mut at: Vec<u64> = (1..16).map(|k| steps * k / 16).collect();
+            at.extend((0..21).map(|k| steps - (1 << k)));
+            at.sort();
+            at.dedup();
+            at
+        } else {
+            vec![]
+        };
+        let r = common::boot(&common::Boot {
+            input: migrate.then_some((0, &b"\n"[..])),
+            snapshots: &at,
+            ..boot()
         });
         let status = r
             .console

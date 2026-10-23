@@ -18,7 +18,7 @@ import { coreImports } from '../web/vm.ts';
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 const WORDS = Number(process.env.WEBPC_JIT_DIFF ?? 4096);
 const STATES = 8;
-const CPU_BYTES = 1072;
+const CPU_BYTES = 1152;
 const BRK = 0xd4200000;
 
 type Exports = {

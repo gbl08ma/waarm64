@@ -18,7 +18,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, MutexGuard};
 
-use crate::cpu::sctlr;
+use crate::cpu::{DISPATCH_INTERP, DISPATCH_MMU, INTERP_DEBUG, sctlr};
 use crate::interp::{self, Exit};
 use crate::mem::Mem;
 use crate::mmu::{Flat, Mmu, Vcpu};
@@ -2073,13 +2073,16 @@ fn now_ns() -> u64 {
 #[inline(always)]
 fn key(v: &mut Vcpu, mem: &Mem) -> Option<u64> {
     let c = &v.cpu;
-    let (pc, el) = (c.pc, c.el() & 1);
+    let (pc, el, d) = (c.pc, c.el() & 1, c.dispatch);
     // Inline loads and stores don't check alignment: with SCTLR_EL1.A set
-    // (Linux never sets it) everything runs in the interpreter.
-    if pc & 3 != 0 || c.sctlr_el1 & sctlr::A != 0 {
+    // (Linux never sets it) everything runs in the interpreter; an EL armed
+    // for debug runs in the debug interpreter (`interp::debug`). One byte
+    // has that and SCTLR_EL1.M: a load and two bit tests, as A and M were.
+    if pc & 3 != 0 || d & DISPATCH_INTERP != 0 {
         return None;
     }
-    if c.sctlr_el1 & (sctlr::M | sctlr::A) == 0 {
+    debug_assert_eq!(d & DISPATCH_MMU != 0, c.sctlr_el1 & sctlr::M != 0);
+    if d & DISPATCH_MMU == 0 {
         return Some(pc | el);
     }
     let p = Mmu::new(mem, Some(&mut v.tlb)).fetch_ptr(c, pc).ok()?;
@@ -2158,6 +2161,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
                     interpret(cpu, &mut Mmu::new(mem, Some(&mut *tlb)), t, mem, k, left)
                 }
                 Some(k) => interpret(cpu, &mut Flat(mem), t, mem, k, left),
+                None if cpu.interp_only[(cpu.el() & 1) as usize] & INTERP_DEBUG != 0 => {
+                    Some(interp::debug::steps(cpu, mem, Some(&mut *tlb), left, true))
+                }
                 None => None,
             };
             let (k, e) = r.unwrap_or_else(|| interp::steps(cpu, mem, Some(tlb), m.min(left)));
@@ -2529,7 +2535,7 @@ mod tests {
     #[test]
     fn cpu_size() {
         // tests/jit-lockstep.test.ts compares this many bytes (`CPU_BYTES`).
-        assert_eq!(size_of::<Cpu>(), 1072);
+        assert_eq!(size_of::<Cpu>(), 1152);
     }
 
     #[test]

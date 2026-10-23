@@ -5,6 +5,7 @@
 //! takes them into EL1 the way hardware does.
 
 pub(crate) mod block;
+pub mod debug;
 mod float;
 mod ldst;
 mod ldst_fp;
@@ -148,10 +149,15 @@ pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R 
 
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
 /// No TLB: meant for user-mode hosts, which run with the MMU off. WFI completes at once.
+/// While an EL is armed for debug, the debug interpreter runs (`debug::steps`).
 pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
     let mut done = 0;
     while done < n {
-        let (k, e) = steps(cpu, mem, None, n - done);
+        let (k, e) = if debug::armed(cpu) {
+            debug::steps(cpu, mem, None, n - done, false)
+        } else {
+            steps(cpu, mem, None, n - done)
+        };
         done += k;
         match e {
             None => {}
@@ -175,7 +181,11 @@ pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
     let (cpu, tlb) = (&mut v.cpu, &mut v.tlb);
     let mut done = 0;
     while done < n {
-        let (k, e) = steps(cpu, mem, Some(&mut *tlb), n - done);
+        let (k, e) = if debug::armed(cpu) {
+            debug::steps(cpu, mem, Some(&mut *tlb), n - done, false)
+        } else {
+            steps(cpu, mem, Some(&mut *tlb), n - done)
+        };
         done += k;
         match e {
             None => {}

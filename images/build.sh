@@ -186,14 +186,16 @@ build_ltp() {
   mkdir -p "$bro" "$obj" "$dst"
   cat images/buildroot.defconfig images/ltp/buildroot.fragment > "$bro/webpc_defconfig"
   buildroot "$bro" "$bro/webpc_defconfig"
-  # The arm64 selftests, with the kernel's UAPI headers, into the target tree;
-  # then Buildroot again to remake the root filesystem with them.
+  # The arm64 and breakpoints selftests, with the kernel's UAPI headers, and
+  # images/ltp/debug.c into the target tree; then Buildroot again to remake
+  # the root filesystem with them.
   linux_src
   make -s -C "$src" O="$root/$obj" ARCH=arm64 headers
   local cc=$root/$bro/host/bin/aarch64-linux-
   make -s -C "$src/tools/testing/selftests" O="$root/$obj/kselftest" ARCH=arm64 CROSS_COMPILE="$cc" \
-    TARGETS=arm64 ARM64_SUBTARGETS="abi signal tags" KHDR_INCLUDES="-isystem $root/$obj/usr/include" \
+    TARGETS="arm64 breakpoints" ARM64_SUBTARGETS="abi signal tags" KHDR_INCLUDES="-isystem $root/$obj/usr/include" \
     INSTALL_PATH="$root/$bro/target/usr/lib/kselftests" install
+  "${cc}gcc" -O2 -Wall -Werror -isystem "$root/$obj/usr/include" -o "$bro/target/usr/bin/webpc-debug" images/ltp/debug.c
   make -s -C "$out/dl/buildroot-$BUILDROOT_TAG" O="$root/$bro" BR2_DL_DIR="$root/$out/dl"
   cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
 }

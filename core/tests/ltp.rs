@@ -9,7 +9,8 @@ mod common;
 /// (suite: test, result). A skip or failure says why.
 /// LTP: 93 syscall tests, all passing (images/ltp/tests; two that need a
 /// loop device with every filesystem were left out). kselftests: arm64 abi,
-/// signal and tags; the SVE, SME and GCS ones skip.
+/// signal and tags (the SVE, SME and GCS ones skip), and breakpoints' arm64
+/// test; webpc: images/ltp/debug.c (self-hosted debug).
 const EXPECTED: &[(&str, &str)] = &[
     ("ltp: abort01", "pass"),
     ("ltp: access01", "pass"),
@@ -195,6 +196,8 @@ const EXPECTED: &[(&str, &str)] = &[
         "kselftest: zt_regs",
         "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
+    ("kselftest: breakpoint_test_arm64", "pass"),
+    ("webpc: debug", "pass"),
 ];
 
 #[test]
@@ -222,10 +225,13 @@ fn ltp_and_kselftests() {
         .filter_map(|l| {
             let (suite, rest) = l.split_once(": ")?;
             let (test, code) = rest.split_once(' ')?;
+            if suite == "webpc" && test != "debug" {
+                return None; // the harness's own "webpc: test ok"
+            }
             let result = match (suite, code) {
-                ("ltp" | "kselftest", "0") => "pass",
+                ("ltp" | "kselftest" | "webpc", "0") => "pass",
                 ("ltp", "32") | ("kselftest", "4") => "skip",
-                ("ltp" | "kselftest", _) => "fail",
+                ("ltp" | "kselftest" | "webpc", _) => "fail",
                 _ => return None,
             };
             Some((format!("{suite}: {test}"), result.to_owned()))

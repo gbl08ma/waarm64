@@ -10,7 +10,7 @@
 pub const MAGIC: u32 = u32::from_le_bytes(*b"WPCS");
 /// Bumped whenever a saved field is added, removed or changes meaning (the
 /// pinned bytes in `vm/tests.rs` fail when the layout moves without it).
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Why a restore was refused (`vm_snapshot_restore`'s return value).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

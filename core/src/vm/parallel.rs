@@ -448,6 +448,8 @@ impl Vm {
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }
+            } else if interp::debug::armed(&v.cpu) {
+                interp::debug::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n, false)
             } else {
                 interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n)
             };

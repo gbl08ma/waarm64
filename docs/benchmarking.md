@@ -213,6 +213,9 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
 - **Keep every benchmark command under the Bash tool's ~600 s cap** (fewer boots per call, or
   `--quick`), with a `timeout`; a command that overruns gets backgrounded and can stall unseen.
 - Numbers from the x86_64 desktop (M0–M5 step 7) aren't comparable with the VM's.
+- The Buildroot guests (`boot_jit*`, `boot_mips_jit`, the LTP run) changed on 2026-10-23: built with
+  Buildroot's own toolchain (gcc 15.3, glibc 2.44) instead of Bootlin's, their step counts moved
+  (Buildroot's boot 40,054,752 → 40,543,331); compare their numbers only from then on.
 - **Peer comparisons are rare:** QEMU TCG, native and in-browser peers were measured once, for
   M6's exit table; performance work compares webpc with itself. **qemu-wasm is dropped for good**
   (it booted Buildroot 4.7× slower than webpc, computes CoreMark wrong, looks abandoned); x86 peers
