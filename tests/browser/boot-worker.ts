@@ -20,6 +20,7 @@
 // booted; its `usb-state` is `usb` in the result (tests/usb-guest.test.ts; realtime: add `&realtime`).
 // `?input` runs the console input test (web/vm.ts `CONSOLE_INPUT`): a shell
 // instead of /test.sh, given the input at its step.
+// `?disk=<path under target/images/>`: the root disk from there instead (a chunked image's manifest: tests/chunked.test.ts).
 // `?snapshots=<steps>,…`: the VM is saved to a snapshot file, closed, and a new one started from the
 // file at each of those steps (web/snapshot.ts `runThroughSnapshots`); `files` in the result has them.
 import { runThroughSnapshots } from '../../web/snapshot.ts';
@@ -55,7 +56,7 @@ try {
     get(`/target/images/${img.kernel}`),
     img.initrd ? get(`/target/images/${img.initrd}`) : undefined,
   ]);
-  const disk = new URL(`/target/images/${img.disk}`, location.href).href;
+  const disk = new URL(`/target/images/${params.get('disk') ?? img.disk}`, location.href).href;
   const test = params.has('devices') || distro === 'alpine'; // Alpine checks linux-virt's modules for them
   const devices = usb !== null || usbhost ? [] : gpu !== null ? [{ type: 'gpu' as const, width: 640, height: 480, trace: true, resize: { after: Number(gpu), width: 800, height: 600 } }] : snd ? [{ type: 'snd' as const }] : litmus !== null ? [] : test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
   const framebuffer = test ? { width: 640, height: 480 } : undefined;

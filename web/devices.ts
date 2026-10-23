@@ -15,6 +15,7 @@ import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_GSO_FRAME, N
 const MAX_RX = NET_HDR + 18 + 40 + 65_535;
 import { IoStats } from './iostats.ts';
 import { cachedSource, type BlockCacheStats } from './blockcache.ts';
+import { chunkedSource, isManifestUrl } from './chunked.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
@@ -578,7 +579,13 @@ const S_IOERR = 1;
 const S_UNSUPP = 2;
 
 /** A disk image's bytes: synchronous range reads (`undefined` on a short or failed read). */
-export type Source = { size: number; read(off: number, len: number): Uint8Array | undefined; close?(): void };
+export type Source = {
+  size: number;
+  read(off: number, len: number): Uint8Array | undefined;
+  close?(): void;
+  /** What a read of [off, off + len) fetches anyway, if more (a chunked image's whole piece where the host has no ranges): a cache asks for all of it and keeps it. */
+  span?(off: number, len: number): [number, number];
+};
 
 /**
  * An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network,
@@ -902,7 +909,7 @@ export class Devices {
       if (d.stored) return openStored(d.stored, d.size ?? 0);
       if (d.file) return blobSource(d.file);
       if (!d.url) throw new Error('a disk with no image (url, file or source)');
-      return d.url.startsWith('file:') ? fileSource(d.url) : cachedSource(httpSource(d.url));
+      return d.url.startsWith('file:') ? fileSource(d.url) : cachedSource(isManifestUrl(d.url) ? chunkedSource(d.url) : httpSource(d.url));
     }));
     return new Devices(init, overlays, sources, out);
   }

@@ -6,6 +6,7 @@
 // Time is deterministic unless `realtime` is set (the host clock, and idle
 // WFIs sleep on the signal word). With `parallel` (M7), every vCPU runs in
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
+import { chunkedHead, isManifestUrl } from './chunked.ts';
 import type { GpuState } from './gpu.ts';
 import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
@@ -772,6 +773,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       const head = f.read(0, 32)!;
       f.close?.();
       return { ...d, size: isQcow2(head) ? qcow2Size(head) : f.size };
+    }
+    if (isManifestUrl(d.url!)) {
+      const { manifest, head } = await chunkedHead(d.url!);
+      return { ...d, size: isQcow2(head) ? qcow2Size(head) : manifest.size };
     }
     const r = await fetch(d.url!, { headers: { Range: 'bytes=0-31' } });
     if (r.status !== 206) throw new Error(`${d.url}: ${r.status}`);

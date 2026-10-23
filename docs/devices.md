@@ -117,6 +117,14 @@ mode (and natively in realtime mode: std has no CSPRNG).
   time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). No concurrency: one request at a
   time, and the device worker blocks while it waits. The import, export and disk-job workers (`web/app/sources.ts`)
   read without the cache.
+- **A chunked image** (`web/chunked.ts`, made by `tools/chunk-image.ts`; docs/plans/remote-disks.md §4.1): a disk URL
+  ending in `.json` is a manifest (`webpc-chunked-1`: the file's size, the piece size, each piece's SHA-256, and an
+  `id` hashed from them) of the image file cut into equal pieces, `pieces/<sha256>.bin` beside it. It reads as one
+  file under the block cache: a piece by range, or whole where the host answers a range with the whole file (as
+  Cloudflare Pages does), and then `Source.span` has the cache take the whole piece. `bootVm` sizes it from the
+  manifest and its first piece; the URL check (`web/app/urlcheck.ts`) gives the manifest's `id` as the disk's `etag`,
+  so a machine's disk identity follows the content. Not checked against the hashes yet (reads are synchronous;
+  `crypto.subtle` isn't).
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
   unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate
   (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). A request's compressed

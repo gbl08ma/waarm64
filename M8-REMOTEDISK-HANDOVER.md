@@ -10,13 +10,12 @@ Making a disk on another server fast. **The plan is [docs/plans/remote-disks.md]
   server with 47 ms added per request reproduces it (181 s): iterate on that, check on the real server.
 - **R1 done:** `web/blockcache.ts` (1 MiB blocks, 256 MiB LRU) under every HTTP source of the device worker: 196 →
   110 s remote, 181 → 82 s at 47 ms. Remote is now one stream's bandwidth (10 MB/s) plus 425 round trips.
-- **R2 next (started, not committed):** `web/chunked.ts` (a manifest and content-addressed pieces, read by range or
-  whole where the host has no ranges) and `tools/chunk-image.ts`. To do: open a `.json` disk URL as one in
-  `Devices.open` (under the block cache), the URL check (`web/app/urlcheck.ts`: a manifest's id as the disk's
-  `etag`, so the overlay follows the content), tests, then measure: whole file vs pieces with ranges vs pieces
-  whole (the local server's `/pages/` prefix answers as Cloudflare Pages does), piece sizes; upload one cut to the
-  user's server (below).
-- Then R3 (the cache in OPFS: min(4 GiB, 25% of the free quota), LRU across images, shown and clearable in Settings),
+- **R2 done:** the chunked format (`tools/chunk-image.ts`, `web/chunked.ts`: a `.json` disk URL is a manifest;
+  content-addressed pieces, by range or whole). Free where the host has ranges; 2 MiB pieces (the tool's default)
+  boot as fast as ranges where it has none. An 8 MiB cut is on the user's server:
+  `https://static.gbl08ma.com/diskimages/webpc-test/desktop-chunk8/manifest.json`. Local cuts at 1, 2, 4, 8 and 25 MiB
+  in `target/images/remote/chunk*/`. 47 ms and 20 MB/s locally (`local:/d47/r20`) lands where the real server does.
+- **R3 next:** `web/diskcache.ts` (written, unit-tested in `tests/diskcache.test.ts`, not wired in) and then R3 (the cache in OPFS: min(4 GiB, 25% of the free quota), LRU across images, shown and clearable in Settings),
   R4 (requests in parallel: `Devices.poll` awaits each request in order today, and the device worker blocks up to
   2.2 s behind back-to-back reads), R5 (a boot's read trace in the manifest, prefetched), then compression (§4.6).
 - **An image finding to act on:** a fresh overlay is the image's first boot, so `ldconfig.service` runs (44 s of the

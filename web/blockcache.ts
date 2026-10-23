@@ -27,8 +27,10 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE): S
     blocks.set(b, bytes);
     if (blocks.size > max) blocks.delete(blocks.keys().next().value!);
   };
-  /** Blocks `a`..`b` (inclusive) from the source in one read; false if it failed. */
+  /** Blocks `a`..`b` (inclusive) from the source in one read, widened to what the source fetches anyway; false if it failed. */
   const fetch = (a: number, b: number) => {
+    const wide = src.span?.(a * block, Math.min(src.size, (b + 1) * block) - a * block);
+    if (wide) [a, b] = [Math.min(a, Math.floor(wide[0] / block)), Math.max(b, Math.floor((wide[1] - 1) / block))];
     const off = a * block;
     const len = Math.min(src.size, (b + 1) * block) - off;
     const t = performance.now();

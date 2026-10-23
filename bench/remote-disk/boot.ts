@@ -4,7 +4,8 @@
 // time, the trace) at each mark, and the local server's request log. One JSON file a run.
 //   node bench/remote-disk/boot.ts <label> <disk> [out.json]
 // <disk>: a URL, or `local:<prefix>` for target/images/remote/desktop.qcow2 on bench/remote-disk/server.ts with its
-// path prefix (`local:/d47/r20`: 47 ms a request, 20 MB/s; `local:` alone: neither).
+// path prefix (`local:/d47/r20`: 47 ms a request, 20 MB/s; `local:` alone: neither) and the file under it
+// (`local:/d47/pages:chunk8/manifest.json`: a chunked image, its host without ranges; default desktop.qcow2).
 // Env: NCPUS (4), RAM (2560 MiB), GPU (virgl), STOP (`firefox`, or `login`/`sway` to stop earlier).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -18,7 +19,8 @@ mkdirSync(dirname(out), { recursive: true });
 const STOP = process.env.STOP ?? 'firefox';
 
 const local = disk.startsWith('local:') ? await diskServer(new URL('../../target/images/remote/', import.meta.url).pathname) : undefined;
-const diskUrl = local ? `${local.url}${disk.slice(6)}/desktop.qcow2` : disk;
+const [prefix, file] = disk.slice(6).split(':');
+const diskUrl = local ? `${local.url}${prefix}/${file ?? 'desktop.qcow2'}` : disk;
 
 type Stats = Record<string, { trace: number[]; stages: Record<string, { n: number; ms: number; bytes: number }> }>;
 const s = await openSession({ gpu: process.env.GPU ?? 'virgl', image: '', diskUrl, out: dirname(out), query: 'iostats', noWait: true, ncpus: Number(process.env.NCPUS ?? 4), ramMiB: Number(process.env.RAM ?? 2560) });

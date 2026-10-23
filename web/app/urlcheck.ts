@@ -1,8 +1,10 @@
 // A disk's URL, checked when it is added (docs/plans/machines.md §4.2; what a host must give: docs/plans/remote-disks.md
-// §3): reachable over HTTPS (or from the page's own origin), with CORS for the page's origin (the page is
-// cross-origin isolated: a response without CORS doesn't reach it), byte ranges answered with 206, `Content-Range`
-// exposed, and a suffix range (the end of a qcow2 is read that way by some tools; the page reads plain ranges, but a
-// server that fails it is often a proxy rewriting ranges). Says what fails and what the server needs, in words.
+// §3; a chunked image's manifest, web/chunked.ts, needs no ranges): reachable over HTTPS (or from the page's own
+// origin), with CORS for the page's origin (the page is cross-origin isolated: a response without CORS doesn't reach
+// it), byte ranges answered with 206, `Content-Range` exposed, and a suffix range (the end of a qcow2 is read that way
+// by some tools; the page reads plain ranges, but a server that fails it is often a proxy rewriting ranges). Says what
+// fails and what the server needs, in words.
+import { checkManifest, isManifestUrl, type Manifest } from '../chunked.ts';
 
 export type UrlCheck = {
   ok: boolean;
@@ -32,6 +34,7 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   if (u.protocol !== 'https:' && !sameOrigin && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') problems.push('The URL must be HTTPS: the page is served securely and the browser blocks plain HTTP from it.');
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, problems: ['Only http(s) URLs can be disks.'] };
   const out: UrlCheck = { ok: false, problems };
+  if (isManifestUrl(u.href)) return checkChunked(u, out);
   // A range read: what the disk does all the time. A failure here is the network or CORS (the browser doesn't say which).
   let r: Response;
   try {
@@ -68,6 +71,33 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   }
   if (out.bytes === undefined && r.status === 200) out.bytes = Number(r.headers.get('content-length')) || undefined;
   out.ok = problems.length === 0;
+  return out;
+}
+
+/**
+ * A chunked image (web/chunked.ts): its manifest, and its first piece's first bytes (by range, or the whole piece
+ * where the host has no ranges, which a chunked image allows). The manifest's id stands as the disk's `etag`, so the
+ * disk's identity follows the content (docs/plans/machines.md §3.1).
+ */
+async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
+  const fail = (why: string) => (out.problems.push(why), out);
+  let m: Manifest;
+  try {
+    const r = await fetch(u, { cache: 'no-store' });
+    if (r.status === 404) return fail('The server says there is no such file (404).');
+    if (!r.ok) return fail(`The server answered ${r.status} ${r.statusText} for the manifest.`);
+    m = checkManifest(await r.json());
+  } catch (e) {
+    return fail(e instanceof TypeError ? `The server didn't answer the page, or answered without CORS. It needs ${CORS_HINT}.` : `The manifest isn't a chunked image's: ${(e as Error).message}.`);
+  }
+  try {
+    const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[0]), u), { headers: { Range: 'bytes=0-511' }, cache: 'no-store' });
+    if (r.status !== 206 && r.status !== 200) return fail(`The server answered ${r.status} ${r.statusText} for the image's first piece (it should be next to the manifest, as tools/chunk-image.ts wrote it).`);
+    out.head = new Uint8Array(await r.arrayBuffer()).slice(0, 512);
+  } catch {
+    return fail(`The server didn't give the page the image's first piece. It needs ${CORS_HINT}, for the pieces too.`);
+  }
+  Object.assign(out, { bytes: m.size, etag: m.id, ok: out.problems.length === 0 });
   return out;
 }
 

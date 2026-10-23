@@ -96,3 +96,36 @@ changes (deterministic boots keep their step counts: the cache only changes whic
 - **The remote run is now bandwidth-bound:** 562 MB in 55 s is 10 MB/s on one request at a time (curl's single
   stream: 16–31 MB/s), against the local server's 24 MB/s with the same latency. What's left is one stream's
   throughput plus 425 round trips (20 s): requests in parallel (R4) take both.
+
+## R2: a chunked image (2026-10-23)
+
+`tools/chunk-image.ts` cuts an image into equal pieces named by their SHA-256 (`pieces/<sha256>.bin`) and writes
+`manifest.json` (the size, the piece size, the hashes, and an id hashed from them); `web/chunked.ts` reads it as one
+file under the block cache, by range where the host answers ranges and whole pieces where it answers a range with
+the whole file (as Cloudflare Pages does: the local server's `/pages/`). A `.json` disk URL is a manifest. Its id is
+the image's identity (the URL check gives it as the disk's `etag`): a new image under the same URL doesn't meet the
+old overlay. All arms at 47 ms a request and 20 MB/s (the local server), one boot each:
+
+| arm | login prompt | **painted** | requests | MB over the network |
+|---|---|---|---|---|
+| the whole file, ranges (`r2-whole.json`) | 54.4 | **108.9 s** | 422 | 560 |
+| 8 MiB pieces, ranges (`r2-c8-ranges.json`) | 55.3 | **108.9 s** | 438 | 561 |
+| no ranges, 8 MiB pieces, the source keeping 64 MiB of whole pieces (`r2-c8-pages.json`) | 81.2 | 145.1 s | 188 | 1561 |
+| the same, 4 MiB (`r2-c4-pages.json`) | 65.0 | 123.7 s | 244 | 1016 |
+| the same, 25 MiB (`r2-c25-pages.json`) | 155.8 | 309.7 s | 175 | 4540 |
+| no ranges, the block cache keeping whole pieces: 1 MiB (`r2b-c1-pages.json`) | 57.7 | 115.9 s | 537 | 561 |
+| **2 MiB** (`r2b-c2-pages.json`) | 53.9 | **108.1 s** | 326 | 681 |
+| 4 MiB (`r2b-c4-pages.json`) | 57.9 | 116.7 s | 221 | 920 |
+| 25 MiB (`r2b-c25-pages.json`) | 146.8 | 284.4 s | 153 | 3943 |
+| static.gbl08ma.com, 8 MiB pieces, ranges (`r2-remote-c8.json`) | 56.6 | **112.4 s** | 421 | 560 |
+
+- **The format costs nothing where the host has ranges**: pieces by range boot as the whole file does, locally and on
+  the real server (112.4 s against R1's 109.7 s, one run each). 47 ms and 20 MB/s locally lands where the real server
+  does (108.9 against 109.7 s): that pair stands in for it from here.
+- **Without ranges, the bytes are the cost:** the boot touches nearly every piece of the file, so the first design
+  (a few whole pieces kept by the source) fetched each 8 MiB piece about once (1.56 GB) and 25 MiB pieces several
+  times (4.5 GB). The source now says what a read fetches anyway (`Source.span`: the whole piece) and the block cache
+  takes all of it: **2 MiB pieces then boot as fast as ranges do** (108.1 s, 681 MB). 25 MiB pieces still refetch
+  (3.9 GB: 256 MiB of memory holds ten of them; R3's store on OPFS holds them all).
+- **The tool's default is 2 MiB** (753 files for this image: Cloudflare Pages allows 20,000 a site and 25 MiB a
+  file, so up to ~40 GB at 2 MiB).
