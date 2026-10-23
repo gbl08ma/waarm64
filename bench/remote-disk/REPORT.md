@@ -251,3 +251,35 @@ localhost through the Mac's network) to Firefox's paint, from:
 
 The warm edge is a local file's time (64 s, R5). Why the images are on static assets and not R2: docs/remote-disks.md
 "Hosting on Cloudflare".
+
+## R6: a paced prefetch (2026-10-23)
+
+R5's prefetch ran ahead of the guest by half of what the store holds, which in practice is the whole boot trace: a
+visitor at the boot menu had fetched ~380 MiB before choosing anything. Now it runs a window ahead of the guest's place
+in the list (16 blocks, widened by 8 each time the guest waits on a block the window held back, up to 128; docs/devices.md
+"Over HTTP"). `bench/remote-disk/boot.ts` now records the bytes fetched at each mark (`fetched`). The Desktop Demo from
+`vmdisks.tny.im/desktop/` (warm edge), the page on localhost through the Mac's network, Chromium 153, fresh profiles,
+alternated:
+
+| arm | fetched at the boot menu | at systemd's start | login prompt | **painted** |
+|---|---|---|---|---|
+| A, no prefetch (`manifest.json`; `r6-A-*.json`) | 4 MiB | 56 MiB | 34.4 / 34.6 s | **73.8 / 75.0 s** |
+| B, R5's prefetch (`r6-B-*.json`) | 378 / 395 MiB | 509 / 512 MiB | 26.8 / 27.4 s | **64.3 / 64.9 s** |
+| C, paced, from 16 (`r6-C-*.json`) | 20 MiB | 100 / 104 MiB | 28.6 / 28.8 s | **66.1 / 66.1 s** |
+
+A second session, three rounds each, with the keyboard change of the same commit (a `?disk=` machine follows the
+browser's layout, so the guest runs the layout's unit at boot):
+
+| arm | fetched at the boot menu | login prompt | **painted** |
+|---|---|---|---|
+| C, paced, from 64 (`r6-C64-*.json`) | 77–80 MiB | 29.2–29.8 s | **66.6–67.1 s** |
+| C, paced, from 16 (`r6-C16k-*.json`) | 20 MiB | 29.4–29.8 s | **66.6–67.1 s** |
+
+- **The prefetch still pays on a warm edge:** without it the boot is 9–10 s slower (A against B or C), each dependent
+  miss (qcow2's L2 table, then the cluster) a round trip.
+- **Paced, a visitor at the menu has fetched 20 MiB, not 380**; the boot to Firefox's paint costs ~1.5 s more than R5's
+  (rounds don't overlap: 2%), all of it before the login prompt. The total is the same (~585 MiB).
+- **The window isn't what costs it:** it widened once or twice (16 → 24 or 32; the guest waited on the list 2–3 times),
+  and starting at 64 changes nothing but the menu's bytes. What R5 had was the menu's idle seconds: by systemd's start
+  it held 510 MiB, so the boot's fetching (the network, the store's writes) never ran beside the guest. Left in
+  docs/backlog.md (running eagerly once the guest is past its menu).

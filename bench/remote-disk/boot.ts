@@ -1,7 +1,7 @@
 // A desktop boot from a disk on a server (docs/remote-disks.md; REPORT.md "R0"): the Arch desktop guest's qcow2 opened by its
 // URL on the page (`?disk=`, `?iostats`), timed from the page's start to the serial login prompt, to the user's
-// session on the screen, to sway's socket, and to Firefox's window; with the disk's base reads (count, sizes, bytes,
-// time, the trace) at each mark, and the local server's request log. One JSON file a run.
+// session on the screen, to sway's socket, and to Firefox's window; with the bytes fetched by each mark and the disk's
+// base reads (count, sizes, bytes, time, the trace), and the local server's request log. One JSON file a run.
 //   node bench/remote-disk/boot.ts <label> <disk> [out.json]
 // <disk>: a URL, or `local:<prefix>` for target/images/remote/desktop.qcow2 on bench/remote-disk/server.ts with its
 // path prefix (`local:/d47/r20`: 47 ms a request, 20 MB/s; `local:` alone: neither) and the file under it
@@ -12,6 +12,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { GUEST_USER, openSession } from '../gpu/guest-session.ts';
+import type { BlockCacheStats } from '../../web/blockcache.ts';
 import { diskServer } from './server.ts';
 
 const [label, disk, outArg] = process.argv.slice(2);
@@ -45,8 +46,16 @@ async function bootOnce(file: string, n: number) {
     setInterval(() => { if (!t || !ready) { t = performance.now(); ch.postMessage('ask'); } }, 250);
   });
   const marks: Record<string, number> = {};
-  const mark = async (name: string) => { marks[name] = (await now()) - origin; log(`boot ${n}:`, name, (marks[name] / 1000).toFixed(1), 's'); };
-  const result: Record<string, unknown> = { label: n > 1 ? `${label} (boot ${n})` : label, boot: n, disk: diskUrl, gl: s.gl, marks };
+  // At each mark, what the block cache had fetched (bytes) and the prefetch's window (blocks ahead of the guest).
+  const fetched: Record<string, { bytes: number; window?: number; late?: number }> = {};
+  const mark = async (name: string) => {
+    marks[name] = (await now()) - origin;
+    const all = await page.evaluate(() => (window as unknown as { __ioStats?: () => Promise<unknown> }).__ioStats?.()).catch(() => undefined) as Record<string, { cache?: BlockCacheStats }> | undefined;
+    const c = Object.values(all ?? {}).find((d) => d.cache)?.cache;
+    if (c) fetched[name] = { bytes: c.fetched, window: c.prefetch?.window, late: c.prefetch?.late };
+    log(`boot ${n}:`, name, (marks[name] / 1000).toFixed(1), 's', c ? `${(c.fetched / 2 ** 20).toFixed(0)} MiB fetched` : '');
+  };
+  const result: Record<string, unknown> = { label: n > 1 ? `${label} (boot ${n})` : label, boot: n, disk: diskUrl, gl: s.gl, marks, fetched };
   try {
     // The boot loader's menu (the firmware read before it), systemd's start (the kernel is quiet: the loader read the
     // kernel and initramfs before it), then the serial getty's prompt.

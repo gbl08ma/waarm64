@@ -1,18 +1,28 @@
 // A remote disk's blocks kept in OPFS (docs/devices.md "Over HTTP"), under the block cache (web/blockcache.ts): a
 // reload, a second boot or a Suspend's resume reads what was fetched before from this browser instead of the network.
-// One directory per image under `remote-cache/`, named by the image's identity (a chunked image's id, or a URL with
-// its size and the server's validator: an image without one isn't kept): `data` holds blocks in slots, `map` one
-// little-endian u32 per image block (0: not held; n: slot n - 1). Bounded by the cache's size when opened plus a
-// quarter of the free quota, at most 4 GiB: other images' caches go first (least recently used), then this image's
-// slots are reused in the order they were filled. A slot's old map entry is cleared (durably) before its new block is
+// They live in a Storage Bucket of their own where the browser has them (Chromium): not persisted, so the browser may
+// take it back under pressure even when the origin's storage is kept (the machines' disks), and expiring a week after
+// it was last used, so a visit to a demo doesn't keep its blocks for good. Elsewhere, the origin's OPFS under
+// `remote-cache/`. Either way an image's cache unused for a week is deleted when the page next looks (`entries`).
+// One directory per image, named by the image's identity (a chunked image's id, or a URL with its size and the
+// server's validator: an image without one isn't kept): `data` holds blocks in slots, `map` one little-endian u32 per
+// image block (0: not held; n: slot n - 1); the map's modification time is when it was last used (touched at open).
+// Bounded by the cache's size when opened plus a quarter of the free quota, at most 2 GiB: other images' caches go
+// first (least recently used), then this image's slots are reused in the order they were filled. A slot's old map entry is cleared (durably) before its new block is
 // written, and the block (durably) before its map entry, so a crash loses a block but never maps one to other bytes.
 // The device worker holds the directory's Web Lock while it reads it; another tab on the same image gets no store (an
-// opener waits 2 s for it: a restarting machine's old device worker lets go as it closes).
+// opener waits 2 s for it: a restarting machine's old device worker lets go as it closes). The page's Clear asks the
+// workers holding one to give its space back (`clearCaches`).
 import { opfsDir, type SyncFile } from './overlay.ts';
 
+/** The Storage Bucket's name, or the OPFS directory's where there are no buckets. */
 export const CACHE_DIR = 'remote-cache';
 /** At most this many bytes kept, whatever the quota. */
-export const CACHE_MAX = 4 * 2 ** 30;
+export const CACHE_MAX = 2 * 2 ** 30;
+/** An image's cache unused this long is deleted; the bucket expires this long after its last use. */
+export const CACHE_EXPIRY_MS = 7 * 86_400_000;
+/** The bucket's quota: the cache and its maps. */
+const BUCKET_QUOTA = CACHE_MAX + 64 * 2 ** 20;
 /** Of the free quota, the share the cache may grow into. */
 const FREE_SHARE = 0.25;
 
@@ -20,6 +30,8 @@ const FREE_SHARE = 0.25;
 export type BlockStore = {
   /** Block `b`'s bytes if held. */
   get(b: number): Uint8Array | undefined;
+  /** Whether it still keeps blocks (not since `giveUp`). */
+  active(): boolean;
   /** Whether block `b` is held (without reading it). */
   has(b: number): boolean;
   /** Keeps block `b` (its bytes as fetched: the last block may be short). */
@@ -34,8 +46,40 @@ export type BlockStore = {
   close(): void;
 };
 
-/** The stores open in this worker, which `releaseStores` empties. */
-const stores = new Set<BlockStore>();
+/** The stores open in this worker, which `releaseStores` empties, by their image's key. */
+const stores = new Map<BlockStore, string>();
+
+type Bucket = { getDirectory(): Promise<FileSystemDirectoryHandle>; setExpires(t: number): Promise<void> };
+type Buckets = { open(name: string, o?: { persisted?: boolean; durability?: string; quota?: number; expires?: number }): Promise<Bucket> };
+/** Storage Buckets (Chromium; not in the DOM types yet). */
+const buckets = () => (navigator as unknown as { storageBuckets?: Buckets }).storageBuckets;
+
+/**
+ * The directory holding the images' caches: the bucket's root (`use`: its expiry pushed on, as an image is opened), or
+ * `remote-cache/` in the origin's OPFS. Where there are buckets, an older page's `remote-cache/` there is deleted.
+ */
+export async function cacheRoot(use = false): Promise<FileSystemDirectoryHandle> {
+  const sb = buckets();
+  if (!sb) return opfsDir(CACHE_DIR, true);
+  const bucket = await sb.open(CACHE_DIR, { persisted: false, durability: 'relaxed', quota: BUCKET_QUOTA, expires: Date.now() + CACHE_EXPIRY_MS });
+  if (use) await bucket.setExpires(Date.now() + CACHE_EXPIRY_MS);
+  await (await navigator.storage.getDirectory()).removeEntry(CACHE_DIR, { recursive: true }).catch(() => {});
+  return bucket.getDirectory();
+}
+
+/** The channel on which the page's Clear asks this origin's workers to empty the stores they hold. */
+const CLEAR_CHANNEL = 'webpc-remote-cache';
+let clearChannel: BroadcastChannel | undefined;
+/** This worker answers Clear (once it opened a store): its stores give up, and it names the images they were. */
+function answerClear() {
+  if (clearChannel || typeof BroadcastChannel === 'undefined') return;
+  clearChannel = new BroadcastChannel(CLEAR_CHANNEL);
+  clearChannel.onmessage = (e) => {
+    if (e.data?.clear !== true) return;
+    const keys = [...stores].map(([s, key]) => (s.giveUp(), key));
+    if (keys.length) clearChannel!.postMessage({ cleared: keys });
+  };
+}
 
 /**
  * Empties every open store (the guest's writes go before kept blocks: a disk's overlay found the storage full, and
@@ -44,7 +88,7 @@ const stores = new Set<BlockStore>();
  */
 export function releaseStores() {
   let freed = false;
-  for (const s of stores) {
+  for (const s of stores.keys()) {
     const st = s.stats();
     if (!st.gaveUp && st.held) freed = true;
     s.giveUp();
@@ -79,12 +123,14 @@ const LOCK_WAIT_MS = 2000;
 
 type Entry = { key: string; bytes: number; used: number };
 
-/** The images' caches: their keys, bytes and when last used (the map's modification time). */
-async function entries(): Promise<Entry[]> {
+/**
+ * The images' caches: their keys, bytes and when last used (the map's modification time); those unused past
+ * CACHE_EXPIRY_MS (and not open) are deleted instead.
+ */
+async function entries(root?: FileSystemDirectoryHandle): Promise<Entry[]> {
   const out: Entry[] = [];
-  let root: FileSystemDirectoryHandle;
   try {
-    root = await opfsDir(CACHE_DIR);
+    root ??= await cacheRoot();
   } catch {
     return out;
   }
@@ -95,7 +141,24 @@ async function entries(): Promise<Entry[]> {
     const [data, map] = await Promise.all([file('data'), file('map')]);
     out.push({ key, bytes: (data?.size ?? 0) + (map?.size ?? 0), used: map?.lastModified ?? 0 });
   }
-  return out;
+  const now = Date.now();
+  const kept: Entry[] = [];
+  for (const e of out) if (now - e.used < CACHE_EXPIRY_MS || !(await remove(root, e.key))) kept.push(e);
+  return kept;
+}
+
+/** Deletes image `key`'s cache unless a machine is reading it; whether it did. */
+async function remove(root: FileSystemDirectoryHandle, key: string) {
+  const release = await tryLock(key);
+  if (!release) return false;
+  try {
+    await root.removeEntry(key, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    release();
+  }
 }
 
 /** What every image's cache holds, in bytes (the page's storage list). */
@@ -103,18 +166,34 @@ export async function cacheBytes() {
   return (await entries()).reduce((n, e) => n + e.bytes, 0);
 }
 
-/** Deletes the images' caches no machine is reading now (the page's Clear); resolves to the bytes freed. */
+/** How long Clear waits for the machines reading an image to give its space back. */
+const CLEAR_WAIT_MS = 2000;
+
+/**
+ * Deletes the images' caches (the page's Clear): those a running machine reads, it empties (it reads from memory and
+ * the network from then on); resolves to the bytes freed.
+ */
 export async function clearCaches() {
+  const root = await cacheRoot();
   let freed = 0;
-  for (const e of await entries()) {
-    const release = await tryLock(e.key);
-    if (!release) continue;
-    try {
-      await (await opfsDir(CACHE_DIR)).removeEntry(e.key, { recursive: true });
-      freed += e.bytes;
-    } finally {
-      release();
-    }
+  const open = new Map<string, number>();
+  for (const e of await entries(root)) {
+    if (await remove(root, e.key)) freed += e.bytes;
+    else open.set(e.key, e.bytes);
+  }
+  if (!open.size || typeof BroadcastChannel === 'undefined') return freed;
+  const ch = new BroadcastChannel(CLEAR_CHANNEL);
+  try {
+    await new Promise<void>((done) => {
+      const timer = setTimeout(done, CLEAR_WAIT_MS);
+      ch.onmessage = (e) => {
+        for (const key of (e.data?.cleared ?? []) as string[]) if (open.has(key)) (freed += open.get(key)!, open.delete(key));
+        if (!open.size) (clearTimeout(timer), done());
+      };
+      ch.postMessage({ clear: true });
+    });
+  } finally {
+    ch.close();
   }
   return freed;
 }
@@ -129,7 +208,8 @@ export async function openBlockStore(key: string, size: number, block: number): 
   if (!release) return undefined;
   const handles: FileSystemSyncAccessHandle[] = [];
   try {
-    const all = await entries();
+    const root = await cacheRoot(true);
+    const all = await entries(root);
     const { quota = 0, usage = 0 } = await navigator.storage.estimate();
     const kept = all.reduce((n, e) => n + e.bytes, 0);
     const budget = Math.min(CACHE_MAX, kept + FREE_SHARE * Math.max(0, quota - usage));
@@ -138,14 +218,7 @@ export async function openBlockStore(key: string, size: number, block: number): 
     let rest = others.reduce((n, e) => n + e.bytes, 0);
     for (const e of others) {
       if (rest + size <= budget) break;
-      const r = await tryLock(e.key);
-      if (!r) continue;
-      try {
-        await (await opfsDir(CACHE_DIR)).removeEntry(e.key, { recursive: true });
-        rest -= e.bytes;
-      } finally {
-        r();
-      }
+      if (await remove(root, e.key)) rest -= e.bytes;
     }
     const blocks = Math.ceil(size / block);
     const slots = Math.floor((budget - rest) / (block + 4));
@@ -153,17 +226,25 @@ export async function openBlockStore(key: string, size: number, block: number): 
       release();
       return undefined;
     }
-    const dir = await opfsDir(`${CACHE_DIR}/${key}`, true);
+    const dir = await root.getDirectoryHandle(key, { create: true });
     const open = async (n: string) => {
       const h = await (await dir.getFileHandle(n, { create: true })).createSyncAccessHandle();
       handles.push(h);
       return h as unknown as SyncFile;
     };
     const [data, mapFile] = [await open('data'), await open('map')];
-    return blockStore(data, mapFile, size, block, Math.min(slots, blocks), () => {
+    // Used now: the map's first entry written back, so its modification time says so (CACHE_EXPIRY_MS).
+    const first = new Uint8Array(4);
+    mapFile.read(first, { at: 0 });
+    mapFile.write(first, { at: 0 });
+    mapFile.flush();
+    answerClear();
+    const store = blockStore(data, mapFile, size, block, Math.min(slots, blocks), () => {
       for (const h of handles) h.close();
       release();
     });
+    stores.set(store, key);
+    return store;
   } catch (e) {
     for (const h of handles) h.close();
     release();
@@ -191,6 +272,7 @@ export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, bloc
   const n = { reads: 0, writes: 0, ms: 0 };
   let gaveUp = false;
   const store: BlockStore = {
+    active: () => !gaveUp,
     has: (b) => !gaveUp && map[b] > 0,
     get(b) {
       if (gaveUp) return undefined;
@@ -247,6 +329,6 @@ export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, bloc
       close();
     },
   };
-  stores.add(store);
+  stores.set(store, '');
   return store;
 }

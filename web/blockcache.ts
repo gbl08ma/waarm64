@@ -17,13 +17,24 @@ const MAX_FETCHES = 8;
 /** Of those, the prefetch's at most (`prefetch`): the guest's own reads keep the rest, and go first in the queue. */
 const PREFETCH_FETCHES = 4;
 
+/**
+ * How far the prefetch runs ahead of the guest's place in its list, in blocks: it starts at AHEAD_START and widens by
+ * AHEAD_STEP each time the guest waits on a block of the list while the prefetch sat idle on its window (a wider one
+ * would have had it), up to AHEAD_MAX. A guest at a boot menu, or one a fast host keeps up with, costs a window.
+ */
+export const AHEAD_START = 16, AHEAD_STEP = 8, AHEAD_MAX = 128;
+
 /** R1's choice (bench/remote-disk/REPORT.md): 1 MiB blocks, 256 MiB kept. */
 export const BLOCK_CACHE: BlockCacheOptions = { block: 1 << 20, bytes: 256 << 20 };
 
 export type BlockCacheStats = {
   hits: number; misses: number; requests: number; fetched: number; ms: number; store?: ReturnType<BlockStore['stats']> & { hits: number };
-  /** `prefetch`'s: blocks fetched ahead, how many the guest then read before they went, and how far it got in the list. */
-  prefetch?: { fetched: number; used: number; done: boolean };
+  /**
+   * `prefetch`'s: blocks fetched ahead, how many the guest then read before they went, how far it got in the list, the
+   * window (blocks ahead of the guest) and how many times the guest waited on the list's blocks (`late`; `widened`: of
+   * those, the times the window grew).
+   */
+  prefetch?: { fetched: number; used: number; done: boolean; window: number; late: number; widened: number };
 };
 
 /**
@@ -64,7 +75,7 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
     stats.fetched += len;
     for (let k = a; k <= b; k++) {
       const one = bytes.subarray((k - a) * block, Math.min(len, (k - a + 1) * block));
-      if (!background || !store) keep(k, one);
+      if (!background || !store?.active()) keep(k, one);
       store?.put(k, one);
       if (background) ahead.add(k);
     }
@@ -130,6 +141,7 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
     let run = -1;
     for (let k = first; k <= end; k++) {
       const at = order.get(k);
+      if (at !== undefined && !blocks.has(k) && !store?.has(k)) late(k);
       if (at !== undefined && at > reached) (reached = at, moved());
       if (ahead.delete(k)) prefetched.used++;
     }
@@ -158,23 +170,47 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
   let reached = -1;
   let wake: (() => void) | undefined;
   const moved = () => { wake?.(); wake = undefined; };
-  const prefetched = { fetched: 0, used: 0, done: false };
+  const prefetched = { fetched: 0, used: 0, done: false, window: 0, late: 0, widened: 0 };
+  /**
+   * The window's ceiling (`prefetch`), whether the prefetch sat on its window since it last widened, and the blocks it
+   * is fetching that the window held back (fetched once the guest moved).
+   */
+  let ceiling = 0, idled = false;
+  const heldBack = new Set<number>();
+  /**
+   * The guest's read needs block `k` of the list from the network: the window widens if it held the prefetch back (the
+   * block is being fetched only because the guest moved, or isn't, and the prefetch sat idle).
+   */
+  const late = (k: number) => {
+    if (!ceiling || prefetched.done) return;
+    prefetched.late++;
+    if (!(pending.has(k) ? heldBack.has(k) : idled) || prefetched.window >= ceiling) return;
+    prefetched.window = Math.min(ceiling, prefetched.window + AHEAD_STEP);
+    prefetched.widened++;
+    idled = false;
+    moved();
+  };
   let closed = false;
   /**
    * Fetches `list` (blocks in the order a boot read them) ahead of the guest, in the background: runs of adjacent
    * blocks one request each, at most PREFETCH_FETCHES at once, and no further ahead of the guest's place in the list
-   * than half of what can keep them (the store's slots, or memory's blocks).
+   * than its window (AHEAD_START, widened up to AHEAD_MAX, and never past half of what can keep the blocks: the store's
+   * slots, or memory's blocks).
    */
   const prefetch = async (list: number[]) => {
     if (!src.readAsync || !list.length) return;
     order = new Map(list.map((b, i) => [b, i]));
     Object.defineProperty(stats, 'prefetch', { enumerable: true, get: () => ({ ...prefetched }) });
-    const window = Math.max(8, Math.floor((store ? store.stats().slots : max) / 2));
+    ceiling = Math.min(AHEAD_MAX, Math.max(8, Math.floor((store ? store.stats().slots : max) / 2)));
+    prefetched.window = Math.min(AHEAD_START, ceiling);
     const held = (b: number) => blocks.has(b) || pending.has(b) || !!store?.has(b);
+    let parked = false; // the window held the prefetch back: what it fetches next, the guest may already want
     let outstanding = 0; // the prefetch's fetches not yet done: at most PREFETCH_FETCHES, so none waits long in the queue
-    for (let i = 0; i < list.length && !closed;) {
+    // It stops if the store gives up (the page's Clear, or the storage full): what it fetched would have nowhere to go.
+    for (let i = 0; i < list.length && !closed && (!store || store.active());) {
       if (held(list[i]) || list[i] > last) { i++; continue; }
-      if (i - reached > window) {
+      if (i - reached > prefetched.window) {
+        idled = parked = true;
         await new Promise<void>((go) => { wake = go; });
         continue;
       }
@@ -182,8 +218,16 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
       while (j < list.length && j - i < 8 && list[j] === list[j - 1] + 1 && list[j] <= last && !held(list[j])) j++;
       prefetched.fetched += j - i;
       outstanding++;
-      void fetchAsync(list[i], list[j - 1], true).finally(() => (outstanding--, moved()));
+      const run = list.slice(i, j);
+      if (parked) for (const b of run) heldBack.add(b);
+      void fetchAsync(list[i], list[j - 1], true).finally(() => {
+        for (const b of run) heldBack.delete(b);
+        outstanding--;
+        moved();
+      });
       i = j;
+      // Its slots all busy: what it fetches next, the network held back, not the window.
+      if (outstanding >= PREFETCH_FETCHES) parked = false;
       while (outstanding >= PREFETCH_FETCHES && !closed) await new Promise<void>((go) => { wake = go; });
     }
     prefetched.done = true;

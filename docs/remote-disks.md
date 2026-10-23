@@ -19,6 +19,7 @@ fresh profile:
 | A block cache in memory (1 MiB blocks): 425 requests | 110 s |
 | Requests in parallel (realtime mode), the device worker never waiting on the network (its longest answer 0.7 s → 17 ms) | 101 s |
 | A boot's reads in the manifest, fetched ahead | **65 s** |
+| The same, paced: a window ahead of the guest, not the whole list at once (20 MiB fetched at the boot menu, not 380; R6, from vmdisks.tny.im, against 64.6 s there) | 66 s |
 | A local file | 64 s |
 | The next boot (the blocks kept in OPFS): no requests | 63 s |
 
@@ -32,7 +33,11 @@ Findings worth not re-measuring:
   with gzip, 99.2% with brotli 5, 99.3% with zstd 3 (per 2 MiB piece, as a host would encode them): they are qcow2's
   compressed clusters. So pieces aren't compressed, and a host's `Content-Encoding` is moot. An image converted
   without `qemu-img convert -c` would differ.
-- **The browser's HTTP cache gives nothing across boots;** the OPFS store is what makes a second boot local.
+- **The browser's HTTP cache gives nothing across boots;** the OPFS store is what makes a second boot local. It sits
+  in an expiring Storage Bucket (a week after its last use, at most 2 GiB, which the browser may take back under
+  pressure), so a visit to a demo doesn't keep its blocks for good.
+- **The prefetch pays on a warm edge too** (R6: 9–10 s to Firefox's paint): a dependent miss is a round trip however
+  fast the host.
 - **A hosted image's first boot runs its update jobs** (`ldconfig.service` by `ConditionNeedsUpdate`): 2–5 s of the
   guest's time, no extra bytes (backlog).
 - The deterministic mode reads a remote disk one request at a time with synchronous XHRs, by design (its step

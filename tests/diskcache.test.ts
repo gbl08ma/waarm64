@@ -85,8 +85,8 @@ test('a short write (the storage full) gives up: nothing kept, its space given b
 });
 
 // In Chromium, on OPFS (a worker's sync access handles): kept across an opening, one opener at a time, and Clear
-// leaves an image a machine reads alone.
-test('on OPFS: kept across an opening, one opener at a time, Clear spares the open one', async () => {
+// empties an image a machine reads too (it gives its store up).
+test('on OPFS: kept across an opening, one opener at a time, Clear empties the open one too', async () => {
   const { chromium } = await import('playwright-core');
   const { startServer } = await import('../tools/serve.ts');
   const server = await startServer();
@@ -110,15 +110,15 @@ test('on OPFS: kept across an opening, one opener at a time, Clear spares the op
         o.put(0, block(0)); o.close();
         await new Promise((r) => setTimeout(r, 50));
         const before = await cacheBytes();
-        await clearCaches(); // b is open: only the other image's goes
+        await clearCaches(); // the other image's goes; b, open, gives its space back
         const after = await cacheBytes();
         b.close();
-        postMessage({ second: second === undefined, back, before, after, held: b.stats().held });`;
+        postMessage({ second: second === undefined, back, before, after, held: b.stats().held, active: b.active() });`;
       const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
       return await new Promise((resolve, reject) => { w.onmessage = (e) => resolve(e.data); w.onerror = (e) => reject(new Error(e.message)); });
-    }) as { second: boolean; back: (boolean | null)[]; before: number; after: number; held: number };
-    assert.deepEqual([r.second, r.back, r.held], [true, [true, true, null], 2]);
-    assert.ok(r.before > r.after && r.after >= 2 * 65536, `${r.before} → ${r.after}`);
+    }) as { second: boolean; back: (boolean | null)[]; before: number; after: number; held: number; active: boolean };
+    assert.deepEqual([r.second, r.back, r.held, r.active], [true, [true, true, null], 0, false]);
+    assert.ok(r.before >= 3 * 65536 && r.after === 0, `${r.before} → ${r.after}`);
   } finally {
     await browser.close();
     server.close();

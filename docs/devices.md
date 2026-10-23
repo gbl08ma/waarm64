@@ -128,24 +128,33 @@ mode (and natively in realtime mode: std has no CSPRNG).
   **A chunked image's boot trace is fetched ahead** (R5): its manifest's `prefetch` (`tools/disk-trace.ts` writes a
   boot's reads there: 1 MiB blocks in the order it first read them) is fetched in the background from the opening
   (realtime only): runs of adjacent blocks a request each, at most 4 of the 8 fetches, the guest's reads first in the
-  queue (slots granted in order), no further ahead of the guest's place in the list than half of what can hold them
-  (the store's slots, or memory's blocks), and into the store alone where there is one. A synchronous read (the
+  queue (slots granted in order), and into the store alone where there is one. **It runs a window ahead of the guest's
+  place in the list** (`AHEAD_START` 16 blocks), not the whole list: the window widens by 8 each time the guest's read
+  needs a block of the list from the network that the window held back (not fetched while the prefetch sat idle on
+  it, or fetched only once the guest moved), up to 128 and never past half of what can hold the blocks (the store's
+  slots, or memory's). A guest at a boot menu, or one a fast host keeps up with, costs a window; a slow host widens
+  it. It stops if the store gives up. A synchronous read (the
   image's opening) of a block the prefetch is fetching fetches it itself. A remote desktop boot's first boot: 96 →
   65 s, a local file's time (bench/remote-disk/REPORT.md "R5"). A read that throws is an IOERR, not a failed device.
-  **The blocks are kept in OPFS** (`web/diskcache.ts`) where the image has an identity that changes with it (a chunked
+  **The blocks are kept in OPFS** (`web/diskcache.ts`), in a Storage Bucket of their own where the browser has
+  them (Chromium): `remote-cache`, not persisted (the browser may take it back under pressure even when the origin's
+  storage is kept, as the machines' disks are), expiring a week after its last use (pushed on as an image opens);
+  elsewhere the origin's `remote-cache/` directory. Either way an image's cache unused for a week (its map's
+  modification time, touched at opening) is deleted when the page next looks. The blocks are kept where the image has an identity that changes with it (a chunked
   image's id, or the URL, size and the server's `ETag` or `Last-Modified`; without one nothing is kept), so a reload, a
   second boot or a resume reads them locally: a block missing in memory is looked for there before it is fetched, and
-  what is fetched is written there. `remote-cache/<key>/`: `data` in 1 MiB slots, `map` a u32 per block; a reused
+  what is fetched is written there. `<root>/<key>/`: `data` in 1 MiB slots, `map` a u32 per block; a reused
   slot's old entry is cleared durably before its block is written, and the block before its entry, so a crash loses
   blocks but never maps one to other bytes (`tests/diskcache.test.ts`). Bounded at opening by what it holds plus a
-  quarter of the free quota, at most 4 GiB: other images' caches go first (least recently used), then this image's
+  quarter of the free quota, at most 2 GiB: other images' caches go first (least recently used), then this image's
   slots are reused in the order they were filled. The device worker holds the image's Web Lock (`webpc-cache:<key>`,
   waiting 2 s for a restarting machine's old worker); another tab on the same image reads without it. **The guest's
   writes go first:** the store checks each write's count (Chromium's sync handles come back short at the quota, they
   don't throw, and a fresh incognito profile takes ~0.8 GB while `estimate()` reports 3.2) and gives up for the
   session on a short one (map cleared, data cut off); a disk write that fails makes every open store give up
   (`releaseStores`) and is tried once more. The Machines
-  page's storage footer shows and clears it; `?diskcache=0` turns it off (benchmarks). A remote desktop boot's second
+  page's storage footer shows and clears it (a machine reading one is asked over a BroadcastChannel to give its store
+  up); `?diskcache=0` turns it off (benchmarks). A remote desktop boot's second
   boot: 109 → 63 s, no requests (bench/remote-disk/REPORT.md "R3").
 - **A chunked image** (`web/chunked.ts`, made by `tools/chunk-image.ts`; [remote-disks.md](remote-disks.md)): a disk URL
   ending in `.json` is a manifest (`webpc-chunked-1`: the file's size, the piece size, each piece's SHA-256, an

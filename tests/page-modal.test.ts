@@ -395,10 +395,10 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
   const page = await context.newPage();
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  // A remote disk's kept blocks, as web/diskcache.ts leaves them: remote-cache/<key>/{data,map}.
+  // A remote disk's kept blocks, as web/diskcache.ts leaves them: <its root>/<key>/{data,map}.
   await page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory();
-    const dir = await (await root.getDirectoryHandle('remote-cache', { create: true })).getDirectoryHandle('0123abcd', { create: true });
+    const { cacheRoot } = await import('/web/diskcache.ts' as string);
+    const dir = await (await cacheRoot()).getDirectoryHandle('0123abcd', { create: true });
     for (const [name, bytes] of [['data', 3 << 20], ['map', 4096]] as const) {
       const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
       await w.write(new Uint8Array(bytes));
@@ -412,11 +412,64 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
   await clear.click();
   await clear.waitFor({ state: 'detached' });
   const left = await page.evaluate(async () => {
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('remote-cache');
+    const { cacheRoot } = await import('/web/diskcache.ts' as string);
+    const dir = await cacheRoot();
     const names: string[] = [];
     for await (const n of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(n);
     return names;
   });
   assert.deepEqual(left, []);
+  await context.close();
+});
+
+test("remote disks' blocks: in an expiring bucket of their own, cleared while a machine reads them, gone after a week unused", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${base}/web/app/`);
+  const got = await page.evaluate(async () => {
+    const dc = await import('/web/diskcache.ts' as string);
+    // A store held open by a worker, as a running machine's device worker holds its disk's.
+    const src = `const dc = await import(${JSON.stringify(`${location.origin}/web/diskcache.ts`)});
+      const s = await dc.openBlockStore('feedc0de', 64 * 4096, 4096);
+      for (let b = 0; b < 8; b++) s.put(b, new Uint8Array(4096).fill(b + 1));
+      postMessage('ready');
+      onmessage = () => postMessage({ active: s.active(), held: s.stats().held });`;
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
+    const next = () => new Promise<unknown>((r) => (w.onmessage = (e) => r(e.data)));
+    await next();
+    const sb = (navigator as unknown as { storageBuckets: { keys(): Promise<string[]>; open(n: string): Promise<{ expires(): Promise<number | null>; persisted(): Promise<boolean> }> } }).storageBuckets;
+    const bucket = await sb.open(dc.CACHE_DIR);
+    const days = ((await bucket.expires())! - Date.now()) / 86_400_000;
+    const persisted = await bucket.persisted();
+    const before = await dc.cacheBytes();
+    const freed = await dc.clearCaches();
+    w.postMessage(0);
+    const store = await next();
+    const after = await dc.cacheBytes();
+    w.terminate();
+    // A cache last used eight days ago (the clock moved on): gone when the page next looks.
+    const dir = await (await dc.cacheRoot()).getDirectoryHandle('0ld0ld', { create: true });
+    const f = await (await dir.getFileHandle('map', { create: true })).createWritable();
+    await f.write(new Uint8Array(4096));
+    await f.close();
+    const fresh = await dc.cacheBytes();
+    const now = Date.now;
+    Date.now = () => now() + 8 * 86_400_000;
+    const later = await dc.cacheBytes();
+    Date.now = now;
+    const names: string[] = [];
+    for await (const n of ((await dc.cacheRoot()) as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(n);
+    return { buckets: await sb.keys(), days, persisted, before, freed, store, after, fresh, later, names };
+  });
+  assert.ok(got.buckets.includes('remote-cache'), String(got.buckets));
+  assert.ok(got.days > 6.9 && got.days <= 7, `expires in ${got.days} days`);
+  assert.equal(got.persisted, false);
+  assert.ok(got.before >= 8 * 4096, `${got.before} bytes before`);
+  assert.ok(got.freed >= 8 * 4096, `${got.freed} bytes freed`);
+  assert.deepEqual(got.store, { active: false, held: 0 });
+  assert.equal(got.after, 0);
+  assert.equal(got.fresh, 4096);
+  assert.equal(got.later, 0);
+  assert.deepEqual(got.names, []); // the worker's too, emptied, once nothing read it
   await context.close();
 });

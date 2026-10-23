@@ -136,6 +136,62 @@ test("prefetch: the list fetched ahead in the background, within its window, the
   c.close?.();
 });
 
+test('prefetch: over a large store it runs a window ahead, not the whole list; it widens only when it held the guest back', async () => {
+  const { AHEAD_START, AHEAD_STEP, AHEAD_MAX } = await import('../web/blockcache.ts');
+  const { blockStore } = await import('../web/diskcache.ts');
+  const { memFile } = await import('../web/overlay.ts');
+  const N = 1024, B = 4096;
+  const bytes = Uint8Array.from({ length: N * B }, (_, i) => (i * 7 + 3) & 0xff);
+  const make = (ms: number) => {
+    let blocks = 0;
+    const src = { size: N * B, read: (off: number, len: number) => bytes.slice(off, off + len), readAsync: async (off: number, len: number) => {
+      blocks += len / B;
+      await new Promise((r) => setTimeout(r, ms));
+      return bytes.slice(off, off + len);
+    } };
+    const c = cachedSource(src, { block: B, bytes: 16 * B }, blockStore(memFile(), memFile(), N * B, B, N));
+    return { c, fetched: () => blocks };
+  };
+  const list = Array.from({ length: N }, (_, i) => i);
+  const settle = () => new Promise((r) => setTimeout(r, 60));
+  // The guest reads nothing (a boot menu): a window and a run past it, of 1024 the store could hold.
+  {
+    const { c, fetched } = make(1);
+    void c.prefetch(list);
+    await settle();
+    assert.ok(fetched() >= AHEAD_START && fetched() <= AHEAD_START + 8, `${fetched()} blocks fetched with the guest idle`);
+    assert.deepEqual([c.stats.prefetch!.window, c.stats.prefetch!.widened], [AHEAD_START, 0]);
+    c.close?.();
+  }
+  // The guest's first read comes at once: late, but the prefetch never sat on its window, so it doesn't widen.
+  {
+    const { c } = make(5);
+    void c.prefetch(list);
+    await c.readAsync!(0, 100);
+    assert.ok(c.stats.prefetch!.late >= 1);
+    assert.equal(c.stats.prefetch!.widened, 0);
+    c.close?.();
+  }
+  // The prefetch idles on its window, then the guest reads faster than it fetches: it widens, step by step, to the
+  // ceiling at most; every read's bytes right.
+  {
+    const { c, fetched } = make(3);
+    void c.prefetch(list);
+    await settle();
+    for (let b = 0; b < 400; b++) {
+      const got = await c.readAsync!(b * B + 10, 20);
+      assert.ok(got && Buffer.compare(got, bytes.subarray(b * B + 10, b * B + 30)) === 0, `block ${b}`);
+    }
+    const p = c.stats.prefetch!;
+    assert.ok(p.widened > 0, 'widened');
+    assert.equal(p.window, Math.min(AHEAD_MAX, AHEAD_START + p.widened * AHEAD_STEP));
+    assert.ok(p.window <= AHEAD_MAX);
+    await settle();
+    assert.ok(fetched() <= 400 + p.window + 8, `${fetched()} blocks fetched, the guest at 400, a window of ${p.window}`);
+    c.close?.();
+  }
+});
+
 test('prefetch: concurrent reads out of the list\'s order all complete while it runs (no read waits on a fetch that never starts)', async () => {
   const BIG = 256 * 4096;
   const bytes = Uint8Array.from({ length: BIG }, (_, i) => (i * 7 + 1) & 0xff);

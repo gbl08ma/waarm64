@@ -373,6 +373,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`<image>.prefetch.json`) would give a whole-file host the same 96 → 65 s.
   - **Pieces aren't checked against their SHA-256:** the synchronous reads can't use `crypto.subtle`; the realtime
     path (`readAsync`) could check whole-piece fetches (a host without ranges) and the prefetch's, not ranges.
+  - **The paced prefetch's 1.5 s** (R6): R5's, which fetched the whole trace at once, did its fetching during the boot
+    menu's idle seconds; the paced one fetches beside the guest. Running eagerly (R5's way) once the guest is past its
+    boot menu (its place in the list past the loader's blocks, or a mark in the manifest) would win it back without
+    fetching anything at the menu.
   - **The prefetch without the OPFS store** (another tab has the image, no room) runs within memory's window and
     refetches what it pushed out (83 against 65 s, 715 MB against 544): a larger memory budget while it runs, or
     stopping it, would do better.
@@ -391,7 +395,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   guest agent of [plans/agent.md](plans/agent.md), which also covers the clock's jump after a resume) and runs when the
   page signals the resume. The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
   change under it (a chunked image's `id`, [remote-disks.md](remote-disks.md), makes that check exact; a whole file's
-  URL doesn't).
+  URL doesn't). **How a visitor gets there** (the user's decision, 2026-10-23): an interstitial page first says what
+  the project is, that it needs a host with enough memory and CPU, and that hundreds of MB will be downloaded; one
+  click then starts the machine, downloads the snapshot (chunked like a disk image, fetched whole before the resume:
+  no prefetch logic) and drops into the demo's workload. Nothing is fetched before that click. Two consequences of
+  the remote disk's reader: the snapshot's pieces belong in the same expiring Storage Bucket as the disk's blocks
+  (`web/diskcache.ts`'s `cacheRoot`: not persisted, a week after its last use, 2 GiB shared), and a disk's boot trace
+  (`prefetch` in its manifest) doesn't fit a resumed guest, so the demo's manifest carries a trace recorded from the
+  resume instead (or none: the paced prefetch then costs nothing).
 - Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
   size only.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the
