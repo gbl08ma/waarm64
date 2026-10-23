@@ -10,7 +10,10 @@ export const CHUNKED_FORMAT = 'webpc-chunked-1';
 
 export type Manifest = {
   format: typeof CHUNKED_FORMAT;
-  /** The image's file name, for the page to show. */
+  /**
+   * What the page calls the image: a disk added by the manifest's URL and a machine opened by `?disk=` take it
+   * (tools/chunk-image.ts `--name`; the image's file name by default), not the manifest's file name.
+   */
   name?: string;
   /** The image file's bytes. */
   size: number;
@@ -140,10 +143,15 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet): Source & { ma
 }
 
 /** A chunked image's manifest and the image file's first `n` bytes (its first piece's: by range, or whole), with `fetch`. */
-export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Manifest; head: Uint8Array }> {
+/** Fetches and checks a chunked image's manifest; throws saying what's wrong. */
+export async function fetchManifest(url: string): Promise<Manifest> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
-  const manifest = checkManifest(await r.json());
+  return checkManifest(await r.json());
+}
+
+export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Manifest; head: Uint8Array }> {
+  const manifest = await fetchManifest(url);
   const p = await fetch(new URL(manifest.pieces.replace('{hash}', manifest.hashes[0]), new URL(url, globalThis.location?.href)), { headers: { Range: `bytes=0-${n - 1}` } });
   if (p.status !== 206 && p.status !== 200) throw new Error(`${url}: its first piece: ${p.status}`);
   return { manifest, head: new Uint8Array(await p.arrayBuffer()).slice(0, n) };

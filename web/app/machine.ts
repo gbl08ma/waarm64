@@ -54,7 +54,8 @@ export type Credential = { name: string; data: string };
 export const credentialFiles = (credentials: Credential[]) => credentials.map((c) => ({ name: `opt/io.systemd.credentials/${c.name}`, data: c.data }));
 
 /** A disk other than the machine's own, chosen on the page: a URL or a local file, with the OPFS overlay (and variable store) that belongs to it. */
-export type DiskChoice = { url?: string; file?: File; overlay: string };
+/** A disk chosen for a transient machine; `name`, a chunked image's manifest's, names the machine. */
+export type DiskChoice = { url?: string; file?: File; overlay: string; name?: string };
 
 /**
  * The overlay a chosen disk gets: `webpc-disk-` and a hash of the disk's identity (a file's name,

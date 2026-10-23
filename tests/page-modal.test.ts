@@ -8,10 +8,14 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { answerAsks } from './page-ask.ts';
 
+const DEMO = { format: 'webpc-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: 'demo' };
 let browser: Browser;
 let base: string;
 let close: () => void;
-/** Another origin: serves 4 KiB at /disk.img, with CORS and ranges, or without (`/plain/…`), or ignoring ranges (`/noranges/…`). */
+/**
+ * Another origin: serves 4 KiB at /disk.img, with CORS and ranges, or without (`/plain/…`), or ignoring ranges (`/noranges/…`);
+ * at /c/demo.json a chunked image's manifest of it, named.
+ */
 let other: Server;
 let otherBase: string;
 before(async () => {
@@ -28,6 +32,7 @@ before(async () => {
     }
     res.setHeader('ETag', '"v1"');
     if (req.method === 'OPTIONS') return void res.writeHead(204).end();
+    if (req.url === '/c/demo.json') return void res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(DEMO));
     const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
     if (!m || req.url!.startsWith('/noranges/')) return void res.writeHead(200, { 'Content-Length': body.length }).end(body);
     const [a, b] = m[1] === '' ? [body.length - Number(m[2]), body.length - 1] : [Number(m[1]), Math.min(Number(m[2] || body.length - 1), body.length - 1)];
@@ -46,8 +51,10 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
   const check = (url: string) => page.evaluate(async (url) => {
     const { checkUrl } = await import('/web/app/urlcheck.ts' as string);
     const r = await checkUrl(url);
-    return { ok: r.ok, problems: r.problems, bytes: r.bytes, etag: r.etag };
+    return { ok: r.ok, problems: r.problems, bytes: r.bytes, etag: r.etag, ...(r.name ? { name: r.name } : {}) };
   }, url);
+  // A chunked image's manifest: its id the identity, its name the disk's.
+  assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: 'demo', name: 'Desktop Demo' });
   assert.deepEqual(await check(`${base}/tests/qcow2/data.raw`), { ok: true, problems: [], bytes: 196608, etag: undefined });
   assert.deepEqual(await check(`${otherBase}/disk.img`), { ok: true, problems: [], bytes: 4096, etag: '"v1"' });
   const plain = await check(`${otherBase}/plain/disk.img`);
@@ -56,6 +63,15 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
   const noRanges = await check(`${otherBase}/noranges/disk.img`);
   assert.match(noRanges.problems.join(' '), /ignores byte ranges/);
   assert.match((await check(`${base}/no/such.img`)).problems.join(' '), /404/);
+  await context.close();
+});
+
+test('a machine opened by `?disk=` on a chunked image is called what its manifest names it', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?disk=${encodeURIComponent(`${otherBase}/c/demo.json`)}`);
+  await page.waitForFunction(() => document.getElementById('machine')?.textContent === 'Desktop Demo', undefined, { timeout: 30_000 });
   await context.close();
 });
 

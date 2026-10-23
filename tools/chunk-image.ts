@@ -4,14 +4,16 @@
 // manifest's URL as the disk (`?disk=…/manifest.json`); any static host serves it, with or without byte ranges. 2 MiB
 // pieces by default: where the host has no ranges a read fetches its piece whole, and 2 MiB lost nothing against
 // ranges (bench/remote-disk/REPORT.md "R2").
-//   node tools/chunk-image.ts <image> <out dir> [piece MiB, default 2]
+//   node tools/chunk-image.ts <image> <out dir> [piece MiB, default 2] [--name <what the page calls it>, default the image's file name]
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { CHUNKED_FORMAT, type Manifest } from '../web/chunked.ts';
 
-const [image, out, mib] = process.argv.slice(2);
-if (!image || !out) throw new Error('usage: node tools/chunk-image.ts <image> <out dir> [piece MiB, default 2]');
+const args = process.argv.slice(2);
+const name = args.includes('--name') ? args.splice(args.indexOf('--name'), 2)[1] : undefined;
+const [image, out, mib] = args;
+if (!image || !out) throw new Error('usage: node tools/chunk-image.ts <image> <out dir> [piece MiB, default 2] [--name <name>]');
 const piece = Number(mib ?? 2) * 2 ** 20;
 if (!(piece >= 2 ** 20 && Number.isInteger(piece / 2 ** 20))) throw new Error('the piece size is a whole number of MiB');
 
@@ -42,7 +44,7 @@ for (;;) {
 closeSync(fd);
 const manifest: Manifest = {
   format: CHUNKED_FORMAT,
-  name: basename(image),
+  name: name ?? basename(image),
   size,
   piece,
   pieces: 'pieces/{hash}.bin',

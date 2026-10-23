@@ -15,6 +15,8 @@ export type UrlCheck = {
   /** The server's validators, for the disk's identity (§3.1). */
   etag?: string;
   lastModified?: string;
+  /** What a chunked image's manifest calls the image. */
+  name?: string;
   /** The first bytes (a qcow2 header: its virtual size), when the range read worked. */
   head?: Uint8Array;
 };
@@ -97,7 +99,7 @@ async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
   } catch {
     return fail(`The server didn't give the page the image's first piece. It needs ${CORS_HINT}, for the pieces too.`);
   }
-  Object.assign(out, { bytes: m.size, etag: m.id, ok: out.problems.length === 0 });
+  Object.assign(out, { bytes: m.size, etag: m.id, name: m.name, ok: out.problems.length === 0 });
   return out;
 }
 

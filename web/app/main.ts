@@ -23,6 +23,7 @@ import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
 import { ALIVE_EVERY_MS, clearAlive, lastCrash, markAlive, Signal } from './memory.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, JIT_DEFAULT_MIB, MACHINES, RAM_CHOICES, ramSplitError, type DiskChoice, type Machine, type MachineName } from './machine.ts';
+import { fetchManifest, isManifestUrl } from '../chunked.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { HeldError, PageNetwork } from './net-live.ts';
@@ -80,7 +81,7 @@ function bootAttachment() {
 }
 const bootDisk = () => { const a = bootAttachment(); return a && stored!.disks.get(a.disk); };
 /** What the disk is called on the page. */
-const diskName = () => (stored ? bootDisk()?.name : chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
+const diskName = () => (stored ? bootDisk()?.name : chosen ? (chosen.file?.name ?? chosen.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 /** The page's disk as a job reads it (its Export, Import changes): its source, overlay and identity. */
 async function pageDisk() {
   const d = bootDisk();
@@ -92,8 +93,8 @@ async function pageDisk() {
 }
 /** A machine that boots the user's disk and has none yet (the page's own, until a disk is opened): it waits. */
 const needsDisk = () => !!spec.firmware && !spec.disk && !chosen && !stored?.record.attachments.length;
-/** What the toolbar calls the machine: its name, or a transient one's and its disk's. */
-const machineTitle = () => (stored ? stored.record.name : `${spec.label} · ${diskName() ?? (needsDisk() ? 'no disk' : '')}`.replace(/ · $/, ''));
+/** What the toolbar calls the machine: its name, a chunked image's own (`?disk=` its manifest), or a transient one's and its disk's. */
+const machineTitle = () => (stored ? stored.record.name : chosen?.name ?? `${spec.label} · ${diskName() ?? (needsDisk() ? 'no disk' : '')}`.replace(/ · $/, ''));
 
 /** A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. */
 async function loadStored(id: string) {
@@ -2047,7 +2048,9 @@ if (!brands.some((b) => b.brand === 'Chromium')) note = 'webpc is developed and 
 const diskParam = params.get('disk');
 if (diskParam && spec.firmware) {
   const url = new URL(diskParam, location.href).href;
-  chosen = { url, overlay: await diskOverlay({ url }) };
+  // A chunked image's manifest names it (the machine is called that, not `prefetch.json`); the boot reads it again.
+  const name = isManifestUrl(url) ? await fetchManifest(url).then((m) => m.name, () => undefined) : undefined;
+  chosen = { url, overlay: await diskOverlay({ url }), name };
   syncDiskButtons();
 }
 boot();

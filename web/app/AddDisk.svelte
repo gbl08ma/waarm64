@@ -131,7 +131,7 @@
         if (source === 'url') {
           urlCheck = await checkUrl(url);
           if (!urlCheck.ok) throw new Error(`The URL can't be a disk:\n${urlCheck.problems.join('\n')}`);
-          d = await reuse({ kind: 'url', url, size: virtualSize(urlCheck.head, urlCheck.bytes!), bytes: urlCheck.bytes!, etag: urlCheck.etag, lastModified: urlCheck.lastModified });
+          d = await reuse({ kind: 'url', url, name: urlCheck.name, size: virtualSize(urlCheck.head, urlCheck.bytes!), bytes: urlCheck.bytes!, etag: urlCheck.etag, lastModified: urlCheck.lastModified });
         } else if (source === 'file' || source === 'stored') {
           if (!picked) throw new Error('Pick a file first.');
           if (source === 'file') {

@@ -63,6 +63,11 @@ test('the tool cuts content-addressed pieces and a manifest', () => {
   writeFileSync(join(tmp, 'changed.img'), changed);
   cut(join(tmp, 'changed.img'), join(tmp, 'changed'));
   assert.notEqual((JSON.parse(readFileSync(join(tmp, 'changed/manifest.json'), 'utf8')) as Manifest).id, m.id);
+  // The name the page shows: the image's file name, or `--name`'s (the id doesn't change).
+  assert.equal(m.name, 'disk.img');
+  execFileSync(process.execPath, [TOOL, join(tmp, 'disk.img'), join(tmp, 'named'), '1', '--name', 'Desktop Demo'], { stdio: 'pipe' });
+  const named = JSON.parse(readFileSync(join(tmp, 'named/manifest.json'), 'utf8')) as Manifest;
+  assert.deepEqual([named.name, named.id], ['Desktop Demo', m.id]);
 });
 
 for (const ranges of [true, false]) {
