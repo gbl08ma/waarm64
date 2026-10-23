@@ -245,11 +245,12 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     time, or a URL's path). A restored machine has empty TLBs, which Linux can tell by its step
     count ([docs/platform.md](docs/platform.md) "Snapshots"). Loose ends:
     [docs/backlog.md](docs/backlog.md) "Snapshots".
-  - Remote disks (in progress since 2026-10-23, `M8-REMOTEDISK-HANDOVER.md`,
-    [docs/plans/remote-disks.md](docs/plans/remote-disks.md)): a disk from another server read fast (a cache, a chunked
-    image format for any static host, OPFS persistence, concurrent reads, a boot's read trace). R0 measured it (a
-    remote desktop boot is its 2160 round trips), R1's block cache took the boot to Firefox 196 → 110 s
-    (bench/remote-disk/REPORT.md); no Cloudflare in this track (the user's, 2026-10-23).
+  - Remote disks: **done (2026-10-23)** ([docs/plans/remote-disks.md](docs/plans/remote-disks.md),
+    bench/remote-disk/REPORT.md). A disk from another server boots as fast as a local file: a block cache (R1), a
+    chunked image format for any static host (R2), the blocks kept in OPFS (R3), reads in parallel with a device
+    worker that never blocks (R4) and a boot's reads fetched ahead (R5). The Arch desktop guest from the user's server
+    to Firefox: 196 → 65 s on a first boot, 63 s on the next; compression measured and not built. No Cloudflare in this
+    track (the user's, 2026-10-23); loose ends in docs/backlog.md "Remote disks' loose ends".
   - Disk I/O speed (a chosen `File` under an overlay): **done (2026-10-08).** One change shipped: the overlay
     reads and writes in runs (first writes of 1 MiB 6 → 212 MiB/s, reads of written data 17 → 358 MiB/s, `dd conv=fsync`
     4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and

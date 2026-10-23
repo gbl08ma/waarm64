@@ -226,3 +226,13 @@ the store alone where there is one. A, the image without the list; B, with it; a
 **From the start of the day (the first boot, the real server, to Firefox's paint): 196 s (R0) → 110 s (R1, a block
 cache) → 101 s (R4, parallel reads) → 65 s (R5, the boot's reads fetched ahead), as a local file boots; a second boot
 63 s (R3, kept in OPFS).**
+
+## Compression and the first boot (2026-10-23)
+
+- **Compression (plan §4.6) has nothing to take:** the desktop image is 34,614 compressed clusters (957 MB) and 9,621
+  plain ones (631 MB: those qemu-img's `-c` couldn't shrink); the 543 MB the boot reads compress to 98.9% (gzip -6),
+  99.2% (brotli 5) and 99.3% (zstd 3), per 2 MiB piece as a host would encode them. Not built.
+- **The image's first boot costs little now:** a second boot keeping the first's overlay (`KEEP_OVERLAY=1`, local,
+  no latency) reaches the login prompt 1.7–5 s sooner and Firefox's paint 1.4–4.6 s sooner, and reads the same bytes
+  (567 against 565 MB without the store): what `ldconfig` reads, the rest of the boot reads anyway. R0's 44 s for
+  `ldconfig.service` was the slow disk's. Left in docs/backlog.md (building a hosted image already "updated").

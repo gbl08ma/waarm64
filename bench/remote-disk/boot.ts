@@ -8,7 +8,7 @@
 // (`local:/d47/pages:chunk8/manifest.json`: a chunked image, its host without ranges; default desktop.qcow2).
 // Env: NCPUS (4), RAM (2560 MiB), GPU (virgl), STOP (`firefox`, or `login`/`sway` to stop earlier), BOOTS (1: more
 // boot again in the same profile, the overlay removed, each to <out>-boot<n>.json), QUERY (more of the page's query:
-// `diskcache=0` keeps no blocks in OPFS).
+// `diskcache=0` keeps no blocks in OPFS), KEEP_OVERLAY (the boots after the first keep its overlay: not first boots).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { GUEST_USER, openSession } from '../gpu/guest-session.ts';
@@ -137,7 +137,7 @@ try {
     if (n > 1) {
       // Again in the same browser profile (what OPFS keeps stays), from the disk's first boot: its overlay removed.
       await page.goto(new URL('/tests/browser/core.html', s.url).href);
-      await page.evaluate(async () => {
+      if (!process.env.KEEP_OVERLAY) await page.evaluate(async () => {
         const root = await navigator.storage.getDirectory();
         for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) if (name.startsWith('webpc-disk-')) await root.removeEntry(name, { recursive: true });
       });

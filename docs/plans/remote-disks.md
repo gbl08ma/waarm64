@@ -1,17 +1,19 @@
-# Disks from a remote server (in progress since 2026-10-23)
+# Disks from a remote server (done, 2026-10-23)
 
 **Status:** R0 (the measurement), R1 (a block cache), R2 (the chunked format: `tools/chunk-image.ts`,
 `web/chunked.ts`; 2 MiB pieces boot as fast as ranges where a host has none), R3 (the blocks kept in OPFS,
 `web/diskcache.ts`), R4 (requests in parallel, the device worker never blocked: its longest answer 0.7 s → 17 ms)
 and R5 (a boot's reads in the manifest, fetched ahead: `tools/disk-trace.ts`) done: a remote desktop boot to Firefox
-196 → 65 s, a local file's time, and a second boot 63 s (bench/remote-disk/REPORT.md). Compression (§4.6) is next. Decided with the user (2026-10-23): no Cloudflare in this track (R2's pieces are
+196 → 65 s, a local file's time, and a second boot 63 s (bench/remote-disk/REPORT.md); compression (§4.6) measured
+and not built (the boot's bytes are qcow2's compressed clusters: 99% with gzip, brotli or zstd). Loose ends in
+docs/backlog.md "Remote disks' loose ends". How it works now: docs/devices.md "blk" ("Over HTTP", "A chunked image"). Decided with the user (2026-10-23): no Cloudflare in this track (R2's pieces are
 measured on the user's server and on a local one that answers as Pages does), the cache kept in OPFS bounded by
 min(4 GiB, 25% of the free quota) with an LRU across images, the loops R0–R5 then compression in order.
 
 The page can boot a disk image from a URL (`?disk=<url>`, docs/frontend.md "Your own disk"), and since 2026-10-17 it is
 deployed publicly (below, "Where the page is deployed"). A disk on another server, not localhost, is what a hosted page's
-users get, and today's reader was built for localhost. This plan is how to make a remote disk fast, and where to host
-one. Its first session starts from `M8-REMOTEDISK-HANDOVER.md`.
+users get, and the reader of the time was built for localhost. This plan is how to make a remote disk fast, and where
+to host one. §1 and §2 describe the starting point; the status line above, what was built.
 
 ## 1. Today's reader
 

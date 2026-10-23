@@ -101,5 +101,5 @@ async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
   return out;
 }
 
-/** The note the URL form shows beside a URL disk (machines.md §4.1: one device worker blocks on each HTTP read). */
-export const URL_SLOW = 'A disk read over the network is slow: every read the guest makes waits for the server, and the screen and keyboard wait behind it. Store it in the browser for speed.';
+/** The note the URL form shows beside a URL disk (docs/devices.md "Over HTTP": what is read once is kept in this browser). */
+export const URL_SLOW = "The first boot reads it over the network, and what it read stays in this browser, so the next boots read that from here. A chunked image with a boot's reads in its manifest (tools/disk-trace.ts) first-boots about as fast as a file. To keep all of it, store it in the browser.";
