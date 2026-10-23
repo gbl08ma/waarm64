@@ -125,6 +125,13 @@ mode (and natively in realtime mode: std has no CSPRNG).
   first (`Devices.drain`, the device worker's `drain`). The deterministic mode keeps one request at a time in order
   (synchronous XHRs), as do the image's opening (header, L1) and Node. The device worker's longest answer during a
   remote boot went 0.7 s → 17 ms.
+  **A chunked image's boot trace is fetched ahead** (R5): its manifest's `prefetch` (`tools/disk-trace.ts` writes a
+  boot's reads there: 1 MiB blocks in the order it first read them) is fetched in the background from the opening
+  (realtime only): runs of adjacent blocks a request each, at most 4 of the 8 fetches, the guest's reads first in the
+  queue (slots granted in order), no further ahead of the guest's place in the list than half of what can hold them
+  (the store's slots, or memory's blocks), and into the store alone where there is one. A synchronous read (the
+  image's opening) of a block the prefetch is fetching fetches it itself. A remote desktop boot's first boot: 96 →
+  65 s, a local file's time (bench/remote-disk/REPORT.md "R5"). A read that throws is an IOERR, not a failed device.
   **The blocks are kept in OPFS** (`web/diskcache.ts`) where the image has an identity that changes with it (a chunked
   image's id, or the URL, size and the server's `ETag` or `Last-Modified`; without one nothing is kept), so a reload, a
   second boot or a resume reads them locally: a block missing in memory is looked for there before it is fetched, and

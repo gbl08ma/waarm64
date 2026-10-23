@@ -885,7 +885,8 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): **Open disk…** (the
 message's button while no disk is open, and the Machines page's From a disk image…: a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own, or a chunked image's `manifest.json`, which any static host can serve:
-`node tools/chunk-image.ts <image> <dir>`, docs/devices.md "A chunked image"). The machine restarts on it (confirmed if it runs); raw or
+`node tools/chunk-image.ts <image> <dir>`, docs/devices.md "A chunked image"; `node tools/disk-trace.ts` adds a
+boot's reads, which the page then fetches ahead). The machine restarts on it (confirmed if it runs); raw or
 qcow2 is told by the file's magic (an ISO is raw: EDK2 boots its El Torito or hybrid partition table's EFI entry; the user
 booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file is a changes file: it is loaded, below, not booted).
 - The `File` goes to the machine worker in `start.disk`, then, structured-cloned inside the

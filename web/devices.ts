@@ -636,11 +636,23 @@ export function httpSource(url: string): Source & { validator?: string } {
  * cache, over the blocks kept in OPFS where the image has an identity that changes with it (a chunked image's id, a
  * server's validator) and this browser has room (web/diskcache.ts).
  */
-async function remoteSource(url: string, keep: boolean) {
+async function remoteSource(url: string, keep: boolean, realtime: boolean) {
   const src = isManifestUrl(url) ? chunkedSource(url) : httpSource(url);
   const identity = 'manifest' in src ? `chunked:${src.manifest.id}` : src.validator ? JSON.stringify({ url, size: src.size, validator: src.validator }) : undefined;
   const store = identity && keep ? await openBlockStore(await cacheKey(identity), src.size, BLOCK_CACHE.block).catch(() => undefined) : undefined;
-  return cachedSource(src, BLOCK_CACHE, store);
+  const cached = cachedSource(src, BLOCK_CACHE, store);
+  // A chunked image's boot trace, fetched ahead of the guest (realtime: the deterministic mode reads one at a time).
+  const trace = 'manifest' in src ? src.manifest.prefetch : undefined;
+  if (trace && realtime) void cached.prefetch(reblock(trace.blocks, trace.block, BLOCK_CACHE.block));
+  return cached;
+}
+
+/** Blocks of `from` bytes as the blocks of `to` bytes that cover them, in the same order (each once). */
+function reblock(blocks: number[], from: number, to: number) {
+  if (from === to) return blocks;
+  const out = new Set<number>();
+  for (const b of blocks) for (let k = Math.floor((b * from) / to); k <= Math.floor(((b + 1) * from - 1) / to); k++) out.add(k);
+  return [...out];
 }
 
 /** An image the user chose (a `File`): `FileReaderSync`'s synchronous slices, so workers only. */
@@ -724,7 +736,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       if (st) st.size(({ 0: 'read', 1: 'write', 4: 'flush' } as Record<number, string>)[op] ?? `op${op}`, op === T_OUT ? r.read.reduce((k, x) => k + x.len, 0) - 16 : room);
       let [status, n] = [S_UNSUPP, 0];
       if (h.byteLength === 16 && h.getUint32(0, true) === T_IN) {
-        const bytes = await disk.read(Number(h.getBigUint64(8, true)) * 512, room);
+        const bytes = await disk.read(Number(h.getBigUint64(8, true)) * 512, room).catch(() => undefined); // IOERR, not a failed device
         if (bytes) st ? st.time('scatter', bytes.length, () => scatter(ram, data, bytes)) : scatter(ram, data, bytes);
         [status, n] = bytes ? [S_OK, room] : [S_IOERR, 0];
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_GET_ID) {
@@ -973,7 +985,7 @@ export class Devices {
       if (d.file) return blobSource(d.file);
       if (!d.url) throw new Error('a disk with no image (url, file or source)');
       if (d.url.startsWith('file:')) return fileSource(d.url);
-      return remoteSource(d.url, d.keep ?? true);
+      return remoteSource(d.url, d.keep ?? true, !init.deterministic);
     }));
     return new Devices(init, overlays, sources, out);
   }

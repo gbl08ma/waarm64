@@ -2,9 +2,9 @@
 
 **Status:** R0 (the measurement), R1 (a block cache), R2 (the chunked format: `tools/chunk-image.ts`,
 `web/chunked.ts`; 2 MiB pieces boot as fast as ranges where a host has none), R3 (the blocks kept in OPFS,
-`web/diskcache.ts`) and R4 (requests in parallel, the device worker never blocked: its longest answer 0.7 s → 17 ms)
-done: a remote desktop boot to Firefox 196 → ~101 s, and a second boot 63 s, as from a local file
-(bench/remote-disk/REPORT.md). Decided with the user (2026-10-23): no Cloudflare in this track (R2's pieces are
+`web/diskcache.ts`), R4 (requests in parallel, the device worker never blocked: its longest answer 0.7 s → 17 ms)
+and R5 (a boot's reads in the manifest, fetched ahead: `tools/disk-trace.ts`) done: a remote desktop boot to Firefox
+196 → 65 s, a local file's time, and a second boot 63 s (bench/remote-disk/REPORT.md). Compression (§4.6) is next. Decided with the user (2026-10-23): no Cloudflare in this track (R2's pieces are
 measured on the user's server and on a local one that answers as Pages does), the cache kept in OPFS bounded by
 min(4 GiB, 25% of the free quota) with an LRU across images, the loops R0–R5 then compression in order.
 

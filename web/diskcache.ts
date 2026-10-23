@@ -20,6 +20,8 @@ const FREE_SHARE = 0.25;
 export type BlockStore = {
   /** Block `b`'s bytes if held. */
   get(b: number): Uint8Array | undefined;
+  /** Whether block `b` is held (without reading it). */
+  has(b: number): boolean;
   /** Keeps block `b` (its bytes as fetched: the last block may be short). */
   put(b: number, bytes: Uint8Array): void;
   /** Blocks held and the slots it may use; `gaveUp` once it stopped (`giveUp`). */
@@ -189,6 +191,7 @@ export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, bloc
   const n = { reads: 0, writes: 0, ms: 0 };
   let gaveUp = false;
   const store: BlockStore = {
+    has: (b) => !gaveUp && map[b] > 0,
     get(b) {
       if (gaveUp) return undefined;
       const s = map[b] - 1;

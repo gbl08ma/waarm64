@@ -22,6 +22,11 @@ export type Manifest = {
   hashes: string[];
   /** SHA-256 of the hashes joined by newlines: the image's identity. */
   id: string;
+  /**
+   * A boot's reads (tools/disk-trace.ts): the image file's blocks of `block` bytes in the order the boot first read
+   * them, which the page fetches ahead of the guest (docs/plans/remote-disks.md R5). Not part of the identity.
+   */
+  prefetch?: { block: number; blocks: number[] };
 };
 
 /** Whether a disk's URL names a chunked image's manifest (by its path's `.json`). */

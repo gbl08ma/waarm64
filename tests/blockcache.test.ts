@@ -103,3 +103,74 @@ test('readAsync: concurrent reads match the source, and a block being fetched is
     return small.readAsync!(off, len).then((got) => same(got, off, len, 'async, small'));
   }));
 });
+
+test("prefetch: the list fetched ahead in the background, within its window, the guest's reads first", async () => {
+  const BIG = 64 * 4096;
+  const bytes = Uint8Array.from({ length: BIG }, (_, i) => (i * 13 + 5) & 0xff);
+  const fetches: { off: number; len: number; at: number }[] = [];
+  let inFlight = 0, most = 0;
+  const src = { size: BIG, read: (off: number, len: number) => bytes.slice(off, off + len), readAsync: async (off: number, len: number) => {
+    fetches.push({ off, len, at: inFlight });
+    most = Math.max(most, ++inFlight);
+    await new Promise((r) => setTimeout(r, 2));
+    inFlight--;
+    return bytes.slice(off, off + len);
+  } };
+  const c = cachedSource(src, { block: 4096, bytes: 16 * 4096 }); // no store: a window of 8 blocks
+  const list = [0, 1, 2, 3, 10, 11, 12, 40, 41, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 50, 51, 52, 53];
+  const running = c.prefetch(list);
+  await new Promise((r) => setTimeout(r, 30));
+  // The guest has read nothing: the prefetch stops a window (8 entries) and a run past the start.
+  const early = fetches.reduce((n, f) => n + f.len / 4096, 0);
+  assert.ok(early >= 8 && early <= 16, `${early} blocks before the guest read`);
+  // The guest reads the list in order: each read's bytes right, most found already fetched.
+  for (const b of list) {
+    const got = await c.readAsync!(b * 4096 + 100, 200);
+    assert.ok(got && Buffer.compare(got, bytes.subarray(b * 4096 + 100, b * 4096 + 300)) === 0, `block ${b}`);
+  }
+  await running;
+  const p = c.stats.prefetch!;
+  assert.equal(p.done, true);
+  assert.ok(p.used >= list.length / 2, `${p.used} of ${list.length} prefetched blocks used`);
+  assert.ok(most <= 8, `${most} fetches at once`);
+  c.close?.();
+});
+
+test('prefetch: concurrent reads out of the list\'s order all complete while it runs (no read waits on a fetch that never starts)', async () => {
+  const BIG = 256 * 4096;
+  const bytes = Uint8Array.from({ length: BIG }, (_, i) => (i * 7 + 1) & 0xff);
+  let seed = 21;
+  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) >>> 0) % n);
+  const src = { size: BIG, read: (off: number, len: number) => bytes.slice(off, off + len), readAsync: async (off: number, len: number) => {
+    await new Promise((r) => setTimeout(r, rnd(3)));
+    return bytes.slice(off, off + len);
+  } };
+  for (let round = 0; round < 5; round++) {
+    const c = cachedSource(src, { block: 4096, bytes: 16 * 4096 });
+    const list = Array.from({ length: 200 }, () => rnd(256));
+    void c.prefetch(list);
+    const reads = Array.from({ length: 120 }, async (_, i) => {
+      await new Promise((r) => setTimeout(r, rnd(20)));
+      const b = list[Math.min(list.length - 1, i + rnd(30))];
+      const got = await c.readAsync!(b * 4096, Math.min(BIG - b * 4096, 4096 * (1 + rnd(3))));
+      assert.ok(got && Buffer.compare(got, bytes.subarray(b * 4096, b * 4096 + got.length)) === 0, `block ${b}`);
+    });
+    const deadline = new Promise((_, no) => setTimeout(() => no(new Error(`round ${round}: reads still waiting after 5 s`)), 5000));
+    await Promise.race([Promise.all(reads), deadline]);
+    c.close?.();
+  }
+});
+
+test('a synchronous read of a block the prefetch is fetching fetches it itself (the image\'s opening can\'t wait)', async () => {
+  const BIG = 32 * 4096;
+  const bytes = Uint8Array.from({ length: BIG }, (_, i) => (i * 3) & 0xff);
+  const src = { size: BIG, read: (off: number, len: number) => bytes.slice(off, off + len), readAsync: async (off: number, len: number) => {
+    await new Promise((r) => setTimeout(r, 20));
+    return bytes.slice(off, off + len);
+  } };
+  const c = cachedSource(src, { block: 4096, bytes: 16 * 4096 });
+  void c.prefetch([0, 1, 2, 3]);
+  const got = c.read(4096 + 10, 100); // block 1: the prefetch's, still in flight
+  assert.ok(got && Buffer.compare(got, bytes.subarray(4096 + 10, 4096 + 110)) === 0);
+  c.close?.();
+});

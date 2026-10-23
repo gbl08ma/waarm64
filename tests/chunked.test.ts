@@ -104,6 +104,20 @@ test('the block cache over a chunked image', () => {
   assert.equal(c.stats.fetched, image.length - 0); // every block once: the reads go forward
 });
 
+test('tools/disk-trace.ts: a run\'s reads, up to a mark, as 1 MiB blocks in first-read order, the id unchanged', () => {
+  // t (ms), offset, length, ms: reads at 3.5 MiB, 0, 3.9 MiB (over two blocks), 0 again, then after the mark.
+  const run = { marks: { login: 50, painted: 100 }, io: { trace: [1, 3.5 * MiB, 100, 1, 2, 0, 512, 1, 3, 3.9 * MiB, 0.2 * MiB, 1, 4, 10, 10, 1, 120, 2 * MiB, 10, 1] } };
+  writeFileSync(join(tmp, 'run.json'), JSON.stringify(run));
+  const tool = new URL('../tools/disk-trace.ts', import.meta.url).pathname;
+  execFileSync(process.execPath, [tool, join(tmp, 'run.json'), join(tmp, 'out/manifest.json'), join(tmp, 'out/prefetch.json')], { stdio: 'pipe' });
+  const m = JSON.parse(readFileSync(join(tmp, 'out/manifest.json'), 'utf8')) as Manifest;
+  const p = JSON.parse(readFileSync(join(tmp, 'out/prefetch.json'), 'utf8')) as Manifest;
+  assert.deepEqual([p.id, p.prefetch], [m.id, { block: MiB, blocks: [3, 0, 4] }]);
+  execFileSync(process.execPath, [tool, join(tmp, 'run.json'), join(tmp, 'out/manifest.json'), join(tmp, 'out/early.json'), '--until', 'login'], { stdio: 'pipe' });
+  assert.deepEqual((JSON.parse(readFileSync(join(tmp, 'out/early.json'), 'utf8')) as Manifest).prefetch!.blocks, [3, 0, 4]);
+  // Past the mark: the read at 120 ms (block 2) is left out either way; with no `--until`, the last mark (100) bounds it.
+});
+
 test('a malformed manifest or a missing piece is refused', () => {
   const h = host(join(tmp, 'out'), true);
   writeFileSync(join(tmp, 'out/bad.json'), JSON.stringify({ format: 'webpc-chunked-1', size: 10, piece: MiB, pieces: 'x', hashes: [] }));

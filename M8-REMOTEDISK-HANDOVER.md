@@ -22,8 +22,11 @@ Making a disk on another server fast. **The plan is [docs/plans/remote-disks.md]
 - **R4 done:** realtime reads by `fetch`, several at once (`readAsync` through the sources, the cache and qcow2;
   `Devices.poll` completes a `concurrent` backend's requests as they resolve; `Devices.drain` on quiesce). Boot −9%
   (remote ~101 s), and the device worker's longest answer 0.7 s → 17 ms. The bytes over the link are the floor now.
-- **R5 next:** a boot's read trace in the manifest, prefetched while the guest boots (the trace: `?iostats`), then
-  compression (§4.6).
+- **R5 done:** `tools/disk-trace.ts` puts a boot's reads in a chunked image's manifest (`prefetch`); the block cache
+  fetches them ahead (`prefetch`: 4 of 8 slots, the guest first, a window). First boot remote 96 → 65 s (a local
+  file's time). `https://static.gbl08ma.com/diskimages/webpc-test/desktop-chunk8/prefetch.json` has the list.
+- **Compression next** (§4.6): the desktop image's share of compressed clusters is unmeasured; the bytes (~544 MB)
+  are what's left for a first boot on a slower link.
 - **An image finding to act on:** a fresh overlay is the image's first boot, so `ldconfig.service` runs (44 s of the
   remote boot): a hosted image should be built with `/etc/.updated` and `/var/.updated` newer than `/usr`
   (`ConditionNeedsUpdate`), or booted once before publishing. Not yet tried.

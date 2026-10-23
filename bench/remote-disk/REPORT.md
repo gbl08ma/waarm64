@@ -191,3 +191,38 @@ inside a disk read answers after it), A the code before R4 (`../webpc-base` at 3
   whose answers carry the trace, which is why A is 116 here against ~109 without them) and ~9% on the real server in
   one run each (100.6 against 109.7 and 112.4 s). The guest mostly has one read outstanding, and the bytes (~540 MB)
   over the link set the floor; a faster link is what moves it (40 MB/s: 90 s).
+
+## R5: a boot's reads fetched ahead (2026-10-23)
+
+`node tools/disk-trace.ts <run.json> <manifest.json> [out.json]` writes a run's base reads up to its last mark (here
+Firefox's paint: 518 blocks of 1 MiB, in the order the boot first read them; `r4-d47-R20.json`'s trace) into a chunked
+image's manifest as `prefetch` (`results/desktop-chunk8-prefetch.json`; the id doesn't change). Opening such an image
+in realtime mode, the block cache fetches the list in the background (`prefetch`): runs of adjacent blocks one request
+each, at most 4 of the 8 fetches, the guest's reads first in the queue, and no further ahead of the guest's place in
+the list than half of what can hold them (the store's slots; memory's blocks without one), the prefetched blocks into
+the store alone where there is one. A, the image without the list; B, with it; alternated at 47 ms and a shared
+20 MB/s link, two rounds:
+
+| arm | login prompt | **painted** | requests | MB | prefetched / used |
+|---|---|---|---|---|---|
+| A, round 1 / 2 (`r5-A-*.json`) | 54.7 / 54.7 | **104.1 / 104.5 s** | 428 / 427 | 543 | |
+| B, round 1 / 2 (`r5-B-*.json`) | 27.7 / 27.7 | **65.1 / 63.7 s** | 291 / 291 | 544 | 518 / 518 |
+| B without the store (`?diskcache=0`, `r5-nostore-B.json`) | 37.9 | 83.2 s | 395 | 715 | 518 / 518 |
+| B, 2 MiB pieces, no ranges (`r5-c2pages-B.json`) | 27.7 | 64.1 s | 201 | 612 | 421 / 519 |
+| static.gbl08ma.com, A (`r5-remote-A.json`) | 48.1 | **96.3 s** | 406 | 543 | |
+| static.gbl08ma.com, B (`r5-remote-B.json`) | 29.1 | **65.0 s** | 258 | 544 | 518 / 518 |
+
+- **A first boot from the remote server now takes what a local file does: 65 s to Firefox's paint** (64 s, R0),
+  the login prompt at 29 s (28.5). The network's time hides under the guest's: the boot needs 544 MB and its own
+  ~64 s of CPU, and the prefetch starts fetching at the page's start.
+- Every prefetched block was read by the guest (518 of 518): the list from one boot fits the next.
+- Without the store the window is memory's (128 blocks): blocks fetched ahead get pushed out before they're used,
+  and 715 MB are fetched instead of 544 (83 s). The store is what lets the prefetch run far ahead.
+- Found on the way, both fixed with a test each: a synchronous read (the image's opening: qcow2's header and L1) of a
+  block the prefetch is fetching assembled without it, so the disk never opened and the firmware sat waiting
+  (`tests/blockcache.test.ts`, the planted bug fails it); and the fetch queue now grants slots in order, the guest's
+  first (a liveness test with reads out of the list's order).
+
+**From the start of the day (the first boot, the real server, to Firefox's paint): 196 s (R0) → 110 s (R1, a block
+cache) → 101 s (R4, parallel reads) → 65 s (R5, the boot's reads fetched ahead), as a local file boots; a second boot
+63 s (R3, kept in OPFS).**
