@@ -7,7 +7,7 @@
 //   vendor/xterm/                     xterm.js and its CSS (node_modules/@xterm/xterm), the page's import map points there
 //   vendor/svelte/, vendor/esm-env/, vendor/clsx/   Svelte's runtime (the same files serve.ts serves), with their licenses
 //   target/…                          the core (webpc_core.wasm), the tailnet client (net/ts.wasm), EDK2 (images/edk2)
-//   index.html                        a redirect to web/app/
+//   index.html                        the page (web/app/index.html's, its URLs made the root's); web/app/ redirects to it
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below)
 // No guest images: the page's machine waits for the user's disk (`?disk=<url>` takes one from any server
 // that allows the page's origin and answers range requests, or a chunked image's manifest from any static host; the
@@ -21,7 +21,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { stripTypeScriptTypes } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
-import { APP, ROOT, startServer } from './serve.ts';
+import { APP, atRoot, ROOT, startServer } from './serve.ts';
 import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
 import { compileRunes, compileSvelte, RUNTIME_LICENSES, runtimeFiles } from './svelte.ts';
 
@@ -62,11 +62,14 @@ AddType application/wasm .wasm
 AddType text/javascript .js .mjs
 `;
 
+// web/app/, where the page was until 2026-10-23: to the root, with the query and fragment (`?disk=<url>` is the
+// page's); the meta refresh is for a browser without scripts.
 const REDIRECT = `<!doctype html>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=web/app/">
+<script>location.replace('../../' + location.search + location.hash);</script>
+<meta http-equiv="refresh" content="0; url=../../">
 <title>webpc</title>
-<a href="web/app/">webpc</a>
+<a href="../../">webpc</a>
 `;
 
 /** Writes the static copy of the page to `out` (its binaries must be built); returns the files written, relative to `out`. */
@@ -93,7 +96,8 @@ export function writeDist(out = OUT) {
   const html = readFileSync(join(ROOT, 'web/app/index.html'), 'utf8');
   if (!html.includes('src="./main.ts"') || !html.includes('../../node_modules/@xterm/xterm/')) throw new Error('web/app/index.html no longer loads ./main.ts and xterm from node_modules: update tools/dist.ts');
   // The import map's node_modules paths (xterm's, and Svelte's runtime: tools/svelte.ts) become vendor/'s.
-  write('web/app/index.html', html.replace('src="./main.ts"', 'src="./main.js"').replaceAll('../../node_modules/@xterm/xterm/lib/', '../../vendor/xterm/').replaceAll('../../node_modules/@xterm/xterm/css/', '../../vendor/xterm/').replaceAll('../../node_modules/', '../../vendor/'));
+  write('index.html', atRoot(html.replace('src="./main.ts"', 'src="./main.js"').replaceAll('../../node_modules/@xterm/xterm/lib/', '../../vendor/xterm/').replaceAll('../../node_modules/@xterm/xterm/css/', '../../vendor/xterm/').replaceAll('../../node_modules/', '../../vendor/')));
+  write('web/app/index.html', REDIRECT);
   const queue = ['web/app/main.ts'];
   const seen = new Set(queue);
   while (queue.length) {
@@ -115,7 +119,6 @@ export function writeDist(out = OUT) {
   for (const f of BINARIES) copy(f);
   copy('LICENSE');
 
-  write('index.html', REDIRECT);
   write('_headers', HEADERS);
   write('.htaccess', HTACCESS);
   write('.nojekyll', '');
@@ -134,7 +137,7 @@ if (import.meta.main) {
       'Copy its contents to a web server. It must send these headers with every file (SharedArrayBuffer needs them):\n' +
       '  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp\n' +
       '(_headers sets them on Cloudflare (a Worker\'s static assets, or Pages) and Netlify, .htaccess on Apache; GitHub Pages can\'t set them.)\n' +
-      'and serve it over HTTPS (or on localhost). The page is web/app/; index.html redirects there.');
+      'and serve it over HTTPS (or on localhost). The page is index.html, at the root.');
     if (values.serve) {
       const server = await startServer(Number(values.port), '127.0.0.1', out);
       console.log(`Previewing at http://127.0.0.1:${(server.address() as { port: number }).port}${APP} (Ctrl+C stops it).`);

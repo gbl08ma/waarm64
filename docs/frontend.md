@@ -2,7 +2,7 @@
 
 The interactive machine (M8 phase A): one VM per page, its screen on a canvas and its serial
 console on xterm.js. `npm start` prepares everything and serves it at
-`http://127.0.0.1:8080/web/app/` (`/` redirects there; below, "`npm start`"); `npm run serve` only
+`http://127.0.0.1:8080/` (below, "`npm start`"); `npm run serve` only
 serves (and builds the Tailscale client, below, "Network"). Chromium only.
 
 ## Files
@@ -1272,7 +1272,12 @@ stops if a binary is missing), then writes, in the repository's layout (so the m
 - the binaries: the core (`webpc_core.wasm`), the tailnet client (`target/net/ts.wasm`), EDK2 (`QEMU_EFI.fd`,
   `LICENSES.txt`). **No guest images** (10.6 MiB in all): the user opens a disk, or passes `?disk=<url>` (a
   server that answers range requests and, cross-origin, sends CORS and CORP headers).
-- `index.html` (a redirect to `web/app/`), `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and `.htaccess` (Apache) with
+- `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`): `web/app/index.html` with its
+  document-relative URLs (the entry module, the stylesheet, the import map, whose values must start with `./`) made
+  the root's (`atRoot` in `tools/serve.ts`); everything else the page loads is relative to its modules. The dev
+  server's `/` is the same page, and it serves `web/app/` too (the tests use it); the copy's `web/app/index.html`
+  redirects to the root with the query and fragment (the page was there until 2026-10-23). A relative `?disk=` URL is
+  relative to where the page is. Then `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and `.htaccess` (Apache) with
   the two headers, `.nojekyll`, and a marker file: the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**

@@ -166,7 +166,7 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
   try {
     const url = await new Promise<string>((resolve, reject) => {
       const t = setInterval(() => {
-        const m = out.match(/open (http:\/\/127\.0\.0\.1:\d+\/web\/app\/) in Chromium/);
+        const m = out.match(/open (http:\/\/127\.0\.0\.1:\d+\/) in Chromium/);
         if (m) { clearInterval(t); served = performance.now() - start; resolve(m[1]); }
       }, 100);
       void exited.then((code) => { clearInterval(t); reject(new Error(`npm start exited (${code}) before serving:\n${out}`)); });

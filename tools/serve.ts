@@ -2,7 +2,8 @@
 // isolation headers (needed for SharedArrayBuffer and fine-grained timers).
 // .ts files are served as JavaScript with types stripped, .svelte files and .svelte.ts modules compiled (tools/svelte.ts). Other files honor a
 // single `Range: bytes=` request (206 / 416), which the virtio-blk HTTP backend uses.
-// `/` redirects to the page (web/app/), a directory serves its index.html, and
+// `/` is the page (web/app/index.html, its relative URLs made the root's: `atRoot`; web/app/ serves it too, as the
+// tests use), a directory serves its index.html, and
 // nothing under node_modules is served except the files the page imports (`ALLOWED`, and Svelte's runtime).
 import { createServer, type Server } from 'node:http';
 import { open, readFile } from 'node:fs/promises';
@@ -25,8 +26,17 @@ const TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
 };
 
-/** The page (docs/frontend.md). */
-export const APP = '/web/app/';
+/** The page (docs/frontend.md): served at the root. */
+export const APP = '/';
+
+/**
+ * web/app/index.html's document-relative URLs (its entry module, stylesheet and import map) made the site root's, so
+ * the page is served at `/` as well as at web/app/. Everything else it loads is relative to its modules.
+ */
+export const atRoot = (html: string) => {
+  if (!html.includes('"./main.') || !html.includes('"../../')) throw new Error('web/app/index.html no longer loads ./main and ../../: update atRoot');
+  return html.replaceAll('"./', '"./web/app/').replaceAll('"../../', '"./'); // an import map's values must start with ./
+};
 
 /** The only files served from node_modules: what the page imports (xterm.js). */
 const ALLOWED = ['node_modules/@xterm/xterm/lib/xterm.mjs', 'node_modules/@xterm/xterm/css/xterm.css'];
@@ -43,8 +53,8 @@ export function startServer(port = 0, host = '127.0.0.1', root = ROOT): Promise<
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
     res.setHeader('Cache-Control', 'no-store');
     const url = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
-    if (url === '/') {
-      res.writeHead(302, { Location: APP }).end();
+    if (url === '/' && root === ROOT) {
+      res.writeHead(200, { 'Content-Type': TYPES['.html'] }).end(atRoot(await readFile(join(ROOT, 'web/app/index.html'), 'utf8')));
       return;
     }
     const path = normalize(join(root, url.endsWith('/') ? url + 'index.html' : url));
@@ -111,5 +121,5 @@ if (import.meta.main) {
   prepareTailnetClient(); // the Network menu's client (tools/tailscale.ts): built if missing or stale, never fatal
   const server = await startServer(Number(process.env.PORT ?? 8080));
   const addr = server.address();
-  if (addr && typeof addr === 'object') console.log(`serving ${ROOT} at http://127.0.0.1:${addr.port}/ (the page: http://127.0.0.1:${addr.port}${APP})`);
+  if (addr && typeof addr === 'object') console.log(`serving ${ROOT} at http://127.0.0.1:${addr.port}/ (the page)`);
 }

@@ -58,7 +58,7 @@ test('compileModule compiles a module with runes (.svelte.ts): types stripped, i
 
 test('the static copy names no .ts module, and its Svelte runtime is complete', { skip: skipCopy }, () => {
   const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
-  const files = walk(join(out, 'web'));
+  const files = [...walk(join(out, 'web')), join(out, 'index.html')];
   assert.ok(!files.some((f) => f.endsWith('.ts')), 'a .ts file in the copy');
   for (const f of files) assert.doesNotMatch(readFileSync(f, 'utf8'), /['"`]\.{1,2}\/[\w./-]*\.(?:ts|svelte)(?:['"`]|\$\{)/, `${f} names a .ts module or an uncompiled component`);
   for (const f of runtimeFiles()) assert.ok(existsSync(join(out, f.replace(/^node_modules\//, 'vendor/'))), `${f} is in vendor/`);
@@ -69,7 +69,7 @@ test("the static copy's page opens the Machines modal (Svelte's runtime from ven
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 10_000 });
   await page.click('#machines-open');
   await page.locator('.machines [data-action=new-machine]').click();
@@ -83,9 +83,12 @@ test('the static copy opens idle and boots Buildroot in Chromium', { skip }, asy
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
+  // The page is the root; web/app/, where it was, redirects there with the query and fragment (`?disk=<url>`).
+  await page.goto(`${base}/web/app/?probe=1#here`);
+  await page.waitForURL(`${base}/?probe=1#here`);
   await page.goto(`${base}/`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
+  await page.goto(`${base}/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000, polling: 250 });
   assert.deepEqual(errors, []);
   await context.close();

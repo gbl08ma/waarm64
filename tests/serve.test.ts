@@ -39,8 +39,13 @@ test('ranges over HTTP', async () => {
 });
 
 test('the page, and only the files it imports from node_modules', async () => {
-  const root = await fetch(base + '/', { redirect: 'manual' });
-  assert.deepEqual([root.status, root.headers.get('location')], [302, '/web/app/']);
+  // The root is the page, its document-relative URLs made the root's (web/app/ serves it too, as the tests use).
+  const root = await fetch(base + '/?disk=https://h/d.json', { redirect: 'manual' });
+  assert.equal(root.status, 200);
+  const html = await root.text();
+  assert.match(html, /src="\.\/web\/app\/main\.ts"/);
+  assert.match(html, /href="\.\/node_modules\/@xterm\/xterm\/css\/xterm\.css"/);
+  assert.doesNotMatch(html, /"\.\.\//);
   const page = await fetch(base + '/web/app/');
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-type') ?? '', /^text\/html/);
