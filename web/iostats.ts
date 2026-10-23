@@ -51,6 +51,18 @@ export class IoStats {
     this.sizes.set(kind, m);
   }
 
+  /** `read` for a read that doesn't block (`readAsync`): its time is until it resolves, overlapping others'. */
+  async readAsync<T>(off: number, len: number, fn: () => Promise<T>): Promise<T> {
+    const t = performance.now();
+    try {
+      return await fn();
+    } finally {
+      const ms = performance.now() - t;
+      this.add('base.read', len, ms);
+      this.trace.push(+(performance.timeOrigin + t).toFixed(1), off, len, +ms.toFixed(2));
+    }
+  }
+
   /** An OPFS file with its reads, writes and flushes timed as `<name>.read` etc. */
   file(name: string, f: SyncFile): SyncFile {
     return {

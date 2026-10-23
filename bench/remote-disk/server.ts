@@ -1,7 +1,8 @@
 // A disk host for bench/remote-disk: files under a root served with range requests and CORS, as a remote host must
 // (docs/plans/remote-disks.md §3), with latency and bandwidth added and every request logged. The path's leading
-// segments set them: `/d<ms>/` waits that long before answering (a round trip), `/r<MB/s>/` paces the body,
-// `/pages/` answers a `Range` with 200 and the whole file (Cloudflare Pages); e.g. `/d47/r20/desktop.qcow2`.
+// segments set them: `/d<ms>/` waits that long before answering (a round trip), `/r<MB/s>/` paces each body,
+// `/R<MB/s>/` paces all bodies together (one link that requests in parallel share), `/pages/` answers a `Range` with
+// 200 and the whole file (Cloudflare Pages); e.g. `/d47/r20/desktop.qcow2`.
 //   const s = await diskServer(root); s.url; s.log (each request: t, path, range, bytes, ms); s.close()
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -11,6 +12,8 @@ export type Logged = { t: number; path: string; method: string; start: number; e
 
 export async function diskServer(root: string, port = 0) {
   const log: Logged[] = [];
+  /** When the shared link (`/R`) is free again (performance.now() ms). */
+  let linkFree = 0;
   const server = createServer(async (req, res) => {
     const t = performance.timeOrigin + performance.now();
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,14 +23,15 @@ export async function diskServer(root: string, port = 0) {
       return void res.end();
     }
     let path = decodeURIComponent(new URL(req.url!, 'http://x').pathname);
-    let delay = 0, rate = 0, pages = false;
+    let delay = 0, rate = 0, link = 0, pages = false;
     for (;;) {
-      const m = /^\/(d(\d+)|r(\d+(?:\.\d+)?)|pages)(\/.*)$/.exec(path);
+      const m = /^\/(d(\d+)|r(\d+(?:\.\d+)?)|R(\d+(?:\.\d+)?)|pages)(\/.*)$/.exec(path);
       if (!m) break;
       if (m[2]) delay = +m[2];
       else if (m[3]) rate = +m[3] * 1e6;
+      else if (m[4]) link = +m[4] * 1e6;
       else pages = true;
-      path = m[4];
+      path = m[5];
     }
     const file = join(root, normalize(path));
     let size: number, mtime: Date;
@@ -50,13 +54,17 @@ export async function diskServer(root: string, port = 0) {
     const done = () => log.push({ t, path, method: req.method!, start, end, status, ms: performance.timeOrigin + performance.now() - t });
     if (req.method === 'HEAD') return void (res.end(), done());
     const stream = createReadStream(file, { start, end, highWaterMark: 64 << 10 });
-    if (!rate) return void stream.pipe(res).on('finish', done);
+    if (!rate && !link) return void stream.pipe(res).on('finish', done);
     // Paced: each chunk no sooner than the rate allows since the body began.
     const t0 = performance.now();
     let sent = 0;
     for await (const chunk of stream) {
       sent += (chunk as Buffer).length;
-      const due = t0 + (sent / rate) * 1000 - performance.now();
+      let due = rate ? t0 + (sent / rate) * 1000 - performance.now() : 0;
+      if (link) {
+        linkFree = Math.max(linkFree, performance.now()) + ((chunk as Buffer).length / link) * 1000;
+        due = Math.max(due, linkFree - performance.now());
+      }
       if (due > 1) await new Promise((r) => setTimeout(r, due));
       if (!res.write(chunk)) await new Promise((r) => res.once('drain', r));
     }

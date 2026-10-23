@@ -241,6 +241,8 @@ export type Ctx = {
  */
 type Backend = {
   request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void;
+  /** Its requests may complete in any order (a remote disk's, R4): in realtime mode `Devices.poll` doesn't wait for them. */
+  concurrent?: boolean;
   /** Runs after the device's requests of a DEVICE exit were taken (every exit, even without any): virtio-snd's deterministic sink completes there. */
   polled?(): void;
   /**
@@ -587,11 +589,15 @@ export type Source = {
   close?(): void;
   /** What a read of [off, off + len) fetches anyway, if more (a chunked image's whole piece where the host has no ranges): a cache asks for all of it and keeps it. */
   span?(off: number, len: number): [number, number];
+  /** The same as `read`, without blocking (`fetch`: a remote disk's, which several requests then read at once, R4). */
+  readAsync?(off: number, len: number): Promise<Uint8Array | undefined>;
 };
 
 /**
- * An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network,
- * one request at a time. The device worker reads it through a block cache (web/blockcache.ts).
+ * An image over HTTP range requests: synchronous XHRs (workers only), which block the thread, or `fetch` (`readAsync`),
+ * which doesn't: the device worker in realtime mode reads by `fetch`, several requests at once, and the rest (the
+ * deterministic mode, the image's header and tables at its opening, the disk jobs' workers) synchronously. The device
+ * worker reads it through a block cache (web/blockcache.ts).
  */
 export function httpSource(url: string): Source & { validator?: string } {
   const xhr = (method: string, range?: string) => {
@@ -612,6 +618,15 @@ export function httpSource(url: string): Source & { validator?: string } {
       const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
       const b = x.response as ArrayBuffer | null;
       return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
+    },
+    async readAsync(off, len) {
+      try {
+        const r = await fetch(url, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
+        const b = r.status === 206 ? new Uint8Array(await r.arrayBuffer()) : (void r.body?.cancel(), undefined);
+        return b?.length === len ? b : undefined;
+      } catch {
+        return undefined; // the network
+      }
     },
   };
 }
@@ -677,7 +692,7 @@ export async function fileSource(url: string): Promise<Source> {
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk'): Backend {
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk', concurrent = false): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
@@ -685,13 +700,14 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     base = rw = src; // a disk that takes writes in itself (a ramdisk)
   } else {
     if (st) {
-      const read = src.read;
-      src = { ...src, read: (off, len) => st.read(off, len, () => read(off, len)) };
+      const { read, readAsync } = src;
+      src = { ...src, read: (off, len) => st.read(off, len, () => read(off, len)), readAsync: readAsync && ((off, len) => st.readAsync(off, len, () => readAsync(off, len))) };
       if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
     }
     const s = src;
     pool = typeof Worker === 'function' ? inflatePool() : undefined; // Node has none
-    base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size, pool);
+    concurrent &&= !!s.readAsync;
+    base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size, pool, concurrent ? (off, len) => (len === 0 ? Promise.resolve(new Uint8Array(0)) : s.readAsync!(off, len)) : undefined);
     rw = files && overlay(base, files.data, files.map, files.meta);
   }
   const disk: Disk = rw ?? base;
@@ -775,6 +791,25 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return n;
     };
   }
+  if (concurrent) {
+    // Several requests at once (`Devices.poll` completes them as they resolve, realtime only): a read starts once the
+    // last write, flush or discard before it ended; any other request waits for every request before it (the overlay
+    // changes one request at a time, and a FLUSH covers the writes completed before it).
+    const request = backend.request;
+    let barrier: Promise<unknown> = Promise.resolve();
+    const inflight = new Set<Promise<number>>();
+    backend.concurrent = true;
+    backend.request = (r) => {
+      const h = gather(ctx.ram(), r.read, 16);
+      const read = h.byteLength === 16 && new DataView(h.slice().buffer).getUint32(0, true) === T_IN;
+      const p = (read ? barrier : Promise.all(inflight)).then(() => request.call(backend, r)) as Promise<number>;
+      inflight.add(p);
+      const settled = p.then(() => {}, () => {});
+      void settled.then(() => inflight.delete(p));
+      if (!read) barrier = settled;
+      return p;
+    };
+  }
   return backend;
 }
 
@@ -834,12 +869,16 @@ export class Devices {
   private closed = false;
   /** The timers of the blk devices with `stats` (web/iostats.ts), by device. */
   private ioStats: Record<number, IoStats> = {};
+  private deterministic: boolean;
+  /** Requests of `concurrent` backends still running (realtime), and the first one's error if one failed. */
+  private detached = new Set<Promise<void>>();
+  private failed: unknown;
   /** The disks' sources, by device (an HTTP one's block cache has its counters). */
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
   private constructor({ memory, shared, ram, ramSize, spill = [], signal, specs, deterministic, wakes, state, xhci }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
-    [this.memory, this.shared, this.signal, this.wakes, this.sources] = [memory, shared, signal, wakes ?? [], sources];
+    [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
     const layout = ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
@@ -861,7 +900,7 @@ export class Devices {
         case 'rng': return rng(ctx, deterministic);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial);
+          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic);
         }
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
@@ -910,8 +949,14 @@ export class Devices {
    * Each backend's state for a snapshot (null: none), with the devices quiet (`poll` resolved): JSON, but for
    * Uint8Arrays (the display's 3D contents), which web/snapshot.ts writes as frames of their own.
    */
-  save(): Promise<unknown[]> {
+  async save(): Promise<unknown[]> {
+    await this.drain(); // nothing may complete into the memory being saved
     return Promise.all(this.backends.map((b) => b.save?.() ?? null));
+  }
+
+  /** Resolves once no request of a `concurrent` backend runs (a snapshot's quiesce: their completions land first). */
+  async drain() {
+    while (this.detached.size) await Promise.all(this.detached);
   }
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
@@ -959,6 +1004,7 @@ export class Devices {
    * those it all happens before it returns.
    */
   async poll() {
+    if (this.failed) throw this.failed;
     for (const [i, b] of this.backends.entries()) {
       const u32 = new Uint32Array(this.memory.buffer);
       const base = this.shared[i] / 4;
@@ -982,7 +1028,13 @@ export class Devices {
         Atomics.store(u32, ring + 1, tail);
         if (w0 >>> 24 !== epoch) continue; // posted before a reset
         const len = b.request(r);
-        if (len !== undefined) this.complete(i, w0, typeof len === 'number' ? len : await len);
+        if (len === undefined) continue;
+        if (typeof len === 'number') this.complete(i, w0, len);
+        else if (b.concurrent && !this.deterministic) {
+          // Completed when it resolves, whatever came before: the device worker serves the rest meanwhile.
+          const p: Promise<void> = len.then((n) => this.complete(i, w0, n), (e) => { this.failed ??= e; }).finally(() => this.detached.delete(p));
+          this.detached.add(p);
+        } else this.complete(i, w0, await len);
       }
       b.polled?.();
     }

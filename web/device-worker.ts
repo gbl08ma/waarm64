@@ -23,6 +23,7 @@ let devices: Devices | undefined;
 self.onmessage = (e: MessageEvent) => {
   if (e.data.type === 'init') start(e.data as Init).catch((err) => self.postMessage({ type: 'error', message: String(err) }));
   else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' }); // after every earlier message
+  else if (e.data.type === 'drain') void devices!.drain().then(() => self.postMessage({ type: 'drained' }));
   else if (e.data.type === 'save') {
     // The backends' state for a snapshot (the owner has the devices quiet).
     devices!.save().then(

@@ -158,3 +158,36 @@ does the same first-boot work), at 47 ms and 20 MB/s; A without the store (`?dis
   and is tried once more (`releaseStores`; `tests/devices.test.ts`, with the retry left out as the planted bug): the
   guest's writes go before kept blocks. With that, the same arm boots to Firefox in **122.9 s** (284.4 s without the
   store, R2), its 25 MiB pieces fetched 46 times (1.16 GB) instead of 153 (3.9 GB).
+
+## R4: requests in parallel (2026-10-23)
+
+In realtime mode the device worker reads a remote disk without blocking: `fetch` instead of synchronous XHRs
+(`readAsync` on the HTTP and chunked sources and on the block cache, which fetches a block being fetched once and at
+most 8 at a time), qcow2 reads a request's L2 tables and merged ranges at once (`openDisk`'s `readAsync`), and
+`Devices.poll` completes a `concurrent` backend's requests as they resolve instead of in order (a read waits for the
+last write, flush or discard before it; those wait for everything before them). The deterministic mode, Node and the
+disk jobs keep the synchronous path. A snapshot's quiesce first drains the requests in flight (`Devices.drain`).
+The local server's `/R<MB/s>` paces all responses together (one link shared by parallel requests).
+
+| arm (47 ms a request, one shared 20 MB/s link unless said) | **painted** | requests |
+|---|---|---|
+| R3's code, one request at a time (R2/R3 arms: 108.9, 108.9, 109.0, 110.1) | **~109 s** | 422 |
+| R4 (`r4-d47-R20.json`) | **106.6 s** | 409 |
+| R4, a 40 MB/s link (`r4-d47-R40.json`) | 90.0 s | 405 |
+| R4, static.gbl08ma.com (`r4-remote.json`; R1 and R2's runs there: 109.7, 112.4 s) | **100.6 s** | 405 |
+
+**The device worker's answer time** (`PING=1`: the page asks it every 250 ms over the `?iostats` channel; a worker
+inside a disk read answers after it), A the code before R4 (`../webpc-base` at 3c1614f), B R4, alternated, 47 ms and
+20 MB/s shared, two rounds (`r4ab-*.json`):
+
+| | painted | answer p50 / p99 / longest | answers over 100 ms |
+|---|---|---|---|
+| A, round 1 / 2 | 116.1 / 116.4 s | 2.6 / 261 / **761 ms**; 2.8 / 274 / **679 ms** | 62 / 64 |
+| B, round 1 / 2 | 105.9 / 105.4 s | 0.8 / 9.0 / **13.9 ms**; 0.8 / 10.2 / **17.1 ms** | 0 / 0 |
+
+- **The device worker no longer stops behind the network:** its longest answer 0.7 s → 17 ms, so keys, the pointer,
+  the display's damage and sound don't wait for a disk read (R0's remote run had spans of 2.2 s).
+- **The boot gains ~9% in the alternated A/B** (116 → 105.5 s: the rounds don't overlap; the asks themselves slow A,
+  whose answers carry the trace, which is why A is 116 here against ~109 without them) and ~9% on the real server in
+  one run each (100.6 against 109.7 and 112.4 s). The guest mostly has one read outstanding, and the bytes (~540 MB)
+  over the link set the floor; a faster link is what moves it (40 MB/s: 90 s).

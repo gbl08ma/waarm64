@@ -19,9 +19,11 @@ Making a disk on another server fast. **The plan is [docs/plans/remote-disks.md]
   id or the URL, size and validator): a second boot 109 → 63 s, no requests. The guest's writes go first: a short OPFS
   write makes the store give up, a failed disk write releases every store and is retried (Chromium's incognito
   quota is ~0.8 GB though `estimate()` says 3.2). The Machines page's storage footer shows and clears it.
-- **R4 next:** requests in parallel (`Devices.poll` awaits each request in order today, and the device worker blocks
-  up to 2.2 s behind back-to-back reads); only in realtime mode. Then R5 (a boot's read trace in the manifest,
-  prefetched), then compression (§4.6).
+- **R4 done:** realtime reads by `fetch`, several at once (`readAsync` through the sources, the cache and qcow2;
+  `Devices.poll` completes a `concurrent` backend's requests as they resolve; `Devices.drain` on quiesce). Boot −9%
+  (remote ~101 s), and the device worker's longest answer 0.7 s → 17 ms. The bytes over the link are the floor now.
+- **R5 next:** a boot's read trace in the manifest, prefetched while the guest boots (the trace: `?iostats`), then
+  compression (§4.6).
 - **An image finding to act on:** a fresh overlay is the image's first boot, so `ldconfig.service` runs (44 s of the
   remote boot): a hosted image should be built with `/etc/.updated` and `/var/.updated` newer than `/usr`
   (`ConditionNeedsUpdate`), or booted once before publishing. Not yet tried.

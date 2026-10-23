@@ -72,3 +72,34 @@ test('over a store (web/diskcache.ts), a second cache reads what the first fetch
   same(b.read(0, 100), 0, 100, 'not kept');
   assert.deepEqual(second.reads, [[0, 4096]]);
 });
+
+test('readAsync: concurrent reads match the source, and a block being fetched is fetched once', async () => {
+  const { src, reads } = source();
+  let seed = 9;
+  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) >>> 0) % n);
+  let inFlight = 0, most = 0;
+  const asyncSrc = { ...src, readAsync: async (off: number, len: number) => {
+    inFlight++;
+    most = Math.max(most, inFlight);
+    await new Promise((r) => setTimeout(r, rnd(4)));
+    inFlight--;
+    return src.read(off, len);
+  } };
+  const c = cachedSource(asyncSrc, { block: 4096, bytes: 64 * 4096 });
+  await Promise.all(Array.from({ length: 200 }, () => {
+    const off = rnd(SIZE);
+    const len = Math.min(SIZE - off, rnd(3 * 4096) + 1);
+    return c.readAsync!(off, len).then((got) => same(got, off, len, 'async'));
+  }));
+  // Every block once (the cache holds them all), in requests that overlap none.
+  const fetched = reads.flatMap(([off, len]) => Array.from({ length: Math.ceil(len / 4096) }, (_, k) => off / 4096 + k));
+  assert.equal(new Set(fetched).size, fetched.length, 'a block fetched twice');
+  assert.ok(most > 1 && most <= 8, `${most} at once`);
+  // A small cache: blocks evicted while a read waits are fetched again, and the bytes still match.
+  const small = cachedSource(asyncSrc, { block: 4096, bytes: 3 * 4096 });
+  await Promise.all(Array.from({ length: 100 }, () => {
+    const off = rnd(SIZE);
+    const len = Math.min(SIZE - off, rnd(2 * 4096) + 1);
+    return small.readAsync!(off, len).then((got) => same(got, off, len, 'async, small'));
+  }));
+});

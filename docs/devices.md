@@ -114,9 +114,17 @@ mode (and natively in realtime mode: std has no CSPRNG).
   HEAD). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
   the 256 MiB most recently used kept in memory, a read's missing blocks fetched in one request per run of adjacent
   ones; a read larger than the cache goes past it. A remote desktop boot's 2160 reads became 422 requests, and its
-  time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). No concurrency: one request at a
-  time, and the device worker blocks while it waits. The import, export and disk-job workers (`web/app/sources.ts`)
-  read without the cache.
+  time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). The import, export and disk-job
+  workers (`web/app/sources.ts`) read without the cache.
+  **In realtime mode, requests run in parallel and nothing blocks** (R4): the sources read with `fetch`
+  (`Source.readAsync`), the cache fetches a block being fetched once and at most 8 at a time, qcow2 reads a request's
+  L2 tables and merged ranges at once (`openDisk`'s `readAsync`), and the blk backend is `concurrent`: `Devices.poll`
+  completes its requests as they resolve (virtio allows any order) and serves the other devices meanwhile. A read
+  starts once the last write, flush or discard before it ended; those wait for every request before them (the overlay
+  changes one request at a time; a FLUSH covers the writes completed before it). A snapshot's quiesce drains them
+  first (`Devices.drain`, the device worker's `drain`). The deterministic mode keeps one request at a time in order
+  (synchronous XHRs), as do the image's opening (header, L1) and Node. The device worker's longest answer during a
+  remote boot went 0.7 s → 17 ms.
   **The blocks are kept in OPFS** (`web/diskcache.ts`) where the image has an identity that changes with it (a chunked
   image's id, or the URL, size and the server's `ETag` or `Last-Modified`; without one nothing is kept), so a reload, a
   second boot or a resume reads them locally: a block missing in memory is looked for there before it is fetched, and

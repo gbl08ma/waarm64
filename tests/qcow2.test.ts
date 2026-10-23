@@ -155,3 +155,25 @@ test('deflate.qcow2 through the inflate pool in Chromium: workers take shares, a
   // 16 clusters over this thread and three workers: 4 each.
   assert.deepEqual(r, { pooled: true, sent: 12, closed: true, after: 12 });
 });
+
+test('a qcow2 read through `readAsync` (several requests at once, answers in any order) reads as data.raw', async () => {
+  let seed = 11;
+  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) >>> 0) % n);
+  for (const name of ['v2.qcow2', 'v3.qcow2', 'deflate.qcow2', 'data.raw']) {
+    const b = file(name);
+    const at = (off: number, len: number) => (off + len <= b.length ? new Uint8Array(b.buffer, b.byteOffset + off, len) : undefined);
+    let reads = 0;
+    const d = openDisk(at, b.length, inflateEach, async (off, len) => {
+      reads++;
+      await new Promise((r) => setTimeout(r, rnd(3)));
+      return at(off, len);
+    });
+    const jobs = Array.from({ length: 60 }, () => {
+      const off = rnd(data.length);
+      const len = Math.min(data.length - off, rnd(40_000) + 1);
+      return d.read(off, len).then((got) => assert.ok(got && Buffer.compare(got, data.subarray(off, off + len)) === 0, `${name} at ${off}+${len}`));
+    });
+    await Promise.all(jobs);
+    assert.ok(reads > 0, `${name}: read through readAsync`);
+  }
+});

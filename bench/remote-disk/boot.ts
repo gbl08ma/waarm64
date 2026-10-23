@@ -34,6 +34,16 @@ const now = () => page.evaluate(() => performance.timeOrigin + performance.now()
 /** One boot on the page as it is now loaded, to Firefox's paint; its JSON at `file`. */
 async function bootOnce(file: string, n: number) {
   const origin = await page.evaluate(() => performance.timeOrigin);
+  // PING=1: the device worker's answer time to the page every 250 ms (the `?iostats` channel's: a device worker busy
+  // with a disk read answers after it), kept in window.__pings.
+  if (process.env.PING) await page.evaluate(() => {
+    const w = window as unknown as { __pings: number[] };
+    w.__pings = [];
+    const ch = new BroadcastChannel('webpc-iostats');
+    let t = 0, ready = false; // asked again until the device worker first answers (it opens its channel as it starts)
+    ch.onmessage = () => { if (t && ready) w.__pings.push(performance.now() - t); t = 0; ready = true; };
+    setInterval(() => { if (!t || !ready) { t = performance.now(); ch.postMessage('ask'); } }, 250);
+  });
   const marks: Record<string, number> = {};
   const mark = async (name: string) => { marks[name] = (await now()) - origin; log(`boot ${n}:`, name, (marks[name] / 1000).toFixed(1), 's'); };
   const result: Record<string, unknown> = { label: n > 1 ? `${label} (boot ${n})` : label, boot: n, disk: diskUrl, gl: s.gl, marks };
@@ -101,6 +111,13 @@ async function bootOnce(file: string, n: number) {
   } catch (e) {
     result.error = String(e);
     log('failed', String(e).slice(0, 500));
+  }
+  if (process.env.PING) {
+    const p: number[] = (await page.evaluate(() => (window as unknown as { __pings: number[] }).__pings)).sort((a, b) => a - b);
+    if (!p.length) p.push(NaN);
+    const q = (x: number) => +p[Math.min(p.length - 1, Math.floor(x * p.length))].toFixed(1);
+    result.pings = { n: p.length, p50: q(0.5), p99: q(0.99), max: +p.at(-1)!.toFixed(1), over100: p.filter((x) => x > 100).length, over500: p.filter((x) => x > 500).length };
+    log('pings', JSON.stringify(result.pings));
   }
   const stats = await page.evaluate(() => (window as unknown as { __ioStats?: () => Promise<unknown> }).__ioStats?.()).catch(() => undefined) as Stats | undefined;
   // The boot disk's (the one device with a trace that read anything), its trace relative to the page's start.

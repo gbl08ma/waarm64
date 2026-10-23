@@ -9,6 +9,8 @@
 
 /** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
 export type ReadAt = (off: number, len: number) => Uint8Array | undefined;
+/** `ReadAt` without blocking: a remote disk's (`fetch`), so a request's reads and other requests' run at once. */
+export type ReadAtAsync = (off: number, len: number) => Promise<Uint8Array | undefined>;
 
 /**
  * Inflates compressed clusters, each to exactly `size` bytes (undefined where one doesn't unpack), in
@@ -53,12 +55,13 @@ export const qcow2Size = (head: Uint8Array) => Number(new DataView(head.buffer, 
 
 /**
  * Opens an image of `fileSize` bytes: qcow2 by its magic, raw otherwise. Throws on what qcow2 we don't support.
- * `inflater` unpacks a request's compressed clusters.
+ * `inflater` unpacks a request's compressed clusters. With `readAsync`, requests read the file through it (the
+ * header and L1 table at the opening still through `readAt`): a request's L2 tables and its merged reads at once.
  */
-export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = inflateEach): Disk {
+export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = inflateEach, readAsync?: ReadAtAsync): Disk {
   const head = fileSize >= HEADER ? readAt(0, HEADER) : undefined;
   if (!head || !isQcow2(head)) {
-    return { size: fileSize, format: 'raw', read: async (off, len) => (off + len <= fileSize ? readAt(off, len) : undefined) };
+    return { size: fileSize, format: 'raw', read: async (off, len) => (off + len > fileSize ? undefined : readAsync ? readAsync(off, len) : readAt(off, len)) };
   }
   const h = new DataView(head.buffer, head.byteOffset, HEADER);
   const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
@@ -86,6 +89,24 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
 
   // L2 tables, kept once read (1/8192 of the virtual size at 64 KiB clusters).
   const l2s = new Map<number, DataView>();
+  /** L2 tables being read without blocking (`readAsync`), so two requests read one once. */
+  const loading = new Map<number, Promise<boolean>>();
+  /** Reads L2 table `i` with `readAsync` if it isn't kept yet; false if that fails. */
+  const loadL2 = (i: number): Promise<boolean> | boolean => {
+    if (l2s.has(i)) return true;
+    const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+    if (off === 0) return true; // unallocated: `l2` makes it
+    let p = loading.get(i);
+    if (!p) {
+      p = readAsync!(off, cs).then((b) => {
+        loading.delete(i);
+        if (b) l2s.set(i, new DataView(b.buffer, b.byteOffset, cs));
+        return !!b;
+      });
+      loading.set(i, p);
+    }
+    return p;
+  };
   const l2 = (i: number) => {
     let t = l2s.get(i);
     if (!t) {
@@ -134,9 +155,38 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
       return readAt(off, len);
     };
   };
+  /**
+   * `merged` with `readAsync`: every group of close ranges (one range alone too) read at once; a group whose read
+   * fails leaves its ranges to their own reads, also at once. The reader it returns has them all.
+   */
+  const mergedAsync = async (ranges: [number, number][]): Promise<ReadAt> => {
+    ranges.sort((p, q) => p[0] - q[0]);
+    const windows: { at: number; bytes: Uint8Array }[] = [];
+    const reads: Promise<void>[] = [];
+    const window = (start: number, end: number) => readAsync!(start, end - start).then((bytes) => { if (bytes) windows.push({ at: start, bytes }); return !!bytes; });
+    for (let i = 0; i < ranges.length;) {
+      let [start, end] = ranges[i];
+      let j = i + 1;
+      for (; j < ranges.length && ranges[j][0] - end <= MERGE_GAP && Math.max(end, ranges[j][1]) - start <= MERGE_MAX; j++) end = Math.max(end, ranges[j][1]);
+      const group = ranges.slice(i, j);
+      reads.push(window(start, end).then(async (ok) => { if (!ok && group.length > 1) await Promise.all(group.map(([a, b]) => window(a, b))); }));
+      i = j;
+    }
+    await Promise.all(reads);
+    return (off, len) => {
+      for (const w of windows) if (off >= w.at && off + len <= w.at + w.bytes.length) return w.bytes.subarray(off - w.at, off - w.at + len);
+      return undefined;
+    };
+  };
 
   const read = async (off: number, len: number) => {
     if (off < 0 || off + len > size) return undefined;
+    if (readAsync && len > 0) {
+      // The request's L2 tables first, all at once.
+      const tables: (Promise<boolean> | boolean)[] = [];
+      for (let t = Math.floor(off / cs / l2Entries); t <= Math.floor((off + len - 1) / cs / l2Entries); t++) tables.push(loadL2(t));
+      if ((await Promise.all(tables)).includes(false)) return undefined;
+    }
     const out = new Uint8Array(len);
     // The request's clusters: what each needs from the file, then the reads, then the bytes.
     const pieces: { k: number; o: number; n: number; e: bigint }[] = [];
@@ -163,7 +213,7 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
       } // else unallocated or zero: out is already zeros
       k += n;
     }
-    const from = merged(ranges);
+    const from = readAsync ? await mergedAsync(ranges) : merged(ranges);
     // The compressed clusters all at once, not one after another (a 1 MiB read of 64 KiB clusters is 16).
     if (wanted.size) {
       const packed = [...wanted];

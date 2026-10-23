@@ -1563,6 +1563,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
+  const drained: (() => void)[] = []; // one a `drain` message, answered in order
   let closed = (_stats?: unknown) => {};
   let saved = (_m: { state?: unknown[]; error?: string }) => {};
   // Requests for a disk's changes (`written`, `blocks`), answered by id.
@@ -1586,6 +1587,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'error') reject(new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'flushed') flushed();
+      else if (e.data.type === 'drained') drained.shift()?.();
       else if (e.data.type === 'saved') saved(e.data);
       else if (e.data.type === 'disk') asked.get(e.data.id)?.(e.data);
       else if (e.data.type === 'closed') closed(e.data.stats);
@@ -1597,7 +1599,14 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   return {
     inFlight: () => false,
     settle: async () => {},
-    quiesce: () => ringAsync(bell),
+    // A remote disk's requests run on after a poll (realtime, R4): they complete before the doorbell is answered.
+    quiesce: async () => {
+      await new Promise<void>((resolve) => {
+        drained.push(resolve);
+        worker.postMessage({ type: 'drain' });
+      });
+      await ringAsync(bell);
+    },
     /** The backends' state for a snapshot (web/devices.ts `Devices.save`). */
     save: () => new Promise<unknown[]>((resolve, reject) => {
       saved = (m) => (m.state ? resolve(m.state) : reject(new Error(m.error ?? 'the device worker has no state')));

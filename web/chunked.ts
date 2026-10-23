@@ -79,9 +79,42 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet): Source & { ma
     }
     return undefined;
   };
+  /** `readPiece` without blocking (`fetch`). */
+  const readPieceAsync = async (i: number, off: number, len: number): Promise<Uint8Array | undefined> => {
+    if (whole?.[0] === i) return whole[1].subarray(off, off + len);
+    const all = off === 0 && len === pieceLen(i);
+    try {
+      const r = await fetch(pieceUrl(i), ranges === false || all ? {} : { headers: { Range: `bytes=${off}-${off + len - 1}` } });
+      if (r.status !== 206 && r.status !== 200) return void r.body?.cancel();
+      const b = new Uint8Array(await r.arrayBuffer());
+      if (r.status === 206 && b.length === len) return (ranges = true, b);
+      if (r.status === 200 && b.length === pieceLen(i)) {
+        if (!all) [ranges, whole] = [false, [i, b]];
+        return b.subarray(off, off + len);
+      }
+    } catch {} // the network
+    return undefined;
+  };
   return {
     size: m.size,
     manifest: m,
+    async readAsync(off, len) {
+      if (off < 0 || len < 0 || off + len > m.size) return undefined;
+      const parts: Promise<Uint8Array | undefined>[] = [];
+      for (let at = off; at < off + len;) {
+        const i = Math.floor(at / m.piece);
+        const n = Math.min(off + len, (i + 1) * m.piece) - at;
+        parts.push(readPieceAsync(i, at - i * m.piece, n));
+        at += n;
+      }
+      const got = await Promise.all(parts);
+      if (got.some((b) => !b)) return undefined;
+      if (got.length === 1) return got[0];
+      const out = new Uint8Array(len);
+      let at = 0;
+      for (const b of got) (out.set(b!, at), at += b!.length);
+      return out;
+    },
     ranges: () => ranges,
     // Without ranges a read fetches its pieces whole: a cache above takes them all.
     span: (off, len) => (ranges === false ? [Math.floor(off / m.piece) * m.piece, Math.min(m.size, Math.ceil((off + len) / m.piece) * m.piece)] : [off, off + len]),
