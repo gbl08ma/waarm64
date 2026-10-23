@@ -733,12 +733,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   running keeps its connection (and its lock) until Disconnect, as the one card did; Log out is offered only where the
   connection runs on this page, and deleting a kept tailnet connection forgets the node without logging it out (it
   stays on the tailnet until it expires or an admin removes it).
-- **tailcat, IPv6 where the exit node's machine has none out** ([tailnet.md](tailnet.md) "tailcat"): the guest gets
-  the tunnel's IPv6 address and a default route, the exit node's netstack accepts each IPv6 TCP connection and then
-  closes it empty when its machine can't dial out over IPv6, so a client that tries IPv6 first (curl, browsers) fails
-  instead of falling back to IPv4 (found on the dev VM, which has no IPv6 route). A fix in the client: probe the exit
-  node's IPv6 reach once Running (a DNS query to `2606:4700:4700::1111` through the tunnel) and lease the guest no IPv6
-  default route if it doesn't answer, keeping the tunnel address for the server's own `fd7a:` services.
+- **IPv6 out's loose ends** ([network-adapters.md](network-adapters.md) §4 "IPv6 out", web/reach6.ts):
+  - **Tailscale exit nodes**: one on a machine without IPv6 still advertises `::/0`, so the guest may meet the same
+    accept-then-close; the worker (web/tailnet-worker.ts) could run the same probe while an exit node is in use.
+    Unchecked whether Tailscale's exit nodes do (they forward packets rather than proxy flows, so they may answer with
+    an ICMPv6 unreachable, which curl takes).
+  - **A primary per family**: with tailcat as the primary and its IPv6 out, a second adapter whose IPv6 reaches out
+    (a tailnet's exit node) could carry IPv6's default; `primaryOf` picks one adapter for both.
+  - The real probe target (Cloudflare's resolver) never answered in a test: the dev VM has no IPv6 (the up case runs
+    against `tests/net/resolver.ts` on a temporary address, testing.md). By hand: an exit node on a machine with
+    IPv6 (the Mac), the guest's `ip -6 route` showing the default within a second of connecting.
+  - The Network menu doesn't say a connection is IPv4-only.
+  - `bench/gpu/firefox-load.ts`'s tailcat mode still drops the guest's IPv6 default and pins resolv.conf and
+    gai.conf by hand; no longer needed, drop it at its next run.
 - **tailcat serving loose ends**: no `--allow` list (any key with the address gets in, as with tailcat's own
   default; the module would check the meowing key); clients are never dropped (64 WireGuard peers at most, until
   Disconnect); disco pings aren't answered, so `tailcat ping` gets no pong (the data path works); the public-relay
@@ -833,8 +840,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   enough to flush (six at 20 s didn't: more cycles or longer dwells), and whether their flushes look like the
   churn's; the churn screen ran one round (main, 160 MiB, the A/A), so its noise band is from one pair; a pages
   session cut to its first pages (`PAGES=wiki,mdn`) as a screen was read off full sessions' counts, never run.
-  The real sites mode drops the guest's IPv6 by hand: the client-side fix ("tailcat, IPv6 where the exit node's
-  machine has none out", below) would make that unnecessary.
+  The real sites mode drops the guest's IPv6 by hand, which the client's IPv6 probe has made unnecessary ("IPv6
+  out's loose ends", above).
 
 - **`linux-gpu`'s build number isn't pinned** (audio's finding, [audio.md](audio.md) "Linux driver behavior"): the `#N` in a kernel's version
   string grows with each rebuild in the same tree and moves its guest's step count (469 steps for `linux-snd` from `#2`

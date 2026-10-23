@@ -103,6 +103,18 @@ restart hands the new machine's port to the running client, and Disconnect takes
   49 s (twice; 37 s in the cloud's first run). Faster would take forcing a renew (DHCP FORCERENEW, which networkd
   ignores without authentication) or flapping the link (a guest-visible device feature: the link is always up,
   devices.md "net"); not needed so far.
+- **IPv6 out** (web/reach6.ts): an adapter whose far end may have no IPv6 route out probes it, and while it doesn't
+  answer, its lease has no IPv6 default route and no IPv6 resolvers (`unreached6`: the address stays, routed through
+  the network's own prefixes), so the guest's IPv6 to the internet fails at once ("network unreachable") and clients
+  that try IPv6 first fall back to IPv4. The probe is a DNS query (the root's NS) to `2606:4700:4700::1111` from the
+  lease's IPv6 address, sent through the backend by its worker, whose answer the worker takes out of the guest's
+  packets: at the start, every minute, at once on the browser's `online` and the Network Information API's `change`
+  events. Three lost in a row (3 s each) make IPv6 out, one answer brings it back; until the first answer it is out.
+  The router advertisement moves the default at once both ways. tailcat going online through a server uses it (a
+  tailcat exit node accepts IPv6 connections it can't dial out and closes them empty, so curl and browsers never fell
+  back): on the dev VM, which has no IPv6, the guest has no IPv6 default and curl reaches the internet over IPv4 by
+  itself. A Tailscale exit node can have the same problem (docs/backlog.md "Network"). The probe tells only whether
+  the far end reaches the internet over IPv6; it isn't per-family primaries (IPv6's default from another adapter).
 - **DNS:** each lease carries its own connection's resolvers and domains, and systemd-resolved keeps them per link:
   a tailnet's MagicDNS domain sends its names to the tailnet's adapter (checked against headscale beside tailcat), and
   the rest go to the primary's resolvers. A guest without systemd-resolved gets every adapter's resolvers in one list.

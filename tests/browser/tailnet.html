@@ -13,7 +13,7 @@
   const q = new URLSearchParams(location.search);
   const events = [];
   const ts = q.get('tailcat') || q.has('serve')
-    ? startTailcat({ addr: q.get('tailcat') ?? '', serve: q.has('serve') ? { relay: q.get('relay') ?? '' } : undefined }, (m) => events.push(m))
+    ? startTailcat({ addr: q.get('tailcat') ?? '', serve: q.has('serve') ? { relay: q.get('relay') ?? '' } : undefined, probe6: q.has('probe6') ? JSON.parse(q.get('probe6')) : undefined }, (m) => events.push(m))
     : startTailscale({ controlURL: q.get('control'), authKey: q.get('authkey') ?? undefined, hostname: q.get('hostname') ?? 'guest' }, (m) => events.push(m));
   const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
   const serial = new MessageChannel();

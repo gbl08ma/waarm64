@@ -8,6 +8,11 @@
 // large packets, web/offload.ts), then over IPv6 when this machine has a non-link-local IPv6
 // address. A tailcat exit node does forward private addresses, so no internet is needed; the
 // internet and DNS (the lease's 1.1.1.1 through the exit node) are opt-in, WEBPC_TAILCAT_INTERNET=1.
+// The client's IPv6 probe (web/reach6.ts): where this machine has no IPv6 address (the dev VM), the exit node's IPv6
+// doesn't reach out, so the probe is lost and the guest has no IPv6 default route: IPv6 to the internet is
+// unreachable at once, the tunnel's /48 still routed (the tailcat clients come in over it). With one, the probe asks
+// tests/net/resolver.ts's stand-in on it: the default route is there while it answers, goes when it stops, and comes
+// back with its next answer.
 // The machine also lets tailcat clients in (T3): the real tailcat CLI parses the machine's address,
 // then fetches a page from a web server in the guest through it.
 // Realtime: one boot, ~2 min alone. Opt-in: WEBPC_TAILCAT=1 (needs Go for tailcat.sh, the
@@ -23,6 +28,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
+import { probeResolver, type ProbeResolver } from './net/resolver.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
@@ -45,8 +51,11 @@ let base: string;
 let closeServer: () => void;
 let http: Server;
 let port: number;
+let resolver: ProbeResolver | undefined;
 before(async () => {
   if (skip) return;
+  const v6 = lan('IPv6');
+  resolver = v6 ? await probeResolver(v6) : undefined;
   const env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2)));
   addr = env.WEBPC_TAILCAT_ADDR;
   const big = Buffer.alloc(BIG, 'x');
@@ -69,6 +78,7 @@ after(async () => {
   await browser?.close();
   closeServer?.();
   http?.close();
+  await resolver?.off();
   if (!skip) spawnSync(script, ['down']);
 });
 
@@ -102,7 +112,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, serve: '', overlay: OVERLAY })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, serve: '', overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: resolver.to, port: resolver.port, everyMs: 5000 } : {}) })}`);
       await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().netmap', null, { timeout: 60_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
       const ts = await harness<{ netmap: { addresses: string[]; serving?: string }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
@@ -126,6 +136,18 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         if (!a6) await page.waitForTimeout(1000);
       }
       assert.equal(a6.split('/')[0], self6, `the IPv6 lease is the tunnel's address (${a6})`);
+      const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {
+        const t0 = performance.now();
+        let out = await run(cmd);
+        while (!ok(out) && performance.now() - t0 < ms) {
+          await page.waitForTimeout(1000);
+          out = await run(cmd);
+        }
+        assert.ok(ok(out), `${what} after ${ms / 1000} s:\n${out}${await context()}`);
+        return (performance.now() - t0) / 1000;
+      };
+      const default6 = (s: string) => /^default (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev \S+ proto ra/m.test(s);
+      if (resolver) await until('the IPv6 default route (the probe answered)', 'ip -6 route', default6, 30_000);
       console.log(`# guest: ${a4}, ${a6}; ${(await run('ip route; ip -6 route')).trim().replace(/\n/g, ' | ')}`);
 
       // TCP over IPv4: translated to IPv6 by the client, proxied by the exit node to this machine's LAN address.
@@ -167,6 +189,20 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         await upload(`"http://[${v6}]:${port}/up"`, 'IPv6');
       }
 
+      // The exit node's IPv6 stops reaching out: within three lost probes the router advertisement withdraws the
+      // default, so IPv6 to the internet fails at once (curl's 7, "couldn't connect", not 52's empty reply from the exit
+      // node), while the tunnel's /48 stays routed. The tailcat clients below come in over it.
+      if (!resolver) console.log('# SKIPPED: the IPv6 default route while the probe answers (this machine has no non-link-local IPv6 address)');
+      await resolver?.off();
+      const gone = await until('no IPv6 default route (the probe lost)', 'ip -6 route', (s) => !default6(s), 60_000);
+      // (networkd drops the default's nexthop and with it the /48 the same advertisement gave: the gateway sends it
+      // again a second later, web/gateway.ts `advertise`.)
+      const kept = await until("the tunnel's /48 stays", 'ip -6 route', (s) => /^fd7a:115c:a1e0::\/48 (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev \S+ proto ra/m.test(s), 5000);
+      const routes6 = await run('ip -6 route');
+      const unreachable = await run("curl -6 -s -m 20 -o /dev/null -w 'exit=' 'http://[2606:4700:4700::1111]/'; echo $?", 60_000);
+      assert.match(unreachable, /exit=7/, `IPv6 to the internet is unreachable at once: ${unreachable}`);
+      console.log(`# IPv6 out: the default route gone after ${gone.toFixed(0)} s, the /48 there ${kept.toFixed(0)} s later; ${routes6.trim().replace(/\n/g, ' | ')}`);
+
       // The machine as a tailcat server: its address is one tailcat reads (the exit node's relay), and the CLI
       // reaches a port the guest listens on (as `tailcat ssh` reaches port 22).
       const served = ts.netmap.serving ?? '';
@@ -192,10 +228,16 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         let named = '';
         for (let k = 0; k < 6 && !named.includes(' '); k++) named = (await run('getent ahostsv4 example.com | head -1', 60_000)).split('\n')[0].trim();
         assert.match(named, /^\d+\.\d+\.\d+\.\d+ /, 'the guest resolves example.com through the exit node');
-        // Over IPv4: where the exit node's machine has no IPv6 route out (the dev VM), its netstack still accepts
-        // the guest's IPv6 connection and then closes it empty, so curl never falls back (docs/backlog.md "Network").
-        const got = await run("curl -4 -s -m 20 -o /dev/null -w 'status=%{http_code}\\n' http://example.com/", 60_000);
-        if (!/status=[1-5]\d\d/.test(got)) assert.fail(`the guest reaches example.com: ${got}; ${await run('curl -4 -v -m 20 -o /dev/null http://example.com/ 2>&1 | tail -15; getent ahosts example.com', 60_000)}`);
+        // Either family: with IPv6 out (above), curl's IPv6 attempt fails at once and it uses IPv4.
+        const got = await run("curl -s -m 20 -o /dev/null -w 'status=%{http_code}\\n' http://example.com/", 60_000);
+        if (!/status=[1-5]\d\d/.test(got)) assert.fail(`the guest reaches example.com: ${got}; ${await run('curl -v -m 20 -o /dev/null http://example.com/ 2>&1 | tail -15; getent ahosts example.com', 60_000)}`);
+      }
+
+      // And back: the next probe's answer advertises the default router again.
+      if (resolver) {
+        await resolver.on();
+        const back = await until('the IPv6 default route again (the probe answered)', 'ip -6 route', default6, 30_000);
+        console.log(`# IPv6 back: the default route after ${back.toFixed(0)} s`);
       }
     } finally {
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});

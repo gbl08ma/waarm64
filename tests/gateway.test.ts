@@ -2,6 +2,7 @@
 // with a synchronous IP backend, and the same through the device worker's `echo` adapter.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { unreached6 } from '../web/reach6.ts';
 import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, TAILNET_ROUTES, echoBackend, gateway, routedLease, type GatewayOptions, type IpBackend, type Lease } from '../web/gateway.ts';
 import { SEVERAL_ADAPTERS } from '../web/devices.ts';
 import { ALL_DHCP_AGENTS, ALL_NODES, ALL_ROUTERS, icmp6, ip6, multicastMac, sum6, udp6 } from '../web/ip6.ts';
@@ -300,6 +301,42 @@ test("an adapter that isn't the default way out: its network's routes only, over
   // Made the primary (the other adapter lost its exit node): advertised at once as the default router.
   setLease(ECHO_LEASE);
   assert.equal(be16(v6(out.pop()!).body, 6), 1800);
+});
+
+test("routes for one family only: IPv4's default stays, IPv6 is routed to its prefixes (web/reach6.ts `unreached6`)", () => {
+  const { g, out } = rig(unreached6(ECHO_LEASE, TAILNET_ROUTES.v6));
+  g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));
+  const o = dhcpReply(out.pop()!).opts;
+  assert.equal(hex(o.get(3)!), hex(GATEWAY_IP), 'the router option: IPv4 has no routes of its own');
+  assert.equal(hex(o.get(121)!), hex([32, ...GATEWAY_IP, 0, 0, 0, 0, 0, ...GATEWAY_IP]), 'the gateway on-link, the default through it');
+  g.send(rs());
+  const r = v6(out.pop()!);
+  assert.equal(be16(r.body, 6), 0, 'not the default IPv6 router');
+  const types: number[] = [];
+  for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) types.push(r.body[k]);
+  assert.ok(types.includes(24), `the /48's route: ${types}`);
+  assert.ok(!types.includes(25), 'no IPv6 resolvers');
+});
+
+test('no longer the default router but still one for routes: advertised again a second later (networkd)', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const { g, out, setLease } = rig(ECHO_LEASE, undefined, { advertiseMs: 60_000 });
+  g.send(rs());
+  assert.equal(be16(v6(out.pop()!).body, 6), 1800, 'the default router');
+  setLease(unreached6(ECHO_LEASE, TAILNET_ROUTES.v6));
+  assert.equal(out.length, 1);
+  assert.equal(be16(v6(out[0]).body, 6), 0);
+  t.mock.timers.tick(999);
+  assert.equal(out.length, 1);
+  t.mock.timers.tick(1);
+  assert.equal(out.length, 2, 'once more');
+  assert.equal(hex(out[1]), hex(out[0]), 'the same advertisement');
+  t.mock.timers.tick(30_000);
+  assert.equal(out.length, 2, 'and only once');
+  setLease(routedLease(ECHO_LEASE, false, TAILNET_ROUTES));
+  t.mock.timers.tick(1000);
+  assert.equal(out.length, 3, 'routes-only to routes-only: no repeat');
+  g.close?.();
 });
 
 test('neighbor discovery: the gateway answers for its own link-local address only; probes are ignored', () => {

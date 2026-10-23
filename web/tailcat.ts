@@ -7,6 +7,7 @@
 // the page's network controller drives either; what a tailcat server doesn't
 // have (exit nodes, logging out) is refused.
 import type { Lease } from './gateway.ts';
+import type { Reach6Options } from './reach6.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
 export type TailcatConfig = {
@@ -18,6 +19,8 @@ export type TailcatConfig = {
   serve?: TailcatServe;
   /** The DERP map for an address that names only a region (default: tailcat's public map). */
   derpMapURL?: string;
+  /** How the server's machine's IPv6 reach is checked (web/reach6.ts; the tests point it at a resolver of theirs). */
+  probe6?: Reach6Options;
   /** Where target/net/ts.wasm is served from (default: this checkout's target/net). */
   wasm?: string;
   /** The gateway's end of the IP port (transferred); default: a new channel, whose device end is `ip`. */
@@ -28,7 +31,7 @@ export type TailcatServe = { relay: string; identityKey?: string; identity?: Tai
 
 /** Messages to the worker. */
 export type ToTailcat =
-  | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; derpMapURL?: string; ip: MessagePort }
+  | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; derpMapURL?: string; probe6?: Reach6Options; ip: MessagePort }
   | { type: 'attach'; ip: MessagePort }
   | { type: 'primary'; primary: boolean }
   | { type: 'detach' };
@@ -168,7 +171,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   });
   running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
-  worker.postMessage({ type: 'start', wasm, addr: config.addr, serve: config.serve, derpMapURL: config.derpMapURL, ip: port1 } satisfies ToTailcat, [port1]);
+  worker.postMessage({ type: 'start', wasm, addr: config.addr, serve: config.serve, derpMapURL: config.derpMapURL, probe6: config.probe6, ip: port1 } satisfies ToTailcat, [port1]);
   return {
     ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailcat, [ip]),

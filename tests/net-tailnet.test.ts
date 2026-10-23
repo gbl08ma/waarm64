@@ -18,6 +18,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
+import { probeResolver } from './net/resolver.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/ts.wasm`;
@@ -214,6 +215,10 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
   const http = createServer((_req, res) => res.end('hello-from-the-internet\n'));
   await new Promise<void>((resolve) => http.listen(0, '0.0.0.0', resolve));
   const url = `http://${lan}:${(http.address() as { port: number }).port}/`;
+  // tailcat's IPv6 probe (web/reach6.ts) answered by a stand-in on this machine's IPv6 address: IPv6's default goes
+  // through tailcat too. Without one (the dev VM) the probe is lost and the guest has no IPv6 default.
+  const lan6 = Object.values(networkInterfaces()).flat().find((a) => a && a.family === 'IPv6' && !a.internal && !a.address.startsWith('fe80'))?.address;
+  const resolver = lan6 ? await probeResolver(lan6) : undefined;
   try {
     await withDebianLock(async () => {
       const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // headscale's test CA, the relay's self-signed certificate
@@ -226,7 +231,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
       try {
         await page.goto(`${base}/tests/browser/core.html`);
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY })}`);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: resolver.to, port: resolver.port } : {}) })}`);
         await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
           .catch(async (e) => { throw new Error(`${e}${await context()}`); });
         const [tn, tc] = await views();
@@ -252,8 +257,14 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
         await until("IPv4: the default through tailcat's adapter, the tailnet's /10 through the tailnet's", 'ip -4 route',
           (s) => new RegExp(`default via 169\\.254\\.0\\.2 dev ${b}`).test(s) && new RegExp(`100\\.64\\.0\\.0/10 via 169\\.254\\.0\\.1 dev ${a}`).test(s), 60_000);
         assert.doesNotMatch(await run('ip -4 route'), /default via 169\.254\.0\.1 /, 'no default through the tailnet');
-        await until("IPv6: the default through tailcat's adapter, the tailnet's /48 through the tailnet's", 'ip -6 route',
-          (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s) && new RegExp(`fd7a:115c:a1e0::/48 (nhid \\d+ )?via fe80::77:65ff:fe62:7063 dev ${a}`).test(s), 60_000);
+        const tailnet48 = new RegExp(`fd7a:115c:a1e0::/48 (nhid \\d+ )?via fe80::77:65ff:fe62:7063 dev ${a}`);
+        if (resolver) {
+          await until("IPv6: the default through tailcat's adapter, the tailnet's /48 through the tailnet's", 'ip -6 route',
+            (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s) && tailnet48.test(s), 60_000);
+        } else {
+          await until("IPv6: no default (tailcat's exit node has no IPv6 out), the tailnet's /48 through the tailnet's", 'ip -6 route',
+            (s) => !/^default /m.test(s) && tailnet48.test(s), 60_000);
+        }
         console.log(`# guest: ${(await run('ip -4 route; ip -6 route')).trim().replace(/\n/g, ' | ')}`);
 
         // At once: the peer pinged through the tailnet while the internet's page comes through tailcat.
@@ -273,6 +284,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
     });
   } finally {
     http.close();
+    await resolver?.off();
     spawnSync(TAILCAT, ['down']);
   }
 });

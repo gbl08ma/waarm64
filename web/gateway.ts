@@ -24,15 +24,16 @@ export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: 
 export type Prefix = [number[], number];
 /**
  * The networks behind a gateway that isn't the guest's way to everything else (docs/network-adapters.md §4): the
- * lease's `routes`. Without them the gateway is the default router (IPv4 and IPv6); with them, it is the router for
- * these prefixes only (option 121's routes and no option 3; a router advertisement with lifetime 0 and a Route
- * Information option per IPv6 prefix), so another adapter's gateway can be the default.
+ * lease's `routes`, per family. Without a family's the gateway is that family's default router; with them, it is the
+ * router for these prefixes only (IPv4: option 121's routes and no option 3; IPv6: a router advertisement with
+ * lifetime 0 and a Route Information option per prefix), so another adapter's gateway can be the default, or none
+ * (an adapter whose IPv6 doesn't reach the internet, web/reach6.ts).
  */
-export type Routes = { v4: Prefix[]; v6: Prefix[] };
+export type Routes = { v4?: Prefix[]; v6?: Prefix[] };
 
 /** A tailnet's own addresses (Tailscale's CGNAT range, MagicDNS's 100.100.100.100 in it, and its ULA /48); tailcat's tunnel addresses are in the /48 too. */
-export const TAILNET_ROUTES: Routes = { v4: [[[100, 64, 0, 0], 10]], v6: [[[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 48]] };
-export const TAILCAT_ROUTES: Routes = { v4: [], v6: TAILNET_ROUTES.v6 };
+export const TAILNET_ROUTES: Required<Routes> = { v4: [[[100, 64, 0, 0], 10]], v6: [[[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 48]] };
+export const TAILCAT_ROUTES: Required<Routes> = { v4: [], v6: TAILNET_ROUTES.v6 };
 
 /** `lease` for the adapter that is the guest's default way out (`primary`), or only for `routes`; null stays null. */
 export const routedLease = (lease: Lease | null, primary: boolean, routes: Routes): Lease | null => (!lease ? null : primary ? { ...lease, routes: undefined } : { ...lease, routes });
@@ -197,6 +198,8 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
   const gw6 = linkLocal(mac);
   let guestMac: Uint8Array | null = null;
   let advertised = false;
+  let defaultRouter = false;
+  let again: ReturnType<typeof setTimeout> | undefined;
 
   let leaseNow = (): Lease | null | undefined => undefined; // the backend's, once it exists
   const backend = makeBackend((packet) => {
@@ -218,7 +221,12 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     advertised = on;
     const dns = lease?.dns6 ?? [];
     const routes = on ? lease!.routes?.v6 : undefined;
-    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime: on && !routes ? 1800 : 0, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes })));
+    const lifetime = on && !routes ? 1800 : 0;
+    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes })));
+    // No longer the default router but still one for `routes`: systemd-networkd drops the default route's nexthop,
+    // which the routes this advertisement gave share, so they went too (back ~11 s later). Once more, a second on.
+    if (defaultRouter && !lifetime && routes?.length && opts.advertiseMs) again = setTimeout(advertise, 1000);
+    defaultRouter = lifetime > 0;
   }
   const timer = opts.advertiseMs ? setInterval(advertise, opts.advertiseMs) : undefined;
 
@@ -242,7 +250,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     if (reply !== NAK && lease) {
       const u32 = (n: number) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
       opt.push(51, 4, ...u32(leaseSeconds), 58, 4, ...u32(renewSeconds), 59, 4, ...u32((leaseSeconds * 7) >> 3));
-      opt.push(1, 4, ...mask, ...(lease.routes ? [] : [3, 4, ...gw]));
+      opt.push(1, 4, ...mask, ...(lease.routes?.v4 ? [] : [3, 4, ...gw]));
       if (lease.dns.length) opt.push(6, lease.dns.length * 4, ...lease.dns.flat());
       const domain = lease.domains[0]?.replace(/\.$/, '');
       if (domain) opt.push(15, domain.length, ...new TextEncoder().encode(domain));
@@ -432,6 +440,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     },
     close: () => {
       if (timer) clearInterval(timer);
+      clearTimeout(again);
       backend.close?.();
     },
   };
