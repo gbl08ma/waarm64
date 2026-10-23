@@ -5,6 +5,7 @@
 // `/` is the page (web/app/index.html, its relative URLs made the root's: `atRoot`; web/app/ serves it too, as the
 // tests use), a directory serves its index.html, and
 // nothing under node_modules is served except the files the page imports (`ALLOWED`, and Svelte's runtime).
+import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { open, readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
@@ -38,6 +39,28 @@ export const atRoot = (html: string) => {
   return html.replaceAll('"./', '"./web/app/').replaceAll('"../../', '"./'); // an import map's values must start with ./
 };
 
+/**
+ * What the page was built from, for its console (main.ts logs it at load): the commit, its date, and whether the work
+ * tree had changes then (tracked files only). Undefined outside a git checkout.
+ */
+export function buildStamp(root = ROOT) {
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  try {
+    const [commit, date] = git('log', '-1', '--format=%h %cI', '--abbrev=12').split(' ');
+    const dirty = git('status', '--porcelain', '--untracked-files=no') !== '';
+    return `${commit} (${date})${dirty ? ' with local changes' : ''}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The page with its build stamp (`buildStamp`) in a `<meta name="webpc-build">` after its charset. */
+export const withStamp = (html: string, stamp: string | undefined) => {
+  if (!stamp) return html;
+  if (!html.includes('<meta charset="utf-8">')) throw new Error('web/app/index.html has no <meta charset="utf-8">: update withStamp');
+  return html.replace('<meta charset="utf-8">', `<meta charset="utf-8">\n<meta name="webpc-build" content="${stamp.replace(/[&"<>]/g, '')}">`);
+};
+
 /** The only files served from node_modules: what the page imports (xterm.js). */
 const ALLOWED = ['node_modules/@xterm/xterm/lib/xterm.mjs', 'node_modules/@xterm/xterm/css/xterm.css'];
 
@@ -54,7 +77,7 @@ export function startServer(port = 0, host = '127.0.0.1', root = ROOT): Promise<
     res.setHeader('Cache-Control', 'no-store');
     const url = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
     if (url === '/' && root === ROOT) {
-      res.writeHead(200, { 'Content-Type': TYPES['.html'] }).end(atRoot(await readFile(join(ROOT, 'web/app/index.html'), 'utf8')));
+      res.writeHead(200, { 'Content-Type': TYPES['.html'] }).end(withStamp(atRoot(await readFile(join(ROOT, 'web/app/index.html'), 'utf8')), buildStamp()));
       return;
     }
     const path = normalize(join(root, url.endsWith('/') ? url + 'index.html' : url));

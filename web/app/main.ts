@@ -46,6 +46,9 @@ import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+// The commit the page was built from (tools/serve.ts `buildStamp`), for reports of what a user ran.
+const build = document.querySelector('meta[name="webpc-build"]')?.getAttribute('content');
+if (build) console.info(`webpc: built from ${build}`);
 // A machine kept in this browser (docs/plans/machines.md), by id: `?m=<id>`. It is the page's machine (`uefi`) with its own
 // vCPUs, RAM, display and disks. Without one the machine is transient, made from the query (the tests' `?machine=`).
 const store = await Store.open();

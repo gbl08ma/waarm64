@@ -7,7 +7,8 @@
 //   vendor/xterm/                     xterm.js and its CSS (node_modules/@xterm/xterm), the page's import map points there
 //   vendor/svelte/, vendor/esm-env/, vendor/clsx/   Svelte's runtime (the same files serve.ts serves), with their licenses
 //   target/…                          the core (webpc_core.wasm), the tailnet client (net/ts.wasm), EDK2 (images/edk2)
-//   index.html                        the page (web/app/index.html's, its URLs made the root's); web/app/ redirects to it
+//   index.html                        the page (web/app/index.html's, its URLs made the root's, the commit it was built
+//                                     from in a meta tag: serve.ts `buildStamp`); web/app/ redirects to it
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below)
 // No guest images: the page's machine waits for the user's disk (`?disk=<url>` takes one from any server
 // that allows the page's origin and answers range requests, or a chunked image's manifest from any static host; the
@@ -21,7 +22,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { stripTypeScriptTypes } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
-import { APP, atRoot, ROOT, startServer } from './serve.ts';
+import { APP, atRoot, buildStamp, ROOT, startServer, withStamp } from './serve.ts';
 import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
 import { compileRunes, compileSvelte, RUNTIME_LICENSES, runtimeFiles } from './svelte.ts';
 
@@ -96,7 +97,7 @@ export function writeDist(out = OUT) {
   const html = readFileSync(join(ROOT, 'web/app/index.html'), 'utf8');
   if (!html.includes('src="./main.ts"') || !html.includes('../../node_modules/@xterm/xterm/')) throw new Error('web/app/index.html no longer loads ./main.ts and xterm from node_modules: update tools/dist.ts');
   // The import map's node_modules paths (xterm's, and Svelte's runtime: tools/svelte.ts) become vendor/'s.
-  write('index.html', atRoot(html.replace('src="./main.ts"', 'src="./main.js"').replaceAll('../../node_modules/@xterm/xterm/lib/', '../../vendor/xterm/').replaceAll('../../node_modules/@xterm/xterm/css/', '../../vendor/xterm/').replaceAll('../../node_modules/', '../../vendor/')));
+  write('index.html', withStamp(atRoot(html.replace('src="./main.ts"', 'src="./main.js"').replaceAll('../../node_modules/@xterm/xterm/lib/', '../../vendor/xterm/').replaceAll('../../node_modules/@xterm/xterm/css/', '../../vendor/xterm/').replaceAll('../../node_modules/', '../../vendor/')), buildStamp()));
   write('web/app/index.html', REDIRECT);
   const queue = ['web/app/main.ts'];
   const seen = new Set(queue);

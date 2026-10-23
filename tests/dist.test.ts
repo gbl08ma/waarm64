@@ -2,6 +2,7 @@
 // (tools/serve.ts over the copy: headers and ranges, nothing stripped), the page opens idle and boots Buildroot (its
 // images linked into the copy for the test: the copy itself has none).
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,13 +65,18 @@ test('the static copy names no .ts module, and its Svelte runtime is complete', 
   for (const f of runtimeFiles()) assert.ok(existsSync(join(out, f.replace(/^node_modules\//, 'vendor/'))), `${f} is in vendor/`);
 });
 
-test("the static copy's page opens the Machines modal (Svelte's runtime from vendor/)", { skip: skipCopy }, async () => {
+test("the static copy's page logs its commit and opens the Machines modal (Svelte's runtime from vendor/)", { skip: skipCopy }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
+  const logs: string[] = [];
+  page.on('console', (m) => logs.push(m.text()));
   await page.goto(`${base}/`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 10_000 });
+  // The commit the copy was built from, on the console (tools/serve.ts `buildStamp`).
+  const head = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.ok(logs.some((l) => l.startsWith(`webpc: built from ${head} (`)), `no "webpc: built from ${head}" on the console`);
   await page.click('#machines-open');
   await page.locator('.machines [data-action=new-machine]').click();
   await page.locator('.machines section.machine[data-selected]').waitFor();

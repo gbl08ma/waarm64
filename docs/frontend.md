@@ -1277,8 +1277,10 @@ stops if a binary is missing), then writes, in the repository's layout (so the m
   server that answers range requests and, cross-origin, sends CORS and CORP headers).
 - `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`): `web/app/index.html` with its
   document-relative URLs (the entry module, the stylesheet, the import map, whose values must start with `./`) made
-  the root's (`atRoot` in `tools/serve.ts`); everything else the page loads is relative to its modules. The dev
-  server's `/` is the same page, and it serves `web/app/` too (the tests use it); the copy's `web/app/index.html`
+  the root's (`atRoot` in `tools/serve.ts`); everything else the page loads is relative to its modules. A
+  `<meta name="webpc-build">` holds the commit it was built from, its date and "with local changes" when tracked files
+  differed (`buildStamp`, `withStamp`), and the page logs it at load (`webpc: built from …`), so a user's console says
+  which build they ran. The dev server's `/` is the same page, stamped at each load (its `web/app/` isn't), and it serves `web/app/` too (the tests use it); the copy's `web/app/index.html`
   redirects to the root with the query and fragment (the page was there until 2026-10-23). A relative `?disk=` URL is
   relative to where the page is. Then `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and `.htaccess` (Apache) with
   the two headers, `.nojekyll`, and a marker file: the script only empties a directory that has it.
