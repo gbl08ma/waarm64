@@ -4,7 +4,7 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { parse6, PROBE_TARGETS, reach6, unreached6, type Reach6Options } from '../web/reach6.ts';
 import { sum6, udp6 } from '../web/ip6.ts';
-import { ECHO_LEASE, TAILCAT_ROUTES } from '../web/gateway.ts';
+import { ECHO_LEASE, TAILCAT_ROUTES, TAILNET_ROUTES } from '../web/gateway.ts';
 
 const SRC = parse6('fd7a:115c:a1e0::1234')!;
 const CF = parse6('2606:4700:4700::1111')!;
@@ -23,8 +23,8 @@ test('unreached6: the address stays, routed through the network only, with no IP
   assert.deepEqual(l.address6, ECHO_LEASE.address6);
   assert.deepEqual(l.dns6, []);
   assert.deepEqual(l.routes, { v6: TAILCAT_ROUTES.v6 }, 'IPv4 keeps its default (no v4 routes)');
-  const routed = unreached6({ ...ECHO_LEASE, routes: TAILCAT_ROUTES }, [])!;
-  assert.deepEqual(routed.routes, TAILCAT_ROUTES, "a non-primary's routes stay");
+  const routed = unreached6({ ...ECHO_LEASE, routes: TAILNET_ROUTES }, TAILCAT_ROUTES.v6)!;
+  assert.deepEqual(routed.routes, TAILNET_ROUTES, "a non-primary's routes stay");
   assert.equal(unreached6(null, []), null);
   const v4only = { ...ECHO_LEASE, address6: undefined };
   assert.equal(unreached6(v4only, []), v4only);

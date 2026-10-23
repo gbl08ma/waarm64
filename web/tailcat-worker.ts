@@ -11,7 +11,7 @@ import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule, type TailcatConfig } from './ts-client.ts';
 import type { FromTailscale } from './tailscale.ts';
 import { nearestRegion, netmapOf, tailcatIdentity, type ToTailcat } from './tailcat.ts';
-import { routedLease, TAILCAT_ROUTES, type Lease } from './gateway.ts';
+import { ranked, routedLease, TAILCAT_ROUTES, type Lease } from './gateway.ts';
 import { reach6, unreached6, type Reach6 } from './reach6.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
@@ -21,6 +21,8 @@ let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
 /** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
+/** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
+let rank = 0;
 let client: TsClient | undefined;
 let serving: string | undefined;
 let exit = true;
@@ -28,7 +30,7 @@ let exit = true;
 let reach: Reach6 | undefined;
 const offered = () => {
   const l = routedLease(lease, primary, TAILCAT_ROUTES);
-  return reach && !reach.reached() ? unreached6(l, TAILCAT_ROUTES.v6) : l;
+  return ranked(reach && !reach.reached() ? unreached6(l, TAILCAT_ROUTES.v6) : l, rank);
 };
 
 function attach(port: MessagePort) {
@@ -47,6 +49,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
   if (m.type === 'attach') return attach(m.ip);
   if (m.type === 'primary') {
     primary = m.primary;
+    rank = m.rank ?? 0;
     return ip?.postMessage({ type: 'lease', lease: offered() });
   }
   if (m.type === 'detach') {

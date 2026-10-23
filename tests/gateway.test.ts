@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { unreached6 } from '../web/reach6.ts';
-import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, TAILNET_ROUTES, echoBackend, gateway, routedLease, type GatewayOptions, type IpBackend, type Lease } from '../web/gateway.ts';
+import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, TAILCAT_ROUTES, TAILNET_ROUTES, echoBackend, gateway, ranked, routedLease, type GatewayOptions, type IpBackend, type Lease } from '../web/gateway.ts';
 import { SEVERAL_ADAPTERS } from '../web/devices.ts';
 import { ALL_DHCP_AGENTS, ALL_NODES, ALL_ROUTERS, icmp6, ip6, multicastMac, sum6, udp6 } from '../web/ip6.ts';
 import { checksum } from '../web/net.ts';
@@ -316,6 +316,21 @@ test("routes for one family only: IPv4's default stays, IPv6 is routed to its pr
   for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) types.push(r.body[k]);
   assert.ok(types.includes(24), `the /48's route: ${types}`);
   assert.ok(!types.includes(25), 'no IPv6 resolvers');
+});
+
+test("IPv6 routes at their adapter's rank's preference: high, medium, then low (the earlier adapter's prefix wins)", () => {
+  const prf = (lease: Lease | null) => {
+    const { g, out } = rig(lease);
+    g.send(rs());
+    const r = v6(out.pop()!);
+    for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) if (r.body[k] === 24) return r.body[k + 3] & 0x18;
+    return undefined;
+  };
+  const routed = routedLease(ECHO_LEASE, false, TAILCAT_ROUTES);
+  assert.equal(prf(routed), 0, 'unranked: medium');
+  assert.deepEqual([0, 1, 2, 3].map((n) => prf(ranked(routed, n))), [0x08, 0, 0x18, 0x18], 'high 01, medium 00, low 11');
+  assert.equal(ranked(ECHO_LEASE, 2), ECHO_LEASE, 'no IPv6 routes (the default router): unchanged');
+  assert.equal(ranked(null, 1), null);
 });
 
 test('no longer the default router but still one for routes: advertised again a second later (networkd)', (t) => {

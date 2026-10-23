@@ -862,7 +862,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **`tests/pause.test.ts` hung twice under `scripts/ci.sh`** (2026-10-18, its file cancelled after 1,337 and 1,351 s: "Promise
   resolution is still pending but the event loop has already resolved", so a pause or an end that nothing will
   resolve, with no timer left), passed alone and 9 times in 3 copies at once. Which of its tests is unknown (a
-  cancelled file prints none); its tests now have a 2-minute deadline, so the next one says.
+  cancelled file prints none); its tests have a 2-minute deadline since. **A third time 2026-10-24**, after the
+  deadlines: 20 min at ~1% CPU, nothing printed. Its diagnostic report (`kill -USR2`: the runner starts files with
+  `--report-signal=SIGUSR2`) had no timer, no worker and no socket, only the pipes to the runner: no test's deadline
+  timer was armed, so it waits outside a test (a top-level await or a hook, where per-test timeouts don't apply).
+  Next: a deadline on the file's own setup, or the same report taken earlier with the JS stack of each pending await.
 - **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
   0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall

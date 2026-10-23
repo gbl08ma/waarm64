@@ -93,7 +93,12 @@ restart hands the new machine's port to the running client, and Disconnect takes
   (`setPrimary`). The primary's lease is as a single card's. The others' carry `routes` (`routedLease`), and their
   gateway is then the router for those prefixes only: option 121 without a default and no option 3, a router
   advertisement with lifetime 0 and a Route Information option per IPv6 prefix. A tailnet offers 100.64.0.0/10 and
-  fd7a:115c:a1e0::/48 (`TAILNET_ROUTES`), tailcat the /48 (`TAILCAT_ROUTES`). systemd-networkd installs them all, so
+  fd7a:115c:a1e0::/48 (`TAILNET_ROUTES`), tailcat the /48 (`TAILCAT_ROUTES`). Both are the same /48 (tailcat's tunnel
+  addresses are in Tailscale's range), so an adapter's IPv6 routes carry a preference from its rank among the
+  connected adapters (`ranksOf`, web/gateway.ts `ranked`: high, medium, then low; RFC 4191's three levels, so a third
+  and fourth tie): the guest's kernel takes the more preferred of equal routes, and the earlier adapter's wins
+  whatever its type. (Without it the guest picked either; a tailnet's peer went unreached over IPv6 when tailcat's won.)
+  systemd-networkd installs them all, so
   this works on any guest without configuration: Debian's `network.network.card` credential matches `e*`.
 - **The takeover:** when the primary loses the internet, the next one becomes primary. Its router advertisement goes
   out at once, and IPv4's default moves at the guest's next DHCP renewal, so a machine with several adapters has its

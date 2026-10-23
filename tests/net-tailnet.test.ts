@@ -276,7 +276,9 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
         await until("IPv4: the default through tailcat's adapter, the tailnet's /10 through the tailnet's", 'ip -4 route',
           (s) => new RegExp(`default via 169\\.254\\.0\\.2 dev ${b}`).test(s) && new RegExp(`100\\.64\\.0\\.0/10 via 169\\.254\\.0\\.1 dev ${a}`).test(s), 60_000);
         assert.doesNotMatch(await run('ip -4 route'), /default via 169\.254\.0\.1 /, 'no default through the tailnet');
-        const tailnet48 = new RegExp(`fd7a:115c:a1e0::/48 (nhid \\d+ )?via fe80::77:65ff:fe62:7063 dev ${a}`);
+        // The tailnet's /48 at high preference, as the first adapter (web/gateway.ts `ranked`): tailcat's, offered when its
+        // IPv6 is out, is the same prefix at medium, so the peer is reached through the tailnet.
+        const tailnet48 = new RegExp(`fd7a:115c:a1e0::/48 (nhid \\d+ )?via fe80::77:65ff:fe62:7063 dev ${a} .*pref high`);
         if (resolver) {
           await until("IPv6: the default through tailcat's adapter, the tailnet's /48 through the tailnet's", 'ip -6 route',
             (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s) && tailnet48.test(s), 60_000);

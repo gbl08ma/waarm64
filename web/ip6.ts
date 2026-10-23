@@ -62,8 +62,10 @@ export function udp6(src: ArrayLike<number>, dst: ArrayLike<number>, sport: numb
   return ip6(src, dst, 17, u);
 }
 
-/** `routes`: Route Information options (RFC 4191), each with `dnsLifetime` as its lifetime. */
-export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: number[][]; dnsLifetime: number; routes?: [number[], number][] };
+/** A Route Information option's preference (RFC 4191 §2.1). */
+export type RoutePref = 'high' | 'medium' | 'low';
+/** `routes`: Route Information options (RFC 4191), each with `dnsLifetime` as its lifetime, at `pref` (default medium). */
+export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: number[][]; dnsLifetime: number; routes?: [number[], number][]; pref?: RoutePref };
 
 /**
  * A router advertisement: managed (the address comes from DHCPv6) and other-config flags, a
@@ -74,8 +76,9 @@ export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: 
 export function routerAdvert(src: number[], a: RouterAdvert) {
   const rdnss = a.dns.length ? [25, 1 + 2 * a.dns.length, 0, 0, a.dnsLifetime >>> 24, (a.dnsLifetime >>> 16) & 255, (a.dnsLifetime >>> 8) & 255, a.dnsLifetime & 255, ...a.dns.flat()] : [];
   const lt = [a.dnsLifetime >>> 24, (a.dnsLifetime >>> 16) & 255, (a.dnsLifetime >>> 8) & 255, a.dnsLifetime & 255];
-  // Route Information: type 24, length 3 (the whole prefix), its length, medium preference, the lifetime, the prefix.
-  const rio = (a.routes ?? []).flatMap(([p, len]) => [24, 3, len, 0, ...lt, ...p]);
+  // Route Information: type 24, length 3 (the whole prefix), its length, the preference (high 01, medium 00, low 11), the lifetime, the prefix.
+  const prf = { high: 0x08, medium: 0, low: 0x18 }[a.pref ?? 'medium'];
+  const rio = (a.routes ?? []).flatMap(([p, len]) => [24, 3, len, prf, ...lt, ...p]);
   const body = [1, 1, ...a.mac, 5, 1, 0, 0, a.mtu >>> 24, (a.mtu >>> 16) & 255, (a.mtu >>> 8) & 255, a.mtu & 255, ...rdnss, ...rio];
   // hop limit 64, flags M|O, router lifetime, reachable time and retransmit timer unspecified
   return icmp6(src, ALL_NODES, 134, 0, [64, 0xc0, a.lifetime >> 8, a.lifetime & 255], [0, 0, 0, 0, 0, 0, 0, 0, ...body], 255);

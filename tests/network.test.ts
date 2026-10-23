@@ -3,7 +3,7 @@
 // connects, the machine restarts and the client disconnects.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createNetwork, parseControlURL, parseHostname, primaryOf, viewOf } from '../web/app/network.ts';
+import { createNetwork, parseControlURL, parseHostname, primaryOf, ranksOf, viewOf } from '../web/app/network.ts';
 import type { FromTailscale, NetMap, Tailscale, TailscaleConfig } from '../web/tailscale.ts';
 
 const netmap = (over: Partial<NetMap> = {}): NetMap => ({ name: 'guest.tail.test.', addresses: ['100.90.0.2/32', 'fd7a:115c:a1e0::2/128'], peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: false }], mtu: 1280, dns: ['100.100.100.100'], domains: ['tail.test'], exitNode: '', ...over });
@@ -256,19 +256,23 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   assert.equal(primaryOf([c('connected', false), c('connected', true)]), 1, 'a tailnet without an exit node, then tailcat through a server');
   assert.equal(primaryOf([c('connected', true), c('connected', true)]), 0, 'both reach it: the first in order');
   assert.equal(primaryOf([c('connecting', true), c('connected', false)]), 1);
+  assert.deepEqual(ranksOf([c('connected'), c('off'), c('connected'), c('connected')]), [0, 1, 1, 2], 'connected adapters before each');
+  assert.deepEqual(ranksOf([c('connecting'), c('connected')]), [0, 0], 'only connected ones count');
   assert.equal(viewOf({ state: 'Running', netmap: netmap() }).internet, false, 'a tailnet without an exit node');
   assert.equal(viewOf({ state: 'Running', netmap: netmap({ exitNode: 'nPEER', peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: true }] }) }).internet, true);
-  const told: boolean[] = [];
+  const told: (boolean | number)[][] = [];
   const fake = (): Tailscale => ({
     state: () => '', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
-    setPrimary: (p) => { told.push(p); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, logout: async () => {}, close: () => {},
+    setPrimary: (p, r) => { told.push([p, r ?? 0]); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, logout: async () => {}, close: () => {},
   });
   const net = createNetwork(() => {}, fake, fake);
   net.port();
   net.setPrimary(false);
   net.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc' });
-  assert.deepEqual(told, [false], 'a client started on a secondary adapter is told at once');
+  assert.deepEqual(told, [[false, 0]], 'a client started on a secondary adapter is told at once');
   net.setPrimary(false);
   net.setPrimary(true);
-  assert.deepEqual(told, [false, true], 'and on every change, once');
+  net.setPrimary(true, 1);
+  net.setPrimary(true, 1);
+  assert.deepEqual(told, [[false, 0], [true, 0], [true, 1]], 'and on every change (the rank too), once');
 });

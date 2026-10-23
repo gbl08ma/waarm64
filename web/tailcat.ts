@@ -33,7 +33,7 @@ export type TailcatServe = { relay: string; identityKey?: string; identity?: Tai
 export type ToTailcat =
   | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; derpMapURL?: string; probe6?: Reach6Options; ip: MessagePort }
   | { type: 'attach'; ip: MessagePort }
-  | { type: 'primary'; primary: boolean }
+  | { type: 'primary'; primary: boolean; rank?: number }
   | { type: 'detach' };
 
 /** A tailcat address as typed or pasted: `tc` and base64url, or an error to show. The module checks the rest. */
@@ -175,7 +175,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   return {
     ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailcat, [ip]),
-    setPrimary: (primary) => worker.postMessage({ type: 'primary', primary } satisfies ToTailcat),
+    setPrimary: (primary, rank) => worker.postMessage({ type: 'primary', primary, rank } satisfies ToTailcat),
     detach: () => new Promise((resolve) => {
       const t = setTimeout(() => resolve(undefined), 3000);
       detached = (ip) => { clearTimeout(t); resolve(ip); };

@@ -6,7 +6,7 @@
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
-import { createNetwork, primaryOf, type Connect, type Network, type NetworkView } from './network.ts';
+import { createNetwork, primaryOf, ranksOf, type Connect, type Network, type NetworkView } from './network.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 
@@ -270,7 +270,8 @@ export class PageNetwork {
   private changed() {
     const views = this.nets.map((n) => n.view());
     this.primary = primaryOf(views);
-    for (const [k, n] of this.nets.entries()) n.setPrimary(this.primary < 0 || k === this.primary);
+    const ranks = ranksOf(views);
+    for (const [k, n] of this.nets.entries()) n.setPrimary(this.primary < 0 || k === this.primary, ranks[k]);
     this.o.onChange();
   }
 

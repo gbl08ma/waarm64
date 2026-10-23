@@ -6,14 +6,16 @@
   // credential, as web/app/machine.ts gives it) with two cards, each a Network (web/app/network.ts) as the page's
   // machine has them: adapter 1 on a tailnet (`control`, `authkey`, `hostname`) with no exit node, adapter 2 on tailcat
   // through a server (`tailcat`; `probe6`: how it checks the server's IPv6 reach, web/reach6.ts, as JSON). As web/app/net-live.ts does, every change picks the primary again (primaryOf) and
-  // tells each adapter whether it is. The test drives the guest's serial console through window.harness.
-  import { createNetwork, primaryOf } from '../../web/app/network.ts';
+  // tells each adapter whether it is, and its rank (ranksOf). The test drives the guest's serial console through window.harness.
+  import { createNetwork, primaryOf, ranksOf } from '../../web/app/network.ts';
   const q = new URLSearchParams(location.search);
   let primary = -1;
   const nets = [];
   const changed = () => {
-    primary = primaryOf(nets.map((n) => n.view()));
-    nets.forEach((n, k) => n.setPrimary(primary < 0 || k === primary));
+    const views = nets.map((n) => n.view());
+    primary = primaryOf(views);
+    const ranks = ranksOf(views);
+    nets.forEach((n, k) => n.setPrimary(primary < 0 || k === primary, ranks[k]));
   };
   nets.push(createNetwork(changed), createNetwork(changed));
   const ports = nets.map((n) => n.port());

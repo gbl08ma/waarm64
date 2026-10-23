@@ -97,6 +97,15 @@ export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet'>[]): num
   return net >= 0 ? net : views.findIndex((v) => v.phase === 'connected');
 }
 
+/**
+ * Each adapter's rank: how many connected adapters come before it. Its IPv6 routes' preference follows (web/gateway.ts
+ * `ranked`), so where two offer the same prefix (a tailnet's and tailcat's /48) the earlier adapter's wins.
+ */
+export function ranksOf(views: Pick<NetworkView, 'phase'>[]): number[] {
+  let n = 0;
+  return views.map((v) => (v.phase === 'connected' ? n++ : n));
+}
+
 /** What a `Tailscale` client reports, as far as the view needs it. */
 export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string; tailcat?: boolean };
 
@@ -164,8 +173,8 @@ export type Network = {
   view(): NetworkView;
   /** Whether a client runs. */
   active(): boolean;
-  /** Whether this adapter is the guest's default way out (`primaryOf`), kept across clients; true until told otherwise. */
-  setPrimary(primary: boolean): void;
+  /** Whether this adapter is the guest's default way out (`primaryOf`), and its `rank` (`ranksOf`; default 0), kept across clients; true and 0 until told otherwise. */
+  setPrimary(primary: boolean, rank?: number): void;
 };
 
 export function createNetwork(
@@ -179,6 +188,7 @@ export function createNetwork(
   let error: string | undefined;
   let tailcat = false;
   let primary = true;
+  let rank = 0;
 
   const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat } : undefined);
 
@@ -218,7 +228,7 @@ export function createNetwork(
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, probe6: c.probe6, ip }, onEvent)
         : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
       client = t;
-      if (!primary) t.setPrimary(false);
+      if (!primary || rank) t.setPrimary(primary, rank);
       t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });
       onChange();
     },
@@ -233,10 +243,11 @@ export function createNetwork(
     },
     view: () => viewOf(report()),
     active: () => !!client,
-    setPrimary(p) {
-      if (p === primary) return;
+    setPrimary(p, r = 0) {
+      if (p === primary && r === rank) return;
       primary = p;
-      client?.setPrimary(p);
+      rank = r;
+      client?.setPrimary(p, r);
     },
   };
 }

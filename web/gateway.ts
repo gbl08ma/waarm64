@@ -12,7 +12,7 @@
 // echo. It runs in the device worker, so a synchronous backend keeps deterministic
 // mode exact (the timer behind periodic advertisements exists only when asked for).
 import { batchSender, checksum, packetsOf, type NetAdapter } from './net.ts';
-import { ALL_DHCP_AGENTS, ALL_NODES, domainList, icmp6, linkLocal, multicastMac, neighborAdvert, routerAdvert, sum6, udp6 } from './ip6.ts';
+import { ALL_DHCP_AGENTS, ALL_NODES, domainList, icmp6, linkLocal, multicastMac, neighborAdvert, routerAdvert, sum6, udp6, type RoutePref } from './ip6.ts';
 
 /**
  * What a backend gives the guest. `address` is the guest's own IPv4 address on the network;
@@ -27,13 +27,22 @@ export type Prefix = [number[], number];
  * lease's `routes`, per family. Without a family's the gateway is that family's default router; with them, it is the
  * router for these prefixes only (IPv4: option 121's routes and no option 3; IPv6: a router advertisement with
  * lifetime 0 and a Route Information option per prefix), so another adapter's gateway can be the default, or none
- * (an adapter whose IPv6 doesn't reach the internet, web/reach6.ts).
+ * (an adapter whose IPv6 doesn't reach the internet, web/reach6.ts). `pref6`: the IPv6 routes' preference (`ranked`).
  */
-export type Routes = { v4?: Prefix[]; v6?: Prefix[] };
+export type Routes = { v4?: Prefix[]; v6?: Prefix[]; pref6?: RoutePref };
 
 /** A tailnet's own addresses (Tailscale's CGNAT range, MagicDNS's 100.100.100.100 in it, and its ULA /48); tailcat's tunnel addresses are in the /48 too. */
-export const TAILNET_ROUTES: Required<Routes> = { v4: [[[100, 64, 0, 0], 10]], v6: [[[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 48]] };
-export const TAILCAT_ROUTES: Required<Routes> = { v4: [], v6: TAILNET_ROUTES.v6 };
+export const TAILNET_ROUTES: Required<Pick<Routes, 'v4' | 'v6'>> = { v4: [[[100, 64, 0, 0], 10]], v6: [[[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 48]] };
+export const TAILCAT_ROUTES: Required<Pick<Routes, 'v4' | 'v6'>> = { v4: [], v6: TAILNET_ROUTES.v6 };
+
+/**
+ * `lease` with its IPv6 routes at the preference of the adapter's `rank` among the machine's connected adapters
+ * (web/app/network.ts `ranksOf`): high for the first, medium for the second, low for the rest. Two adapters can offer
+ * the same prefix (a tailnet's and tailcat's /48); the guest's kernel takes the more preferred of equal routes, so the
+ * earlier adapter's wins.
+ */
+export const ranked = (lease: Lease | null, rank: number): Lease | null =>
+  lease?.routes?.v6?.length ? { ...lease, routes: { ...lease.routes, pref6: (['high', 'medium', 'low'] as const)[Math.min(rank, 2)] } } : lease;
 
 /** `lease` for the adapter that is the guest's default way out (`primary`), or only for `routes`; null stays null. */
 export const routedLease = (lease: Lease | null, primary: boolean, routes: Routes): Lease | null => (!lease ? null : primary ? { ...lease, routes: undefined } : { ...lease, routes });
@@ -222,7 +231,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     const dns = lease?.dns6 ?? [];
     const routes = on ? lease!.routes?.v6 : undefined;
     const lifetime = on && !routes ? 1800 : 0;
-    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes })));
+    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes, pref: lease?.routes?.pref6 })));
     // No longer the default router but still one for `routes`: systemd-networkd drops the default route's nexthop,
     // which the routes this advertisement gave share, so they went too (back ~11 s later). Once more, a second on.
     if (defaultRouter && !lifetime && routes?.length && opts.advertiseMs) again = setTimeout(advertise, 1000);

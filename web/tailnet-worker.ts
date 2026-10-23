@@ -8,7 +8,7 @@ import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, type FromTailscale, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
-import { routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
+import { ranked, routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
 import { reach6, unreached6, type Reach6, type Reach6Options } from './reach6.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
@@ -18,6 +18,8 @@ let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
 /** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
+/** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
+let rank = 0;
 let client: TsClient | undefined;
 /** While an exit node is in use (`reachVia`, its stable ID): whether its machine's IPv6 reaches the internet. */
 let reach: Reach6 | undefined;
@@ -25,7 +27,7 @@ let reachVia = '';
 let probe6: Reach6Options | undefined;
 const offered = () => {
   const l = routedLease(lease, primary, TAILNET_ROUTES);
-  return reach && !reach.reached() ? unreached6(l, TAILNET_ROUTES.v6) : l;
+  return ranked(reach && !reach.reached() ? unreached6(l, TAILNET_ROUTES.v6) : l, rank);
 };
 
 /** The exit node in use (''); another one is probed from scratch (out until it answers). */
@@ -55,6 +57,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   if (m.type === 'attach') return attach(m.ip);
   if (m.type === 'primary') {
     primary = m.primary;
+    rank = m.rank ?? 0;
     return ip?.postMessage({ type: 'lease', lease: offered() });
   }
   if (m.type === 'detach') {
