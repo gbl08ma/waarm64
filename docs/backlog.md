@@ -875,6 +875,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - `images/Containerfile` and `images/alpine/user/webpc-user.start` still cite PLAN.md sections
   from before the docs moved; they're image inputs (editing them makes the images stale), so fix
   the comments with their next rebuild.
+- **`kvm-unit-tests` still builds under qemu-user** in the x86_64 `images/Containerfile`, the last
+  image there (`buildroot` and `ltp` moved to the multi-arch `images/buildroot/Containerfile`
+  on 2026-10-23). Moving it (Debian arm64's own gcc answers to `aarch64-linux-gnu-`; an x86_64 host
+  keeps `gcc-aarch64-linux-gnu`) means editing that file, which `inputs()` hashes into every
+  image's key: do it with a change that rebuilds them anyway, and hash it only into the images
+  built in it. Also: `buildroot` and `ltp` each build the same toolchain (~8 min of each build);
+  a shared one (Buildroot's `make sdk` as an external toolchain, keyed by its own inputs) would
+  save that on the second.
 
 - **No consumer left:** `web/bootfs.ts` and `web/ext4.ts` (the ext4 reader that took Debian's
   kernel and initrd out of its disk; only `tests/ext4.test.ts` uses them: remove them or keep them

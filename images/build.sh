@@ -3,8 +3,10 @@
 #   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
-# buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
-#   x86_64-hosted toolchain in the images container (qemu-user on the arm64 VM).
+# buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Buildroot's
+#   own toolchain, built natively in images/buildroot/Containerfile (multi-arch:
+#   the host's architecture, arm64 or x86_64), as ltp. kvm-unit-tests runs in
+#   images/Containerfile (x86_64: qemu-user on the arm64 VM).
 # linux: a Linux Image from allnoconfig + linux.fragment, and Image-defconfig,
 #   the same kernel from arm64 defconfig + linux.fragment (the distro-like
 #   candidate, M4 step 4); built natively in Alpine's arm64 container (M7: an
@@ -648,6 +650,7 @@ build_kvm-unit-tests() {
 # What decides an image's contents: its files, the pins, and its build steps.
 inputs() {
   local files=(images/Containerfile) pins="^${1^^}"
+  [[ $1 == buildroot || $1 == ltp ]] && files=(images/buildroot/Containerfile)
   [ "$1" = buildroot ] && files+=(images/buildroot.defconfig $(find images/overlay -type f | sort))
   [ "$1" = linux ] && files+=(images/linux.fragment) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = debian ] && files+=(images/debian.json) && pins='^export SOURCE'
@@ -741,11 +744,19 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi=
+  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
   done
+  # The Buildroot images, natively in the host's architecture.
+  if [ ${#br[@]} -gt 0 ]; then
+    tag=webpc-buildroot:$(sha256sum images/buildroot/Containerfile | cut -c1-12)
+    podman image exists "$tag" || podman build -t "$tag" -f images/buildroot/Containerfile images/buildroot
+    mkdir -p "$out"
+    podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
+      -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${br[@]}"
+  fi
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
     podman image exists "$tag" || podman build -t "$tag" -f images/Containerfile images

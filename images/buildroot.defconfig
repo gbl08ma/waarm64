@@ -4,9 +4,13 @@
 # not by Buildroot. The UUID and directory hash seed are fixed so the image
 # rebuilds bit for bit.
 BR2_aarch64=y
-BR2_TOOLCHAIN_EXTERNAL=y
-BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
-BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
+# Buildroot's own toolchain (glibc, no C++), built natively in the host's
+# container: the same recipe on arm64 and x86_64 hosts (docs/images.md).
+BR2_TOOLCHAIN_BUILDROOT=y
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_KERNEL_HEADERS_6_18=y
+BR2_BINUTILS_VERSION_2_45_X=y
+BR2_GCC_VERSION_15_X=y
 BR2_REPRODUCIBLE=y
 BR2_TARGET_GENERIC_HOSTNAME="webpc"
 BR2_INIT_NONE=y

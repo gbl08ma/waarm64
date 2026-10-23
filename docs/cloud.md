@@ -24,7 +24,7 @@ with a per-environment egress policy (Network access in the environment's settin
 | qemu-user, qemu-img, fonts | absent | apt (`qemu-user`, `qemu-utils`, `fonts-dejavu-core`) |
 | `systemd-run --user --scope -p MemoryMax=10G` around heavy runs | "Failed to connect to bus" | run without it, under `timeout`; the container has 15 GiB and nothing else on it, but a leaking test can still take the session down |
 | testfloat's tarballs from github.com | the redirect to `codeload.github.com` is refused (403) | `scripts/testfloat.sh` falls back to `git fetch` of the pinned commit |
-| Guest images in rootless Podman (`images/build.sh`) | not practical: the images are aarch64 builds that run natively on the arm64 VM, here they'd run under qemu-user for hours, and nested Podman is untested | not attempted; see below |
+| Guest images in rootless Podman (`images/build.sh`) | not practical: most images are built in arm64 containers that run natively on the arm64 VM, here they'd run under qemu-user for hours (`buildroot` and `ltp` would build natively: their container is multi-arch), and nested Podman is untested | not attempted; see below |
 | macOS-side oracles (`--oracle m4`, `oracle.sh --hvf`, `ssh macmini.lan`) | unreachable | the QEMU oracles (`qemu-aarch64`) work; real-hardware comparisons stay local |
 | Chromium 153 decodes H.264 (OpenH264) | Playwright's Chromium has no proprietary codecs | the H.264 cases of `tests/virgl-browser.test.ts` skip; VP9 and AV1 run |
 | The M4's SwiftShader | x86_64 SwiftShader (Vulkan) has 6 color attachments, not 8, and x86's default NaN is negative | nothing to handle: both found real bugs (the renderer's attachments loop, the JIT's FMA) the arm64 VM didn't show |

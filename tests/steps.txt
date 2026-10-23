@@ -5,11 +5,11 @@
 # them once: record the new counts here in the same commit, and say why in its
 # message (docs/testing.md "Step counts").
 # Since "virtio: offer EVENT_IDX": every Linux guest with a virtio device negotiates it (EDK2 doesn't).
-buildroot 40054752
+buildroot 40543331
 # devices: virtio-net offers its offloads (web/offload.ts), receive merging and MRG_RXBUF included, which the guest's driver negotiates;
 # the tablet has a mouse's back and forward buttons (BTN_SIDE, BTN_EXTRA).
-devices 113097398
-ltp 2721725891
+devices 113653558
+ltp 2713177591
 crypto 4367540335
 # alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates, and the tablet
 # with a mouse's back and forward buttons.
@@ -20,10 +20,10 @@ alpine-user 10615125762
 # access flags without a TLBI), though since TLBI by VA drops whole blocks it comes out at alpine-user's count.
 # The same count with the TLBs only flushed there (core/tests/distros.rs).
 alpine-user-snapshots 10615125762
-buildroot-2cpu 41833117
-buildroot-4cpu 44502343
+buildroot-2cpu 42464950
+buildroot-4cpu 45228471
 litmus-4cpu 875711629
-console-input 36444023
+console-input 36497350
 # edk2-shell: the firmware has the USB stack's way to the DT's xHCI (WebpcXhciDxe, NonDiscoverablePciDeviceDxe), dispatched on every machine.
 edk2-shell 543585320
 edk2-shell-again 540899546
