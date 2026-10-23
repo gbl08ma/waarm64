@@ -73,6 +73,21 @@ Cloudflare's free plan (checked 2026-10-17 in Cloudflare's docs):
   cache with an edge TTL of its own (not the request's or the origin's headers), checked before the URL is shared: a
   repeated `no-cache` request answers `cf-cache-status: HIT`. The whole image over 512 MB (the table's first row) can't
   be cached on the free plan, so it is exposed this way whatever the rules: on R2, only pieces.
+  **The cache key isn't the only way around the cache:** a query string is part of it (`?random` misses every time),
+  and with CORS on the bucket R2 answers `Vary: Origin`, so the edge keeps a copy per `Origin` value and a made-up
+  `Origin` misses every time (measured 2026-10-23). Both need closing too: the query string out of the cache key, and
+  a WAF rule (it runs before the cache) refusing any `Origin` but the page's, and requests without one.
+- **Set up (2026-10-23; nothing on it but a probe yet):** bucket `webpcimages` at `https://vmr2.tny.im` (R2 custom
+  domain), `r2.dev` off; CORS `*` for GET and HEAD, `Range` allowed, `Content-Range, Content-Length, Accept-Ranges,
+  ETag` exposed; two Cache Rules on `tny.im` for that host (everything cached, a year at the edge, 404s an hour, the
+  query string out of the key; `.json` manifests 5 minutes at the edge, as they change and the token can't purge);
+  a WAF custom rule blocking that host unless `Origin` is `https://vm.tny.im`, `https://webpc.gbl08ma.workers.dev`,
+  `http://localhost:8080` or `http://127.0.0.1:8080` (a new deployed origin goes there first). Checked: a repeated
+  `no-cache`, a `?random` and an allowed `Origin` all `HIT`; no `Origin` or another one 403; from the page at
+  vm.tny.im a fetch and a synchronous XHR by range answer 206, from another site they fail. Uploads: `wrangler r2
+  object put webpcimages/<key> --file <f> --remote`. Still open: a path that doesn't exist misses every time (R2
+  answers 404, cached for an hour per path, but random paths are endless); the free plan's one rate-limiting rule
+  could bound that.
 - **"Abuse":** Cloudflare's 2023 terms limit serving mostly large non-HTML files through its CDN in front of someone
   else's origin, not from its own storage and hosting (R2, Pages); a disk image on R2 or Pages is the intended use.
   Pieces don't change that; they only make the image cacheable.
