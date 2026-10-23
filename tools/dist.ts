@@ -10,7 +10,8 @@
 //   index.html                        a redirect to web/app/
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below)
 // No guest images: the page's machine waits for the user's disk (`?disk=<url>` takes one from any server
-// that answers range requests and allows the page's origin). The layout under the root is the repository's, so
+// that allows the page's origin and answers range requests, or a chunked image's manifest from any static host; the
+// deployed copy's images are on their own host, deploy/disks/). The layout under the root is the repository's, so
 // the modules' relative URLs (`../../target/…`) hold as they are.
 // The server must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
 // require-corp` with every file (SharedArrayBuffer), and answer range requests (the firmware, disks).
@@ -132,7 +133,7 @@ if (import.meta.main) {
     console.log(`\nWrote ${files.length} files (${(bytes / 2 ** 20).toFixed(1)} MiB) to ${out}.\n` +
       'Copy its contents to a web server. It must send these headers with every file (SharedArrayBuffer needs them):\n' +
       '  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp\n' +
-      '(_headers sets them on Netlify and Cloudflare Pages, .htaccess on Apache; GitHub Pages can\'t set them.)\n' +
+      '(_headers sets them on Cloudflare (a Worker\'s static assets, or Pages) and Netlify, .htaccess on Apache; GitHub Pages can\'t set them.)\n' +
       'and serve it over HTTPS (or on localhost). The page is web/app/; index.html redirects there.');
     if (values.serve) {
       const server = await startServer(Number(values.port), '127.0.0.1', out);

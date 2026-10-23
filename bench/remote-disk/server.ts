@@ -2,7 +2,7 @@
 // (docs/plans/remote-disks.md §3), with latency and bandwidth added and every request logged. The path's leading
 // segments set them: `/d<ms>/` waits that long before answering (a round trip), `/r<MB/s>/` paces each body,
 // `/R<MB/s>/` paces all bodies together (one link that requests in parallel share), `/pages/` answers a `Range` with
-// 200 and the whole file (Cloudflare Pages); e.g. `/d47/r20/desktop.qcow2`.
+// 200 and the whole file (a Cloudflare Worker's static assets, as Pages did); e.g. `/d47/r20/desktop.qcow2`.
 //   const s = await diskServer(root); s.url; s.log (each request: t, path, range, bytes, ms); s.close()
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';

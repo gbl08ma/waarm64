@@ -1,5 +1,5 @@
 // Chunked images (web/chunked.ts, tools/chunk-image.ts): an image cut into content-addressed pieces reads back as the
-// file, from a host with byte ranges and from one that answers a range with the whole piece (Cloudflare Pages), under
+// file, from a host with byte ranges and from one that answers a range with the whole piece (a Cloudflare Worker's static assets, as Pages did), under
 // the block cache too; the manifest's id follows the content. In Chromium, Buildroot boots with its root on a chunked
 // image in the whole file's exact steps, and the URL check takes a manifest.
 import assert from 'node:assert/strict';

@@ -1302,8 +1302,8 @@ deployed page; untracked). How it was set up:
 - **Credentials:** an account API token and the account ID in `~/.config/cloudflare/webpc.env`
   (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written by the user on the VM. Source it; never print
   it. Its permissions (2026-10-23): Account → Workers Scripts, Workers KV Storage → Edit, Workers Tail and Account
-  Settings → Read; Zone (`tny.im`) → DNS, Workers Routes → Edit (Cloudflare Pages → Edit until the old Pages project
-  is deleted). No R2, Cache Rules or WAF: R2 was tried for disk images and dropped (plans/remote-disks.md §3
+  Settings → Read; Zone (`tny.im`) → DNS, Workers Routes → Edit. No Pages (the old project is deleted), R2, Cache
+  Rules or WAF: R2 was tried for disk images and dropped (plans/remote-disks.md §3
   "Decided"). The user edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
   localhost), and `wrangler whoami` fails with this token (no user-level permission): verify it with
   `GET /client/v4/user/tokens/verify` instead.
@@ -1313,8 +1313,9 @@ deployed page; untracked). How it was set up:
 - **From Pages (2026-10-23):** the site was a classic Pages project `webpc` (`wrangler pages deploy`) until then;
   moved by Cloudflare's guide (workers/static-assets/migration-guides/migrate-from-pages): the Worker deployed and
   checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm CNAME
-  webpc.pages.dev` deleted and the Worker deployed with the route (under a minute without the site). The Pages project
-  stays, without a domain, until the user deletes it. One difference kept: an unknown path is a 404
+  webpc.pages.dev` deleted and the Worker deployed with the route (under a minute without the site); the user then
+  deleted the Pages project. In the dashboard (Workers & Pages) the Workers `webpc` and `webpc-disks` showed only after
+  a hard reload. One difference kept: an unknown path is a 404
   (`not_found_handling: none`), where Pages answered the root page (its single-page fallback, with no `404.html`).
 
 **Disk images** are a second assets-only Worker, `webpc-disks` at `https://vmdisks.tny.im` (`deploy/disks/deploy.sh`,

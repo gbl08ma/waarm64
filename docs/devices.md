@@ -151,7 +151,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   ending in `.json` is a manifest (`webpc-chunked-1`: the file's size, the piece size, each piece's SHA-256, an
   `id` hashed from them, and a `name` the page shows: `--name`, or the image's file name) of the image file cut into equal pieces, `pieces/<sha256>.bin` beside it. It reads as one
   file under the block cache: a piece by range, or whole where the host answers a range with the whole file (as
-  Cloudflare Pages does), and then `Source.span` has the cache take the whole piece. `bootVm` sizes it from the
+  a Cloudflare Worker's static assets and Pages do: the images' host, vmdisks.tny.im), and then `Source.span` has the cache take the whole piece. `bootVm` sizes it from the
   manifest and its first piece; the URL check (`web/app/urlcheck.ts`) gives the manifest's `id` as the disk's `etag`,
   so a machine's disk identity follows the content. Not checked against the hashes yet (reads are synchronous;
   `crypto.subtle` isn't).

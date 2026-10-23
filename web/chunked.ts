@@ -1,7 +1,7 @@
 // A chunked image (docs/plans/remote-disks.md §4.1): the image file cut into equal pieces at byte offsets, each a file
 // named by its SHA-256, listed by a manifest (tools/chunk-image.ts makes them). Read as one file (a `Source`), so
 // qcow2, the block cache and the overlay above it are unchanged. A piece is read by range where the host answers
-// ranges, and whole where it answers a range with the whole file (Cloudflare Pages): the host is tried once, and then
+// ranges, and whole where it answers a range with the whole file (a Cloudflare Worker's static assets, as Pages did): the host is tried once, and then
 // `span` tells a cache above to take the whole piece. The manifest's `id` (a hash of the pieces' hashes) is the image's identity: it
 // changes with the content, whatever the URL.
 import type { Source } from './devices.ts';
