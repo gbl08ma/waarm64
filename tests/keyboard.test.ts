@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { oemStrings } from '../web/app/guest-unit.ts';
-import { detectLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, resolveKeyboard, validKeyboard } from '../web/app/keyboard.ts';
+import { detectLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, keyboardSetting, resolveKeyboard, validKeyboard } from '../web/app/keyboard.ts';
 
 const map = (o: Record<string, string>) => new Map(Object.entries(o));
 const US = { KeyQ: 'q', KeyW: 'w', KeyE: 'e', KeyR: 'r', KeyY: 'y', KeyZ: 'z', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyM: 'm', KeyI: 'i', Digit0: '0', Digit2: '2', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/', Comma: ',', Period: '.' };
@@ -35,6 +35,16 @@ test("the setting's values: a layout, or the browser's at every start (none wher
   assert.equal(await resolveKeyboard(undefined, de), undefined);
   // Node has no Keyboard API: the browser's is none.
   assert.equal(await resolveKeyboard(FOLLOW_BROWSER), undefined);
+});
+
+test("which setting a start uses: the query's, a stored machine's own, the browser's for a disk the user opened", () => {
+  assert.equal(keyboardSetting('gb', { keyboard: 'pt' }, false), 'gb');
+  assert.equal(keyboardSetting(null, { keyboard: 'pt' }, false), 'pt');
+  assert.equal(keyboardSetting(null, {}, false), undefined); // a stored machine set to "Don't set it"
+  assert.equal(keyboardSetting(null, undefined, false), FOLLOW_BROWSER); // `?disk=`, or a file opened on the page
+  assert.equal(keyboardSetting(null, undefined, true), undefined); // the tests' `?machine=`
+  assert.equal(keyboardSetting('none', undefined, false), 'none'); // turned off by the query: no layout
+  assert.equal(keyboardLayout('none'), undefined);
 });
 
 test('credentials: a unit, its drop-in on systemd-user-sessions and its script, as base64 SMBIOS strings', () => {

@@ -718,8 +718,10 @@ user's keys say), the layout `navigator.keyboard.getLayoutMap()` reports, looked
 few keys' characters against each layout's, `detectLayout`; where the browser doesn't say, nothing is set and the
 guest keeps its last); or none (**Don't set it**: the guest's own, and what a machine made before the default or a
 definition without the field has). **Match this browser** picks a fixed layout from the same lookup, for the user to
-save. It takes effect at the next boot, without a restart. Transient machines (`?disk=`, the tests' `?machine=`) set
-none without `?keyboard=`.
+save. It takes effect at the next boot, without a restart. A transient machine the user opened (`?disk=`, a
+file opened on the page) follows the browser as a new machine does (`keyboardSetting`); the tests' `?machine=` guests
+set none; `?keyboard=` overrides both (`?keyboard=none`: none). The network's settings (MTU, search domain; "Take the
+connection's settings") are on for every transient machine, `?netconfig=0` off.
 
 What the guest gets: three systemd credentials (256+: `systemd.extra-unit.*`, `systemd.unit-dropin.*`) as SMBIOS
 type 11 strings (base64, `io.systemd.credential.binary:`), which PID 1 imports in a VM with nothing loaded first. The

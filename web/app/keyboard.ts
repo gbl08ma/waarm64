@@ -55,6 +55,13 @@ export const keyboardLayout = (id: string | undefined) => KEYBOARD_LAYOUTS.find(
 export const FOLLOW_BROWSER = 'browser';
 /** A value the setting can hold: a layout's id or `FOLLOW_BROWSER`. */
 export const validKeyboard = (id: string) => id === FOLLOW_BROWSER || !!keyboardLayout(id);
+/**
+ * The setting a start uses: `?keyboard=` (`query`: a layout's id, `FOLLOW_BROWSER`, anything else none), else a stored
+ * machine's own; a transient machine the user opened (a disk by `?disk=` or a file) follows the browser, as a new stored
+ * one does, and the tests' `?machine=` guests (`test`) get none.
+ */
+export const keyboardSetting = (query: string | null, stored: { keyboard?: string } | undefined, test: boolean) =>
+  query ?? (stored ? stored.keyboard : test ? undefined : FOLLOW_BROWSER);
 /** The layout a start gives the guest for the setting `id`: `FOLLOW_BROWSER` is the browser's, or none where it doesn't say. */
 export async function resolveKeyboard(id: string | undefined, detect = browserLayout): Promise<KeyboardLayout | undefined> {
   return id === FOLLOW_BROWSER ? detect() : keyboardLayout(id);
