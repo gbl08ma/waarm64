@@ -1,10 +1,12 @@
 // The guest's keyboard layout (docs/frontend.md "The keyboard layout"): the page sends `KeyboardEvent.code`, the keys'
 // positions on a PC keyboard (web/input.ts), so the guest has to be told which characters the user's keys carry. A
-// machine with the setting on gives the guest, as SMBIOS credentials, a unit that sets it at every boot: localed's X11
+// machine with the setting on gives the guest a unit that sets it at every boot (web/app/guest-unit.ts): localed's X11
 // keymap (Xorg, GNOME, KDE, display managers) and the console's (or Debian's /etc/default/keyboard), and
 // libxkbcommon's `XKB_DEFAULT_*` in /etc/environment (wlroots compositors such as sway; every PAM login and the user
-// manager read it). Both stay in the guest's disk: turning the setting off leaves the last layout set.
+// manager read it). Both stay in the guest's disk: turning the setting off leaves the last layout set. Not in /run, as
+// the network's settings are (web/app/guest-net.ts): Xorg's xorg.conf.d, localed, console-setup and pam_env read /etc only.
 
+import { guestUnit } from './guest-unit.ts';
 import type { Credential } from './machine.ts';
 
 /**
@@ -82,8 +84,6 @@ export async function browserLayout(): Promise<KeyboardLayout | undefined> {
   return detectLayout(await kb.getLayoutMap().catch(() => new Map()));
 }
 
-const UNIT = 'webpc-keyboard.service';
-
 /** The script the unit runs (a credential of its own: no quoting in the unit). POSIX sh: Debian's is dash. */
 export function keyboardScript(l: KeyboardLayout): string {
   const model = l.model ?? 'pc105';
@@ -116,32 +116,13 @@ fi
 `;
 }
 
-/** The systemd credentials (SMBIOS type 11, `oemStrings`) that set `l` in the guest: systemd 256+. */
-export function keyboardCredentials(l: KeyboardLayout): Credential[] {
-  return [
-    { name: 'webpc.keyboard.sh', data: keyboardScript(l) },
-    {
-      name: `systemd.extra-unit.${UNIT}`,
-      data: `[Unit]
-Description=Keyboard layout from webpc's machine settings
-ConditionPathExists=!/etc/initrd-release
-After=dbus.service local-fs.target
-Before=systemd-user-sessions.service display-manager.service
-
-[Service]
-Type=oneshot
-ImportCredential=webpc.keyboard.sh
-ExecStart=/bin/sh %d/webpc.keyboard.sh
-`,
-    },
-    // What starts it: the generator can't read an [Install] section, so a drop-in has the logins' gate want it.
-    { name: `systemd.unit-dropin.systemd-user-sessions.service~${UNIT.replace('.service', '')}`, data: `[Unit]\nWants=${UNIT}\nAfter=${UNIT}\n` },
-  ];
-}
-
-/** The fw_cfg file the core moves into SMBIOS type 11 (core/src/smbios.rs `OEM_STRINGS`, ABI 49): NUL-separated strings. */
-export const OEM_STRINGS_FILE = 'opt/webpc/oem-strings';
-
-/** Credentials as SMBIOS type 11 strings, systemd's binary form (base64: the contents have newlines). */
-export const oemStrings = (credentials: Credential[]) =>
-  credentials.map((c) => `io.systemd.credential.binary:${c.name}=${btoa(String.fromCharCode(...new TextEncoder().encode(c.data)))}`);
+/** The systemd credentials (web/app/guest-unit.ts: SMBIOS, systemd 256+) that set `l` in the guest at every boot. */
+export const keyboardCredentials = (l: KeyboardLayout): Credential[] =>
+  guestUnit({
+    name: 'webpc-keyboard.service',
+    description: "Keyboard layout from webpc's machine settings",
+    script: keyboardScript(l),
+    // Before the logins' gate and the display manager, so every login sees what it set.
+    unit: 'After=dbus.service local-fs.target\nBefore=systemd-user-sessions.service display-manager.service\n',
+    wantedBy: 'systemd-user-sessions.service',
+  });

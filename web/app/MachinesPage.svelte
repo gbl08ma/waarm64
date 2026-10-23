@@ -109,6 +109,7 @@
     const m = plain(draft!);
     if (!m.jitMiB) delete m.jitMiB;
     if (!m.keyboard) delete m.keyboard;
+    if (m.netConfig !== false) delete m.netConfig;
     await act('Saving', async () => {
       const was = machines.find((x) => x.id === m.id)!;
       if (shapeChanged(was, m) && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('This change orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Save' }))) return;
@@ -406,8 +407,10 @@
                 {/each}
               </ul>
               {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network adapter</button></div>{/if}
-              {@render saveRow()}
               <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding or removing one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.</p>
+              <label class="check" title="At every boot the page has the guest's systemd-networkd take what each connection's lease says"><input type="checkbox" checked={draft.netConfig !== false} onchange={(e) => { draft!.netConfig = e.currentTarget.checked ? undefined : false; dirty = true; }} data-field="net-config"> Take the connection's settings in the guest</label>
+              <p class="note" data-net-config-note>{#if draft.netConfig !== false}At every boot the page has the guest's systemd-networkd take each connection's MTU (a tailnet's is 1280: at the adapter's 1500, large packets can be lost) and search domain (MagicDNS's), and use DHCP on adapters nothing else sets up, on a guest with systemd 256 or newer. Nothing is written to the guest's disk: it lasts until the guest shuts down. NetworkManager takes them by itself.{:else}The page leaves the guest's network settings alone: the guest takes the MTU and search domain only if it is set up to. The next boot has none of the page's settings.{/if}</p>
+              {@render saveRow()}
             </div>
           {:else if ui.machinesTab === 'usb'}
             <div class="settings usb-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>

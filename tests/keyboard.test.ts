@@ -6,7 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { detectLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, oemStrings, resolveKeyboard, validKeyboard } from '../web/app/keyboard.ts';
+import { oemStrings } from '../web/app/guest-unit.ts';
+import { detectLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, resolveKeyboard, validKeyboard } from '../web/app/keyboard.ts';
 
 const map = (o: Record<string, string>) => new Map(Object.entries(o));
 const US = { KeyQ: 'q', KeyW: 'w', KeyE: 'e', KeyR: 'r', KeyY: 'y', KeyZ: 'z', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyM: 'm', KeyI: 'i', Digit0: '0', Digit2: '2', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/', Comma: ',', Period: '.' };

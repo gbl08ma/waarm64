@@ -80,6 +80,11 @@ export type MachineRecord = {
    * `FOLLOW_BROWSER`: the browser's, looked up at every start; a new machine's); absent: the page leaves the guest's own. Not in the shape: only a boot reads it.
    */
   keyboard?: string;
+  /**
+   * False: the page leaves the guest's network settings alone; absent: it has the guest take each adapter's lease (its
+   * MTU, search domain; web/app/guest-net.ts) at every boot. Not in the shape: only a boot reads it.
+   */
+  netConfig?: false;
   display: Display;
   /**
    * The network adapters (virtio-net), in slot order (docs/network-adapters.md). Absent on machines made before

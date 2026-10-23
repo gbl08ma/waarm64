@@ -9,7 +9,7 @@
 //    (xterm.js to the PL011) and on the screen (keys on the canvas through virtio-input to tty1's
 //    getty); a command typed on the screen writes a marker to /dev/ttyAMA0 that comes back on the
 //    serial side; the platform the firmware gave Linux (RTC, framebuffer, EFI, both vCPUs, a
-//    credential read back from fw_cfg; the keyboard layout `?keyboard=gb` set through SMBIOS); the page's size reaches the guest (the console is born at it,
+//    credential read back from fw_cfg; the keyboard layout `?keyboard=gb` and the network's drop-ins set through SMBIOS); the page's size reaches the guest (the console is born at it,
 //    a bigger window is a new preferred mode, a smaller one never crops the console); a snapshot of
 //    the logged-in machine with a file on its disk (the machine runs on).
 // 2. A reload (as a user closes the tab: no shutdown): the file written in 1 is on the disk.
@@ -283,6 +283,10 @@ for (let run = 1; run <= RUNS; run++) {
     // /etc/default/keyboard, read back by localed, and XKB_DEFAULT_* in this login's environment.
     await onSerial(page, 'clear; echo ==kb""d $(systemctl show -P Result webpc-keyboard.service) $(localectl status | grep -o "X11 Layout: [a-z]*" | cut -d" " -f3) $XKB_DEFAULT_LAYOUT $XKB_DEFAULT_MODEL.\n');
     await shows(page, /==kbd success gb gb pc105\./);
+    // The network's settings (web/app/guest-net.ts): the unit ran before networkd, and networkd reads its drop-in in /run
+    // for the file that configures the adapter (Debian's netplan's, which sorts before the page's card.network).
+    await onSerial(page, 'clear; l=$(ls /sys/class/net | grep ^e | head -1); echo ==ne""t $(systemctl show -P Result webpc-network.service) $(networkctl status --json=short $l | grep -o "\\"NetworkFileDropins\\":[^]]*]") ==en""d\n');
+    await shows(page, /==net success "NetworkFileDropins":\["\/run\/systemd\/network\/[^"]+\.network\.d\/50-webpc\.conf"\] ==end/);
     // Nothing speculates, and the core's SMCCC answers say so (docs/cpu.md): Spectre-v4 is not affected. (Spectre-v2 still
     // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
     await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');

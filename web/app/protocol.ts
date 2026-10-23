@@ -40,6 +40,8 @@ export type ToWorker =
     jitMiB?: number;
     /** The guest's keyboard layout (`MachineRecord.keyboard`, `?keyboard=`; web/app/keyboard.ts), for a `firmware` machine; absent: none set. */
     keyLayout?: string;
+    /** The guest takes the network's settings (`MachineRecord.netConfig`, `?netconfig=0` turns it off; web/app/guest-net.ts): the page's .network credential and the unit. */
+    netConfig: boolean;
     /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
     sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
     /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */

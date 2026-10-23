@@ -296,7 +296,7 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   }
 });
 
-test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule; its keyboard layout by its definition", async () => {
+test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule; its keyboard layout and network settings by its definition", async () => {
   const { hostMemoryGiB, jitHostGiB, JIT_DEFAULT_MIB } = await import('../web/app/machine.ts');
   const { createMachine, updateMachine } = await import('../web/app/machines.ts');
   const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
@@ -327,6 +327,14 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
   assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(follows)))).machine.keyboard, 'browser');
   assert.equal('keyboard' in (await exportDefinition(store, (await updateMachine(store, { ...plain, keyboard: undefined })).id)).machine, false);
   for (const keyboard of ['xx', 7, '']) assert.throws(() => parseDefinition(JSON.stringify({ ...kbd, machine: { ...kbd.machine, keyboard } })), /damaged/, String(keyboard));
+  // The network's settings in the guest (web/app/guest-net.ts): on unless false; only off travels, outside the shape.
+  assert.equal('netConfig' in plain, false);
+  assert.equal('netConfig' in shapeOf({ ...m, netConfig: false }, () => undefined), false);
+  assert.equal('netConfig' in follows.machine, false);
+  const off = await exportDefinition(store, (await updateMachine(store, { ...plain, netConfig: false })).id);
+  assert.equal(off.machine.netConfig, false);
+  assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(off)))).machine.netConfig, false);
+  for (const netConfig of [true, 0, 'no']) assert.throws(() => parseDefinition(JSON.stringify({ ...off, machine: { ...off.machine, netConfig } })), /damaged/, String(netConfig));
   // The rule: 160 MiB is what it was measured with; the default (320) adds 0.625 GiB; smaller saves at most 0.25.
   assert.equal(jitHostGiB(160), 0);
   assert.equal(JIT_DEFAULT_MIB, 320);

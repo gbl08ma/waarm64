@@ -15,7 +15,9 @@ import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../
 import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
 import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
-import { keyboardCredentials, keyboardLayout, OEM_STRINGS_FILE, oemStrings } from './keyboard.ts';
+import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
+import { netCredentials } from './guest-net.ts';
+import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
@@ -354,11 +356,13 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   if (stopping) return;
   core = await compileCore(wasm);
   // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
-  const credentials = [...(m.nets?.length && machine.network ? machine.network.credentials : []), ...(m.credentials ?? [])];
+  const net = !!m.nets?.length && !!machine.network && m.netConfig;
+  const credentials = [...(net ? machine.network!.credentials : []), ...(m.credentials ?? [])];
   savedFlash = await flash;
-  // The keyboard layout's credentials are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
+  // The units' credentials (the keyboard layout, the network's settings) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
   const keys = keyboardLayout(m.keyLayout);
-  const oem = keys ? [{ name: OEM_STRINGS_FILE, data: oemStrings(keyboardCredentials(keys)).join('\0') }] : [];
+  const units = [...(keys ? keyboardCredentials(keys) : []), ...(net ? netCredentials() : [])];
+  const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem] } : undefined;
   if (stopping) return;
   let ncpus = m.ncpus;

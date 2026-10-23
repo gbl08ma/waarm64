@@ -102,6 +102,14 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', /^The next time the machine boots, the page changes the guest's own keyboard settings to this layout/);
   await m.locator('[data-action=save]').click();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).waitFor();
+  // The network's settings in the guest (the Network tab): on for a new machine, with its note; off is saved as false.
+  await m.locator('[data-tab=network]').click();
+  assert.equal(await m.locator('[data-field=net-config]').isChecked(), true);
+  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', /^At every boot the page has the guest's systemd-networkd take each connection's MTU/);
+  await m.locator('[data-field=net-config]').uncheck();
+  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', /^The page leaves the guest's network settings alone/);
+  await m.locator('[data-action=save]').click();
+  await page.waitForFunction(() => document.querySelector('.machines [data-action=save]')?.hasAttribute('disabled'));
   // A URL disk (checked), a blank one, a ramdisk; a URL whose server lacks CORS is refused with the reason (the wizard stays open).
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'url', { url: `${otherBase}/plain/disk.img` });
@@ -124,9 +132,9 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
     const m = await store.get('machines', id);
     const disks = await Promise.all(m.attachments.map((a: { disk: string }) => store.get('disks', a.disk)));
     store.close();
-    return { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, jitMiB: m.jitMiB, keyboard: m.keyboard, display: m.display, disks: disks.map((d: { kind: string; size: number }) => [d.kind, d.size]), readOnly: m.attachments.map((a: { readOnly: boolean }) => a.readOnly) };
+    return { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, jitMiB: m.jitMiB, keyboard: m.keyboard, netConfig: m.netConfig, display: m.display, disks: disks.map((d: { kind: string; size: number }) => [d.kind, d.size]), readOnly: m.attachments.map((a: { readOnly: boolean }) => a.readOnly) };
   }, id);
-  const want = { name: 'Workbench', ncpus: 2, ramMiB: 1024, jitMiB: 128, keyboard: 'pt', display: '2d', disks: [['url', 1 << 20], ['blank', 64 << 20], ['ramdisk', 32 << 20]], readOnly: [false, false, false] };
+  const want = { name: 'Workbench', ncpus: 2, ramMiB: 1024, jitMiB: 128, keyboard: 'pt', netConfig: false, display: '2d', disks: [['url', 1 << 20], ['blank', 64 << 20], ['ramdisk', 32 << 20]], readOnly: [false, false, false] };
   const got = await record();
   assert.ok((got.disks[0][1] as number) > 0);
   assert.deepEqual({ ...got, disks: got.disks.slice(1) }, { ...want, disks: want.disks.slice(1) });

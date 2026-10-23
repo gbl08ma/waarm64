@@ -223,7 +223,8 @@ Duplicate, Export the definition, Delete; then tabs:
   machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added and removed with the machine
   off, and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
   **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
-  once, running or not (a connection isn't in the shape). **Connections** (in the list of machines) is the
+  once, running or not (a connection isn't in the shape). **Take the connection's settings in the guest** (on; off is
+  `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **Connections** (in the list of machines) is the
   browser's connections; **Preferences** under it is the page's, per browser (below, "Leaving the page"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **USB** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
@@ -747,6 +748,36 @@ guest (`images/arch/desktop.sh`, 2026-10-21) by hand: `?keyboard=de` on a fresh 
 environment has `XKB_DEFAULT_*`) and in Firefox's address bar; the next boot with `?keyboard=pt` types `y` and `ç`
 everywhere, and one without the setting keeps Portuguese (the unit isn't there).
 
+### What the page sets in the guest
+
+Two machine settings have the guest change something at boot: **Keyboard layout** (above) and the Network tab's
+**Take the connection's settings in the guest** (on unless the user turns it off: `MachineRecord.netConfig`). Both are
+units the page adds (`web/app/guest-unit.ts` `guestUnit`): `systemd.extra-unit.webpc-<what>.service`, a oneshot that
+runs a POSIX sh script given as a credential of its own (`webpc.<what>.sh`, `ImportCredential=`), and a
+`systemd.unit-dropin.*` that has the unit it serves want it (the generator reads no `[Install]`), all as SMBIOS type 11
+strings (systemd 256+; the keyboard's paragraph above says how they get there). Nothing is installed: a boot without
+the setting has no unit. Guests without systemd 256 ignore them.
+
+- **The network's settings** (`web/app/guest-net.ts`): `webpc-network.service`, wanted by and ordered before
+  `systemd-networkd.service` (no default dependencies; after `local-fs.target` and `systemd-network-generator.service`,
+  which writes the card's `.network` credential), gives every `.network` file in networkd's directories a drop-in,
+  `/run/systemd/network/<file>.network.d/50-webpc.conf`, with `UseMTU=yes` and `UseDomains=yes` under `[DHCPv4]` and
+  `UseDomains=yes` under `[DHCPv6]`. So the guest takes each lease's MTU (a tailnet's 1280) and search domain
+  (MagicDNS's) whichever file configures the adapter: the card's own `card.network` does only where no file of the
+  guest's sorts before it, and Arch's `20-en*.network` and netplan's `10-netplan-all-en.network` (Debian's cloud
+  image, Ubuntu) do. **It writes only to
+  /run**: the guest's disk is untouched, and the next boot with the setting off has none of it. A drop-in of the
+  guest's that sorts after `50-webpc.conf` wins. NetworkManager asks for the MTU by default (`interface_mtu` is in
+  its DHCP request list, from its source) and applies it while the connection's MTU is automatic, as Debian's
+  dhclient does: nothing is set for them. Without any of it the gateway's MSS clamp still keeps TCP working ("Network").
+  `tests/guest-net.test.ts` runs the script under dash on directories of its own; `tests/page-debian.test.ts` checks
+  that it ran and that networkd reads its drop-in for netplan's file. On the desktop guest (2026-10-23, by hand) networkd
+  reads it for Arch's `/etc/systemd/network/20-en.network`; there the card's fw_cfg credential never arrives (no
+  `card.network` in /run), while the SMBIOS ones do.
+- **The keyboard layout** writes to the guest's disk instead (`/etc/default/keyboard`, localed's files,
+  `/etc/environment`): Xorg's `xorg.conf.d`, localed, console-setup and pam_env read `/etc` only, so nothing in `/run`
+  would reach them, and turning it off leaves the last layout set.
+
 ## Latency
 
 Key to glyph, median of 40–100 keys, Chromium 153 headless on the dev VM, Debian on 4 vCPUs and
@@ -844,7 +875,9 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
   goes with Reset disk. It is what lets GRUB's "UEFI Firmware Settings" reach EDK2's setup.
 - **The network card's settings** (`machine.network.credentials`) go over fw_cfg as the
   credential `opt/io.systemd.credentials/network.network.card`, whenever the machine has a card
-  (always, on this machine); the unmasked networkd and resolved do the rest.
+  (always, on this machine) and `?netconfig=0` doesn't turn them off; the unmasked networkd and resolved do the rest.
+  The image's own netplan file, `10-netplan-all-en.network`, sorts first and configures the adapter: the network's unit
+  gives it the lease's MTU and search domain ("What the page sets in the guest").
 
 ## Your own disk
 
@@ -980,9 +1013,11 @@ and the guest's default way out (below).
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
-  noise), and the client isn't loaded until Connect. A systemd credential
+  noise), and the client isn't loaded until Connect. While the machine's **Take the connection's settings in the
+  guest** is on (`?netconfig=0` turns it off on a transient one), a systemd credential
   (`network.network.card`, over fw_cfg since phase B loop 3; on the command line before) gives
-  networkd a `.network` file (Debian's own units are all enabled under UEFI), so the guest asks the gateway for DHCP by itself; the gateway offers nothing
+  networkd a `.network` file (systemd-network-generator writes it as `/run/systemd/network/card.network`), and a unit
+  has every `.network` file take the lease's MTU and search domain ("What the page sets in the guest", below) (Debian's own units are all enabled under UEFI), so the guest asks the gateway for DHCP by itself; the gateway offers nothing
   until a client has an address (the tailnet address, MagicDNS through systemd-resolved). Not
   `ip=dhcp`: Debian's initramfs reads it too and waits for a lease before booting (found by the
   page test: the boot sat at the root mount for minutes). **A lease that arrives after the boot is
@@ -1060,7 +1095,7 @@ and the guest's default way out (below).
   (docs/tailnet.md "Tailscale"; the Go client used the exit node's DoH service instead).
   **The guest must take the lease's search domain** (MagicDNS's, e.g. `tail1234.ts.net`): with
   systemd-networkd that's `UseDomains=yes` under `[DHCPv4]` and `[DHCPv6]`, which the page's
-  credential and the Arch image set, with `UseMTU=yes` (the lease's 1280 on the link; IPv6 takes
+  credential, its unit's drop-ins and the Arch image set, with `UseMTU=yes` (the lease's 1280 on the link; IPv6 takes
   it from the router advertisement anyway). **The gateway clamps TCP's MSS** in SYNs both ways to
   what fits the lease's MTU (1240 over IPv4, 1220 over IPv6; `clampMss`, `web/gateway.ts`), so a
   guest left at 1500 still works: before, it asked servers for 1460-byte segments, and where a
