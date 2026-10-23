@@ -162,7 +162,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     ([docs/network-adapters.md](docs/network-adapters.md): the connections' model and migration, adapters
     in the shape, the default route through the one that reaches the internet (IPv4 follows it within 10 s, IPv6 at
     once), the page's connections per adapter; a tailnet beside tailcat checked against headscale; loose ends in
-    [docs/backlog.md](docs/backlog.md) "Several adapters' loose ends").
+    [docs/backlog.md](docs/backlog.md) "Several adapters' loose ends"). Proposed (2026-10-23): a local network
+    helper, a third kind of connection for a fast one the user trusts (DERP is slow and far for many): a Go program
+    of ours in its own repository, about 250 lines over gvisor-tap-vsock, reached by a WebSocket on loopback,
+    Ethernet frames with no gateway in the page, IPv4 only, reproducible binaries with published hashes
+    ([docs/plans/networking-local.md](docs/plans/networking-local.md)).
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device

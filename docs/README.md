@@ -29,6 +29,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/networking-p2p.md](plans/networking-p2p.md) | peer-to-peer rooms over WebRTC: addresses that are keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory, names that are keys (proposed, not scheduled) |
+| [plans/networking-local.md](plans/networking-local.md) | a local network helper: a Go program of ours on the user's computer, over gvisor-tap-vsock, that the page reaches by a WebSocket on loopback; Ethernet frames, no gateway in the page, IPv4 only, reproducible binaries (proposed, not started) |
 | [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4), snapshots while 3D is in use and dEQP on the Mac's GPU (G5), working notes for 3D: what each loop found, the numbers |
 | [plans/video.md](plans/video.md) | hardware video decoding (done): VA-API over virgl decoded by WebCodecs (why not V4L2), H.264, VP9 and AV1, each loop's record |
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |

@@ -13,7 +13,8 @@ code's comments still cite; [machines.md](plans/machines.md) had left several ad
 1. **A machine has up to 4 network adapters** (`MAX_ADAPTERS`), in order, each with its own MAC. Adapters are part
    of the shape: virtio-mmio has no hotplug, so adding or removing one needs the machine off (as a disk does).
 2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet or tailcat
-   (later, perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md)). A connection carries its own state
+   (later, perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md), or a local helper:
+   [plans/networking-local.md](plans/networking-local.md)). A connection carries its own state
    (a tailnet's node, tailcat's identity and address), so it keeps working as the user moves from one machine to the
    next. There is no "default" connection.
 3. **An adapter with no connection is allowed:** a card with no cable.
