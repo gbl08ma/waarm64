@@ -236,3 +236,18 @@ cache) → 101 s (R4, parallel reads) → 65 s (R5, the boot's reads fetched ahe
   no latency) reaches the login prompt 1.7–5 s sooner and Firefox's paint 1.4–4.6 s sooner, and reads the same bytes
   (567 against 565 MB without the store): what `ldconfig` reads, the rest of the boot reads anyway. R0's 44 s for
   `ldconfig.service` was the slow disk's. Left in docs/backlog.md (building a hosted image already "updated").
+
+## The Desktop Demo, hosted (2026-10-23)
+
+The updated desktop image (1.95 GB, `images/arch/desktop.sh`), cut into 2 MiB pieces with its own boot's reads (525
+MiB) in `prefetch.json`, named "Desktop Demo" (`tools/chunk-image.ts --name`). A first boot (fresh profile, the page on
+localhost through the Mac's network) to Firefox's paint, from:
+
+| Host | Painted |
+|---|---|
+| `static.gbl08ma.com/diskimages/desktop/prefetch.json` (Caddy, ranges; `hosted-gbl08ma.json`) | 66.5 s |
+| `vmdisks.tny.im/desktop/prefetch.json` (a Worker's static assets, no ranges), its first boot ever: Cloudflare's edge fetching each piece from its storage (`hosted-vmdisks-cold.json`) | 78.1 s |
+| the same, the next first boot (the edge holding the pieces; `hosted-vmdisks-warm.json`) | **62.9 s** |
+
+The warm edge is a local file's time (64 s, R5). Why the images are on static assets and not R2: docs/plans/remote-disks.md
+§3 "Decided".

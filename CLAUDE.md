@@ -72,7 +72,7 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   `http://127.0.0.1:8190`–`8197`). `qemu-hw-usb-host` (QEMU's `usb-host`, for `tests/usb/oracle.sh`): installing
   it moved QEMU from 11.1.1 to 11.1.2 on 2026-10-18, while `qemu-linux-user` (the corpus oracle) and `qemu-img` stay at 11.1.1.
 - **Go** (from zypper; `net/tailscale/go.mod` pins the toolchain) builds the Go Tailscale client, `net/tailscale/build.sh` (no longer the page's: a test fixture, tests/ts-tailnet.test.ts's hand-over), and the tailcat rig. The networking tests' headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.
-- Deploying the page (only when the user asks): wrangler in `~/.local/bin`, the Cloudflare token in
+- Deploying the page and the disk images' host `vmdisks.tny.im` (`deploy/disks/`; only when the user asks; images never on R2: docs/plans/remote-disks.md §3): wrangler in `~/.local/bin`, the Cloudflare token in
   `~/.config/cloudflare/webpc.env` (never print it); docs/frontend.md "Deployed at vm.tny.im".
 - Dev-only tools (not repo dependencies, not in tests or CI): `perf` (with V8's `--perf-prof`;
   `perf_event_paranoid` is 2, so profile your own processes) and `wasm-tools` (`cargo +stable

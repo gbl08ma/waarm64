@@ -94,7 +94,7 @@ Decisions (the user, 2026-09-28):
   `tools/dist.ts` (as type stripping is), not a separate build. The page looks like a desktop application (a
   toolbar of Tabler's icons, its own dialogs: docs/frontend.md "The toolbar").
 - **Public hosting:** M8 started without it (others clone the repo); since 2026-10-17 `npm run dist` makes a static
-  copy and the user deploys it at `https://vm.tny.im` (a Cloudflare Worker with static assets, Pages until 2026-10-23; docs/frontend.md "A static copy"). **No guest
+  copy and the user deploys it at `https://vm.tny.im` (a Cloudflare Worker with static assets, Pages until 2026-10-23; docs/frontend.md "A static copy"; disk images on another assets-only Worker, `vmdisks.tny.im`, never R2, whose uncached reads anyone can bill: docs/plans/remote-disks.md §3 "Decided"). **No guest
   network in the first phase.**
 - The Firefox and Safari pass left M8 for the backlog (the user checks Firefox by hand later).
 

@@ -7,7 +7,7 @@ and R5 (a boot's reads in the manifest, fetched ahead: `tools/disk-trace.ts`) do
 196 → 65 s, a local file's time, and a second boot 63 s (bench/remote-disk/REPORT.md); compression (§4.6) measured
 and not built (the boot's bytes are qcow2's compressed clusters: 99% with gzip, brotli or zstd). Loose ends in
 docs/backlog.md "Remote disks' loose ends". How it works now: docs/devices.md "blk" ("Over HTTP", "A chunked image"). Decided with the user (2026-10-23): no Cloudflare in this track (R2's pieces are
-measured on the user's server and on a local one that answers as Pages does), the cache kept in OPFS bounded by
+measured on the user's server and on a local one that answers as Pages does; after it, images on Cloudflare went to a Worker's static assets, never R2: §3 "Decided"), the cache kept in OPFS bounded by
 min(4 GiB, 25% of the free quota) with an LRU across images, the loops R0–R5 then compression in order.
 
 The page can boot a disk image from a URL (`?disk=<url>`, docs/frontend.md "Your own disk"), and since 2026-10-17 it is
@@ -50,51 +50,62 @@ the page's `Cross-Origin-Embedder-Policy: require-corp`; CORP isn't needed. The 
 "Content-Range, Content-Length, Accept-Ranges, ETag" }`, and `handle` of `OPTIONS` there answering 204 with
 `Allow-Methods: GET, HEAD`, `Allow-Headers: Range`, `Max-Age: 86400`.
 
-Cloudflare's free plan (checked 2026-10-17 in Cloudflare's docs):
+### Decided (2026-10-23): images on Cloudflare are a Worker's static assets, never R2
 
-| Option | Ranges | Edge cache | Limits | Code change |
+**Where images are hosted:** `https://vmdisks.tny.im`, the Worker `webpc-disks` with static assets only (no script;
+`deploy/disks/`: `wrangler.jsonc`, `_headers`, `deploy.sh`), serving `target/disks/` from the dev VM: a chunked image
+per directory (`<name>/manifest.json`, `<name>/prefetch.json`, `<name>/pieces/`, 2 MiB pieces). The Desktop Demo:
+`?disk=https://vmdisks.tny.im/desktop/prefetch.json`. Its `_headers`: CORS `*` on everything, pieces `immutable` (named
+by their hash), manifests 5 minutes. Deploying replaces the whole site, so `target/disks/` holds every image that
+stays; wrangler uploads only the pieces it hasn't seen. Deploy only when the user asks. The user's own server
+(`static.gbl08ma.com/diskimages/`, Caddy, below) keeps the whole `desktop.qcow2` and the same chunked copy in `desktop/`.
+
+**Why static assets:** Cloudflare's Workers pricing says "Requests to static assets are free and unlimited", and an
+assets-only Worker runs no script: there is no per-request bill anyone could run up, a 404 or a made-up header
+included. Checked: after a day of boots, URL comparisons and 404s against the page's assets-only Worker, the account's
+Workers analytics (`workersInvocationsAdaptive`) counted **zero invocations**. Even a Worker with a script, on the
+Workers Free plan, isn't billed past its 100,000 requests a day: it answers error 1027 (an outage, not a bill). Limits:
+25 MiB a file and 20,000 files a version on the free plan (`deploy.sh` checks), no total size listed: ~40 GB at 2 MiB.
+**No byte ranges** (measured on vm.tny.im: a `Range` gets 200 and the whole file, as Pages did), which is what the
+chunked format is for: 2 MiB pieces boot as fast as ranges (bench/remote-disk/REPORT.md "R2").
+
+**Why not R2** (set up and torn down the same day; the bucket `webpcimages` is deleted): every read R2 serves that the
+edge cache didn't is one billed Class B operation, $0.36 a million past the free 10 M a month, and on a public bucket
+anyone chooses how many of those happen (a "denial of payment"). Closing that took more than one rule, and the last
+hole stayed open:
+- `Cache-Control: no-cache` downloads are uncached reads too
+  (https://community.cloudflare.com/t/questions-about-the-calculation-of-b-class-requests-for-cloudflare-r2/609909/3):
+  a Cache Rule must force caching with its own edge TTL. `r2.dev` is never cached: off. An object over 512 MB can't
+  be cached on the free plan at all (the whole image): pieces only.
+- A query string is part of the cache key: `?random` missed every time until the rule took it out of the key.
+- With CORS set on the bucket, R2 answers `Vary: Origin` and the edge keeps a copy per `Origin` value: a made-up
+  `Origin` missed every time (measured). A WAF custom rule (it runs before the cache) refusing every `Origin` but the
+  page's closed it.
+- **A path that doesn't exist** misses every time (a 404 is cached per path, and random paths are endless). R2's
+  pricing page doesn't say whether a 404 is billed (only that unauthorized requests aren't). The free plan's one
+  rate-limiting rule can't help: it matches on the path only (not the host), counts every request per IP (HITs too;
+  counting only 404s or misses needs Business), over a fixed 10 s with a 10 s block. A limit above a real VM's bursts
+  (up to 8 fetches at once, over 100 requests a second while prefetching, more behind a NAT) still lets one IP make
+  ~17 M requests a day, more than the month's free 10 M; a lower one blocks real users.
+- A Worker in front of R2 (answering the 404s itself) counts every request, real ones included, against the free
+  plan's 100,000 a day: a first boot is 600–900 pieces, so ~100–160 first boots a day before error 1027.
+
+**Other options considered** (free plan, from Cloudflare's docs, 2026-10-17):
+
+| Option | Ranges | Edge cache | Limits | Verdict |
 |---|---|---|---|---|
-| **R2, the whole image**, on a custom domain (not `r2.dev`: rate-limited, development only, never cached) | yes | **no**: the free plan caches objects up to **512 MB** | 10 GB-month storage, 10 M reads (Class B) and 1 M writes a month, egress free; one read per range | none |
-| **R2, the image in pieces ≤ 512 MB**, a Cache Rule enforcing caching (required: below) (`.qcow2` or a made-up extension isn't in the default cached list; `.bin`, `.iso`, `.zst` are) | yes, from the cache once cached | yes, per data centre | as above, but cached ranges cost no R2 reads | the chunked format (§4) |
-| **Pages, the image in pieces ≤ 25 MiB** (the `webpc` project or another) | **no**: Pages answers a `Range` with 200 and the whole file (measured on `QEMU_EFI.fd`) | yes | 20,000 files a site, 25 MiB a file, bandwidth unmetered | the chunked format, whole pieces |
-| Proxying `static.gbl08ma.com` through Cloudflare | yes | no for files over 512 MB | | none, and no gain |
+| **Worker static assets, pieces ≤ 25 MiB** (chosen) | no | yes | 20,000 files a version, 25 MiB a file; requests free and unlimited | nothing billable |
+| R2, the whole image or pieces, on a custom domain | yes | objects ≤ 512 MB, with a Cache Rule | 10 GB-month, 10 M Class B reads a month free, egress free | billed per uncached read: above |
+| Pages, pieces ≤ 25 MiB | no | yes | 20,000 files a site, 25 MiB a file | the same as static assets; Cloudflare's legacy product (the page moved off it: docs/frontend.md) |
+| Proxying `static.gbl08ma.com` through Cloudflare | yes | no for files over 512 MB | | no gain |
 
-- **Cache misses on big pieces:** on a cold miss Cloudflare fetches the whole object from the origin (or, with its
-  newer origin range fetching, cache-aligned ranges of it) and collapses concurrent misses into one. So the first
-  read of a 512 MB piece in a data centre may wait on far more than it asked for. Smaller pieces (tens of MiB) are
-  cached the same and fill faster; the size is a measurement (R2 below), not 512 MB because it's allowed. Each data
-  centre caches on its own, and rarely read objects are evicted early on the free plan.
-- **On R2, a Cache Rule that enforces caching is required, not an optimization.** Every read R2 serves that the edge
-  cache didn't is one Class B operation (no-cache downloads included:
-  https://community.cloudflare.com/t/questions-about-the-calculation-of-b-class-requests-for-cloudflare-r2/609909/3),
-  $0.36 a million past the free 10 M a month. A public bucket without such a rule lets anyone run up our bill by
-  downloading it over and over with `Cache-Control: no-cache` (a financial DoS). So: the bucket only on a custom
-  domain, `r2.dev` access off (it is never cached), and a Cache Rule on the image's path that makes it eligible for
-  cache with an edge TTL of its own (not the request's or the origin's headers), checked before the URL is shared: a
-  repeated `no-cache` request answers `cf-cache-status: HIT`. The whole image over 512 MB (the table's first row) can't
-  be cached on the free plan, so it is exposed this way whatever the rules: on R2, only pieces.
-  **The cache key isn't the only way around the cache:** a query string is part of it (`?random` misses every time),
-  and with CORS on the bucket R2 answers `Vary: Origin`, so the edge keeps a copy per `Origin` value and a made-up
-  `Origin` misses every time (measured 2026-10-23). Both need closing too: the query string out of the cache key, and
-  a WAF rule (it runs before the cache) refusing any `Origin` but the page's, and requests without one.
-- **Set up (2026-10-23; nothing on it but a probe yet):** bucket `webpcimages` at `https://vmr2.tny.im` (R2 custom
-  domain), `r2.dev` off; CORS `*` for GET and HEAD, `Range` allowed, `Content-Range, Content-Length, Accept-Ranges,
-  ETag` exposed; two Cache Rules on `tny.im` for that host (everything cached, a year at the edge, 404s an hour, the
-  query string out of the key; `.json` manifests 5 minutes at the edge, as they change and the token can't purge);
-  a WAF custom rule blocking that host unless `Origin` is `https://vm.tny.im`, `https://webpc.gbl08ma.workers.dev`,
-  `http://localhost:8080` or `http://127.0.0.1:8080` (a new deployed origin goes there first). Checked: a repeated
-  `no-cache`, a `?random` and an allowed `Origin` all `HIT`; no `Origin` or another one 403; from the page at
-  vm.tny.im a fetch and a synchronous XHR by range answer 206, from another site they fail. Uploads: `wrangler r2
-  object put webpcimages/<key> --file <f> --remote`. Still open: a path that doesn't exist misses every time (R2
-  answers 404, cached for an hour per path, but random paths are endless); the free plan's one rate-limiting rule
-  could bound that.
+- **Cache misses on big pieces:** on a cold miss Cloudflare fetches the whole object from the origin (or
+  cache-aligned ranges of it) and collapses concurrent misses into one; each data centre caches on its own, and rarely
+  read objects are evicted early on the free plan. 2 MiB pieces keep that small.
 - **"Abuse":** Cloudflare's 2023 terms limit serving mostly large non-HTML files through its CDN in front of someone
-  else's origin, not from its own storage and hosting (R2, Pages); a disk image on R2 or Pages is the intended use.
-  Pieces don't change that; they only make the image cacheable.
-- **Recommendation:** one chunked format (§4) that works on any static host. On Cloudflare, either Pages (small whole
-  pieces; no ranges) or R2 with pieces of tens of MiB and a Cache Rule enforcing caching, never without one (ranges inside a cached piece). R2 pieces
-  likely win per read (a 64 KiB read doesn't pull a whole piece), Pages wins on setup (it's where the page already is).
-  Measure both from the page before choosing.
+  else's origin, not from its own storage and hosting; a disk image in a Worker's static assets is the intended use.
+- **The Cloudflare token** (docs/frontend.md "Deployed at vm.tny.im") needs no R2, Cache Rules or WAF permission for
+  this; if images ever go to a bucket again, every point above comes back first.
 
 ## 4. The design, to measure piece by piece
 

@@ -1301,9 +1301,10 @@ deployed page; untracked). How it was set up:
   wrangler@4.151.1` (in `~/.local/bin`; npm skips `workerd`'s postinstall, which only `wrangler dev` needs).
 - **Credentials:** an account API token and the account ID in `~/.config/cloudflare/webpc.env`
   (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written by the user on the VM. Source it; never print
-  it. Its permissions (2026-10-23): Account → Cloudflare Pages, Workers Scripts, Workers R2 Storage, Workers KV Storage
-  → Edit, Workers Tail and Account Settings → Read; Zone (`tny.im`) → DNS, Workers Routes, Cache Rules → Edit. The user
-  edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
+  it. Its permissions (2026-10-23): Account → Workers Scripts, Workers KV Storage → Edit, Workers Tail and Account
+  Settings → Read; Zone (`tny.im`) → DNS, Workers Routes → Edit (Cloudflare Pages → Edit until the old Pages project
+  is deleted). No R2, Cache Rules or WAF: R2 was tried for disk images and dropped (plans/remote-disks.md §3
+  "Decided"). The user edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
   localhost), and `wrangler whoami` fails with this token (no user-level permission): verify it with
   `GET /client/v4/user/tokens/verify` instead.
 - **The domain:** `routes` in `wrangler.jsonc` makes `vm.tny.im` the Worker's custom domain (Cloudflare adds its DNS
@@ -1316,9 +1317,12 @@ deployed page; untracked). How it was set up:
   stays, without a domain, until the user deletes it. One difference kept: an unknown path is a 404
   (`not_found_handling: none`), where Pages answered the root page (its single-page fallback, with no `404.html`).
 
+**Disk images** are a second assets-only Worker, `webpc-disks` at `https://vmdisks.tny.im` (`deploy/disks/deploy.sh`,
+the same credentials), never a bucket: plans/remote-disks.md §3 "Decided".
+
 What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`
 `text/javascript`, a missing trailing slash and `index.html` redirect (307). 25 MiB a file, 20,000 files (the free
-plan). Disks aren't hosted here: [plans/remote-disks.md](plans/remote-disks.md) §3. The dev VM's resolver may cache a
+plan). Disks aren't hosted with the page (above). The dev VM's resolver may cache a
 new name's absence for a while after a DNS change: Chromium's `--host-resolver-rules=MAP vm.tny.im <ip>` (the
 script's `MAP=`) checks the real site meanwhile.
 
