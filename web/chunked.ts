@@ -1,4 +1,4 @@
-// A chunked image (docs/plans/remote-disks.md §4.1): the image file cut into equal pieces at byte offsets, each a file
+// A chunked image (docs/devices.md "A chunked image", docs/remote-disks.md): the image file cut into equal pieces at byte offsets, each a file
 // named by its SHA-256, listed by a manifest (tools/chunk-image.ts makes them). Read as one file (a `Source`), so
 // qcow2, the block cache and the overlay above it are unchanged. A piece is read by range where the host answers
 // ranges, and whole where it answers a range with the whole file (a Cloudflare Worker's static assets, as Pages did): the host is tried once, and then
@@ -27,7 +27,7 @@ export type Manifest = {
   id: string;
   /**
    * A boot's reads (tools/disk-trace.ts): the image file's blocks of `block` bytes in the order the boot first read
-   * them, which the page fetches ahead of the guest (docs/plans/remote-disks.md R5). Not part of the identity.
+   * them, which the page fetches ahead of the guest (docs/remote-disks.md "Publishing an image"). Not part of the identity.
    */
   prefetch?: { block: number; blocks: number[] };
 };

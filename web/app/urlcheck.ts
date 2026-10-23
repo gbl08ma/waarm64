@@ -1,4 +1,4 @@
-// A disk's URL, checked when it is added (docs/plans/machines.md §4.2; what a host must give: docs/plans/remote-disks.md
+// A disk's URL, checked when it is added (docs/plans/machines.md §4.2; what a host must give: docs/remote-disks.md
 // §3; a chunked image's manifest, web/chunked.ts, needs no ranges): reachable over HTTPS (or from the page's own
 // origin), with CORS for the page's origin (the page is cross-origin isolated: a response without CORS doesn't reach
 // it), byte ranges answered with 206, `Content-Range` exposed, and a suffix range (the end of a qcow2 is read that way

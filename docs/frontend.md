@@ -1303,8 +1303,8 @@ deployed page; untracked). How it was set up:
   (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written by the user on the VM. Source it; never print
   it. Its permissions (2026-10-23): Account → Workers Scripts, Workers KV Storage → Edit, Workers Tail and Account
   Settings → Read; Zone (`tny.im`) → DNS, Workers Routes → Edit. No Pages (the old project is deleted), R2, Cache
-  Rules or WAF: R2 was tried for disk images and dropped (plans/remote-disks.md §3
-  "Decided"). The user edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
+  Rules or WAF: R2 was tried for disk images and dropped ([remote-disks.md](remote-disks.md)
+  "Hosting on Cloudflare"). The user edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
   localhost), and `wrangler whoami` fails with this token (no user-level permission): verify it with
   `GET /client/v4/user/tokens/verify` instead.
 - **The domain:** `routes` in `wrangler.jsonc` makes `vm.tny.im` the Worker's custom domain (Cloudflare adds its DNS
@@ -1319,7 +1319,7 @@ deployed page; untracked). How it was set up:
   (`not_found_handling: none`), where Pages answered the root page (its single-page fallback, with no `404.html`).
 
 **Disk images** are a second assets-only Worker, `webpc-disks` at `https://vmdisks.tny.im` (`deploy/disks/deploy.sh`,
-the same credentials), never a bucket: plans/remote-disks.md §3 "Decided".
+the same credentials), never a bucket: [remote-disks.md](remote-disks.md).
 
 What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`
 `text/javascript`, a missing trailing slash and `index.html` redirect (307). 25 MiB a file, 20,000 files (the free

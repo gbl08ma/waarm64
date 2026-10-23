@@ -1,4 +1,4 @@
-// A desktop boot from a disk on a server (docs/plans/remote-disks.md R0): the Arch desktop guest's qcow2 opened by its
+// A desktop boot from a disk on a server (docs/remote-disks.md; REPORT.md "R0"): the Arch desktop guest's qcow2 opened by its
 // URL on the page (`?disk=`, `?iostats`), timed from the page's start to the serial login prompt, to the user's
 // session on the screen, to sway's socket, and to Firefox's window; with the disk's base reads (count, sizes, bytes,
 // time, the trace) at each mark, and the local server's request log. One JSON file a run.

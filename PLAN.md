@@ -94,7 +94,7 @@ Decisions (the user, 2026-09-28):
   `tools/dist.ts` (as type stripping is), not a separate build. The page looks like a desktop application (a
   toolbar of Tabler's icons, its own dialogs: docs/frontend.md "The toolbar").
 - **Public hosting:** M8 started without it (others clone the repo); since 2026-10-17 `npm run dist` makes a static
-  copy and the user deploys it at `https://vm.tny.im` (a Cloudflare Worker with static assets, Pages until 2026-10-23; docs/frontend.md "A static copy"; disk images on another assets-only Worker, `vmdisks.tny.im`, never R2, whose uncached reads anyone can bill: docs/plans/remote-disks.md §3 "Decided"). **No guest
+  copy and the user deploys it at `https://vm.tny.im` (a Cloudflare Worker with static assets, Pages until 2026-10-23; docs/frontend.md "A static copy"; disk images on another assets-only Worker, `vmdisks.tny.im`, never R2, whose uncached reads anyone can bill: docs/remote-disks.md "Hosting on Cloudflare"). **No guest
   network in the first phase.**
 - The Firefox and Safari pass left M8 for the backlog (the user checks Firefox by hand later).
 
@@ -245,7 +245,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     time, or a URL's path). A restored machine has empty TLBs, which Linux can tell by its step
     count ([docs/platform.md](docs/platform.md) "Snapshots"). Loose ends:
     [docs/backlog.md](docs/backlog.md) "Snapshots".
-  - Remote disks: **done (2026-10-23)** ([docs/plans/remote-disks.md](docs/plans/remote-disks.md),
+  - Remote disks: **done (2026-10-23)** ([docs/remote-disks.md](docs/remote-disks.md),
     bench/remote-disk/REPORT.md). A disk from another server boots as fast as a local file: a block cache (R1), a
     chunked image format for any static host (R2), the blocks kept in OPFS (R3), reads in parallel with a device
     worker that never blocks (R4) and a boot's reads fetched ahead (R5). The Arch desktop guest from the user's server

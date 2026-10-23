@@ -1,4 +1,4 @@
-# A disk on a remote server (docs/plans/remote-disks.md)
+# A disk on a remote server (docs/remote-disks.md)
 
 Measured from the dev VM (Lima vz, 8 vCPUs, arm64; Chromium 153.0.8010.52 headless, SwiftShader's WebGL2), through
 the Mac's network to `static.gbl08ma.com` (Caddy, HTTP/2). The page on localhost: the image's host is cross-origin
@@ -249,5 +249,5 @@ localhost through the Mac's network) to Firefox's paint, from:
 | `vmdisks.tny.im/desktop/prefetch.json` (a Worker's static assets, no ranges), its first boot ever: Cloudflare's edge fetching each piece from its storage (`hosted-vmdisks-cold.json`) | 78.1 s |
 | the same, the next first boot (the edge holding the pieces; `hosted-vmdisks-warm.json`) | **62.9 s** |
 
-The warm edge is a local file's time (64 s, R5). Why the images are on static assets and not R2: docs/plans/remote-disks.md
-§3 "Decided".
+The warm edge is a local file's time (64 s, R5). Why the images are on static assets and not R2: docs/remote-disks.md
+"Hosting on Cloudflare".

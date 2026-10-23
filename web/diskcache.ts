@@ -1,4 +1,4 @@
-// A remote disk's blocks kept in OPFS (docs/plans/remote-disks.md R3), under the block cache (web/blockcache.ts): a
+// A remote disk's blocks kept in OPFS (docs/devices.md "Over HTTP"), under the block cache (web/blockcache.ts): a
 // reload, a second boot or a Suspend's resume reads what was fetched before from this browser instead of the network.
 // One directory per image under `remote-cache/`, named by the image's identity (a chunked image's id, or a URL with
 // its size and the server's validator: an image without one isn't kept): `data` holds blocks in slots, `map` one

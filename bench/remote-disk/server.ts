@@ -1,5 +1,5 @@
 // A disk host for bench/remote-disk: files under a root served with range requests and CORS, as a remote host must
-// (docs/plans/remote-disks.md §3), with latency and bandwidth added and every request logged. The path's leading
+// (docs/remote-disks.md "What a server must give"), with latency and bandwidth added and every request logged. The path's leading
 // segments set them: `/d<ms>/` waits that long before answering (a round trip), `/r<MB/s>/` paces each body,
 // `/R<MB/s>/` paces all bodies together (one link that requests in parallel share), `/pages/` answers a `Range` with
 // 200 and the whole file (a Cloudflare Worker's static assets, as Pages did); e.g. `/d47/r20/desktop.qcow2`.

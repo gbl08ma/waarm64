@@ -1,4 +1,4 @@
-// A read cache under a remote disk (docs/plans/remote-disks.md R1): the image file in aligned blocks, the most recently
+// A read cache under a remote disk (docs/devices.md "Over HTTP"): the image file in aligned blocks, the most recently
 // used kept in memory, so a guest's many small reads (and qcow2's L2 tables and nearby clusters) are a few large
 // requests. A read's missing blocks are fetched together where they are adjacent: one request each run. Over a source
 // that reads without blocking (`readAsync`), several reads fetch at once and a block being fetched is fetched once.

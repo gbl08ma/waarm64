@@ -364,8 +364,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - virtio: the host can change config space under a running driver since ABI 31
   (`Devices.changeConfig`, docs/abi.md), but only virtio-gpu's display events use it: console resize,
   capacity change and net link state don't yet.
-- **Remote disks' loose ends** (the track is done: [plans/remote-disks.md](plans/remote-disks.md),
-  bench/remote-disk/REPORT.md; a remote first boot takes a local file's time with a boot trace), by promise:
+- **Remote disks' loose ends** ([remote-disks.md](remote-disks.md), bench/remote-disk/REPORT.md; a remote first boot
+  takes a local file's time with a boot trace), by promise:
   - **A boot trace without the bench:** `tools/disk-trace.ts` takes a `bench/remote-disk/boot.ts` run's trace. A page
     switch that records this boot's reads and offers the manifest with them (or the Machines page doing it for a URL
     disk) would let whoever hosts an image make one.
@@ -376,15 +376,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **The prefetch without the OPFS store** (another tab has the image, no room) runs within memory's window and
     refetches what it pushed out (83 against 65 s, 715 MB against 544): a larger memory budget while it runs, or
     stopping it, would do better.
-  - **Hosting on Cloudflare** (R2's pieces with a Cache Rule against Pages' whole files, plan §3) is deferred by the
-    user (2026-10-23: R2 needs a card on file; other lanes will look at Workers). The format works on both; 2 MiB pieces
-    are the tool's default for Pages' lack of ranges.
   - **A hosted image's first boot** runs its update jobs (`ldconfig.service`: `ConditionNeedsUpdate`): ~2–5 s of the
     guest's time, no more bytes (measured: 565 against 567 MB). Building with `/etc/.updated` and `/var/.updated`
     newer than `/usr` would skip it.
-  - **Compression (plan §4.6): nothing to gain on the desktop image** (the boot's 543 MB compress to 98.9% with gzip,
-    99.2% brotli, 99.3% zstd: they are qcow2's compressed clusters); an image converted without `-c` would differ.
-  - The deterministic mode reads a remote disk one request at a time with synchronous XHRs, by design (its steps).
 - **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md
   phase D's preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
   before a first-boot script, which then gives this copy its own identity and per-machine setup. Every visitor resumes
@@ -396,7 +390,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   entropy at once. The trigger: the script waits in the snapshot (on the serial console, a fw_cfg credential, or the
   guest agent of [plans/agent.md](plans/agent.md), which also covers the clock's jump after a resume) and runs when the
   page signals the resume. The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
-  change under it (plans/remote-disks.md §4.1's content identity would make that check exact).
+  change under it (a chunked image's `id`, [remote-disks.md](remote-disks.md), makes that check exact; a whole file's
+  URL doesn't).
 - Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
   size only.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the

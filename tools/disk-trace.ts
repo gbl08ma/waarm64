@@ -1,4 +1,4 @@
-// A boot's reads into a chunked image's manifest (docs/plans/remote-disks.md R5, web/chunked.ts `prefetch`): the image
+// A boot's reads into a chunked image's manifest (docs/remote-disks.md "Publishing an image", web/chunked.ts `prefetch`): the image
 // file's 1 MiB blocks in the order a boot first read them, from a bench/remote-disk/boot.ts run's trace (the page's
 // `?iostats`: every base read, any image of the same bytes: the whole file or a chunked copy) up to one of its marks.
 // The page then fetches them ahead of the guest. The manifest's id doesn't change (the bytes are the same).

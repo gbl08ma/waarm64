@@ -1,4 +1,4 @@
-// Cuts a disk image into a chunked image (docs/plans/remote-disks.md §4.1, web/chunked.ts): equal pieces of the file
+// Cuts a disk image into a chunked image (docs/remote-disks.md "Publishing an image", web/chunked.ts): equal pieces of the file
 // at byte offsets, each named by its SHA-256 (`pieces/<sha256>.bin`: a new version of the image shares the pieces it
 // didn't change, and repeated pieces, zeros, are one file), and `manifest.json` beside them. The page opens the
 // manifest's URL as the disk (`?disk=…/manifest.json`); any static host serves it, with or without byte ranges. 2 MiB

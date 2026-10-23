@@ -34,7 +34,7 @@ the embedding API, none of which it conflicts with (§10).
    nothing. Detecting "as it left it" is a **generation counter**, never a hash of a large file (§3.3).
 9. **Export a machine's definition** first (its shape: a small file; disk files are picked again on import, checked
    by identity); **export a machine** (with its overlays and snapshots, a bundle) later. The UI names them apart.
-10. **Remote disks stay their own track** (docs/plans/remote-disks.md: the chunked format and how a user gives its URL
+10. **Remote disks stay their own track** (docs/remote-disks.md: the chunked format and how a user gives its URL
     still need discovery). Here: a URL source with a check of the server and the requirements stated (§4.2).
 11. **A stored disk can take an overlay in place** ("merge into the disk"): the overlay's blocks are written into the
     stored disk, and **every other overlay of that disk is deleted** (they were over the old bytes); the confirmation
