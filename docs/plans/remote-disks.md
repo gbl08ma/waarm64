@@ -55,7 +55,7 @@ Cloudflare's free plan (checked 2026-10-17 in Cloudflare's docs):
 | Option | Ranges | Edge cache | Limits | Code change |
 |---|---|---|---|---|
 | **R2, the whole image**, on a custom domain (not `r2.dev`: rate-limited, development only, never cached) | yes | **no**: the free plan caches objects up to **512 MB** | 10 GB-month storage, 10 M reads (Class B) and 1 M writes a month, egress free; one read per range | none |
-| **R2, the image in pieces ≤ 512 MB**, a Cache Rule making them eligible (`.qcow2` or a made-up extension isn't in the default cached list; `.bin`, `.iso`, `.zst` are) | yes, from the cache once cached | yes, per data centre | as above, but cached ranges cost no R2 reads | the chunked format (§4) |
+| **R2, the image in pieces ≤ 512 MB**, a Cache Rule enforcing caching (required: below) (`.qcow2` or a made-up extension isn't in the default cached list; `.bin`, `.iso`, `.zst` are) | yes, from the cache once cached | yes, per data centre | as above, but cached ranges cost no R2 reads | the chunked format (§4) |
 | **Pages, the image in pieces ≤ 25 MiB** (the `webpc` project or another) | **no**: Pages answers a `Range` with 200 and the whole file (measured on `QEMU_EFI.fd`) | yes | 20,000 files a site, 25 MiB a file, bandwidth unmetered | the chunked format, whole pieces |
 | Proxying `static.gbl08ma.com` through Cloudflare | yes | no for files over 512 MB | | none, and no gain |
 
@@ -64,11 +64,20 @@ Cloudflare's free plan (checked 2026-10-17 in Cloudflare's docs):
   read of a 512 MB piece in a data centre may wait on far more than it asked for. Smaller pieces (tens of MiB) are
   cached the same and fill faster; the size is a measurement (R2 below), not 512 MB because it's allowed. Each data
   centre caches on its own, and rarely read objects are evicted early on the free plan.
+- **On R2, a Cache Rule that enforces caching is required, not an optimization.** Every read R2 serves that the edge
+  cache didn't is one Class B operation (no-cache downloads included:
+  https://community.cloudflare.com/t/questions-about-the-calculation-of-b-class-requests-for-cloudflare-r2/609909/3),
+  $0.36 a million past the free 10 M a month. A public bucket without such a rule lets anyone run up our bill by
+  downloading it over and over with `Cache-Control: no-cache` (a financial DoS). So: the bucket only on a custom
+  domain, `r2.dev` access off (it is never cached), and a Cache Rule on the image's path that makes it eligible for
+  cache with an edge TTL of its own (not the request's or the origin's headers), checked before the URL is shared: a
+  repeated `no-cache` request answers `cf-cache-status: HIT`. The whole image over 512 MB (the table's first row) can't
+  be cached on the free plan, so it is exposed this way whatever the rules: on R2, only pieces.
 - **"Abuse":** Cloudflare's 2023 terms limit serving mostly large non-HTML files through its CDN in front of someone
   else's origin, not from its own storage and hosting (R2, Pages); a disk image on R2 or Pages is the intended use.
   Pieces don't change that; they only make the image cacheable.
 - **Recommendation:** one chunked format (§4) that works on any static host. On Cloudflare, either Pages (small whole
-  pieces; no ranges) or R2 with pieces of tens of MiB and a Cache Rule (ranges inside a cached piece). R2 pieces
+  pieces; no ranges) or R2 with pieces of tens of MiB and a Cache Rule enforcing caching, never without one (ranges inside a cached piece). R2 pieces
   likely win per read (a 64 KiB read doesn't pull a whole piece), Pages wins on setup (it's where the page already is).
   Measure both from the page before choosing.
 
