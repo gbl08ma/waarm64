@@ -113,5 +113,5 @@ chunked format and the tool (1) with Pages and R2 measured, **R3** OPFS persiste
 
 ## Where the page is deployed
 
-`https://vm.tny.im` (Cloudflare Pages, since 2026-10-17): how it's set up and redeployed from the dev VM is in
+`https://vm.tny.im` (since 2026-10-17; a Cloudflare Worker with static assets since 2026-10-23): how it's set up and redeployed from the dev VM is in
 docs/frontend.md "Deployed at vm.tny.im".

@@ -1272,7 +1272,7 @@ stops if a binary is missing), then writes, in the repository's layout (so the m
 - the binaries: the core (`webpc_core.wasm`), the tailnet client (`target/net/ts.wasm`), EDK2 (`QEMU_EFI.fd`,
   `LICENSES.txt`). **No guest images** (10.6 MiB in all): the user opens a disk, or passes `?disk=<url>` (a
   server that answers range requests and, cross-origin, sends CORS and CORP headers).
-- `index.html` (a redirect to `web/app/`), `_headers` (Netlify, Cloudflare Pages) and `.htaccess` (Apache) with
+- `index.html` (a redirect to `web/app/`), `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and `.htaccess` (Apache) with
   the two headers, `.nojekyll`, and a marker file: the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**
@@ -1284,39 +1284,43 @@ it (its images linked in).
 
 ### Deployed at vm.tny.im
 
-The user's public copy (since 2026-10-17): `https://vm.tny.im`, a classic **Cloudflare Pages** project `webpc`
-(`webpc.pages.dev`) on the user's account, uploaded from the dev VM by direct upload. **Deploying is outward-facing:
-only when the user asks.** Redeploy (the copy is rebuilt first; a deploy is atomic and replaces the site):
+The user's public copy (since 2026-10-17): `https://vm.tny.im`, a **Worker with static assets only** (no script) named
+`webpc` on the user's account (`wrangler.jsonc` at the repo's root; also at `webpc.gbl08ma.workers.dev`), uploaded from
+the dev VM. **Deploying is outward-facing: only when the user asks.** Redeploy (the copy is rebuilt first; a deploy is
+atomic and replaces the site):
 
 ```sh
 set -a; . ~/.config/cloudflare/webpc.env; set +a
-npm run dist && wrangler pages deploy target/dist --project-name webpc --branch main \
-  --commit-hash "$(git rev-parse HEAD)" --commit-message "$(git log -1 --format=%s)"
+npm run dist && wrangler deploy --message "$(git log -1 --format=%s | head -c 100)"
 ```
 
 then check it from Chromium (`bench/results/local/live-pages.ts <origin>` boots Debian from a local file on the
-deployed page; untracked). How it was set up, once:
+deployed page; untracked). How it was set up:
 
 - **wrangler** (Cloudflare's CLI) in the dev VM, outside the repo (not a dependency): `npm i -g --prefix ~/.local
   wrangler@4.151.1` (in `~/.local/bin`; npm skips `workerd`'s postinstall, which only `wrangler dev` needs).
-- **Credentials:** an API token (custom: Account → Cloudflare Pages → Edit; Zone → DNS → Edit on `tny.im`) and the
-  account ID in `~/.config/cloudflare/webpc.env` (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written
-  by the user on the VM. Source it; never print it. `wrangler login` doesn't suit the VM (its OAuth callback is on the
-  VM's localhost), and `wrangler whoami` fails with this token (it has no user-level permission): verify it with
+- **Credentials:** an account API token and the account ID in `~/.config/cloudflare/webpc.env`
+  (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written by the user on the VM. Source it; never print
+  it. Its permissions (2026-10-23): Account → Cloudflare Pages, Workers Scripts, Workers R2 Storage, Workers KV Storage
+  → Edit, Workers Tail and Account Settings → Read; Zone (`tny.im`) → DNS, Workers Routes, Cache Rules → Edit. The user
+  edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
+  localhost), and `wrangler whoami` fails with this token (no user-level permission): verify it with
   `GET /client/v4/user/tokens/verify` instead.
-- **The project:** `wrangler pages project create webpc --production-branch main --force`. `--force` only that once:
-  wrangler 4.151 otherwise creates the new Workers-based kind of Pages project, which needs Workers permissions; the
-  project, once there, is classic Pages for every later command.
-- **The domain:** `vm.tny.im` added to the project (Pages API `POST …/pages/projects/webpc/domains`) and one proxied
-  DNS record `vm CNAME webpc.pages.dev` in the `tny.im` zone (DNS API). **Every other record in that zone is the
-  user's: leave them exactly as they are** (`tny.im` itself is another Pages project). The certificate took a few
-  minutes ("pending" until then, Cloudflare's timeout page meanwhile).
+- **The domain:** `routes` in `wrangler.jsonc` makes `vm.tny.im` the Worker's custom domain (Cloudflare adds its DNS
+  record). **Every other record in the `tny.im` zone is the user's: leave them exactly as they are** (`tny.im` itself
+  is a Pages project).
+- **From Pages (2026-10-23):** the site was a classic Pages project `webpc` (`wrangler pages deploy`) until then;
+  moved by Cloudflare's guide (workers/static-assets/migration-guides/migrate-from-pages): the Worker deployed and
+  checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm CNAME
+  webpc.pages.dev` deleted and the Worker deployed with the route (under a minute without the site). The Pages project
+  stays, without a domain, until the user deletes it. One difference kept: an unknown path is a 404
+  (`not_found_handling: none`), where Pages answered the root page (its single-page fallback, with no `404.html`).
 
-What Pages gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`
-`application/javascript`; **no range requests** (a `Range` gets 200 and the whole file: the page fetches the firmware
-whole, so it doesn't matter here, but disks shouldn't be hosted on Pages as one file: [plans/remote-disks.md](plans/remote-disks.md) §3).
-25 MiB a file, 20,000 files. The dev VM's resolver may cache a new name's absence for a while after a DNS change:
-Chromium's `--host-resolver-rules=MAP vm.tny.im <ip>` (the script's `MAP=`) checks the real site meanwhile.
+What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`
+`text/javascript`, a missing trailing slash and `index.html` redirect (307). 25 MiB a file, 20,000 files (the free
+plan). Disks aren't hosted here: [plans/remote-disks.md](plans/remote-disks.md) §3. The dev VM's resolver may cache a
+new name's absence for a while after a DNS change: Chromium's `--host-resolver-rules=MAP vm.tny.im <ip>` (the
+script's `MAP=`) checks the real site meanwhile.
 
 ## The disk reader
 
