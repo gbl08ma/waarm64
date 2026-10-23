@@ -255,7 +255,10 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       const cat = (await connections(page)).find((c) => c.tailcat);
       assert.equal(cat?.connectAtStart, true, 'a served machine reconnects by itself');
       assert.equal(cat?.tailcat?.relay, '127.0.0.1:8444');
-      // The guest takes the tunnel's IPv6 address (DHCPv6) and serves a page on it.
+      // The guest takes the tunnel's IPv6 address (DHCPv6) and serves a page on it. The menu closed first: open, it
+      // covers the terminal's middle (since the toolbar's mouse lock moved it).
+      await page.click('#network > summary');
+      await page.waitForFunction(() => !(document.getElementById('network') as HTMLDetailsElement).open, null, { timeout: 5000 });
       await page.locator('.xterm').click();
       await onSerial(page, 'cd /tmp; echo served-page > index.html; (python3 -m http.server --bind :: 8080 >/dev/null 2>&1 &); sleep 2; ip -6 -br addr show scope global | grep -c fd7a; echo READY\n');
       await shows(page, /1READY/, 60_000); // the rows run together: the count (1), then READY
