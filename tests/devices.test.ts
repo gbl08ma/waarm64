@@ -241,3 +241,28 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
   assert.equal(await ask(blk(ctx, src, undefined, true), ZEROES, 0, seg(0, 8)), UNSUPP);
   assert.equal(await first(b, 0), 9);
 });
+
+test('virtio-blk: a write that finds the storage full gets the remote disks\' kept blocks out of the way, and lands', async () => {
+  const { blockStore } = await import('../web/diskcache.ts');
+  const size = 16 * 4096;
+  const ram = new Uint8Array(1 << 16);
+  const ctx = { ram: () => [ram] } as unknown as Ctx;
+  const src = { size, read: (off: number, len: number) => new Uint8Array(len).fill(7) };
+  // The storage is full while the store keeps anything: the overlay's data writes then fall short.
+  const kept = memFile();
+  const store = blockStore(kept, memFile(), size, 4096, 8);
+  store.put(0, new Uint8Array(4096).fill(1));
+  const full = memFile();
+  const data = { ...full, read: full.read.bind(full), getSize: full.getSize.bind(full), truncate: full.truncate.bind(full), flush: full.flush.bind(full),
+    write: (buf: Uint8Array, o: { at: number }) => (kept.getSize() > 0 ? 0 : full.write(buf, o)) };
+  const files = { data, map: memFile(), meta: memFile(), close() {} };
+  const b = blk(ctx, src, files);
+  const h = new DataView(ram.buffer, 0, 16);
+  h.setUint32(0, 1, true); // OUT, sector 0
+  h.setBigUint64(8, 0n, true);
+  ram.fill(9, 16, 16 + 4096);
+  ram[8192] = 0xff;
+  await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: 4096, mem: 0 }], write: [{ off: 8192, len: 1, mem: 0 }] });
+  assert.deepEqual([ram[8192], store.stats().gaveUp, kept.getSize(), full.getSize()], [0, true, 0, 4096]);
+  store.close();
+});

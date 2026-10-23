@@ -146,17 +146,17 @@ const layout = (m: StartMessage, machine: Machine): Slot[] =>
   slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', mouse: !!m.mouse, touch: !!m.touch, attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
 
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
-function blkSpec(d: StartDisk, stats?: boolean): DeviceSpec {
+function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
   const s = d.source;
   const source = 'url' in s ? { url: new URL(s.url, self.location.href).href } : 'file' in s ? { file: s.file } : 'blank' in s ? { source: 'zero' as const, size: s.blank } : 'stored' in s ? { stored: s.stored, size: s.size } : { source: 'ram' as const, size: s.ramdisk };
-  return { type: 'blk', ...source, overlay: 'ramdisk' in s ? undefined : d.overlay, identity: d.identity, serial: d.serial, discard: true, stats };
+  return { type: 'blk', ...source, overlay: 'ramdisk' in s ? undefined : d.overlay, identity: d.identity, serial: d.serial, discard: true, stats, keep };
 }
 
 /** The device in `slot` for this start. */
 function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
   switch (slot.kind) {
     case 'rng': return { type: 'rng' };
-    case 'blk': return blkSpec(slot.disk!, m.ioStats);
+    case 'blk': return blkSpec(slot.disk!, m.ioStats, m.noDiskCache ? false : undefined);
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
     case 'mouse': return { type: 'input', kind: 'mouse', port: m.mouse };

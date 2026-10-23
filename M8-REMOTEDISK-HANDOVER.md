@@ -15,9 +15,13 @@ Making a disk on another server fast. **The plan is [docs/plans/remote-disks.md]
   boot as fast as ranges where it has none. An 8 MiB cut is on the user's server:
   `https://static.gbl08ma.com/diskimages/webpc-test/desktop-chunk8/manifest.json`. Local cuts at 1, 2, 4, 8 and 25 MiB
   in `target/images/remote/chunk*/`. 47 ms and 20 MB/s locally (`local:/d47/r20`) lands where the real server does.
-- **R3 next:** `web/diskcache.ts` (written, unit-tested in `tests/diskcache.test.ts`, not wired in) and then R3 (the cache in OPFS: min(4 GiB, 25% of the free quota), LRU across images, shown and clearable in Settings),
-  R4 (requests in parallel: `Devices.poll` awaits each request in order today, and the device worker blocks up to
-  2.2 s behind back-to-back reads), R5 (a boot's read trace in the manifest, prefetched), then compression (§4.6).
+- **R3 done:** `web/diskcache.ts` keeps the fetched blocks in OPFS (`remote-cache/<key>/`, keyed by a chunked image's
+  id or the URL, size and validator): a second boot 109 → 63 s, no requests. The guest's writes go first: a short OPFS
+  write makes the store give up, a failed disk write releases every store and is retried (Chromium's incognito
+  quota is ~0.8 GB though `estimate()` says 3.2). The Machines page's storage footer shows and clears it.
+- **R4 next:** requests in parallel (`Devices.poll` awaits each request in order today, and the device worker blocks
+  up to 2.2 s behind back-to-back reads); only in realtime mode. Then R5 (a boot's read trace in the manifest,
+  prefetched), then compression (§4.6).
 - **An image finding to act on:** a fresh overlay is the image's first boot, so `ldconfig.service` runs (44 s of the
   remote boot): a hosted image should be built with `/etc/.updated` and `/var/.updated` newer than `/usr`
   (`ConditionNeedsUpdate`), or booted once before publishing. Not yet tried.

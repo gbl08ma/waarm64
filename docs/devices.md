@@ -117,6 +117,21 @@ mode (and natively in realtime mode: std has no CSPRNG).
   time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). No concurrency: one request at a
   time, and the device worker blocks while it waits. The import, export and disk-job workers (`web/app/sources.ts`)
   read without the cache.
+  **The blocks are kept in OPFS** (`web/diskcache.ts`) where the image has an identity that changes with it (a chunked
+  image's id, or the URL, size and the server's `ETag` or `Last-Modified`; without one nothing is kept), so a reload, a
+  second boot or a resume reads them locally: a block missing in memory is looked for there before it is fetched, and
+  what is fetched is written there. `remote-cache/<key>/`: `data` in 1 MiB slots, `map` a u32 per block; a reused
+  slot's old entry is cleared durably before its block is written, and the block before its entry, so a crash loses
+  blocks but never maps one to other bytes (`tests/diskcache.test.ts`). Bounded at opening by what it holds plus a
+  quarter of the free quota, at most 4 GiB: other images' caches go first (least recently used), then this image's
+  slots are reused in the order they were filled. The device worker holds the image's Web Lock (`webpc-cache:<key>`,
+  waiting 2 s for a restarting machine's old worker); another tab on the same image reads without it. **The guest's
+  writes go first:** the store checks each write's count (Chromium's sync handles come back short at the quota, they
+  don't throw, and a fresh incognito profile takes ~0.8 GB while `estimate()` reports 3.2) and gives up for the
+  session on a short one (map cleared, data cut off); a disk write that fails makes every open store give up
+  (`releaseStores`) and is tried once more. The Machines
+  page's storage footer shows and clears it; `?diskcache=0` turns it off (benchmarks). A remote desktop boot's second
+  boot: 109 → 63 s, no requests (bench/remote-disk/REPORT.md "R3").
 - **A chunked image** (`web/chunked.ts`, made by `tools/chunk-image.ts`; docs/plans/remote-disks.md §4.1): a disk URL
   ending in `.json` is a manifest (`webpc-chunked-1`: the file's size, the piece size, each piece's SHA-256, and an
   `id` hashed from them) of the image file cut into equal pieces, `pieces/<sha256>.bin` beside it. It reads as one

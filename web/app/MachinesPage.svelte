@@ -19,6 +19,7 @@
   import type { Connection } from './connections.ts';
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
+  import { clearCaches } from '../diskcache.ts';
   import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
   import { leaveWarning, remember, settings } from './settings.ts';
@@ -434,6 +435,7 @@
     <footer class="storage">
       <span>The browser's storage: {bytesText(storage.usage)} used of {bytesText(storage.quota)}{storage.persisted ? ', kept under pressure' : ''}.</span>
       {#if !storage.persisted}<button onclick={() => act('Asking', askPersist)}>Keep it under pressure</button>{/if}
+      {#if storage.remote > 0}<button data-action="clear-remote-cache" title="Remote disks read again from the network; a machine reading one now keeps its own" onclick={() => act('Clearing', clearCaches)}>Clear remote disks' blocks ({bytesText(storage.remote)})</button>{/if}
       <details><summary>What takes it</summary><ul>{#each storage.items.filter((x) => x.bytes > 0) as it}<li>{it.what}: {bytesText(it.bytes)}</li>{/each}</ul></details>
     </footer>
   {/if}

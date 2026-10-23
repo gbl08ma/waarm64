@@ -14,7 +14,8 @@ import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_GSO_FRAME, N
 /** The largest frame for the guest: a merged packet, IPv6's largest, behind Ethernet and a VLAN tag. */
 const MAX_RX = NET_HDR + 18 + 40 + 65_535;
 import { IoStats } from './iostats.ts';
-import { cachedSource, type BlockCacheStats } from './blockcache.ts';
+import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts';
+import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk } from './ramdisk.ts';
@@ -41,7 +42,8 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * (web/ramdisk.ts: writable in itself, empty at every start, with DISCARD). `serial` is what GET_ID answers (default
  * `webpc-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
  * is a disk kept in the browser (web/stored.ts: its OPFS directory, `disks/<id>`, read under its overlay; `size` given);
- * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source).
+ * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source). A `url` disk is
+ * read through a block cache whose blocks are kept in OPFS (web/diskcache.ts) unless `keep` is false.
  */
 export type DeviceSpec =
   | { type: 'console' }
@@ -53,7 +55,7 @@ export type DeviceSpec =
   | GpuSpec
   | SndSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, SharedArrayBuffer][] };
+export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, SharedArrayBuffer][] };
 
 /** Whether a disk takes the guest's writes: through an overlay, or a ramdisk. */
 export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
@@ -591,7 +593,7 @@ export type Source = {
  * An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network,
  * one request at a time. The device worker reads it through a block cache (web/blockcache.ts).
  */
-export function httpSource(url: string): Source {
+export function httpSource(url: string): Source & { validator?: string } {
   const xhr = (method: string, range?: string) => {
     const x = new XMLHttpRequest();
     x.open(method, url, false);
@@ -604,12 +606,26 @@ export function httpSource(url: string): Source {
   if (head.status !== 200) throw new Error(`${url}: ${head.status}`);
   return {
     size: Number(head.getResponseHeader('content-length')),
+    // What says the file changed (for the cache kept in OPFS): its ETag, or its modification time.
+    validator: head.getResponseHeader('etag') ?? head.getResponseHeader('last-modified') ?? undefined,
     read(off, len) {
       const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
       const b = x.response as ArrayBuffer | null;
       return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
     },
   };
+}
+
+/**
+ * A disk on a web server, as the device worker reads it: a chunked image (by its manifest) or a file, through the block
+ * cache, over the blocks kept in OPFS where the image has an identity that changes with it (a chunked image's id, a
+ * server's validator) and this browser has room (web/diskcache.ts).
+ */
+async function remoteSource(url: string, keep: boolean) {
+  const src = isManifestUrl(url) ? chunkedSource(url) : httpSource(url);
+  const identity = 'manifest' in src ? `chunked:${src.manifest.id}` : src.validator ? JSON.stringify({ url, size: src.size, validator: src.validator }) : undefined;
+  const store = identity && keep ? await openBlockStore(await cacheKey(identity), src.size, BLOCK_CACHE.block).catch(() => undefined) : undefined;
+  return cachedSource(src, BLOCK_CACHE, store);
 }
 
 /** An image the user chose (a `File`): `FileReaderSync`'s synchronous slices, so workers only. */
@@ -704,7 +720,9 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         // The data follows the header in the readable buffers. Read-only: IOERR.
         const len = r.read.reduce((k, s) => k + s.len, 0);
         const payload = st ? st.time('gather', len, () => gather(ram, r.read, len)) : gather(ram, r.read, len);
-        const ok = rw && (await rw.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)).catch(() => false)); // e.g. OPFS over quota
+        const write = () => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)).catch(() => false);
+        // A failed write is most likely the storage full (OPFS over quota): the remote disks' kept blocks give way, once.
+        const ok = rw && ((await write()) || (releaseStores() && (await write())));
         status = ok ? S_OK : S_IOERR;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
         st ? st.time('flush', 0, () => rw.flush()) : rw.flush();
@@ -909,7 +927,8 @@ export class Devices {
       if (d.stored) return openStored(d.stored, d.size ?? 0);
       if (d.file) return blobSource(d.file);
       if (!d.url) throw new Error('a disk with no image (url, file or source)');
-      return d.url.startsWith('file:') ? fileSource(d.url) : cachedSource(isManifestUrl(d.url) ? chunkedSource(d.url) : httpSource(d.url));
+      if (d.url.startsWith('file:')) return fileSource(d.url);
+      return remoteSource(d.url, d.keep ?? true);
     }));
     return new Devices(init, overlays, sources, out);
   }

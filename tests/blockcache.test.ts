@@ -54,3 +54,21 @@ test('a read larger than the cache goes past it', () => {
   same(c.read(0, 3 * 4096), 0, 3 * 4096, 'three blocks');
   assert.deepEqual(reads, [[0, 3 * 4096]]);
 });
+
+test('over a store (web/diskcache.ts), a second cache reads what the first fetched without a request', async () => {
+  const { blockStore } = await import('../web/diskcache.ts');
+  const { memFile } = await import('../web/overlay.ts');
+  const [data, map] = [memFile(), memFile()];
+  const first = source();
+  const a = cachedSource(first.src, { block: 4096, bytes: 8 * 4096 }, blockStore(data, map, SIZE, 4096, 64));
+  same(a.read(5000, 3 * 4096), 5000, 3 * 4096, 'fetched');
+  same(a.read(SIZE - 50, 50), SIZE - 50, 50, 'the last block');
+  a.close?.();
+  const second = source();
+  const b = cachedSource(second.src, { block: 4096, bytes: 8 * 4096 }, blockStore(data, map, SIZE, 4096, 64));
+  same(b.read(5000, 3 * 4096), 5000, 3 * 4096, 'kept');
+  same(b.read(SIZE - 50, 50), SIZE - 50, 50, 'the last block, kept');
+  assert.deepEqual([second.reads.length, b.stats.store?.hits], [0, 5]);
+  same(b.read(0, 100), 0, 100, 'not kept');
+  assert.deepEqual(second.reads, [[0, 4096]]);
+});

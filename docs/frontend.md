@@ -236,7 +236,8 @@ Duplicate, Export the definition, Delete; then tabs:
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **Reset disk…**) and a Snapshots tab (restore from a file, save to a file). The
-storage's estimate is at the bottom.
+storage's estimate is at the bottom, with what takes it and, while remote disks' blocks are kept (docs/devices.md "Over
+HTTP"), **Clear remote disks' blocks** (a machine reading one now keeps its own).
 
 ## The worker protocol
 

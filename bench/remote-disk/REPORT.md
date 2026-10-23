@@ -129,3 +129,32 @@ old overlay. All arms at 47 ms a request and 20 MB/s (the local server), one boo
   (3.9 GB: 256 MiB of memory holds ten of them; R3's store on OPFS holds them all).
 - **The tool's default is 2 MiB** (753 files for this image: Cloudflare Pages allows 20,000 a site and 25 MiB a
   file, so up to ~40 GB at 2 MiB).
+
+## R3: the blocks kept in OPFS (2026-10-23)
+
+`web/diskcache.ts` under the block cache: a block missing in memory is read from OPFS before it is fetched, and what
+is fetched is written there (`remote-cache/<key>/`, keyed by the image's identity: a chunked image's id, or the URL,
+size and validator). `BOOTS=2` boots again in the same browser profile with the disk's overlay removed (so the guest
+does the same first-boot work), at 47 ms and 20 MB/s; A without the store (`?diskcache=0`), B with it:
+
+| arm | first boot: login / **painted** | second boot: login / **painted** | second boot's requests |
+|---|---|---|---|
+| no store (`r3-nostore*.json`) | 55.4 / **109.0 s** | 55.4 / **108.8 s** | 421 (560 MB) |
+| store (`r3-store*.json`) | 56.5 / **110.1 s** | 26.8 / **62.9 s** | **0** |
+
+- **The second boot reads nothing from the network: 109 → 63 s**, which is the local file's 64 s (R0). Chromium's
+  own HTTP cache gave the second boot nothing (421 requests again: in a fresh profile's memory cache the ranges don't
+  stay).
+- The first boot pays for writing the blocks: 520 block writes in 2.2 s (a write and a flush each), within one run's
+  noise of the arm without (110.1 against 109.0 s).
+- The second boot's 536 store reads took 0.6 s.
+- **The quota can be smaller than the browser says.** 25 MiB pieces without ranges, with the store
+  (`r3-c25-pages.json`): the first attempt hung after login with the guest's own writes failing ("Buffer I/O error …
+  lost async page write"): the store had taken its budget (767 MiB: a quarter of what `estimate()` called free), and
+  the overlay's writes then fell short. A fresh Playwright profile (incognito) reports a 3.2 GB quota but takes 832 MiB
+  of OPFS before a sync handle's write comes back short (4294967288: −8, not an exception;
+  `bench/remote-disk/quota-probe.ts`). Since then the store checks every write's count and gives up for the session
+  on a short one (its map cleared, its data cut off), and a disk write that fails makes every open store give up
+  and is tried once more (`releaseStores`; `tests/devices.test.ts`, with the retry left out as the planted bug): the
+  guest's writes go before kept blocks. With that, the same arm boots to Firefox in **122.9 s** (284.4 s without the
+  store, R2), its 25 MiB pieces fetched 46 times (1.16 GB) instead of 153 (3.9 GB).

@@ -2,6 +2,7 @@
 // detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `webpc-machine:<id>`
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
+import { cacheBytes } from '../diskcache.ts';
 import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
 import { adaptersOf, canonical, DEFAULT_MAC, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
@@ -203,8 +204,10 @@ export async function storageReport(store: Store) {
   const disks = new Map((await store.all('disks')).map((d) => [d.id, d.name]));
   for (const o of await store.all('overlays')) items.push({ what: `${disks.get(o.disk) ?? 'a disk'}: ${o.name}`, bytes: await store.files.size(`overlays/${o.id}`) });
   for (const m of await store.all('machines')) items.push({ what: `${m.name}: variable store, snapshots`, bytes: await store.files.size(machineDir(m.id)) });
+  const remote = await cacheBytes();
+  items.push({ what: "Remote disks' blocks, kept to read them again without the network", bytes: remote });
   items.sort((a, b) => b.bytes - a.bytes);
-  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, items };
+  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, items, remote };
 }
 
 /** Asks the browser to keep this origin's storage under pressure (§2): once, the first time something is stored. */

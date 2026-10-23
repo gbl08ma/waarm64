@@ -373,3 +373,34 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   assert.deepEqual(errors, []);
   await context.close();
 });
+
+test("the storage footer shows remote disks' kept blocks and clears them", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  // A remote disk's kept blocks, as web/diskcache.ts leaves them: remote-cache/<key>/{data,map}.
+  await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dir = await (await root.getDirectoryHandle('remote-cache', { create: true })).getDirectoryHandle('0123abcd', { create: true });
+    for (const [name, bytes] of [['data', 3 << 20], ['map', 4096]] as const) {
+      const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+      await w.write(new Uint8Array(bytes));
+      await w.close();
+    }
+  });
+  await page.click('#machines-open');
+  const clear = page.locator('[data-action=clear-remote-cache]');
+  await clear.waitFor();
+  assert.match(await clear.textContent() ?? '', /^Clear remote disks' blocks \(3(\.0)? MiB\)$/);
+  await clear.click();
+  await clear.waitFor({ state: 'detached' });
+  const left = await page.evaluate(async () => {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('remote-cache');
+    const names: string[] = [];
+    for await (const n of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(n);
+    return names;
+  });
+  assert.deepEqual(left, []);
+  await context.close();
+});

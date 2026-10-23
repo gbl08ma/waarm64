@@ -70,6 +70,8 @@ export type ToWorker =
     displayStats?: boolean;
     /** The disks keep stage timers and a trace of their base reads, answered on the `webpc-iostats` BroadcastChannel (the page's `?iostats`, for bench/remote-disk). */
     ioStats?: boolean;
+    /** A remote disk's blocks aren't kept in OPFS (the page's `?diskcache=0`: bench/remote-disk's A/B). */
+    noDiskCache?: boolean;
     /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
     avProbe?: boolean;
     /**

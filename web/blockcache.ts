@@ -2,6 +2,7 @@
 // used kept in memory, so a guest's many small reads (and qcow2's L2 tables and nearby clusters) are a few large
 // requests. A read's missing blocks are fetched together where they are adjacent: one request each run.
 import type { Source } from './devices.ts';
+import type { BlockStore } from './diskcache.ts';
 
 export type BlockCacheOptions = {
   /** Block size in bytes (a power of two). */
@@ -13,14 +14,21 @@ export type BlockCacheOptions = {
 /** R1's choice (bench/remote-disk/REPORT.md): 1 MiB blocks, 256 MiB kept. */
 export const BLOCK_CACHE: BlockCacheOptions = { block: 1 << 20, bytes: 256 << 20 };
 
-export type BlockCacheStats = { hits: number; misses: number; requests: number; fetched: number; ms: number };
+export type BlockCacheStats = { hits: number; misses: number; requests: number; fetched: number; ms: number; store?: ReturnType<BlockStore['stats']> & { hits: number } };
 
-/** `src` read through a block cache. `stats` counts block hits and misses, the requests made, the bytes fetched and the ms inside them. */
-export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE): Source & { stats: BlockCacheStats } {
+/**
+ * `src` read through a block cache, over `store` (blocks kept in OPFS, web/diskcache.ts) if given: a block missing here
+ * is looked for there before it is fetched, and what is fetched is kept there too. `stats` counts block hits and
+ * misses, the requests made, the bytes fetched and the ms inside them, and the store's.
+ */
+export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, store?: BlockStore): Source & { stats: BlockCacheStats } {
   const { block } = o;
   const max = Math.max(1, Math.floor(o.bytes / block));
   const blocks = new Map<number, Uint8Array>(); // insertion order: least recently used first
-  const stats: BlockCacheStats = { hits: 0, misses: 0, requests: 0, fetched: 0, ms: 0 };
+  const counts = { hits: 0, misses: 0, requests: 0, fetched: 0, ms: 0 };
+  let storeHits = 0;
+  const stats = counts as BlockCacheStats;
+  if (store) Object.defineProperty(stats, 'store', { enumerable: true, get: () => ({ ...store.stats(), hits: storeHits }) });
   const last = Math.floor((src.size - 1) / block);
   const keep = (b: number, bytes: Uint8Array) => {
     blocks.delete(b);
@@ -39,13 +47,20 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE): S
     stats.requests++;
     if (!bytes) return false;
     stats.fetched += len;
-    for (let k = a; k <= b; k++) keep(k, bytes.subarray((k - a) * block, Math.min(len, (k - a + 1) * block)));
+    for (let k = a; k <= b; k++) {
+      const one = bytes.subarray((k - a) * block, Math.min(len, (k - a + 1) * block));
+      keep(k, one);
+      store?.put(k, one);
+    }
     return true;
   };
   return {
     size: src.size,
     stats,
-    close: src.close,
+    close: () => {
+      store?.close();
+      src.close?.();
+    },
     read(off, len) {
       if (off < 0 || len < 0 || off + len > src.size) return undefined;
       if (len === 0) return new Uint8Array(0);
@@ -54,6 +69,10 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE): S
       // The missing blocks, fetched in runs of adjacent ones.
       let run = -1;
       for (let k = first; k <= end + 1; k++) {
+        if (k <= end && store && !blocks.has(k)) {
+          const kept = store.get(k);
+          if (kept) (keep(k, kept), storeHits++);
+        }
         const missing = k <= end && !blocks.has(k);
         if (k <= end && missing) stats.misses++;
         else if (k <= end) (stats.hits++, keep(k, blocks.get(k)!)); // most recent now, so this read's fetches don't evict it
