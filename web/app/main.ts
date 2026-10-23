@@ -435,6 +435,12 @@ if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }
 if (benchHooks) (window as unknown as { __webpcTimeline?: (on: boolean) => void }).__webpcTimeline = (on) => run?.worker.postMessage({ type: 'timeline', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
 if (benchHooks) (window as unknown as { __webpcHeap?: () => void }).__webpcHeap = () => run?.worker.postMessage({ type: 'heap' } satisfies ToWorker);
+/** `?iostats`: `window.__ioStats()` resolves to the disks' timers and base-read traces (web/iostats.ts), by device (bench/remote-disk). */
+if (params.has('iostats')) (window as unknown as { __ioStats?: () => Promise<unknown> }).__ioStats = () => new Promise((resolve) => {
+  const ch = new BroadcastChannel('webpc-iostats');
+  ch.onmessage = (e) => { ch.close(); resolve(e.data); };
+  ch.postMessage('ask');
+});
 /** `?avprobe`: when the screen's centre turned bright (ms on this page's clock), for bench/audio/avsync.ts. */
 const flashed = (t: number) => ((window as unknown as { __flashes?: number[] }).__flashes ??= []).push(t - performance.timeOrigin);
 /**
@@ -704,7 +710,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(params.get('keyboard') ?? stored?.record.keyboard))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(params.get('keyboard') ?? stored?.record.keyboard))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.

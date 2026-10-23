@@ -14,6 +14,7 @@ import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_GSO_FRAME, N
 /** The largest frame for the guest: a merged packet, IPv6's largest, behind Ethernet and a VLAN tag. */
 const MAX_RX = NET_HDR + 18 + 40 + 65_535;
 import { IoStats } from './iostats.ts';
+import { cachedSource, type BlockCacheStats } from './blockcache.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
@@ -579,8 +580,10 @@ const S_UNSUPP = 2;
 /** A disk image's bytes: synchronous range reads (`undefined` on a short or failed read). */
 export type Source = { size: number; read(off: number, len: number): Uint8Array | undefined; close?(): void };
 
-/** An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network. */
-// ponytail: one request at a time, no cache (the guest's page cache is the cache); batch or cache if an I/O benchmark says so.
+/**
+ * An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network,
+ * one request at a time. The device worker reads it through a block cache (web/blockcache.ts).
+ */
 export function httpSource(url: string): Source {
   const xhr = (method: string, range?: string) => {
     const x = new XMLHttpRequest();
@@ -660,7 +663,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
   } else {
     if (st) {
       const read = src.read;
-      src = { ...src, read: (off, len) => st.time('base.read', len, () => read(off, len)) };
+      src = { ...src, read: (off, len) => st.read(off, len, () => read(off, len)) };
       if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
     }
     const s = src;
@@ -806,10 +809,12 @@ export class Devices {
   private closed = false;
   /** The timers of the blk devices with `stats` (web/iostats.ts), by device. */
   private ioStats: Record<number, IoStats> = {};
+  /** The disks' sources, by device (an HTTP one's block cache has its counters). */
+  private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
   private constructor({ memory, shared, ram, ramSize, spill = [], signal, specs, deterministic, wakes, state, xhci }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
-    [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
+    [this.memory, this.shared, this.signal, this.wakes, this.sources] = [memory, shared, signal, wakes ?? [], sources];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
     const layout = ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
@@ -897,14 +902,14 @@ export class Devices {
       if (d.stored) return openStored(d.stored, d.size ?? 0);
       if (d.file) return blobSource(d.file);
       if (!d.url) throw new Error('a disk with no image (url, file or source)');
-      return d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url);
+      return d.url.startsWith('file:') ? fileSource(d.url) : cachedSource(httpSource(d.url));
     }));
     return new Devices(init, overlays, sources, out);
   }
 
   /** The I/O timers of the blk devices that have them (spec `stats`), by device index. */
   stats() {
-    return Object.fromEntries(Object.entries(this.ioStats).map(([i, st]) => [i, st.json()]));
+    return Object.fromEntries(Object.entries(this.ioStats).map(([i, st]) => [i, { ...st.json(), cache: (this.sources[+i] as { stats?: BlockCacheStats } | undefined)?.stats }]));
   }
 
   /** Releases the backends' files (an overlay's handles lock them). */

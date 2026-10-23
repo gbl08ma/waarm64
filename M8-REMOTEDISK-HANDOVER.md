@@ -1,48 +1,43 @@
-# M8 remote disks: handover (2026-10-17)
+# M8 remote disks: handover (2026-10-23)
 
-The page is now a static site (`npm run dist`, docs/frontend.md "A static copy") deployed at `https://vm.tny.im`, and
-it can boot a disk from another server (`?disk=<url>`). The disk reader was built for localhost: one blocking request
-per read, no cache. This handover starts the work of making a remote disk fast. **The plan is
-[docs/plans/remote-disks.md](docs/plans/remote-disks.md)**: today's reader (§1), the numbers so far (§2), where to host
-an image, Cloudflare's options among them (§3), the design and its loops R0–R5 (§4), the deployment.
+Making a disk on another server fast. **The plan is [docs/plans/remote-disks.md](docs/plans/remote-disks.md)**
+(its status line has the user's decisions of 2026-10-23); **the numbers are bench/remote-disk/REPORT.md**.
 
-Read first: remote-disks.md; docs/devices.md (blk, qcow2, the overlay); bench/io/REPORT.md (the local-disk I/O work:
-its method and why it changed little); `web/devices.ts` (`httpSource`, `blk`), `web/qcow2.ts`, `web/overlay.ts`,
-`web/iostats.ts`, `bench/io/` (suite, page, guest.sh).
+## Where it stands
 
-## The first loop: R0, measure
+- **R0 done:** a desktop boot from `https://static.gbl08ma.com/diskimages/desktop.qcow2` is its disk's round trips
+  (2160 reads one at a time, ~47 ms each from the dev VM; 196 s to Firefox's paint against 64 s locally). A local
+  server with 47 ms added per request reproduces it (181 s): iterate on that, check on the real server.
+- **R1 done:** `web/blockcache.ts` (1 MiB blocks, 256 MiB LRU) under every HTTP source of the device worker: 196 →
+  110 s remote, 181 → 82 s at 47 ms. Remote is now one stream's bandwidth (10 MB/s) plus 425 round trips.
+- **R2 next (started, not committed):** `web/chunked.ts` (a manifest and content-addressed pieces, read by range or
+  whole where the host has no ranges) and `tools/chunk-image.ts`. To do: open a `.json` disk URL as one in
+  `Devices.open` (under the block cache), the URL check (`web/app/urlcheck.ts`: a manifest's id as the disk's
+  `etag`, so the overlay follows the content), tests, then measure: whole file vs pieces with ranges vs pieces
+  whole (the local server's `/pages/` prefix answers as Cloudflare Pages does), piece sizes; upload one cut to the
+  user's server (below).
+- Then R3 (the cache in OPFS: min(4 GiB, 25% of the free quota), LRU across images, shown and clearable in Settings),
+  R4 (requests in parallel: `Devices.poll` awaits each request in order today, and the device worker blocks up to
+  2.2 s behind back-to-back reads), R5 (a boot's read trace in the manifest, prefetched), then compression (§4.6).
+- **An image finding to act on:** a fresh overlay is the image's first boot, so `ldconfig.service` runs (44 s of the
+  remote boot): a hosted image should be built with `/etc/.updated` and `/var/.updated` newer than `/usr`
+  (`ConditionNeedsUpdate`), or booted once before publishing. Not yet tried.
 
-1. Count a boot's base reads with the existing timers: a blk spec's `stats` wraps `Source.read` as `base.read`
-   (web/iostats.ts, reported by `vm.close()`); the page doesn't expose them, so a bench page or a query switch is
-   needed (bench/io/page.ts is the model). Per boot: reads, sizes (histogram), bytes, time in them, share of the boot.
-2. The image: `https://static.gbl08ma.com/diskimages/desktop.qcow2` (the Arch desktop guest, images/arch/desktop.sh;
-   1.58 GB, qcow2 v3; CORS is set up there for any origin). Boot it on `https://vm.tny.im/web/app/?disk=…` and on
-   localhost (`npm run serve` with a local copy of the image, and with latency added: a delay in a test server's
-   range answers is enough, no netem needed) to separate latency from bandwidth. `ready` is a getty's login prompt;
-   the desktop starts after it, so pick an end marker that means "desktop up" (the guest-session tools in
-   `bench/gpu/` find sway's and Firefox's).
-3. Also measure what the blocked device worker costs besides the disk: input and display latency while a read
-   waits (bench/io's screen-latency check under a continuous read is the model).
-4. Write `bench/remote-disk/REPORT.md` with the JSON behind it, then pick R1's design from the numbers.
+## Tools
+
+- `node bench/remote-disk/boot.ts <label> <url | local:/d47[/r20][/pages]>`: one boot to Firefox's paint, JSON in
+  `bench/results/local/remote-disk/`; `summary.ts` per phase; `simulate.ts` replays a trace through a block cache.
+  Needs `target/images/remote/desktop.qcow2` (a copy of the hosted image: `curl -o` it from the URL above).
+- The page's `?iostats`: `window.__ioStats()` gives the disks' stage timers, base-read traces and cache counters.
+- Each boot is 1.5–3.5 min: run it in the background with `timeout`, under a `systemd-run` memory cap.
 
 ## Rules that bite here
 
-- Don't add dependencies (no bundler, no zstd library) without asking; Node's and the browser's APIs first.
-- A disk change that the guest sees (read sizes, timing in deterministic mode) can move step counts: deterministic
-  tests use local files and `file:` sources, so keep HTTP-only changes off those paths, or check `tests/steps.txt`.
-- The overlay's identity is a URL's path and the size today: a chunked image needs an identity that changes when the
-  content does (remote-disks.md §4.1).
-- Cloudflare: deploying (`wrangler pages deploy`, R2 uploads, Cache Rules, DNS) is outward-facing: only when the user
-  asks. Credentials are in `~/.config/cloudflare/webpc.env` (mode 600): source it, never print it. The token has Pages
-  Edit and DNS Edit on `tny.im`, not R2 or Cache Rules; ask the user to extend it when a loop needs them. In the
-  `tny.im` zone, only `vm` is ours.
-- Measurements from the dev VM go through the Mac's network: say so beside the numbers, and repeat a remote number
-  at another time of day before trusting a difference under ~20%.
-
-## What exists for it
-
-- `npm run dist` (tools/dist.ts), `npm run dist -- --serve` (preview with tools/serve.ts over the copy:
-  headers and ranges, as a host must give), `tests/dist.test.ts`.
-- `bench/results/local/live-pages.ts` (a Debian boot from a local file on a deployed page; `MAP="vm.tny.im <ip>"` maps
-  the name in Chromium) and `bench/results/local/cors-probe.ts` (HEAD, range and suffix range from a page origin to a
-  disk URL): untracked ad-hoc tools; move them to `bench/remote-disk/` if R0 keeps them.
+- **No Cloudflare work and no deploys** (the user's, 2026-10-23).
+- **The user's server** (production): `rsync … skybox-diskimages:` (an ssh alias, an rrsync-only key into
+  `/srv/http/static.gbl08ma.com/diskimages`, served at `https://static.gbl08ma.com/diskimages/`). Our files go under
+  `webpc-test/` only, uploaded with `--chmod=D755,F644`; never touch `desktop.qcow2`.
+- Don't add dependencies without asking. Deterministic boots must keep their step counts: the cache and the chunked
+  source change only host reads; concurrency (R4) must stay out of deterministic mode.
+- Measurements go through the Mac's network: repeat a remote number at another time of day before trusting a
+  difference under ~20%.

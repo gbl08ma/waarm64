@@ -37,6 +37,10 @@ export type SessionOptions = {
   snapshot?: string;
   /** Another core build served as the page's (bench/snapshot-start.ts `routeCore`); default target/'s. */
   core?: string;
+  /** Return once the page opened the disk, not once the machine runs (its ready marker: the login prompt): the caller waits. */
+  noWait?: boolean;
+  /** The disk's URL, any server's (`?disk=`, a machine that isn't stored; bench/remote-disk): `image` is then unused. */
+  diskUrl?: string;
   /** A tailcat exit node's address (tests/net/tailcat.sh's WEBPC_TAILCAT_ADDR): the machine's adapter connected to it
    * once it runs (the Network wizard, an ephemeral connection), so the guest reaches the internet. Benchmarks only. */
   tailcat?: string;
@@ -123,9 +127,9 @@ export async function openSession(o: SessionOptions) {
 
   // The image under the repository, as the server serves it.
   const served = relative(resolve(new URL('../..', import.meta.url).pathname), resolve(o.image));
-  const byUrl = !!o.disk2 || !!o.byUrl || !!o.snapshot;
-  if (byUrl && served.startsWith('..')) throw new Error(`an image opened by its URL must be under the repository (${o.image})`);
-  const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=/${served}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`;
+  const byUrl = !!o.disk2 || !!o.byUrl || !!o.snapshot || !!o.diskUrl;
+  if (byUrl && !o.diskUrl && served.startsWith('..')) throw new Error(`an image opened by its URL must be under the repository (${o.image})`);
+  const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=${o.diskUrl ? encodeURIComponent(o.diskUrl) : `/${served}`}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`;
   const coreServed = o.core ? await routeCore(page, o.core) : undefined;
   await page.goto(url);
   const gl = await page.evaluate(() => {
@@ -138,10 +142,10 @@ export async function openSession(o: SessionOptions) {
   /** Where the machine came from when it started from a snapshot (`loadSnapshotFile`'s record). */
   const restored = o.snapshot ? await loadSnapshotFile(page, o.snapshot, o.core) : undefined;
   if (restored) log('restored', JSON.stringify(restored));
-  else await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
+  else if (!o.noWait) await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
   if (coreServed && !coreServed.n) throw new Error(`the page didn't load the core ${o.core}`);
   if (coreServed) log('core', o.core, coreServed.sha);
-  log('running');
+  if (!o.noWait) log('running');
   if (o.tailcat) {
     // The Network menu's wizard: tailcat through an exit node, not kept (tests/page-network.test.ts drives it the same way).
     if (!(await page.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await page.locator('#network summary').click();

@@ -11,6 +11,20 @@ export class IoStats {
   private sizes = new Map<string, Map<number, number>>();
   /** `poll` calls and the time inside them. */
   polls = 0;
+  /** Every base read as [start ms on the epoch clock (`timeOrigin` + `now`), offset, length, ms]: what a remote disk's reads were, in order. */
+  private trace: number[] = [];
+
+  /** A base read (`fn` reads `len` bytes at `off`), timed as `base.read` and traced. */
+  read<T>(off: number, len: number, fn: () => T): T {
+    const t = performance.now();
+    try {
+      return fn();
+    } finally {
+      const ms = performance.now() - t;
+      this.add('base.read', len, ms);
+      this.trace.push(+(performance.timeOrigin + t).toFixed(1), off, len, +ms.toFixed(2));
+    }
+  }
 
   /** Runs `fn`, adding its time to stage `name` (`bytes`: what it moved). */
   time<T>(name: string, bytes: number, fn: () => T): T {
@@ -50,6 +64,7 @@ export class IoStats {
 
   json() {
     return {
+      trace: this.trace,
       stages: Object.fromEntries([...this.stages].map(([k, s]) => [k, { n: s.n, ms: +s.ms.toFixed(2), bytes: s.bytes }])),
       sizes: Object.fromEntries([...this.sizes].map(([k, m]) => [k, Object.fromEntries([...m].sort((a, b) => a[0] - b[0]).map(([b, n]) => [`<=${2 ** b}`, n]))])),
     };

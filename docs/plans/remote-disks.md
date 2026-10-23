@@ -1,4 +1,9 @@
-# Disks from a remote server (proposed, not scheduled)
+# Disks from a remote server (in progress since 2026-10-23)
+
+**Status:** R0 (the measurement) and R1 (a block cache) done: a remote desktop boot to Firefox 196 → 110 s
+(bench/remote-disk/REPORT.md). Decided with the user (2026-10-23): no Cloudflare in this track (R2's pieces are
+measured on the user's server and on a local one that answers as Pages does), the cache kept in OPFS bounded by
+min(4 GiB, 25% of the free quota) with an LRU across images, the loops R0–R5 then compression in order.
 
 The page can boot a disk image from a URL (`?disk=<url>`, docs/frontend.md "Your own disk"), and since 2026-10-17 it is
 deployed publicly (below, "Where the page is deployed"). A disk on another server, not localhost, is what a hosted page's

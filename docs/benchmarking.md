@@ -24,6 +24,14 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 | `bench/jit/index.html` | `jit_install`, `jit_first_call` |
 | `bench/spike/index.html` | the M0 spike (`node bench/spike/node.ts` in Node) |
 
+**A disk on a remote server** (`bench/remote-disk/`, beside the harness; journal in `bench/remote-disk/REPORT.md`):
+`node bench/remote-disk/boot.ts <label> <url | local:/d47[/r20][/pages]>` boots the Arch desktop guest from a disk
+URL (`?disk=`, `?iostats`: `window.__ioStats()` gives the disks' stage timers, a trace of every base read and the
+block cache's counters) to Firefox's first paint, with a mark per phase; `local:` serves
+`target/images/remote/desktop.qcow2` from `bench/remote-disk/server.ts` with latency (`/d<ms>`), a rate (`/r<MB/s>`)
+or no ranges (`/pages`) added, and logs each request. `summary.ts` sums a run per phase, `simulate.ts` replays its
+trace through a block cache.
+
 **A complex application** (`bench/apps/`, beside the harness; results and journal in `bench/apps/REPORT.md`):
 `node bench/apps/chromium.ts [--ncpus 4] [--json f] [--wasm core.wasm] [--perf N] [page...]` boots the page's
 Debian on images/debian-chromium/build.sh's disk (`?disk=`, a fresh overlay), logs in on the serial terminal and

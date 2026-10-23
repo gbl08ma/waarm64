@@ -111,8 +111,12 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - **Over HTTP** in the browser: one **synchronous XHR range request** per request (needs a worker:
   no binary sync XHR on a page's main thread, no XHR in Node, where `file:` URLs read with
   `node:fs`). `tools/serve.ts` answers single `Range: bytes=` requests (206/416, `Accept-Ranges`,
-  HEAD). No cache, merging or concurrency: the guest's page cache is the only cache, and the
-  per-request XHR dominates random reads (fio 4 KiB random reads ~1,800 IOPS on the M4).
+  HEAD). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
+  the 256 MiB most recently used kept in memory, a read's missing blocks fetched in one request per run of adjacent
+  ones; a read larger than the cache goes past it. A remote desktop boot's 2160 reads became 422 requests, and its
+  time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). No concurrency: one request at a
+  time, and the device worker blocks while it waits. The import, export and disk-job workers (`web/app/sources.ts`)
+  read without the cache.
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
   unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate
   (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). A request's compressed

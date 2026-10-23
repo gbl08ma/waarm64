@@ -68,6 +68,8 @@ export type ToWorker =
     simple?: boolean;
     /** The display reports its draw latencies (`draw-stats` on the display port, kept in `window.__drawStats`; the page's `?displaystats`, for bench/gpu). */
     displayStats?: boolean;
+    /** The disks keep stage timers and a trace of their base reads, answered on the `webpc-iostats` BroadcastChannel (the page's `?iostats`, for bench/remote-disk). */
+    ioStats?: boolean;
     /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
     avProbe?: boolean;
     /**
