@@ -162,7 +162,9 @@ needs no CI run.
 - No build step: Node runs `.ts` directly, and `tools/serve.ts` strips types for the browser. Use
   **erasable syntax only** (no enums, namespaces or parameter properties; `tsconfig.json` enforces
   it). Import with `.ts` extensions.
-- Keep dependencies minimal: stdlib and platform APIs first. **Ask before adding a dependency.**
+- Stdlib and platform APIs first where they suit; past them, use a dependency. **Ask before adding one**: each is vetted
+  (not too many, none redundant, none of known bad quality). Fewest dependencies isn't a goal in itself: an
+  industry-standard set of dependencies and build steps beats a bespoke setup.
 - Anything that runs in the browser must work with cross-origin isolation (COOP/COEP) on.
 
 **Testing** ([docs/testing.md](docs/testing.md))

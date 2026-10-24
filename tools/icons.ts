@@ -10,7 +10,7 @@ const ICONS = [
   'arrow-down', 'arrow-left', 'arrow-up', 'aspect-ratio', 'bolt', 'chevron-down', 'copy', 'cpu', 'database',
   'database-import', 'device-desktop', 'device-gamepad-2', 'download', 'file', 'file-export', 'file-import', 'file-plus', 'git-merge', 'history', 'history-toggle',
   'keyboard', 'layout-columns', 'maximize', 'microphone', 'network', 'pencil', 'player-pause', 'player-play', 'player-stop', 'plug', 'plug-connected', 'plus',
-  'adjustments-horizontal', 'mouse', 'refresh', 'server-2', 'settings', 'square-dashed', 'terminal-2', 'trash', 'upload', 'usb', 'volume', 'volume-off', 'world-www', 'x', 'zzz',
+  'adjustments-horizontal', 'arrow-right', 'arrows-horizontal', 'blocks', 'cake-roll', 'car-turbine', 'clock', 'clock-code', 'gauge', 'keyframes', 'memory', 'mouse', 'refresh', 'server-2', 'settings', 'square-dashed', 'terminal-2', 'trash', 'upload', 'usb', 'volume', 'volume-off', 'world-www', 'x', 'zzz',
 ];
 
 const dir = process.argv[2];

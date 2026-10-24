@@ -1,14 +1,16 @@
-// The presenter's cursor messages (web/gpu-present.ts): what the page turns into the canvas's CSS cursor.
+// The presenter's messages (web/gpu-present.ts): the cursor, which the page turns into the canvas's CSS cursor, and the
+// screen's stats.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { canvasPresenter, type DisplayToPage } from '../web/gpu-present.ts';
 
 function rig() {
   const sent: DisplayToPage[] = [];
-  const ctx = { putImageData() {}, fillRect() {} };
+  let puts = 0;
+  const ctx = { putImageData() { puts++; }, fillRect() {} };
   const canvas = { width: 0, height: 0, getContext: (type: string) => (type === '2d' ? ctx : null) } as unknown as OffscreenCanvas;
   const port = { postMessage: (m: DisplayToPage) => sent.push(m) } as unknown as MessagePort;
-  return { hooks: canvasPresenter(canvas, port), sent };
+  return { hooks: canvasPresenter(canvas, port), sent, puts: () => puts };
 }
 
 test('presenter: the cursor goes to the page when its image or hotspot changes, its moves as positions', () => {
@@ -38,4 +40,28 @@ test('presenter: hidden by the guest (null) and never set (undefined, after a re
   hooks.cursorReset!();
   assert.equal(sent.length, 2);
   assert.equal((sent[1] as { image: unknown }).image, undefined);
+});
+
+test('presenter: from the first scanout on, the draws so far once a second (a 2D context here)', () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  const g = globalThis as { ImageData?: unknown };
+  const had = g.ImageData;
+  g.ImageData = function ImageData() {};
+  try {
+    const { hooks, sent, puts } = rig();
+    mock.timers.tick(3000);
+    assert.equal(sent.length, 0, 'nothing before a scanout');
+    hooks.scanout!(4, 2, { pixels: new Uint8Array(4 * 2 * 4), width: 4, height: 2, x: 0, y: 0 });
+    mock.timers.tick(20); // its draw (a timer: Node has no animation frames)
+    hooks.damage!({ x: 0, y: 0, w: 1, h: 1 });
+    mock.timers.tick(20);
+    hooks.damage!({ x: 1, y: 0, w: 1, h: 1 });
+    mock.timers.tick(1000);
+    const stats = sent.filter((m) => m.type === 'screen-stats');
+    assert.deepEqual(stats.at(-1), { type: 'screen-stats', screen: 'canvas2d', presents: puts() });
+    assert.equal(puts(), 3);
+  } finally {
+    g.ImageData = had;
+    mock.timers.reset();
+  }
 });

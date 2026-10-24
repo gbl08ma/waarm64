@@ -12,6 +12,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/index.html` | the page's stylesheet, the import map (`@xterm/xterm`, Svelte's runtime) and the module; the markup is the components' |
 | `web/app/App.svelte`, `Toolbar.svelte`, `Menu.svelte`, `Icon.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
 | `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
+| `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts`, `tools/icons.ts` | the icons (Tabler's, below, "Icons") and the script that copies them |
 | `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
@@ -165,8 +166,8 @@ five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapsh
 off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "Mouse lock"), **Full screen**,
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
 offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
-a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item,
-before the machine's numbers. Menus (`Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
+a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item
+by default (below, "The status bar"). Menus (`Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
 elsewhere and open under their right edge (a page's Export menus under their left).
 
 ### Icons
@@ -175,6 +176,41 @@ Tabler Icons 3.49.0 (MIT, THIRD_PARTY.md), outline, drawn by `Icon.svelte` in a 
 ones the page uses are in the repository: `web/app/icons.ts`, their inner markup with the license, written by
 `tools/icons.ts` from the npm package (`npm pack @tabler/icons@3.49.0`, extracted; the script's header says how).
 A new icon is a name added to the script's list and the script run again; icons aren't drawn by hand.
+
+### The status bar
+
+The bar under the machine is a row of elements the user chooses and orders in **Preferences** (the Machines page),
+kept per browser as `webpc.settings` `statusBar` (absent: the defaults; `[]`: no bar). `web/app/statusbar.ts` is the
+model, DOM-free (tests/statusbar.test.ts): the kinds (`KINDS`: name, group, icon, default look), the defaults (power
+state, a divider, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s), `normalize` (a kept list from another version: unknown
+kinds and fields dropped), `metrics` (the last second from two `status` messages; none across a new run, whose
+counters start at 0), `graphics` (the screen's report: a 3D machine's GPU worker `stats`, a 2D one's presenter
+`screen-stats`) and `render` (an element's pieces: words, an icon and a short value, a tone, per-vCPU bars, or values
+with icons of their own, the network's received and sent arrows). `StatusBar.svelte` draws the bar (neighbours split by
+a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#state[data-state]` stays, hidden, for the
+tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor.
+- **Elements:** power state, vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
+  IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
+  connection; disk speed and totals; the renderer (3D or 2D, WebGL2 or a canvas, amber when WebGL2 is software), frame
+  rate, video decode (the streams' codecs, hardware as asked: WebCodecs doesn't say what a decoder got, and pictures a
+  second); mouse lock, keyboard (where keys go: the machine when the screen or the terminal has the focus, what the
+  screen's "Click to type" hint says otherwise, and its shortcuts too with full screen's Keyboard Lock), microphone (shown while it records);
+  spacer and divider.
+- **Per device:** MIPS, the JIT share, and the network's and disks' elements come summed (`all`), for `each` device
+  (vCPUs as bars or numbers; adapters and disks one after another) or for `one`, by its number: vCPUs from 0, as the
+  guest names them, adapters and disks from 1, as the machine's tabs list them. An element whose device the running
+  machine hasn't isn't drawn (dimmed in the editor). USB devices aren't counted (attached while running).
+- **Looks:** words (`812 MIPS`), an icon and the bare value (the words for screen readers and in the tooltip), or both;
+  the states (mouse lock, keyboard, the connection, the microphone) default to the icon, coloured by their tone.
+- **The editor:** a copy of the bar, its elements as chips that draw what the running machine shows (a made-up
+  machine's numbers, `SAMPLE`, while none runs): dragged to move (Alt+←/→ with the focus on one), × or dragged onto the
+  palette to remove, chosen to set their look, bars or numbers and device number. The palette under it adds an element
+  at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
+- **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' "Show the
+  status bar in full screen" (`statusFullscreen`) makes it the page's, without its toolbar and message bar (index.html).
+- **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk and adapter bytes are one add per
+  completed request in the device worker, into a shared buffer the machine worker reads once a second (devices.md
+  "Threads and determinism"); the GPU's numbers are increments where the work already happens, posted once a second.
 
 ## Dialogs and the message bar
 
@@ -225,7 +261,7 @@ Duplicate, Export the definition, Delete; then tabs:
   **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape). **Take the connection's settings in the guest** (on; off is
   `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **Connections** (in the list of machines) is the
-  browser's connections; **Preferences** under it is the page's, per browser (below, "Leaving the page"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
+  browser's connections; **Preferences** under it is the page's, per browser (below, "Leaving the page" and "The status bar"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **USB** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
@@ -290,7 +326,12 @@ Worker → page:
   liveness (`vcpus`, web/liveness.ts: chunks, time inside the current `vm_run_cpu`, the longest
   chunk and the longest host-side handling of an exit). The worker posts it from a timer, not from
   its run loop, so a stuck loop shows as a growing `loopAgeMs` instead of silence. The page keeps
-  the last status as JSON in the status line's `data-status` (for `bench/stress`).
+  the last status as JSON in the status bar's `data-status` (for `bench/stress`). For the status bar's
+  rates it carries totals since this start (a restart, a resume or a snapshot's load starts them at 0):
+  `disks` (bytes read and written, one per start message's `disks`, by slot), `nets` (bytes to and from
+  the guest, one per `nets`; none without `network`) and `cpus` (each vCPU's steps and JIT steps,
+  `Vm.cpuStats`; none in round-robin mode). The disk and adapter counters are the device worker's
+  (`Vm.deviceIo`, devices.md "Threads and determinism").
 - `phase {text}`: what a machine `loading` from a snapshot is doing (it has no download to report).
 - `snapshot-progress {phase, fraction}`, `snapshot-chunk {data}` (transferred; without a handle),
   `snapshot-done {bytes, pausedMs}` (the file is complete; the ms from the pause request to the

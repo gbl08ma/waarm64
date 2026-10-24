@@ -871,7 +871,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci }, scratch + S_BELL, parallel, o.onNotice);
+  // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them.
+  const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(16 * specs.length) : new ArrayBuffer(16 * specs.length));
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1083,6 +1085,14 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     setChunk: (steps: number) => ex.vm_set_chunk(vm, BigInt(steps)),
     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
     stats: () => stats(counter),
+    /** The vCPUs run each on its own worker (`VmConfig.parallel`): `cpuStats` is then per vCPU. */
+    parallel,
+    /**
+     * Each device's I/O bytes since the VM started (`DevicesInit.io`), by device index (`VmConfig.devices`): [2i] and
+     * [2i + 1] are a blk's bytes read and written, a net's bytes received (to the guest) and sent; 0 for other kinds.
+     * The live view (the device worker adds to it): read it, don't keep a copy expecting it to move.
+     */
+    deviceIo: () => io,
     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
     cpuStats: () => blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */

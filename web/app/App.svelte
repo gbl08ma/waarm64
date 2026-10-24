@@ -8,6 +8,7 @@
   import Icon from './Icon.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import NetWizard from './NetWizard.svelte';
+  import StatusBar from './StatusBar.svelte';
   import Toolbar from './Toolbar.svelte';
   import type { PageAudio } from '../audio.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -49,10 +50,7 @@
   <div id="terminal-view"><div id="terminal"></div></div>
 </main>
 {#if ui.machinesOpen}<MachinesPage {store} {net} />{/if}
-<footer>
-  <span id="state" data-state={ui.state}>{ui.stateText}</span>
-  <span id="status" data-status={ui.status.data || undefined}>{ui.status.text}</span>
-</footer>
+<StatusBar {net} />
 <NetWizard {net} />
 <Ask />
 <input type="file" id="load-snapshot-input" hidden onchange={take((f) => page.loadSnapshot(f))}>

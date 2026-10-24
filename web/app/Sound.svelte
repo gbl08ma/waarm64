@@ -8,6 +8,7 @@
   import Menu from './Menu.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
+  import { ui } from './ui.svelte.ts';
 
   let { audio }: { audio: PageAudio } = $props();
 
@@ -22,6 +23,7 @@
   $effect(() => { audio.onMixer = (level, muted) => { [volume, on] = [Math.round(100 * level), !muted]; }; });
   const waiting = $derived((void tick, audio.waiting()));
   const micState = $derived((void tick, audio.micState));
+  $effect(() => { ui.mic = micState; }); // the status bar's Microphone
   const summary = $derived(waiting ? 'Sound: click to hear' : `${on ? 'Sound' : 'Sound (muted)'}${micState === 'on' ? ' · mic' : ''}`);
 
   $effect(() => { audio.setVolume(volume / 100, !on); });

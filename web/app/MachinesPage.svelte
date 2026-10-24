@@ -11,6 +11,7 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import Snapshots from './Snapshots.svelte';
+  import StatusEditor from './StatusEditor.svelte';
   import Usb from './Usb.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
@@ -264,6 +265,12 @@
           <label class="check"><input type="checkbox" bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} data-field="leave-warning"> Ask before leaving the page while a machine runs</label>
           <p class="note">Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.</p>
         </div>
+        <div class="tab">
+          <h4>Status bar</h4>
+          <StatusEditor {net} />
+          <label class="check status-fullscreen"><input type="checkbox" bind:checked={ui.statusFullscreen} onchange={() => remember({ statusFullscreen: ui.statusFullscreen })} data-field="status-fullscreen"> Show the status bar in full screen</label>
+          <p class="note">Off, full screen is the machine alone, edge to edge; on, the bar comes along (its Keyboard element says there whether the browser's shortcuts reach the machine).</p>
+        </div>
       </section>
     {:else if ui.machinesSelected === CONNECTIONS}
       <section class="machine" data-selected={CONNECTIONS}>
@@ -475,6 +482,7 @@
   .settings > label:not(.check) { grid-column: 1 / 3; display: grid; grid-template-columns: subgrid; align-items: center; color: var(--dim); }
   .settings .row, .settings .note { grid-column: 1 / -1; }
   .check { display: flex; align-items: center; gap: 6px; }
+  .status-fullscreen { margin-top: 20px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .primary { background: #24406b; border-color: #3b6db3 !important; color: #fff; }
   .primary:disabled { background: transparent; color: var(--text); }

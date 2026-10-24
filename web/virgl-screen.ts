@@ -45,6 +45,17 @@ export function flashProbe(flash: (t: number) => void) {
   };
 }
 
+/** The WebGL context's renderer and vendor (unmasked where the browser gives `WEBGL_debug_renderer_info`), read once. */
+export function glInfo(gl: WebGL2RenderingContext) {
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  const vendor = String(gl.getParameter(dbg ? dbg.UNMASKED_VENDOR_WEBGL : gl.VENDOR));
+  return { renderer, vendor, software: softwareRenderer(renderer) };
+}
+
+/** A WebGL renderer string that names a CPU rasterizer (SwiftShader, Mesa's llvmpipe or softpipe, Windows' WARP). */
+export const softwareRenderer = (renderer: string) => /SwiftShader|llvmpipe|softpipe|Basic Render Driver/i.test(renderer);
+
 export class Screen {
   private gl: WebGL2RenderingContext;
   private r: VirglRenderer | undefined;
@@ -56,6 +67,8 @@ export class Screen {
   /** Presents since the last read (`?displaystats`), and the time spent drawing them. */
   presents = 0;
   drawMs = 0;
+  /** Presents since the screen was made (never reset: the GPU worker's `stats`). */
+  presented = 0;
   /** Each present's time since the last read (epoch ms; `?displaystats`: bench/imgdecode/desktop.ts times rounds to the last one). */
   presentAt?: number[];
   /** Called after a present (a stats hook). */
@@ -185,6 +198,7 @@ export class Screen {
     gl.colorMask(true, true, true, true);
     gl.drawArrays(E.TRIANGLE_STRIP, 0, 4);
     this.presents++;
+    this.presented++;
     this.lastDraw = performance.now();
     this.presentAt?.push(performance.timeOrigin + this.lastDraw);
     this.drawMs += this.lastDraw - t0;

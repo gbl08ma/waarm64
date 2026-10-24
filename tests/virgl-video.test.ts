@@ -7,7 +7,7 @@ import { decodeCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl, withVideo } from '../web/virgl-caps.ts';
 import { CallQueue, type WorkerCall } from '../web/virgl-host.ts';
 import { VirglRenderer } from '../web/virgl-renderer.ts';
-import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, padPlane, PROFILE, probeVideo, VideoContext, type DecodedPicture, type DecoderConfig, type DecoderFactory, type VideoStats } from '../web/virgl-video.ts';
+import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, padPlane, PROFILE, probeVideo, VideoContext, videoStats, type DecodedPicture, type DecoderConfig, type DecoderFactory, type VideoStats } from '../web/virgl-video.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
 const H264 = { profile: PROFILE.AVC_HIGH, maxLevel: 51, maxWidth: 4096, maxHeight: 2304 };
@@ -64,7 +64,7 @@ test('probeVideo: what the browser decodes is offered, and what it decodes in ha
 });
 
 test('VideoContext: codecs, buffers and a picture\'s parameters and data, read from the staging buffers', () => {
-  const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
+  const stats: VideoStats = videoStats();
   const errors: string[] = [];
   const staging = new Map([[7, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])], [8, new Uint8Array(32).fill(9)]]);
   const v = new VideoContext({
@@ -75,7 +75,7 @@ test('VideoContext: codecs, buffers and a picture\'s parameters and data, read f
   const cmd = (c: number, ...p: number[]) => v.command(c, new Uint32Array(p));
   cmd(53, 100, PROFILE.AVC_HIGH, 1, 1, 41, 864, 480, 16); // CREATE_VIDEO_CODEC (864: Mesa aligns H.264 to macroblocks)
   cmd(55, 200, FORMAT_NV12, 864, 480, 31, 32); // CREATE_VIDEO_BUFFER: two planes
-  assert.deepEqual(stats, { codecs: 1, buffers: 1, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 });
+  assert.deepEqual(stats, { ...videoStats(), codecs: 1, buffers: 1, created: 1 });
   assert.deepEqual(v.buffers.get(200)?.planes, [31, 32]);
   cmd(57, 100, 200); // BEGIN_FRAME
   cmd(59, 100, 200, 8, 7, 5); // DECODE_BITSTREAM: desc in 8, data in 7 (5 bytes)
@@ -120,7 +120,7 @@ const picture = (ts: number): DecodedPicture => ({ width: 4, height: 2, y: new U
 /** A context with a fake decoder, one codec (handle 1) and 8 NV12 buffers (handles 2-9, planes 31 and 32, 33 and 34, …),
  * used in turn as the guest's surfaces are (a buffer is decoded into again once released). */
 function video(profile: number, o: { hardware?: number[] } = {}) {
-  const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
+  const stats: VideoStats = videoStats();
   const errors: string[] = [], written: { planes: number[]; ts: number }[] = [];
   let settled = 0;
   const staging = new Map<number, Uint8Array>();
@@ -196,6 +196,24 @@ test('VideoContext: a decoder error loses its pictures, and a new decoder starts
   t.made[1].out(t.made[1].chunks[0].ts);
   assert.deepEqual(t.written.map((w) => w.ts), [t.made[1].chunks[0].ts]);
   assert.deepEqual({ decoded: t.stats.decoded, dropped: t.stats.dropped, errors: t.stats.errors }, { decoded: 1, dropped: 4, errors: 1 });
+});
+
+test('VideoContext: its streams (the page\'s status bar): made, opened at the first picture, counted, closed by an error, gone when destroyed', () => {
+  const t = video(PROFILE.VP9_PROFILE0, { hardware: [PROFILE.VP9_PROFILE0] });
+  const one = { id: 1, profile: 'VP9', codec: 'vp09.00.51.08', width: 864, height: 480, hardware: true };
+  assert.deepEqual(t.v.streams([]), [{ ...one, open: false, decoded: 0 }]);
+  t.frame(vp9(true), new Uint8Array([1]));
+  t.frame(vp9(false), new Uint8Array([2]));
+  t.made[0].out(t.made[0].chunks[0].ts);
+  assert.deepEqual(t.v.streams([]), [{ ...one, open: true, decoded: 1 }]);
+  t.made[0].fail('EncodingError: boom');
+  assert.deepEqual(t.v.streams([]), [{ ...one, open: false, decoded: 1 }]);
+  assert.deepEqual({ errors: t.stats.errors, decoderErrors: t.stats.decoderErrors }, { errors: 1, decoderErrors: 1 });
+  t.v.command(53, new Uint32Array([5, PROFILE.AVC_HIGH, 1, 1, 41, 1920, 1088, 4])); // a second codec, H.264 in software
+  assert.deepEqual(t.v.streams([]).map((s) => [s.id, s.profile, s.codec, s.hardware]), [[1, 'VP9', 'vp09.00.51.08', true], [2, 'H.264 High', 'avc1.640029', false]]);
+  t.v.command(54, new Uint32Array([1])); // DESTROY_VIDEO_CODEC
+  assert.deepEqual(t.v.streams([]).map((s) => s.id), [2]);
+  assert.deepEqual({ codecs: t.stats.codecs, created: t.stats.created }, { codecs: 1, created: 2 });
 });
 
 /** An H.264 desc (High, frame pictures only) and an IDR picture's one slice (I, first_mb 0, PPS 0). */

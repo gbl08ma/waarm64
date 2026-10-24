@@ -7,8 +7,8 @@
 import { capsFromGl, withVideo } from './virgl-caps.ts';
 import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type WorkerCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
-import { flashProbe, Screen } from './virgl-screen.ts';
-import { probeVideo, webCodecsDecoder, type VideoStats } from './virgl-video.ts';
+import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
+import { probeVideo, profileName, webCodecsDecoder, type VideoStats, type VideoStream } from './virgl-video.ts';
 
 /** Page → GPU worker. */
 export type ToGpuWorker = { type: 'snapshotBytes'; id: number } | { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swvideo`: every codec decoded in software, H.264 offered (experiments on a host with hardware decoders). */ softwareVideo?: boolean };
@@ -21,8 +21,24 @@ export type FromGpuWorker =
   | { type: 'lost' }
   /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
   | { type: 'flash'; t: number }
+  /**
+   * Always, once a second from `ready` on (the first with it): totals since the worker started (rates are the page's)
+   * and what is in use now (the page's status bar). The worker exists only on a 3D machine, so this is WebGL2 with
+   * virgl. `renderer` and `vendor` are WebGL's (unmasked where the browser gives them), `software` whether the renderer
+   * is a CPU rasterizer (SwiftShader, llvmpipe). `presents` are the screen's draws (at most one a display frame: a
+   * guest's flip, whatever it took); `submits` the guest's command buffers, `commands` the virgl commands in them,
+   * `draws` the GL draws they made, `errors` the renderer's (video's among them). `video` is off (`enabled: false`) with
+   * `?gpu=novideo` or where WebCodecs decodes none of the codecs; `offered` the codecs the guest was told of and which
+   * are decoded in hardware; `streams` the guest's decoding contexts now (web/virgl-video.ts `VideoStream`); `frames`
+   * the pictures the guest sent, `decoded` those written back, `dropped` those given up, `errors` the video errors and
+   * `decoderErrors` the decoders' own (of `errors`).
+   */
+  | { type: 'stats'; renderer: string; vendor: string; software: boolean; presents: number; submits: number; commands: number; draws: number; errors: number; video: GpuVideoStats }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
   | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
+
+/** The video part of `stats`. */
+export type GpuVideoStats = { enabled: boolean; offered: { profile: string; hardware: boolean }[]; streams: VideoStream[]; frames: number; decoded: number; dropped: number; errors: number; decoderErrors: number };
 
 let ram: Uint8Array[] = [];
 let snapshotBytes = () => 0;
@@ -165,6 +181,14 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     post({ type: 'failed', reason: `the caps couldn't be read: ${err}` });
     return;
   }
-  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-  post({ type: 'ready', caps, renderer: String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) });
+  const info = glInfo(gl);
+  post({ type: 'ready', caps, renderer: info.renderer });
+  // The status bar's numbers: what the renderer, the screen and the decoders count anyway, read once a second.
+  const offered = (decoders?.caps ?? []).map((c) => ({ profile: profileName(c.profile), hardware: decoders!.hardware.includes(c.profile) }));
+  const report = () => {
+    const s = renderer.stats, v = renderer.videoStats;
+    post({ type: 'stats', ...info, presents: screen.presented, submits: s.submits, commands: s.commands, draws: s.draws, errors: s.errors, video: { enabled: offered.length > 0, offered, streams: renderer.videoStreams(), frames: v.frames, decoded: v.decoded, dropped: v.dropped, errors: v.errors, decoderErrors: v.decoderErrors } });
+  };
+  report();
+  setInterval(report, 1000);
 };

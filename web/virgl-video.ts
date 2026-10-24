@@ -35,6 +35,17 @@ export const CODECS: { profile: number; codec: string; maxLevel: number }[] = [
 ];
 const MAX_W = 4096, MAX_H = 2304;
 
+/** A profile's name for people ('H.264 High', 'VP9', 'AV1'; the number when it isn't one of these). */
+export function profileName(profile: number) {
+  const n: Record<number, string> = {
+    [PROFILE.AVC_BASELINE]: 'H.264 Baseline', [PROFILE.AVC_CONSTRAINED_BASELINE]: 'H.264 Constrained Baseline', [PROFILE.AVC_MAIN]: 'H.264 Main',
+    [PROFILE.AVC_EXTENDED]: 'H.264 Extended', [PROFILE.AVC_HIGH]: 'H.264 High', [PROFILE.AVC_HIGH10]: 'H.264 High 10',
+    [PROFILE.HEVC_MAIN]: 'HEVC Main', [PROFILE.HEVC_MAIN_10]: 'HEVC Main 10', [PROFILE.VP9_PROFILE0]: 'VP9', [PROFILE.VP9_PROFILE2]: 'VP9 Profile 2',
+    [PROFILE.AV1_MAIN]: 'AV1', [PROFILE.AV1_PROFILE2]: 'AV1 Profile 2',
+  };
+  return n[profile] ?? `profile ${profile}`;
+}
+
 /**
  * The caps entries for what this browser's `VideoDecoder` takes (an empty list without WebCodecs), and the profiles
  * it decodes in hardware (`prefer-hardware` supported): those are decoded there, the rest in software, and the
@@ -87,8 +98,19 @@ export function decodeVideoCaps(words: number[], n: number): VideoCap[] {
  * written: before a key picture (at the start, after a decoder error or a drain) or given up (`VideoContext.giveUp`).
  */
 /** The renderer's video totals; of the decoded pictures, the ms from END_FRAME to written (`latencyMs`, and the longest:
- * `latencyMaxMs`, reset by whoever reads it) and the ms spent writing them into the planes (`writeMs`). */
-export type VideoStats = { codecs: number; buffers: number; frames: number; decoded: number; dropped: number; bitstreamBytes: number; errors: number; latencyMs: number; latencyMaxMs: number; writeMs: number };
+ * `latencyMaxMs`, reset by whoever reads it) and the ms spent writing them into the planes (`writeMs`). `codecs` and
+ * `buffers` are the ones that exist now; `created` the codecs made since the start (a stream's `id`), `decoderErrors`
+ * the errors the decoders reported (of `errors`, which also counts the guest's commands the host refused). */
+export type VideoStats = { codecs: number; buffers: number; created: number; frames: number; decoded: number; dropped: number; bitstreamBytes: number; errors: number; decoderErrors: number; latencyMs: number; latencyMaxMs: number; writeMs: number };
+export const videoStats = (): VideoStats => ({ codecs: 0, buffers: 0, created: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, decoderErrors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 });
+
+/**
+ * A codec the guest made (one VA-API decoding context): `id` is unique for the renderer's life (`VideoStats.created`),
+ * `hardware` whether it is decoded with `prefer-hardware` (WebCodecs doesn't say what it got, but Chromium's
+ * `prefer-hardware` never falls back to software: a decoder without hardware fails, `decoderErrors`), `open` whether
+ * it has a decoder now (made at its first picture, again after an error), `decoded` its pictures written since it was made.
+ */
+export type VideoStream = { id: number; profile: string; codec: string; width: number; height: number; hardware: boolean; open: boolean; decoded: number };
 
 /** A decoded picture as the host writes it: luma rows `width` bytes long, and chroma at half size with U and V interleaved (NV12's second plane). */
 export type DecodedPicture = { width: number; height: number; y: Uint8Array; uv: Uint8Array };
@@ -105,6 +127,8 @@ export type DecoderConfig = { codec: string; hardware: boolean; width: number; h
 export type DecoderFactory = (config: DecoderConfig, output: (timestamp: number, picture: DecodedPicture) => void, error: (m: string) => void) => PictureDecoder;
 
 type Codec = {
+  /** `VideoStream.id`, and its pictures written. */
+  id: number; decoded: number;
   handle: number; profile: number; entrypoint: number; level: number; width: number; height: number; maxRefs: number; target?: number; desc?: Uint8Array; bits: Uint8Array[];
   /** The decoder, made at the first picture and again after an error; until a key chunk reaches it, pictures are dropped. */
   dec?: PictureDecoder; needKey?: boolean; hardware?: boolean; h264?: H264Stream; av1?: Av1Stream;
@@ -179,7 +203,7 @@ export class VideoContext {
       case 53: { // CREATE_VIDEO_CODEC: handle, profile, entrypoint, chroma format, level, width, height[, max refs]
         if (p.length < 7) return this.env.error('short CREATE_VIDEO_CODEC');
         if (this.codecs.has(p[0])) return;
-        this.codecs.set(p[0], { handle: p[0], profile: p[1], entrypoint: p[2], level: p[4], width: p[5], height: p[6], maxRefs: p[7] ?? 0, bits: [], epoch: 0 });
+        this.codecs.set(p[0], { id: ++this.stats.created, decoded: 0, handle: p[0], profile: p[1], entrypoint: p[2], level: p[4], width: p[5], height: p[6], maxRefs: p[7] ?? 0, bits: [], epoch: 0 });
         this.stats.codecs++;
         this.env.debug?.(`video: codec ${p[0]} profile ${p[1]} entrypoint ${p[2]} level ${p[4]} ${p[5]}x${p[6]} refs ${p[7] ?? '-'}`);
         return;
@@ -235,6 +259,16 @@ export class VideoContext {
         return;
       }
     }
+  }
+
+  /** The codecs as `VideoStream`s, into `out` (read once a second: the GPU worker's `stats`). */
+  streams(out: VideoStream[]) {
+    for (const c of this.codecs.values()) {
+      const known = isH264(c.profile) || CODECS.some((x) => x.profile === c.profile);
+      const codec = !known ? '' : isH264(c.profile) ? codecString(c.profile, c.level) : CODECS.find((x) => x.profile === c.profile)!.codec;
+      out.push({ id: c.id, profile: profileName(c.profile), codec, width: c.width, height: c.height, hardware: !!this.env.hardware?.includes(c.profile), open: !!c.dec, decoded: c.decoded });
+    }
+    return out;
   }
 
   /** Pictures sent to a decoder and not yet written. */
@@ -403,6 +437,7 @@ export class VideoContext {
         this.env.write?.(q.planes, pic);
         const t1 = performance.now();
         this.stats.decoded++;
+        c.decoded++;
         this.stats.writeMs += t1 - t0;
         this.stats.latencyMs += t1 - q.at;
         this.stats.latencyMaxMs = Math.max(this.stats.latencyMaxMs, t1 - q.at);
@@ -410,6 +445,7 @@ export class VideoContext {
       this.env.settled?.();
     }, (m) => {
       if (this.closed || c.dec !== dec) return;
+      this.stats.decoderErrors++;
       this.err(`video: codec ${c.handle}: ${m}`);
       // The pictures it had are lost; a new decoder starts at the next key picture.
       this.closeCodec(c);

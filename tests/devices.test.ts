@@ -1,9 +1,10 @@
 // Device backends without a guest: the 9P2000.L server (web/9p.ts), the
-// loopback network adapter (web/net.ts) and virtio-input's config answers.
+// loopback network adapter (web/net.ts), virtio-input's config answers, and
+// the blk and net backends' I/O counters (the page's status, `Ctx.io`).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { P9Server } from '../web/9p.ts';
-import { blk, deviceEntry, Devices, inputConfig, type Ctx } from '../web/devices.ts';
+import { blk, deviceEntry, Devices, inputConfig, net, type Ctx } from '../web/devices.ts';
 import { memFile } from '../web/overlay.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
 
@@ -265,4 +266,39 @@ test('virtio-blk: a write that finds the storage full gets the remote disks\' ke
   await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: 4096, mem: 0 }], write: [{ off: 8192, len: 1, mem: 0 }] });
   assert.deepEqual([ram[8192], store.stats().gaveUp, kept.getSize(), full.getSize()], [0, true, 0, 4096]);
   store.close();
+});
+
+test('the I/O counters: blk counts the bytes of completed reads and writes, net the frames to and from the guest', async () => {
+  const ram = new Uint8Array(1 << 16);
+  const io = new Float64Array(4); // two devices' worth: each backend gets its own two slots, as `Devices` hands them out
+  const done: number[] = [];
+  const ctxOf = (k: number) => ({ ram: () => [ram], complete: (_w0: number, len: number) => done.push(len), features: () => 0n, io: io.subarray(2 * k, 2 * k + 2) }) as unknown as Ctx;
+  const size = 16 * 4096;
+  const src = { size, read: (off: number, len: number) => (off + len <= size ? new Uint8Array(len) : undefined) };
+  const files = { data: memFile(), map: memFile(), meta: memFile(), close() {} };
+  const d = blk(ctxOf(0), src, files);
+  /** A request of `type` at `sector` with `body` after the header and `room` bytes to read into; its status. */
+  const ask = async (type: number, sector: number, body: number, room: number) => {
+    const h = new DataView(ram.buffer, 0, 16);
+    h.setUint32(0, type, true);
+    h.setBigUint64(8, BigInt(sector), true);
+    await d.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: body, mem: 0 }].filter((x) => x.len), write: [{ off: 16384, len: room + 1, mem: 0 }] });
+    return ram[16384 + room];
+  };
+  assert.equal(await ask(0, 0, 0, 4096), 0);
+  assert.equal(await ask(1, 8, 8192, 0), 0);
+  assert.equal(await ask(4, 0, 0, 0), 0); // a flush: nothing
+  assert.equal(await ask(0, size / 512, 0, 512), 1); // past the end: IOERR, nothing
+  assert.deepEqual([...io], [4096, 8192, 0, 0]);
+  // The loopback answers an ARP for its peer: a 42-byte frame out (after virtio's 12-byte header), its 42-byte reply in.
+  const n = net(ctxOf(1), { type: 'net', adapter: 'loopback' });
+  const guest = [0x52, 0x54, 0, 0x12, 0x34, 0x56];
+  const arp = [...Array(6).fill(0xff), ...guest, 8, 6, 0, 1, 8, 0, 6, 4, 0, 1, ...guest, 10, 0, 2, 15, 0, 0, 0, 0, 0, 0, ...PEER_IP];
+  ram.fill(0, 0, 12);
+  ram.set(arp, 12);
+  n.request({ w0: 1, queue: 1, read: [{ off: 0, len: 12 + arp.length, mem: 0 }], write: [] });
+  assert.deepEqual([...io], [4096, 8192, 0, 42]);
+  n.request({ w0: 2, queue: 0, read: [], write: [{ off: 4096, len: 2048, mem: 0 }] });
+  assert.equal(done.at(-1), 12 + 42);
+  assert.deepEqual([...io], [4096, 8192, 42, 42]);
 });

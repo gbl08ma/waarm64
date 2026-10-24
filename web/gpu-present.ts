@@ -9,7 +9,7 @@
 // told (`mode`) to refit its box.
 import { busy } from './gpu.ts';
 import { fenceLag } from './virgl-host.ts';
-import { flashProbe, Screen } from './virgl-screen.ts';
+import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
 import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
 
 /** Page ⇄ backend over the display port. */
@@ -28,6 +28,14 @@ export type DisplayToPage =
   | { type: 'capture'; record: Uint8Array }
   /** With `probe` (`?avprobe`): a draw turned the screen's centre bright, at `t` (ms since the epoch: `performance.timeOrigin + now`). */
   | { type: 'flash'; t: number }
+  /**
+   * A 2D machine's screen (`canvasPresenter`; a 3D machine's GPU worker sends its own `stats`, web/gpu-worker.ts): once a
+   * second from the first scanout on, always (not only with `stats`). `presents` is the canvas's draws since the
+   * presenter was made (a total: rates are the page's; at most one a display frame, however many flushes the guest
+   * made); `screen` what draws it: WebGL2 on the GPU (with its renderer, read once) or a 2D context (on a browser
+   * whose WebGL2 renders on the CPU, or without one: no renderer to name).
+   */
+  | { type: 'screen-stats'; screen: 'webgl2' | 'canvas2d'; presents: number; renderer?: string; vendor?: string; software?: boolean }
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { events?: number[]; request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
@@ -55,16 +63,22 @@ export type Screen2d = 'auto' | 'canvas2d' | 'webgl2';
 export function softwareGl() {
   const gl = typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('webgl2');
   if (!gl) return true;
-  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-  const renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  const { software } = glInfo(gl);
   gl.getExtension('WEBGL_lose_context')?.loseContext();
-  return /SwiftShader|llvmpipe|softpipe|Basic Render Driver/i.test(renderer);
+  return software;
 }
 
 export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false, probe = false, which: Screen2d = 'auto'): GpuHooks {
   const sample = probe && port ? flashProbe((t) => port.postMessage({ type: 'flash', t } satisfies DisplayToPage)) : undefined;
   const gl = which === 'canvas2d' || (which === 'auto' && softwareGl()) ? null : canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false }) as WebGL2RenderingContext | null;
   let screen = gl ? new Screen(gl) : undefined;
+  const info = gl ? glInfo(gl) : undefined;
+  let presents = 0, reporting = false;
+  const report = () => {
+    if (reporting || !port) return;
+    reporting = true;
+    setInterval(() => port.postMessage({ type: 'screen-stats', screen: info ? 'webgl2' : 'canvas2d', presents, ...info } satisfies DisplayToPage), 1000);
+  };
   const ctx = gl ? undefined : canvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D;
   let src: ScanoutSource | null = null;
   let img: ImageData | undefined;
@@ -100,6 +114,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
       screen.draw();
     } else ctx!.putImageData(img!, -src.x, -src.y, src.x + d.x, src.y + d.y, d.w, d.h);
     lastDraw = performance.now();
+    presents++;
     drawMs += lastDraw - t0;
     if (stats) lat.push(performance.now() - since);
     if (sample) {
@@ -156,6 +171,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
         port?.postMessage({ type: 'mode', width, height } satisfies DisplayToPage);
       }
       dirty = src ? { x: 0, y: 0, w: width, h: height } : null;
+      if (src) report();
       if (screen && source) screen.set({ pixels: source.pixels, swizzle: source.swizzle, width: source.width, height: source.height, rect: { x: source.x, y: source.y, w: width, h: height } });
       if (!src) {
         if (screen) {

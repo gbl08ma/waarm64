@@ -15,7 +15,7 @@
 import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
-import { padPlane, VideoContext, type DecodedPicture, type DecoderFactory, type VideoStats } from './virgl-video.ts';
+import { padPlane, VideoContext, videoStats, type DecodedPicture, type DecoderFactory, type VideoStats, type VideoStream } from './virgl-video.ts';
 import { bytes, type Ram, type Segment } from './ram.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
@@ -216,7 +216,7 @@ export class VirglRenderer {
   private serial = 0;
   readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0, feedbackCopies: 0 };
   /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
-  readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
+  readonly videoStats: VideoStats = videoStats();
   /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
   private video?: { decoders: DecoderFactory; hardware: readonly number[] };
   /** Called when a picture is written or given up (the GPU worker's queue goes on: `videoPending`). */
@@ -951,6 +951,13 @@ export class VirglRenderer {
     if (!r.picture) return;
     this.gl.deleteTexture(r.picture.tex!);
     r.picture = undefined;
+  }
+
+  /** Every context's video codecs (`VideoContext.streams`; read once a second). */
+  videoStreams(): VideoStream[] {
+    const out: VideoStream[] = [];
+    for (const c of this.contexts.values()) c.video?.streams(out);
+    return out;
   }
 
   /** Pictures sent to a decoder and not yet written (web/virgl-video.ts): the GPU worker holds what follows them. */

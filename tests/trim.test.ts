@@ -2,7 +2,8 @@
 // takes the limits from the config space, and what `fstrim` trims leaves the overlay: the blocks
 // of a deleted file read as zeros without slots, and the data file shrinks. Without the offer
 // (the tests' other guests, whose step counts are without it) the filesystem can't trim.
-// Buildroot on 2 vCPUs under the JIT, a few seconds; not step-counted (realtime).
+// Buildroot on 2 vCPUs under the JIT, a few seconds; not step-counted (realtime). The second test checks the I/O and
+// per-vCPU counters the page's status carries, too.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
@@ -15,6 +16,9 @@ const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm',
 const IMAGES = new URL('../target/images/', import.meta.url);
 const DISK = new URL('buildroot/rootfs.ext4', IMAGES);
 const skip = (!existsSync(WASM) || !existsSync(new URL('linux/Image', IMAGES)) || !existsSync(DISK)) && 'SKIPPED: run scripts/build-wasm.sh and images/build.sh linux buildroot';
+
+/** The last `shell`'s disk counters (`Vm.deviceIo`: the blk is device 2) and its vCPUs' steps, against all of them. */
+let last: { read: number; written: number; cpuSteps: number[]; steps: number } | undefined;
 
 /** Boots a shell on the disk with overlay `name`, runs `script` line by line at its prompts; the console's text. */
 async function shell(name: string, discard: boolean, script: string[]) {
@@ -38,6 +42,8 @@ async function shell(name: string, discard: boolean, script: string[]) {
       }
     }
   } finally {
+    const io = vm.deviceIo();
+    last = { read: io[4], written: io[5], cpuSteps: vm.cpuStats().map((c) => c.steps), steps: vm.stats().steps };
     await vm.close();
     port1.close();
   }
@@ -83,4 +89,11 @@ test('without the offer the guest can\'t trim, and the deleted file stays in the
   const h = await held('trim-off');
   assert.equal(h.zeroed, 0);
   assert.ok(h.data >= 8 << 20, `the data file is ${h.data} bytes`);
+  // The status bar's counters (web/app/protocol.ts `Status.disks`, `cpus`): the 8 MiB written, the boot's reads, and
+  // both vCPUs' own steps, which make up the total.
+  assert.ok(last!.written >= 8 << 20 && last!.written < 64 << 20, `${last!.written} bytes written`);
+  assert.ok(last!.read > 1 << 20 && last!.read < statSync(DISK).size * 4, `${last!.read} bytes read`);
+  assert.equal(last!.cpuSteps.length, 2);
+  assert.ok(last!.cpuSteps.every((n) => n > 0), `steps by vCPU: ${last!.cpuSteps.join(', ')}`);
+  assert.equal(last!.cpuSteps[0] + last!.cpuSteps[1], last!.steps);
 });

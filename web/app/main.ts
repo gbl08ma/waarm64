@@ -22,6 +22,7 @@ import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
 import { ALIVE_EVERY_MS, clearAlive, lastCrash, markAlive, Signal } from './memory.ts';
+import { graphics, metrics, shows, type Graphics, type Sample } from './statusbar.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, JIT_DEFAULT_MIB, MACHINES, RAM_CHOICES, ramSplitError, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { fetchManifest, isManifestUrl } from '../chunked.ts';
 import { runExport, type ExportMode } from './export.ts';
@@ -466,7 +467,7 @@ let run: Run | undefined;
 /** The guest has a driver on its keyboard (else the screen's keys go to the serial console: the firmware, GRUB). Per machine; false until the worker says. */
 let keyboardLive = false;
 let state: PageState = 'loading';
-let last: { status: Status; at: number } | undefined;
+let last: Sample | undefined;
 /** A stop and start in progress (`exclusively`), or a snapshot being written (`saveSnapshot`): the other actions wait. */
 let switching = false;
 let saving = false;
@@ -575,6 +576,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
     if (run?.display !== display.port1) return;
     if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
+    if (e.data.type === 'screen-stats') { showGraphics(e.data.screen, e.data); return; }
     if (e.data.type === 'cursor-at') { if (guestCursor) [guestCursor.x, guestCursor.y] = [e.data.x, e.data.y]; placeCursor(); return; }
     if ((e.data as { type: string }).type === 'draw-stats') {
       ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
@@ -657,8 +659,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'notice') {
       notify(m.message, 'error');
     } else if (m.type === 'status') {
-      showStatus(m.status);
-      alive(m.status);
+      showStatus(m.status, alive(m.status));
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
     } else if (m.type === 'profile') {
       (window as unknown as { __profile?: [string, number][] }).__profile = m.samples;
@@ -703,6 +704,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       const needs = stored ? await filesNeedingUser(stored) : [];
       if (needs.length) throw new NeedsUser(needs);
       ({ disks, home } = await startDisks());
+      ui.status.disks = disks.map((d) => d.name);
       about = await aboutMachine(!!three);
     } catch (e) {
       if (run !== r) return;
@@ -739,6 +741,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         r.input.detach();
         run = undefined;
         start(snapshot, resume, plan);
+      } else if (m.type === 'stats') {
+        showGraphics('3d', m);
       } else if (m.type === 'lost') {
         setState('crashed', 'The browser lost the WebGL context the screen was drawn with.', ACTIONS.emulator);
       } else if (m.type === 'snapshotBytes') {
@@ -1502,9 +1506,16 @@ function fullscreen() {
   if (ui.machinesOpen) closeMachines();
   (ui.view === 'terminal' ? term : canvas).focus();
   // Without the lock (refused, or another browser), the browser keeps its shortcuts.
-  mainEl.requestFullscreen({ navigationUI: 'hide' }).then(() => keyboardLock?.lock()).catch(() => {});
+  // With the status bar along (Preferences), the page goes full screen without its toolbar and message bar (index.html).
+  const target = ui.statusFullscreen && shows(ui.statusItems) ? document.body : mainEl;
+  target.requestFullscreen({ navigationUI: 'hide' }).then(() => keyboardLock?.lock()).then(() => { ui.keyboardLocked = !!keyboardLock && !!document.fullscreenElement; }).catch(() => {});
 }
-document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) keyboardLock?.unlock(); });
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { keyboardLock?.unlock(); ui.keyboardLocked = false; } });
+// Where keys go, for the status bar's Keyboard: the screen or the terminal focused in a focused window (what the
+// screen's "Click to type" hint says otherwise).
+const syncKeys = () => { const a = document.activeElement; ui.keysFocused = document.hasFocus() && !!a && (a.id === 'screen' || !!a.closest('#terminal')); };
+for (const ev of ['focusin', 'focusout']) document.addEventListener(ev, () => queueMicrotask(syncKeys));
+for (const ev of ['focus', 'blur']) addEventListener(ev, syncKeys);
 
 // Leaving the page while the machine runs stops it like pulling the plug: the browser asks first (Preferences, on the
 // Machines page, turns it off). The browser words the question itself. Not under automation (the tests navigate away
@@ -1516,27 +1527,18 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = ''; // older Chromium asks only with this set
 });
 
-const hms = (ms: number) => {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-};
-function showStatus(s: Status) {
+function showStatus(s: Status, tabBytes: number) {
   const now = performance.now();
-  const dt = last ? (now - last.at) / 1000 : 0;
-  const mips = last && dt > 0 ? (s.steps - last.status.steps) / dt / 1e6 : undefined;
-  // The share of those steps retired in JIT code (the rest were interpreted).
-  const dSteps = last ? s.steps - last.status.steps : 0;
-  const jitPct = last && dSteps > 0 ? ((s.jitSteps - last.status.jitSteps) / dSteps) * 100 : undefined;
-  const irqs = last && dt > 0 ? (s.irqs - last.status.irqs) / dt : undefined;
-  last = { status: s, at: now };
+  // A new run's counters start again from 0 (a restart, a resume, a snapshot load): no rates across that.
+  const prev = last && s.uptime >= last.status.uptime ? last : undefined;
+  last = { status: s, at: now, metrics: metrics(s, now, prev, tabBytes) };
   ui.status.data = JSON.stringify(s); // for tools (bench/stress)
-  ui.status.text = [
-    `${s.ncpus} vCPU${s.ncpus > 1 ? 's' : ''}`, `${s.ramMiB} MiB`, `up ${hms(s.uptime)}`,
-    mips === undefined ? '' : `${mips.toFixed(0)} MIPS`,
-    jitPct === undefined ? '' : `${jitPct.toFixed(1)}% in JIT`,
-    `JIT ${s.jitBlocks.toLocaleString('en')} blocks compiled${s.jitFlushes ? ` (cache flushed ${s.jitFlushes}×)` : ''}, ${(s.jitCompileMs / 1000).toFixed(1)} s compiling`,
-    irqs === undefined ? '' : `${irqs.toFixed(0)} IRQ/s`,
-  ].filter(Boolean).join(' · ');
+  ui.status.metrics = last.metrics;
+}
+/** The screen's report each second (a 3D machine's GPU worker, a 2D machine's presenter), for the status bar. */
+function showGraphics(mode: Graphics['mode'], m: Parameters<typeof graphics>[1]) {
+  const at = performance.now();
+  ui.status.gpu = { g: graphics(mode, m, at, ui.status.gpu), at };
 }
 
 syncDiskButtons();
@@ -1563,13 +1565,15 @@ syncMachineMenu();
 // it running (most likely killed for memory), and the next start offers a smaller JIT cache or less RAM first.
 const aliveKey = () => (stored ? stored.record.id : `transient-${machine}`);
 let aliveAt = 0, signal = new Signal(), signalRun: Run | undefined;
+/** Returns the estimate (bytes), for the status bar's Tab memory. */
 function alive(st: Status) {
   const now = Date.now();
   if (signalRun !== run) [signal, signalRun] = [new Signal(), run];
   const est = signal.update(st.memory, st.ncpus);
-  if (now - aliveAt < ALIVE_EVERY_MS) return;
+  if (now - aliveAt < ALIVE_EVERY_MS) return est;
   aliveAt = now;
   markAlive(aliveKey(), { name: machineTitle(), ramMiB, ncpus, jitMiB: Math.round(st.memory.jitBudget / 2 ** 20), gib: +(est / 2 ** 30).toFixed(2), peakGiB: +(signal.peak / 2 ** 30).toFixed(2), t: now });
+  return est;
 }
 addEventListener('pagehide', () => { if (run) clearAlive(aliveKey()); });
 /** A mark left by a tab that went away with this machine running: says so and offers what may fit (true: not started). */

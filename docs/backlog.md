@@ -555,6 +555,27 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   'moz-firefox', executablePath: '/usr/bin/firefox' })` (WebDriver BiDi, zypper's Firefox) with
   `firefoxUserPrefs: { 'memory.phc.enabled': false }` (PHC's stack walks hit the VM's
   SME-without-SVE in libgcc's unwinder: SIGILL) and `env: chromiumEnv()`.
+- **A build system for the page** (the user's call, 2026-10-24): Vite with `@sveltejs/vite-plugin-svelte` (what Svelte
+  recommends for a page without SvelteKit's routing and server), so packages are used as packages: Tabler through
+  `@tabler/icons-svelte-runes` (tree-shaken to the icons used) instead of `tools/icons.ts` copying SVG markup into
+  `web/app/icons.ts`, and other libraries likewise. What it must keep: no build step for Node (tools, tests and
+  `bench/` run `.ts` directly, CLAUDE.md "TypeScript"), COOP/COEP on the dev server and in `npm run dist`'s static
+  copy, the module workers (machine, vCPU, device, compile, GPU, sampler, tailnet; `new Worker(new URL(…,
+  import.meta.url), { type: 'module' })`, which Vite bundles), the wasm core and `target/net/*.wasm` loaded by URL, the
+  test pages under `tests/browser/` and `bench/*/index.html`, and `npm start`'s checks. It replaces `tools/serve.ts`'s
+  type stripping and Svelte compiling (`tools/svelte.ts`), `index.html`'s import map (xterm.js, Svelte's runtime) and `npm run dist`'s copying
+  (frontend.md "A static copy"); CLAUDE.md's "no build step" convention and docs/frontend.md "Icons" change with it.
+  Decided (the user, 2026-10-24): Vite is an accepted dependency; Rollup or esbuild is whichever is simpler (Vite brings
+  its own: the bundler is its choice, not a second one to add). The tests drive whichever is fastest of the paths close
+  to the production build (`vite build` served statically with COOP/COEP, or Vite's dev server if it's measured
+  faster): no bespoke CI-only scripts kept for it. The page served as a few bundled files instead of hundreds of
+  modules is part of the point (fewer requests on slow clients and connections).
+- **The status bar's loose ends** (2026-10-24, frontend.md "The status bar"): no frame rate on `?display=simple`
+  (`showFramebuffer` in the machine worker would need a count and a message); USB devices (mass storage included) count
+  in no disk or adapter element (attached while running: the counters are per start); video decode's "hardware" is
+  what a decoder asked for (WebCodecs doesn't say what it got; Chromium's `prefer-hardware` fails rather than fall back,
+  so a decoding stream asked for it is in practice hardware); per-vCPU bars scale to the run's peak, not a fixed scale.
+  The editor is mouse- and keyboard-driven (drag, Alt+←/→, Delete); touch drag isn't handled (HTML5 drag and drop).
 - **A ramdisk as swap, set up for the user** (the user's idea, 2026-10-18): an option on a ramdisk in the Machines
   screen's disks menu that formats it as swap and turns it on in the guest, with nothing to do inside. The host can
   write the swap header itself (`mkswap`'s format: a fixed page with `SWAPSPACE2`, a label and the size) and hand the

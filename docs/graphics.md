@@ -226,6 +226,14 @@ screen than on the simple framebuffer (backlog).
   39 frames a second instead of 55. The drawing buffer isn't preserved, so every present draws the whole scanout.
 - **Stats** (`?displaystats`, `render-stats` once a second): submits, draws, commands, busy and submit time, presents,
   uploads and read-backs, fences and their latency, compile time, video's counters.
+- **The status bar's numbers** (`stats`, always, once a second from `ready` on; `FromGpuWorker` in web/gpu-worker.ts):
+  the WebGL renderer and vendor (read once) and whether it is a CPU rasterizer, totals since the worker started of
+  presents (`Screen.presented`), submits, commands, draws and errors, and video's: the codecs offered and which in
+  hardware, the guest's codecs now (`VideoContext.streams`: profile, size, hardware or not, open, pictures written)
+  and the decoded, dropped and error totals. Only what is counted anyway, read by the timer: nothing per frame or
+  per call, no GL query. A 2D machine's presenter (web/gpu-present.ts `canvasPresenter`, in the device worker) sends
+  its own over the display port: `screen-stats` once a second from the first scanout on (its draws so far, WebGL2 or
+  a 2D context, the renderer). Neither is state a snapshot holds.
 
 ### Fences
 

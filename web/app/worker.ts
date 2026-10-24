@@ -404,6 +404,10 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     restoring = !resume;
   }
   const devices = liveSpecs = specs ?? layout(m, machine).map((s) => device(s, m, machine));
+  // The status's disks and adapters (`Status.disks`, `nets`): the device index of each of the page's, in its order.
+  // A restore makes the same layout (fromHeader checks it), so the slots are the same either way.
+  const here = layout(m, machine);
+  const io = { disks: here.flatMap((s, i) => (s.kind === 'blk' ? [i] : [])), nets: machine.network ? here.flatMap((s, i) => (s.kind === 'net' ? [i] : [])) : undefined };
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   const { ramSize, spill } = split;
   booting = bootVm(core, {
@@ -461,7 +465,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
     if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
     const now = performance.now();
-    const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt);
+    const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt, io);
     // The memory signal (web/app/memory.ts): past what the device reports, the JIT's cache holds no more than it does now
     // (the gauge's limit: it flushes there, docs/jit.md "The page's memory signal").
     const device = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
@@ -624,7 +628,14 @@ async function suspend() {
   }
 }
 
-function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number): Status {
+/** `io`: the device index of each of the page's disks and adapters, in its order (none: a machine without `network`). */
+function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number, io: { disks: number[]; nets?: number[] }): Status {
   const s = vm.stats();
-  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s, memory: vm.hostUse() };
+  const c = vm.deviceIo(); // two per device: blk read, written; net received, sent
+  return {
+    ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s, memory: vm.hostUse(),
+    disks: io.disks.map((i) => ({ read: c[2 * i], written: c[2 * i + 1] })),
+    nets: io.nets?.map((i) => ({ rx: c[2 * i], tx: c[2 * i + 1] })),
+    cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
+  };
 }

@@ -198,7 +198,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.match(dialogs.at(-1)!, /^confirm: Load the snapshot first\.webpcsnap\? It holds Buildroot \(test guest\) as it was on .* \(\d.* (KiB|MiB), 2 vCPUs\)\..*replaced by the snapshot's changes to the disk\.$/);
   // The terminal shows the saved output's tail, and the status the snapshot's vCPUs (the page asked for 1).
   await shows(p2, /saved-state/);
-  await p2.waitForFunction(() => /^2 vCPUs/.test((document.getElementById('status')?.textContent ?? '')), null, { timeout: 10_000 });
+  await p2.waitForFunction(() => /(?<!\d)2 vCPUs/.test((document.getElementById('status')?.textContent ?? '')), null, { timeout: 10_000 });
   assert.equal(await p2.locator('#boot').isHidden(), true);
   // The machine is where it was: its variable, its tmpfs file, and a shell that answers.
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile; echo af""ter-$((6*7))\n');
@@ -246,7 +246,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await p2.locator('#message-actions button', { hasText: 'Start' }).click();
   await p2.waitForFunction(() => document.body.dataset.state !== 'failed', null, { timeout: 10_000, polling: 20 });
   await running(p2);
-  assert.match(await status(p2), /^\d vCPUs?/);
+  assert.match(await status(p2), /\d vCPUs?/);
   await onSerial(p2, 'echo var=[$SNAPVAR] boo""ted-$((6*7))\n');
   await shows(p2, /var=\[\] booted-42/); // a normal boot: the variable of the snapshot isn't there
 

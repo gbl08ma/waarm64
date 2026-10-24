@@ -13,6 +13,7 @@
   gpu.postMessage({ type: 'init', canvas: offscreen, port: channel.port1, stats: true }, [offscreen, channel.port1]);
   window.renderStats = [];
   gpu.onmessage = (e) => {
+    if (e.data.type === 'stats') return; // once a second, for the page's status bar
     if (e.data.type === 'render-stats') { window.renderStats.push(e.data); return; }
     if (e.data.type !== 'ready') { window.result = { error: `gpu worker: ${JSON.stringify(e.data)}` }; return; }
     window.renderer = e.data.renderer;

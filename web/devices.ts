@@ -234,6 +234,8 @@ export type Ctx = {
   changeConfig: (write: (config: Uint8Array) => void) => void;
   /** The features the driver negotiated (0 before FEATURES_OK). */
   features: () => bigint;
+  /** This device's two I/O byte counters (`DevicesInit.io`), where the owner keeps them: blk read, written; net received, sent. */
+  io?: Float64Array;
 };
 
 /**
@@ -369,6 +371,7 @@ const RX_QUEUE = 256; // frames held while the guest has posted no receive buffe
  * Guest bugs (short, oversized or malformed chains) drop the frame.
  */
 export function net(ctx: Ctx, d: NetSpec): Backend {
+  const io = ctx.io ?? new Float64Array(2); // bytes received (frames to the guest), sent
   const rx: Request[] = [];
   const frames: Uint8Array[] = []; // not yet through `receive`
   const ready: RxFrame[] = []; // waiting for buffers
@@ -399,6 +402,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
       const b = new Uint8Array(total);
       b.set(hdr);
       b.set(frame, NET_HDR);
+      io[0] += frame.length;
       for (let k = 0, at = 0; k < n; k++) {
         const r = rx.shift()!;
         const len = Math.min(room(r), total - at);
@@ -431,7 +435,10 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
         return undefined;
       }
       const len = r.read.reduce((n, s) => n + s.len, 0);
-      if (len > NET_HDR && len <= NET_HDR + MAX_GSO_FRAME) for (const f of transmit(gather(ctx.ram(), r.read, len))) adapter.send(f);
+      if (len > NET_HDR && len <= NET_HDR + MAX_GSO_FRAME) {
+        io[1] += len - NET_HDR; // the guest's frame (a large one before its segmentation)
+        for (const f of transmit(gather(ctx.ram(), r.read, len))) adapter.send(f);
+      }
       return 0;
     },
     reset() {
@@ -725,6 +732,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     rw = files && overlay(base, files.data, files.map, files.meta);
   }
   const disk: Disk = rw ?? base;
+  const io = ctx.io ?? new Float64Array(2); // bytes read, written (completed requests)
   const backend: Backend = {
     async request(r) {
       const ram = ctx.ram();
@@ -741,6 +749,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         const bytes = await disk.read(Number(h.getBigUint64(8, true)) * 512, room).catch(() => undefined); // IOERR, not a failed device
         if (bytes) st ? st.time('scatter', bytes.length, () => scatter(ram, data, bytes)) : scatter(ram, data, bytes);
         [status, n] = bytes ? [S_OK, room] : [S_IOERR, 0];
+        if (bytes) io[0] += room;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_GET_ID) {
         const id = new Uint8Array(20);
         id.set(new TextEncoder().encode(serial).subarray(0, 20));
@@ -754,6 +763,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         // A failed write is most likely the storage full (OPFS over quota): the remote disks' kept blocks give way, once.
         const ok = rw && ((await write()) || (releaseStores() && (await write())));
         status = ok ? S_OK : S_IOERR;
+        if (ok) io[1] += len - 16;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
         st ? st.time('flush', 0, () => rw.flush()) : rw.flush();
         status = S_OK;
@@ -856,6 +866,12 @@ export type DevicesInit = {
   state?: unknown[];
   /** The xHCI (docs/usb.md): `vm_xhci`'s address, the page's port for the contract's messages, devices to plug in at start. */
   xhci?: { shared: number; port?: MessagePort; attach?: UsbAttach[] };
+  /**
+   * Two I/O byte counters per device, by index (over a SharedArrayBuffer where the backends run in the device worker,
+   * so the VM's thread reads them: `Vm.deviceIo`): a blk's bytes read and written, a net's frames' bytes received and
+   * sent (`Ctx.io`). Only this thread writes them (plain stores; a reader may see a value a request old).
+   */
+  io?: Float64Array;
 };
 
 /** The buffers of the Uint8Arrays in a saved state (`Devices.save`), to transfer it to another thread. */
@@ -891,7 +907,7 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, spill = [], signal, specs, deterministic, wakes, state, xhci }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
@@ -908,6 +924,7 @@ export class Devices {
           const f = new Uint32Array(this.memory.buffer, shared[i] + FEATURES, 2);
           return BigInt(Atomics.load(f, 0)) | BigInt(Atomics.load(f, 1)) << 32n;
         },
+        io: io?.subarray(2 * i, 2 * i + 2),
       };
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);

@@ -7,6 +7,8 @@ import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
 import type { ProblemWords } from './usb-ports.ts';
 import type { LockMode } from '../input.ts';
+import { normalize, type Graphics, type Metrics } from './statusbar.ts';
+import { settings } from './settings.ts';
 
 export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
@@ -68,7 +70,21 @@ export const ui = $state({
   netMenu: 0,
   netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
-  status: { text: '', data: '' },
+  /**
+   * The status bar (web/app/StatusBar.svelte): the last status as JSON (`data`, for tools), the last second's numbers,
+   * the names of the running machine's disks, in its order, and the screen's last second (with when it came, ms).
+   */
+  status: { data: '', metrics: undefined as Metrics | undefined, disks: [] as string[], gpu: undefined as { g: Graphics; at: number } | undefined },
+  /** The status bar's elements (Preferences, web/app/statusbar.ts; remembered as the settings' `statusBar`). */
+  statusItems: normalize(settings().statusBar),
+  /** Full screen takes the status bar along (Preferences; off: the machine alone, edge to edge). */
+  statusFullscreen: settings().statusFullscreen === true,
+  /** Full screen with the keyboard lock held: the browser's shortcuts reach the machine. */
+  keyboardLocked: false,
+  /** The screen or the terminal has the focus, in a focused window (the screen's "Click to type" hint is off). */
+  keysFocused: false,
+  /** The microphone's state (web/audio.ts `micState`), for the status bar. */
+  mic: 'off',
   /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
   size: { ncpus: 1, ramMiB: 1024, split: undefined as number[] | undefined, gpu: '3d' as '3d' | '2d', cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
   /** Bumped when the store's records change (the toolbar's snapshot list rereads). */

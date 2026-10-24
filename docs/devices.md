@@ -52,6 +52,11 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   parallel SMP every vCPU worker rings it (`ring`: a waiter compares with wrap-around, since the
   handled value may pass its own ring), Node serves it inline between the coordinator's awaits,
   and completions also bump and notify every vCPU's wake word (`DevicesInit.wakes`).
+- **I/O counters** (`DevicesInit.io`, `Vm.deviceIo`): a Float64Array over a SharedArrayBuffer that
+  `bootVm` makes and hands over with the init message, two slots per device. blk adds the bytes of
+  each completed read and write, net those of each frame given to the guest and sent by it (`Ctx.io`):
+  one store per request, from the backends' one thread; the machine worker reads them once a second
+  for the page's status (frontend.md, `status`). They start at 0 with each `bootVm`.
 - **Deterministic mode:** the vCPU worker `Atomics.wait`s on each `DEVICE` exit until the device
   worker has completed everything posted, so completions land at a fixed step and boots keep one
   exact step count natively, in Node and in Chromium (backend latency only lengthens the wait).

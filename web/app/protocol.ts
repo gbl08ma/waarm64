@@ -246,4 +246,24 @@ export type Status = {
   stats: ReturnType<Vm['stats']>;
   /** What the machine holds that the host pays for (`Vm.hostUse`: RAM, the core's heap, the JIT's cache), for the page's memory signal (web/app/memory.ts). */
   memory: ReturnType<Vm['hostUse']>;
+  /**
+   * Each disk's bytes the guest read and wrote since this start (a restart, a resume or a snapshot's load starts again
+   * at 0), counted as its virtio-blk requests complete (failed ones, flushes, discards and write-zeroes count nothing):
+   * one per entry of the start message's `disks`, in its order (that is, by slot). Undefined only from a worker that
+   * doesn't count them. USB mass storage isn't in it (the xHCI's devices are the page's, docs/usb.md).
+   */
+  disks?: { read: number; written: number }[];
+  /**
+   * Each network adapter's bytes since this start, as the guest sees them: `rx` the frames given to the guest, `tx` the
+   * frames it sent (Ethernet frames without virtio's header; a large TCP/UDP send counts once, before its segments).
+   * One per entry of the start message's `nets`, in its order; undefined for a machine without `network` (its `nets`
+   * then make no adapters).
+   */
+  nets?: { rx: number; tx: number }[];
+  /**
+   * Each vCPU's instructions retired and the part of them in JIT code since this start (`Vm.cpuStats`), by vCPU
+   * number. Only where every vCPU counts in its own block (`Vm.parallel`, which the page's machines always are);
+   * undefined in round-robin mode, where vCPU 0's block counts them all.
+   */
+  cpus?: { steps: number; jitSteps: number }[];
 };
