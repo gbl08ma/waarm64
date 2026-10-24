@@ -167,7 +167,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     of ours in its own repository, about 250 lines over gvisor-tap-vsock, reached by a WebSocket on loopback,
     Ethernet frames with no gateway in the page, IPv4 only, reproducible binaries with published hashes
     ([docs/plans/networking-local.md](docs/plans/networking-local.md)).
-  - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
+  - Graphics ([docs/graphics.md](docs/graphics.md): what exists; [docs/plans/graphics.md](docs/plans/graphics.md):
+    the decisions and what's open): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device
     pixels with HiDPI), with damage only and the guest's cursor as the page's; snapshots keep
@@ -179,24 +180,24 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     2026-10-09):** no software rendering or translation layers in the guest; OpenGL ES first,
     through Mesa's upstream **virgl** driver onto **our own virgl renderer on WebGL2** (the
     baseline), a WebGPU backend only where the browser has one, Vulkan (Venus, Zink) deferred
-    (graphics.md §1, §18). **G2 is done (2026-10-09, graphics.md §19): the gate passed.** On a
+    (plans/graphics.md §1). **G2 is done (2026-10-09, docs/graphics.md "Measurements"): the gate passed.** On a
     virtio-gpu with virgl and a null renderer, a sway frame costs the guest 6.6 ms of CPU against
     llvmpipe's 81 (60 frames a second against 28), and glcomp's ~1/190 of llvmpipe's work; Mesa
-    is cheap, the kernel's submit path is what's left. **G3 is done (2026-10-09, graphics.md §20): 3D
+    is cheap, the kernel's submit path is what's left. **G3 is done (2026-10-09, docs/graphics.md "The renderer"): 3D
     is the page's default where WebGL2 is.** Our virgl renderer on WebGL2 (TGSI to GLSL ES 3.00, caps
     from the browser) draws glcomp within 7 levels a byte of llvmpipe, and Arch's sway on GLES at 60
     frames a second on the Mac host's GPU (the null renderer's rate and guest CPU; 55 on SwiftShader).
     The page's tests pass with it; snapshots work while 3D is unused (`?gpu=2d` keeps the 2D path).
-    **G4 is done (2026-10-10, graphics.md §21): breadth and correctness.** Firefox runs on 3D (WebRender and WebGL
+    **G4 is done (2026-10-10, docs/graphics.md "Applications on 3D", "Testing"): breadth and correctness.** Firefox runs on 3D (WebRender and WebGL
     on virgl; scrolling real sites at 50–60 frames a second on the Mac's GPU; its start and page loads are the guest's
     CPU, the JIT track's), GTK4's GSK GL renderer draws every gtk4-demo demo, and **dEQP-GLES2 and GLES3's whole
     mustpass lists pass with no failure** (17,027 and 44,398 pass, the rest not supported, on SwiftShader), with a pass
-    list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **G5** (proposed at graphics.md
-    §21's exit, no kickoff): **dEQP on a real GPU is done** (2026-10-19, graphics.md §23: the whole lists on the Mac's
+    list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **G5** (proposed at G4's exit, no
+    kickoff): **dEQP on a real GPU is done** (2026-10-19, docs/graphics.md "Testing": the whole lists on the Mac's
     M4, ANGLE on Metal, found four bugs of ours SwiftShader hid, fixed; 85 GLES2 and 129 GLES3 failures remain, all the
     GPU's: the filter switch near level 0, one invariance case); other platforms, GtkGLArea's offload and breadth (a
-    desktop's compositor, Chromium in the guest) are open items in docs/backlog.md and graphics.md §7, with no handover.
-    **Snapshots while 3D is in use are done** (built ahead of it, 2026-10-18 to 10-19, graphics.md §22: the
+    desktop's compositor, Chromium in the guest) are open items in docs/backlog.md and plans/graphics.md §2, with no handover.
+    **Snapshots while 3D is in use are done** (built ahead of it, 2026-10-18 to 10-19, docs/graphics.md "Snapshots with 3D in use": the
     renderer's state as data, its contents read back, BLOB frames in the file; refused only while a video decodes).
     On the desktop guest with sway, Firefox on WebGL and GTK4 running: 96 resources, 119 MB of 3D state stored as
     6 MB, read in 0.23 s of an 8.2 s pause (the rest is the guest's RAM); the load brings the session back. It also

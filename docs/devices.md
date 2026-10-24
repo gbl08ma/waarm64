@@ -338,6 +338,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (oldest dropped past 1024). LED status events go to the port. The page's mouse lock and touches: docs/frontend.md "Input".
 
 ### virtio-gpu (ID 16): 2D, and 3D through virgl
+What the guests do with it, and why it is built as it is: [graphics.md](graphics.md) "The 2D display".
 - `{type: 'gpu', width, height, dpi?}` (`web/gpu.ts`; the native twin is `core/tests/common/gpu.rs`
   and must give the same answers, the same EDID bytes and the same pixels). controlq and cursorq,
   feature `EDID`, config `events_read`, `events_clear` (write-one-to-clear), `num_scanouts` = 1,
@@ -363,7 +364,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   is ours: one 128-byte block, CVT reduced-blanking timings for the preferred mode (60 Hz, lower
   for the largest sizes to keep the pixel clock in a detailed timing), physical size from the DPI,
   sizes from 480×300 to 4095×4095; `edid-decode --check` passes for every size tested.
-  **Two rules keep fbcon's console whole** (found on Debian's page, graphics.md §13): fbcon's buffer
+  **Two rules keep fbcon's console whole** (graphics.md "The console and the display size"): fbcon's buffer
   is allocated once, and DRM rejects any mode wider or taller than it (`VIRTUAL_X`), so the EDID lists
   after the preferred mode the size of the resource the guest last showed (the console's buffer; kept in a
   snapshot) and the *floor*, or the guest finds no mode and blanks the console. And when a guest answers a smaller mode with a rectangle smaller than the
@@ -381,9 +382,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   test guests, whose bytes and step counts must not move): one `RESOURCE_FLUSH` is answered per 16 ms frame, the
   first after an idle moment at once, and whatever is queued behind a held flush waits with it, in order. It is the
   only back-pressure a 2D guest takes: with replies instant a scrolling console commits thousands of times a
-  second, and with the queue full it commits once per frame (graphics.md §16 has the numbers). Commands are never
+  second, and with the queue full it commits once per frame (graphics.md "Console scrolling and the flush pacing" has the numbers). Commands are never
   delayed, only their replies. `?gpu=nopace,q<N>` on the page changes both, for measurements.
-- **A guest that composites with llvmpipe shows stale frames** (graphics.md §16): Mesa's software GL rasterizes
+- **A guest that composites with llvmpipe shows stale frames** (graphics.md "Guests that composite with llvmpipe"): Mesa's software GL rasterizes
   on its own threads after `glFlush`, wlroots flips without waiting, so the transfer copies a buffer that is
   still being drawn and nothing tells the device when it is done. That is the guest's race (a real display hides it
   by scanning memory continuously); `WLR_RENDERER=pixman` in the guest removes it, and pixman is also about ten
@@ -401,131 +402,47 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - Guests: Linux's `virtio_gpu` (a module in Debian and Alpine, built in `images/gpu` with
   `CONFIG_DRM_VIRTIO_GPU_KMS`, without which it says "KMS disabled" and offers no display).
 
-#### virgl (3D: G2's guest side, G3's renderer on WebGL2)
+#### virgl (3D)
+How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps, queries, video, snapshots) is
+[graphics.md](graphics.md); this is the device's side.
 - `{type: 'gpu', …, virgl: true, caps?}` (`GpuOptions.virgl`, off by default so no guest's bytes or steps move; the
-  page's `?gpu=virgl-null`). Adds feature `VIRGL` (bit 0) and `num_capsets` = 2, and the 3D commands: `GET_CAPSET_INFO`,
+  page's 3D machines, and `?gpu=virgl-null`). Adds feature `VIRGL` (bit 0) and `num_capsets` = 2, and the 3D commands: `GET_CAPSET_INFO`,
   `GET_CAPSET`, `CTX_CREATE`/`DESTROY`, `CTX_ATTACH`/`DETACH_RESOURCE`, `RESOURCE_CREATE_3D`, `TRANSFER_TO_HOST_3D`,
   `TRANSFER_FROM_HOST_3D`, `SUBMIT_3D`. Errors as virglrenderer gives them (`ERR_INVALID_CONTEXT_ID` for an unknown or
-  reused context, context 0 included); at most 1,024 contexts and 65,536 resources.
+  reused context, context 0 included); at most 1,024 contexts and 65,536 resources. No blob resources, `HOSTMEM` or
+  context init: virgl's resources are guest-backed.
 - **The capsets** are VIRGL (v1, 308 bytes) and VIRGL2 (v2, 1408 bytes) from one blob, `GpuOptions.caps` or else
-  `virglCaps` (`web/virgl.ts`: virglrenderer's own caps on a GLES 3.0 host, graphics.md §19, so the guest's Mesa
-  reports **OpenGL ES 3.0**, GLSL level 130, minus what WebGL2 lacks and at WebGL2's minimum limits). A 3D machine on
-  the page is given `capsFromGl` (`web/virgl-caps.ts`): that floor with the browser's limits and only the formats its
-  extensions back (graphics.md §20). The renderer string is `webpc`.
+  `virglCaps` (`web/virgl.ts`, the floor: graphics.md "The caps"); a page machine is given the caps its GPU worker
+  built from the browser (`capsFromGl`). The renderer string is `webpc`.
 - **The device checks, the host runs** (`web/virgl-host.ts`): the device validates every command and keeps its tables
   (contexts, resources and their backings) as for the null renderer, and hands the work to `Gpu.host`: contexts,
   3D resources, backings, attachments, transfers and submits, and with a host every scanout too (a 2D resource's
   pixels then live in shared memory, in the guest's format, and the host's screen reads them in place and draws them
-  through the format's swizzle). Calls are ordered and answer nothing.
+  through the format's swizzle). Calls are ordered and answer nothing (graphics.md "The GPU worker").
   **A command with the fence flag** has its reply held until the host's fence resolves (everything before it has
   run: uploads read, read-backs written), and every reply behind it waits in order (the flush pacing is the same
   queue). Without a host it is the null renderer: streams walked and counted (`VirglStats`), 3D transfers counted,
   fences at once, a 3D scanout black.
-- **The renderer** (`web/virgl-renderer.ts`, graphics.md §20) runs the stream on one WebGL2 context:
-  virglrenderer's decoder and state model (contexts, sub-contexts owning the objects, resources attached to
-  contexts), state applied at each draw, programs from `web/virgl-tgsi.ts` (TGSI → GLSL ES 3.00, per vertex and
-  fragment pair and draw-state key) cached by shader and key. Resources: buffers (a GL buffer and a CPU copy, the
-  element buffer made from the copy; staging buffers only the guest's pages), textures by target (1D and rectangles
-  as 2D, 1D arrays as 2D arrays, cubes, 3D), multisampled and stencil-only ones as renderbuffers; formats from
-  `web/virgl-formats.ts`, stored as their bytes are (no BGRA in WebGL2) and swizzled in the shaders; an X format's
-  unused byte gets the fragment's alpha when drawn to (blending reads it; sampling an X format reads 1, and its
-  destination alpha is 1 through substituted blend factors). Uploads read the
-  guest's pages in place where they are contiguous (`COPY_TRANSFER3D` from a staging buffer, `TRANSFER3D`, the
-  virtio transfer, `RESOURCE_INLINE_WRITE`); read-backs (`readPixels`, or the buffer's copy) write them. What WebGL
-  refuses and GLES allows is worked around at the draw: front and back stencil states whose reference or masks
-  differ draw twice (each face's triangles with its own state on both faces, the other face culled); an attribute
-  whose stride or offset isn't a multiple of its type's size, or whose stride is over 255, is repacked from the
-  buffer's copy into a scratch buffer of its slot; WebGL2 always restarts primitives at the index type's largest
-  value, so indices that hold it with restart off (GLES 2) are widened to the next type, and another restart index is
-  mapped onto the largest (in a scratch element buffer; a draw's indices start at the index buffer's offset alone:
-  Mesa folds the draw's start into it, as vrend reads it). A color target without alpha (RGB565, R8) gets the
-  fragment's alpha in its output's fourth component (blending reads it); WebGL2's one color mask leaves on the
-  components the first target doesn't store (another may); a blit drawn through the formats' swizzles has only its
-  destination attached (sampling a texture still attached from the last draw is a feedback loop WebGL refuses); flat
-  varyings travel as integers. A fence waits for the occlusion queries ended before it (WebGL's results come only
-  after the task that ended them; GL's are ready at a fence, so a guest's `glFinish` sees them: `FenceGate`); a query destroyed before its result stops counting (a deleted WebGL query never has one). `gl_FragCoord` is upper-left whatever the
-  shader's `FS_COORD_ORIGIN` says: the caps offer no lower-left origin, so Mesa flips y itself. What a real GPU's
-  compiler may take liberties with is said explicitly (graphics.md §23, ANGLE on Metal): a position computed by
-  precise instructions (Mesa's mark of `invariant`) is `invariant gl_Position`, `x != x` is `isnan(x)`, and an integer
-  immediate that isn't a normal float is no constant expression (`^ u_zero`: folded, a NaN's bits came back canonical). Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
-  keeps depth in a word's low 24 bits, GL in its high 24); Z32_FLOAT_S8X24_UINT uploads are drawn (WebGL2 takes no data
-  for its type: the depth through `gl_FragDepth`, the stencil a bit a pass). Clears,
-  `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both
-  formats' swizzles otherwise), copies between resources, occlusion queries as "any samples passed" (exact, or
-  conservative for virgl's conservative type; a counter reads 0 or 1, written to the query's buffer when WebGL has it), stream output (transform feedback, graphics.md
-  §20: interleaved into one buffer or one output a buffer, unindexed lists, cut at a full buffer, read back into the
-  buffer's copy; PRIMITIVES_GENERATED and PRIMITIVES_EMITTED counted by the draws; a shader's program captures all its
-  outputs whether targets are bound or not, so it draws through one program, as in GL). Multisampled resources are renderbuffers
-  (`texture_multisample` is advertised where the browser multisamples: Mesa makes no multisampled renderbuffer
-  without it); a multisampled source is resolved into a texture of its format before a blit that converts layouts or
-  flips, a multisampled texture sampled is resolved at the draw (one value a pixel, whatever the sample index), and
-  the sample mask is WebGL's sample coverage. Not there yet (none advertised): conditional rendering, user clip
-  planes, depth read-backs.
-- **What the guest sends** (Mesa 26.1 and 26.2): textures are uploaded and read back through staging buffers
-  (`VIRGL_BIND_STAGING`, `COPY_TRANSFER3D` in the stream), vertex data through `TRANSFER3D` in the stream (the
-  buffer's own pages), so glcomp and sway send no `TRANSFER_*_3D` at all; dumb buffers (fbcon, a console's cursor, pixman)
-  stay 2D.
 - **Captures** (`Gpu.onCapture`; `GpuSpec.capture` posts them on the display port; `web/virgl-trace.ts`): the 3D
-  control commands and the guest memory they read, the renderer's fixtures (`tests/virgl/`, graphics.md §20).
+  control commands and the guest memory they read, the renderer's fixtures (`tests/virgl/`, graphics.md "Tools").
   `web/virgl-replay.ts` runs one through the device into a host.
 - **A 3D cursor:** a compositor on virgl (sway on GLES) draws its cursor with GL into a 3D resource, and Linux
   transfers only dumb buffers, so `UPDATE_CURSOR` on a 3D resource reads its pixels back from the renderer
   (`VirglHost.read`, after the commands before it; QEMU's `virgl_renderer_get_cursor_data`) and shows them, unless
   another update came meanwhile.
-- **Snapshots** ([plans/graphics.md](plans/graphics.md) §22): with 3D in use (a context that submitted, or a 3D
+- **Snapshots** (graphics.md "Snapshots with 3D in use"): with 3D in use (a context that submitted, or a 3D
   resource), `save()` (async) asks the host (`VirglHost.save`: the GPU worker, after every call before it and once its
-  queries have their results) for the renderer's state: every resource's description, backing and contents read back,
-  and every context's sub-contexts, their objects and bound state as data (`VirglRenderer.save`). The device adds its
-  3D tables (the resources' gallium fields, the contexts' attachments, the contexts that submitted). The contents are
-  Uint8Arrays in the state, which the snapshot file carries as BLOB frames. A restore sends the state to the new host
-  (`load`), which makes everything again in a fresh renderer. Refused (`unsaveable`, and `vm.snapshot` refuses with
-  the reason) only while a context has video codecs or buffers (WebCodecs keeps its reference pictures), or a host
-  without `save`. Contexts that never submitted are made again; on the null renderer only the tables are kept. The
-  caps the guest read are saved; a restore in a browser that can't back them (`capsBacked`) keeps them for the guest
-  and turns 3D off (new contexts refused, a saved 3D state not loaded) rather than refusing the machine. The restore
-  tells the host what the scanout shows (the GPU worker draws the screen on a 3D machine).
-- **Video** ([plans/video.md](plans/video.md); on with 3D, `?gpu=novideo` off): the caps' `video_caps` list the decoders
-  the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main and High, VP9 profile 0, AV1 Main 8-bit; `web/virgl-video.ts`
-  `probeVideo`, in the GPU worker before it answers, which also notes which are in hardware), so the guest's Mesa offers
-  VA-API decoding. The renderer keeps each context's codecs and video buffers (CCMD 53-61: a buffer is its planes'
-  resources, R8 and RG8) and reads each picture's parameters and data from the guest's staging buffers. `VideoContext`
-  makes a chunk of each END_FRAME (H.264 rebuilt as Annex B with our SPS and PPS by `H264Stream`, `web/video-h264.ts`;
-  VP9 as sent) for one `VideoDecoder` per codec (`optimizeForLatency`; recreated at the next key picture after an
-  error), and writes each frame's Y and interleaved U/V into the buffer's planes (`VirglRenderer.writePicture`), each
-  plane filled to its texture's size with the picture's last column and row repeated (`padPlane`: the planes are the
-  coded size, whole blocks, and Chromium and mpv show its width: unwritten, the padding was a green edge).
-  Mesa's `end_frame` makes no fence, so the GPU worker's `CallQueue` (`web/virgl-host.ts`) holds a call while it
-  could see a pending picture: a call of a context that has a pending picture's plane attached (unless the submit
-  only decodes) or one naming a plane, and what must follow a held call (its context, its resources; fences, reads,
-  the screen and a resource's end wait for every held call; and another context's call that could see what a held one
-  draws: a submit of a context sharing an attached resource with it, a transfer of one of its resources). The rest
-  runs, so a decoder that holds pictures stalls only the context that shows them (Firefox's compositor attaches the
-  planes per frame) and the contexts that read what it draws (sway, sampling its window): the guest has no sync
-  between contexts but the host's order (graphics.md §24). The SPS's reorder depth is
-  0 for a hardware decoder; in software (which outputs in display order) the larger of the stream's reference count
-  and the depth learned from the POCs (`H264Stream` `'stream'`): FFmpeg drops a picture that comes after one it has
-  shown, and a pending picture of a lesser POC than one that comes out is given up at once. If calls wait 200 ms and
-  nothing comes out, a software H.264 decoder is drained without loss: flushed, and a new one decodes the IDR period
-  again from its start (kept up to 600 pictures or 32 MiB; else the next IDR); a picture still out after 1 s is given
-  up (logged; the guest sees the old planes). VP9 frames with `show_frame` 0 give no output and aren't waited for.
-  A picture is written into the planes its buffer had at END_FRAME as long as they exist, attached to the decoding
-  context or not (virglrenderer writes at END_FRAME; Firefox's decoder process lets go of its surfaces at a seek while
-  the compositor's context still shows them), never over a later picture in the same planes; a destroyed buffer's
-  pending picture is still written, and a destroyed codec's decoder is flushed (what it holds written) before it
-  closes. A decoder error (WebCodecs reports a damaged chunk; none conceals) closes the decoder and drops the codec's
-  pending pictures; a new decoder starts at the next key picture. A seek sends a key picture to the same codec; a size
-  change makes a new codec (plans/video.md §9). AV1 (`web/video-av1.ts` `Av1Stream`, plans/video.md §10): a sequence
-  header and each frame header written from the desc, a tile group of the tiles; the decoder's reference slots are
-  this side's (Mesa sends no refresh_frame_flags): a frame goes to a slot holding nothing the guest's reference map
-  has, or waits for the next frame's map (`nudge`d out after 30 ms of calls waiting: `CallQueue`'s `nudgeMs`, and
-  before a destroyed codec's flush), and one sent stored nowhere is decoded again if a later frame references it; a
-  hidden frame the guest shows later is written shown, and frames with no output go in the next temporal unit. Film
-  grain reaches the shown surface through webpc-va 2 (Mesa sends the film grain target too late). `renderer.videoStats` (decoded, dropped, errors;
-  each picture's END_FRAME to written and its write, in ms) and the queue's `ahead` and `maxWaitMs` go out in
-  render-stats (`bench/gpu/guest-session.ts` sums them over a phase). Mesa's wire numbers its profiles by its own
-  `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across releases. A capture includes
-  DECODE_BITSTREAM's buffers. `capsBacked` wants every decoder the guest was told of. The guest needs our `webpc-va`
-  (NV12 surfaces only, plans/video.md §1; AV1 film grain, §10), in the desktop image.
+  queries have their results) for the renderer's state, and adds the device's 3D tables (the resources' gallium
+  fields, the contexts' attachments, the contexts that submitted). The contents are Uint8Arrays in the state, which
+  the snapshot file carries as BLOB frames. A restore sends the state to the new host (`load`), which makes everything
+  again in a fresh renderer, and tells the host what the scanout shows (the GPU worker draws the screen on a 3D
+  machine). Refused (`unsaveable`, and `vm.snapshot` refuses with the reason) only while a context has video codecs or
+  buffers, or with a host without `save`. Contexts that never submitted are made again; on the null renderer only the
+  tables are kept. The caps the guest read are saved; a restore in a browser that can't back them (`capsBacked`) keeps
+  them for the guest and turns 3D off (new contexts refused, a saved 3D state not loaded) rather than refusing the
+  machine.
+- **Video** (graphics.md "Video", [plans/video.md](plans/video.md)): the caps' `video_caps`, and video commands in the
+  submits, which the device hands to the host like any other (a capture includes DECODE_BITSTREAM's buffers).
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 
@@ -624,8 +541,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - `web/display.ts` compares the buffer with the frame drawn last on every animation frame and puts
   the rows that changed on a `<canvas>` (or a worker's `OffscreenCanvas`: the page draws in its
   machine worker, docs/frontend.md "The screen") as opaque RGBA; fixed size, no mode setting.
-  virtio-gpu (above) is the display for guests with the driver; the page switches to it in
-  [plans/graphics.md](plans/graphics.md) G1 loop 4.
+  virtio-gpu (above) is the display for guests with the driver (the page's Debian: docs/frontend.md "The
+  screen").
 - The Buildroot test kernel has no fbcon (drawing the boot log would cost the boot test).
 
 ## Validation and oracles

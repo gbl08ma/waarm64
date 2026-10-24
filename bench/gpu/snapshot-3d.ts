@@ -1,4 +1,4 @@
-// Snapshots while 3D is in use, on a real guest (graphics.md §22; dev-only, not in tests): the desktop guest
+// Snapshots while 3D is in use, on a real guest (docs/graphics.md "Snapshots with 3D in use"; dev-only, not in tests): the desktop guest
 // (`target/arch/desktop.qcow2`, images/arch/desktop.sh) opened by its URL (a machine that isn't stored: its snapshots
 // are files), 4 vCPUs, 2.5 GiB, the screen at 1376×762, as bench/gpu/firefox-load.ts runs it. Scenes, each saved
 // SNAPS times (default 3) with Save snapshot: `idle` (the root shell, the login prompt on the screen: no 3D yet),

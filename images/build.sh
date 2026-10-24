@@ -26,7 +26,7 @@
 #   Mesa (EGL, GLES, the Gallium drivers: llvmpipe) and glcomp, a compositor's GLES load
 #   compiled in the same container, with its local.d script instead of the boot test's, as
 #   rootfs-gl.ext4 (it boots alpine's Image and initramfs-virt). Built as alpine-user.
-# alpine-virgl: G2's virgl guest (docs/plans/graphics.md §19): alpine-gl's root plus Mesa
+# alpine-virgl: G2's virgl guest (docs/graphics.md "The guest's 3D: Mesa's virgl"): alpine-gl's root plus Mesa
 #   $MESA built from source with llvmpipe and virgl in /opt/mesa (Alpine's Mesa has no
 #   virgl on any architecture), so both renderers run the same build; rootfs-virgl.ext4.
 # linux-crypto: the crypto extensions' test kernel (M6.5, images/crypto/):

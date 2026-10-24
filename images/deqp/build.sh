@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dEQP for G4's conformance subset (docs/plans/graphics.md; the G4 kickoff's decision 3): VK-GL-CTS
+# dEQP for G4's conformance subset (docs/graphics.md "Testing"; the G4 kickoff's decision 3): VK-GL-CTS
 # opengl-es-cts-3.2.14.1 (Apache-2.0: a workload, built and run, nothing copied), deqp-gles2 and deqp-gles3 on EGL's
 # surfaceless platform, built natively for Arch Linux (arch.bens.haus's aarch64 port: the desktop guest's
 # distribution) in rootless Podman from localhost/arch-base (images/arch/base.sh). On demand only: not in

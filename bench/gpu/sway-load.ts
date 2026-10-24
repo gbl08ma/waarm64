@@ -1,4 +1,4 @@
-// A compositor's load on the page (graphics.md §19; dev-only, not in tests): sway in a UEFI disk image with sway and
+// A compositor's load on the page (docs/graphics.md "Measurements"; dev-only, not in tests): sway in a UEFI disk image with sway and
 // foot (the user's Arch image, `images/arch/build.sh` plus `pacman -S sway foot`; login arch/arch on the
 // screen, root/root on the serial console), headless Chromium, 4 vCPUs, the screen fixed at 1376×762. Renderer modes:
 // `virgl` (?gpu=virgl-null, or `?gpu=` + VIRGL_GPU, `virgl` for G3's renderer; WLR_RENDERER=gles2 on Mesa's virgl),

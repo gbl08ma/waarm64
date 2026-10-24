@@ -19,7 +19,7 @@ with a live codec refused a snapshot that saves once the player exits. **AV1 is 
 wherever `VideoDecoder` takes it (the user's Linux Chromium decodes it in software), its headers rebuilt, exact in
 software and in the Mac's hardware, film grain included (webpc-va 2).
 **The track is done (§11): HEVC dropped.** What exists is
-in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
+in the topic docs ([graphics.md](../graphics.md) "Video", [devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
 The question: a guest's video player decodes on our emulated CPU (Firefox's VP9 decoder takes 1.7-1.8 s of the guest's
@@ -168,7 +168,7 @@ Firefox on the clips; `CAPTURE=1` saves the virgl capture), `bench/video/media-d
 
 ## 5. V1: the decoders on WebCodecs (2026-10-14)
 
-What exists is in [devices.md](../devices.md) "virgl" ("Video") and [testing.md](../testing.md) ("Video over virgl").
+What exists is in [graphics.md](../graphics.md) "Video" and [testing.md](../testing.md) ("Video over virgl").
 Tools: `bench/video/replay.ts` (a capture's pictures through `VideoDecoder`; `hw|sw`, `REORDER`; on the Mac,
 `replay-mac.sh`), `bench/video/fixture.ts` (the Chromium tests' fixtures), `bench/video/v1.ts` (the desktop guest's
 FFmpeg decoding each clip in software and through VA-API, frames compared by framemd5; on the Mac,
@@ -234,7 +234,7 @@ vCPUs, 1376×762, 20 s a clip from 5 s after it starts. JSON in `bench/video/res
   sync clips drop as many frames whether decoded on the host or not (VP9 at 360p is cheap in software): the drops are
   the per-frame cost of Firefox's pipeline at 30 frames a second, not the decode. The profile (kernel 45% of samples,
   flat: the scheduler, preemption counts, IRQs) charges each run chunk to the instruction after the last exit
-  (graphics.md §20's caveat), so `arch_counter_get_cntvct`'s 4% is an exit site, not a measured cost. Arch Linux ARM's
+  (docs/benchmarking.md "PC sampling"), so `arch_counter_get_cntvct`'s 4% is an exit site, not a measured cost. Arch Linux ARM's
   kernel has `DEBUG_PREEMPT` on (`debug_smp_processor_id`, `check_preemption_disabled` ~1.5%) and walks stacks
   (`arch_stack_walk` 1.6%). Sampling slows the guest (273 drops of 558 with it): drop counts only from unsampled runs.
 - **A/V sync, decoded on the host:** the H.264 sync clip median -13 ms (p10 -29, p90 +7, all within -40..+7), VP9
@@ -260,7 +260,7 @@ on the M4, its software decoders FFmpeg's; `*-devvm`, `mpv-*`: the dev VM's Chro
   ~2 a frame) or it names one; decode-only submits still pass. With that alone Firefox played H.264 through OpenH264
   on the dev VM with no call ever waiting, every picture decoded, 117-176 ms from END_FRAME to written. *Too fine:*
   other contexts ran ahead of a held one they share resources with, so sway composited a client's window before the
-  client's held draws into it (Chromium in the guest showed older frames; graphics.md §24). They wait too since
+  client's held draws into it (Chromium in the guest showed older frames; docs/graphics.md "The call queue"). They wait too since
   2026-10-22.
 - **FFmpeg (Chrome's software decoder) drops what it reorders too late.** Told no depth it guesses, dropping a
   picture while it learns (V1's replay: 1 of 130); that picture never came out, the compositor waited on it, the
@@ -392,7 +392,7 @@ test. JSON in `bench/video/results/v3d/` (the dev VM's Chromium 153; the Mac's C
   Mac in hardware and in software (where a codec destroyed with pictures held is flushed out); Firefox on the VP9 clip
   shows the right frame at every paused seek across the sizes and plays on after each seek. VP9's change of size
   without a key frame (reference scaling: libvpx's real-time resizing) wasn't tried.
-- **Decided:** the write and destroy rules above (devices.md "virgl"); nothing else changes. Next: HEVC and AV1.
+- **Decided:** the write and destroy rules above (graphics.md "Video"); nothing else changes. Next: HEVC and AV1.
 
 
 ## 10. V3: AV1 (2026-10-15)

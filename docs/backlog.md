@@ -140,7 +140,7 @@ left open, most promising first.
   (54 ms). What dies is Liftoff code TurboFan replaced and flushed modules' code; fewer, larger modules or less
   tier-up churn would shrink it, neither measured. Also open from that item: which Blink object a vCPU thread's
   `new WebAssembly.Module` allocates in Oilpan (`CppGC.SweepOnAllocation` inside `wasm.SyncCompile`).
-- **llvmpipe under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing
+- **llvmpipe under the JIT** ([graphics.md](graphics.md) "Guests that composite with llvmpipe"): sway compositing
   through Mesa's software GL kept four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman:
   4–8%). Profiled 2026-10-08 with a compositor-like GLES load (`images/alpine/gl`): ~95% of the
   rasterizer's time was helper calls for NEON the JIT didn't inline (ZIP/UZP, LD1 of a lane, half
@@ -417,21 +417,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   deterministic mode land when they land. Past 1024 queued events the oldest are dropped, so
   anything that types a long string (a test agent, a paste into the screen) must pace itself.
 - **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
-- **Guests that composite with llvmpipe show stale frames on virtio-gpu** (graphics.md §16; devices.md): the
+- **Guests that composite with llvmpipe show stale frames on virtio-gpu** (graphics.md "Guests that composite with llvmpipe"; devices.md): the
   rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
   samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
   unmodified guests: not built (a full compare per refresh; build it if GL compositors become fast enough to use).
-- **Chromium in the guest still steps back one frame now and then** (graphics.md §24): after the queue's fix,
+- **Chromium in the guest still steps back one frame now and then** (graphics.md "The call queue"): after the queue's fix,
   `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
   `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
   scanout.
-- **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md §21 loop 5): GTK hands sway the GL area's
+- **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md "The guest's 3D: Mesa's virgl"): GTK hands sway the GL area's
   texture as a dmabuf, and Mesa's virgl backs a texture that isn't shared with a 1-byte staging BO (the host copies
   transfers both ways), so the dmabuf is smaller than stride × height and the compositor disconnects the client. A
   guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload` avoids it. Ways out: Mesa reallocating a
   staging-backed texture when it is exported (upstream), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every
   texture then has a guest backing and read-backs go through it: measure Firefox and GTK before choosing).
-- **dEQP on more platforms** (graphics.md §21, §23): the whole GLES2 and GLES3 lists have run on SwiftShader (the
+- **dEQP on more platforms** (graphics.md "Testing"): the whole GLES2 and GLES3 lists have run on SwiftShader (the
   dev VM, CI) and on ANGLE on Metal (the Mac's M4). Each WebGL2 stack behaves differently within the spec (precision,
   optional extensions, limits, undefined behavior, ANGLE's workarounds), and whatever differs is what users hit.
   Metal found four bugs of ours that SwiftShader hid, all where our GLSL leaned on what the spec leaves open: two
@@ -470,7 +470,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (the Mac host; the dev VM composites in software), then a device worker the page creates (a top-level worker has
   animation frames; moving blk off that thread and G3's GPU worker want the same change) or drawing from the
   machine worker out of shared memory.
-- **virtio-gpu, not built or not measured in G1:** GNOME, KDE and Xorg sessions (sway is: graphics.md §17); a page test
+- **virtio-gpu, not built or not measured in G1:** GNOME, KDE and Xorg sessions (sway is: graphics.md "The console and the display size"); a page test
   of the pointer through a letterboxed screen (checked by hand with sway); an overlay for a guest that warps its
   cursor (`MOVE_CURSOR` away from the pointer: none seen); sizes beyond 4088 pixels a side (a DisplayID block in the
   EDID); a display event at a fixed step beyond the test hook (`GpuOptions.resize`).
@@ -912,7 +912,7 @@ report it. Nothing has been filed.
   2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `webpc-va` package (`images/arch/webpc-va/`), which goes
   away with the fix.
 - **Mesa and virglrenderer disagree on virgl's video profile numbers** ([plans/video.md](plans/video.md) §4,
-  [devices.md](devices.md) "virgl"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped
+  [graphics.md](graphics.md) "Video"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped
   `MPEG4_SIMPLE`/`MPEG4_ADVANCED_SIMPLE` (and added HEVC 4:2:2/4:4:4 profiles) that virglrenderer's copy (`c8e3fc3b`)
   still has, so every later value (H.264, HEVC, VP9, AV1) means a different profile to each. The protocol needs its
   own fixed numbering.

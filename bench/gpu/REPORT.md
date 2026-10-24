@@ -179,7 +179,7 @@ renderer's on the Mac (5.5 ms) and ~0.8 ms more on SwiftShader; the renderer's o
 0.65 on the Mac. A first run made 38.8 (`vm-renderer-1.json`): the GPU worker committed a canvas frame at every
 scanout and damage call (three a guest frame), held to the display's rate with the fences behind; drawing in an
 animation frame fixed it (the split runs are `vm-skip-1.json`, the submits skipped, and `vm-skipfloor-1.json`,
-skipped with G2's caps). Details in docs/plans/graphics.md §20.
+skipped with G2's caps). Details in docs/graphics.md "The GPU worker".
 
 ## A 2D machine on WebGL2 (2026-10-18)
 

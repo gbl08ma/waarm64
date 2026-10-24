@@ -5,7 +5,7 @@
 // give the same answers and the same pixels.
 //
 // A host resource is RGBA bytes in JS memory (what a canvas takes: the swizzle from the guest's
-// format is fused into TRANSFER_TO_HOST_2D's gather, docs/plans/graphics.md §10); where the screen is
+// format is fused into TRANSFER_TO_HOST_2D's gather, bench/gpu/REPORT.md, G0); where the screen is
 // WebGL2 (a 3D machine's, and a 2D machine's where the canvas gives WebGL2) it is the guest's bytes as
 // they are (a plain copy, ~4 times faster), and the screen swizzles in its draw (web/virgl-screen.ts). The guest's
 // backing pages are guest-physical addresses inside the command's payload, which the core's chain
@@ -109,7 +109,7 @@ export type GpuOptions = {
    * stay in order). Why: Linux's driver waits for no reply on a primary plane
    * (no fence, and before 6.19 no vblank either), so a guest with damage to show commits as fast as it can
    * and only a full queue stops it. Answered at once, a scrolling console committed ~5,000 times a second,
-   * and the guest spent its CPU on DRM's atomic path (graphics.md §13). The commands themselves are never
+   * and the guest spent its CPU on DRM's atomic path (docs/graphics.md "Console scrolling and the flush pacing"). The commands themselves are never
    * delayed: a transfer copies when it arrives. The page's machine sets it; the test guests don't.
    */
   paceFlushes?: boolean;
@@ -192,7 +192,7 @@ export class Gpu {
   private wanted: { width: number; height: number };
   /**
    * The size of a resource the guest shows cropped (a rectangle smaller than the resource, from the
-   * origin): fbcon keeps its buffer and crops the console when the mode shrinks (graphics.md §9),
+   * origin): fbcon keeps its buffer and crops the console when the mode shrinks (docs/graphics.md "The console and the display size"),
    * so the display never reports less than this. Zero until a guest does it; a compositor that
    * allocates a resource per mode never trips it, so desktops follow shrinks.
    */
@@ -847,8 +847,8 @@ export class Gpu {
   /**
    * A snapshot's state: `state` plus the cursor's image, JSON but for the 3D contents (Uint8Arrays: web/snapshot.ts
    * writes them as frames of their own). Host pixels come back from the backing at `restore`. With 3D in use, the
-   * renderer's state comes from the host (`VirglRenderer.save`: objects as data, contents read back; graphics.md
-   * §22), with the 3D resources and the contexts' attachments here; the caps the guest was given are kept, for a
+   * renderer's state comes from the host (`VirglRenderer.save`: objects as data, contents read back; docs/graphics.md
+   * "Snapshots with 3D in use"), with the 3D resources and the contexts' attachments here; the caps the guest was given are kept, for a
    * restore to check. `unsaveable` where the host refuses (a video decoding) or can't save; the snapshot refuses it
    * (web/vm.ts), and a test's state read takes the rest all the same.
    */

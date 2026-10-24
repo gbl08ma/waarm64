@@ -1143,7 +1143,7 @@ compress 22% slower than one alone (Node, one run each), about what 4 vCPUs cost
 
 2026-10-08, the dev VM, Chromium 153.0.8010.52; `results/m8-llvmpipe/` (A: `16883ec`, B: `d659d18`,
 the commit that inlines what follows). The backlog's question: why sway compositing on Mesa's
-llvmpipe kept four vCPUs at ~54% for ~3 frames a second ([plans/graphics.md](../../docs/plans/graphics.md) §16).
+llvmpipe kept four vCPUs at ~54% for ~3 frames a second ([docs/graphics.md](../../docs/graphics.md) "Guests that composite with llvmpipe").
 The workload is `gl_llvmpipe_jit` (`images/alpine/gl`, docs/benchmarking.md): a compositor's
 frame (a 64-row texture upload, 3 blended quads over 1376×762, a read-back) without a display.
 
@@ -1808,7 +1808,7 @@ wasm code GC, not install time.
 The proposal: compute CNTVCT_EL0 inline in JIT code instead of a helper call that returns from the block (the
 platform exit, docs/jit.md "Faults and exits"), quoted at 2-5% on kernel-heavy guests from `arch_counter_get_cntvct`'s
 2.7% in the boot profile above. That share is the PC sampler's: it charges a chunk to the instruction after the last
-exit (graphics.md §20, video.md), so it says where exits are, not what they cost. Counted instead, against
+exit (docs/benchmarking.md "PC sampling", video.md), so it says where exits are, not what they cost. Counted instead, against
 `be6f4d4`: the dev VM, Node 26.7, Chromium 153.0.8010.52. Raw data and tools in `results/m8-cntvct/`
 (`count-exits.patch` counts the exits by EL in spare exception-class counters; a diagnostic, not for commit).
 

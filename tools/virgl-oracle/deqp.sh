@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dEQP's expected results on virgl (G4's gate, graphics.md §21): the dEQP build's container (images/deqp/build.sh:
+# dEQP's expected results on virgl (G4's gate, docs/graphics.md "Testing"): the dEQP build's container (images/deqp/build.sh:
 # Arch's Mesa, the same deqp-gles2/3 the guest runs) on Mesa's virpipe, against this oracle's vtest server
 # (build.sh) on a GLES 3.0 host (llvmpipe with MESA_GLES_VERSION_OVERRIDE=3.0, as capture.sh). The case list is a
 # mustpass list's every <stride>th case (bench/gpu/deqp-run.ts's choice) or a file. Results: <out>/<api>.res

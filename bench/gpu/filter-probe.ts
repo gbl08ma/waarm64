@@ -1,4 +1,4 @@
-// Which filter a browser's WebGL2 applies at a given level of detail (graphics.md §23: dEQP on the Mac's GPU), without
+// Which filter a browser's WebGL2 applies at a given level of detail (docs/graphics.md "Testing": dEQP on the Mac's GPU), without
 // the emulator: a 2×1 RGBA8 texture (texels 0 and 255, no mipmaps) sampled at u = 0.5, where NEAREST gives 255 and
 // LINEAR 127 or 128, with the minifying and magnifying filters set apart (NEAREST/LINEAR and LINEAR/NEAREST), from a
 // vertex shader (`texture`, implicit level 0; `textureLod`) and from a fragment shader at explicit levels around 0.

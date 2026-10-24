@@ -65,7 +65,7 @@ first kernel line.
 
 ## dEQP for the Arch image (`images/deqp/build.sh`)
 
-**On demand only**, like the Arch image below: G4's conformance subset (graphics.md §21). VK-GL-CTS
+**On demand only**, like the Arch image below: dEQP, the 3D correctness gate (graphics.md "Testing"). VK-GL-CTS
 `opengl-es-cts-3.2.14.1` (Apache-2.0: built and run, nothing copied), `deqp-gles2` and `deqp-gles3` with EGL's
 surfaceless target, built natively for Arch Linux in rootless Podman from `localhost/arch-base` (`images/arch/base.sh`;
 `images/deqp/Containerfile`, ~10 min). Results: `target/deqp/deqp.ext4` (113
@@ -118,7 +118,7 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   surfaces only and AV1 film grain decoded into the shown surface, `LIBVA_DRIVER_NAME=webpc` for every session
   ([plans/video.md](plans/video.md)). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
   Result `target/arch/pkg/webpc-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
-- **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md §24),
+- **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md "The call queue"),
   htop, nano, lsof, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`),
   gtk4-demos (`gtk4-demo`, for `bench/gpu/gtk4-load.ts`), mesa-utils (`eglinfo`, `glxgears`) and `webpc-va`; sound is the kernel's own `virtio_snd` (udev loads it); Firefox's policies allow autoplay with sound and
   skip the first-run pages. A **20 GiB root**, mostly free, for packages installed by hand. `images/arch/media.sh`

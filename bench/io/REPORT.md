@@ -103,7 +103,7 @@ under an overlay, two runs each (`bench/gpu/results/2026-10-08-io-draw-*.json`, 
 | HTTP, run 1 / 2 | 4.4 / 16.9 ms; 3.2 / 22.7 ms | 0.2 / 33.2 ms; 1.2 / 28.1 ms |
 | chosen file, run 1 / 2 | 4.4 / 14.7 ms; 6.9 / 15.1 ms | 2.4 / 28.8 ms; 2.6 / 22.4 ms |
 
-Under a continuous disk read the worst flush-to-draw is 22–33 ms, against 89–972 ms in graphics.md §12 (before `serve`
+Under a continuous disk read the worst flush-to-draw is 22–33 ms, against 89–972 ms in G1's measurement (docs/frontend.md "The screen"; before `serve`
 yielded to the event loop every ~2 ms) and 1.2–5.6 s of device-worker lag with the storm. The blk worker would buy
 nothing visible: **loop 5 dropped.** Caveat: the HTTP source here is localhost; a slow network's synchronous XHRs would still
 hold the device worker for their length (a request is one XHR), which is the HTTP source's matter, not this track's.

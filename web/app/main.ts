@@ -1123,7 +1123,7 @@ let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: 
 const SNAPSHOT_SUFFIX = '.webpcsnap';
 const mb = bytesText;
 
-/** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/plans/graphics.md §22). */
+/** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/graphics.md "Snapshots with 3D in use"). */
 const GRAPHICS_WARN = 64 << 20;
 const bytesAsked = new Map<number, (bytes: number) => void>();
 let bytesAskId = 0;

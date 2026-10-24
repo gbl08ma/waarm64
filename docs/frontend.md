@@ -376,7 +376,7 @@ stored machine's is kept: below, "A stored machine's snapshots"): the picker fir
 `<machine>-<yyyy-mm-dd-hhmm>.webpcsnap`), else a Blob download, as a disk's Export does. No confirmation:
 the machine isn't stopped. One exception, asked before the picker (its OK is the click the picker needs): a machine
 whose 3D state would add 64 MiB or more (the GPU worker's count of its resources' bytes, before compression:
-`VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md §22); the
+`VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md "Snapshots with 3D in use"); the
 same for a stored machine's kept snapshot. The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
@@ -527,30 +527,29 @@ lost context is drawn again when it comes back); elsewhere, software WebGL inclu
 the CPU), it is an `ImageData` over the device's RGBA copy on a 2D context (bench/gpu/REPORT.md "A 2D machine on
 WebGL2"). The console says which (`webpc: the 2D screen on WebGL2`); `?gpu=gl2d` and `?gpu=canvas2d` choose.
 The page's main thread still has no per-frame work. The canvas takes the scanout's size, and the page
-refits its box when the display port says `mode` (the boot card hides at the first one). **Keys for the
-firmware's menus still go through the serial terminal** (EDK2 has no virtio-input driver), which is why GRUB's
-menu is on the screen only; `?display=simple` gives a gpu machine the simple framebuffer instead (the firmware
-then keeps its serial menus: `tests/page-disk.test.ts` uses it).
+refits its box when the display port says `mode` (the boot card hides at the first one). GRUB's menu is on the screen only (`gfxterm` takes the firmware's graphics output); **the firmware's keys** come
+from the built-in USB keyboard on a machine with the USB controller, and from the serial terminal on one without
+(EDK2 has no virtio-input driver; "Input" below). `?display=simple` gives a gpu machine the simple framebuffer
+instead (the firmware then keeps its serial menus: `tests/page-disk.test.ts` uses it).
 Flush-to-draw latency (`bench/gpu/draw-latency.ts`, Debian, tty1 changing every 30 ms): median 16–17 ms idle
-(the timer, for a flush within a frame of the last draw), and with the guest reading its disk (virtio-blk's
-synchronous XHRs block the device worker, and a flush is only served between them) a median of 17 to 66 ms and
-a worst case of 89 to 972 ms over two runs (`bench/gpu/results/draw-latency-*.json`): the drawing thread isn't
-the cause, the device worker's serving is, so moving the draw elsewhere wouldn't help; blk would have to leave that
-thread (asynchronous reads: backlog).
+(the timer, for a flush within a frame of the last draw). With the guest reading its disk, virtio-blk's synchronous
+reads share the device worker and a flush is served between them: since the device worker yields to its event loop
+every ~2 ms of work, the worst case is 22–33 ms (bench/io/REPORT.md "Loop 5 judged"; it was 89–972 ms before, which
+is why moving blk off that thread was considered, and dropped).
 
 **A desktop on the screen:** a compositor's frames arrive as full-screen transfers at its own rate (a guest kernel
 from 6.19 paces itself at 60 Hz; for older ones the device answers one flush per frame, docs/devices.md), and the page
 draws at most one per frame. **sway should run with `WLR_RENDERER=pixman`** (other wlroots compositors likely too):
 left alone on a display without 3D, Arch's picked Mesa's llvmpipe, which under the JIT costs about ten times the CPU
-and draws on its own threads after the page flip, so the screen shows frames late and in pieces (graphics.md §16).
+and draws on its own threads after the page flip, so the screen shows frames late and in pieces (graphics.md "Guests that composite with llvmpipe").
 On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's virgl driver, drawn by the host.
 
-**A 3D machine** (graphics.md §20) gives a virtio-gpu machine virgl, rendered on the host by WebGL2: the default
+**A 3D machine** ([graphics.md](graphics.md)) gives a virtio-gpu machine virgl, rendered on the host by WebGL2: the default
 wherever the browser has WebGL2 (since G3). The Machine menu's **Graphics** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
-them ([devices.md](devices.md) "virgl", [plans/video.md](plans/video.md)): H.264 and VP9, in hardware where the browser
+them ([graphics.md](graphics.md) "Video", [plans/video.md](plans/video.md)): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);
 `?gpu=novideo` turns that off.
 The page starts a **GPU worker** (`web/gpu-worker.ts`, top-level, so it has animation frames) and hands it the
@@ -566,7 +565,8 @@ at each call committed up to three canvas frames per guest frame, which Chromium
 capped sway at 39 frames a second. A fenced command's reply waits until the GPU worker has run everything before it.
 Without WebGL2 (or if the context can't be made: `failed`) the machine starts again as 2D, and a lost context
 crashes the machine with a message. Sway with `WLR_RENDERER=gles2` keeps 60 frames a second on a real GPU,
-the same as with no renderer at all (graphics.md §20 loop 4). Snapshots of a 3D machine: docs/devices.md "virgl".
+the same as with no renderer at all (graphics.md "Applications on 3D"). Snapshots of a 3D machine: graphics.md "Snapshots
+with 3D in use".
 
 The simple-framebuffer's canvas keeps the framebuffer's size; CSS scales it to an integer multiple **in device pixels**
 when one fits the view (`image-rendering: pixelated`: crisp at any `devicePixelRatio`), and
@@ -584,7 +584,7 @@ firmware are born at it, no event), and later changes go to the display port as 
 the size it was saved with). The canvas shows the scanout 1:1 in guest pixels, so with HiDPI off on a
 screen of fractional density (1.25, 1.5) it is one guest pixel per CSS pixel and a little soft; an
 integer density is crisp. A guest that doesn't take the size is letterboxed (the box centres the canvas).
-**What the guest does with a new size** is measured in graphics.md §13 and §17: fbcon can't grow its
+**What the guest does with a new size** is measured in graphics.md "The console and the display size": fbcon can't grow its
 buffer, so the console stays at its born size (a bigger window shows it letterboxed), and a smaller window is
 never allowed to crop it (devices.md "Display size and events"); sway keeps the size it started with
 (wlroots seems to read an output's modes when it connects, not at a display event); GNOME and KDE are expected to
@@ -595,7 +595,10 @@ starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 **The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
 they change (`cursor`; its moves as `cursor-at`, which the page uses only under the mouse lock: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
 a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels, followed by the same cursor cut to its top-left 32 CSS pixels: Chromium skips a cursor over 32×32 where its image would reach past the page's edge, which made the guest's cursor vanish in the last 64 pixels), again whenever the scale changes. A cursor the guest
-never set leaves the page's own pointer; one it hid is `none`. docs/plans/graphics.md §14.
+never set leaves the page's own pointer (EDK2's screens and a console with no mouse driver keep one); one it hid is
+`none`; a virtio reset goes back to never set (`GpuHooks.cursorReset`), and a restored snapshot sends its cursor again.
+The image is smoothed only when the scale isn't whole; Chromium normalizes `-webkit-image-set(...)` to `image-set(...)`.
+A guest that warps its cursor (`MOVE_CURSOR` away from the pointer) isn't shown: none seen (backlog).
 
 ## Sound
 

@@ -1,4 +1,4 @@
-// The virgl command stream (docs/plans/graphics.md §1, §19): what Mesa's virgl driver sends in a virtio-gpu
+// The virgl command stream (docs/plans/graphics.md §1; docs/graphics.md "The caps"): what Mesa's virgl driver sends in a virtio-gpu
 // SUBMIT_3D. The names and the header's layout are virglrenderer's src/virgl_protocol.h (MIT,
 // THIRD_PARTY.md). G2's device runs a null renderer: the stream is walked and counted, never drawn.
 
@@ -151,7 +151,7 @@ const bits = (...b: number[]) => b.reduce((m, k) => (m | (1 << k)) >>> 0, 0);
 /**
  * What the device advertises (G2: a null renderer, so the guest takes the paths it will take on the WebGL2
  * renderer). The base is virglrenderer's own caps on a GLES 3.0 host (llvmpipe with
- * `MESA_GLES_VERSION_OVERRIDE=3.0`, graphics.md §19), which gives the guest GLES 3.0 and GL 2.1; then
+ * `MESA_GLES_VERSION_OVERRIDE=3.0`, docs/graphics.md "The caps"), which gives the guest GLES 3.0 and GL 2.1; then
  * everything WebGL2 lacks or has only as an extension is taken out, and the limits are WebGL2's
  * minimums where virglrenderer's were above them. G3 raises them per adapter (never past what it backs);
  * the format masks are virglrenderer's and are G3's to trim.

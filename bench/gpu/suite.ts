@@ -1,4 +1,4 @@
-// G0 (docs/plans/graphics.md §10): the WebGPU environment and the ways to put a
+// G0 (bench/gpu/REPORT.md): the WebGPU environment and the ways to put a
 // guest's frame on a canvas, measured in a worker (where the presentation will live).
 //   webgpu_adapter        the adapter's info, features and limits (in the params; one sample of 1)
 //   writebuffer           queue.writeBuffer from a SharedArrayBuffer view against a plain one (ms to return, ms to complete)

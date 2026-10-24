@@ -2,7 +2,7 @@
 // and written, and what it needs from the browser. The table follows virglrenderer's vrend_formats.c on a GLES host
 // (MIT, THIRD_PARTY.md), with WebGL2's own rules: no BGRA formats and no texture swizzle, so a format whose bytes
 // aren't RGBA order is stored as its bytes are (an RGBA8 texture holding B, G, R, A) and the generated shaders
-// swizzle, on sampling and on rendering (docs/plans/graphics.md §20). Gallium names 8-bit formats in memory order:
+// swizzle, on sampling and on rendering (docs/graphics.md "Resources and formats"). Gallium names 8-bit formats in memory order:
 // B8G8R8A8's first byte is B.
 
 /** WebGL2's enums (no WebGL2RenderingContext in Node). */

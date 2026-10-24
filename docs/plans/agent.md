@@ -10,7 +10,7 @@ path on systemd ≥ 256.
 ## What an agent is for
 
 What G1 measured on our machine
-([graphics.md](graphics.md) §9, §13, §17):
+([graphics.md](../graphics.md) "The console and the display size"):
 
 | Guest software | What a display event does | An agent would |
 |---|---|---|
