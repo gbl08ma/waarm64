@@ -521,6 +521,26 @@ test('virgl renderer: a shader with stream outputs draws through one program, ca
   assert.deepEqual(gl.log.filter(([n]) => n === 'transformFeedbackVaryings').map(([, a]) => a[1]), [['tf_0']]);
 });
 
+/** Commands setting up a draw (a red triangle into resource 3, 4×4, vertices in resource 1), and the draw itself. */
+function drawable(r: VirglRenderer, ctx = 1) {
+  r.createResource({ id: 1, target: 0, format: 64, bind: 0x10, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.createResource({ id: 3, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(ctx, 1); r.attach(ctx, 3);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const shader = (h: number, type: number, src: string) => { const [len, ...t] = text(src); cmd(1, 4, h, type, len, 0, 0, ...t); };
+  shader(10, 0, 'VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  shader(11, 1, 'FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END\n');
+  cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+  cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 21);
+  cmd(1, 8, 22, 3, 67, 0, 0);
+  cmd(5, 0, 1, 0, 22);
+  cmd(6, 0, 16, 0, 1);
+  return { setup: words, draw: [8 | 12 << 16, 0, 3, 4, 0, 1, 0, 0, 0, 0, 0, 2, 0] };
+}
+
 test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GLES3 occlusion_query: results after glFinish)', () => {
   const gl = mockGl();
   let available = false;
@@ -535,8 +555,9 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
   const answered: string[] = [];
   const gate = new FenceGate<string>((f) => answered.push(f));
   gate.fence('before', r.queriesSettled());
-  // An occlusion predicate (virgl's type 1), its state in resource 5: begun, ended.
-  r.submit(1, new Uint32Array([1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, 20 | 1 << 16, 40]));
+  // An occlusion predicate (virgl's type 1), its state in resource 5: begun, a draw, ended.
+  const d = drawable(r);
+  r.submit(1, new Uint32Array([...d.setup, 1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, ...d.draw, 20 | 1 << 16, 40]));
   assert.deepEqual(errors, []);
   assert.equal(new DataView(ram.buffer).getUint32(0, true), 2, 'the guest is told to wait for the host');
   gate.fence('after', r.queriesSettled());
@@ -564,14 +585,83 @@ test('virgl renderer: a query destroyed before its result holds no fence (dEQP-G
   r.attachBacking(5, [{ off: 0, len: 64, mem: 0 }]);
   const answered: string[] = [];
   const gate = new FenceGate<string>((f) => answered.push(f));
-  // An occlusion predicate begun and ended, then destroyed (DESTROY_OBJECT) with its result pending.
-  r.submit(1, new Uint32Array([1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, 20 | 1 << 16, 40, 3 | 9 << 8 | 1 << 16, 40]));
+  // An occlusion predicate begun, a draw, ended, then destroyed (DESTROY_OBJECT) with its result pending.
+  const d = drawable(r);
+  r.submit(1, new Uint32Array([...d.setup, 1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, ...d.draw, 20 | 1 << 16, 40]));
+  assert.equal(r.pollQueries(), 1, 'pending');
+  r.submit(1, new Uint32Array([3 | 9 << 8 | 1 << 16, 40]));
   assert.deepEqual(errors, []);
   gate.fence('after', r.queriesSettled());
   r.pollQueries();
   gate.release();
   assert.deepEqual(answered, ['after']);
   assert.equal(r.pollQueries(), 0, 'nothing left to poll');
+});
+
+test('virgl renderer: an occlusion query without a draw has its result at once; one WebGL never answers counts as samples passed', () => {
+  const gl = mockGl();
+  // A query WebGL refused, or a lost context's: its result never comes (null).
+  (gl as unknown as { getQueryParameter: unknown }).getQueryParameter = () => null;
+  const ram = new Uint8Array(64);
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 5, target: 0, format: 64, bind: 0x800, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 5);
+  r.attachBacking(5, [{ off: 0, len: 64, mem: 0 }]);
+  const d = drawable(r);
+  const dv = new DataView(ram.buffer);
+  // Begun and ended with no draw: done, nothing passed.
+  r.submit(1, new Uint32Array([...d.setup, 1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, 20 | 1 << 16, 40]));
+  assert.deepEqual([dv.getUint32(0, true), Number(dv.getBigUint64(8, true))], [1, 0]);
+  assert.equal(r.pollQueries(), 0);
+  // With a draw: pending, then settled as passed when WebGL says it never will.
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((f) => answered.push(f));
+  r.submit(1, new Uint32Array([19 | 1 << 16, 40, ...d.draw, 20 | 1 << 16, 40]));
+  assert.equal(dv.getUint32(0, true), 2);
+  gate.fence('after', r.queriesSettled());
+  assert.equal(r.pollQueries(), 0);
+  gate.release();
+  assert.deepEqual(answered, ['after']);
+  assert.deepEqual([dv.getUint32(0, true), Number(dv.getBigUint64(8, true))], [1, 1]);
+  assert.deepEqual(errors, ['an occlusion query has no result (taken as samples passed)']);
+});
+
+test('virgl renderer: occlusion queries count their own sub-context\'s draws: WebGL\'s one query paused when another draws, or a blit', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createContext(2);
+  r.createResource({ id: 5, target: 0, format: 64, bind: 0x800, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 5); r.attach(2, 5);
+  const d = drawable(r);
+  r.attach(2, 1); r.attach(2, 3);
+  const q = (h: number, offset: number) => [1 | 9 << 8 | 4 << 16, h, 1, offset, 5];
+  const ops = (from: number) => gl.log.slice(from).filter(([n]) => n === 'beginQuery' || n === 'endQuery' || n === 'drawArrays' || n === 'blitFramebuffer').map(([n]) => n);
+  r.submit(1, new Uint32Array(d.setup));
+  r.submit(2, new Uint32Array(d.setup));
+  // Context 1 begins and draws twice (one span); context 2 draws (context 1's span ended at its submit's end), begins
+  // its own, draws; context 1 draws again (a new span) and ends.
+  let at = gl.log.length;
+  r.submit(1, new Uint32Array([...q(40, 0), 19 | 1 << 16, 40, ...d.draw, ...d.draw]));
+  assert.equal(ops(at).at(-1), 'endQuery', 'paused when the submit ends: the screen draws on the same context');
+  r.submit(2, new Uint32Array([...d.draw, ...q(41, 16), 19 | 1 << 16, 41, ...d.draw]));
+  r.submit(1, new Uint32Array([...d.draw, 20 | 1 << 16, 40]));
+  assert.deepEqual(ops(at), ['beginQuery', 'drawArrays', 'drawArrays', 'endQuery', 'drawArrays', 'beginQuery', 'drawArrays', 'endQuery', 'beginQuery', 'drawArrays', 'endQuery']);
+  // Sub-contexts: 1 begins and draws in sub-context 1, then sub-context 0 draws (paused there) and 1 draws again.
+  at = gl.log.length;
+  r.submit(1, new Uint32Array([29 | 1 << 16, 1, 28 | 1 << 16, 1, ...d.setup, ...q(42, 32), 19 | 1 << 16, 42, ...d.draw, 28 | 1 << 16, 0, ...d.draw, 28 | 1 << 16, 1, ...d.draw, 20 | 1 << 16, 42]));
+  assert.deepEqual(ops(at), ['beginQuery', 'drawArrays', 'endQuery', 'drawArrays', 'beginQuery', 'drawArrays', 'endQuery']);
+  // A blit while a query is active counts nothing: paused before it, a new span at the next draw.
+  r.createResource({ id: 4, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 4);
+  at = gl.log.length;
+  r.submit(1, new Uint32Array([19 | 1 << 16, 42, ...d.draw, 16 | 21 << 16, 0xf, 0, 0, 3, 0, 67, 0, 0, 0, 4, 4, 1, 4, 0, 67, 0, 0, 0, 4, 4, 1, ...d.draw, 20 | 1 << 16, 42]));
+  assert.deepEqual(ops(at), ['beginQuery', 'drawArrays', 'endQuery', 'blitFramebuffer', 'beginQuery', 'drawArrays', 'endQuery']);
+  assert.deepEqual(errors, []);
 });
 
 test('virgl renderer: a multisampled source is resolved before a conversion or a flip (dEQP-GLES3 fbo.invalidate unbind_blit_msaa)', () => {

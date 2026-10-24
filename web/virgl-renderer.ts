@@ -65,7 +65,13 @@ type VertexElements = { offset: number; divisor: number; vb: number; format: num
 type SamplerView = { res: number; format: number; target: number; first: number; last: number; firstLevel: number; lastLevel: number; swizzle: number[] };
 type SamplerState = { wrap: number[]; minImg: number; minMip: number; magImg: number; compare: boolean; compareFunc: number; maxAniso: number; lodBias: number; minLod: number; maxLod: number; sampler?: WebGLSampler };
 type Surface = { res: number; format: number; level: number; firstLayer: number; lastLayer: number };
-type Query = { type: number; index: number; res: number; offset: number; q?: WebGLQuery; target?: number; pending?: boolean; result: number; /** Begun and not ended. */ active?: boolean };
+type Query = {
+  type: number; index: number; res: number; offset: number; pending?: boolean; result: number; /** Begun and not ended. */ active?: boolean;
+  /** An occlusion query's spans: the WebGL queries that counted its sub-context's draws while it was active (`countQueries`). */
+  spans?: Span[];
+};
+/** A WebGL query counting one sub-context's draws for the occlusion queries active in it then (any of them may share it). */
+type Span = { q: WebGLQuery; done: boolean; passed: boolean };
 /** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
 type SoTarget = { res: number; offset: number; size: number; filled: number };
 type SoOutput = NonNullable<Shader['so']>['outputs'][number];
@@ -104,6 +110,8 @@ type Sub = {
   vao?: WebGLVertexArrayObject;
   /** A long shader arriving in pieces (VIRGL_OBJ_SHADER_OFFSET_CONT), by stage. */
   longShader: Map<number, { handle: number; shader: Shader }>;
+  /** The occlusion queries begun and not ended. */
+  occlusion: Set<Query>;
 };
 type Ctx = { id: number; subs: Map<number, Sub>; sub: Sub; attached: Set<number>; video?: VideoContext };
 
@@ -156,6 +164,7 @@ function foldedBlend(blend?: Blend): number | undefined {
 
 /** Query types as virgl numbers them (VIRGL_QUERY_*: not Gallium's PIPE_QUERY_*, whose PRIMITIVES_GENERATED is 6). */
 const Q_OCCLUSION_COUNTER = 0, Q_OCCLUSION_PREDICATE = 1, Q_GENERATED = 5, Q_EMITTED = 6, Q_OCCLUSION_CONSERVATIVE = 11;
+const OCCLUSION = new Set([Q_OCCLUSION_COUNTER, Q_OCCLUSION_PREDICATE, Q_OCCLUSION_CONSERVATIVE]);
 const STENCIL_OP = [E.KEEP, E.ZERO, E.REPLACE, E.INCR, E.DECR, E.INCR_WRAP, E.DECR_WRAP, E.INVERT];
 const WRAP = [E.REPEAT, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT];
 const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIANGLE_STRIP, E.TRIANGLE_FAN];
@@ -205,6 +214,15 @@ export class VirglRenderer {
   /** The color attachments the context has, up to the 8 the caps offer (WebGL2 promises 4; SwiftShader's Vulkan has 6). */
   private readonly colorAttachments: number;
   private queries: Query[] = [];
+  /**
+   * The span counting draws now (WebGL has one occlusion query active, and every context and sub-context draws on the
+   * one WebGL context): begun at a sub-context's draw while it has occlusion queries active, ended when anything else
+   * may draw (`pauseQueries`).
+   */
+  private counter?: { span: Span; sub: Sub };
+  /** WebGL queries whose results were read, for new spans. */
+  private spareQueries: WebGLQuery[] = [];
+  private lostQueries = 0;
   /** Primitive queries (generated, emitted by stream output) counted by the draws, with their context. */
   private counting = new Map<Query, number>();
   /** A framebuffer for draws that only capture (stream output with nothing bound to draw on). */
@@ -268,6 +286,7 @@ export class VirglRenderer {
 
   /** A virtio reset: every context and resource is gone. */
   reset() {
+    this.pauseQueries();
     for (const id of [...this.contexts.keys()]) this.destroyContext(id);
     for (const id of [...this.resources.keys()]) this.unrefResource(id);
     this.queries = [];
@@ -282,21 +301,22 @@ export class VirglRenderer {
       views: { vs: [], fs: [] }, samplers: { vs: [], fs: [] },
       fb: { cbufs: [] }, viewport: { scale: [1, 1, 1], translate: [0, 0, 0] }, scissor: { minx: 0, miny: 0, maxx: 0, maxy: 0 },
       stencilRef: [0, 0], blendColor: [0, 0, 0, 0], stipple: new Uint32Array(32).fill(0xffffffff), sampleMask: ~0,
-      so: { targets: [], seen: new Set() }, longShader: new Map(),
+      so: { targets: [], seen: new Set() }, longShader: new Map(), occlusion: new Set(),
     };
   }
 
   private destroySub(s: Sub) {
-    for (const o of s.objects.values()) this.destroyObject(o);
+    for (const o of s.objects.values()) this.destroyObject(o, s);
     if (s.vao) this.gl.deleteVertexArray(s.vao);
     if (s.so.tf) this.gl.deleteTransformFeedback(s.so.tf);
   }
 
-  private destroyObject(o: Obj) {
+  private destroyObject(o: Obj, s: Sub) {
     if (o.kind === 'sampler' && o.v.sampler) this.gl.deleteSampler(o.v.sampler);
-    if (o.kind === 'query' && o.v.q) this.gl.deleteQuery(o.v.q);
     if (o.kind === 'query') {
       this.counting.delete(o.v);
+      if (s.occlusion.delete(o.v) && this.counter?.sub === s) this.pauseQueries();
+      o.v.spans = undefined;
       // A deleted query never has its result: pending, it would hold every later fence (FenceGate) for good, and the
       // guest's control queue filled behind them (dEQP-GLES3 hung at a context's end).
       o.v.pending = false;
@@ -681,6 +701,8 @@ export class VirglRenderer {
       }
       at += 1 + len;
     }
+    // Another context's commands, or the screen's, may draw next.
+    this.pauseQueries();
     return true;
   }
 
@@ -690,7 +712,7 @@ export class VirglRenderer {
       case 0: return; // NOP
       case 1: return this.createObject(c, obj, p);
       case 2: return this.bindObject(s, obj, p);
-      case 3: { const o = s.objects.get(p[0]); if (o) { this.destroyObject(o); s.objects.delete(p[0]); } return; }
+      case 3: { const o = s.objects.get(p[0]); if (o) { this.destroyObject(o, s); s.objects.delete(p[0]); } return; }
       case 4: { // SET_VIEWPORT_STATE: start slot, then scale xyz, translate xyz per viewport
         if (p.length >= 7 && p[0] === 0) s.viewport = { scale: [uif(p[1]), uif(p[2]), uif(p[3])], translate: [uif(p[4]), uif(p[5]), uif(p[6])] };
         return;
@@ -737,8 +759,9 @@ export class VirglRenderer {
         if (p.length >= 3 && p[0] === 0) s.scissor = { minx: p[1] & 0xffff, miny: p[1] >>> 16, maxx: p[2] & 0xffff, maxy: p[2] >>> 16 };
         return;
       }
-      case 16: return this.blit(c, p);
-      case 17: return this.copyRegion(c, p);
+      // A blit or a copy counts no samples (one may be a draw: `drawBlit`; ANGLE's may be too).
+      case 16: this.pauseQueries(); return this.blit(c, p);
+      case 17: this.pauseQueries(); return this.copyRegion(c, p);
       case 18: { // BIND_SAMPLER_STATES: shader, start slot, handles
         const st = this.stage(p[0]);
         if (!st) return;
@@ -1000,7 +1023,7 @@ export class VirglRenderer {
     }
     if (o) {
       const old = s.objects.get(h);
-      if (old) this.destroyObject(old);
+      if (old) this.destroyObject(old, s);
       s.objects.set(h, o);
     }
   }
@@ -1279,6 +1302,7 @@ export class VirglRenderer {
   private drawBlit(src: Res, sf: Format, sb: { level: number; x: number; y: number; w: number; h: number }, sz: number, dst: Res, df: Format, db: { level: number; x: number; y: number; w: number; h: number }, dz: number, filter: number, scissor?: Uint32Array) {
     const gl = this.gl;
     if (!src.tex || src.glTarget !== E.TEXTURE_2D) return this.error('blit: only 2D sources are converted');
+    this.pauseQueries(); // a blit counts no samples (also a resource copy's or an upload's)
     const b = this.blitProgram();
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
     // Only the destination attached: the source may still be another of the last draw's targets, and sampling an
@@ -1335,6 +1359,7 @@ export class VirglRenderer {
    */
   private drawZs(r: Res, level: number, box: Box, fill: (z: number, depth: Float32Array, sten: Uint8Array) => void, parts = { depth: true, stencil: true }) {
     const gl = this.gl;
+    this.pauseQueries(); // an upload counts no samples
     if (!this.zsProg) {
       const prog = this.link(`#version 300 es
 void main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }`, `#version 300 es
@@ -1848,6 +1873,7 @@ void main() {
     }
     const prim = PRIM[mode];
     this.stats.draws++;
+    this.countQueries(c.sub);
     if (this.debug) {
       const s = c.sub, rt = s.blend?.rt[0];
       const fmt = (res: number, f: number) => `${res}:${FORMATS.get(f)?.name ?? f}`;
@@ -2148,13 +2174,17 @@ void main() {
     const q = this.query(c, h);
     this.debug?.(`begin query ${h}: type ${q?.type} index ${q?.index}`);
     if (!q) return;
-    const gl = this.gl;
     q.active = true;
-    // Occlusion counters and predicates: WebGL2 has only "any samples passed" (a counter reads 0 or 1).
-    if (q.type === Q_OCCLUSION_COUNTER || q.type === Q_OCCLUSION_PREDICATE || q.type === Q_OCCLUSION_CONSERVATIVE) {
-      q.q ??= gl.createQuery()!;
-      q.target = q.type === Q_OCCLUSION_CONSERVATIVE ? E.ANY_SAMPLES_PASSED_CONSERVATIVE : E.ANY_SAMPLES_PASSED;
-      gl.beginQuery(q.target, q.q);
+    // Occlusion counters and predicates: counted in spans of the sub-context's draws (`countQueries`), each WebGL2's
+    // "any samples passed" (a counter reads 0 or 1). Begun again before its result came: that result is dropped.
+    if (OCCLUSION.has(q.type)) {
+      if (this.counter?.sub === c.sub) this.pauseQueries();
+      if (q.pending) {
+        q.pending = false;
+        this.queries = this.queries.filter((x) => x !== q);
+      }
+      q.spans = [];
+      c.sub.occlusion.add(q);
     }
     // PRIMITIVES_GENERATED and PRIMITIVES_EMITTED: the draws count them (they know their primitives and what they captured).
     if (q.type === Q_GENERATED || q.type === Q_EMITTED) {
@@ -2167,15 +2197,39 @@ void main() {
     const q = this.query(c, h);
     this.debug?.(`end query ${h}: type ${q?.type} result ${q?.result}`);
     if (!q) return;
-    const gl = this.gl;
     q.active = false;
     this.counting.delete(q);
-    if (q.q) {
-      gl.endQuery(q.target ?? E.ANY_SAMPLES_PASSED);
-      q.pending = true;
-      this.queries.push(q);
+    if (c.sub.occlusion.delete(q)) {
+      if (this.counter?.sub === c.sub) this.pauseQueries();
+      // Spans have their results after the task that ended them (`pollQueries`); without a draw, no sample passed.
+      if (q.spans?.length) {
+        q.pending = true;
+        this.queries.push(q);
+      } else q.result = 0;
     }
-    this.queryState(c, q, q.q ? 0 : 1);
+    this.queryState(c, q, q.pending ? 0 : 1);
+  }
+
+  /**
+   * Before a draw of sub-context `s`: a span counts it for the occlusion queries active in `s`, the one running if it
+   * is `s`'s, or a new one (another's ended first). What draws outside a sub-context's commands (another context, a
+   * blit, an upload, the screen) pauses it first (`pauseQueries`), so no query counts another's samples.
+   */
+  private countQueries(s: Sub) {
+    if (this.counter?.sub === s) return;
+    this.pauseQueries();
+    if (!s.occlusion.size) return;
+    const span: Span = { q: this.spareQueries.pop() ?? this.gl.createQuery()!, done: false, passed: false };
+    this.gl.beginQuery(E.ANY_SAMPLES_PASSED, span.q);
+    for (const q of s.occlusion) q.spans!.push(span);
+    this.counter = { span, sub: s };
+  }
+
+  /** Ends the span counting draws, if one is. */
+  private pauseQueries() {
+    if (!this.counter) return;
+    this.gl.endQuery(E.ANY_SAMPLES_PASSED);
+    this.counter = undefined;
   }
 
   private getQueryResult(c: Ctx, h: number) {
@@ -2202,12 +2256,29 @@ void main() {
     return () => waiting.every((q) => !q.pending);
   }
 
-  /** Polls pending queries (the GPU worker calls it between tasks: WebGL results arrive after the task ends). */
+  /**
+   * Polls pending queries (the GPU worker calls it between tasks: WebGL results arrive after the task ends). A span
+   * whose result can never come (WebGL answers null: a lost context, a query it refused) counts as samples passed: a
+   * query pending for good would hold every later fence (`FenceGate`), and the guest's control queue would fill.
+   */
   pollQueries() {
     const gl = this.gl;
     this.queries = this.queries.filter((q) => {
-      if (!q.q || !gl.getQueryParameter(q.q, E.QUERY_RESULT_AVAILABLE)) return true;
-      q.result = gl.getQueryParameter(q.q, E.QUERY_RESULT) ? 1 : 0;
+      for (const span of q.spans ?? []) {
+        if (span.done) continue;
+        const available = gl.getQueryParameter(span.q, E.QUERY_RESULT_AVAILABLE) as boolean | null;
+        if (available === false) return true;
+        span.done = true;
+        if (available === null) {
+          span.passed = true;
+          if (!this.lostQueries++) this.error('an occlusion query has no result (taken as samples passed)');
+          continue;
+        }
+        span.passed = !!gl.getQueryParameter(span.q, E.QUERY_RESULT);
+        this.spareQueries.push(span.q);
+      }
+      q.result = q.spans?.some((span) => span.passed) ? 1 : 0;
+      q.spans = undefined;
       q.pending = false;
       const r = this.resources.get(q.res);
       if (r) {
@@ -2621,6 +2692,7 @@ void main() {
     const s = this.newSub(ss.id);
     const values: Obj[] = ss.objects.map((so) => this.loadValue(so, c));
     ss.objects.forEach((so, k) => { if (so.handle) s.objects.set(so.handle, values[k]); });
+    for (const o of values) if (o.kind === 'query' && o.v.spans) s.occlusion.add(o.v);
     const v = <K extends Obj['kind']>(k: number | null, kind: K) => {
       const o = k === null ? undefined : values[k];
       return o?.kind === kind ? (o.v as Extract<Obj, { kind: K }>['v']) : undefined;
@@ -2656,12 +2728,9 @@ void main() {
       case 'query': {
         const q: Query = { type: v.type as number, index: v.index as number, res: v.res as number, offset: v.offset as number, result: v.result as number };
         if (v.counting) this.counting.set(q, c.id);
-        if (v.active && (q.type === Q_OCCLUSION_COUNTER || q.type === Q_OCCLUSION_PREDICATE || q.type === Q_OCCLUSION_CONSERVATIVE)) {
-          // Begun again: what it counts from here on (its count before the snapshot is a draw's "any samples passed").
-          q.q = this.gl.createQuery()!;
-          q.target = q.type === Q_OCCLUSION_CONSERVATIVE ? E.ANY_SAMPLES_PASSED_CONSERVATIVE : E.ANY_SAMPLES_PASSED;
-          this.gl.beginQuery(q.target, q.q);
-        }
+        // Active, an occlusion query counts what its sub-context draws from here on (`loadSub` adds it there; its count
+        // before the snapshot is a draw's "any samples passed").
+        if (v.active && OCCLUSION.has(q.type)) q.spans = [];
         q.active = !!v.active;
         return { kind: 'query', v: q };
       }

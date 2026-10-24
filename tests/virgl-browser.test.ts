@@ -225,6 +225,18 @@ test('a 2D machine\'s screen: WebGL2 gets the guest\'s bytes and swizzles them, 
   assert.deepEqual(r, { raw: true, first: [30, 60, 90], restored: [30, 60, 90] });
 });
 
+test('virgl on WebGL2: occlusion queries open at once in two contexts, and in two sub-contexts, count their own draws and hold no fence', async () => {
+  // WebGL has one query active per target: a second begun fails, the next end ends the first, and the second's
+  // result never comes, so every later fence was held for good (a KDE desktop's tasks hung in virtio_gpu_queue_ctrl_sgs).
+  type Q = { state: number; result: number };
+  const r = await page.evaluate(() => (window as unknown as { virgl: { overlappingQueries(): Promise<{ answered: string[]; contexts: Q[]; subs: Q[]; log: string[]; glError: number }> } }).virgl.overlappingQueries());
+  assert.deepEqual(r.answered, ['after'], `the fence after the queries is answered (${JSON.stringify(r)})`);
+  assert.deepEqual(r.contexts, [{ state: 1, result: 0 }, { state: 1, result: 1 }], 'context 1 drew off its target, context 2 on it');
+  assert.deepEqual(r.subs, [{ state: 1, result: 0 }, { state: 1, result: 1 }], 'sub-context 0 drew off the target, 1 on it');
+  assert.deepEqual(r.log, []);
+  assert.equal(r.glError, 0);
+});
+
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; mixed: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
   assert.deepEqual([r.log, r.glError], [[], 0]);

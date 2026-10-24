@@ -5,7 +5,7 @@
 // (web/virgl-screen.ts), and answers fences once everything before them has run. With video, what follows a
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withVideo } from './virgl-caps.ts';
-import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, type WorkerCall } from './virgl-host.ts';
+import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type WorkerCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, Screen } from './virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type VideoStats } from './virgl-video.ts';
@@ -69,10 +69,16 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     port.postMessage({ t: 'fenced', id: c.id, at: now });
   });
   // WebGL's query results come after the task that ended the query: polled while some are pending.
+  let held = 0;
   const poll = () => {
     pollTimer = undefined;
     queries = renderer.pollQueries();
     fenced.release();
+    const f = fenced.oldest;
+    if (f && f.id !== held && clock() - f.at > STUCK_MS) {
+      held = f.id;
+      console.warn(`virgl: fence ${f.id} held ${((clock() - f.at) / 1000).toFixed(0)} s for ${queries} occlusion queries' results`);
+    }
     if (queries) pollTimer = setTimeout(poll, 4);
   };
   const run = (c: WorkerCall) => {

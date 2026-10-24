@@ -96,6 +96,8 @@ export class FenceGate<F> {
     while (this.held.length && this.held[0].settled()) this.answer(this.held.shift()!.f);
   }
   get waiting() { return this.held.length; }
+  /** The oldest fence held. */
+  get oldest(): F | undefined { return this.held[0]?.f; }
 }
 
 /** What the GPU worker takes from the device worker's port: the calls, fences and reads (`portHost`). */
@@ -288,10 +290,30 @@ export const fenceLag = { n: 0, ms: 0, maxMs: 0 };
 /** Now on a clock both workers share (their `performance.now()`s start at different times). */
 export const clock = () => performance.timeOrigin + performance.now();
 
+/** How long a fence may go unanswered before the console says so (`portHost`, the GPU worker's `FenceGate`). */
+export const STUCK_MS = 5000;
+
 /** A host across a port (the device worker's end of the GPU worker). */
 export function portHost(port: MessagePort): VirglHost {
   let next = 1;
   const waiting = new Map<number, () => void>();
+  // A fence unanswered for `STUCK_MS` is said on the console once (the guest's GPU tasks wait behind it; the GPU
+  // worker says why when it holds one for queries), and when it's answered.
+  const sent = new Map<number, number>();
+  let stuck = 0;
+  let watch: ReturnType<typeof setInterval> | undefined;
+  const check = () => {
+    const [id, at] = sent.entries().next().value ?? [];
+    if (id === undefined) {
+      clearInterval(watch);
+      watch = undefined;
+      return;
+    }
+    if (id !== stuck && clock() - at! > STUCK_MS) {
+      stuck = id;
+      console.warn(`virgl: fence ${id} unanswered for ${((clock() - at!) / 1000).toFixed(0)} s (the guest's 3D waits behind it)`);
+    }
+  };
   const reads = new Map<number, (bytes: Uint8Array | null) => void>();
   const saves = new Map<number, (s: HostSave) => void>();
   port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null } | ({ t: 'saved'; id: number } & HostSave)>) => {
@@ -316,6 +338,8 @@ export function portHost(port: MessagePort): VirglHost {
     for (const [id, done] of waiting) {
       if (id > e.data.id) break;
       waiting.delete(id);
+      if (id === stuck) console.warn(`virgl: fence ${id} answered after ${((clock() - sent.get(id)!) / 1000).toFixed(0)} s`);
+      sent.delete(id);
       done();
     }
   };
@@ -327,7 +351,10 @@ export function portHost(port: MessagePort): VirglHost {
     },
     fence() {
       const id = next++;
-      port.postMessage({ t: 'fence', id, at: clock() });
+      const at = clock();
+      port.postMessage({ t: 'fence', id, at });
+      sent.set(id, at);
+      watch ??= setInterval(check, 1000);
       return new Promise<void>((resolve) => waiting.set(id, resolve));
     },
     read(res) {

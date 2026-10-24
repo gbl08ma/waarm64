@@ -30,7 +30,7 @@ export function compileCorpus(corpus: string) {
 
 import { VirglRenderer, type RendererSnapshot, type ResourceDesc, type SavedLevel } from '../../web/virgl-renderer.ts';
 import { FORMATS } from '../../web/virgl-formats.ts';
-import { CallQueue, localHost, portHost, runCall, type HostCall } from '../../web/virgl-host.ts';
+import { CallQueue, FenceGate, localHost, portHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
 import { Gpu } from '../../web/gpu.ts';
 import { ramLayout, type Ram } from '../../web/ram.ts';
@@ -500,4 +500,77 @@ export async function presenter2d(format: number, px: number[], canvas2d: boolea
   // The presenter's draw is on the next animation frame, asked for before this one's: read in the same frame.
   const restored = await new Promise<number[]>((ok) => requestAnimationFrame(() => ok(centre())));
   return { raw, first, restored };
+}
+
+/**
+ * Occlusion queries of two contexts, and of two sub-contexts of one, open at once on the one WebGL2 context: what
+ * their results say and whether a fence after them is answered (`FenceGate`). Each query's state (struct
+ * virgl_host_query_state: state, size, result) is read from the guest's memory.
+ */
+export async function overlappingQueries() {
+  const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
+  const ram = new Uint8Array(4096);
+  const log: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => log.push(m) });
+  const f = (v: number) => new Uint32Array(new Float32Array([v]).buffer)[0];
+  const text = (s: string) => { const b = new TextEncoder().encode(s + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const VS = 'VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END\n';
+  const FS = 'FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END\n';
+  // Resources: 5 the queries' states (in the guest's memory), then per context a vertex buffer and a 16×16 target.
+  const res = (ctx: number, d: Partial<ResourceDesc> & { id: number }) => { r.createResource({ target: 0, format: 64, bind: 0x10, width: 16, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0, ...d }); r.attach(ctx, d.id); };
+  const contexts = [1, 2];
+  for (const c of contexts) r.createContext(c);
+  res(1, { id: 5, bind: 0x800, width: 256 });
+  r.attach(2, 5);
+  r.attachBacking(5, [{ off: 0, len: 256, mem: 0 }]);
+  // The state of a context's current sub-context: a triangle over the whole target, or one off it (no samples).
+  const setup = (cmd: (c: number, obj: number, ...p: number[]) => void, vb: number, rt: number) => {
+    cmd(9, 0, vb, 0, 0, 0, 0, 0, 0, 0, 96, 1, 1, ...[-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1, 5, 5, 0, 1, 6, 5, 0, 1, 5, 6, 0, 1].map(f));
+    const [vl, ...vt] = text(VS), [fl, ...ft] = text(FS);
+    cmd(1, 4, 10, 0, vl, 0, 0, ...vt); cmd(1, 4, 11, 1, fl, 0, 0, ...ft);
+    cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+    cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20); // one R32G32B32A32_FLOAT
+    cmd(1, 2, 21, 1 << 1, f(1), 0, 0, f(1), 0, 0, 0); cmd(2, 2, 21);
+    cmd(1, 8, 22, rt, 1, 0, 0); cmd(5, 0, 1, 0, 22);
+    cmd(4, 0, 0, f(8), f(8), f(1), f(8), f(8), f(0));
+    cmd(6, 0, 16, 0, vb);
+  };
+  const stream = () => {
+    const words: number[] = [];
+    const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+    return { words, cmd, draw: (start: number) => cmd(8, 0, start, 3, 4, 0, 1, 0, 0, 0, 0, 0, 0, 0) };
+  };
+  for (const c of contexts) {
+    res(c, { id: 10 * c, width: 96 });
+    res(c, { id: 10 * c + 1, target: 2, format: 1, bind: 2, height: 16 });
+  }
+  // Each context's sub-context 0 set up; context 1's sub-context 1 too, drawing into context 1's target.
+  for (const c of contexts) {
+    const s = stream();
+    setup(s.cmd, 10 * c, 10 * c + 1);
+    if (c === 1) { s.cmd(29, 0, 1); s.cmd(28, 0, 1); setup(s.cmd, 10, 11); s.cmd(28, 0, 0); }
+    r.submit(c, new Uint32Array(s.words));
+  }
+  const PREDICATE = 1;
+  const query = (s: ReturnType<typeof stream>, h: number, offset: number) => s.cmd(1, 9, h, PREDICATE, offset, 5);
+  // Two contexts: 1 begins (drawing nothing in it), 2 begins, draws and ends, 1 ends in a later submit.
+  let s = stream(); query(s, 40, 0); s.cmd(19, 0, 40); r.submit(1, new Uint32Array(s.words));
+  s = stream(); query(s, 41, 16); s.cmd(19, 0, 41); s.draw(0); s.cmd(20, 0, 41); r.submit(2, new Uint32Array(s.words));
+  s = stream(); s.draw(3); s.cmd(20, 0, 40); r.submit(1, new Uint32Array(s.words));
+  // Two sub-contexts of context 1 in one submit: 0 begins, 1 begins, draws and ends, 0 draws off the target and ends.
+  s = stream(); query(s, 42, 32); s.cmd(19, 0, 42);
+  s.cmd(28, 0, 1); query(s, 43, 48); s.cmd(19, 0, 43); s.draw(0); s.cmd(20, 0, 43);
+  s.cmd(28, 0, 0); s.draw(3); s.cmd(20, 0, 42); r.submit(1, new Uint32Array(s.words));
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((x) => answered.push(x));
+  gate.fence('after', r.queriesSettled());
+  // Results come after the task that ended the queries: polled for up to a second, as the GPU worker does.
+  for (let k = 0; k < 100 && !answered.length; k++) {
+    await new Promise((ok) => setTimeout(ok, 10));
+    r.pollQueries();
+    gate.release();
+  }
+  const dv = new DataView(ram.buffer);
+  const state = (o: number) => ({ state: dv.getUint32(o, true), result: Number(dv.getBigUint64(o + 8, true)) });
+  return { answered, contexts: [state(0), state(16)], subs: [state(32), state(48)], log, glError: gl.getError() };
 }
