@@ -439,6 +439,15 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   await page.locator('.xterm').click();
   await page.keyboard.up('KeyS');
   await shows(/held: 1 31 1 0 0 0 1 31 0 :end/); // not a repeat (1 31 2): a stuck key autorepeats
+  // The browser's repeats of a held key aren't the guest's: its kernel repeats the key itself (the keyboard has EV_REP).
+  await page.keyboard.type(events(0, 3, 'repeat'));
+  await page.waitForTimeout(300);
+  await page.locator('#screen').click();
+  await page.keyboard.down('KeyD');
+  await page.keyboard.down('KeyD'); // Playwright's second down is a repeat
+  await page.keyboard.up('KeyD');
+  await shows(/repeat: 1 32 1 0 0 0 1 32 0 :end/);
+  await page.locator('.xterm').click();
   // A chord from the Keys menu, in order and released in reverse.
   await page.keyboard.type(events(0, 12, 'chord'));
   await page.waitForTimeout(300);

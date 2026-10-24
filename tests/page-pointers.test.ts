@@ -31,8 +31,8 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-/** The page with a mouse and a touchscreen, its input ports kept here and its worker stopped (with `booting`, once the page says the machine boots: a moment on one vCPU). */
-async function open(query = '', booting = false) {
+/** The page with `devices` (a mouse and a touchscreen), its input ports kept here and its worker stopped (with `booting`, once the page says the machine boots: a moment on one vCPU). */
+async function open(query = '', booting = false, devices = 'mouse=1&touch=1') {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, hasTouch: true });
   const page = await context.newPage();
   const errors: string[] = [];
@@ -58,7 +58,7 @@ async function open(query = '', booting = false) {
       return post.call(this, m, transfer as unknown as StructuredSerializeOptions);
     } as typeof Worker.prototype.postMessage;
   });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=${booting ? 1 : 2}&view=screen&mouse=1&touch=1&${unattendedQuery()}${query}`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=${booting ? 1 : 2}&view=screen&${devices}&${unattendedQuery()}${query}`);
   await page.waitForFunction(() => (window as unknown as { __workers: Worker[] }).__workers.length > 0, null, { timeout: 30_000 });
   if (booting) await page.waitForSelector('#state[data-state=booting], #state[data-state=running]', { state: 'attached', timeout: 30_000 });
   await page.evaluate(() => {
@@ -121,6 +121,42 @@ test('touches go to the touchscreen, one slot each', { skip, timeout: 120_000 },
   assert.deepEqual(ev.filter((x) => x[0] === EV_KEY), [[EV_KEY, 0x14a, 1], [EV_KEY, 0x14a, 0]], 'BTN_TOUCH from the first finger down to the last up');
   const xs = ev.filter((x) => x[0] === EV_ABS && x[1] === 0x35).map((x) => x[2]);
   assert.ok(Math.abs(xs[0] - 8192) < 200 && Math.abs(xs[1] - 24575) < 200, `positions across the screen: ${xs}`);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("without a touchscreen the first finger is the tablet's and its left button; another finger is dropped", { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors, cdp, at } = await open('', false, 'mouse=1');
+  const [a, b] = [at(0.25, 0.5), at(0.75, 0.5)];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...a, id: 1 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...a, id: 1 }, { ...b, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, id: 1 }, { x: b.x, y: b.y + 40, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ ...a, id: 1 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: a.x, y: a.y + 40, id: 1 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(500);
+  const e = await events(page);
+  assert.deepEqual([e.touch.length, e.mouse.length], [0, 0]);
+  assert.deepEqual(keys(e.tablet), [[EV_KEY, 0x110, 1], [EV_KEY, 0x110, 0]], 'one press, held until the first finger lifts');
+  const xs = flat(e.tablet).filter((x) => x[0] === EV_ABS && x[1] === 0).map((x) => x[2]);
+  assert.ok(xs.length && xs.every((x) => Math.abs(x - 8192) < 200), `the tablet stays with the first finger: ${xs}`);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the wheel: a mouse's notch is one, a touchpad's small steps add up to notches", { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors, at } = await open();
+  const p = at(0.5, 0.5);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.wheel(0, 100); // a notch down: REL_WHEEL -1
+  await page.mouse.wheel(0, -100);
+  for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 10); // 100 px in small steps: two notches
+  await page.mouse.wheel(0, 30);
+  await page.mouse.wheel(0, -30); // turning back starts over: none
+  await page.waitForTimeout(300);
+  const e = await events(page);
+  const wheel = flat(e.tablet).filter((x) => x[0] === EV_REL && x[1] === 8).map((x) => x[2]);
+  assert.deepEqual(wheel, [-1, 1, -1, -1]);
   assert.deepEqual(errors, []);
   await context.close();
 });

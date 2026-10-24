@@ -23,6 +23,10 @@ const KEYS = new Map<string, number>([
   ['Pause', 119], ['MetaLeft', 125], ['MetaRight', 126], ['ContextMenu', 127],
   // Keys a US keyboard lacks (ABNT2's and JIS's; the guest's layout gives them characters: web/app/keyboard.ts).
   ['IntlRo', 89], ['Convert', 92], ['KanaMode', 93], ['NonConvert', 94], ['Lang1', 122], ['Lang2', 123], ['IntlYen', 124],
+  // Keys past a PC's 105 (the keyboard advertises every code to KEY_MICMUTE): the numpad's extras, F13 to F24, media keys.
+  ['NumpadEqual', 117], ['NumpadComma', 121], ...ROW('F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24', 183),
+  ['AudioVolumeMute', 113], ['AudioVolumeDown', 114], ['AudioVolumeUp', 115],
+  ['MediaTrackNext', 163], ['MediaPlayPause', 164], ['MediaTrackPrevious', 165], ['MediaStop', 166],
 ]);
 // `PointerEvent.buttons`' bits: left, right, middle, back, forward → BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA.
 const BUTTON_BITS = [[1, 0x110], [2, 0x111], [4, 0x112], [8, 0x113], [16, 0x114]] as const;
@@ -30,6 +34,8 @@ const BTN_TOUCH = 0x14a;
 const ABS_MT_SLOT = 0x2f, ABS_MT_POSITION_X = 0x35, ABS_MT_POSITION_Y = 0x36, ABS_MT_TRACKING_ID = 0x39;
 /** The touchscreen's slots (web/devices.ts `TOUCH_SLOTS`). */
 const TOUCH_SLOTS = 10;
+/** A wheel's notch (REL_WHEEL 1) in CSS pixels: a mouse's notch comes as one event of at least this, a touchpad's motion as many small ones, summed. */
+const NOTCH_PX = 50;
 
 /** What `attachInput` returns. */
 export type Input = {
@@ -125,7 +131,10 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     if (!keyboard || code === undefined) return;
     e.preventDefault();
     if (!down && !keys.has(code)) return; // pressed elsewhere, or released already on a blur
-    sendKey(code, e.repeat && keys.has(code) ? 2 : down);
+    // The browser's repeats aren't the guest's: the keyboard has EV_REP, so the guest's kernel repeats a held key itself
+    // (as QEMU's does; forwarded, a held key on a console repeated twice as fast).
+    if (down && e.repeat && keys.has(code)) return;
+    sendKey(code, down);
   };
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
   /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
@@ -209,6 +218,10 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     fingers.clear();
   };
   const touched = (e: PointerEvent) => !!touch && e.pointerType === 'touch';
+  /** Without a touchscreen, only the first finger is the tablet's (another would move it there and lift its button). */
+  const stray = (e: PointerEvent) => !touch && e.pointerType === 'touch' && !e.isPrimary;
+  /** The wheel's motion not yet a notch (CSS pixels; reset when it turns). */
+  let wheelPx = 0;
   const takeMouse = () => {
     // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
     // A refusal (the browser's: too soon after Esc, no gesture) leaves the mouse the page's: the next click asks again.
@@ -237,6 +250,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     on(el, 'keyup', key(0)),
     on(el, 'pointerdown', (e: PointerEvent) => {
       if (touched(e)) return finger(e, 'down');
+      if (stray(e)) return;
       if (lockOn && !locked() && e.pointerType === 'mouse') {
         // The click that takes the mouse isn't the guest's.
         ignored = e.buttons;
@@ -247,9 +261,10 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
       if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
       pointer(e);
     }),
-    on(el, 'pointerup', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : pointer(e))),
-    on(el, 'pointercancel', (e: PointerEvent) => touched(e) && finger(e, 'up')),
-    on(el, 'pointermove', (e: PointerEvent) => (touched(e) ? finger(e, 'move') : pointer(e))),
+    on(el, 'pointerup', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e) || pointer(e))),
+    // A cancelled pointer (the browser took a touch, a pen left) sends no up: what it held is released.
+    on(el, 'pointercancel', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e) || releaseButtons())),
+    on(el, 'pointermove', (e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e) || pointer(e))),
     on(el, 'mousedown', sideButton),
     on(el, 'mouseup', sideButton),
     on(el, 'auxclick', sideButton),
@@ -257,7 +272,12 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
       const port = raw() ? mouse : tablet;
       if (!port || !e.deltaY) return;
       e.preventDefault();
-      port.postMessage([[EV_REL, 8, e.deltaY < 0 ? 1 : -1], [EV_SYN, 0, 0]]);
+      // Lines and pages (Firefox's deltaMode 1, 2) are a notch each; pixels add up to one (a notch per event at most).
+      const px = e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * NOTCH_PX;
+      wheelPx = Math.sign(px) === Math.sign(wheelPx) ? wheelPx + px : px;
+      if (Math.abs(wheelPx) < NOTCH_PX) return;
+      port.postMessage([[EV_REL, 8, wheelPx < 0 ? 1 : -1], [EV_SYN, 0, 0]]);
+      wheelPx = 0;
     }),
     on(el, 'contextmenu', (e: Event) => e.preventDefault()),
     on(el, 'blur', releaseAll),

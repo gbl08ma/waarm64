@@ -678,6 +678,10 @@ page writes the context's output latency into the ring's header, and the guest g
   `buttons` mask (a second button pressed while one is held is a `pointermove`, not a `pointerdown`): left, right,
   middle, and a mouse's **back and forward** as `BTN_SIDE` and `BTN_EXTRA`, whose browser navigation is cancelled on
   the screen (Chromium navigates on an uncancelled `mouseup`; `tests/page-pointers.test.ts` sees it navigate without).
+  A cancelled pointer (`pointercancel`: a pen leaving) releases what it held. The **wheel** is `REL_WHEEL`, vertical
+  only: lines and pages (Firefox's) are a notch each, pixels add up to one at 50 (`NOTCH_PX`), a notch per event at
+  most, so a mouse's notch is one and a touchpad's stream of small steps doesn't scroll many times
+  as far; turning back starts the sum over.
 - **Mouse lock** (the toolbar's menu, `webpc.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
   the mouse (Pointer Lock) and isn't the guest's; every button reaches the guest then, the back and forward ones too.
   Esc (the browser's) or the menu lets it go, and so does a change of mode (the next click takes it in the new one).
@@ -701,7 +705,8 @@ page writes the context's output latency into the ring's header, and the guest g
 - **Touch** (`MachineRecord.touch`, `?touch=1`): a machine with a touchscreen (virtio-input, `INPUT_PROP_DIRECT`, 10
   multitouch slots, 0–32767) gets the screen's touches as touches: a slot per finger (`ABS_MT_SLOT`,
   `ABS_MT_TRACKING_ID`, positions), the primary finger also as `ABS_X/Y`, `BTN_TOUCH` from the first finger down to
-  the last up; fingers past ten are dropped. Without one a touch moves the tablet and presses its left button. The
+  the last up; fingers past ten are dropped. Without one the first finger moves the tablet and presses its left button,
+  and the others are dropped (they would move the pointer to them and lift the button). The
   screen has `touch-action: none`, so the page doesn't pan or zoom under them.
 - **Leaving the page** while the machine runs (booting, running, rebooting) stops it like pulling the plug, so the
   page asks the browser to ask first (`beforeunload`; the browser words the question itself, the page's text isn't
@@ -711,7 +716,10 @@ page writes the context's output latency into the ring's header, and the guest g
   `IntlBackslash`, ABNT2's `IntlRo`, JIS's `IntlYen` and its conversion keys), whatever the host's layout prints on it.
   The guest's keymap says what the key types (a US one unless it is told otherwise: "The keyboard layout"). A
   synthesized key without its modifier events (Playwright's `type()` of `>` sends Period without Shift) reaches the
-  guest unshifted. The built-in USB keyboard is a boot keyboard (usages up to 101): the keys past it reach only virtio-input.
+  guest unshifted. Past a PC's keys, `NumpadEqual`, `NumpadComma`, F13–F24 and the media and volume keys are mapped
+  too (the keyboard advertises every code to `KEY_MICMUTE`). The browser's repeats of a held key aren't sent: the
+  keyboard has `EV_REP`, so the guest's kernel repeats it (as QEMU's does; forwarded as value 2, a console repeated
+  the key twice as fast). The built-in USB keyboard is a boot keyboard (usages up to 101): the keys past it reach only virtio-input.
 
 ### The keyboard layout
 
