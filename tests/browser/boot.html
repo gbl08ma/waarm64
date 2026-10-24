@@ -9,7 +9,10 @@
   // presses A on the keyboard and clicks the tablet, through their ports.
   import { showFramebuffer } from '../../web/display.ts';
   import { KEY_EVENTS, TABLET_EVENTS } from '../../web/vm.ts';
-  const worker = new Worker(new URL('./boot-worker.ts' + location.search, import.meta.url), { type: 'module' });
+  // The query goes along as the worker's name (in its URL, the dev server would resolve the worker's imports and pick its
+  // language from the query too).
+  const url = new URL('./boot-worker.ts', import.meta.url);
+  const worker = new Worker(url, { type: 'module', name: location.search });
   const [kbd, tablet] = [new MessageChannel(), new MessageChannel()];
   kbd.port1.onmessage = (e) => {
     if (e.data[0] === 0x11 && e.data[2] === 1) {

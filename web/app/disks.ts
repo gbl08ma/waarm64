@@ -16,7 +16,7 @@ export const identityOf = (d: DiskRecord) => canonical(d.identity);
 /** A disk's bytes for a job or a machine (a file disk's handle must have its permission: §3.2). */
 export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
   switch (d.kind) {
-    case 'url': return { url: d.url! };
+    case 'url': return { url: new URL(d.url!, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
     case 'file': {
       if (!d.handle) throw new Error(`${d.name} has to be picked again`);
       return { file: await d.handle.getFile() };

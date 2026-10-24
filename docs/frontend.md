@@ -9,12 +9,13 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 
 | File | What |
 |---|---|
-| `web/app/index.html` | the page's stylesheet, the import map (`@xterm/xterm`, Svelte's runtime) and the module; the markup is the components' |
+| `web/app/index.html` | the page's stylesheet and its module; the markup is the components' |
+| `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte`, `Menu.svelte`, `Icon.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
 | `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
 | `web/app/Check.svelte` | a checkbox and its words, with its fine print under them when it has some: the page's checkboxes (settings, rows, menus, the Network wizard; not the USB menu's device rows) |
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
-| `web/app/icons.ts`, `tools/icons.ts` | the icons (Tabler's, below, "Icons") and the script that copies them |
+| `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
 | `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
@@ -135,8 +136,8 @@ docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
 
 ## The page's code
 
-Svelte 5 (runes), compiled when served and in the static copy (`tools/svelte.ts`: `.svelte` components, and
-`.svelte.ts` modules with runes, their types stripped first); no build step. `main.ts` mounts `App.svelte` on the
+Svelte 5 (runes), compiled by Vite's Svelte plugin (below, "The build": `.svelte` components, and `.svelte.ts`
+modules with runes). `main.ts` mounts `App.svelte` on the
 body first, then finds the canvas and the terminal's element in it and runs the machine as before. **What the page
 shows is `ui`** (`ui.svelte.ts`, one `$state` object: the state and its words, the message and its actions, the view,
 the boot card, the status line, the Machines page's tab and choice, a transient machine's size, which menus apply), and
@@ -148,8 +149,10 @@ main.ts fills in before the first start. Records the components read come from t
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`). **Sizes are in binary units**
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
-**Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~10 s) checks them
-with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10). It
+**Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~2 s) checks them
+with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10) and
+the Svelte options in `vite.config.ts` (`--config`: without it, svelte-check crawls the whole repository, `target/`
+included, for config files). Vite's own types (`vite/client`: CSS imports, `?worker&url`) are in `tsconfig.json`. It
 runs on TypeScript 6, in its own package `tools/svelte-check` (a `file:` dev dependency, its packages in its own
 `node_modules`): svelte-check needs the compiler API TypeScript 7 doesn't have, and a peer can't nest under the root's
 TypeScript 7. A `$derived` that only reads a value to depend on it writes `(void tick, value())`: TypeScript rejects
@@ -173,10 +176,11 @@ elsewhere and open under their right edge (a page's Export menus under their lef
 
 ### Icons
 
-Tabler Icons 3.49.0 (MIT, THIRD_PARTY.md), outline, drawn by `Icon.svelte` in a 24×24 `currentColor` SVG. Only the
-ones the page uses are in the repository: `web/app/icons.ts`, their inner markup with the license, written by
-`tools/icons.ts` from the npm package (`npm pack @tabler/icons@3.49.0`, extracted; the script's header says how).
-A new icon is a name added to the script's list and the script run again; icons aren't drawn by hand.
+Tabler Icons' outline set (MIT), from the npm package `@tabler/icons-svelte-runes` (a component per icon). `icons.ts`
+imports the ones the page uses by name (`@tabler/icons-svelte-runes/icons/<name>`: one module each, so the dev server
+loads only those and the build carries only those) into `ICONS`; `Icon.svelte` draws one by name (`IconName`, which
+the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new icon is an import and an entry in
+`icons.ts`; icons aren't drawn by hand. The license reaches the static copy in `THIRD-PARTY-LICENSES.md`.
 
 ### The status bar
 
@@ -875,8 +879,7 @@ against a guest that polls): a person's typing is slower. The serial terminal, n
 setup (GRUB's "UEFI Firmware Settings" entry resets into it; the boot device menu's "EFI Firmware
 Setup") and GRUB's editor and command line.
 
-The dev server serves exactly two files from `node_modules`, `@xterm/xterm/lib/xterm.mjs` and
-`@xterm/xterm/css/xterm.css` (`tools/serve.ts` `ALLOWED`); everything else there is refused.
+xterm.js and its stylesheet are imported as the package (`main.ts`: `@xterm/xterm`, `@xterm/xterm/css/xterm.css`).
 
 ## Views, settings and the disk
 
@@ -1266,6 +1269,42 @@ the lock the second opener fails at once) and "the page restarts over and over" 
 while the guest rewrites its disk, during the next machine's loading and booting, one a double
 click; the page as it was fails on the double click).
 
+## The build
+
+**Vite** (8, Rolldown inside) with `@sveltejs/vite-plugin-svelte`, configured in `vite.config.ts` (the user's call,
+2026-10-24: packages used as packages, and the page served as a few bundled files instead of hundreds of modules).
+Node never goes through it: tools, tests and `bench/` run `.ts` directly, as before.
+
+- **`vite build`** (`npm run dist`, `npm start`; ~1 s) has `web/app/` as its root, so `web/app/index.html` is the
+  copy's, and `base: './'`, so the copy works under any path. Workers are found in the form
+  `new Worker(new URL('./x.ts', import.meta.url), { type: 'module' })` written out whole, with static options, and
+  bundled each on their own (ES modules); `web/vm.ts` writes its two that way and gives Node's `worker_threads` the
+  same files through a lookup the bundler leaves alone. The machine worker gets the page's query in its start message
+  (`query`), not in its URL. The sound worklet is `import WORKLET from './audio-worklet.ts?worker&url'` (the bundler
+  doesn't follow a URL given to `addModule`). A `new URL('<literal>', import.meta.url)` is an asset: the core, the
+  tailnet client and the firmware are copied with hashed names; the tests' guest images are named by concatenation
+  (`machine.ts` `images`), which the bundler leaves alone (a template literal would make it take in every file
+  under `target/images/`). `node:` modules, which `web/` imports dynamically on its Node paths, are left external.
+- **The dev server** (`tools/serve.ts` `startServer`, the repository as its root) serves the whole repository from
+  source: TypeScript and Svelte compiled per request, so the test pages under `tests/browser/`, `bench/*/index.html`
+  and modules a test imports in a page (`import('/web/app/store.ts')`) work as they are. `/` redirects to the page at
+  `/web/app/` (with the query). `target/` is served by sirv ahead of Vite (range requests and HEAD for the disks and
+  firmware; Vite would take an extensionless file, a kernel's `Image`, for a module). No dependency pre-bundling (the
+  packages are ES modules, and parallel test processes would race on its cache). The tests and benchmarks run it in
+  mode `test`: no file watching or hot reloading, Svelte's production code and the packages' production builds.
+  `npm run serve` runs it in development mode, hot reloading. Both send COOP, COEP and `Cache-Control: no-store`.
+  **A module's URL is its identity to Vite** (its query included: `?worker`, `?url`, `?raw` mean something), so
+  settings never ride on a module's URL: the page gives the machine worker its query in the start message, and a
+  harness page gives its worker the query as the worker's `name` (`self.name`: `tests/browser/boot.html`,
+  `virgl-boot.html`, `bench/spike/page.ts`). A worker's URL is a literal (Vite can't analyse a template string).
+- **The preview server** (`startServer` with a build's directory) serves a static copy with the same isolation
+  headers and range requests: `npm start`, `npm run dist -- --serve`, `tests/dist.test.ts`.
+
+Why the tests use the dev server and not the build: their harness pages and in-page imports would each have to be
+a build entry; the build itself is tested end to end by `tests/dist.test.ts` (Buildroot boots from it). The Mac
+benchmark scripts (`bench/run-mac.sh`, `bench/gpu/*-mac.sh`) install the packages there with `npm ci`
+(`bench/mac-packages.sh`): Vite's native parts are per platform.
+
 ## `npm start`
 
 One command from a fresh clone (M8 decision 5): `tools/start.js`, then `tools/start.ts`. In order,
@@ -1299,7 +1338,9 @@ each step skipped when its output is current:
    skipped when `images/build.sh --check edk2` says it's current. Without Podman the start
    stops *before* the long steps, saying how to install it. `tests/start.test.ts` covers the
    message and (with `WEBPC_START_COLD=1`) the build in the copy.
-6. **The server** (`tools/serve.ts`) on `127.0.0.1:8080` (`PORT` or `--port`; `--host` for
+6. **The page's build** (`vite build` into `target/dist/`, as `npm run dist` writes it, below, "A static copy"; ~1 s,
+   run every time: its output carries the commit) and **the server**, Vite's preview server over it
+   (`tools/serve.ts`), on `127.0.0.1:8080` (`PORT` or `--port`; `--host` for
    another interface, with a warning that a remote browser over plain HTTP gets no cross-origin
    isolation, so forwarding the port is the way), then the URL and the `ssh -L` line. A port in
    use stops it with a message rather than moving to another port: **OPFS is per origin, so the
@@ -1308,8 +1349,9 @@ each step skipped when its output is current:
    Debian until 2026-10-17, when the page stopped starting it.
 
 What stops it is said in one message with what to do, and it exits 1. Time on the dev VM (M8 loop
-5, bench/boot/REPORT.md): nothing to do, ~0.1 s to the URL (0.2 s through npm); a fresh clone
-1.2 s plus the core's build (10–11 s cold; the toolchain's install, 722 MB, 6 s on this network).
+5, bench/boot/REPORT.md): nothing to do, ~0.1 s of checks (`--prepare-only`: 119 ms on 2026-10-24) and the page's
+build (~1 s) to the URL; a fresh clone 6.4 s to the URL with the core copied in (`tests/start.test.ts`: npm ci, the
+build), plus the core's build cold (10–11 s; the toolchain's install, 722 MB, 6 s on this network).
 
 **Debian's preparation** (the tests' guest; `tools/debian.ts`, run by `images/build.sh debian`: it links
 the disk and takes nothing out of it; the pin is `images/debian.json`): the qcow2 from the download cache (`WEBPC_DL`, default
@@ -1322,35 +1364,34 @@ disk reader below (`web/bootfs.ts`, `web/ext4.ts`) has no consumer but its tests
 
 ## A static copy
 
-`npm run dist` (`tools/dist.ts`) writes the page as plain files to `target/dist/` (`--out <dir>`), to copy to
-any web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
-stops if a binary is missing), then writes, in the repository's layout (so the modules' relative URLs,
-`../../target/…`, hold unchanged):
+`npm run dist` (`tools/dist.ts`) writes the page as plain files to `target/dist/` (`--out <dir>`), to copy to any
+web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
+stops if a binary is missing), then builds the page with Vite (below, "The build") and adds the licenses:
 
-- `web/app/index.html` and the modules the page reaches from `main.ts`, found by following their `.ts`
-  specifiers and URLs (imports, workers, the worklet: `new URL('./x.ts', import.meta.url)`); each with its types
-  stripped (`stripTypeScriptTypes`, as `tools/serve.ts` does) and its `.ts` specifiers renamed `.js`, since a
-  static server sends `.ts` as something else (`video/mp2t`). Nothing is bundled or minified.
-- `vendor/xterm/` (xterm.js's `xterm.mjs`, its CSS and license; the import map is rewritten to point there),
-- the binaries: the core (`webpc_core.wasm`), the tailnet client (`target/net/ts.wasm`), EDK2 (`QEMU_EFI.fd`,
-  `LICENSES.txt`). **No guest images** (10.6 MiB in all): the user opens a disk, or passes `?disk=<url>` (a
-  server that answers range requests and, cross-origin, sends CORS and CORP headers).
-- `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`): `web/app/index.html` with its
-  document-relative URLs (the entry module, the stylesheet, the import map, whose values must start with `./`) made
-  the root's (`atRoot` in `tools/serve.ts`); everything else the page loads is relative to its modules. A
-  `<meta name="webpc-build">` holds the commit it was built from, its date and "with local changes" when tracked files
-  differed (`buildStamp`, `withStamp`), and the page logs it at load (`webpc: built from …`), so a user's console says
-  which build they ran. The dev server's `/` is the same page, stamped at each load (its `web/app/` isn't), and it serves `web/app/` too (the tests use it); the copy's `web/app/index.html`
-  redirects to the root with the query and fragment (the page was there until 2026-10-23). A relative `?disk=` URL is
-  relative to where the page is. Then `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and `.htaccess` (Apache) with
-  the two headers, `.nojekyll`, and a marker file: the script only empties a directory that has it.
+- `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`), with a `<meta name="webpc-build">`
+  holding the commit it was built from, its date and "with local changes" when tracked files differed
+  (`tools/stamp.ts`, written by `vite.config.ts` into every load of the page, the dev server's too); the page logs it
+  at load (`webpc: built from …`), so a user's console says which build they ran.
+- `assets/`: the page's code bundled, minified, with source maps: the page (`index-<hash>.js`, its CSS), each worker
+  (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
+  deflate) and the sound worklet; and the binaries the page fetches, the core (`webpc_core.wasm`), the tailnet client
+  (`ts.wasm`) and EDK2 (`QEMU_EFI.fd`). Every name is hashed, so a host's caches never serve a stale file with a new
+  page. 10.6 MiB in all. **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
+  range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
+  page is.
+- From `web/app/public/`, copied as they are: `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and
+  `.htaccess` (Apache) with the two headers, `.nojekyll`, and `web/app/index.html`, which redirects to the root with
+  the query and fragment (the page was there until 2026-10-23).
+- `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
+  firmware's), `LICENSE`, and a marker file: the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**
 with every file (shared memory needs cross-origin isolation), answer range requests, and serve over HTTPS (or
-localhost). GitHub Pages can't set headers. `npm run dist -- --serve` previews the copy with `tools/serve.ts`
-(`startServer`'s `root`), which gives the headers and ranges and nothing else. OPFS is per origin, so a disk's
-saved changes stay with the site they were made on. `tests/dist.test.ts` serves a copy so and boots Buildroot from
-it (its images linked in).
+localhost). GitHub Pages can't set headers. `npm run dist -- --serve` previews the copy with Vite's preview server
+(`tools/serve.ts` `startServer` with the copy as its root), which gives the headers and ranges. OPFS is per origin,
+so a disk's saved changes stay with the site they were made on. `tests/dist.test.ts` builds a copy, checks it is the
+bundle (a few hashed files, no source), serves it so and boots Buildroot from it (its images linked in at
+`target/images/`, where the page's direct-boot machines look: `web/app/machine.ts`).
 
 ### Deployed at vm.tny.im
 

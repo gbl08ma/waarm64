@@ -2,8 +2,10 @@
 // the result as `window.benchResult` for bench/run.ts.
 const params = new URLSearchParams(location.search);
 const log = document.getElementById('log')!;
-// The page's query goes along: a suite reads its own switches from `location.search` (bench/boot: `nocw`).
-const worker = new Worker(new URL(`./worker.ts${location.search}`, import.meta.url), { type: 'module' });
+// The page's query goes along as the worker's name: a suite reads its own switches from it (bench/boot: `nocw`). Not in
+// the worker's URL: the dev server would resolve the worker's imports and pick its language from the query too.
+const url = new URL('./worker.ts', import.meta.url);
+const worker = new Worker(url, { type: 'module', name: location.search });
 worker.onmessage = (e: MessageEvent) => {
   if (e.data.log) log.textContent += e.data.log + '\n';
   else Object.assign(window, { benchResult: e.data });

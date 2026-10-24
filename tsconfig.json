@@ -1,11 +1,11 @@
 {
-  // Type-check only. Node runs .ts directly and tools/serve.ts strips types for
-  // the browser, so only erasable syntax is allowed (no enums, namespaces, etc).
+  // Type-check only. Node runs .ts directly (vite.config.ts builds the page), so only erasable syntax is allowed (no
+  // enums, namespaces, etc).
   "compilerOptions": {
     "target": "es2024",
     "module": "nodenext",
     "lib": ["es2024", "dom", "webworker"],
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
@@ -13,5 +13,5 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["tools", "bench", "web", "tests"]
+  "include": ["tools", "bench", "web", "tests", "vite.config.ts"]
 }

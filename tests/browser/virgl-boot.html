@@ -17,7 +17,10 @@
     if (e.data.type === 'render-stats') { window.renderStats.push(e.data); return; }
     if (e.data.type !== 'ready') { window.result = { error: `gpu worker: ${JSON.stringify(e.data)}` }; return; }
     window.renderer = e.data.renderer;
-    const boot = new Worker(new URL('./virgl-boot-worker.ts' + location.search, import.meta.url), { type: 'module' });
+    // The query goes along as the worker's name (in its URL, the dev server would resolve the worker's imports and pick
+    // its language from the query too).
+    const url = new URL('./virgl-boot-worker.ts', import.meta.url);
+    const boot = new Worker(url, { type: 'module', name: location.search });
     boot.postMessage({ renderer: channel.port2, caps: e.data.caps }, [channel.port2]);
     boot.onmessage = (m) => { window.result = m.data; };
     boot.onerror = (m) => { window.result = { error: m.message }; };

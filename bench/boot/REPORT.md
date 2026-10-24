@@ -2938,3 +2938,21 @@ Its phases' pages stay mostly in node 0; the arm's gain is in the boot's share o
 code: the same 11,250 blocks compiled into 19.24 MB of wasm with the arm against 16.71 MB without (**+15%**; compile
 time 120 vs 121 ms). On a machine without spill memory the code is unchanged: `alpine_user_jit` compiled 16,650,058
 bytes with either build (`nospill-*.json`).
+
+## The page under Vite (2026-10-24)
+
+The build system change (docs/frontend.md "The build"): the page's load (to `idle`) and Buildroot's start (to
+`running`) on the page, served three ways and alternated, 5 rounds, Chromium 153 on the dev VM
+(`results/m8-vite/vite-ab.ts`, `vite-ab.json`; an ad-hoc timing from Playwright, not `bench/run.ts`): the old server
+(type stripping, at a67b658), Vite's dev server in mode `test` (what the tests use), and `vite build` behind Vite's
+preview server.
+
+| | page idle, ms | Buildroot running, ms | requests to idle |
+|---|---|---|---|
+| old server | 290 [275–343] | 678 [668–696] | 163 |
+| Vite dev server | 248 [228–475] | 704 [675–782] | 239 |
+| Vite build | 105 [101–109] | 529 [525–532] | 3 |
+
+The build loads in a third of the time and starts a machine ~150 ms sooner (its workers are one file each); the dev
+server is the old server's speed (its first load per process compiles; later loads are cached). The tests stay on the
+dev server (their harness pages and in-page imports aren't build entries; docs/backlog.md "Page tests on the build").

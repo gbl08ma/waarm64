@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # G0's real-GPU numbers (the user's answer to the G0/G1 kickoff, docs/plans/graphics.md §1): the bench page on the Mac host's
 # Chromium (Playwright's Chrome for Testing, headless, temporary profile), served from a small copy in
-# ~/webpc-gpu-bench there. It needs Node and playwright-core (a copy of node_modules/playwright-core
-# from any checkout there) and the Chromium that Playwright installed. Nothing else on the host is touched.
+# ~/webpc-gpu-bench there, the packages installed there. It needs Node, npm and the Chromium that Playwright
+# installed. Nothing else on the host is touched.
 #   bench/gpu/run-mac.sh [extra bench/run.ts args]    -> bench/results/local/gpu-mac.json
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
 DEST=webpc-gpu-bench
 rsync -a --delete --exclude results --exclude memory bench/gpu bench/spike bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
-rsync -a tools/serve.ts tools/tailscale.ts tools/nosme.ts "$HOST:$DEST/tools/"
-rsync -a --delete --include '*/' --include '*.ts' --exclude '*' web "$HOST:$DEST/"   # flush_cost runs the backend itself (web/gpu.ts and what it imports)
-rsync -a package.json "$HOST:$DEST/"
+rsync -a --delete web "$HOST:$DEST/"   # flush_cost runs the backend itself (web/gpu.ts and what it imports)
+# The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
+. bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH && \
   export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
   node --disable-warning=ExperimentalWarning bench/run.ts --page bench/gpu/index.html --chromium-args='--enable-unsafe-webgpu' --out bench/results/local/gpu-mac.json $* && \

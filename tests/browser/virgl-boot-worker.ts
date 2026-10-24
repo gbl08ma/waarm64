@@ -11,7 +11,7 @@ const get = async (path: string) => {
 
 try {
   const { renderer, caps } = await new Promise<{ renderer: MessagePort; caps: Uint8Array }>((resolve) => { self.onmessage = (e) => resolve(e.data); });
-  const params = new URLSearchParams(location.search);
+  const params = new URLSearchParams(self.name); // the page's query (virgl-boot.html)
   const a = DISTROS.alpine;
   const [wasm, kernel, initrd] = await Promise.all([get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'), get(`/target/images/${a.kernel}`), get(`/target/images/${a.initrd}`)]);
   const disk = new URL('/target/images/alpine-virgl/rootfs-virgl.ext4', location.href).href;

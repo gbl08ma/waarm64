@@ -38,9 +38,13 @@ let current: Machine | undefined;
 /** The OPFS directory of the machine's variable store and suspended copy (the start message's `home`). */
 let home: string | undefined;
 
+/** The page's query (the start message's). */
+let query = new URLSearchParams();
+
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   if (m.type === 'start') {
+    query = new URLSearchParams(m.query);
     start(m).catch((err) => {
       if (stopping) return;
       const [problem, message] = explain(err, MACHINES[m.machine]);
@@ -181,7 +185,7 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
  * on a timer instead of the worklet's notify, `stats` posts their timing once a second (kept in `window.__sndStats`).
  */
 function sndTuning() {
-  const knobs = (new URLSearchParams(self.location.search).get('snd') ?? '').split(',');
+  const knobs = (query.get('snd') ?? '').split(',');
   return { wake: knobs.includes('timer') ? 'timer' as const : 'worklet' as const, stats: knobs.includes('stats') };
 }
 /**
@@ -192,7 +196,7 @@ function sndTuning() {
  * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
  */
 function gpuTuning() {
-  const knobs = (new URLSearchParams(self.location.search).get('gpu') ?? '').split(',');
+  const knobs = (query.get('gpu') ?? '').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
   return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), capture: knobs.includes('capture'), screen2d: knobs.includes('canvas2d') ? 'canvas2d' as const : knobs.includes('gl2d') ? 'webgl2' as const : 'auto' as const };
 }
@@ -411,7 +415,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   const { ramSize, spill } = split;
   booting = bootVm(core, {
-    ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, exactCore: !new URLSearchParams(self.location.search).has('growcore'), vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'), sha3: cpu.includes('sha3'),
+    ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined, ncpus, parallel: true, realtime: true, compileWorker: query.get('jit') !== 'nocw' && !spiderMonkey, exactCore: !query.has('growcore'), vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'), sha3: cpu.includes('sha3'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices, usb: m.usb ? { port: m.usb } : undefined, onNotice: (message) => post({ type: 'notice', message }),
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });

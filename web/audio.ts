@@ -19,8 +19,8 @@
 // changes are said to the device (`setVolume(…, true)`), which tells the guest.
 import { LATENCY, newRing, ringViews } from './audio-ring.ts';
 import type { SndFromPage, SndStats, SndToPage } from './snd.ts';
-
-const WORKLET = new URL('./audio-worklet.ts', import.meta.url);
+// The worklet, bundled as a worker is (Vite's `?worker&url`: the bundler doesn't follow a URL given to `addModule`).
+import WORKLET from './audio-worklet.ts?worker&url';
 
 export class PageAudio {
   private ctx?: AudioContext;

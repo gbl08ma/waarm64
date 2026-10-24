@@ -69,7 +69,10 @@ export async function diskOverlay(d: { url: string } | { file: File }) {
   return `webpc-disk-${[...hash.subarray(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-const images = (path: string) => new URL(`../../target/images/${path}`, import.meta.url).href;
+// The tests' guest images, served by the dev server (a concatenation: a template would have the bundler take in every
+// file under target/images/). The firmware is the static copy's (written out, so the build carries it).
+const images = (path: string) => new URL('../../target/images/' + path, import.meta.url).href;
+const FIRMWARE = new URL('../../target/images/edk2/QEMU_EFI.fd', import.meta.url).href;
 
 /**
  * What a firmware machine with a card gives the guest: a systemd credential with a .network file for networkd (DHCP from
@@ -86,7 +89,7 @@ export const MACHINES = {
   uefi: {
     label: 'AArch64 machine',
     prepare: '`npm start` (it builds the firmware)',
-    kernel: images('edk2/QEMU_EFI.fd'),
+    kernel: FIRMWARE,
     firmware: true,
     cmdline: '',
     network: NETWORKD,
@@ -100,7 +103,7 @@ export const MACHINES = {
   debian: {
     label: 'Debian 13',
     prepare: '`images/build.sh debian edk2`',
-    kernel: images('edk2/QEMU_EFI.fd'),
+    kernel: FIRMWARE,
     firmware: true,
     disk: images('debian/disk.qcow2'),
     overlay: 'webpc-debian',

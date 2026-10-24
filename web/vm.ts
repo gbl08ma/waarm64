@@ -23,6 +23,8 @@ export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, sp
 
 export const ABI = 52;
 const RAM_BASE = 0x4000_0000;
+/** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
+const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
 const RING = 4096;
 
 /** Exit kinds (core/src/vm.rs `exit`). */
@@ -1333,16 +1335,18 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     Atomics.add(pword, 0, 1);
     Atomics.notify(pword, 0);
   };
-  const spawn = async (url = new URL('./vcpu-worker.ts', import.meta.url)): Promise<Handle> => {
+  // `new Worker(new URL('…', import.meta.url))` written out whole, as the page's bundler finds workers (docs/frontend.md
+  // "The build"); Node's worker_threads get the same files by a URL it leaves alone.
+  const spawn = async (which: 'vcpu' | 'compile' = 'vcpu'): Promise<Handle> => {
     if (typeof Worker !== 'undefined') {
-      const w = new Worker(url, { type: 'module' });
+      const w = which === 'vcpu' ? new Worker(new URL('./vcpu-worker.ts', import.meta.url), { type: 'module' }) : new Worker(new URL('./jit-compile-worker.ts', import.meta.url), { type: 'module' });
       const h: Handle = { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => w.terminate() };
       w.onmessage = (e: MessageEvent<VcpuEnd | VcpuClock>) => heard(h, e.data);
       w.onerror = (e) => ended({ type: 'error', cpu: -1, message: e.message });
       return h;
     }
     const { Worker: NodeWorker } = await import('node:worker_threads');
-    const w = new NodeWorker(url);
+    const w = new NodeWorker(new URL(NODE_WORKERS[which], import.meta.url));
     const h: Handle = { post: (m, t) => w.postMessage(m, t as never), terminate: () => void w.terminate() };
     w.on('message', (m: VcpuEnd | VcpuClock) => heard(h, m));
     w.on('error', (e: Error) => ended({ type: 'error', cpu: -1, message: String(e.stack ?? e) }));
@@ -1353,7 +1357,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   const start = () => {
     const channels = c.compileWorker ? Array.from({ length: c.ncpus }, () => new MessageChannel()) : [];
     if (channels.length) {
-      compiler = spawn(new URL('./jit-compile-worker.ts', import.meta.url));
+      compiler = spawn('compile');
       const ports = channels.map((ch) => ch.port2);
       void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
     }

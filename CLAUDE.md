@@ -124,9 +124,9 @@ node tests/usb/hid-record.ts   # re-record Chromium's parse of the uhid rig's de
 node bench/usb/run.ts 5        # WebUSB's per-transfer cost and bulk throughput from a worker, against Gadget Zero (bench/usb/)
 scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)
 tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
-npm start                      # what a user runs: checks, npm ci, wasm core, the tailnet client, the UEFI firmware (images/build.sh edk2, Podman), then serves; the page waits for the user's disk (docs/frontend.md)
-npm run dist                   # the page as static files for any web server -> target/dist/ (no guest images; docs/frontend.md "A static copy")
-npm run serve                  # dev server with COOP/COEP on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
+npm start                      # what a user runs: checks, npm ci, wasm core, the tailnet client, the UEFI firmware (images/build.sh edk2, Podman), the page's build, then serves it; the page waits for the user's disk (docs/frontend.md)
+npm run dist                   # the page built (Vite) as static files for any web server -> target/dist/ (no guest images; docs/frontend.md "A static copy")
+npm run serve                  # Vite's dev server with COOP/COEP and hot reloading on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; docs/tailnet.md)
 node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
@@ -159,9 +159,12 @@ needs no CI run.
   and `ABI_VERSION` is bumped when they change ([docs/abi.md](docs/abi.md)).
 
 **TypeScript (host, tools, tests)**
-- No build step: Node runs `.ts` directly, and `tools/serve.ts` strips types for the browser. Use
-  **erasable syntax only** (no enums, namespaces or parameter properties; `tsconfig.json` enforces
-  it). Import with `.ts` extensions.
+- No build step for Node: tools, tests and `bench/` run `.ts` directly. The page is built with **Vite**
+  (`vite.config.ts`, Svelte's plugin; docs/frontend.md "The build"): the dev server (`tools/serve.ts`, the tests'
+  and benchmarks') compiles per request, `npm run dist` and `npm start` bundle. Use **erasable syntax only** (no
+  enums, namespaces or parameter properties; `tsconfig.json` enforces it). Import with `.ts` extensions, and npm
+  packages as packages (no copied code or import maps). A worker is `new Worker(new URL('./x.ts',
+  import.meta.url), { type: 'module' })` written out whole (Vite bundles only that form; options static).
 - Stdlib and platform APIs first where they suit; past them, use a dependency. **Ask before adding one**: each is vetted
   (not too many, none redundant, none of known bad quality). Fewest dependencies isn't a goal in itself: an
   industry-standard set of dependencies and build steps beats a bespoke setup.

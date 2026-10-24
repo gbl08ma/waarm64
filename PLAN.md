@@ -90,8 +90,9 @@ Decisions (the user, 2026-09-28):
   and initrd without host tools beyond Node, serves on localhost and prints the URL (since phase B loop 3 it links the disk and builds the UEFI firmware with Podman instead of extracting a kernel). Done in M8
   loop 5 ([docs/frontend.md](docs/frontend.md) "`npm start`").
 - **Frontend stack:** Svelte 5 for the page (since 2026-10-17, the user's call: the Machines modal first, then the
-  whole page), the rest of `web/` plain TypeScript; Chromium only. Svelte is compiled by `tools/serve.ts` and
-  `tools/dist.ts` (as type stripping is), not a separate build. The page looks like a desktop application (a
+  whole page), the rest of `web/` plain TypeScript; Chromium only. **Built with Vite** (since 2026-10-24, the user's
+  call: `@sveltejs/vite-plugin-svelte`, packages used as packages, the static copy a few bundled files; Node still runs
+  `.ts` directly; docs/frontend.md "The build"). The page looks like a desktop application (a
   toolbar of Tabler's icons, its own dialogs: docs/frontend.md "The toolbar").
 - **Public hosting:** M8 started without it (others clone the repo); since 2026-10-17 `npm run dist` makes a static
   copy and the user deploys it at `https://vm.tny.im` (a Cloudflare Worker with static assets, Pages until 2026-10-23; docs/frontend.md "A static copy"; disk images on another assets-only Worker, `vmdisks.tny.im`, never R2, whose uncached reads anyone can bill: docs/remote-disks.md "Hosting on Cloudflare"). **No guest

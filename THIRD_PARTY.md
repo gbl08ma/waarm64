@@ -17,7 +17,6 @@ copyright/license header in the file.
 | `net/ts/src/control.rs`, `net/ts/src/netmap.rs`, `net/ts/src/tailnet.rs` | the control session, map stream and data plane follow tailscale-rs's `ts_control` (`client/register.rs`, `client/map_stream.rs`, `map_request_builder.rs`) and Tailscale's `controlclient`, `magicsock` and `filter` (v1.102.5): what's sent and how responses apply; reimplemented over the worker's transports, nothing copied | BSD-3-Clause |
 | `net/ts/src/derp.rs` | the DERP client handshake and frame types of Tailscale's `derp` package as tailscale-rs's `ts_derp` (v0.6.1) has them (`frame/`, `client.rs` `make_clientinfo`); reimplemented over a byte stream, nothing copied | BSD-3-Clause |
 | `net/tailscale/overlay/controlhttp_client_js.go` (N2) | `tailscale.com/control/controlhttp/client_js.go` (v1.102.5), copied with one marked change (keep the control server's HTTPS port over WebSocket); `net/tailscale/build.sh` builds against a copy of the module with this file replaced | BSD-3-Clause |
-| `web/app/icons.ts` (the page's icons) | [Tabler Icons](https://tabler.io/icons) 3.49.0 (`@tabler/icons`, npm), outline: the inner markup of the SVGs the page uses, copied by `tools/icons.ts`, the license in the file's header | MIT |
 
 ## Techniques from papers and other projects (ideas, no code)
 

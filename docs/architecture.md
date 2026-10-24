@@ -23,7 +23,7 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 ```
 
 - The page must be **cross-origin isolated** (COOP/COEP) for `SharedArrayBuffer`; everything that
-  runs in the browser works with it on (`tools/serve.ts` sets the headers).
+  runs in the browser works with it on (Vite's servers, `tools/serve.ts`, and the static copy's `_headers` set them).
 - `web/vm.ts` is the host side of the ABI: it instantiates the core, boots a VM (`bootVm`), runs it
   (`run`, `runAsync`, `runToPowerOff`), handles exits, and hosts the JIT's installs.
   `tests/browser/boot.html` and the bench pages run it in a worker; Node runs it directly (devices
@@ -93,7 +93,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 | `core/fuzz/` | decoder sweep and libFuzzer targets (separate workspace) |
 | `web/` | `vm.ts` (host ABI, parallel SMP's coordinator), `vcpu-worker.ts`, `devices.ts` + `device-worker.ts` (backends), `9p.ts`, `net.ts`, `input.ts`, `display.ts`, `overlay.ts`, `qcow2.ts` + `inflate-pool.ts`, `sampler-worker.ts`, `profiler.ts`; `app/`: the page ([frontend.md](frontend.md)) |
 | `tests/` | Node and Chromium tests, the corpus, the harness, bare-metal tests, qcow2 fixtures, `steps.txt` |
-| `tools/` | `serve.ts` (dev server with COOP/COEP and ranges), `corpus/` (generator and oracle runner), `v8code.ts` (V8 machine code of JIT functions), `wasm-sizes.ts` |
+| `tools/` | `serve.ts` (Vite's dev and preview servers with COOP/COEP and ranges; the build is `vite.config.ts`), `corpus/` (generator and oracle runner), `v8code.ts` (V8 machine code of JIT functions), `wasm-sizes.ts` |
 | `bench/` | `run.ts` (the harness), `interp/`, `boot/`, `jit/`, `spike/` (pages, suites, reports, committed results) |
 | `images/` | guest image builds ([images.md](images.md)) |
 | `scripts/` | `ci.sh`, `build-wasm.sh`, `testfloat.sh`, `tsan.sh` |
@@ -108,5 +108,5 @@ wasm64 core was free there), B +31–40%, D +26–32%.
   register-mask code three times (LLVM's wasm backend combines `<32|64 x i1>` bitcasts in the
   wrong order, llvm/llvm-project#226741). Nothing needs it: the JIT's SIMD128 comes from our own
   encoder. How to turn it on safely is in [backlog.md](backlog.md).
-- TypeScript runs without a build step (Node runs `.ts` directly; `tools/serve.ts` strips types
-  for the browser): erasable syntax only.
+- TypeScript runs without a build step in Node (Node runs `.ts` directly): erasable syntax only. The browser gets it
+  through Vite (the dev server compiles per request; `npm run dist` bundles; docs/frontend.md "The build").

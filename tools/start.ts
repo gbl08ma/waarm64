@@ -1,7 +1,8 @@
 // `npm start` (M8 loop 5; docs/frontend.md "npm start"), after tools/start.js
 // checked Node's version: rustup, the npm packages, the wasm core, the tailnet client, the
-// UEFI firmware (EDK2, built in Podman: images/build.sh edk2), then the server on 127.0.0.1 and the URL. Each step is skipped when its output is
-// current, so a second start takes about a second. No disk image: the page waits for the user's (docs/frontend.md).
+// UEFI firmware (EDK2, built in Podman: images/build.sh edk2), then the page's build (Vite, into target/dist/, as `npm run
+// dist` writes it) served on 127.0.0.1 (Vite's preview server) and the URL. Each step but the page's build (~1 s) is
+// skipped when its output is current, so a second start takes about a second. No disk image: the page waits for the user's (docs/frontend.md).
 //   npm start [-- --host <addr>] [-- --port <n>] [-- --prepare-only]
 // PORT sets the port too (default 8080); WEBPC_DL the download cache.
 import { spawnSync } from 'node:child_process';
@@ -13,7 +14,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { prepareTailnetClient } from './tailscale.ts';
 
-// serve.ts is imported once `npm ci` ran: it compiles the page's components with Svelte, a package it installs.
+// serve.ts and dist.ts are imported once `npm ci` ran: they run Vite, a package it installs.
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/webpc_core.wasm');
@@ -135,9 +136,12 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`Ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (not serving: --prepare-only).`);
     return;
   }
+  // The page, built (Vite, ~1 s; tools/dist.ts) and served as the static copy is: what a user should get.
+  const { OUT, writeDist } = await import('./dist.ts');
+  await writeDist(OUT);
   const { APP, startServer } = await import('./serve.ts');
   const port = Number(values.port);
-  const server = await startServer(port, values.host).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'
+  const server = await startServer(port, values.host, OUT).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'
     ? `Port ${port} is in use (another \`npm start\` or \`npm run serve\`?). Stop that one, or pick another port: PORT=${port + 1} npm start\n(What the page keeps, a disk's changes among them, is per address: another port starts without them.)`
     : `Couldn't listen on ${values.host}:${port}: ${e.message}`));
   const addr = server.address() as { port: number };

@@ -30,6 +30,8 @@ export type Problem = 'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-m
 export type ToWorker =
   | {
     type: 'start';
+    /** The page's query (`location.search`), for the worker's own knobs (`?snd=`, `?gpu=`, `?jit=`, `?growcore`, `?vyield=`). */
+    query: string;
     machine: MachineName;
     ncpus: number;
     /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */

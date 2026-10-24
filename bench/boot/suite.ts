@@ -31,6 +31,8 @@ import type { DeviceSpec } from '../../web/devices.ts';
 import { bootVm, compileCore, DISTROS, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF, testDevices } from '../../web/vm.ts';
 
 const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
+/** The bench page's query: the spike worker's name (bench/spike/page.ts); none in Node. */
+const pageQuery = () => new URLSearchParams((globalThis as { name?: string }).name);
 
 async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
   const r = await fetch(new URL(rel, import.meta.url));
@@ -57,7 +59,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), exactCore: !new URLSearchParams(globalThis.location?.search).has('growcore'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
+  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -417,7 +419,7 @@ async function scriptBoots(o: Options, script: string, n: number) {
   // `?jit=1` on the page boots them under the JIT (the interpreter otherwise, as the early reports measured).
   // `?ncpus=N`: parallel SMP on N vCPUs (a worker each, as the page runs); `?chunk=N`: its chunk (`vm_set_chunk`);
   // `?disk=`/`?script=`: another root disk and script (ad hoc experiments).
-  const q = new URLSearchParams(globalThis.location?.search);
+  const q = pageQuery();
   const jit = q.get('jit') === '1' ? (1 as const) : undefined;
   const ncpus = q.has('ncpus') ? Number(q.get('ncpus')) : undefined;
   const chunk = q.has('chunk') ? Number(q.get('chunk')) : undefined;

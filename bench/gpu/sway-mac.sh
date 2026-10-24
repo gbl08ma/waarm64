@@ -14,14 +14,12 @@ cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
 DEST=webpc-gpu-bench
 MODE=$1 IMAGE=$2 NAME=$3
-ssh "$HOST" "mkdir -p $DEST/bench/results/local $DEST/target/images/debian $DEST/target/wasm32-unknown-unknown/release $DEST/node_modules/@xterm"
+ssh "$HOST" "mkdir -p $DEST/bench/results/local $DEST/target/images/debian $DEST/target/wasm32-unknown-unknown/release"
 rsync -a --delete --exclude results bench/gpu bench/audio bench/video "$HOST:$DEST/bench/"
 rsync -a --delete web "$HOST:$DEST/"
-rsync -a tools/serve.ts tools/svelte.ts tools/tailscale.ts tools/nosme.ts "$HOST:$DEST/tools/"
 ssh "$HOST" "mkdir -p $DEST/tests" && rsync -a tests/page-ask.ts "$HOST:$DEST/tests/"   # guest-session.ts answers the page's dialogs with it
-rsync -a package.json "$HOST:$DEST/"
-# The page's runtime packages (xterm.js, Svelte and its compiler, which serve.ts runs): plain JS. The host's own playwright-core stays.
-rsync -a --exclude playwright-core --exclude typescript --exclude @typescript --exclude @types node_modules/ "$HOST:$DEST/node_modules/"
+# The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
+. bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 rsync -a target/wasm32-unknown-unknown/release/webpc_core.wasm "$HOST:$DEST/target/wasm32-unknown-unknown/release/"
 rsync -a target/images/edk2 "$HOST:$DEST/target/images/"
 rsync -a target/images/debian/disk.qcow2 "$HOST:$DEST/target/images/debian/"   # the page's own machine, which starts first

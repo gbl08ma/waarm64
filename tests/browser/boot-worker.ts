@@ -36,7 +36,7 @@ const get = async (path: string) => {
 
 try {
   const ports = await new Promise<{ keyboard: MessagePort; tablet: MessagePort }>((resolve) => { self.onmessage = (e) => resolve(e.data); });
-  const params = new URLSearchParams(location.search);
+  const params = new URLSearchParams(self.name); // the page's query (boot.html)
   const distro = params.get('distro') as keyof typeof DISTROS | null;
   const script = params.get('script');
   const litmus = params.get('litmus');

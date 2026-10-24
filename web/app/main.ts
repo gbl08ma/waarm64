@@ -9,6 +9,7 @@
 // test guest and `?snd=stats[,timer]` the sound's measurements (docs/frontend.md "Sound"), `?avprobe` the screen's
 // flashes for A/V sync (bench/audio/avsync.ts).
 import { Terminal } from '@xterm/xterm';
+import '@xterm/xterm/css/xterm.css';
 import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { ask } from './ask.svelte.ts';
@@ -47,7 +48,7 @@ import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
-// The commit the page was built from (tools/serve.ts `buildStamp`), for reports of what a user ran.
+// The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="webpc-build"]')?.getAttribute('content');
 if (build) console.info(`webpc: built from ${build}`);
 // A machine kept in this browser (docs/plans/machines.md), by id: `?m=<id>`. It is the page's machine (`uefi`) with its own
@@ -210,7 +211,7 @@ async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
   const own: { url?: string; file?: File; overlay?: string } | undefined = chosen ?? (spec.disk ? { url: spec.disk, overlay: spec.overlay } : undefined);
   if (own) disks.push({ name: baseName(), source: own.file ? { file: own.file } : { url: own.url! }, overlay: own.overlay, own: chosen ? undefined : true });
   const disk2 = params.get('disk2');
-  if (disk2) disks.push({ name: new URL(disk2, location.href).pathname.split('/').pop() ?? 'disk2', source: { url: disk2 } });
+  if (disk2) disks.push({ name: new URL(disk2, location.href).pathname.split('/').pop() ?? 'disk2', source: { url: new URL(disk2, location.href).href } }); // the page's, not the worker's (its bundle is under assets/)
   return { disks, home: own?.overlay };
 }
 /** After a stored machine ran: its overlays' and in-place disks' generations and sizes from their files into their records (§3.3). */
@@ -591,7 +592,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     ui.boot.done = true;
     ui.boot.shown = false;
   };
-  const worker = new Worker(new URL(`./worker.ts${location.search}`, import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   // A machine's network adapters are there from the start (one can't be added later without a restart): their ends of
   // the IP ports, whose other ends the page's network has (web/app/net-live.ts: the clients of their connections).
   const nets = net.ports(netKey(), pageAdapters());
@@ -718,7 +719,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.

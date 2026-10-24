@@ -2,8 +2,8 @@
 # The boot and small-guest benchmarks on the Mac host's Chromium (Playwright's Chrome for Testing,
 # headless, temporary profile): macOS has V8's wasm trap handler, so its numbers are without the
 # explicit bounds checks this Linux arm64 VM's carry (docs/v8.md "Bounds checks"). The pages, the
-# wasm core, the Alpine images and the repo's node_modules are copied to ~/webpc-bench there (~660 MB); it
-# needs Node and the Chromium that Playwright installed. Nothing else on the host is touched.
+# wasm core and the Alpine images are copied to ~/webpc-bench there (~600 MB), the packages installed there; it
+# needs Node, npm and the Chromium that Playwright installed. Nothing else on the host is touched.
 #   [WASM=core.wasm] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
 # e.g. bench/run-mac.sh user-default --page bench/boot/index.html --only alpine_user_jit
 set -euo pipefail
@@ -14,11 +14,9 @@ DEST=webpc-bench
 CORE=target/wasm32-unknown-unknown/release
 ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $DEST/target/bench"
 rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
-rsync -a tools/serve.ts tools/tailscale.ts tools/svelte.ts "$HOST:$DEST/tools/"
-# The server compiles the page's Svelte (tools/svelte.ts): the repo's node_modules (plain JS), 60 MB.
-rsync -a --delete node_modules "$HOST:$DEST/"
-rsync -a --delete --include '*/' --include '*.ts' --exclude '*' web "$HOST:$DEST/"
-rsync -a package.json "$HOST:$DEST/"
+# The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
+. bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
+rsync -a --delete web "$HOST:$DEST/"
 rsync -a "${WASM:-$CORE/webpc_core.wasm}" "$HOST:$DEST/$CORE/webpc_core.wasm"
 rsync -a target/images/alpine target/images/alpine-user "$HOST:$DEST/target/images/"
 rsync -a --exclude '*defconfig' --exclude 'System.map' target/images/linux target/images/buildroot "$HOST:$DEST/target/images/"

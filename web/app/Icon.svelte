@@ -2,10 +2,12 @@
 <script lang="ts">
   import { ICONS, type IconName } from './icons.ts';
   let { name, size = 20 }: { name: IconName; size?: number } = $props();
+  const Glyph = $derived(ICONS[name]);
 </script>
 
-<svg class="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html ICONS[name]}</svg>
+<Glyph {size} stroke={1.75} aria-hidden="true" />
 
 <style>
-  .icon { flex: none; display: block; }
+  /* The package's component draws the <svg>, with its class. */
+  :global(svg.tabler-icon) { flex: none; display: block; }
 </style>

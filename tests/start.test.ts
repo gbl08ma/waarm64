@@ -181,7 +181,7 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
     assert.ok(existsSync(join(d, FIRMWARE)) && existsSync(join(d, 'target/images/edk2/LICENSES.txt')));
     // The copy's firmware is this checkout's (current: images/SHA256SUMS) unless built cold, and
     // tests/page-debian.test.ts boots Debian to a login three times; so here the page only has to
-    // wait for a disk, then start the copy's machine on one: its module graph, core and firmware load and the firmware (or
+    // wait for a disk, then start the copy's machine on one: its bundle, core and firmware load and the firmware (or
     // whatever is further by then) writes to the serial console. The disk is this checkout's Debian, linked into the copy.
     // Only the page takes the Debian lock: the install and the build before it boot nothing.
     await withDebianLock(async () => {
@@ -189,9 +189,9 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
       const page = await browser.newPage();
       await page.goto(url);
       await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000, polling: 100 });
-      mkdirSync(join(d, 'target/images/debian'), { recursive: true });
-      symlinkSync(join(ROOT, DEBIAN_DISK), join(d, DEBIAN_DISK));
-      await page.goto(`${url}?disk=/${DEBIAN_DISK}`);
+      // Into the served copy (npm start serves the build, target/dist/).
+      symlinkSync(join(ROOT, DEBIAN_DISK), join(d, 'target/dist/debian.qcow2'));
+      await page.goto(`${url}?disk=/debian.qcow2`);
       await page.waitForFunction(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim() !== '' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}; ${document.querySelector('.xterm-rows')?.textContent}`)}`); });
       const state = await page.evaluate(() => document.body.dataset.state);

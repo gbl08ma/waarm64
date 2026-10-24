@@ -55,7 +55,10 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
   }, url);
   // A chunked image's manifest: its id the identity, its name the disk's.
   assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: 'demo', name: 'Desktop Demo' });
-  assert.deepEqual(await check(`${base}/tests/qcow2/data.raw`), { ok: true, problems: [], bytes: 196608, etag: undefined });
+  // The dev server's files (sirv): a weak ETag of the size and modification time.
+  const raw = await check(`${base}/tests/qcow2/data.raw`);
+  assert.deepEqual({ ...raw, etag: undefined }, { ok: true, problems: [], bytes: 196608, etag: undefined });
+  assert.match(raw.etag ?? '', /^W\/"196608-\d+"$/);
   assert.deepEqual(await check(`${otherBase}/disk.img`), { ok: true, problems: [], bytes: 4096, etag: '"v1"' });
   const plain = await check(`${otherBase}/plain/disk.img`);
   assert.equal(plain.ok, false);

@@ -1,16 +1,15 @@
-// tools/dist.ts: the page as a static copy. Its modules name no .ts file, and in Chromium, served as plain files
-// (tools/serve.ts over the copy: headers and ranges, nothing stripped), the page opens idle and boots Buildroot (its
-// images linked into the copy for the test: the copy itself has none).
+// tools/dist.ts: the page as a static copy, Vite's build. It is a few bundled files, and in Chromium, served as plain
+// files (Vite's preview server over the copy, tools/serve.ts: headers and ranges), the page opens idle and boots
+// Buildroot (its images linked into the copy for the test: the copy itself has none).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
-import { BINARIES, compileModule, writeDist } from '../tools/dist.ts';
+import { BINARIES, writeDist } from '../tools/dist.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
-import { runtimeFiles } from '../tools/svelte.ts';
 import { PAGE_QUERY } from './page-query.ts';
 
 const skipCopy = BINARIES.some((f) => !existsSync(join(ROOT, f))) && 'SKIPPED: npm start --prepare-only builds the binaries';
@@ -24,7 +23,9 @@ let close: () => void;
 before(async () => {
   if (skipCopy) return;
   out = mkdtempSync(join(tmpdir(), 'webpc-dist-'));
-  writeDist(out);
+  await writeDist(out);
+  // The page's direct-boot machines find their images at target/images/ under the root (web/app/machine.ts).
+  mkdirSync(join(out, 'target/images'), { recursive: true });
   if (buildroot) for (const d of ['linux', 'buildroot']) symlinkSync(join(ROOT, 'target/images', d), join(out, 'target/images', d));
   const server = await startServer(0, '127.0.0.1', out);
   close = () => server.close();
@@ -33,39 +34,19 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); if (out) rmSync(out, { recursive: true, force: true }); });
 
-test('compileModule renames .ts specifiers and URLs, and lists them', () => {
-  const { js, deps } = compileModule("import { a } from './a.ts';\nimport type { B } from '../b.ts';\nconst w = new Worker(new URL(`./w.ts${location.search}`, import.meta.url));\nconst x: number = 1; // web/c.ts\n");
-  assert.deepEqual(deps, ['./a.ts', './w.ts']);
-  assert.match(js, /from '\.\/a\.js'/);
-  assert.match(js, /`\.\/w\.js\$\{location\.search\}`/);
-  assert.match(js, /web\/c\.ts/); // a comment stays
+test('the static copy is the page bundled: a few hashed files, its binaries among them, no source', { skip: skipCopy }, () => {
+  const files = readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile()).map((f) => f.split(sep).join('/'));
+  assert.ok(!files.some((f) => /\.(?:ts|svelte)$/.test(f)), `source in the copy: ${files.filter((f) => /\.(?:ts|svelte)$/.test(f)).join(', ')}`);
+  for (const f of ['index.html', 'web/app/index.html', '_headers', '.htaccess', '.nojekyll', 'LICENSE', 'THIRD-PARTY-LICENSES.md', 'EDK2-LICENSES.txt']) assert.ok(files.includes(f), `${f} is missing`);
+  for (const name of ['index', 'worker', 'vcpu-worker', 'device-worker', 'jit-compile-worker', 'gpu-worker', 'audio-worklet', 'webpc_core', 'ts', 'QEMU_EFI']) {
+    assert.ok(files.some((f) => new RegExp(`^assets/${name}-[\\w-]{8}\\.(?:js|wasm|fd)$`).test(f)), `no assets/${name}-<hash>`);
+  }
+  const scripts = files.filter((f) => f.endsWith('.js'));
+  assert.ok(scripts.length < 40, `${scripts.length} scripts: the page isn't bundled`);
+  assert.match(readFileSync(join(out, 'THIRD-PARTY-LICENSES.md'), 'utf8'), /@xterm\/xterm[\s\S]*svelte/);
 });
 
-test('compileModule compiles a Svelte component and renames its specifiers', () => {
-  const { js, deps } = compileModule("<script lang=\"ts\">import { f } from './f.ts'; import Other from './Other.svelte'; let n: number = $state(0);</script><Other />{f(n)}", 'web/app/X.svelte');
-  assert.deepEqual(deps, ['./f.ts', './Other.svelte']);
-  assert.match(js, /from '\.\/f\.js'/);
-  assert.match(js, /from '\.\/Other\.svelte\.js'/);
-  assert.match(js, /from 'svelte\/internal\/client'/);
-});
-
-test('compileModule compiles a module with runes (.svelte.ts): types stripped, its state Svelte\'s', () => {
-  const { js, deps } = compileModule("import type { T } from './t.ts';\nimport { g } from './g.ts';\nexport const s = $state({ n: 1 as number, t: undefined as T | undefined });\nexport const h = () => g(s.n);", 'web/app/x.svelte.ts');
-  assert.deepEqual(deps, ['./g.ts']);
-  assert.match(js, /from '\.\/g\.js'/);
-  assert.match(js, /from 'svelte\/internal\/client'/);
-  assert.doesNotMatch(js, /\$state|as number/);
-});
-
-test('the static copy names no .ts module, and its Svelte runtime is complete', { skip: skipCopy }, () => {
-  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
-  const files = [...walk(join(out, 'web')), join(out, 'index.html')];
-  assert.ok(!files.some((f) => f.endsWith('.ts')), 'a .ts file in the copy');
-  for (const f of files) assert.doesNotMatch(readFileSync(f, 'utf8'), /['"`]\.{1,2}\/[\w./-]*\.(?:ts|svelte)(?:['"`]|\$\{)/, `${f} names a .ts module or an uncompiled component`);
-  for (const f of runtimeFiles()) assert.ok(existsSync(join(out, f.replace(/^node_modules\//, 'vendor/'))), `${f} is in vendor/`);
-});
-
-test("the static copy's page logs its commit and opens the Machines modal (Svelte's runtime from vendor/)", { skip: skipCopy }, async () => {
+test("the static copy's page logs its commit and opens the Machines modal", { skip: skipCopy }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -74,7 +55,7 @@ test("the static copy's page logs its commit and opens the Machines modal (Svelt
   page.on('console', (m) => logs.push(m.text()));
   await page.goto(`${base}/`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 10_000 });
-  // The commit the copy was built from, on the console (tools/serve.ts `buildStamp`).
+  // The commit the copy was built from, on the console (tools/stamp.ts `buildStamp`).
   const head = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.ok(logs.some((l) => l.startsWith(`webpc: built from ${head} (`)), `no "webpc: built from ${head}" on the console`);
   await page.click('#machines-open');
