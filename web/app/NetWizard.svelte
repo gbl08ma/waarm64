@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import Check from './Check.svelte';
   import { preselect, type Connection } from './connections.ts';
   import type { PageNetwork } from './net-live.ts';
   import { DEFAULT_CONTROL, hasTailcatIdentity, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, tailcatBuilt, tailscaleBuilt } from './network.ts';
@@ -169,7 +170,7 @@
       <label>Hostname<input id="net-hostname" bind:value={hostname} placeholder="webpc" autocomplete="off" spellcheck="false"></label>
       {#if here}
         <label>Auth key (optional, never saved)<input id="net-authkey" bind:value={authKey} type={reveal ? 'text' : 'password'} autocomplete="off" spellcheck="false"></label>
-        <label class="net-check"><input id="net-reveal" type="checkbox" bind:checked={reveal}> Show the auth key</label>
+        <Check id="net-reveal" bind:checked={reveal}>Show the auth key</Check>
         <p class="net-note">Without an auth key you log in, in a new tab; with one there's no login, and the key isn't kept. A kept connection's node stays on the tailnet over reloads. A Headscale must answer <code>/key</code> with CORS headers.</p>
       {:else if editing}
         <p class="net-note">Another control server is another node: make a new connection for it.</p>
@@ -178,12 +179,12 @@
       {/if}
     </section>
     <section id="net-step-tailcat" class="net-step" hidden={step !== 'tailcat'}>
-      <label class="net-check"><input id="net-tc-exit" type="checkbox" bind:checked={tcExit}> Go online through a computer of mine</label>
+      <Check id="net-tc-exit" bind:checked={tcExit}>Go online through a computer of mine</Check>
       <div id="net-tc-exit-fields" class="net-sub" hidden={!tcExit}>
         <label>Its tailcat address<input id="net-tailcat" bind:value={tailcat} type="password" placeholder="tc…" autocomplete="off" spellcheck="false"></label>
         <p class="net-note">On that computer run <code>tailcat serve exit-node</code> (<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">tailcat</a>) and paste the address it prints: the machine reaches what that computer reaches, its LAN and the internet. Keep the address to yourself: it lets anyone in. A kept connection keeps it in this browser.</p>
       </div>
-      <label class="net-check"><input id="net-tc-serve" type="checkbox" bind:checked={tcServe}> Let tailcat clients in to this machine</label>
+      <Check id="net-tc-serve" bind:checked={tcServe}>Let tailcat clients in to this machine</Check>
       <div id="net-tc-serve-fields" class="net-sub" hidden={!tcServe}>
         <p class="net-note">The connection gets a tailcat address of its own. With it another computer runs <code>tailcat ssh &lt;address&gt;</code> to log in to the guest's sshd, or <code>tailcat &lt;address&gt; &lt;port&gt;</code> for any port the guest listens on.</p>
         <details id="net-tc-advanced" bind:open={advanced}><summary>Advanced</summary>
@@ -197,8 +198,10 @@
       </div>
     </section>
     {#if !editing && (step === 'tailscale' || step === 'tailcat')}
-      <label class="net-check"><input id="net-keep" type="checkbox" bind:checked={keep}> Keep this connection in this browser</label>
-      <p class="net-note" id="net-keep-note">{keep ? 'Any machine here can use it again, and it comes back after a reload without a login.' : "Ephemeral: kept nowhere, it goes when this page closes (a tailnet's node then leaves the tailnet, and a served address stops working)."}</p>
+      <Check id="net-keep" bind:checked={keep}>
+        Keep this connection in this browser
+        {#snippet note()}<span id="net-keep-note">{keep ? 'Any machine here can use it again, and it comes back after a reload without a login.' : "Ephemeral: kept nowhere, it goes when this page closes (a tailnet's node then leaves the tailnet, and a served address stops working)."}</span>{/snippet}
+      </Check>
     {/if}
     <p id="net-error" class="net-note" hidden={!formError}>{formError}</p>
     <div class="net-buttons">

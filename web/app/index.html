@@ -49,7 +49,7 @@
   .menu .items .fkeys { display: grid; grid-template-columns: repeat(4, 1fr); }
   .menu .items .fkeys button { justify-content: center; padding-left: 4px; padding-right: 4px; }
   .menu .items.panel { width: 260px; gap: 8px; padding: 10px; }
-  .menu .items.panel label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
+  .menu .items.panel label:not(.check) { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
   .menu .items.panel label.row { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
   .menu .items.panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
   .menu .items.panel .hint { margin: 0; }
@@ -81,7 +81,7 @@
   dialog { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px #000a; }
   dialog::backdrop { background: rgb(0 0 0 / 0.55); }
   #net-wizard { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; }
-  #net-wizard label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
+  #net-wizard label:not(.check) { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
   #net-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
   #net-form h2 { margin: 0; font-size: 16px; }
   .net-step { display: flex; flex-direction: column; gap: 10px; }
@@ -92,7 +92,6 @@
   .net-choice:hover, .net-choice:focus-visible { border-color: var(--accent); }
   .net-choice span { color: var(--dim); font-size: 12px; }
   .net-choice[aria-pressed=true] { border-color: var(--accent); background: var(--pressed); }
-  #net-wizard label.net-check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
   .net-sub { display: flex; flex-direction: column; gap: 8px; margin-left: 24px; }
   #net-wizard details summary { cursor: pointer; color: var(--dim); font-size: 12px; }
   #net-wizard details[open] { display: flex; flex-direction: column; gap: 8px; }

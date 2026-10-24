@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
   import Menu from './Menu.svelte';
+  import Check from './Check.svelte';
   import { ask } from './ask.svelte.ts';
   import type { PageNetwork } from './net-live.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -81,10 +82,11 @@
           {#each v.exitNodes as e (e.id)}<option value={e.id}>{e.online ? e.name : `${e.name} (offline)`}</option>{/each}
         </select>
       </label>
-      <label id={`net-routes-label${s}`} hidden={!v.subnets} title={v.subnets?.routes.join(', ')}>
-        <input id={`net-routes${s}`} type="checkbox" checked={v.subnets?.on ?? true} onchange={(e) => act(a.index, () => page.netRoutes(a.index, (e.currentTarget as HTMLInputElement).checked))}>
-        Reach the subnets peers route ({v.subnets?.routes.slice(0, 2).join(', ')}{(v.subnets?.routes.length ?? 0) > 2 ? ', …' : ''})
-      </label>
+      <div id={`net-routes-label${s}`} hidden={!v.subnets}>
+        <Check id={`net-routes${s}`} checked={v.subnets?.on ?? true} onchange={(on) => act(a.index, () => page.netRoutes(a.index, on))} title={v.subnets?.routes.join(', ')}>
+          Reach the subnets peers route ({v.subnets?.routes.slice(0, 2).join(', ')}{(v.subnets?.routes.length ?? 0) > 2 ? ', …' : ''})
+        </Check>
+      </div>
       <div id={`net-served${s}`} hidden={!v.served}>
         <label>This machine's tailcat address<input id={`net-served-addr${s}`} type={revealed[a.index] ? 'text' : 'password'} readonly spellcheck="false" value={v.served ?? ''}></label>
         <div class="net-row"><button id={`net-served-copy${s}`} onclick={() => copyServed(a.index, v.served ?? '')}>Copy</button><button id={`net-served-show${s}`} onclick={() => (revealed = { ...revealed, [a.index]: !revealed[a.index] })}>{revealed[a.index] ? 'Hide' : 'Show'}</button></div>

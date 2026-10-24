@@ -3,6 +3,7 @@
   then its details (the URL and the server's check, the file, the size) and whether the machine may write to it.
 -->
 <script lang="ts">
+  import Check from './Check.svelte';
   import { onMount } from 'svelte';
   import Icon from './Icon.svelte';
   import { ask } from './ask.svelte.ts';
@@ -202,7 +203,7 @@
         <label>Size<span class="line"><input type="number" min="1" bind:value={sizeMiB} data-field="size"> MiB</span></label>
       {/if}
       {#if source !== 'blank' && source !== 'ramdisk' && source !== 'known'}
-        <label class="check" title="The guest can read it but not write it: no overlay. An installer ISO is read-only."><input type="checkbox" bind:checked={readOnly}> Read-only</label>
+        <Check bind:checked={readOnly} title="The guest can read it but not write it: no overlay. An installer ISO is read-only.">Read-only</Check>
       {/if}
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -223,7 +224,6 @@
   .choice b { display: flex; align-items: center; gap: 8px; }
   .note { margin: 0; color: var(--dim); font-size: 13px; }
   label { display: flex; flex-direction: column; gap: 4px; color: var(--dim); font-size: 12px; }
-  label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
   .line { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
   .line input { flex: 1; }
   .line input[type=number] { flex: 0 1 140px; }

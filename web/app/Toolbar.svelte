@@ -5,6 +5,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
+  import Check from './Check.svelte';
   import Network from './Network.svelte';
   import Sound from './Sound.svelte';
   import UsbMenu from './UsbMenu.svelte';
@@ -107,7 +108,7 @@
       <label>Size<select id="screen-size" bind:value={screenSize} onchange={() => { remember({ screen: screenSize }); page.screenSize(); }}>
         <option value="fit">Fit the window</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option>
       </select></label>
-      <label class="row" title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)"><input id="screen-hidpi" type="checkbox" bind:checked={hidpi} onchange={() => { remember({ hidpi }); page.screenSize(); }}> HiDPI</label>
+      <Check id="screen-hidpi" bind:checked={hidpi} onchange={() => { remember({ hidpi }); page.screenSize(); }} title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)">HiDPI</Check>
       <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop takes it when it starts; whether it follows a change is up to its compositor (sway doesn't).</p>
     </Menu>
   {/if}
@@ -121,7 +122,7 @@
     </div>
   </Menu>
   <Menu id="mouse-lock" icon="mouse" title={ui.mouseLocked ? 'Mouse lock: the machine has the mouse (Esc lets it go)' : ui.mouseLock ? 'Mouse lock is on: a click on the screen gives the machine the mouse' : 'Mouse lock: a click on the screen gives the machine the mouse, every button included'} data-on={ui.mouseLock || undefined} panel>
-    <label class="row" title="A click on the screen gives the machine the mouse: every button reaches it, the back and forward ones too, and the browser hides its pointer; Esc lets it go"><input id="mouse-lock-on" type="checkbox" checked={ui.mouseLock} onchange={(e) => page.setMouseLock(e.currentTarget.checked)}> Lock the mouse on a click</label>
+    <Check id="mouse-lock-on" checked={ui.mouseLock} onchange={(on) => page.setMouseLock(on)} title="A click on the screen gives the machine the mouse: every button reaches it, the back and forward ones too, and the browser hides its pointer; Esc lets it go">Lock the mouse on a click</Check>
     <label class="row" title="The pointer moves as it does unlocked, at the host's speed, and stays in the screen"><input type="radio" name="mouse-lock-mode" value="pointer" data-mode="pointer" checked={ui.mouseLockMode === 'pointer'} onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}> Pointer: the same speed as unlocked</label>
     <label class="row" title={ui.hasMouse ? "The mouse's own motion to the machine's relative mouse, unbounded by the screen (games that turn with the mouse); the guest's settings set its speed" : "This machine has no relative mouse (its Settings, Mouse): the lock moves the pointer"}><input type="radio" name="mouse-lock-mode" value="raw" data-mode="raw" checked={ui.mouseLockMode === 'raw'} disabled={!ui.hasMouse} onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}> Raw: unbounded, for games</label>
     <p class="hint">Esc lets the mouse go. In Raw the guest's own mouse settings set the speed.{ui.hasMouse ? '' : " Raw needs the machine's Mouse (its Settings)."}</p>

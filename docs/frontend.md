@@ -12,6 +12,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/index.html` | the page's stylesheet, the import map (`@xterm/xterm`, Svelte's runtime) and the module; the markup is the components' |
 | `web/app/App.svelte`, `Toolbar.svelte`, `Menu.svelte`, `Icon.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
 | `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
+| `web/app/Check.svelte` | a checkbox and its words, with its fine print under them when it has some: the page's checkboxes (settings, rows, menus, the Network wizard; not the USB menu's device rows) |
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts`, `tools/icons.ts` | the icons (Tabler's, below, "Icons") and the script that copies them |
 | `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |

@@ -5,6 +5,7 @@
   device… opens the wizard (AddUsb.svelte). The controller's switch is the Machines page's (it is in the shape).
 -->
 <script lang="ts">
+  import Check from './Check.svelte';
   import AddUsb from './AddUsb.svelte';
   import Icon from './Icon.svelte';
   import UsbProblems from './UsbProblems.svelte';
@@ -68,7 +69,7 @@
           <select value={e.connector} disabled={here && v.state === 'attached'} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }))} data-field="connector">
             {#each Array.from({ length: USER_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option>{/each}
           </select></label>
-        <label class="check" title="Attached when the machine starts, and when it is plugged in while the machine runs"><input type="checkbox" checked={e.atStart} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { atStart: (ev.currentTarget as HTMLInputElement).checked }))} data-field="at-start"> At start</label>
+        <Check compact checked={e.atStart} onchange={(on) => act('Saving', () => page.usbEdit(machine.id, e.id, { atStart: on }))} field="at-start" title="Attached when the machine starts, and when it is plugged in while the machine runs">At start</Check>
         {#if v.state === 'ungranted'}
           <button onclick={() => act('Asking the browser', () => page.usbAllow(machine.id, e.id))} data-action="allow" title="The browser's chooser, showing this device: pick it to give this page its permission">Allow…</button>
         {/if}
@@ -106,7 +107,6 @@
   li[data-state=held] [data-usb-state], li[data-state=ungranted] [data-usb-state] { color: #ffb36b; }
   .problems { margin-top: 4px; color: #ffb36b; font-size: 12px; }
   .field { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
-  .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; }
   button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
   .primary { background: #24406b; border-color: #3b6db3; color: #fff; }

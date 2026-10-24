@@ -10,6 +10,7 @@
   import Disks from './Disks.svelte';
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
+  import Check from './Check.svelte';
   import Snapshots from './Snapshots.svelte';
   import StatusEditor from './StatusEditor.svelte';
   import Usb from './Usb.svelte';
@@ -197,7 +198,7 @@
 
 {#snippet usbSwitch()}
   {#if draft}
-    <label class="check" title="An xHCI with four connectors (USB 2 and USB 3 each) for the machine's USB devices: the guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.usb} data-field="usb"> USB controller</label>
+    <Check bind:checked={draft.usb} field="usb" title="An xHCI with four connectors (USB 2 and USB 3 each) for the machine's USB devices: the guest sees it, so turning it on or off changes the machine's shape">USB controller</Check>
     {#if !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>Turning the USB controller {draft.usb ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
   {/if}
 {/snippet}
@@ -205,8 +206,8 @@
 {#snippet pointerSwitches()}
   {#if draft}
     {@const rec = machines.find((x) => x.id === draft?.id)}
-    <label class="check" title="A relative mouse (virtio-input) for the mouse lock's Raw mode: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), at the guest's own mouse speed. Without it the lock has the Pointer mode only. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.mouse} data-field="mouse"> Mouse (the mouse lock's Raw mode)</label>
-    <label class="check" title="A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.touch} data-field="touch"> Touchscreen</label>
+    <Check bind:checked={draft.mouse} field="mouse" title="A relative mouse (virtio-input) for the mouse lock's Raw mode: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), at the guest's own mouse speed. Without it the lock has the Pointer mode only. The guest sees it, so turning it on or off changes the machine's shape">Mouse (the mouse lock's Raw mode)</Check>
+    <Check bind:checked={draft.touch} field="touch" title="A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape">Touchscreen</Check>
     {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch}<p class="note warn" data-pointer-orphans>Adding or removing the mouse or the touchscreen changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
   {/if}
 {/snippet}
@@ -262,14 +263,16 @@
           <span class="meta">Kept by this browser, for every machine.</span></span>
         </div>
         <div class="tab settings">
-          <label class="check"><input type="checkbox" bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} data-field="leave-warning"> Ask before leaving the page while a machine runs</label>
-          <p class="note">Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.</p>
+          <Check bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} field="leave-warning"
+            note="Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.">Ask before leaving the page while a machine runs</Check>
         </div>
         <div class="tab">
           <h4>Status bar</h4>
           <StatusEditor {net} />
-          <label class="check status-fullscreen"><input type="checkbox" bind:checked={ui.statusFullscreen} onchange={() => remember({ statusFullscreen: ui.statusFullscreen })} data-field="status-fullscreen"> Show the status bar in full screen</label>
-          <p class="note">Off, full screen is the machine alone, edge to edge; on, the bar comes along (its Keyboard element says there whether the browser's shortcuts reach the machine).</p>
+          <div class="settings status-fullscreen">
+            <Check bind:checked={ui.statusFullscreen} onchange={() => remember({ statusFullscreen: ui.statusFullscreen })} field="status-fullscreen"
+              note="Off, full screen is the machine alone, edge to edge; on, the bar comes along (its Keyboard element says there whether the browser's shortcuts reach the machine).">Show the status bar in full screen</Check>
+          </div>
         </div>
       </section>
     {:else if ui.machinesSelected === CONNECTIONS}
@@ -318,7 +321,7 @@
                     <button data-save="changes" title="A small qcow2 holding what the machine wrote, with the image it booted as its backing file (kept beside it)" onclick={() => savePage('changes')}>Changes only (qcow2)</button>
                     <button data-save="qcow2" title="The whole disk as a qcow2 (empty space left out)" onclick={() => savePage('qcow2')}>Whole disk (qcow2)</button>
                     <button data-save="raw" title="The whole disk as a raw image" onclick={() => savePage('raw')}>Whole disk (raw)</button>
-                    <label class="check" title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write"><input id="save-compress" type="checkbox" bind:checked={compress} onchange={() => remember({ compress })}> Compress the qcow2</label>
+                    <Check id="save-compress" bind:checked={compress} onchange={() => remember({ compress })} title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write">Compress the qcow2</Check>
                     <p class="hint">The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.</p>
                   </Menu>
                   <button onclick={() => document.getElementById('load-changes-input')!.click()} title="Put the changes of a saved changes file onto this disk (the disk it was made over must be this one)"><Icon name="upload" size={16} />Import changes…</button>
@@ -365,7 +368,7 @@
               {#if numaNote(draft.ramMiB, draft.ramSplit)}<p class="note warn" data-numa>{numaNote(draft.ramMiB, draft.ramSplit)}</p>{/if}
               <details class="advanced" data-ram-split open={!!draft.ramSplit}>
                 <summary>Memory split (advanced)</summary>
-                <label class="check"><input type="checkbox" checked={!!draft.ramSplit} onchange={(e) => customSplit(e.currentTarget.checked)} data-field="custom-split"> Set the split myself</label>
+                <Check checked={!!draft.ramSplit} onchange={customSplit} field="custom-split">Set the split myself</Check>
                 {#if draft.ramSplit}
                   <div class="split">
                     <label>Memory 0, MiB <input bind:this={ram0Input} type="number" min="64" step="1" value={draft.ramSplit[0]} onchange={editSplit} data-field="ram0"></label>
@@ -400,7 +403,7 @@
                       <span class="meta" data-connection-name>{c ? `${c.name}: ${kindText(c)}` : 'No connection: the cable is out'}{here?.active ? ` · ${here.view.text}` : ''}{here?.primary ? ' · the default way out' : ''}</span>
                       {#if here?.note}<span class="meta warn">{here.note}</span>{/if}</div>
                     {#if at >= 0}
-                      {#if c}<label class="check" title="Connect it when the machine starts (Disconnect turns it off)"><input type="checkbox" checked={c.connectAtStart} onchange={(e) => { const on = e.currentTarget.checked; void act('Saving', () => setAtStart(c, on)); }} data-field="connect-at-start"> Connect at start</label>{/if}
+                      {#if c}<Check compact checked={c.connectAtStart} onchange={(on) => void act('Saving', () => setAtStart(c, on))} field="connect-at-start" title="Connect it when the machine starts (Disconnect turns it off)">Connect at start</Check>{/if}
                       <button onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: m.id === ui.current })} data-action="attach-connection" title="A connection of this browser's, or a new one">{c ? 'Change connection…' : 'Attach…'}</button>
                       {#if c}<button onclick={() => act('Detaching', () => page.netDetach(m.id, at))} data-action="detach-connection" title="Take the connection off the adapter (its client stops)">Detach</button>{/if}
                       {#if here && c}
@@ -416,8 +419,10 @@
               </ul>
               {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network adapter</button></div>{/if}
               <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding or removing one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.</p>
-              <label class="check" title="At every boot the page has the guest's systemd-networkd take what each connection's lease says"><input type="checkbox" checked={draft.netConfig !== false} onchange={(e) => { draft!.netConfig = e.currentTarget.checked ? undefined : false; dirty = true; }} data-field="net-config"> Take the connection's settings in the guest</label>
-              <p class="note" data-net-config-note>{#if draft.netConfig !== false}At every boot the page has the guest's systemd-networkd take each connection's MTU (a tailnet's is 1280: at the adapter's 1500, large packets can be lost) and search domain (MagicDNS's), and use DHCP on adapters nothing else sets up, on a guest with systemd 256 or newer. Nothing is written to the guest's disk: it lasts until the guest shuts down. NetworkManager takes them by itself.{:else}The page leaves the guest's network settings alone: the guest takes the MTU and search domain only if it is set up to. The next boot has none of the page's settings.{/if}</p>
+              <Check checked={draft.netConfig !== false} onchange={(on) => { draft!.netConfig = on ? undefined : false; dirty = true; }} field="net-config" title="At every boot the page has the guest's systemd-networkd take what each connection's lease says">
+                Take the connection's settings in the guest
+                {#snippet note()}<span data-net-config-note>{#if draft?.netConfig !== false}At every boot the page has the guest's systemd-networkd take each connection's MTU (a tailnet's is 1280: at the adapter's 1500, large packets can be lost) and search domain (MagicDNS's), and use DHCP on adapters nothing else sets up, on a guest with systemd 256 or newer. Nothing is written to the guest's disk: it lasts until the guest shuts down. NetworkManager takes them by itself.{:else}The page leaves the guest's network settings alone: the guest takes the MTU and search domain only if it is set up to. The next boot has none of the page's settings.{/if}</span>{/snippet}
+              </Check>
               {@render saveRow()}
             </div>
           {:else if ui.machinesTab === 'usb'}
@@ -479,16 +484,15 @@
   .settings { display: grid; grid-template-columns: max-content minmax(0, 320px) 1fr; gap: 10px 16px; align-items: center; }
   /* A full-row note's text would widen the labels' max-content column and squeeze the controls to nothing: it takes the row's width instead. */
   .settings > .note, .settings > .advanced { contain: inline-size; }
-  .settings > label:not(.check) { grid-column: 1 / 3; display: grid; grid-template-columns: subgrid; align-items: center; color: var(--dim); }
-  .settings .row, .settings .note { grid-column: 1 / -1; }
-  .check { display: flex; align-items: center; gap: 6px; }
+  .settings > label { grid-column: 1 / 3; display: grid; grid-template-columns: subgrid; align-items: center; color: var(--dim); }
+  .settings .row, .settings .note, .settings > :global(.check), .settings > :global(.check-field) { grid-column: 1 / -1; }
   .status-fullscreen { margin-top: 20px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .primary { background: #24406b; border-color: #3b6db3 !important; color: #fff; }
   .primary:disabled { background: transparent; color: var(--text); }
   .note, .hint { color: var(--dim); font-size: 12px; margin: 0; }
   .note.warn { color: #ffb36b; }
-  .settings .check, .settings .warn { grid-column: 1 / -1; }
+  .settings .warn { grid-column: 1 / -1; }
   .settings > .beside { justify-self: start; }
   .advanced { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
   .advanced summary { color: var(--dim); cursor: pointer; }
@@ -502,7 +506,6 @@
   .adapters li.none { color: var(--dim); }
   .adapters .what { flex: 1; min-width: 200px; display: flex; flex-direction: column; }
   .adapters .warn { color: #ffb36b; }
-  .adapters .check { font-size: 13px; white-space: nowrap; }
   .conn-name { font: inherit; font-weight: 600; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 4px; margin-left: -5px; }
   .conn-name:hover, .conn-name:focus { border-color: var(--line); }
   .new .chosen { background: var(--pressed); }

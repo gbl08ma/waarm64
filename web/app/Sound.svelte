@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import Menu from './Menu.svelte';
+  import Check from './Check.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
   import { ui } from './ui.svelte.ts';
@@ -37,10 +38,10 @@
 
 <Menu id="sound-menu" icon={on && !waiting ? 'volume' : 'volume-off'} title={summary} panel data-waiting={waiting || undefined}>
   {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag">mic</span>{/if}{/snippet}
-  <label class="row"><input id="sound-on" type="checkbox" bind:checked={on} onchange={keepSound}> Sound on</label>
+  <Check id="sound-on" bind:checked={on} onchange={keepSound}>Sound on</Check>
   <label>Volume<input id="sound-volume" type="range" min="0" max="100" step="1" bind:value={volume} oninput={keepSound}></label>
-  <label class="row" title="When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence"><input id="mic-on" type="checkbox" bind:checked={mic} onchange={keepMic}> Microphone</label>
-  <label class="row" title="The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)"><input id="mic-raw" type="checkbox" bind:checked={micRaw} onchange={keepMic}> Raw microphone</label>
+  <Check id="mic-on" bind:checked={mic} onchange={keepMic} title="When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence">Microphone</Check>
+  <Check id="mic-raw" bind:checked={micRaw} onchange={keepMic} title="The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)">Raw microphone</Check>
   <p class="hint" id="sound-hint">Kept in this browser. The browser plays sound once the page has had a click or a key.</p>
   <p class="hint" id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>{micState === 'denied' ? "The browser refused the microphone: the machine records silence. Allow it in the site's settings, then turn Microphone off and on." : 'The machine is recording: the browser asks for the microphone.'}</p>
 </Menu>

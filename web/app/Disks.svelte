@@ -4,6 +4,7 @@
   the whole disk) and import (a changes file becomes a new overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
 <script lang="ts">
+  import Check from './Check.svelte';
   import AddDisk from './AddDisk.svelte';
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
@@ -108,7 +109,7 @@
     {#if changes}<button data-save="changes" title="A small qcow2 holding what the machine wrote, with the image as its backing file (keep it beside it)" onclick={() => save(id, disk, overlay, 'changes')}>Changes only (qcow2)</button>{/if}
     <button data-save="qcow2" title="The whole disk as a qcow2 (empty space left out)" onclick={() => save(id, disk, overlay, 'qcow2')}>Whole disk (qcow2)</button>
     <button data-save="raw" title="The whole disk as a raw image" onclick={() => save(id, disk, overlay, 'raw')}>Whole disk (raw)</button>
-    <label class="check" title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write"><input type="checkbox" bind:checked={compress} onchange={() => remember({ compress })}> Compress the qcow2</label>
+    <Check bind:checked={compress} onchange={() => remember({ compress })} title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write">Compress the qcow2</Check>
     <p class="hint">A machine running from the disk stops while the file is written, and starts again after.</p>
   </Menu>
 {/snippet}
@@ -122,9 +123,9 @@
         <strong>{d?.name ?? 'missing disk'}</strong>
         <span class="meta">{d ? `${KIND[d.kind].text}, ${bytesText(d.size)}` : ''} · vd{String.fromCharCode(97 + i)}</span>
         <span class="grow"></span>
-        <label class="check"><input type="checkbox" checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(e) => setFlag(a.id, { readOnly: e.currentTarget.checked })}> read-only</label>
+        <Check compact checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(on) => setFlag(a.id, { readOnly: on })}>read-only</Check>
         {#if d?.kind === 'stored' && !a.readOnly}
-          <label class="check" title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it."><input type="checkbox" checked={!!a.inPlace} onchange={(e) => setFlag(a.id, { inPlace: e.currentTarget.checked })}> write in place</label>
+          <Check compact checked={!!a.inPlace} onchange={(on) => setFlag(a.id, { inPlace: on })} title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it.">write in place</Check>
         {/if}
         <button class="icon" onclick={() => act('Moving', () => editAttachment(store, plain(machine), a.id, { move: -1 }))} disabled={i === 0} aria-label="Up" title="Move up (an earlier slot)"><Icon name="arrow-up" size={16} /></button>
         <button class="icon" onclick={() => act('Moving', () => editAttachment(store, plain(machine), a.id, { move: 1 }))} disabled={i === machine.attachments.length - 1} aria-label="Down" title="Move down (a later slot)"><Icon name="arrow-down" size={16} /></button>
@@ -180,7 +181,6 @@
   .meta, .note, .hint { color: var(--dim); font-size: 12px; }
   .note { margin: 4px 0 0; }
   .hint { margin: 4px 8px; max-width: 260px; }
-  .check { display: inline-flex; align-items: center; gap: 4px; }
   .overlays > label { display: inline-flex; align-items: center; gap: 6px; }
   .row > button, .overlays > button, .add { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
   .row > button.icon { padding: 3px 5px; }
