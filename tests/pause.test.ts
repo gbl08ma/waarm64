@@ -95,22 +95,23 @@ const booted = /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/;
 // scripts/ci.sh with nothing left to wake it, and its cancelled file said nothing: docs/backlog.md).
 const TIMEOUT = 120_000;
 
-test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 30 ms of running, and at console markers)', { skip, timeout: TIMEOUT }, async () => {
+test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 10 ms of running, and at console markers)', { skip, timeout: TIMEOUT }, async () => {
   for (let i = 0; i < RUNS; i++) {
     const latencies: number[] = [];
     let pauses = 0;
     const markers = new Set<string>();
     const r = await drive(parallel(), async ({ vm, console, ended }) => {
-      let next = performance.now() + 30;
+      let next = performance.now() + 10;
       while (!ended()) {
         await sleep(5);
-        // At a marker (the guest is running: its disk and console traffic), or every 30 ms: the boot takes ~1 s.
+        // At a marker (the guest is running: its disk and console traffic), or every 10 ms: the boot takes ~0.7 s
+        // on an idle dev VM since the block interpreter's speed-up (every 30 ms left it 12 or 13 pauses).
         const marker = ['Freeing unused kernel', 'Run /init', 'webpc: test'].find((m) => !markers.has(m) && console().includes(m));
         if (!marker && performance.now() < next) continue;
         if (marker) markers.add(marker);
         if (!(await checkedPause(vm, latencies))) break;
         pauses++;
-        next = performance.now() + 30;
+        next = performance.now() + 10;
       }
     });
     assert.ok(pauses >= 20, `${pauses} pauses in ${r.ms} ms`);
