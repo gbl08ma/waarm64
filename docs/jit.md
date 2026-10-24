@@ -713,6 +713,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   `PMULL.1Q` as Karatsuba over three 32×32 `i64.mul`s with holes (4.5% faster than four
   products); SHA1C/P/M and SHA256H/H2 as scalar rounds on renamed i32 locals, the schedule
   updates as SIMD128, and `mov S, A; sha256h A, E, W; sha256h2 E, S, W` computed once.
+  FEAT_SHA512 and FEAT_SHA3 (`inline_sha3`, when the vCPU has them): SHA512H/H2 as two scalar
+  rounds on i64 locals, SHA512SU0/SU1 as `i64x2` shifts and adds, EOR3 and BCAX as
+  `v128.xor`/`v128.andnot`, RAX1 and XAR as `i64x2` shifts; no helper calls.
 - **Vector constants** live in `Vcpu::consts` and are loaded from fixed offsets (V8 materialized
   each `v128.const` from 16 bytes of immediates at every use).
 - **Branch hints** (`wasm::Code::hint`, the `metadata.code.branch_hint` section): every `if`/

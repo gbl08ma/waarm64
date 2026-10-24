@@ -1,5 +1,6 @@
-//! The v8.0 crypto extensions' arithmetic (M6.5): AES rounds, SHA-1 and
-//! SHA-256 hash updates, carry-less multiplies. Our own code, written from
+//! The crypto extensions' arithmetic: AES rounds, SHA-1 and SHA-256 hash
+//! updates, carry-less multiplies (v8.0, M6.5), and SHA-512's and SHA-3's
+//! (FEAT_SHA512, FEAT_SHA3). Our own code, written from
 //! FIPS 197, FIPS 180-4 and the Arm pseudocode (AESSubBytes, SHA256hash, …);
 //! the interpreter's reference semantics and the JIT's helpers.
 //!
@@ -459,6 +460,96 @@ pub fn sha256su1(d: u128, n: u128, m: u128) -> u128 {
         r[e] = s1(r[e - 2]).wrapping_add(d[e]).wrapping_add(t0[e]);
     }
     from_elems(r)
+}
+
+fn halves(x: u128) -> (u64, u64) {
+    (x as u64, (x >> 64) as u64)
+}
+
+fn from_halves(lo: u64, hi: u64) -> u128 {
+    (hi as u128) << 64 | lo as u128
+}
+
+fn sigma512_0(x: u64) -> u64 {
+    x.rotate_right(28) ^ x.rotate_right(34) ^ x.rotate_right(39)
+}
+
+fn sigma512_1(x: u64) -> u64 {
+    x.rotate_right(14) ^ x.rotate_right(18) ^ x.rotate_right(41)
+}
+
+/// SHA512H: the T1 halves of two rounds, with `d` the two rounds' W + K and
+/// h, g already added (the Arm pseudocode: X = Vn [f, g], Y = Vm [d, e]).
+pub fn sha512h(d: u128, n: u128, m: u128) -> u128 {
+    let ((x0, x1), (y0, y1), (w0, w1)) = (halves(n), halves(m), halves(d));
+    let hi = ((y1 & x0) ^ (!y1 & x1))
+        .wrapping_add(sigma512_1(y1))
+        .wrapping_add(w1);
+    let t = hi.wrapping_add(y0);
+    let lo = ((t & y1) ^ (!t & x0))
+        .wrapping_add(sigma512_1(t))
+        .wrapping_add(w0);
+    from_halves(lo, hi)
+}
+
+/// SHA512H2: the new a and b from SHA512H's T1s (`d`), X = Vn [c, d], Y = Vm [a, b].
+pub fn sha512h2(d: u128, n: u128, m: u128) -> u128 {
+    let ((x0, _), (y0, y1), (w0, w1)) = (halves(n), halves(m), halves(d));
+    let hi = ((x0 & y1) ^ (x0 & y0) ^ (y1 & y0))
+        .wrapping_add(sigma512_0(y0))
+        .wrapping_add(w1);
+    let lo = ((hi & y0) ^ (hi & y1) ^ (y1 & y0))
+        .wrapping_add(sigma512_0(hi))
+        .wrapping_add(w0);
+    from_halves(lo, hi)
+}
+
+fn small512_0(x: u64) -> u64 {
+    x.rotate_right(1) ^ x.rotate_right(8) ^ x >> 7
+}
+
+fn small512_1(x: u64) -> u64 {
+    x.rotate_right(19) ^ x.rotate_right(61) ^ x >> 6
+}
+
+/// SHA512SU0: W[t] + σ0(W[t+1]) for two words, W[t+2] the low half of `n`.
+pub fn sha512su0(d: u128, n: u128) -> u128 {
+    let ((w0, w1), (x0, _)) = (halves(d), halves(n));
+    from_halves(
+        w0.wrapping_add(small512_0(w1)),
+        w1.wrapping_add(small512_0(x0)),
+    )
+}
+
+/// SHA512SU1: adds σ1(W[t+14]) and W[t+9], lane by lane.
+pub fn sha512su1(d: u128, n: u128, m: u128) -> u128 {
+    let ((w0, w1), (x0, x1), (y0, y1)) = (halves(d), halves(n), halves(m));
+    from_halves(
+        w0.wrapping_add(small512_1(x0)).wrapping_add(y0),
+        w1.wrapping_add(small512_1(x1)).wrapping_add(y1),
+    )
+}
+
+/// RAX1: n ^ rol(m, 1) in each 64-bit lane (Keccak's θ).
+pub fn rax1(n: u128, m: u128) -> u128 {
+    let ((n0, n1), (m0, m1)) = (halves(n), halves(m));
+    from_halves(n0 ^ m0.rotate_left(1), n1 ^ m1.rotate_left(1))
+}
+
+/// XAR: ror(n ^ m, imm) in each 64-bit lane (Keccak's ρ).
+pub fn xar(n: u128, m: u128, imm: u32) -> u128 {
+    let (x0, x1) = halves(n ^ m);
+    from_halves(x0.rotate_right(imm), x1.rotate_right(imm))
+}
+
+/// EOR3: n ^ m ^ a.
+pub fn eor3(n: u128, m: u128, a: u128) -> u128 {
+    n ^ m ^ a
+}
+
+/// BCAX: n ^ (m & !a) (Keccak's χ).
+pub fn bcax(n: u128, m: u128, a: u128) -> u128 {
+    n ^ (m & !a)
 }
 
 /// 32×32 → 64-bit carry-less product: integer multiplies of the operands with

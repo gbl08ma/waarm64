@@ -2848,3 +2848,52 @@ three rounds alternating (`results/m8-exactcore/pages/`, `run.sh`). Each session
   index's lists took ~5 MiB more than it said, ~12 MiB more than the new one in all.
 - **A prune in a 4-vCPU session takes ~35 ms** under the cache's lock (19 ms in tests/heap.test.ts's guest in Node): it
   happens once, in the bbc load, which was no slower for it.
+
+## M9: FEAT_SHA512 and FEAT_SHA3 (2026-10-24)
+
+SHA512H/H2/SU0/SU1 and EOR3, RAX1, XAR, BCAX from the backlog, inline in the JIT (docs/cpu.md, docs/jit.md
+"Crypto"), advertised as `VmConfig.features` bit 3 (ABI 51). Chromium 153.0.8010.52 headless, the dev VM
+(linux-arm64, 8 vCPUs), one session, medians of each run's 5 samples; the JSON is in `results/m9-sha3/`.
+
+**Other workloads: no change.** The change (B, which the guests see: Linux picks its sha512-ce code) against
+origin/main (A, `cb08e58`, its own page and core), alternated: Alpine's boot 3 rounds, its userspace benchmark 6
+(rounds 4-6 with B first). ms, each round's median; `results/m9-sha3/ab/`:
+
+| | A | B | |
+|---|---|---|---|
+| Alpine's boot (total, warm) | 5728 · 5635 · 5634; **5635** | 5602 · 5625 · 5634; **5625** | −0.2% |
+| userspace: compress | **1971** | **1973** | +0.1% |
+| userspace: lua | **3079** | **3095** | +0.5% |
+| userspace: churn | **1376** | **1378** | +0.2% |
+| userspace: sqlite | **2299** | **2310** | +0.5% |
+| userspace: total | 14115 · 14052 · 14156 · 14037 · 14041 · 13973; **14041** | 14107 · 14112 · 14200 · 13725 · 14114 · 14279; **14112** | +0.5% |
+
+Every row's rounds overlap (B has the userspace total's fastest round and its slowest) and none is past 1%: noise
+by docs/benchmarking.md "Rules".
+
+**OpenSSL** (`alpine_crypto_ce_jit` against `alpine_crypto_nosha3_jit`, the crypto phase of `images/alpine/user`
+with `sha512` and `sha3-256` added; 3 rounds alternated; MB/s; `results/m9-sha3/openssl/`):
+
+| | without SHA512/SHA3 | with them | |
+|---|---|---|---|
+| sha512, 256 B | 76.2 · 74.7 · 74.2; **74.7** | 83.1 · 83.2 · 83.4; **83.2** | **+11%** |
+| sha512, 16 KiB | 288.7 · 266.6 · 265.9; **266.6** | 303.7 · 300.2 · 299.9; **300.2** | **+13%** |
+| sha3-256, 16 KiB | **311.1** | **313.7** | the same code |
+
+AES-GCM, AES-CBC, SHA-1 and SHA-256 moved under 1.1% either way, rounds overlapping. sha512-armv8's scalar path is
+already 64-bit integer code, which the JIT runs well; SHA512H's two rounds an instruction are what's left to gain.
+**OpenSSL 3.5 doesn't use the SHA-3 instructions on our vCPU**: `crypto/armcap.c` sets its "SHA3 and worth using"
+bit (1 << 15, its EOR3/RAX1/XAR/BCAX Keccak) only for Apple M1 and M2 MIDRs, and its EOR3 AES-GCM (1 << 12, 1 << 16)
+only for Neoverse V1, V2, N2, Cobalt 100 and Ampere; our MIDR's implementer is 0. Its armcap on our vCPU is 0x9fd
+(SHA512, SHA3 and RNG set). Told to use both (`webpc.armcap=0x99fd`, `alpine_crypto_eor3_jit`, against the default;
+3 rounds alternated; `results/m9-sha3/openssl-forced/`):
+
+| | default (0x9fd) | forced (0x99fd) | |
+|---|---|---|---|
+| sha3-256, 256 B | 83.4 · 85.8 · 83.9; **83.9** | 91.3 · 90.5 · 91.2; **91.2** | +9% |
+| sha3-256, 16 KiB | 278.7 · 308.0 · 281.1; **281.1** | 520.3 · 510.1 · 514.5; **514.5** | **+83%** |
+| aes-128-gcm, 16 KiB | **315.1** | 348.4 · 344.4 · 346.9; **346.9** | +10% |
+| aes-256-gcm, 16 KiB | **260.3** | 286.4 · 283.5 · 283.8; **283.8** | +9% |
+
+(256-byte GCM and SHA-512 unchanged.) So the instructions are worth it where a guest uses them: Linux's sha3-ce,
+and OpenSSL if the MIDR said a CPU it knows (docs/backlog.md "OpenSSL's MIDR-gated paths").

@@ -407,7 +407,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   const { ramSize, spill } = split;
   booting = bootVm(core, {
-    ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, exactCore: !new URLSearchParams(self.location.search).has('growcore'), vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
+    ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, exactCore: !new URLSearchParams(self.location.search).has('growcore'), vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'), sha3: cpu.includes('sha3'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices, usb: m.usb ? { port: m.usb } : undefined, onNotice: (message) => post({ type: 'notice', message }),
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });

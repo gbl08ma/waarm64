@@ -93,12 +93,12 @@ ALPINE_PKGS="openrc=0.63.2-r0" # from the ISO's repository
 USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0" # openssl from the ISO's
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0" # the ISO's
 GL_PKGS="mesa-egl=26.1.6-r0 mesa-gles=26.1.6-r0 mesa-dri-gallium=26.1.6-r0"
-GL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 mesa-dev=26.1.6-r0"
+GL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 mesa-dev=26.1.6-r0"
 MESA=26.1.6
 MESA_SHA256=5296b88a0f1e012e2cb9ada150a2bbadf728ca81e5a4fb2ab43c83a4d2158606
 VIRGL_TOOLS="build-base=0.5-r4 meson=1.11.1-r0 samurai=1.2-r8 python3=3.14.8-r0 py3-mako=1.3.12-r0 py3-yaml=6.0.3-r2 py3-packaging=26.2-r0 llvm22-dev=22.1.3-r0 libdrm-dev=2.4.134-r0 expat-dev=2.8.5-r0 zlib-dev=1.3.2-r1 zstd-dev=1.5.7-r2 bison=3.8.2-r3 flex=2.6.4-r8 linux-headers=7.0.0-r1 elfutils-dev=0.195-r0"
-KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 openssl-dev=3.5.9-r0"
-LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 tar=1.35-r5"
+KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 openssl-dev=3.5.9-r0"
+LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 tar=1.35-r5"
 HERDTOOLS_TAG=7.58
 HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
 # fptest: Berkeley SoftFloat and TestFloat 3e (the commits scripts/testfloat.sh pins).
@@ -106,7 +106,7 @@ FPTEST_SOFTFLOAT=a0c6494cdc11865811dec815d5c0049fba9d82a8
 FPTEST_SOFTFLOAT_SHA256=1f719bcc8878be9627f6cfc44a0d6dbddf32bacc70ac81193bcbf2c62f97cbe9
 FPTEST_TESTFLOAT=a9c849f1b0eb0264b626d9686ffae167d996e3be
 FPTEST_TESTFLOAT_SHA256=54852fd1d11f0109011e54d69952cda097d3c49709ce46e4800353a6e8c764c3
-FPTEST_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 python3=3.14.8-r0 busybox-static=1.37.0-r31 tar=1.35-r5"
+FPTEST_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 python3=3.14.8-r0 busybox-static=1.37.0-r31 tar=1.35-r5"
 EDK2_TAG=edk2-stable202608
 EDK2_COMMIT=2970e5699ba6267f3384ffab20f96647578aebc8
 EDK2_CONTAINER=docker.io/library/debian@sha256:1808211ab6f37c6fc6a75368651697536f7bf47993f2797befa8908b1254979d # trixie, arm64

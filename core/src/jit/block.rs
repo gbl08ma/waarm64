@@ -519,6 +519,7 @@ pub fn module(
     xmiss: Option<u32>,
 ) -> Emitted {
     let crypto = features & crate::cpu::FEATURE_CRYPTO != 0;
+    let sha3 = crate::cpu::has_sha3(features);
     let parallel = features & crate::cpu::FEATURE_PARALLEL != 0;
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32], &[I32]);
@@ -602,6 +603,7 @@ pub fn module(
                 bus: emit::Bus::Tlb { read },
                 el1: head.key & KEY_EL1 != 0,
                 crypto,
+                sha3,
                 parallel,
                 pair_locks,
                 clock,
@@ -613,6 +615,7 @@ pub fn module(
                 bus: emit::Bus::Flat { base, phys, size },
                 el1: head.key & KEY_EL1 != 0,
                 crypto,
+                sha3,
                 parallel,
                 pair_locks,
                 clock,

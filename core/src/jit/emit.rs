@@ -1116,6 +1116,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             let chain = c.chain.clone();
             fp_guard(c, cx, i, k);
             if !(cx.crypto && crypto::inline(c, i, op))
+                && !(cx.sha3 && crypto::inline_sha3(c, i, op))
                 && !simd::inline(c, i, op)
                 && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
@@ -1144,6 +1145,9 @@ pub struct Ctx {
     /// The vCPU has the crypto extensions (`cpu::FEATURE_CRYPTO`, fixed for its
     /// life): without them the helper runs those words (UNDEFINED).
     pub crypto: bool,
+    /// The vCPU has FEAT_SHA512 and FEAT_SHA3 (`cpu::has_sha3`, fixed for its
+    /// life): without them the helper runs those words (UNDEFINED).
+    pub sha3: bool,
     /// Parallel SMP (`cpu::FEATURE_PARALLEL`): DSB is the helper's, which
     /// ends the chunk there.
     pub parallel: bool,
@@ -3495,6 +3499,7 @@ mod tests {
         },
         el1: false,
         crypto: true,
+        sha3: true,
         parallel: false,
         pair_locks: 0x100,
         clock: None,
@@ -4006,6 +4011,7 @@ mod tests {
             bus: Bus::Tlb { read },
             el1: true,
             crypto: true,
+            sha3: true,
             parallel: false,
             pair_locks: 0x100,
             clock: None,

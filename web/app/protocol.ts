@@ -75,10 +75,11 @@ export type ToWorker =
     /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
     avProbe?: boolean;
     /**
-     * The vCPUs' optional features (`BootOptions.rng`, `e0pd`), all on by default; the page's `?rng=0`, `?e0pd=0`
-     * turn one off (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD"). A snapshot's are its own.
+     * The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`), all on by default; the page's `?rng=0`,
+     * `?e0pd=0`, `?sha3=0` turn one off (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
+     * A snapshot's are its own.
      */
-    cpu?: { rng?: boolean; e0pd?: boolean };
+    cpu?: { rng?: boolean; e0pd?: boolean; sha3?: boolean };
     /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
     params?: string;
     /**

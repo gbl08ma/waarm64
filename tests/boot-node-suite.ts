@@ -89,7 +89,7 @@ const BAREMETAL = new URL('baremetal/', import.meta.url);
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
 // Its `// flash` line: the firmware configuration (M8 phase B), for its flash bank.
 const flashOf = (f: string) => /^\/\/ flash$/m.test(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8'));
-const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined, rng: false, e0pd: false }); // the ID registers as core/tests/baremetal.rs has them
+const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined, rng: false, e0pd: false, sha3: false }); // the ID registers as core/tests/baremetal.rs has them
 // Its `// input: <text>` line, typed once it waits: at its idle, or once it printed "ready" (parallel).
 const inputOf = (f: string): ConsoleInput | undefined => {
   const text = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ input: (.*)$/m)?.[1];
@@ -381,18 +381,18 @@ guest('LTP and kselftests', () => ({
 }, { skip: ltp, stress: STRESS, max: 200e9, steps: STEPS.ltp, interp: false });
 
 // The crypto extensions' test kernel (images/build.sh linux-crypto)
-// with them on: the arm64 CE drivers pass the full crypto self-tests, and
-// lib/crypto's SHA KUnit suites (on the CE code) pass.
-const CE_DRIVERS = ['aes-ce', 'ecb-aes-ce', 'cbc-aes-ce', 'ctr-aes-ce', 'xctr-aes-ce', 'xts-aes-ce', 'cts-cbc-aes-ce', 'essiv-cbc-aes-sha256-ce', 'cmac-aes-ce', 'xcbc-aes-ce', 'cbcmac-aes-ce', 'ccm-aes-ce', 'gcm-aes-ce', 'rfc4106-gcm-aes-ce', 'polyval-ce'];
+// with them on (SHA512 and SHA3 too): the arm64 CE drivers pass the full crypto
+// self-tests, and lib/crypto's SHA KUnit suites (on the CE code) pass.
+const CE_DRIVERS = ['aes-ce', 'ecb-aes-ce', 'cbc-aes-ce', 'ctr-aes-ce', 'xctr-aes-ce', 'xts-aes-ce', 'cts-cbc-aes-ce', 'essiv-cbc-aes-sha256-ce', 'cmac-aes-ce', 'xcbc-aes-ce', 'cbcmac-aes-ce', 'ccm-aes-ce', 'gcm-aes-ce', 'rfc4106-gcm-aes-ce', 'polyval-ce', 'sha3-224-ce', 'sha3-256-ce', 'sha3-384-ce', 'sha3-512-ce'];
 guest('crypto test kernel', () => ({
   ramSize: 256 << 20, kernel: image('linux-crypto/Image'), initrd: image('linux-crypto/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', crypto: true,
 }), (r) => {
   poweredOff(r);
   assert.match(r.console, /webpc: test ok \(0 failed, 0 pending\)/);
-  assert.match(r.console, /cpuinfo: Features\t: fp asimd aes pmull sha1 sha2 /);
+  assert.match(r.console, /cpuinfo: Features\t: fp asimd aes pmull sha1 sha2 .* sha3 .*sha512/);
   for (const d of CE_DRIVERS) assert.match(r.console, new RegExp(`^crypto: ${d} \\S+ passed\r?$`, 'm'), d);
   const totals = [...r.console.matchAll(/# Totals: pass:(\d+) fail:(\d+)/g)];
-  assert.deepEqual(totals.map((m) => m[2]), ['0', '0', '0'], 'the sha1, sha224 and sha256 KUnit suites');
+  assert.deepEqual(totals.map((m) => m[2]), ['0', '0', '0', '0', '0'], 'the sha1, sha224, sha256, sha384 and sha512 KUnit suites');
   assert.doesNotMatch(r.console, /alg: .*(failed|error)/i);
 }, { skip: !has('linux-crypto/Image') && 'SKIPPED: run images/build.sh linux-crypto', stress: STRESS, max: 60e9, steps: STEPS.crypto, interp: false });
 

@@ -228,7 +228,6 @@ const SYS_NOT_OURS: &[&str] = &[
     "lor",
     "accdata",
     "scxtnum",
-    "rndr",
     "cntpctss",
     "cntvctss",
     "ccsidr2",
@@ -327,10 +326,10 @@ const NOT_OURS: &[&str] = &[
     "cfinv", "rmif", "setf8", "setf16", "xaflag", "axflag", "sb", "wfet", "wfit", "ld64b", "st64b",
     "st64bv", "st64bv0",
     // FP/AdvSIMD beyond v8.0: FEAT_JSCVT, FEAT_FRINTTS, FEAT_FHM, FEAT_RDM, FEAT_DotProd,
-    // FEAT_I8MM, FEAT_FCMA, FEAT_SHA3, FEAT_SHA512, FEAT_SM3, FEAT_SM4.
+    // FEAT_I8MM, FEAT_FCMA, FEAT_SM3, FEAT_SM4.
     "fjcvtzs", "frint32x", "frint32z", "frint64x", "frint64z", "fmlal", "fmlal2", "fmlsl", "fmlsl2",
     "sqrdmlah", "sqrdmlsh", "sdot", "udot", "usdot", "sudot", "smmla", "ummla", "usmmla", "fcmla",
-    "fcadd", "rax1", "xar", "eor3", "bcax",
+    "fcadd",
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
     // halting or external debug (HLT, DCPS1-3, DRPS).
     "hvc", "eret", "smc", "hlt", "dcps1", "dcps2", "dcps3", "drps",
@@ -339,8 +338,8 @@ const NOT_OURS: &[&str] = &[
     "addspl", "rdsvl",
 ];
 const NOT_OURS_PREFIX: &[&str] = &[
-    // FEAT_SHA512, FEAT_SM3/SM4, FEAT_BF16 (the v8.0 AES, SHA1 and SHA256 are ours since M6.5)
-    "sha512", "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla", // FEAT_PAuth
+    // FEAT_SM3/SM4, FEAT_BF16 (AES, SHA1 and SHA256 are ours since M6.5, SHA512 and SHA3 since ABI 51)
+    "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla", // FEAT_PAuth
     "pac", "aut", "xpac", "braa", "brab", "blraa", "blrab", "retaa", "retab", "eretaa", "eretab",
     "ldraa", "ldrab", // FEAT_LRCPC, FEAT_LRCPC2, FEAT_LOR
     "ldapr", "ldapur", "stlur", "ldlar", "stllr",

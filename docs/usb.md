@@ -375,7 +375,10 @@ Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest
      usbtest.
   2. Passes again until the host unplugs connector 0 at step 95M. That lands in pass 2, whose remaining
      tests fail with ENODEV.
-  3. The host plugs it in again at step 115M, and the guest enumerates it again.
+  3. The host plugs it in again at step 150M, and the guest enumerates it again. Pass 2 must end while
+     it's out (the guest counts the gadgets after each pass): on 2026-10-24 any replug from 130M to 170M
+     did, and 115M, 125M didn't; a guest-visible change can move pass 2's end, so recheck the window then
+     (`WEBPC_USB_UNPLUG`, `WEBPC_USB_REPLUG` move them in the native twin).
   4. A clean pass, then it powers off.
 
   It runs in every runner with exact steps (tests/steps.txt):

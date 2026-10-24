@@ -18,14 +18,15 @@ if grep -q 'webpc\.phase=crypto' /proc/cmdline; then
   cap=$(sed -n 's/.*webpc\.armcap=\([0-9a-fx]*\).*/\1/p' /proc/cmdline)
   [ -n "$cap" ] && export OPENSSL_armcap=$cap
   echo "crypto: $(openssl version -a | grep CPUINFO)"
-  # SHA-1, SHA-256, AES-128-CBC encrypt and decrypt, AES-256-CTR of a fixed MiB.
+  # SHA-1, SHA-256, AES-128-CBC encrypt and decrypt, AES-256-CTR, SHA-512 and SHA3-256 of a fixed MiB.
   yes webpc | head -c 1048576 > m
   k=000102030405060708090a0b0c0d0e0f iv=f0e0d0c0b0a090807060504030201000
   h() { openssl dgst -sha256 -r | cut -c1-16; }
   echo "crypto: $(openssl dgst -sha1 -r < m | cut -c1-16) $(h < m) $(openssl enc -aes-128-cbc -K $k -iv $iv < m | h)" \
-    "$(openssl enc -aes-256-ctr -K $k$k -iv $iv < m | h) $(openssl enc -d -nopad -aes-128-cbc -K $k -iv $iv < m | h)"
+    "$(openssl enc -aes-256-ctr -K $k$k -iv $iv < m | h) $(openssl enc -d -nopad -aes-128-cbc -K $k -iv $iv < m | h)" \
+    "$(openssl dgst -sha512 -r < m | cut -c1-16) $(openssl dgst -sha3-256 -r < m | cut -c1-16)"
   echo "webpc: crypto start"
-  for a in aes-128-gcm aes-256-gcm aes-128-cbc sha1 sha256; do
+  for a in aes-128-gcm aes-256-gcm aes-128-cbc sha1 sha256 sha512 sha3-256; do
     for b in 256 16384; do openssl speed -elapsed -mr -seconds 1 -bytes $b -evp $a 2>/dev/null | grep '^+[HF]:'; done
   done
   echo "webpc: crypto end"

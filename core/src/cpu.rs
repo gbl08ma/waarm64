@@ -107,8 +107,18 @@ pub const FEATURE_RNG: u64 = 2;
 /// of the address space a level 0 translation fault (`mmu::e0pd`), advertised in
 /// ID_AA64MMFR2_EL1. Linux then keeps KPTI off under KASLR (`kaslr_requires_kpti`).
 pub const FEATURE_E0PD: u64 = 4;
+/// FEAT_SHA512 and FEAT_SHA3 (ABI 51): `SHA512H`/`H2`/`SU0`/`SU1` and `EOR3`,
+/// `RAX1`, `XAR`, `BCAX`, advertised in ID_AA64ISAR0_EL1 and UNDEFINED without
+/// it. Only with `FEATURE_CRYPTO` (SHA512 needs SHA256): alone it is nothing.
+pub const FEATURE_SHA3: u64 = 8;
 /// Every feature bit the core knows.
-pub const FEATURES: u64 = FEATURE_CRYPTO | FEATURE_RNG | FEATURE_E0PD;
+pub const FEATURES: u64 = FEATURE_CRYPTO | FEATURE_RNG | FEATURE_E0PD | FEATURE_SHA3;
+
+/// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
+#[inline]
+pub fn has_sha3(features: u64) -> bool {
+    features & (FEATURE_CRYPTO | FEATURE_SHA3) == FEATURE_CRYPTO | FEATURE_SHA3
+}
 /// The GICv3 system-register CPU interface (`ICC_*_EL1`, ID_AA64PFR0_EL1.GIC
 /// = 1). Not a `VmConfig.features` bit: a VM sets it from `VmConfig.gic`; a
 /// user-mode vCPU doesn't have it.

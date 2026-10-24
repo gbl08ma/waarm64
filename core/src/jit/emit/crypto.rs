@@ -6,8 +6,9 @@
 //! memory indexed by data; never `relaxed_swizzle`, whose out-of-range lanes
 //! aren't deterministic). It measured 30% faster than the S-box as sixteen
 //! swizzles of 16-byte slices (`bench/interp/REPORT.md` "M6.5 loop 4").
-//! Only when the vCPU has the feature (`Ctx::crypto`); operands come from
-//! the `Cpu`'s V registers and results go back there.
+//! Only when the vCPU has the feature (`Ctx::crypto`; SHA512 and SHA3,
+//! `inline_sha3`, with `Ctx::sha3`); operands come from the `Cpu`'s V
+//! registers and results go back there.
 
 use core::mem::offset_of;
 
@@ -143,6 +144,71 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
     true
 }
 
+/// Emits `i` inline if it's a FEAT_SHA512 or FEAT_SHA3 instruction (only when
+/// the vCPU has them, `Ctx::sha3`); false (nothing emitted) otherwise.
+pub(super) fn inline_sha3(c: &mut Func, i: u32, op: Op) -> bool {
+    use Op::*;
+    let (rd, rn, rm, ra) = (
+        bits(i, 4, 0),
+        bits(i, 9, 5),
+        bits(i, 20, 16),
+        bits(i, 14, 10),
+    );
+    match op {
+        EOR3 => {
+            vreg(c, rn);
+            vreg(c, rm);
+            c.simd(XOR);
+            vreg(c, ra);
+            c.simd(XOR);
+        }
+        BCAX => {
+            vreg(c, rn);
+            vreg(c, rm);
+            vreg(c, ra);
+            c.simd(ANDNOT).simd(XOR);
+        }
+        RAX1 => {
+            vreg(c, rn);
+            vreg(c, rm);
+            ror2(c, 63);
+            c.simd(XOR);
+        }
+        XAR => {
+            vreg(c, rn);
+            vreg(c, rm);
+            c.simd(XOR);
+            let r = bits(i, 15, 10) as i32;
+            if r != 0 {
+                ror2(c, r);
+            }
+        }
+        SHA512SU0 => {
+            // d + σ0(d.hi : n.lo)
+            vreg(c, rd);
+            vreg(c, rn);
+            c.shuffle(DOWN2).local_set(VT[0]);
+            small_sigma2(c, VT[0], [1, 8, 7]);
+            vreg(c, rd);
+            c.simd(I64X2_ADD);
+        }
+        SHA512SU1 => {
+            // d + σ1(n) + m
+            vreg(c, rn);
+            c.local_set(VT[0]);
+            small_sigma2(c, VT[0], [19, 61, 6]);
+            vreg(c, rd);
+            c.simd(I64X2_ADD);
+            vreg(c, rm);
+            c.simd(I64X2_ADD);
+        }
+        SHA512H | SHA512H2 => sha512(c, i, op == SHA512H2),
+        _ => return false,
+    }
+    c.vset(rd);
+    true
+}
+
 // i64 scratch locals for PMULL (above the register locals, below the v128 ones).
 const PA: u32 = 100;
 const PB: u32 = 101;
@@ -269,6 +335,12 @@ const I32X4_SPLAT: u32 = 0x11;
 const I32X4_REPLACE: u32 = 0x1c;
 const I64X2_SPLAT: u32 = 0x12;
 const I64X2_REPLACE: u32 = 0x1e;
+const I64X2_SHL: u32 = 0xcb;
+const I64X2_SHR_U: u32 = 0xcd;
+const I64X2_ADD: u32 = 0xce;
+const ANDNOT: u32 = 0x4f;
+const I64_ADD: u8 = 0x7c;
+const I64_ROTR: u8 = 0x8a;
 
 /// Lane `e` of Vn onto the stack.
 fn lane(c: &mut Func, n: u32, e: u32) {
@@ -439,6 +511,109 @@ fn small_sigma(c: &mut Func, x: u32, r: [i32; 3]) {
 
 /// Bytes 4..20 of a:b (a shifted down one lane, b's first lane on top).
 const DOWN1: [u8; 16] = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+/// Bytes 8..24 of a:b (a's high half, then b's low half).
+const DOWN2: [u8; 16] = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+
+/// Each 64-bit lane of the vector on the stack rotated right by `r` (1..=63).
+fn ror2(c: &mut Func, r: i32) {
+    let t = VT[3];
+    c.local_tee(t).i32_const(r).simd(I64X2_SHR_U);
+    c.local_get(t).i32_const(64 - r).simd(I64X2_SHL).simd(OR);
+}
+
+/// SHA-512's σ of the vector in local `x`: rotations right by r[0], r[1], a shift right by r[2].
+fn small_sigma2(c: &mut Func, x: u32, r: [i32; 3]) {
+    c.local_get(x);
+    ror2(c, r[0]);
+    c.local_get(x);
+    ror2(c, r[1]);
+    c.simd(XOR)
+        .local_get(x)
+        .i32_const(r[2])
+        .simd(I64X2_SHR_U)
+        .simd(XOR);
+}
+
+// i64 scratch locals for SHA512H and H2 (PMULL's).
+const SX0: u32 = PA;
+const SX1: u32 = PB;
+const SY0: u32 = PLO;
+const SY1: u32 = PHI;
+const SHI: u32 = PMID;
+const ST1: u32 = PX;
+
+/// SHA-512's Σ of the i64 local `x` onto the stack: its rotations right by `r`, XORed.
+fn big_sigma64(c: &mut Func, x: u32, r: [i64; 3]) {
+    for (k, &r) in r.iter().enumerate() {
+        c.local_get(x).i64_const(r).op(I64_ROTR);
+        if k > 0 {
+            c.op(I64_XOR);
+        }
+    }
+}
+
+/// SHA512H (`h2` false) and SHA512H2: two rounds' halves on i64 locals
+/// (`crypto::sha512h`, `sha512h2`), the result's low half under its high on
+/// the stack as a v128 (`inline_sha3` stores it).
+fn sha512(c: &mut Func, i: u32, h2: bool) {
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    for (l, r, e) in [(SX0, rn, 0), (SX1, rn, 1), (SY0, rm, 0), (SY1, rm, 1)] {
+        if !(h2 && l == SX1) {
+            c.vlane(r, 64, e);
+            c.local_set(l);
+        }
+    }
+    if !h2 {
+        // hi = Ch(e, f, g) + Σ1(e) + W1, with X = [f, g], Y = [d, e]
+        c.local_get(SX0)
+            .local_get(SX1)
+            .op(I64_XOR)
+            .local_get(SY1)
+            .op(I64_AND)
+            .local_get(SX1)
+            .op(I64_XOR);
+        big_sigma64(c, SY1, [14, 18, 41]);
+        c.op(I64_ADD);
+        c.vlane(rd, 64, 1);
+        c.op(I64_ADD).local_tee(SHI);
+        // T = hi + d; lo = Ch(T, e, f) + Σ1(T) + W0
+        c.local_get(SY0).op(I64_ADD).local_set(ST1);
+        c.local_get(SY1)
+            .local_get(SX0)
+            .op(I64_XOR)
+            .local_get(ST1)
+            .op(I64_AND)
+            .local_get(SX0)
+            .op(I64_XOR);
+        big_sigma64(c, ST1, [14, 18, 41]);
+    } else {
+        // hi = Maj(a, b, c) + Σ0(a) + W1, with X = [c, -], Y = [a, b]
+        maj64(c, SY0, SY1, SX0);
+        big_sigma64(c, SY0, [28, 34, 39]);
+        c.op(I64_ADD);
+        c.vlane(rd, 64, 1);
+        c.op(I64_ADD).local_set(SHI);
+        // lo = Maj(hi, a, b) + Σ0(hi) + W0
+        maj64(c, SHI, SY0, SY1);
+        big_sigma64(c, SHI, [28, 34, 39]);
+    }
+    c.op(I64_ADD);
+    c.vlane(rd, 64, 0);
+    c.op(I64_ADD);
+    c.simd(I64X2_SPLAT);
+    c.local_get(SHI).simd_lane(I64X2_REPLACE, 1);
+}
+
+/// SHAmajority of the i64 locals x, y, z onto the stack: (x & y) | ((x | y) & z).
+fn maj64(c: &mut Func, x: u32, y: u32, z: u32) {
+    c.local_get(x).local_get(y).op(I64_AND);
+    c.local_get(x)
+        .local_get(y)
+        .op(I64_OR)
+        .local_get(z)
+        .op(I64_AND);
+    c.op(I64_OR);
+}
 
 /// The message schedule updates, as SIMD128 (`crypto::sha1su0` & co).
 fn schedule(c: &mut Func, i: u32, op: Op) {

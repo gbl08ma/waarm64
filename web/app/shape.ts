@@ -165,9 +165,16 @@ export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'blk';
-/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`). */
-export type CpuFeature = 'rng' | 'e0pd';
-export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
+/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`). */
+export type CpuFeature = 'rng' | 'e0pd' | 'sha3';
+export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3'];
+/**
+ * The features the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and suspended
+ * machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's `cpu`),
+ * whatever the machine's are now, so the hash needn't tell them apart.
+ */
+const UNHASHED_CPU: CpuFeature[] = ['sha3'];
+const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));
 
 /**
  * The machine's transports in slot order: the other devices first, in a fixed order, then the disks
@@ -215,8 +222,8 @@ export type Shape = {
   jitMiB?: number;
 };
 
-/** The part of a shape its hash covers: what the guest sees (all but `jitMiB`). */
-const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined });
+/** The part of a shape its hash covers: what the guest sees (all but `jitMiB` and `UNHASHED_CPU`). */
+const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined, cpu: hashedCpu(s.cpu) });
 
 /**
  * A machine's shape, from its record and its disks' (by id). `cpu`: the vCPUs' features (all,
@@ -279,7 +286,7 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
     out.push(`memory's split: ${split(was.split)} then, ${split(now.split)} now`);
   }
   if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
-  if (canonical(was.cpu) !== canonical(now.cpu)) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
+  if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu))) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
   const [macsWas, macsNow] = [macsOf(was), macsOf(now)];
   if (macsWas.length !== macsNow.length) out.push(`network adapters: ${macsWas.length} then, ${macsNow.length} now`);
   else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(`network adapter ${i + 1}: MAC ${macsWas[i]} then, ${macsNow[i]} now`);

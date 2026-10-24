@@ -12,7 +12,9 @@
 // `--query=growcore`: the core imports the memory growable (web/vm.ts `exactCore`), for an A/B.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
-// `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7).
+// `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7), SHA512 and
+// SHA3 too (since ABI 51); `--only alpine_crypto_nosha3_jit`: the v8.0 ones without SHA512 and SHA3;
+// `--only alpine_crypto_eor3_jit`: all of them, with OpenSSL told to use its SHA-3 and EOR3 AES-GCM code.
 // `--only gl_llvmpipe_jit`: a compositor's GLES frames on Mesa's llvmpipe (images/alpine/gl), 1 vCPU,
 // rasterizing on the calling thread; `gl_llvmpipe_jit_4`: 4 parallel vCPUs, llvmpipe's 4 threads. ms a frame.
 // `--only gl_virgl_jit`, `gl_virgl_jit_4`: the same frames through virgl (images/alpine-virgl's Mesa) on the
@@ -51,10 +53,10 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
  * by the text after "webpc: ") and to the end, and the counters. `test`: the
  * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
  */
-export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
+export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), exactCore: !new URLSearchParams(globalThis.location?.search).has('growcore'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), exactCore: !new URLSearchParams(globalThis.location?.search).has('growcore'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -230,22 +232,23 @@ async function alpineUser(o: Options): Promise<Sample[]> {
  * mode, since `openssl speed` times itself with the guest clock. MB/s (10^6
  * bytes) per algorithm and block size, and the helper calls made during the
  * phase. `extra` adds to Alpine's command line (`webpc.armcap=…` sets
- * OPENSSL_armcap); `crypto` gives the vCPU the crypto extensions (ABI 19).
+ * OPENSSL_armcap); `crypto` gives the vCPU the crypto extensions (ABI 19),
+ * `sha3` SHA512 and SHA3 with them (ABI 51).
  */
-async function alpineCrypto(o: Options, extra = '', crypto = false): Promise<Sample[]> {
+async function alpineCrypto(o: Options, extra = '', crypto = false, sha3 = true): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
   const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
   const cmdline = `${a.cmdline} webpc.phase=crypto${extra && ` ${extra}`}`;
   const module = await compileCore(img.wasm);
   const out = new Map<string, Sample>();
-  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1, crypto };
+  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1, crypto, sha3: crypto && sha3 };
   let helpers: { op: string; calls: number }[] = [];
   let check = '';
   for (let i = 0; i < (o.quick ? 1 : 5); i++) {
     fresh();
     let before = new Map<string, number>();
-    const r = await boot(module, img, undefined, { cmdline, realtime: true, crypto, onMark: (m, vm) => { if (m === 'crypto start') before = new Map(vm.helperReport().map((h) => [h.op, h.calls])); } });
+    const r = await boot(module, img, undefined, { cmdline, realtime: true, crypto, sha3, onMark: (m, vm) => { if (m === 'crypto start') before = new Map(vm.helperReport().map((h) => [h.op, h.calls])); } });
     helpers = r.helpers.map((h) => ({ op: h.op, calls: h.calls - (before.get(h.op) ?? 0) })).filter((h) => h.calls > 0).sort((x, y) => y.calls - x.calls);
     check = r.console.match(/crypto: [0-9a-f]{16} [^\r\n]*/)?.[0] ?? '';
     const phase = r.console.split('webpc: crypto start')[1]?.split('webpc: crypto end')[0] ?? '';
@@ -309,7 +312,7 @@ async function glLlvmpipe(o: Options, ncpus: number, renderer: 'llvmpipe' | 'vir
 }
 
 /** The crypto phase's check line (SHA-1, SHA-256, AES-128-CBC, AES-256-CTR, AES-128-CBC decrypt), from arm64 hardware. */
-const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e 5aa8ca270a880d01 63bd397e0cc0e537';
+const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e 5aa8ca270a880d01 63bd397e0cc0e537 fc136488924032ae d48c89f81da2114e';
 
 /**
  * M7's scaling curve (docs/benchmarking.md "SMP"): parallel SMP (a worker per
@@ -503,6 +506,10 @@ export const suite = {
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
+  alpine_crypto_nosha3_jit: (o: Options) => alpineCrypto(o, '', true, false), // with them, but not SHA512 and SHA3
+  // OpenSSL's SHA-3 (Keccak) and EOR3 AES-GCM paths, which it picks only on CPUs it knows by MIDR (bit 15, bit 12):
+  // its armcap on our vCPU (0x9fd) with those two bits.
+  alpine_crypto_eor3_jit: (o: Options) => alpineCrypto(o, 'webpc.armcap=0x99fd', true),
   // M7: parallel SMP at N = 1, 2, 4 vCPUs, alternated; `…_8` once as a check (N + 2 threads: more than the dev VM's 8).
   smp_alpine_jit: (o: Options) => smp(o, 'alpine', [1, 2, 4], 5),
   smp_user_jit: (o: Options) => smp(o, 'user', [1, 2, 4], 2),

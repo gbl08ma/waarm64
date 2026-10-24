@@ -1446,6 +1446,292 @@ fn sha_known_answers() {
     assert_eq!(c.v[1], 0x6000_0000);
 }
 
+const SHA512H: u32 = 0xce608000;
+const SHA512H2: u32 = 0xce608400;
+const SHA512SU1: u32 = 0xce608800;
+const SHA512SU0: u32 = 0xcec08000;
+const RAX1: u32 = 0xce608c00;
+const XAR: u32 = 0xce800000;
+const EOR3: u32 = 0xce000000;
+const BCAX: u32 = 0xce200000;
+
+/// FIPS 180-4's SHA-512 constants.
+const K512: [u64; 80] = [
+    0x428a2f98d728ae22,
+    0x7137449123ef65cd,
+    0xb5c0fbcfec4d3b2f,
+    0xe9b5dba58189dbbc,
+    0x3956c25bf348b538,
+    0x59f111f1b605d019,
+    0x923f82a4af194f9b,
+    0xab1c5ed5da6d8118,
+    0xd807aa98a3030242,
+    0x12835b0145706fbe,
+    0x243185be4ee4b28c,
+    0x550c7dc3d5ffb4e2,
+    0x72be5d74f27b896f,
+    0x80deb1fe3b1696b1,
+    0x9bdc06a725c71235,
+    0xc19bf174cf692694,
+    0xe49b69c19ef14ad2,
+    0xefbe4786384f25e3,
+    0x0fc19dc68b8cd5b5,
+    0x240ca1cc77ac9c65,
+    0x2de92c6f592b0275,
+    0x4a7484aa6ea6e483,
+    0x5cb0a9dcbd41fbd4,
+    0x76f988da831153b5,
+    0x983e5152ee66dfab,
+    0xa831c66d2db43210,
+    0xb00327c898fb213f,
+    0xbf597fc7beef0ee4,
+    0xc6e00bf33da88fc2,
+    0xd5a79147930aa725,
+    0x06ca6351e003826f,
+    0x142929670a0e6e70,
+    0x27b70a8546d22ffc,
+    0x2e1b21385c26c926,
+    0x4d2c6dfc5ac42aed,
+    0x53380d139d95b3df,
+    0x650a73548baf63de,
+    0x766a0abb3c77b2a8,
+    0x81c2c92e47edaee6,
+    0x92722c851482353b,
+    0xa2bfe8a14cf10364,
+    0xa81a664bbc423001,
+    0xc24b8b70d0f89791,
+    0xc76c51a30654be30,
+    0xd192e819d6ef5218,
+    0xd69906245565a910,
+    0xf40e35855771202a,
+    0x106aa07032bbd1b8,
+    0x19a4c116b8d2d0c8,
+    0x1e376c085141ab53,
+    0x2748774cdf8eeb99,
+    0x34b0bcb5e19b48a8,
+    0x391c0cb3c5c95a63,
+    0x4ed8aa4ae3418acb,
+    0x5b9cca4f7763e373,
+    0x682e6ff3d6b2b8a3,
+    0x748f82ee5defb2fc,
+    0x78a5636f43172f60,
+    0x84c87814a1f0ab72,
+    0x8cc702081a6439ec,
+    0x90befffa23631e28,
+    0xa4506cebde82bde9,
+    0xbef9a3f7b2c67915,
+    0xc67178f2e372532b,
+    0xca273eceea26619c,
+    0xd186b8c721c0c207,
+    0xeada7dd6cde0eb1e,
+    0xf57d4f7fee6ed178,
+    0x06f067aa72176fba,
+    0x0a637dc5a2c898a6,
+    0x113f9804bef90dae,
+    0x1b710b35131c471b,
+    0x28db77f523047d84,
+    0x32caab7b40c72493,
+    0x3c9ebe0a15c9bebc,
+    0x431d67c49c100d4c,
+    0x4cc5d4becb3e42b6,
+    0x597f299cfc657e2a,
+    0x5fcb6fab3ad6faec,
+    0x6c44198c4a475817,
+];
+
+fn pair(lo: u64, hi: u64) -> u128 {
+    (hi as u128) << 64 | lo as u128
+}
+
+fn add2(a: u128, b: u128) -> u128 {
+    pair(
+        (a as u64).wrapping_add(b as u64),
+        ((a >> 64) as u64).wrapping_add((b >> 64) as u64),
+    )
+}
+
+/// `ext Vd.16b, Vn.16b, Vm.16b, #8`: n's high half, then m's low half.
+fn ext8(n: u128, m: u128) -> u128 {
+    n >> 64 | m << 64
+}
+
+/// SHA-512 as Linux's sha512-ce runs it (its `dround`): the state in v0–v4,
+/// two words a register, renamed round by round; the schedule in v12–v19.
+fn sha512(msg: &[u8]) -> [u64; 8] {
+    let mut h: [u64; 8] = [
+        0x6a09e667f3bcc908,
+        0xbb67ae8584caa73b,
+        0x3c6ef372fe94f82b,
+        0xa54ff53a5f1d36f1,
+        0x510e527fade682d1,
+        0x9b05688c2b3e6c1f,
+        0x1f83d9abfb41bd6b,
+        0x5be0cd19137e2179,
+    ];
+    let mut m = msg.to_vec();
+    m.push(0x80);
+    while m.len() % 128 != 112 {
+        m.push(0);
+    }
+    m.extend_from_slice(&(8 * msg.len() as u128).to_be_bytes());
+    // i0..i4 of the five drounds Linux cycles through.
+    const ROT: [[usize; 5]; 5] = [
+        [0, 1, 2, 3, 4],
+        [3, 0, 4, 2, 1],
+        [2, 3, 1, 4, 0],
+        [4, 2, 0, 1, 3],
+        [1, 4, 3, 0, 2],
+    ];
+    for b in m.chunks(128) {
+        let w = |i: usize| u64::from_be_bytes(b[8 * i..8 * i + 8].try_into().unwrap());
+        let mut c = Cpu::default();
+        for q in 0..4 {
+            c.v[q] = pair(h[2 * q], h[2 * q + 1]);
+        }
+        for q in 0..8 {
+            c.v[12 + q] = pair(w(2 * q), w(2 * q + 1));
+        }
+        for k in 0..40 {
+            let [i0, i1, i2, i3, i4] = ROT[k % 5];
+            let r = |j: usize| 12 + (k + j) % 8;
+            let (in0, in1, in2, in3, in4) = (r(0), r(1), r(7), r(4), r(5));
+            let wk = add2(c.v[in0], pair(K512[2 * k], K512[2 * k + 1]));
+            c.v[6] = ext8(c.v[i2], c.v[i3]);
+            c.v[7] = ext8(c.v[i1], c.v[i2]);
+            c.v[i3] = add2(c.v[i3], ext8(wk, wk));
+            if k < 32 {
+                c.v[5] = ext8(c.v[in3], c.v[in4]);
+                vx(&mut c, rdnm(SHA512SU0, in0 as u32, in1 as u32, 0));
+            }
+            vx(&mut c, rdnm(SHA512H, i3 as u32, 6, 7));
+            if k < 32 {
+                vx(&mut c, rdnm(SHA512SU1, in0 as u32, in2 as u32, 5));
+            }
+            c.v[i4] = add2(c.v[i1], c.v[i3]);
+            vx(&mut c, rdnm(SHA512H2, i3 as u32, i1 as u32, i0 as u32));
+        }
+        for (e, h) in h.iter_mut().enumerate() {
+            *h = h.wrapping_add((c.v[e / 2] >> (64 * (e % 2))) as u64);
+        }
+    }
+    h
+}
+
+/// `insn` (Vd = v0, Vn = v1, Vm = v2, Va or imm6 = `a`) on n, m and v3 = `va`.
+fn sha3_op(insn: u32, a: u32, n: u128, m: u128, va: u128) -> u128 {
+    let mut c = Cpu::default();
+    (c.v[1], c.v[2], c.v[3]) = (n, m, va);
+    vx(&mut c, insn | 2 << 16 | a << 10 | 1 << 5);
+    c.v[0]
+}
+
+/// Keccak-f[1600] (FIPS 202 3.3) as Linux's sha3-ce writes a round: θ by EOR3
+/// and RAX1, ρ and π by XAR, χ by BCAX. Two states, one a lane.
+fn keccak(s: &mut [u128; 25]) {
+    let mut rho = [0u32; 25];
+    let (mut x, mut y) = (1, 0);
+    for t in 0..24 {
+        rho[x + 5 * y] = ((t + 1) * (t + 2) / 2) % 64;
+        (x, y) = (y, (2 * x + 3 * y) % 5);
+    }
+    let mut lfsr = 1u8;
+    for _ in 0..24 {
+        let c: [u128; 5] = core::array::from_fn(|x| {
+            let t = sha3_op(EOR3, 3, s[x], s[x + 5], s[x + 10]);
+            sha3_op(EOR3, 3, t, s[x + 15], s[x + 20])
+        });
+        let d: [u128; 5] =
+            core::array::from_fn(|x| sha3_op(RAX1, 0, c[(x + 4) % 5], c[(x + 1) % 5], 0));
+        let mut b = [0u128; 25];
+        for x in 0..5 {
+            for y in 0..5 {
+                let r = (64 - rho[x + 5 * y]) % 64;
+                b[y + 5 * ((2 * x + 3 * y) % 5)] = sha3_op(XAR, r, s[x + 5 * y], d[x], 0);
+            }
+        }
+        for x in 0..5 {
+            for y in 0..5 {
+                let (b1, b2) = (b[(x + 1) % 5 + 5 * y], b[(x + 2) % 5 + 5 * y]);
+                s[x + 5 * y] = sha3_op(BCAX, 3, b[x + 5 * y], b2, b1);
+            }
+        }
+        let mut rc = 0u64;
+        for j in 0..7 {
+            if lfsr & 1 != 0 {
+                rc |= 1 << ((1 << j) - 1);
+            }
+            lfsr = if lfsr & 0x80 != 0 {
+                lfsr << 1 ^ 0x71
+            } else {
+                lfsr << 1
+            };
+        }
+        s[0] ^= pair(rc, rc);
+    }
+}
+
+/// SHA3-256 of two messages of one block's rate (136 bytes) or less, one a lane.
+fn sha3_256(a: &[u8], b: &[u8]) -> [[u8; 32]; 2] {
+    let pad = |m: &[u8]| {
+        let mut p = m.to_vec();
+        p.resize(136, 0);
+        p[m.len()] ^= 0x06;
+        p[135] ^= 0x80;
+        p
+    };
+    let (pa, pb) = (pad(a), pad(b));
+    let mut s = [0u128; 25];
+    for (l, s) in s.iter_mut().enumerate().take(17) {
+        let lane = |p: &[u8]| u64::from_le_bytes(p[8 * l..8 * l + 8].try_into().unwrap());
+        *s = pair(lane(&pa), lane(&pb));
+    }
+    keccak(&mut s);
+    core::array::from_fn(|h| core::array::from_fn(|i| (s[i / 8] >> (64 * h + 8 * (i % 8))) as u8))
+}
+
+#[test]
+fn sha512_and_sha3_known_answers() {
+    // FIPS 180-4's examples: one block and two.
+    let two = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    assert_eq!(
+        sha512(b"abc"),
+        [
+            0xddaf35a193617aba,
+            0xcc417349ae204131,
+            0x12e6fa4e89a97ea2,
+            0x0a9eeee64b55d39a,
+            0x2192992a274fc1a8,
+            0x36ba3c23a3feebbd,
+            0x454d4423643ce80e,
+            0x2a9ac94fa54ca49f
+        ]
+    );
+    assert_eq!(
+        sha512(two),
+        [
+            0x8e959b75dae313da,
+            0x8cf4f72814fc143f,
+            0x8f7779c6eb9f7fa1,
+            0x7299aeadb6889018,
+            0x501d289e4900f7e4,
+            0x331b99dec4b5433a,
+            0xc7d329eeb6dd2654,
+            0x5e96e55b874be909
+        ]
+    );
+    // FIPS 202's SHA3-256 of "abc" and of the empty message.
+    let hex = |h: &[u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let [abc, empty] = sha3_256(b"abc", b"");
+    assert_eq!(
+        hex(&abc),
+        "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
+    );
+    assert_eq!(
+        hex(&empty),
+        "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
+    );
+}
+
 const PMULL: u32 = 0x0ee0e000;
 const PMULL2: u32 = 0x4ee0e000;
 
@@ -1549,14 +1835,43 @@ fn crypto_feature_gate() {
         let mut t = T::new(&[insn]);
         assert_eq!(t.step(), Ok(()), "{insn:#x}");
     }
+    // SHA512 and SHA3 need FEATURE_SHA3 too, and it means nothing alone.
+    use crate::cpu::{FEATURE_CRYPTO, FEATURE_SHA3};
+    for insn in [
+        rdnm(SHA512H, 1, 2, 3),
+        rdnm(SHA512SU0, 1, 2, 0),
+        rdnm(EOR3, 1, 2, 3) | 4 << 10,
+        rdnm(XAR, 1, 2, 3) | 5 << 10,
+    ] {
+        for (features, cpacr) in [
+            (0, 3 << 20),
+            (FEATURE_CRYPTO, 3 << 20),
+            (FEATURE_SHA3, 3 << 20),
+            (FEATURE_CRYPTO, 0),
+        ] {
+            let mut t = T::new(&[insn]);
+            t.c.features = features;
+            t.c.cpacr_el1 = cpacr;
+            assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x} {features}");
+        }
+        let mut t = T::new(&[insn]);
+        t.c.features = FEATURE_CRYPTO | FEATURE_SHA3;
+        assert_eq!(t.step(), Ok(()), "{insn:#x}");
+    }
     // The 8-bit PMULL is plain AdvSIMD.
     let mut t = T::new(&[0x0e22e020]);
     t.c.features = 0;
     assert_eq!(t.step(), Ok(()));
     assert_eq!(sys::isar0(0), 2 << 20 | 1 << 16);
+    assert_eq!(sys::isar0(FEATURE_SHA3), 2 << 20 | 1 << 16);
     assert_eq!(
-        sys::isar0(crate::cpu::FEATURE_CRYPTO),
+        sys::isar0(FEATURE_CRYPTO),
         2 << 20 | 1 << 16 | 1 << 12 | 1 << 8 | 2 << 4
+    );
+    // SHA2 = 2 (SHA512) and SHA3 = 1.
+    assert_eq!(
+        sys::isar0(FEATURE_CRYPTO | FEATURE_SHA3),
+        1 << 32 | 2 << 20 | 1 << 16 | 2 << 12 | 1 << 8 | 2 << 4
     );
 }
 

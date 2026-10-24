@@ -8,12 +8,18 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 - **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
   AdvSIMD), DotProd, RDM, FHM, FCMA, JSCVT (JS engines use `FJCVTZS`), FRINTTS, BF16, I8MM, LSE2,
-  RCpc, FlagM, SB, DIT, SHA512 and SHA3 (OpenSSL uses both; SHA3's `EOR3`/`RAX1`/`XAR`/`BCAX` speed
-  up Keccak and are plain SIMD128 lowerings). Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
+  RCpc, FlagM, SB, DIT. Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
   copies run at 7-21 GB/s under the JIT and are under 2% of a browser's profile (`bench/boot/REPORT.md`
   "M8: the device round trip"). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
+- **OpenSSL's MIDR-gated paths:** OpenSSL 3.5 uses its EOR3/RAX1/XAR/BCAX Keccak only on Apple M1/M2 MIDRs and
+  its EOR3 AES-GCM only on Neoverse V1/V2/N2, Cobalt 100 and Ampere (`crypto/armcap.c`); our MIDR (implementer 0)
+  gets neither. Forced on through `OPENSSL_armcap`, they're **+83% on SHA3-256 and +9-10% on AES-GCM** at 16 KiB
+  (`bench/boot/REPORT.md` "M9: FEAT_SHA512 and FEAT_SHA3"); GCM is TLS's. Reporting another CPU's MIDR is
+  guest-visible beyond OpenSSL: Linux applies that CPU's errata workarounds and Spectre lists, glibc picks string
+  functions by MIDR, and only Apple's unlock the Keccak. Needs the user's call on the identity, then an A/B of the
+  long workloads with it.
 - **Hardware breakpoints and watchpoints at JIT speed:** a task with one armed runs in the debug
   interpreter while it's on the CPU ([cpu.md](cpu.md) "Self-hosted debug"); pages holding a
   breakpoint could stay uncompiled and watched pages out of the TLB instead, so their accesses take

@@ -888,6 +888,14 @@ const sys: Form[] = [
 
 // The v8.0 crypto extensions (M6.5): AES, SHA1, SHA256 and the 64-bit PMULL,
 // random full registers; a few reserved sizes and opcodes for UNDEFINED.
+/** With chance 1/3, two of the register letters `ls` set to the same register. */
+function alias(r: Rng, ls: string): Fields {
+  if (!r.chance(1 / 3)) return {};
+  const a = r.int(ls.length);
+  const b = (a + 1 + r.int(ls.length - 1)) % ls.length;
+  const x = r.int(32);
+  return { [ls[a]]: x, [ls[b]]: x };
+}
 const size0 = (r: Rng) => (r.chance(0.95) ? 0 : r.range(1, 3));
 const crypto: Form[] = [
   vform("aes", "01001110zz10100001oo10nnnnnddddd", 400, { fix: (r) => ({ z: size0(r) }), esize: () => 8 }),
@@ -924,6 +932,12 @@ const crypto: Form[] = [
       return { code: [mov, h, h2], in: new Map() };
     },
   },
+  // FEAT_SHA512 and FEAT_SHA3: SHA512H/H2/SU1 and RAX1, SHA512SU0, XAR, EOR3
+  // and BCAX on random full registers, a third of them with two registers the same.
+  vform("sha512_3reg", "11001110011mmmmm1000oonnnnnddddd", 600, { fix: (r) => alias(r, "dnm"), esize: () => 64 }),
+  vform("sha512su0", "1100111011000000100000nnnnnddddd", 200, { fix: (r) => alias(r, "dn"), esize: () => 64 }),
+  vform("xar", "11001110100mmmmmiiiiiinnnnnddddd", 300, { fix: (r) => ({ ...alias(r, "dnm"), ...(r.chance(0.1) ? { i: r.pick([0, 1, 63]) } : {}) }), esize: () => 64 }),
+  vform("eor3_bcax", "1100111000ommmmm0aaaaannnnnddddd", 400, { fix: (r) => alias(r, "dnma"), src: "nma", esize: () => 64 }),
 ];
 
 export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto };

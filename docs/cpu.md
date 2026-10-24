@@ -16,6 +16,13 @@ match it step for step.
   the ID register says. The user-mode entry points (`vcpu_new`, `jit_new`: the corpus, the
   differential tests, `bench/interp`) always have them, since the golden corpus records the M4's
   behavior.
+- **FEAT_SHA512 and FEAT_SHA3** (`SHA512H`/`H2`/`SU0`/`SU1`; `EOR3`, `RAX1`, `XAR`, `BCAX`):
+  `VmConfig.features` bit 3 (`FEATURE_SHA3`, ABI 51), together and only with the crypto extensions
+  (`cpu::has_sha3`; SHA512 needs SHA256, and Armv8.4 makes the two one choice). **On by default**
+  in `bootVm` (`sha3: false` turns them off), the native runners and the page's machines (`?sha3=0`;
+  a snapshot keeps its machine's, and the shape's hash leaves the feature out, so the snapshots kept
+  before it still match: [frontend.md](frontend.md)); the bare-metal tests run without them. The
+  user-mode entry points have them (the corpus is the M4's).
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -35,8 +42,8 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (FP16, BF16, FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS, LSE2, RCpc, FlagM, SB, DIT, SHA512,
-  SHA3, SM3/SM4, LOR, MOPS, HBC) is UNDEFINED and unadvertised. Candidates for later are in
+  (FP16, BF16, FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS, LSE2, RCpc, FlagM, SB, DIT,
+  SM3/SM4, LOR, MOPS, HBC) is UNDEFINED and unadvertised. Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: ID registers advertise exactly what's implemented.** `ID_AA64DFR0_EL1` advertises
   v8.0 self-hosted debug with the architectural minimum (2 breakpoints, 2 watchpoints, 1 context
@@ -53,7 +60,7 @@ match it step for step.
   system-register interface, `cpu::FEATURE_GICV3`), 0 for user-mode vCPUs.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
-  and RNDR = 1 with FEAT_RNG.
+  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), and RNDR = 1 with FEAT_RNG.
   `ID_AA64ISAR1_EL1` reports none of RDM, DotProd, FHM, FCMA, JSCVT, FRINTTS, BF16, I8MM; no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
@@ -287,7 +294,8 @@ FMA, so:
 
 ## Crypto extensions (`core/src/crypto.rs`)
 
-AESE/AESD/AESMC/AESIMC, PMULL/PMULL2 (8- and 64-bit), SHA1C/P/M/H/SU0/SU1, SHA256H/H2/SU0/SU1.
+AESE/AESD/AESMC/AESIMC, PMULL/PMULL2 (8- and 64-bit), SHA1C/P/M/H/SU0/SU1, SHA256H/H2/SU0/SU1;
+SHA512H/H2/SU0/SU1, EOR3, RAX1, XAR, BCAX (FEAT_SHA512, FEAT_SHA3).
 - **Our own Rust** from FIPS 197, FIPS 180-4 and the Arm pseudocode (nothing ported; papers
   credited in `THIRD_PARTY.md`). Table-free, because that measured fastest: SubBytes as the
   GF(2⁸) inverse (x²⁵⁴ by an addition chain of bytewise SWAR multiplies) plus the affine map;
@@ -303,8 +311,11 @@ AESE/AESD/AESMC/AESIMC, PMULL/PMULL2 (8- and 64-bit), SHA1C/P/M/H/SU0/SU1, SHA25
   AF_ALG in userspace, which Linux 7.2 deprecated (CVE-2026-31431).
 - **Why they're advertised:** with them on, `openssl speed` beats the NEON-only paths in every
   row (AES-GCM 4.6–4.7×, AES-CBC 3.4×, SHA-256 3.4×, SHA-1 1.5× at 16 KiB), and Alpine boots in
-  5.1% fewer steps (`bench/interp/REPORT.md` "M6.5 loop 7"). The rule stands for future
-  extensions: **advertise only if faster than the paths guests use without them.**
+  5.1% fewer steps (`bench/interp/REPORT.md` "M6.5 loop 7"). SHA512 and SHA3 likewise: OpenSSL's
+  SHA-512 +11-13%, its SHA-3 Keccak on them +83% at 16 KiB against its scalar code (which it runs
+  on our MIDR all the same), no other workload slower (`bench/boot/REPORT.md` "M9: FEAT_SHA512 and
+  FEAT_SHA3"). The rule stands for future extensions: **advertise only if faster than the paths
+  guests use without them.**
 
 ## Decoder (`core/build.rs` ← `core/src/a64/a64.inc`)
 

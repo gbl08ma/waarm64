@@ -51,17 +51,24 @@ pub fn icc(features: u64, key: u32) -> Option<crate::gicv3::Icc> {
 /// architectural minimum), no PMU. Self-hosted debug is `debug`'s.
 const ID_AA64DFR0: u64 = 1 << 20 | 1 << 12 | 6;
 /// LSE atomics (2) and CRC32; nothing past v8.1. AES (2: with PMULL), SHA1
-/// and SHA2 with `FEATURE_CRYPTO`, RNDR with `FEATURE_RNG` (`isar0`).
+/// and SHA2 with `FEATURE_CRYPTO`, SHA2 = 2 (SHA512) and SHA3 with it and
+/// `FEATURE_SHA3`, RNDR with `FEATURE_RNG` (`isar0`).
 const ID_AA64ISAR0: u64 = 2 << 20 | 1 << 16;
 const ISAR0_CRYPTO: u64 = 1 << 12 | 1 << 8 | 2 << 4;
+const ISAR0_SHA3: u64 = 2 << 12 | 1 << 32;
 const ISAR0_RNDR: u64 = 1 << 60;
 
 /// ID_AA64ISAR0_EL1 for a vCPU with `features`.
 pub fn isar0(features: u64) -> u64 {
     let has = |f: u64, v: u64| if features & f != 0 { v } else { 0 };
-    ID_AA64ISAR0
+    let r = ID_AA64ISAR0
         | has(crate::cpu::FEATURE_CRYPTO, ISAR0_CRYPTO)
-        | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR)
+        | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR);
+    if crate::cpu::has_sha3(features) {
+        r & !(0xf << 12) | ISAR0_SHA3
+    } else {
+        r
+    }
 }
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.
 const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;

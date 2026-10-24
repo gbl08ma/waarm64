@@ -65,6 +65,11 @@ test("the shape: the other devices first, then the disks; its hash is stable and
     assert.ok(shapeDiff(s, t).length > 0, `${what} is said`);
   }
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: ['e0pd'] })), h, 'cpu features');
+  // SHA3 came after shapes: with it or without, a machine's snapshots keep their hash.
+  const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd'] });
+  assert.deepEqual(s.cpu, ['rng', 'e0pd', 'sha3']);
+  assert.equal(await shapeHash(noSha3), h, 'sha3 left out of the hash');
+  assert.deepEqual(shapeDiff(noSha3, s), []);
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { display: '2d' })), h, 'a 3D machine run in 2D');
   assert.deepEqual(shapeDiff(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), ['memory: 1024 MiB then, 2048 MiB now']);
   assert.deepEqual(shapeDiff(s, s), []);

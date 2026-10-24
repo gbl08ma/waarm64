@@ -21,7 +21,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 50;
+export const ABI = 51;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -546,6 +546,8 @@ export type BootOptions = {
   rng?: boolean;
   /** `VmConfig.features` bit 2 (ABI 35): FEAT_E0PD, which spares a KASLR kernel KPTI; on unless false. */
   e0pd?: boolean;
+  /** `VmConfig.features` bit 3 (ABI 51): FEAT_SHA512 and FEAT_SHA3, advertised and implemented (with `crypto`); on unless false. */
+  sha3?: boolean;
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
   stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
@@ -815,7 +817,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
-  const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n);
+  const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n);
   new BigUint64Array(memory.buffer, scratch + S_CFG, 33).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
