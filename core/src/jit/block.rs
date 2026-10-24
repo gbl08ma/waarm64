@@ -573,6 +573,11 @@ pub fn module(
         m.import_func("env", "now_ms", t)
     });
     m.import_core_memory(cfg.pages);
+    // The spill memories with an inline arm (docs/spill-memories.md "The JIT's spill arm"): memories 1 to `spill`.
+    let spill = cfg.inline_spill();
+    for (k, &pages) in cfg.spill[..spill as usize].iter().enumerate() {
+        m.import_memory("env", &format!("ram{}", k + 1), pages, pages);
+    }
     if parallel {
         let z = m.zero_global();
         debug_assert_eq!(z, emit::ZERO_GLOBAL);
@@ -607,6 +612,7 @@ pub fn module(
                 parallel,
                 pair_locks,
                 clock,
+                spill,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -619,6 +625,7 @@ pub fn module(
                 parallel,
                 pair_locks,
                 clock,
+                spill: 0,
             }
         };
         let env = Env {

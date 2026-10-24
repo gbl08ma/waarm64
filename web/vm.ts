@@ -21,7 +21,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 51;
+export const ABI = 52;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -83,7 +83,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
   const now_ms = wrap('clock', () => clock + performance.now());
-  const jit = jitHost(memory, now_ms, compile);
+  const jit = jitHost(memory, now_ms, compile, spill);
   return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
 }
 
@@ -373,12 +373,12 @@ function collect() {
  * The host half of the JIT: compiles a module the core generated,
  * synchronously, and puts its exports f0, f1, … into the core's function table
  * at JIT slot `slot` on (after the core's own entries). The modules import the
- * memory, the table, the core's exports (its helpers) and the host clock (`now_ms`) from `env`, and
+ * memory, the spill memories (`ram1`, …), the table, the core's exports (its helpers) and the host clock (`now_ms`) from `env`, and
  * already-installed blocks they chain to from `t`, by table index. With a
  * port to the compile worker (`compile`), the core hands it each module it
  * emits first, and installs it once compiled there: a hit in V8's module cache.
  */
-function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: MessagePort) {
+function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: MessagePort, spill: WebAssembly.Memory[] = []) {
   let table: WebAssembly.Table | undefined;
   let base = 0;
   let imports: WebAssembly.Imports = {};
@@ -404,7 +404,8 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
     bind(core: WebAssembly.Instance) {
       table = core.exports.__indirect_function_table as WebAssembly.Table;
       base = table.length;
-      imports = { env: { ...core.exports, memory, table, now_ms } };
+      // The spill memories as `env.ram1`…, which modules import for their loads' and stores' spill arms (docs/spill-memories.md).
+      imports = { env: { ...core.exports, memory, table, now_ms, ...Object.fromEntries(spill.map((m, k) => [`ram${k + 1}`, m])) } };
     },
     install(ptr: number, len: number, slot: number, seq: number): number {
       if (!table) return -1;

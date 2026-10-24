@@ -240,7 +240,9 @@ puts its functions into the core's table.
   and, when every module up to `seq` is compiled, stores `seq` atomically into the u32 at byte
   address `ready`. A table installs a module (`jit_install`, then a cache hit) only once `ready`
   has reached it, interpreting its blocks until then, or after a second without it.
-- **A JIT module's imports:** `env.memory` (limits 0–65536 pages, or exactly `VmConfig.mem_pages`: ABI 32), `env.table`, any core export by
+- **A JIT module's imports:** `env.memory` (limits 0–65536 pages, or exactly `VmConfig.mem_pages`: ABI 32), on a machine
+  with spill memory the first `jit::INLINE_SPILL` spill memories as `env.ram1`, … (exact limits, its size: ABI 52;
+  [spill-memories.md](spill-memories.md) "The JIT's spill arm"), `env.table`, any core export by
   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
   module `t`, whose imports are named by table index and resolved with `table.get` (links to
   already-compiled blocks).
@@ -547,4 +549,5 @@ implemented by this step).
 | 49 | the host's type 11 strings: fw_cfg's `opt/webpc/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
 | 50 | counter word 120: the ns the block map's prunes took; `heap_probe(size)`: an infallible allocation of `size` bytes, freed at once, so a test can run the heap out through the allocation error hook (tests/heap.test.ts) |
 | 51 | FEAT_SHA512 and FEAT_SHA3: `VmConfig.features` bit 3 (`FEATURE_SHA3`, with bit 0); `ID_AA64ISAR0_EL1` SHA2 = 2, SHA3 = 1 |
+| 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

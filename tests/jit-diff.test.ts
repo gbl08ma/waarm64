@@ -9,11 +9,12 @@
 // for their length, so stale register locals, missing write-backs and wrong
 // flag liveness show. `WEBPC_JIT_DIFF=<n>` sets the words per class (and a
 // quarter as many sequences). Flat bus only (the MMU path is covered by
-// lockstep and the boots). Needs the wasm build (scripts/ci.sh).
+// lockstep and the boots), but for the load and store classes on spill
+// memories at the end. Needs the wasm build (scripts/ci.sh).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports } from '../web/vm.ts';
+import { coreImports, helperReport } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 const WORDS = Number(process.env.WEBPC_JIT_DIFF ?? 4096);
@@ -881,4 +882,128 @@ test('JIT vs interpreter, regions: loops', () => {
   }
   console.log(`loops: ${SEQS} programs, ${counts()}, ${skipped} runs skipped (they rewrote their code)`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SEQS} programs differ`);
+});
+
+// Spill memories (docs/spill-memories.md "The JIT's spill arm"): the load and store classes with
+// the MMU on, at EL1, the registers mostly addresses around a data area in spill memory 1 (whose
+// pages the JIT reaches in an inline arm) or in spill memory 2 (the helper's), on an interpreter
+// VM and a JIT-check VM (each block compiled on first sight). Memory 0 is read-only to the guest,
+// so the code stays as it was. A page's first access fills its TLB entry; the later states hit it.
+const SPILL_WORDS = WORDS >> 1;
+const SPILL_DATA = [0x8000_0000, 0xc000_8000]; // memory 1's first bytes; memory 2's at 32 KiB (another TLB index)
+function setupSpill(code: number) {
+  const RAM = 1 << 20, BASE = 0x4000_0000, TABLES = 0x8_0000, VECTORS = 0x7_0000;
+  const B_SELF = 0x14000000;
+  const side = (jit: number) => {
+    const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
+    const spill = [0, 1].map(() => new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }));
+    const imports = coreImports(memory, undefined, undefined, undefined, spill);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), imports);
+    imports.jit.bind(instance);
+    const ex = instance.exports as Record<string, (...a: (number | bigint)[]) => number>;
+    const ram = memory.grow(RAM / 65536) * 65536;
+    const cfg = memory.grow(1) * 65536;
+    const words = new BigUint64Array(memory.buffer, cfg, 32);
+    words.set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 0n, 0n, BigInt(jit)]);
+    [words[24], words[25]] = [65536n, 65536n];
+    const vm = ex.vm_new(ram, BigInt(RAM), cfg);
+    assert.notEqual(vm, 0);
+    // 1 GiB blocks, VA = PA: memory 0's RAM read-only at EL1, the spill memories read-write at EL0 and EL1 (LDTR).
+    const block = (pa: number, ap: bigint, xn: boolean) => BigInt(pa) | 1n << 10n | 3n << 8n | ap << 6n | 1n | (xn ? 3n << 53n : 0n);
+    new BigUint64Array(memory.buffer, ram + TABLES, 4).set([0n, block(BASE, 2n, false), block(0x8000_0000, 1n, true), block(0xc000_0000, 1n, true)]);
+    new Uint32Array(memory.buffer, ram + VECTORS, 0x800 / 4).fill(B_SELF);
+    const cpu = ex.vm_cpu(vm, 0);
+    const full = new BigUint64Array(memory.buffer, cpu, CPU_BYTES / 8);
+    full[904 / 8] = 25n | 1n << 8n | 1n << 10n | 3n << 12n | 1n << 23n | 2n << 32n; // TCR: T0SZ 25, EPD1, IPS 40 bits
+    full[912 / 8] = BigInt(BASE + TABLES); // TTBR0
+    full[928 / 8] = 0xffn; // MAIR: attribute 0 normal
+    full[896 / 8] = 3n << 20n; // CPACR: FPEN
+    full[880 / 8] = BigInt(BASE + VECTORS); // VBAR
+    full[888 / 8] |= 1n; // SCTLR.M
+    new Uint8Array(memory.buffer, cpu, CPU_BYTES)[1146] |= 2; // and the dispatcher's copy of it (`Cpu::dispatch`, DISPATCH_MMU)
+    full[832 / 8] = 0x3c5n; // EL1h, DAIF masked
+    const code32 = new Uint32Array(memory.buffer, ram, code / 4);
+    const data = spill.map((m, k) => new Uint8Array(m.buffer, SPILL_DATA[k] & 0xffff, DATA_SIZE));
+    return { ex, vm, memory, cpu, code32, data };
+  };
+  const [a, b] = [side(0), side(3)];
+  for (const d of a.data) for (let k = 0; k < DATA_SIZE; k++) d[k] = rand32() & 0xff;
+  a.data.forEach((d, k) => b.data[k].set(d));
+  /** Runs both for `n` steps; what differs, or null. */
+  const run = (n: bigint) => {
+    const [ka, kb] = [a.ex.vm_run(a.vm, n), b.ex.vm_run(b.vm, n)];
+    const [ca, cb] = [new Uint8Array(a.memory.buffer, a.cpu, CPU_BYTES), new Uint8Array(b.memory.buffer, b.cpu, CPU_BYTES)];
+    const d = ca.findIndex((x, i) => x !== cb[i]);
+    const m = a.data.findIndex((x, k) => Buffer.compare(x, b.data[k]) !== 0);
+    if (d < 0 && m < 0 && ka === kb) return null;
+    a.data.forEach((x, k) => b.data[k].set(x));
+    return d >= 0 ? `Cpu byte ${d} (x${d >> 3})` : m >= 0 ? `spill memory ${m + 1}'s data` : `the exit (${ka} vs ${kb})`;
+  };
+  /** `size` bytes at guest PA `addr` if they're in a data area, else 0n. */
+  const peek = (addr: bigint, size: number) => {
+    let v = 0n;
+    for (let i = size - 1; i >= 0; i--) {
+      const p = Number(addr) + i, k = SPILL_DATA.findIndex((s) => p >= s && p < s + DATA_SIZE);
+      v = (v << 8n) | BigInt(k < 0 ? 0 : a.data[k][p - SPILL_DATA[k]]);
+    }
+    return v;
+  };
+  return { a, b, run, peek, pc: BigInt(BASE) };
+}
+
+for (const [name, [mask, bits]] of Object.entries(MEMORY)) test(`JIT vs interpreter on spill memories, MMU on: ${name}`, () => {
+  const { a, b, run, peek, pc } = setupSpill(8 * SPILL_WORDS);
+  const words = Array.from({ length: SPILL_WORDS }, () => ((field(rand32()) & ~mask) | bits) >>> 0);
+  words.forEach((w, k) => {
+    a.code32.set([w, 0x14000000], 2 * k); // b .
+    b.code32.set([w, 0x14000000], 2 * k);
+  });
+  const failures: string[] = [];
+  for (let k = 0; k < SPILL_WORDS; k++) {
+    for (let s = 0; s < STATES; s++) {
+      const fa = new BigUint64Array(a.memory.buffer, a.cpu, CPU_BYTES / 8);
+      const data = SPILL_DATA[rand32() % 4 === 0 ? 1 : 0];
+      for (let r = 0; r < 32; r++) fa[r] = value(true, data);
+      fa[32] = pc + BigInt(8 * k);
+      fa[33] = BigInt(rand32() & 0xf) << 28n;
+      const va = new BigUint64Array(a.memory.buffer, a.cpu + 304, 64);
+      for (let r = 0; r < 64; r++) va[r] = rand64();
+      if (name.includes('exclusive')) {
+        const w = words[k], rn = (w >>> 5) & 31;
+        const size = name.endsWith('pair') ? 8 << ((w >>> 30) & 1) : 1 << (w >>> 30);
+        if (rand32() % 2 === 0) fa[rn] &= ~BigInt(size - 1);
+        const v = peek(fa[rn], size);
+        fa.set([fa[rn], BigInt(rand32() % 4 === 0 ? 4 : size), rand32() % 4 === 0 ? rand64() : v & M64, size === 16 ? v >> 64n : 0n], 272 / 8);
+      }
+      new Uint8Array(b.memory.buffer, b.cpu, CPU_BYTES).set(new Uint8Array(a.memory.buffer, a.cpu, CPU_BYTES));
+      const what = run(2n);
+      if (what) {
+        failures.push(`${words[k].toString(16).padStart(8, '0')}: ${what} differs`);
+        break;
+      }
+    }
+  }
+  const st = new BigUint64Array(b.memory.buffer, b.ex.vm_counters(b.vm, 0), 82);
+  console.log(`${name} on spill memories: ${SPILL_WORDS} words, ${st[79]} compiled inline, ${st[80]} as helper calls`);
+  assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SPILL_WORDS} words differ`);
+});
+
+// The arm runs: a load from a page in spill memory 1, its TLB entry filled, stays in the block, while one from
+// spill memory 2 takes the helper each time (the tests above pass either way).
+test('JIT on spill memories: memory 1 inline, memory 2 through the helper', () => {
+  const { b, pc } = setupSpill(8);
+  b.code32.set([0xf9400020, 0x14000000]); // ldr x0, [x1]; b .
+  const f = new BigUint64Array(b.memory.buffer, b.cpu, 34);
+  const calls = () => helperReport(b.ex as never, b.memory, b.ex.vm_cpu(b.vm, 0)).find((h) => h.op === 'STRx_LDRx_imm_2')?.calls ?? 0;
+  for (const [k, inline] of [[0, true], [1, false]] as const) {
+    const before = calls();
+    for (let n = 0; n < 10; n++) {
+      [f[1], f[32]] = [BigInt(SPILL_DATA[k] + 8 * n), pc];
+      b.ex.vm_run(b.vm, 2n);
+      assert.equal(f[32], pc + 4n, `memory ${k + 1}: the load retired`);
+    }
+    const n = calls() - before;
+    if (inline) assert.ok(n <= 1, `memory 1: ${n} helper calls (only its first, which fills the TLB entry)`);
+    else assert.ok(n >= 9, `memory 2: ${n} helper calls`);
+  }
 });

@@ -628,7 +628,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   MMU off a bounds check against RAM, whose layout the block embeds.
   Every addressing form of LDR/STR, LDP/STP/LDPSW/LDNP/STNP, LDR literal, PRFM, SIMD&FP single and
   pair, LD1/ST1 multiple and of one lane (a narrow load into the V register's lane, the others
-  kept), LDTR/STTR (through EL0's TLB arrays). Anything else (a miss, a fault,
+  kept), LDTR/STTR (through EL0's TLB arrays). On a machine with spill memory, an entry for a page of spill
+  memory 1 takes a second arm in the cold path: the body again, its RAM accesses naming memory 1
+  ([spill-memories.md](spill-memories.md) "The JIT's spill arm"). Anything else (a miss, a fault,
   MMIO, a page-crossing access, a misaligned SP base) calls a helper that re-executes the whole
   instruction: the fast path changes nothing before its check, so fault state is exact by
   construction. Every guest RAM access in generated code goes through one lowering function

@@ -1157,6 +1157,9 @@ pub struct Ctx {
     /// The host clock (`env.now_ms`, imported by a parallel SMP module with a
     /// counter read): CNTVCT and CNTPCT read inline ([`counter`]).
     pub clock: Option<u32>,
+    /// Spill memories 1 to `spill` have a load's or store's arm inline
+    /// ([`access`]): the module imports them as memories 1 to `spill`.
+    pub spill: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1589,7 +1592,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     if store {
                         c.local_get(HOST);
                         get(c, true, rt);
-                        c.memarg(STORE[size as usize], 0, off);
+                        c.ram(STORE[size as usize], 0, off);
                     } else {
                         load_reg(c, rt, off, len, sign, to32);
                     }
@@ -1636,7 +1639,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         for (r, o) in [(rt, o), (rt2, o + len)] {
                             c.local_get(HOST);
                             get(c, true, r);
-                            c.memarg(STORE[len.trailing_zeros() as usize], 0, o);
+                            c.ram(STORE[len.trailing_zeros() as usize], 0, o);
                         }
                     }
                     if mode & 1 == 1 {
@@ -1658,11 +1661,11 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 if store {
                     c.local_get(HOST);
                     get(c, true, rt);
-                    c.atomic(ATOMIC_STORE[size as usize], size, off);
+                    c.ram_atomic(ATOMIC_STORE[size as usize], size, off);
                 } else {
                     set(c, true, rt, |c| {
                         c.local_get(HOST)
-                            .atomic(ATOMIC_LOAD[size as usize], size, off);
+                            .ram_atomic(ATOMIC_LOAD[size as usize], size, off);
                     });
                 }
             });
@@ -1683,7 +1686,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             access(c, cx, i, here, len, !load, &[guard], written, |c, off| {
                 if load {
                     c.local_get(HOST)
-                        .atomic(ATOMIC_LOAD[size as usize], size, off)
+                        .ram_atomic(ATOMIC_LOAD[size as usize], size, off)
                         .local_set(VALUE);
                     c.local_get(VCPU).local_get(ADDR).i64_store(MON);
                     c.local_get(VCPU).i64_const(len as i64).i64_store(MON_SIZE);
@@ -1702,7 +1705,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         .local_get(VCPU)
                         .i64_load(VAL)
                         .local_get(VALUE);
-                    c.atomic(RMW_CMPXCHG + RMW_SIZE[size as usize], size, off);
+                    c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[size as usize], size, off);
                     c.local_get(VCPU)
                         .i64_load(VAL)
                         .op(NE + WC)
@@ -1760,7 +1763,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         } else if bits(i, 15, 12) == 1 {
                             c.i64_const(-1).op(XOR + W);
                         }
-                        c.atomic(rmw, size, off);
+                        c.ram_atomic(rmw, size, off);
                     };
                     if dest == 31 {
                         value(c);
@@ -1803,7 +1806,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.local_get(HOST);
                     join(c, rs);
                     join(c, rt);
-                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off).local_set(VALUE);
+                    c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off)
+                        .local_set(VALUE);
                     set(c, true, rs, |c| {
                         c.local_get(VALUE).i64_const(u32::MAX as i64).i64_and();
                     });
@@ -1829,11 +1833,11 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.op(NE + WC).op(OR).br_if(1);
                 c.local_get(HOST).local_get(VALUE);
                 get(c, true, rt);
-                c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
+                c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
                 c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
                 c.local_get(HOST).local_get(BASE);
                 get(c, true, rt + 1);
-                c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
+                c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
                 c.end().end();
                 pair_unlock(c, &pcx);
                 set(c, true, rs, |c| {
@@ -1880,7 +1884,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         pair_unlock(c, &pcx);
                     } else {
                         c.local_get(HOST)
-                            .atomic(ATOMIC_LOAD[3], 3, off)
+                            .ram_atomic(ATOMIC_LOAD[3], 3, off)
                             .local_set(VALUE);
                         c.i64_const(0).local_set(BASE);
                     }
@@ -1918,11 +1922,11 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.br_if(1);
                     c.local_get(HOST).local_get(VALUE);
                     get(c, true, rt);
-                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
+                    c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
                     c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
                     c.local_get(HOST).local_get(BASE);
                     get(c, true, rt2);
-                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
+                    c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
                     c.end().end();
                     pair_unlock(c, &pcx);
                     differs(c);
@@ -1938,7 +1942,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         .local_get(VCPU)
                         .i64_load(VAL)
                         .local_get(VALUE);
-                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
+                    c.ram_atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
                     c.local_get(VCPU)
                         .i64_load(VAL)
                         .op(NE + WC)
@@ -1963,9 +1967,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             };
             access(c, cx, i, here, 64, true, &[guard], 0, |c, off| {
                 for k in 0..8 {
-                    c.local_get(HOST)
-                        .i64_const(0)
-                        .memarg(STORE[3], 0, off + 8 * k);
+                    c.local_get(HOST).i64_const(0).ram(STORE[3], 0, off + 8 * k);
                 }
             });
         }
@@ -2009,12 +2011,12 @@ fn pair_unlock(c: &mut Func, cx: &Ctx) {
 /// while the low half changed across the read of the high one (`Mem::pair_op`'s read).
 fn read_pair(c: &mut Func, off: u32) {
     c.local_get(HOST)
-        .atomic(ATOMIC_LOAD[3], 3, off)
+        .ram_atomic(ATOMIC_LOAD[3], 3, off)
         .local_set(VALUE);
     c.local_get(HOST)
-        .atomic(ATOMIC_LOAD[3], 3, off + 8)
+        .ram_atomic(ATOMIC_LOAD[3], 3, off + 8)
         .local_set(BASE);
-    c.local_get(HOST).atomic(ATOMIC_LOAD[3], 3, off);
+    c.local_get(HOST).ram_atomic(ATOMIC_LOAD[3], 3, off);
     c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
 }
 
@@ -2184,12 +2186,12 @@ fn vload(c: &mut Func, t: u32, off: u32, len: u32) {
         16 | 8 | 4 => {
             let op =
                 [V128_LOAD32_ZERO, V128_LOAD64_ZERO, V128_LOAD][len.trailing_zeros() as usize - 2];
-            c.local_get(HOST).simd_mem(op, 0, off);
+            c.local_get(HOST).ram_simd(op, 0, off);
             c.vset(t);
         }
         _ => c.vset_scalar(t, 32, |c| {
             c.local_get(HOST)
-                .memarg(LOAD32_U[len.trailing_zeros() as usize], 0, off);
+                .ram(LOAD32_U[len.trailing_zeros() as usize], 0, off);
         }),
     }
 }
@@ -2295,9 +2297,9 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
                     c.vget(t);
                     c.local_get(HOST);
                     if lg == 3 {
-                        c.i64_load(off);
+                        c.ram(0x29, 3, off);
                     } else {
-                        c.memarg(LOAD32_U[lg], 0, off);
+                        c.ram(LOAD32_U[lg], 0, off);
                     }
                     c.simd_lane(REPLACE[lg], index);
                     c.vset(t);
@@ -2305,7 +2307,7 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
                     c.local_get(HOST);
                     c.vget(t);
                     c.simd_lane(EXTRACT[lg], index);
-                    c.memarg(if lg == 3 { STORE[3] } else { STORE32[lg] }, 0, off);
+                    c.ram(if lg == 3 { STORE[3] } else { STORE32[lg] }, 0, off);
                 }
             }
             if wb && rm == 31 {
@@ -2368,7 +2370,7 @@ fn ldn_stn(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
                     } else {
                         V128_LOAD
                     };
-                    c.local_get(HOST).simd_mem(op, 0, off + 16 * m);
+                    c.local_get(HOST).ram_simd(op, 0, off + 16 * m);
                     c.local_set(VT[m as usize]);
                 }
                 for r in 0..n {
@@ -2394,9 +2396,9 @@ fn ldn_stn(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
                         c.vget((rt + r) % 32);
                     });
                     if 16 * m + 8 == total {
-                        c.simd_lane(0x1d, 0).memarg(STORE[3], 0, off + 16 * m);
+                        c.simd_lane(0x1d, 0).ram(STORE[3], 0, off + 16 * m);
                     } else {
-                        c.simd_mem(V128_STORE, 0, off + 16 * m);
+                        c.ram_simd(V128_STORE, 0, off + 16 * m);
                     }
                 }
             }
@@ -2472,7 +2474,7 @@ fn ldnr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
             const SPLAT: [u8; 4] = [7, 8, 9, 10];
             for r in 0..n {
                 c.local_get(HOST)
-                    .simd_mem(SPLAT[size as usize], 0, off + r * eb);
+                    .ram_simd(SPLAT[size as usize], 0, off + r * eb);
                 if !q {
                     c.i64_const(0).simd_lane(0x1e, 1);
                 }
@@ -2498,15 +2500,15 @@ fn vstore(c: &mut Func, t: u32, off: u32, len: u32) {
     match len {
         16 => {
             c.vget(t);
-            c.simd_mem(V128_STORE, 0, off);
+            c.ram_simd(V128_STORE, 0, off);
         }
         8 => {
             c.vlane(t, 64, 0);
-            c.memarg(STORE[3], 0, off);
+            c.ram(STORE[3], 0, off);
         }
         _ => {
             c.vlane(t, 32, 0);
-            c.memarg(STORE32[len.trailing_zeros() as usize], 0, off);
+            c.ram(STORE32[len.trailing_zeros() as usize], 0, off);
         }
     }
 }
@@ -2541,9 +2543,9 @@ fn load_reg(c: &mut Func, rt: u32, off: u32, len: u32, sign: bool, to32: bool) {
         c.local_get(HOST);
         if to32 {
             // i32.load8_s / i32.load16_s
-            c.memarg([0x2c, 0x2e][lg], 0, off).i64_extend_i32_u();
+            c.ram([0x2c, 0x2e][lg], 0, off).i64_extend_i32_u();
         } else {
-            c.memarg(if sign { LOAD_S[lg] } else { LOAD_U[lg] }, 0, off);
+            c.ram(if sign { LOAD_S[lg] } else { LOAD_U[lg] }, 0, off);
         }
     });
 }
@@ -2589,6 +2591,13 @@ impl Guard {
 /// didn't retire; the registers are written back before the call, and after
 /// it the ones in `written` (the instruction's destinations), and any the fast
 /// path loaded, are reloaded, so both arms leave the fast path's register state.
+///
+/// With the MMU on and spill memories inline (`cx.spill`), a TLB entry for
+/// the page in spill memory k (its tag differs from memory 0's in the
+/// memory bits alone, `mmu`) runs `body` again in a nested arm before the
+/// helper, its guest RAM accesses naming memory k ([`Code::ram`]): the same
+/// registers as the fast path's, so it leaves the same state
+/// (docs/spill-memories.md "The JIT's spill arm").
 #[allow(clippy::too_many_arguments)]
 fn access(
     c: &mut Func,
@@ -2599,7 +2608,7 @@ fn access(
     write: bool,
     guards: &[Guard],
     written: u64,
-    body: impl FnOnce(&mut Func, u32),
+    body: impl Fn(&mut Func, u32),
 ) {
     c.chain_open();
     let off = match cx.bus {
@@ -2644,7 +2653,49 @@ fn access(
     c.local_set(HOST);
     let before = c.regs;
     body(c, off);
-    fallback_chain(c, cx, i, here, before, written);
+    let Bus::Tlb { read } = cx.bus else {
+        return fallback_chain(c, cx, i, here, before, written);
+    };
+    let arr = read + if write { 16 } else { 0 };
+    let fast = c.regs;
+    c.else_();
+    c.regs = before;
+    // The arms run the body again: the masks of what it reads count the
+    // fast path's reads alone (a register read once stays `plain`).
+    let (read_, reused) = (c.read, c.reused);
+    for k in 1..=cx.spill {
+        // tag ^ ((va + len - 1) | 0xfff) is k << 3 (stored inverted, memory 0 all ones).
+        c.local_get(TLBE).i64_load(arr).local_get(ADDR);
+        if len > 1 {
+            c.i64_const(len as i64 - 1).i64_add();
+        }
+        c.i64_const(0xfff).op(OR + W).op(XOR + W);
+        c.i64_const((k as i64) << 3).op(EQ + WC);
+        for &g in guards {
+            guard(c, g, len);
+        }
+        c.if_();
+        c.local_get(TLBE)
+            .i64_load(arr + 8)
+            .local_get(ADDR)
+            .i64_add()
+            .i32_wrap_i64()
+            .local_set(HOST);
+        c.ram_mem = k;
+        body(c, off);
+        c.ram_mem = 0;
+        debug_assert_eq!(c.regs, fast, "a spill arm's registers");
+        c.else_();
+        c.regs = before;
+    }
+    c.read = read_;
+    c.reused = reused;
+    fallback_arm(c, cx, i, here, written, fast, 2 + cx.spill);
+    for _ in 0..cx.spill {
+        c.end();
+    }
+    c.regs = fast;
+    c.end();
 }
 
 /// ANDs the condition of `g` into the i32 on the stack (an access of `len` bytes).
@@ -2723,6 +2774,15 @@ fn fallback_chain(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, writt
     let fast = c.regs;
     c.else_();
     c.regs = before;
+    fallback_arm(c, cx, i, here, written, fast, 2);
+    c.regs = fast;
+    c.end();
+}
+
+/// The failure arm of [`fallback_chain`], in its `else` with the registers
+/// as they were at the access's `if`, `depth` - 1 `if`s inside the segment;
+/// leaves the fast arm's register state `fast`.
+fn fallback_arm(c: &mut Func, cx: &Ctx, i: u32, here: i64, written: u64, fast: Regs, depth: u32) {
     let mut need = (c.ireads | written) & c.regs.dirty;
     c.regs.dirty &= !need;
     while need != 0 {
@@ -2743,13 +2803,13 @@ fn fallback_chain(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, writt
     if let Flags::Lazy { stored, .. } = &mut c.flags {
         *stored = true;
     }
-    // Inside the `if`s of the fast path and of the failure: the segment is 2 out.
-    c.i32_const((here / 4) as i32).br(2);
+    // Inside the `if`s of the fast path (and the spill arms) and of the
+    // failure: the segment is `depth` out.
+    c.i32_const((here / 4) as i32).br(depth);
     c.end();
     c.forget(written);
     c.reload(fast.valid);
     c.regs = fast;
-    c.end();
 }
 
 /// MRS of a register [`sys::plain`] reads inline at the block's EL (M6 loop
@@ -3503,6 +3563,7 @@ mod tests {
         parallel: false,
         pair_locks: 0x100,
         clock: None,
+        spill: 0,
     };
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
@@ -4015,6 +4076,7 @@ mod tests {
             parallel: false,
             pair_locks: 0x100,
             clock: None,
+            spill: 0,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {
@@ -4045,6 +4107,23 @@ mod tests {
         assert!(emit(0xc85f7c20, 0).is_some()); // ldxr x0, [x1] (M6 loop 7)
         assert!(emit(0xf8200020, 0).is_some()); // ldadd x0, x0, [x1]
         assert_eq!(emit(0xf8204020, 0), None); // ldsmax x0, x0, [x1]: a helper
+        // With spill memory 1 inline, a second arm: the tag differing in the
+        // memory bits alone (i64.const 8, i64.eq), then the body again, its
+        // load naming memory 1 (align with bit 6, memory 1, offset 0: HOST has
+        // the whole address). The
+        // fast path is as without it.
+        let spill = Ctx { spill: 1, ..tlb };
+        let ldr = 0xf9400420; // ldr x0, [x1, #8]
+        let (b0, b1) = (
+            emit_in(ldr, 0, &tlb).unwrap(),
+            emit_in(ldr, 0, &spill).unwrap(),
+        );
+        let mem1 = [LOAD_U[3], 0x40, 1, 0];
+        assert!(!b0.windows(4).any(|w| w == mem1));
+        assert_eq!(b1.windows(4).filter(|w| *w == mem1).count(), 1);
+        assert!(b1.windows(3).any(|w| w == [0x42, 8, 0x51]));
+        let fast = b0.windows(2).position(|w| w == [0x05, 0x20]).unwrap(); // the fast arm, up to its `else`
+        assert_eq!(b0[..fast], b1[..fast]);
         assert!(emit(0xc87f0020, 0).is_some()); // ldxp x0, x0, [x1] (M8)
     }
 }

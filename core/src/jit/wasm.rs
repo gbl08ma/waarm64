@@ -58,6 +58,10 @@ pub struct Code {
     /// Branch hints (M6): where an `if` or `br_if` is in `b`, and whether
     /// it's likely taken; the module's `metadata.code.branch_hint` section.
     hints: Vec<(usize, bool)>,
+    /// The memory guest RAM accesses ([`Code::ram`] and its kin) name: 0,
+    /// or a spill memory's index while a load's or store's spill arm is
+    /// emitted (docs/spill-memories.md "The JIT's spill arm").
+    pub ram_mem: u32,
 }
 
 impl Code {
@@ -93,6 +97,33 @@ impl Code {
         uleb(&mut self.b, align as u64);
         uleb(&mut self.b, offset as u64);
         self
+    }
+    /// [`Code::memarg`] on guest RAM: in memory [`Code::ram_mem`] (multi-memory:
+    /// bit 6 of the alignment field says a memory index follows it).
+    pub fn ram(&mut self, op: u8, align: u32, offset: u32) -> &mut Self {
+        self.b.push(op);
+        self.ram_memarg(align, offset)
+    }
+    fn ram_memarg(&mut self, align: u32, offset: u32) -> &mut Self {
+        if self.ram_mem == 0 {
+            uleb(&mut self.b, align as u64);
+        } else {
+            uleb(&mut self.b, (align | 0x40) as u64);
+            uleb(&mut self.b, self.ram_mem as u64);
+        }
+        uleb(&mut self.b, offset as u64);
+        self
+    }
+    /// [`Code::simd_mem`] on guest RAM.
+    pub fn ram_simd(&mut self, op: u8, align: u32, offset: u32) -> &mut Self {
+        self.b.push(0xfd);
+        uleb(&mut self.b, op as u64);
+        self.ram_memarg(align, offset)
+    }
+    /// [`Code::atomic`] on guest RAM.
+    pub fn ram_atomic(&mut self, op: u8, align: u32, offset: u32) -> &mut Self {
+        self.b.push(0xfe);
+        self.ram(op, align, offset)
     }
     /// A SIMD memory instruction (`0xfd` prefix): v128.load (0), v128.store
     /// (11), v128.load32_zero (92), v128.load64_zero (93).

@@ -49,10 +49,11 @@ wasm64 core was free there), B +31–40%, D +26–32%.
   past memory 0 in more wasm32 memories, each a CPU-less NUMA node in the DT. TLB tag bits 11:3 hold the memory
   index (inverted, all ones for memory 0), so every inline compare misses on a spill page and memory 0's code is
   unchanged; the interpreter's miss path does the access through `ram.*` imports from a host-made module
-  (`web/spill.ts`), and the JIT's miss re-runs the instruction there. A core host address (`mem::Host`) names its
-  memory in its top byte. NUMA balancing must be off (its hinting faults are expensive under emulation): an SMBIOS
-  systemd credential does it. A spill access costs 2–19× a memory-0 one; the guest keeps spill pages cold until its
-  active set outgrows memory 0.
+  (`web/spill.ts`). JIT code reaches spill memory 1 in a second arm of each access, its body again on a memarg naming
+  memory 1 (multi-memory), and re-runs the instruction in the interpreter for the others. A core host address
+  (`mem::Host`) names its memory in its top byte. NUMA balancing must be off (its hinting faults are expensive under
+  emulation): an SMBIOS systemd credential does it. Node 1's workloads take 1.0–1.6× node 0's time; the guest fills
+  node 0 first anyway.
 - Re-measure the gaps on new Chromium releases.
 
 ## Design principles

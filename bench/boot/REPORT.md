@@ -2897,3 +2897,44 @@ only for Neoverse V1, V2, N2, Cobalt 100 and Ampere; our MIDR's implementer is 0
 
 (256-byte GCM and SHA-512 unchanged.) So the instructions are worth it where a guest uses them: Linux's sha3-ce,
 and OpenSSL if the MIDR said a CPU it knows (docs/backlog.md "OpenSSL's MIDR-gated paths").
+
+## M8: the JIT's spill arm (2026-10-24)
+
+Loads and stores in JIT code reach spill memory 1 inline (docs/spill-memories.md "The JIT's spill arm"). Chromium
+153.0.8010.52 headless, the dev VM (linux-arm64, 8 vCPUs), one session; the arm off (`jit::INLINE_SPILL` 0, "base")
+and on, as two wasm builds swapped between runs. The JSON is in `results/m8-spill/debian-arm/` and
+`results/m8-spill/alpine-user-spill/`.
+
+**Debian's workloads bound to node 1** (`results/m8-spill/tools/numa-debian.ts`, `?ram=6144`, 2 vCPUs, `MB=32`;
+base, arm, base, arm, three rounds each alternating nodes 0,1 and 1,0; ms in the guest, median of six [range]):
+
+| | node 0, base | node 1, base | node 0, arm | node 1, arm | node 1 / node 0 |
+|---|---|---|---|---|---|
+| `dd` 512 MiB from /dev/zero | 404 [317–493] | 2490 [2362–2560] | 364 [336–382] | 430 [425–442] | 6.2× → 1.18× |
+| `cat` 32 MiB | 234 [164–341] | 482 [402–580] | 196 [176–215] | 208 [198–221] | 2.1× → 1.06× |
+| `sha256sum` 32 MiB | 318 [276–407] | 1378 [1267–1463] | 318 [290–334] | 322 [314–343] | 4.3× → 1.01× |
+| `gzip -1` 32 MiB | 3685 [3606–3774] | 63606 [63258–64403] | 3720 [3638–3747] | 6020 [6014–6058] | 17× → 1.62× |
+| `sort` 16 MiB | 744 [636–897] | 5232 [5132–5427] | 704 [663–758] | 828 [816–921] | 7.0× → 1.18× |
+| perl, a 300k-key hash | 1258 [1153–1351] | 12418 [11954–12637] | 1241 [1174–1255] | 1730 [1691–1775] | 9.9× → 1.39× |
+
+On node 1 the arm makes the workloads 2.3× (cat) to 10.6× (gzip) faster: dd 5.8×, sha256 4.3×, sort 6.3×, perl
+7.2×. Node 0's ranges overlap across the builds. What's left (gzip's 1.6×) is the arm being out of line: the deferred branch, the
+second compare and memory 1's base, which V8 loads from the instance (it reaches memory 1 through a guard region, no
+bounds check: `--print-wasm-code` of a two-memory module).
+
+**Alpine's userspace benchmark on a spill machine** (`alpine_user_spill_jit`, new: 192 MiB in memory 0, the
+initrd's +128 MiB the floor, and 832 MiB in a spill memory; base, arm, base, arm, three boots each; ms, median of
+six):
+
+| | base | arm | |
+|---|---|---|---|
+| compress | 1974 | 1987 | +0.7%, overlapping |
+| lua | 3068 | 3077 | +0.3%, overlapping |
+| churn | 1414 | 1397 | −1.2%, overlapping |
+| sqlite | 2336 | 2323 | −0.5%, overlapping |
+| total | 14598 [14552–14725] | 14301 [14162–14419] | **−2.0%** |
+
+Its phases' pages stay mostly in node 0; the arm's gain is in the boot's share of the total. What it shows is the
+code: the same 11,250 blocks compiled into 19.24 MB of wasm with the arm against 16.71 MB without (**+15%**; compile
+time 120 vs 121 ms). On a machine without spill memory the code is unchanged: `alpine_user_jit` compiled 16,650,058
+bytes with either build (`nospill-*.json`).

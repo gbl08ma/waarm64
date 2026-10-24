@@ -109,6 +109,10 @@ pub struct Config {
     /// modules import as exact limits: V8 then loads its size once per
     /// function, not after every call (docs/v8.md "Bounds checks"). 0: growable.
     pub pages: u32,
+    /// The spill memories' sizes in pages, memory 1 first (`VmConfig.spill`;
+    /// 0 ends the list): the first [`INLINE_SPILL`] of them, which modules
+    /// import with exact limits, get an inline arm in loads and stores.
+    pub spill: [u32; crate::mem::MAX_SPILL],
     /// Micro-ops each table's decoded blocks hold (`interp::block::BUDGET`
     /// shared out among a VM's tables).
     pub decoded: u32,
@@ -132,6 +136,7 @@ impl Config {
         check: false,
         region_after: REGION_AFTER,
         pages: 0,
+        spill: [0; crate::mem::MAX_SPILL],
         decoded: interp::block::MAX_BUDGET as u32,
         warm: WARM,
     };
@@ -146,6 +151,7 @@ impl Config {
         check: true,
         region_after: 1,
         pages: 0,
+        spill: [0; crate::mem::MAX_SPILL],
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
     };
@@ -171,7 +177,22 @@ impl Config {
         threshold_max: u32::MAX,
         ..Config::DEFAULT
     };
+
+    /// How many spill memories modules import and loads and stores reach
+    /// inline: the first [`INLINE_SPILL`] the machine has.
+    pub fn inline_spill(&self) -> u32 {
+        self.spill
+            .iter()
+            .take(INLINE_SPILL)
+            .take_while(|&&p| p != 0)
+            .count() as u32
+    }
 }
+
+/// The spill memories a load or store has an inline arm for, memory 1 first
+/// (docs/spill-memories.md "The JIT's spill arm"); the rest leave for the
+/// helper.
+pub const INLINE_SPILL: usize = 1;
 
 /// [`Config::DEFAULT`]'s `max_bytes`: the wasm bytes V8 may hold for a whole VM
 /// (~6-10× that in memory once full: ~2-3 GiB), whose vCPUs share the code.
@@ -2549,6 +2570,7 @@ mod tests {
             check: false,
             region_after: 0,
             pages: 0,
+            spill: [0; crate::mem::MAX_SPILL],
             decoded: 0,
             warm: 0,
         });

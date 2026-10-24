@@ -302,26 +302,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **Spill memories** ([spill-memories.md](spill-memories.md); the numbers in `bench/boot/results/m8-spill/`):
-  - **The JIT's inline second path for spill pages, not built.** A spill access leaves JIT code for the interpreter
-    (`jit_exec_mmu`): Debian's workloads bound to node 1 ran 2.2× (`cat`) to 19× (`gzip -1`) slower than on node 0,
-    and the desktop's memory tabs 6.4× (a sweep of 384 MB: 170 vs 1083 ms). The guest fills node 0 first and keeps
-    it, and with 1.9 GB of busy tabs on node 1 the desktop's WebGL and video windows kept their rates, so it waits for
-    a workload whose user-visible part lives on node 1. The design: on a tag that differs from the entry's only in
-    the memory bits (11:3), a `br_table` on the index into a copy of the access's body whose memarg names that memory;
-    JIT modules import the spill memories (multi-memory), and the copies grow every access's code with the number of
-    spill memories (one copy for the common one-node machine, the rest through the helper). It needs the JIT's gates
-    (differential, lockstep, exact-step boots, a planted bug). The alternative is to **tier on the host, invisibly**:
-    the guest sees one flat RAM, and we swap hot memory-1 pages with cold memory-0 ones and drop their TLB entries.
-    That costs a per-page physical-to-host table for `Mem` and DMA, a way to find cold memory-0 pages, and a stop of
-    every vCPU per move in parallel SMP.
-  - **A reopened video stopped presenting under the memory tabs' load**, once in each of two runs (after ~40 s; the
-    busy-tab arms of `tools/numa-desktop.ts`). It didn't happen with the same placement and idle tabs (2.5 minutes),
-    nor without a fill. The guest's CPU was busier (the node-1 sweeps), and whether that or something in Firefox's
-    decoder stops it isn't known. Check first: the video's `waiting`/`stalled` events (the tool logs them now), and
-    the renderer's video totals over the stop.
-  - `vm.zone_reclaim_mode=1` keeps only ~200 MB more on node 0 (it reclaims only unmapped clean cache), so it isn't
-    in the SMBIOS credential.
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
   firmware.md "Our patches"), no standard items beside SMBIOS (platform.md); the

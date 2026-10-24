@@ -272,10 +272,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   CPU feature switches, devices, snapshots, network backends), with its docs.
 - **Guest RAM past memory 0** (the user, 2026-10-18; **done 2026-10-19**, [docs/spill-memories.md](docs/spill-memories.md)):
   more wasm32 memories the guest sees as CPU-less NUMA nodes, NUMA balancing off through an SMBIOS credential, devices
-  and snapshots across memories, one RAM value on the page up to 16 GiB. A spill access costs 2–19× a memory-0 one;
-  the guest fills node 0 first and keeps it, and what a desktop user watched held its rate with 1.9 GB of busy tabs
-  on node 1, so the JIT's inline second path waits in the backlog; the heap floor stays 1 GiB (the heap reaches
-  ~600 MiB).
+  and snapshots across memories, one RAM value on the page up to 16 GiB. The guest fills node 0 first and keeps it;
+  the heap floor stays 1 GiB (the heap reaches ~600 MiB). **The JIT's spill arm** (the user, 2026-10-24; done
+  2026-10-24): loads and stores reach spill memory 1 inline (multi-memory), so node 1's workloads take 1.0–1.6× node
+  0's time instead of 2–17×; tiering on the host behind a flat RAM was weighed and dropped (it could win back only
+  that).
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.
 - **The block interpreter's speed** (the user, 2026-10-20; done 2026-10-22): judged by the interpreter's
   own MIPS, not by what it adds to a JIT run, so that the compile threshold can rise and less code reaches V8 (less
@@ -321,7 +322,8 @@ Unscheduled loose ends, by area: [docs/backlog.md](docs/backlog.md).
 - **Rust + wasm threads** needs nightly (`-Zbuild-std`, `-Zllvm-target-feature=+atomics`); the
   toolchain is pinned, and `simd128` stays off until LLVM's bitmask bug is fixed.
 - **Guest RAM ceiling:** memory 0 holds at most 3 GiB less 1 MiB of RAM; past it, spill memories as NUMA nodes
-  (done, up to 16 GiB on the page), 2–19× slower to reach (docs/spill-memories.md).
+  (done, up to 16 GiB on the page): node 1 at 1.0–1.6× memory 0's time through the JIT's spill arm, nodes 2 and up
+  2–19× (docs/spill-memories.md).
   Chromium gives no catchable error when host RAM runs out (the renderer is OOM-killed), so guest
   RAM is sized against host RAM up front (the page: [docs/frontend.md](docs/frontend.md) "Errors").
 - **Linux arm64 has no V8 trap handler:** explicit bounds checks cost up to 27% there, which

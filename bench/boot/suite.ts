@@ -11,6 +11,7 @@
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
 // `--query=growcore`: the core imports the memory growable (web/vm.ts `exactCore`), for an A/B.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
+// `--only alpine_user_spill_jit` the same with 192 MiB in memory 0 and the rest in a spill memory;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
 // `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7), SHA512 and
 // SHA3 too (since ABI 51); `--only alpine_crypto_nosha3_jit`: the v8.0 ones without SHA512 and SHA3;
@@ -38,7 +39,7 @@ async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 /** `jit`: `VmConfig.jit` (0 interpreter, 1 JIT). */
-type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean; jit?: 0 | 1 | 4 };
+type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; spill?: number[]; test?: boolean; jit?: 0 | 1 | 4 };
 
 export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<ArrayBuffer> }> {
   const [wasm, kernel] = await Promise.all([
@@ -56,7 +57,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), exactCore: !new URLSearchParams(globalThis.location?.search).has('growcore'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
+  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !new URLSearchParams(globalThis.location?.search).has('nocw'), exactCore: !new URLSearchParams(globalThis.location?.search).has('growcore'), vcpuYieldMs: new URLSearchParams(globalThis.location?.search).has('vyield') ? Number(new URLSearchParams(globalThis.location?.search).get('vyield')) : undefined });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -207,10 +208,14 @@ const USER_PHASES = ['compress', 'lua', 'churn', 'sqlite'];
  * (images/alpine/user). Deterministic, the root disk only; ms per phase from
  * its "webpc: <phase> start/end" lines, and to power-off.
  */
-async function alpineUser(o: Options): Promise<Sample[]> {
+async function alpineUser(o: Options, spill = false): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
+  // `spill`: 192 MiB in memory 0 (the initrd is at +128 MiB) and the rest of the GiB in a spill memory (docs/spill-memories.md), so the phases'
+  // pages land in node 1: what a spill access costs the JIT.
+  const ram = spill ? { ramSize: 192 << 20, spill: [832 << 20] } : { ramSize: 1 << 30 };
+  const name = spill ? 'alpine_user_spill_jit' : 'alpine_user_jit';
+  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ...ram, jit: 1 as const };
   const module = await compileCore(img.wasm);
   const phases: Record<string, number[]> = Object.fromEntries([...USER_PHASES, 'total'].map((p) => [p, []]));
   let stats;
@@ -220,10 +225,10 @@ async function alpineUser(o: Options): Promise<Sample[]> {
     for (const p of USER_PHASES) phases[p].push(between(r, p));
     phases.total.push(r.total);
     stats = r.stats;
-    o.log?.(`alpine_user_jit: ${USER_PHASES.map((p) => `${p} ${between(r, p).toFixed(0)}`).join(', ')}, total ${r.total.toFixed(0)} ms`);
+    o.log?.(`${name}: ${USER_PHASES.map((p) => `${p} ${between(r, p).toFixed(0)}`).join(', ')}, total ${r.total.toFixed(0)} ms`);
   }
-  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, jit: 1, steps: stats!.steps, counters: stats };
-  return Object.entries(phases).map(([p, samples]) => ({ name: `alpine_user_jit_${p}`, unit: 'ms', params, samples }));
+  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, spillMiB: spill ? [832] : undefined, jit: 1, steps: stats!.steps, counters: stats };
+  return Object.entries(phases).map(([p, samples]) => ({ name: `${name}_${p}`, unit: 'ms', params, samples }));
 }
 
 /**
@@ -495,7 +500,7 @@ async function net(o: Options): Promise<Sample[]> {
 export const suite = {
   boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
   // Under the JIT (VmConfig.jit = 1), deterministic.
-  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
+  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), coremark_vm_jit: coremarkVm, alpine_user_jit: (o: Options) => alpineUser(o), alpine_user_spill_jit: (o: Options) => alpineUser(o, true),
   gl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1), gl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4),
   gl_virgl_jit: (o: Options) => glLlvmpipe(o, 1, 'virgl'), gl_virgl_jit_4: (o: Options) => glLlvmpipe(o, 4, 'virgl'),
   gl_virgl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1, 'virgl-llvmpipe'), gl_virgl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4, 'virgl-llvmpipe'),

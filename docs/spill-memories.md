@@ -42,9 +42,9 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
 - **The TLB tag carries the memory index**, in bits 11:3, stored inverted (core/src/mmu.rs). Every inline compare
   (the JIT's `emit::access`, `xmiss`, the interpreter's `Mmu::host` and `fast`) expects memory 0's all-ones, so it
   misses on a spill entry. `Mmu::miss` recognises an entry that differs only in those bits and does the access
-  through the spill accessor without a walk. The JIT's miss already re-runs the instruction in the interpreter
-  (`jit_exec_mmu`), so the JIT needed no change for correctness. That re-run is what a spill access costs
-  ([Measurements](#what-a-spill-access-costs)).
+  through the spill accessor without a walk. JIT code reaches spill memory 1 in a second arm of each load and store
+  ([The JIT's spill arm](#the-jits-spill-arm)); for the other spill memories its miss re-runs the instruction in the
+  interpreter (`jit_exec_mmu`).
 - **A host address names its memory.** The core's RAM pointers are a 64-bit `Host`: bits 63:56 are the memory index
   (0: a plain pointer into memory 0), and the low bits are the offset in that memory. The access primitives
   (`mem::load`, `store`, the atomics, the pair ops) branch once on the index. Fast paths that hold a TLB hit never see
@@ -57,7 +57,8 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
 - **Devices address RAM by (memory, offset)** (ABI 40). The virtio transport and the xHCI split a guest buffer at a
   memory's edge and post each piece with its memory index ([devices.md](devices.md), [usb.md](usb.md)). The
   backends hold one view per memory (web/ram.ts `Ram`, `Segment`). virtio-gpu, which is handed guest PAs, finds the
-  memory with `locate`. The vCPU and device workers get the spill memories; the compile worker reads no guest RAM.
+  memory with `locate`. The vCPU and device workers get the spill memories, and JIT modules import memory 1
+  (`env.ram1`); the compile worker reads no guest RAM.
 - **The page** ([frontend.md](frontend.md) "Settings") offers one RAM value, up to 16 GiB. Past memory 0, a note says
   that the rest goes to NUMA nodes and is slower to reach. 3 GiB isn't offered: it would spill 1 MiB. A stored
   machine's Settings has an advanced section, hidden by default, for the split (`ramSplit`, part of its shape and
@@ -93,49 +94,48 @@ The dev VM, headless Chromium 153, 2026-10-19. The JSON and tools are in `bench/
 
 ### What a spill access costs
 
-Every access to a spill page leaves JIT code for the interpreter, so the cost scales with the accesses, not with the
-pages.
+With the JIT's spill arm, an access to spill memory 1 costs a little more than one to memory 0: node 1 runs Debian's
+workloads at 1.0–1.6× node 0's time. Before it, every spill access left JIT code for the interpreter (2.1–17×), which
+is still what an access to spill memory 2 and up costs.
 
-Debian, `?ram=6144`, 2 vCPUs. Each workload is bound to node 0, then to node 1 (systemd-run's
-`NUMAPolicy=bind`; its input is on a tmpfs bound to the same node). Five rounds, alternating 0,1 and 1,0; ms in the
-guest, median (IQR):
+Debian, `?ram=6144` (memory 0's 3071 MiB and a 3073 MiB node), 2 vCPUs. Each workload is bound to node 0, then to
+node 1 (systemd-run's `NUMAPolicy=bind`; its input is on a tmpfs bound to the same node). 2026-10-24, the dev VM,
+Chromium 153: the arm off and on alternated twice (`base, arm, base, arm`), three rounds each alternating 0,1 and 1,0;
+ms in the guest, median of the six [range] (`bench/boot/results/m8-spill/debian-arm/`):
 
-| Workload | Node 0 | Node 1 | Node 1 / node 0 |
-|---|---|---|---|
-| `dd` 512 MiB from /dev/zero (the kernel's `clear_user`) | 326 (37) | 2446 (88) | 7.5× |
-| `cat` of a 32 MiB tmpfs file | 224 (31) | 483 (36) | 2.2× |
-| `sha256sum`, 32 MiB | 352 (27) | 1488 (177) | 4.2× |
-| `gzip -1`, 32 MiB | 3540 (18) | 67723 (2853) | 19× |
-| `sort`, 16 MiB | 753 (44) | 5725 (262) | 7.6× |
-| perl, a 300k-key hash | 1191 (75) | 13210 (290) | 11× |
+| Workload | Node 0, no arm | Node 1, no arm | Node 0, arm | Node 1, arm | Node 1 / node 0: no arm → arm |
+|---|---|---|---|---|---|
+| `dd` 512 MiB from /dev/zero (the kernel's `clear_user`) | 404 [317–493] | 2490 [2362–2560] | 364 [336–382] | 430 [425–442] | 6.2× → 1.18× |
+| `cat` of a 32 MiB tmpfs file | 234 [164–341] | 482 [402–580] | 196 [176–215] | 208 [198–221] | 2.1× → 1.06× |
+| `sha256sum`, 32 MiB | 318 [276–407] | 1378 [1267–1463] | 318 [290–334] | 322 [314–343] | 4.3× → 1.01× |
+| `gzip -1`, 32 MiB | 3685 [3606–3774] | 63606 [63258–64403] | 3720 [3638–3747] | 6020 [6014–6058] | 17× → 1.62× |
+| `sort`, 16 MiB | 744 [636–897] | 5232 [5132–5427] | 704 [663–758] | 828 [816–921] | 7.0× → 1.18× |
+| perl, a 300k-key hash | 1258 [1153–1351] | 12418 [11954–12637] | 1241 [1174–1255] | 1730 [1691–1775] | 9.9× → 1.39× |
 
-On the desktop guest, a memory tab's sweep of 384 MB (6M loads) took a median of 170 ms (quartiles 146–330) on
-node 0 and 1083 ms (863–1203) on node 1: 6.4×. The dd row suggests roughly 60–250 ns per spill access beyond a
-memory-0 access, depending on whether the kernel clears with `stp` or DC ZVA.
+Node 0's times are the same either way (the arm is in the access's cold path). The 2026-10-19 run without the arm
+(`debian/`, five rounds) had the same shape: 2.2–19×.
 
-**What the user felt was small.** On the desktop, with 1.9 GB of active memory tabs on node 1:
-- The WebGL 2 window (bench/gpu/firefox/webgl.html) kept 20–26 frames a second, against 21 before the fill. The
-  video window (VA-API, decoded by the host) kept 24.
-- The guest ran more steps a second (MIPS 194 → 386), because the node-1 sweeps were working harder.
-- With the WebGL and video windows closed and opened again after the fill (their new memory can only come from
-  node 1), they ran at 18–31 and 24 frames a second.
+On the desktop guest without the arm, a memory tab's sweep of 384 MB (6M loads) took a median of 170 ms (quartiles
+146–330) on node 0 and 1083 ms (863–1203) on node 1: 6.4×. The dd row suggested roughly 60–250 ns per spill access
+beyond a memory-0 access then, depending on whether the kernel clears with `stp` or DC ZVA.
 
-Their hot data and work are mostly elsewhere (node 0, and the host's GPU and decoder). The slowdown lands on what
-reads node-1 memory itself.
+**On the desktop** (`tools/numa-desktop.ts`: 6 GiB, 4 vCPUs, memory tabs of 384 MB each opened until 2 GB of
+Firefox's anonymous memory is on node 1, a WebGL 2 window and a VA-API video window beside them, both closed and
+opened again after the fill so their new memory can only come from node 1):
+- **With the arm** (2026-10-24, `desktop-arm/`): the node-1 tabs' sweeps took a median of 161 ms (quartiles
+  140–178) against the node-0 tabs' 123 ms (111–141), 1.3×; the WebGL window ran 24–28 frames a second through the
+  fill and 29–33 reopened; the video kept 24 throughout, 2.3 minutes reopened.
+- **Without it** (2026-10-19, `desktop/`): the node-1 tabs' sweeps took ~1083 ms, 6.4×; what the user watched still
+  held its rate (WebGL 20–26 frames a second, 18–31 reopened; video 24), because those windows' hot data and work are
+  mostly in node 0 and on the host's GPU and decoder.
 
-Once in each busy-tab run (`desktop/` and `desktop-reclaim/`), the reopened video stopped presenting after ~40 s.
-With the same placement and idle tabs (`desktop-idle-tabs/`: node 0 full, 1.2 GB on node 1), it played on for
-2.5 minutes, and with nothing on node 1 (`desktop-control/`) too. So it isn't the spill path's data. It is open in
-[backlog.md](backlog.md) "Spill memories".
-
-### The JIT's inline second path: not built
-
-A second path in `emit::access` would turn a spill access from an interpreter round trip into a few instructions:
-on a tag that differs only in the memory bits, a `br_table` on the index into the access's body with the memarg
-naming that memory. JIT modules would import the spill memories (multi-memory), and each access would carry a copy of
-its body per spill memory. It is not built because the measurements above show the guest keeps spill pages cold
-until its active set really outgrows memory 0, and even then what the user watched held its rate. The numbers and
-the design are in [backlog.md](backlog.md) "Spill memories", as is the alternative of tiering on the host.
+In each 2026-10-19 busy-tab run (`desktop/` and `desktop-reclaim/`) the reopened video once stopped presenting
+after ~40 s (24 → 0.1 frames a second, the WebGL window beside it on at 31); not with idle tabs on node 1, not without
+the fill, and not in the arm's run. A review of the host's video path (the clip is VP9, decoded in software: one
+picture in, one out) found no mechanism: every failure there drops pictures without making the guest wait, the
+command queue holds calls for at most 1–3 s, and a held queue would have held the WebGL window's fences too. If it
+comes back, the GPU worker's video counters (`render-stats`) tell guest from host: `frames` (the guest's END_FRAMEs)
+stopping means the guest stopped decoding; `frames` growing while `decoded` stalls means ours.
 
 ### The heap floor
 
@@ -153,6 +153,42 @@ its bytes, so the extent of touched pages is the heap's high-water mark.
 A floor under ~768 MiB would leave no margin, and the 256 MiB the backlog once proposed is far too small. What fills
 it is broken down in [jit.md](jit.md) "The core's heap" (2026-10-21): mostly the tables' decoded blocks (~360 MiB on 4
 vCPUs), then the JIT's block map (bounded at ~60 MiB since: unbounded, it ran the desktop guest's heap out).
+
+## The JIT's spill arm
+
+A load or store in JIT code (`emit::access`) checks its TLB entry against memory 0's tag, and its fast path runs on a
+hit. With the MMU on and spill memory, the failure side (deferred code: V8 keeps it off the hot path) first checks
+the same entry for spill memory 1: `tag ^ ((va + len - 1) | 0xfff) == 1 << 3`, the memory index's bit alone, and the
+access's guards again. On a match, the access's body runs again with the host offset from the entry's addend, its
+guest RAM accesses naming memory 1. Everything else (a miss, another spill memory, a failed guard) goes to the helper
+as before.
+- **Multi-memory.** JIT modules of a machine with spill memory import memory 1 as `env.ram1`, with exact limits
+  (`jit::Config::spill`, from `VmConfig.spill`; web/vm.ts's `jitHost` passes it, ABI 52). The bodies write their RAM
+  accesses through `Code::ram`, `ram_atomic` and `ram_simd`, which add the memory index to the memarg while
+  `Code::ram_mem` is set; `Vcpu` fields, the pair locks and the clock stay on memory 0. V8 reaches memory 1 through
+  its guard region, as memory 0 (no bounds check), with its base loaded from the instance.
+- **The body twice.** The arm starts from the registers as they were at the access's `if` and leaves them as the fast
+  path does (a debug assertion checks it), and the masks of what the block reads count the fast path's reads alone.
+  A CASP or exclusive pair takes the same pair lock, which hashes the address's offset, as the interpreter's
+  `Mem::pair_op` does for any memory.
+- **Code.** Without spill memory, a block's code is byte for byte what it was. With it, each load and store carries
+  one more copy of its body in its cold path: Alpine's userspace benchmark on a spill machine (`alpine_user_spill_jit`)
+  compiled the same blocks into 15% more wasm bytes, in the same compile time (bench/boot/REPORT.md "M8: the JIT's
+  spill arm"). The JIT cache's budget counts them, so a spill machine's cache holds ~13% fewer blocks.
+- **Only memory 1** (`jit::INLINE_SPILL`). The guest fills node 0, then node 1 (the zonelist's order at equal
+  distance), so node 2 holds active pages only past 7 GiB of them. Each more memory inline would add another copy to
+  every access.
+
+**Why not tier on the host.** The alternative was to give the guest one flat RAM and move hot pages into memory 0
+behind its back. With the arm, node 1 runs at 1.0–1.6× node 0's time, which is all a tier could win back, and a tier
+costs on every path: a physical-to-host table for `Mem` and every DMA, finding cold memory-0 pages, and a stop of every
+vCPU for each move in parallel SMP.
+
+**Tests.** `tests/jit-diff.test.ts` runs the load and store classes with the MMU on, at EL1, on data in spill memory 1
+(the arm) and 2 (the helper), an interpreter VM against a JIT-check VM, and checks that a warm load on memory 1 makes
+no helper call while one on memory 2 makes one each time. Planted: the arm naming memory 0 (every class touching
+spill data fails), and one access each left on memory 0 (LD1's lane load, STXP's W pair: those classes fail). The
+emitted bytes: `jit::emit::tests::loads_and_stores`.
 
 ## Tests
 
