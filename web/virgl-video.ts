@@ -525,8 +525,8 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
 /**
  * A plane's rows (`w` texels of `bpp` bytes, `h` of them) widened to at least `tw`×`th` texels, the last column and the
  * last row repeated. The planes are the coded size (whole blocks: 864×480 for an 854×480 video) and a picture is its
- * visible part; a guest that shows the coded width (Chromium, mpv) would otherwise show what the rest held, zeros (luma
- * and chroma 0: a green edge). A hardware decoder leaves the blocks' own pixels there.
+ * visible part; what the rest held would be zeros (luma and chroma 0: green) to whoever reads the whole plane. A hardware
+ * decoder leaves the blocks' own pixels there. (Draws sample the picture alone: `VirglRenderer.writePicture`.)
  */
 export function padPlane(data: Uint8Array, w: number, h: number, bpp: number, tw: number, th: number): { data: Uint8Array; w: number; h: number } {
   if (!w || !h || (tw <= w && th <= h)) return { data, w, h };

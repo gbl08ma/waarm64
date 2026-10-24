@@ -434,8 +434,17 @@ On with 3D (`?gpu=novideo` off); the design and its measurements are [plans/vide
   of each END_FRAME (H.264 rebuilt as Annex B with our SPS and PPS by `H264Stream`, `web/video-h264.ts`; VP9 as sent)
   for one `VideoDecoder` per codec (`optimizeForLatency`; recreated at the next key picture after an error), and writes
   each frame's Y and interleaved U/V into the buffer's planes (`VirglRenderer.writePicture`), each plane filled to its
-  texture's size with the picture's last column and row repeated (`padPlane`: the planes are the coded size, whole
-  blocks, 864×480 for an 854×480 video, and Chromium and mpv show its width: unwritten, the padding was a green edge).
+  texture's size with the picture's last column and row repeated (`padPlane`, for whoever reads the plane back).
+- **Draws sample the picture, not the plane** (`Res.picture`): Mesa makes the planes whole 16×16 blocks (864×480 for
+  an 854×480 video, 640×368 for 640×360), and Chromium and mpv import a plane at the picture's size, which on real
+  hardware crops it. virgl's import never reaches the host (Mesa's virgl sends nothing for an ordinary resource; views
+  carry no size), so they sampled the whole plane and showed its padding along the right or bottom edge: zeros (a green
+  stripe), then the repeated edge (a smear). A picture smaller than its plane is also written into a texture of its own
+  size, and draws sampling the plane sample that; an upload into the plane or a draw into it drops it. Firefox shows the
+  same picture either way. Checked with the padding painted a marker colour (`bench/results/local/edge/`): VP9 at
+  854×480 in Chromium (the right edge) and at 640×360 in Chromium and mpv (the bottom) showed it, none with the fix, in
+  Chromium, mpv and Firefox; H.264 at 640×360 showed none either way. The size a player asked for can't tell them apart:
+  Chromium's buffers ask for 864×480, as FFmpeg's do.
 - **Waiting for pictures** is the call queue's (above). The SPS's reorder depth is 0 for a hardware decoder; in
   software (which outputs in display order) the larger of the stream's reference count and the depth learned from the
   POCs (`H264Stream` `'stream'`): FFmpeg drops a picture that comes after one it has shown, and a pending picture of a

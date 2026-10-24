@@ -367,10 +367,17 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   made[0].out(0);
   assert.deepEqual(errors, []);
   const ups = gl.log.filter(([n]) => n === 'texSubImage2D').slice(before);
-  assert.equal(ups.length, 2, 'both planes uploaded');
-  // Each plane whole (its padding the picture's edges, not what the texture held): x, y, width, height.
-  assert.deepEqual(ups.map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 3, 2]]);
+  // Each plane whole (its padding the picture's edges, not what the texture held), then the picture alone into a
+  // texture of its size (what draws sample: players import the plane at the picture's size): x, y, width, height.
+  assert.deepEqual(ups.map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 4, 2], [0, 0, 3, 2], [0, 0, 2, 1]]);
+  assert.deepEqual(gl.log.filter(([n]) => n === 'texStorage2D').slice(-2).map(([, a]) => (a as number[]).slice(3)), [[4, 2], [2, 1]]);
   assert.equal(r.videoStats.decoded, 1);
+  // Anything else written into a plane drops its picture: the plane is sampled again.
+  r.attachBacking(10, [{ off: 2048, len: 24, mem: 0 }]);
+  const deleted = gl.calls.get('deleteTexture') ?? 0;
+  assert.ok(r.transfer(1, 10, 0, { x: 0, y: 0, z: 0, w: 6, h: 4, d: 1 }, 0, 0, 0, true));
+  assert.equal((gl.calls.get('deleteTexture') ?? 0) - deleted, 1, 'the luma picture dropped');
+  assert.deepEqual(errors, []);
 });
 
 /** An AV1 desc (Mesa's `virgl_av1_picture_desc`): a 64x64 frame, one 4-byte tile at 0, the guest's reference map. */

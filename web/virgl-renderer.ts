@@ -45,6 +45,13 @@ type Res = ResourceDesc & {
   msResolved?: Res;
   /** A texture sampled by a draw into it: the copy it is sampled from, made again at each such draw (`feedbackCopies`). */
   feedback?: Res;
+  /**
+   * A video plane whose decoded picture is smaller than it (the plane is whole blocks: 864 wide for an 854-wide video):
+   * the picture alone, what draws sample. A player imports the plane at the picture's size, and virgl's import doesn't
+   * reach the host, so sampling the whole plane showed its padding at the edge. Dropped when anything else writes the
+   * plane (`writePicture`).
+   */
+  picture?: Res;
   /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
   texels?: Map<number, Uint8Array>;
   /** A compressed format (nothing reads it back): its uploaded blocks by level, every layer, for a snapshot. */
@@ -436,6 +443,7 @@ export class VirglRenderer {
     if (r.ibuf) gl.deleteBuffer(r.ibuf);
     if (r.msResolved?.tex) gl.deleteTexture(r.msResolved.tex);
     if (r.feedback?.tex) gl.deleteTexture(r.feedback.tex);
+    this.dropPicture(r);
     if (r.tex) gl.deleteTexture(r.tex);
     if (r.rb) gl.deleteRenderbuffer(r.rb);
     this.fbCache.clear();
@@ -539,6 +547,7 @@ export class VirglRenderer {
    */
   private upload(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
     const gl = this.gl;
+    this.dropPicture(r);
     this.stats.uploads++;
     this.stats.uploadBytes += data.length;
     const l = this.life.get(r.id);
@@ -663,6 +672,7 @@ export class VirglRenderer {
   private attachTo(target: number, point: number, r: Res | undefined, level: number, layer: number) {
     const gl = this.gl;
     if (!r) { gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, null); return; }
+    if (target === E.DRAW_FRAMEBUFFER) this.dropPicture(r); // drawn into: the plane is what's current
     if (r.rb) gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, r.rb);
     else if (r.glTarget === E.TEXTURE_2D) gl.framebufferTexture2D(target, point, E.TEXTURE_2D, r.tex!, level);
     else if (r.glTarget === E.TEXTURE_CUBE_MAP) gl.framebufferTexture2D(target, point, E.TEXTURE_CUBE_MAP_POSITIVE_X + layer, r.tex!, level);
@@ -896,12 +906,23 @@ export class VirglRenderer {
    */
   private writePicture(planes: number[], pic: DecodedPicture) {
     const cw = (pic.width + 1) >> 1, ch = (pic.height + 1) >> 1;
-    // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`).
+    // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`), and a picture smaller than
+    // its plane also kept alone, for draws to sample (`Res.picture`).
     const put = (res: number, data: Uint8Array, w: number, h: number, bpp: number) => {
       const r = this.resources.get(res);
       if (!r) return;
+      // The last picture's texture, kept from the plane's upload (which drops it) for this picture if it's its size.
+      const prev = r.picture;
+      r.picture = undefined;
       const p = padPlane(data, w, h, bpp, r.width, r.height);
       this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(p.w, r.width), h: Math.min(p.h, r.height), d: 1 }, p.data, p.w * bpp, 0);
+      const t = r.tex && r.fmt && r.target === PIPE_TEXTURE_2D && r.lastLevel === 0 && (w < r.width || h < r.height)
+        ? (prev?.width === w && prev.height === h ? prev : this.pictureTexture(r, w, h)) : undefined;
+      if (prev && prev !== t) this.gl.deleteTexture(prev.tex!);
+      if (t) {
+        this.upload(t, 0, { x: 0, y: 0, z: 0, w, h, d: 1 }, p.data, p.w * bpp, 0);
+        r.picture = t;
+      }
     };
     put(planes[0], pic.y, pic.width, pic.height, 1);
     if (planes.length === 2) put(planes[1], pic.uv, cw, ch, 2);
@@ -914,6 +935,22 @@ export class VirglRenderer {
       put(planes[1], u, cw, ch, 1);
       put(planes[2], v, cw, ch, 1);
     }
+  }
+
+  /** A picture texture for the plane `r` (`Res.picture`), `w`×`h`. */
+  private pictureTexture(r: Res, w: number, h: number): Res {
+    const gl = this.gl, tex = gl.createTexture()!;
+    gl.bindTexture(E.TEXTURE_2D, tex);
+    gl.texStorage2D(E.TEXTURE_2D, 1, r.fmt!.internal, w, h);
+    gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAX_LEVEL, 0);
+    return { ...r, width: w, height: h, tex, msResolved: undefined, feedback: undefined, picture: undefined, backing: null, refs: new Set() };
+  }
+
+  /** Drops `r`'s picture texture (`Res.picture`): the plane itself is what's sampled again. */
+  private dropPicture(r: Res) {
+    if (!r.picture) return;
+    this.gl.deleteTexture(r.picture.tex!);
+    r.picture = undefined;
   }
 
   /** Pictures sent to a decoder and not yet written (web/virgl-video.ts): the GPU worker holds what follows them. */
@@ -1846,7 +1883,7 @@ void main() {
         const unit = samplerUnit(st, n, VS_UNIT_BASE);
         const v = s.views[st][n];
         const r0 = v && this.resources.get(v.res);
-        const r = (r0 && copies?.get(r0)) ?? r0?.msResolved ?? r0;
+        const r = (r0 && copies?.get(r0)) ?? r0?.msResolved ?? r0?.picture ?? r0;
         gl.activeTexture(E.TEXTURE0 + unit);
         if (!r?.tex) {
           // Nothing to sample: no texture on any target (another context's would be sampled), no sampler.
