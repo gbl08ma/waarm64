@@ -528,6 +528,30 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   assert.ok(!q.stalled);
 });
 
+test('CallQueue: a picture that never comes out while later ones do is given up after oldMs (it held every fence)', () => {
+  const pending = new Map<number, number>(), attached = new Map<number, Set<number>>([[1, new Set([31])], [2, new Set([31])]]);
+  const planes = new Set<number>();
+  const ran: string[] = [];
+  const q = new CallQueue<WorkerCall>({
+    run: (m) => void ran.push(name(m)),
+    pending: pendingOf(planes, attached),
+    drain: () => {}, giveUp: () => {},
+    giveUpOld: (before) => { for (const [ts, at] of pending) if (at < before) pending.delete(ts); if (!pending.size) planes.clear(); },
+  });
+  // Picture 0 never comes out; the compositor (2), sharing its plane, waits, and so does a fence after it.
+  pending.set(0, 0);
+  planes.add(31);
+  q.push(submit(2, 8), 0);
+  q.push({ t: 'fence', id: 1, at: 0 }, 0);
+  // Later pictures come out every 400 ms (each a progress: the idle give-up never comes).
+  for (let t = 400; t < 3000; t += 400) { q.progress(t); q.tick(t + 20); }
+  assert.deepEqual(ran, [], 'held while picture 0 is younger than 3 s');
+  q.progress(3000);
+  q.tick(3020);
+  assert.deepEqual(ran, ['2:8', 'fence1']);
+  assert.equal(pending.size, 0);
+});
+
 test('CallQueue: a context sharing a resource with a waiting one waits behind it (a compositor sampling a client)', () => {
   // The decoder (1) and the browser's compositor (2) share a picture's plane (31); the compositor draws into its window
   // buffer (50), which the desktop's compositor (6) samples. Context 7 shares nothing.

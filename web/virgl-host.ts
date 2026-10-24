@@ -1,4 +1,4 @@
-// Between the virtio-gpu device (web/gpu.ts, in the device worker) and where WebGL2 runs (docs/devices.md "virgl"):
+// Between the virtio-gpu device (web/gpu.ts, in the device worker) and where WebGL2 runs (docs/devices.md "virgl", docs/graphics.md "The GPU worker"):
 // the device checks the guest's commands and keeps its own tables, and hands the 3D work and, on a 3D machine, the
 // screen to a host. The host is the GPU worker (web/gpu-worker.ts) over a MessagePort — the page's top-level worker
 // that owns the screen's canvas — or, in tests, a renderer in the same thread. Calls are ordered and answer nothing;
@@ -126,10 +126,11 @@ const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58
  * what ends a resource's life wait for every earlier waiting call). That includes another context's call that could
  * see what a waiting one draws, a submit of a context sharing an attached resource with it or a transfer of one of
  * its resources: the guest has no sync between contexts beyond the host running their commands in order (a
- * compositor samples a client's buffer right after the client's draws into it were sent; graphics.md §24). If nothing comes out for `nudgeMs` while calls
+ * compositor samples a client's buffer right after the client's draws into it were sent; docs/graphics.md "The call queue"). If nothing comes out for `nudgeMs` while calls
  * wait, frames held for the next one are sent (`nudge`: AV1's, web/video-av1.ts); after `drainMs`, the decoders that
  * hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up (`giveUp`; the guest sees
- * the buffers' old planes rather than hanging).
+ * the buffers' old planes rather than hanging); and a picture pending for `oldMs` is given up whatever comes out
+ * (`giveUpOld`).
  */
 export class CallQueue<M extends WorkerCall> {
   private q: M[] = [];
@@ -141,6 +142,11 @@ export class CallQueue<M extends WorkerCall> {
      */
     pending: { ctx(id: number): boolean; res(id: number): boolean; shared(a: number, b: number): boolean; holds(ctx: number, res: number): boolean };
     nudge?(): void; drain(): void; giveUp(): void; nudgeMs?: number; drainMs?: number; giveUpMs?: number;
+    /**
+     * Gives up the pictures pending since before a time, called while calls wait with `now - oldMs`: one a decoder
+     * never outputs while later ones come out (so `giveUp` never comes) would hold them as long as decoding goes on.
+     */
+    giveUpOld?(before: number): void; oldMs?: number;
   };
   /** Since when nothing has come out while calls wait (undefined: none wait). */
   private since?: number;
@@ -196,6 +202,7 @@ export class CallQueue<M extends WorkerCall> {
       this.o.drain();
     }
     if (idle >= (this.o.giveUpMs ?? 1000)) this.o.giveUp();
+    this.o.giveUpOld?.(now - (this.o.oldMs ?? 3000));
     this.pump(now);
   }
 

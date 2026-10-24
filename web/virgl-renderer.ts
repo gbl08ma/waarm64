@@ -1,4 +1,4 @@
-// The virgl renderer on WebGL2 (docs/plans/graphics.md §1, §20; docs/devices.md "virgl"): Mesa's virgl command
+// The virgl renderer on WebGL2 (docs/plans/graphics.md §1; docs/graphics.md "The renderer"): Mesa's virgl command
 // stream (virglrenderer's virgl_protocol.h) decoded and run on one WebGL2 context. The decoder and the state model
 // follow virglrenderer's vrend_decode.c and vrend_renderer.c (MIT, THIRD_PARTY.md): contexts with sub-contexts that
 // own the objects (shaders, blend, depth-stencil-alpha and rasterizer states, vertex elements, sampler views and
@@ -30,7 +30,7 @@ export type ResourceDesc = {
 export type Box = { x: number; y: number; z: number; w: number; h: number; d: number };
 
 /** What a renderer does with the device's commands (the device worker calls these through `VirglHost`). */
-export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; compileMs: number };
+export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; compileMs: number; /** Textures copied because a draw sampled what it drew into (`feedbackCopies`). */ feedbackCopies: number };
 
 type Res = ResourceDesc & {
   fmt?: Format;
@@ -43,6 +43,8 @@ type Res = ResourceDesc & {
   tex?: WebGLTexture; glTarget?: number; rb?: WebGLRenderbuffer;
   /** A multisampled resource sampled: its resolved texture, made again at each draw that samples it. */
   msResolved?: Res;
+  /** A texture sampled by a draw into it: the copy it is sampled from, made again at each such draw (`feedbackCopies`). */
+  feedback?: Res;
   /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
   texels?: Map<number, Uint8Array>;
   /** A compressed format (nothing reads it back): its uploaded blocks by level, every layer, for a snapshot. */
@@ -69,9 +71,14 @@ type Query = {
   type: number; index: number; res: number; offset: number; pending?: boolean; result: number; /** Begun and not ended. */ active?: boolean;
   /** An occlusion query's spans: the WebGL queries that counted its sub-context's draws while it was active (`countQueries`). */
   spans?: Span[];
+  /** Whether a span already read passed (`foldSpans`: a query left active keeps few spans). */
+  passed?: boolean;
 };
-/** A WebGL query counting one sub-context's draws for the occlusion queries active in it then (any of them may share it). */
-type Span = { q: WebGLQuery; done: boolean; passed: boolean };
+/**
+ * A WebGL query counting one sub-context's draws for the occlusion queries active in it then (`users` of them share
+ * it); `lost`: WebGL will never answer it.
+ */
+type Span = { q: WebGLQuery; done: boolean; passed: boolean; users: number; lost?: boolean };
 /** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
 type SoTarget = { res: number; offset: number; size: number; filled: number };
 type SoOutput = NonNullable<Shader['so']>['outputs'][number];
@@ -197,8 +204,10 @@ export class VirglRenderer {
   readonly resources = new Map<number, Res>();
   private contexts = new Map<number, Ctx>();
   private programs = new Map<string, Program | null>();
+  /** The programs made with each shader (by serial): deleted with it (`forgetShader`), so the cache doesn't grow for good. */
+  private programsOf = new Map<number, string[]>();
   private serial = 0;
-  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0 };
+  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0, feedbackCopies: 0 };
   /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
   readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
   /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
@@ -258,7 +267,8 @@ export class VirglRenderer {
   /** Logged: each kind of error (its first 40 characters) 5 times, 200 in all (one noisy kind hid the others). */
   private error(m: string) {
     this.stats.errors++;
-    const kind = m.slice(0, 40), n = this.errorKinds.get(kind) ?? 0;
+    // A kind is the message without its numbers (most begin with a context's and a resource's), so each is said a few times.
+    const kind = m.replace(/\d+/g, '#').slice(0, 60), n = this.errorKinds.get(kind) ?? 0;
     this.errorKinds.set(kind, n + 1);
     if (n < 5 && this.errorsLogged++ < 200) this.log(m);
   }
@@ -313,15 +323,30 @@ export class VirglRenderer {
 
   private destroyObject(o: Obj, s: Sub) {
     if (o.kind === 'sampler' && o.v.sampler) this.gl.deleteSampler(o.v.sampler);
+    if (o.kind === 'shader') this.forgetShader(o.v.serial);
     if (o.kind === 'query') {
       this.counting.delete(o.v);
       if (s.occlusion.delete(o.v) && this.counter?.sub === s) this.pauseQueries();
-      o.v.spans = undefined;
+      this.dropSpans(o.v);
       // A deleted query never has its result: pending, it would hold every later fence (FenceGate) for good, and the
       // guest's control queue filled behind them (dEQP-GLES3 hung at a context's end).
       o.v.pending = false;
       this.queries = this.queries.filter((q) => q !== o.v);
     }
+  }
+
+  /** A shader object gone: the programs made with it are deleted (a new object of the same text has a new serial). */
+  private forgetShader(serial: number) {
+    for (const id of this.programsOf.get(serial) ?? []) {
+      const p = this.programs.get(id);
+      if (p) this.gl.deleteProgram(p.prog);
+      this.programs.delete(id);
+      // The other shader's list too (a long-lived vertex shader meets many fragment shaders).
+      const [a, b] = id.split('/', 2).map(Number);
+      const other = this.programsOf.get(a === serial ? b : a);
+      if (other && a !== b) other.splice(other.indexOf(id), 1);
+    }
+    this.programsOf.delete(serial);
   }
 
   // --- resources -------------------------------------------------------------------------------------------------
@@ -410,6 +435,7 @@ export class VirglRenderer {
     if (r.buf) gl.deleteBuffer(r.buf);
     if (r.ibuf) gl.deleteBuffer(r.ibuf);
     if (r.msResolved?.tex) gl.deleteTexture(r.msResolved.tex);
+    if (r.feedback?.tex) gl.deleteTexture(r.feedback.tex);
     if (r.tex) gl.deleteTexture(r.tex);
     if (r.rb) gl.deleteRenderbuffer(r.rb);
     this.fbCache.clear();
@@ -691,7 +717,11 @@ export class VirglRenderer {
     for (let at = 0; at < words.length;) {
       const h = words[at];
       const len = h >>> 16;
-      if (at + 1 + len > words.length) { this.error(`ctx ${ctxId}: a command runs past the buffer`); return false; }
+      if (at + 1 + len > words.length) {
+        this.error(`ctx ${ctxId}: a command runs past the buffer`);
+        this.pauseQueries();
+        return false;
+      }
       const p = words.subarray(at + 1, at + 1 + len);
       this.stats.commands++;
       try {
@@ -1048,6 +1078,8 @@ export class VirglRenderer {
     let so: Shader['so'];
     if (nso) so = { strides: [p[5], p[6], p[7], p[8]], outputs: Array.from({ length: nso }, (_, k) => { const t = p[9 + 2 * k]; return { reg: t & 0xff, start: (t >>> 8) & 3, comps: (t >>> 10) & 7, buffer: (t >>> 13) & 7, offset: (t >>> 16) & 0xffff }; }) };
     const shader: Shader = { serial: ++this.serial, type, text: new TextDecoder().decode(chunk), expected: offlen, so };
+    const old = s.objects.get(h);
+    if (old) this.destroyObject(old, s);
     s.objects.set(h, { kind: 'shader', v: shader });
     if (chunk.length < offlen) s.longShader.set(type, { handle: h, shader });
     else this.finishShader(shader);
@@ -1621,6 +1653,11 @@ void main() {
     const id = `${vs.serial}/${fs.serial}/${JSON.stringify(key)}`;
     const cached = this.programs.get(id);
     if (cached !== undefined) return cached;
+    for (const serial of [vs.serial, fs.serial]) {
+      const ids = this.programsOf.get(serial);
+      if (ids) ids.push(id);
+      else this.programsOf.set(serial, [id]);
+    }
     let layout: ProgramLayout;
     try {
       layout = generate(vs.tgsi!, fs.tgsi!, key);
@@ -1652,6 +1689,90 @@ void main() {
     return p;
   }
 
+  /**
+   * A texture a draw samples while it draws into it (a color or depth target): WebGL refuses the draw ("feedback loop
+   * formed between Framebuffer and active Texture") when the attached level is among the levels sampled (the view's
+   * range, or its first level alone without a mip filter), whatever the layer of an array or 3D texture, and a depth
+   * texture even with depth writes off; GL draws it (different levels or layers are well defined, the same texels
+   * undefined: the texels as they were before the draw are what drivers mostly give). Those textures are copied, the
+   * levels sampled with every layer, and the draw samples the copies. Returns them by resource, or undefined.
+   */
+  private feedbackCopies(c: Ctx, s: Sub): Map<Res, Res> | undefined {
+    const targets = new Map<Res, number[]>();
+    for (const sf of [...s.fb.cbufs, s.fb.zs]) {
+      const r = sf && this.lookup(c, sf.res);
+      if (r?.tex) targets.set(r, [...(targets.get(r) ?? []), sf!.level]);
+    }
+    if (!targets.size) return undefined;
+    // The levels sampled of each target texture, over every view of it that takes in a level drawn into.
+    const sampled = new Map<Res, [number, number]>();
+    for (const st of ['vs', 'fs'] as const) s.views[st].forEach((v, n) => {
+      const r = v && this.resources.get(v.res);
+      const levels = r && targets.get(r);
+      if (!levels) return;
+      const first = v!.firstLevel;
+      const last = s.samplers[st][n]?.minMip === 2 ? first : Math.max(first, Math.min(v!.lastLevel, r!.lastLevel));
+      if (!levels.some((l) => l >= first && l <= last)) return;
+      const had = sampled.get(r!);
+      sampled.set(r!, had ? [Math.min(had[0], first), Math.max(had[1], last)] : [first, last]);
+    });
+    if (!sampled.size) return undefined;
+    const copies = new Map<Res, Res>();
+    for (const [r, [first, last]] of sampled) {
+      const t = this.copyLevels(r, first, last);
+      if (t) copies.set(r, t);
+    }
+    return copies;
+  }
+
+  /** `src`'s levels `first`..`last`, every layer, copied into its feedback texture (same target, format and size). */
+  private copyLevels(src: Res, first: number, last: number): Res | undefined {
+    const gl = this.gl, f = src.fmt;
+    if (!f || !src.tex) return undefined;
+    this.pauseQueries(); // a copy counts no samples
+    let t = src.feedback;
+    if (!t) {
+      const tex = gl.createTexture()!;
+      gl.bindTexture(src.glTarget!, tex);
+      const levels = src.lastLevel + 1;
+      if (src.glTarget === E.TEXTURE_3D || src.glTarget === E.TEXTURE_2D_ARRAY) {
+        gl.texStorage3D(src.glTarget, levels, f.internal, src.width, src.target === PIPE_TEXTURE_1D_ARRAY ? 1 : src.height, src.glTarget === E.TEXTURE_3D ? src.depth : src.arraySize);
+      } else gl.texStorage2D(src.glTarget!, levels, f.internal, src.width, src.target === PIPE_TEXTURE_1D ? 1 : src.height);
+      gl.texParameteri(src.glTarget!, E.TEXTURE_MAX_LEVEL, src.lastLevel);
+      t = { ...src, msResolved: undefined, feedback: undefined, tex, backing: null, refs: new Set() };
+      src.feedback = t;
+    }
+    const bits = f.kind === 'depth' ? E.DEPTH_BUFFER_BIT : f.kind === 'depthstencil' ? E.DEPTH_BUFFER_BIT | E.STENCIL_BUFFER_BIT : E.COLOR_BUFFER_BIT;
+    const color = bits === E.COLOR_BUFFER_BIT;
+    const point = color ? E.COLOR_ATTACHMENT0 : f.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+    gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+    for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT]) this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
+    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
+    gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
+    gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    gl.disable(E.SCISSOR_TEST);
+    gl.colorMask(true, true, true, true);
+    gl.depthMask(true);
+    gl.stencilMask(0xff);
+    for (let level = first; level <= last; level++) {
+      const { w, h } = this.levelSize(src, level);
+      const layers = src.glTarget === E.TEXTURE_CUBE_MAP ? 6 : src.glTarget === E.TEXTURE_3D ? Math.max(1, src.depth >> level) : src.glTarget === E.TEXTURE_2D_ARRAY ? src.arraySize : 1;
+      for (let z = 0; z < layers; z++) {
+        this.attachTo(E.READ_FRAMEBUFFER, point, src, level, z);
+        this.attachTo(E.DRAW_FRAMEBUFFER, point, t, level, z);
+        gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, bits, E.NEAREST);
+      }
+    }
+    this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
+    gl.readBuffer(E.COLOR_ATTACHMENT0); // the read framebuffer's own state: the other reads expect it
+    this.fbCache.clear();
+    this.stats.feedbackCopies++;
+    return t;
+  }
+
   private draw(c: Ctx, p: Uint32Array) {
     if (p.length !== 12 && p.length !== 14 && p.length !== 20) throw new Error('bad DRAW_VBO');
     if (p.length === 20 && p[14]) return this.error('indirect draws aren\'t supported');
@@ -1668,6 +1789,8 @@ void main() {
       const r = v && this.resources.get(v.res);
       if (r?.rb && r.samples > 1 && r.fmt) this.resolve(r, r.fmt.kind === 'depth' || r.fmt.kind === 'depthstencil' ? E.DEPTH_BUFFER_BIT : E.COLOR_BUFFER_BIT, true);
     }
+    // Textures the draw also draws into are sampled from copies (it rebinds the framebuffers too).
+    const copies = this.feedbackCopies(c, s);
     let fb = this.bindFramebuffer(c, s);
     // Nothing to draw on, only captures: a framebuffer of its own (WebGL2 draws on a complete one), rasterizer off.
     const captureOnly = !fb && !!so;
@@ -1723,9 +1846,14 @@ void main() {
         const unit = samplerUnit(st, n, VS_UNIT_BASE);
         const v = s.views[st][n];
         const r0 = v && this.resources.get(v.res);
-        const r = r0?.msResolved ?? r0;
+        const r = (r0 && copies?.get(r0)) ?? r0?.msResolved ?? r0;
         gl.activeTexture(E.TEXTURE0 + unit);
-        if (!r?.tex) { gl.bindTexture(E.TEXTURE_2D, null); continue; }
+        if (!r?.tex) {
+          // Nothing to sample: no texture on any target (another context's would be sampled), no sampler.
+          for (const t of [E.TEXTURE_2D, E.TEXTURE_CUBE_MAP, E.TEXTURE_3D, E.TEXTURE_2D_ARRAY]) gl.bindTexture(t, null);
+          gl.bindSampler(unit, null);
+          continue;
+        }
         gl.bindTexture(r.glTarget!, r.tex);
         gl.texParameteri(r.glTarget!, E.TEXTURE_BASE_LEVEL, v!.firstLevel);
         gl.texParameteri(r.glTarget!, E.TEXTURE_MAX_LEVEL, Math.max(v!.firstLevel, Math.min(v!.lastLevel, r.lastLevel)));
@@ -1738,9 +1866,12 @@ void main() {
         const u = s.ubos[st].get(k);
         const r = u && this.resources.get(u.res);
         const need = prog.layout.ubos[st].get(k)! * 16;
-        if (!r?.buf) continue;
-        if (u!.offset + need <= r.width) gl.bindBufferRange(E.UNIFORM_BUFFER, uboBinding(st, k), r.buf, u!.offset, need);
-        else this.error(`uniform buffer ${k} is shorter than the shader's block`);
+        // Without a buffer (or a long enough one) nothing is bound: another context's would be read.
+        if (r?.buf && u!.offset + need <= r.width) gl.bindBufferRange(E.UNIFORM_BUFFER, uboBinding(st, k), r.buf, u!.offset, need);
+        else {
+          gl.bindBufferBase(E.UNIFORM_BUFFER, uboBinding(st, k), null);
+          if (r?.buf) this.error(`uniform buffer ${k} is shorter than the shader's block`);
+        }
       }
     }
     // Rasterizer, viewport, scissor.
@@ -2183,7 +2314,9 @@ void main() {
         q.pending = false;
         this.queries = this.queries.filter((x) => x !== q);
       }
+      this.dropSpans(q);
       q.spans = [];
+      q.passed = false;
       c.sub.occlusion.add(q);
     }
     // PRIMITIVES_GENERATED and PRIMITIVES_EMITTED: the draws count them (they know their primitives and what they captured).
@@ -2201,11 +2334,15 @@ void main() {
     this.counting.delete(q);
     if (c.sub.occlusion.delete(q)) {
       if (this.counter?.sub === c.sub) this.pauseQueries();
-      // Spans have their results after the task that ended them (`pollQueries`); without a draw, no sample passed.
+      // Spans have their results after the task that ended them (`pollQueries`); without one (no draw, or every
+      // span already read: `passed`), the query is done.
       if (q.spans?.length) {
         q.pending = true;
         this.queries.push(q);
-      } else q.result = 0;
+      } else {
+        q.result = q.passed ? 1 : 0;
+        q.spans = undefined;
+      }
     }
     this.queryState(c, q, q.pending ? 0 : 1);
   }
@@ -2219,10 +2356,57 @@ void main() {
     if (this.counter?.sub === s) return;
     this.pauseQueries();
     if (!s.occlusion.size) return;
-    const span: Span = { q: this.spareQueries.pop() ?? this.gl.createQuery()!, done: false, passed: false };
+    // The spans read so far folded in; queries that already passed need no more.
+    const counted = [...s.occlusion].filter((q) => (this.foldSpans(q), !q.passed));
+    if (!counted.length) return;
+    const span: Span = { q: this.spareQueries.pop() ?? this.gl.createQuery()!, done: false, passed: false, users: counted.length };
     this.gl.beginQuery(E.ANY_SAMPLES_PASSED, span.q);
-    for (const q of s.occlusion) q.spans!.push(span);
+    for (const q of counted) q.spans!.push(span);
     this.counter = { span, sub: s };
+  }
+
+  /**
+   * Reads a span's result if WebGL has it; whether it's done. A span WebGL answers null for (a lost context, a query
+   * it refused) never will: it counts as passed, said once, since a query pending for good would hold every later
+   * fence (`FenceGate`) and the guest's control queue would fill.
+   */
+  private readSpan(span: Span) {
+    if (span.done) return true;
+    if (this.counter?.span === span) return false;
+    const gl = this.gl;
+    const available = gl.getQueryParameter(span.q, E.QUERY_RESULT_AVAILABLE) as boolean | null;
+    if (available === false) return false;
+    span.done = true;
+    if (available === null) {
+      span.passed = span.lost = true;
+      if (!this.lostQueries++) this.error('an occlusion query has no result (taken as samples passed)');
+    } else span.passed = !!gl.getQueryParameter(span.q, E.QUERY_RESULT);
+    return true;
+  }
+
+  /** Folds a query's spans that have their results into `passed`, and lets them go. */
+  private foldSpans(q: Query) {
+    if (!q.spans?.length) return;
+    q.spans = q.spans.filter((span) => {
+      if (!this.readSpan(span)) return true;
+      q.passed ||= span.passed;
+      this.releaseSpan(span);
+      return false;
+    });
+  }
+
+  /** Lets go of a query's spans unread (begun again, destroyed). */
+  private dropSpans(q: Query) {
+    if (this.counter && q.spans?.includes(this.counter.span)) this.pauseQueries();
+    for (const span of q.spans ?? []) this.releaseSpan(span);
+    q.spans = undefined;
+  }
+
+  /** One query fewer uses `span`: the last one gives its WebGL query back (read) or deletes it. */
+  private releaseSpan(span: Span) {
+    if (--span.users) return;
+    if (span.done && !span.lost) this.spareQueries.push(span.q);
+    else this.gl.deleteQuery(span.q);
   }
 
   /** Ends the span counting draws, if one is. */
@@ -2256,28 +2440,12 @@ void main() {
     return () => waiting.every((q) => !q.pending);
   }
 
-  /**
-   * Polls pending queries (the GPU worker calls it between tasks: WebGL results arrive after the task ends). A span
-   * whose result can never come (WebGL answers null: a lost context, a query it refused) counts as samples passed: a
-   * query pending for good would hold every later fence (`FenceGate`), and the guest's control queue would fill.
-   */
+  /** Polls pending queries (the GPU worker calls it between tasks: WebGL results arrive after the task ends). */
   pollQueries() {
-    const gl = this.gl;
     this.queries = this.queries.filter((q) => {
-      for (const span of q.spans ?? []) {
-        if (span.done) continue;
-        const available = gl.getQueryParameter(span.q, E.QUERY_RESULT_AVAILABLE) as boolean | null;
-        if (available === false) return true;
-        span.done = true;
-        if (available === null) {
-          span.passed = true;
-          if (!this.lostQueries++) this.error('an occlusion query has no result (taken as samples passed)');
-          continue;
-        }
-        span.passed = !!gl.getQueryParameter(span.q, E.QUERY_RESULT);
-        this.spareQueries.push(span.q);
-      }
-      q.result = q.spans?.some((span) => span.passed) ? 1 : 0;
+      this.foldSpans(q);
+      if (q.spans?.length) return true;
+      q.result = q.passed ? 1 : 0;
       q.spans = undefined;
       q.pending = false;
       const r = this.resources.get(q.res);
@@ -2317,7 +2485,7 @@ void main() {
   }
 
   /**
-   * What the guest made, for a snapshot (docs/plans/graphics.md §22): every resource (its description, backing, and
+   * What the guest made, for a snapshot (docs/graphics.md "Snapshots with 3D in use"): every resource (its description, backing, and
    * contents read back level by level) and every context (its sub-contexts' objects and bound state, as data). The
    * GL objects are made again from it by `load` in a fresh renderer. Call it with the calls before it run and the
    * queries settled (the GPU worker's `save`); `snapshotRefusal` first.

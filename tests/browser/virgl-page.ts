@@ -574,3 +574,62 @@ export async function overlappingQueries() {
   const state = (o: number) => ({ state: dv.getUint32(o, true), result: Number(dv.getBigUint64(o + 8, true)) });
   return { answered, contexts: [state(0), state(16)], subs: [state(32), state(48)], log, glError: gl.getError() };
 }
+
+/**
+ * Draws that sample what they draw into (WebGL refuses them as feedback loops; the renderer samples copies): a 2D
+ * texture's level 0 drawn while sampled through a red↔blue swizzle (the texels as they were: red becomes blue), and
+ * an array's layer 0 drawn while its layer 1 is sampled. Returns each target's centre texel after the draw.
+ */
+export function feedbackDraws() {
+  const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
+  const log: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => log.push(m) });
+  r.createContext(1);
+  const f = (v: number) => new Uint32Array(new Float32Array([v]).buffer)[0];
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const res = (d: Partial<ResourceDesc> & { id: number }) => { r.createResource({ target: 2, format: 67, bind: 0xa, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0, ...d }); r.attach(1, d.id); };
+  res({ id: 1, target: 0, format: 64, bind: 0x10, width: 48, height: 1 });
+  res({ id: 2, lastLevel: 1 }); // 2D, two levels
+  res({ id: 3, target: 7, arraySize: 2 }); // an array of two layers
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const shader = (h: number, type: number, src: string) => { const [len, ...t] = text(src); cmd(1, 4, h, type, len, 0, 0, ...t); };
+  cmd(9, 0, 1, 0, 0, 0, 0, 0, 0, 0, 48, 1, 1, ...[-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1].map(f));
+  shader(10, 0, 'VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  shader(11, 1, 'FRAG\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], 2D, FLOAT\nIMM[0] FLT32 {0.5, 0.5, 0.0, 0.0}\n  0: TEX OUT[0], IMM[0], SAMP[0], 2D\n  1: END\n');
+  shader(12, 1, 'FRAG\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], 2D_ARRAY, FLOAT\nIMM[0] FLT32 {0.5, 0.5, 1.0, 0.0}\n  0: TEX OUT[0], IMM[0], SAMP[0], 2D_ARRAY\n  1: END\n');
+  cmd(31, 0, 10, 0);
+  cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, f(1), 0, 0, f(1), 0, 0, 0); cmd(2, 2, 21);
+  cmd(6, 0, 16, 0, 1);
+  cmd(4, 0, 0, f(2), f(2), f(1), f(2), f(2), f(0));
+  cmd(1, 7, 30, 0, f(0), f(0), f(1000), 0, 0, 0, 0); cmd(18, 0, 1, 0, 30); // nearest, mipmapped (nearest)
+  const clear = (surface: number, rgba: number[]) => { cmd(5, 0, 1, 0, surface); cmd(7, 0, 4, ...rgba.map(f), 0, 0, 0); };
+  const BGRA = 2 | 1 << 3 | 0 << 6 | 3 << 9, RGBA = 0 | 1 << 3 | 2 << 6 | 3 << 9;
+  // The 2D texture: level 0 red, level 1 green; drawn into level 0, sampling levels 0–1 (level 0 at this LOD) as BGRA.
+  cmd(1, 8, 40, 2, 67, 0, 0); cmd(1, 8, 41, 2, 67, 1, 0);
+  clear(40, [1, 0, 0, 1]); clear(41, [0, 1, 0, 1]);
+  cmd(1, 6, 42, 2, 67 | 2 << 24, 0, 0 | 1 << 8, BGRA); cmd(10, 0, 1, 0, 42);
+  cmd(31, 0, 11, 1); cmd(5, 0, 1, 0, 40);
+  cmd(8, 0, 0, 3, 4, 0, 1, 0, 0, 0, 0, 0, 2, 0);
+  // The array: layer 0 red, layer 1 green; drawn into layer 0, sampling layer 1.
+  cmd(1, 8, 50, 3, 67, 0, 0); cmd(1, 8, 51, 3, 67, 0, 1 | 1 << 16);
+  clear(50, [1, 0, 0, 1]); clear(51, [0, 1, 0, 1]);
+  cmd(1, 6, 52, 3, 67 | 7 << 24, 0 | 1 << 16, 0, RGBA); cmd(10, 0, 1, 0, 52);
+  cmd(31, 0, 12, 1); cmd(5, 0, 1, 0, 50);
+  cmd(8, 0, 0, 3, 4, 0, 1, 0, 0, 0, 0, 0, 2, 0);
+  r.submit(1, new Uint32Array(words));
+  const glError = gl.getError();
+  // Each target's centre texel (level 1 is 2×2), read from its texture.
+  const tex = (id: number) => (r as unknown as { resources: Map<number, { tex: WebGLTexture }> }).resources.get(id)!.tex;
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
+  const texel = (attach: () => void, at = 2) => { attach(); const px = new Uint8Array(4); gl.readPixels(at, at, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return [...px]; };
+  return {
+    level0: texel(() => gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex(2), 0)),
+    level1: texel(() => gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex(2), 1), 1),
+    layer0: texel(() => gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, tex(3), 0, 0)),
+    layer1: texel(() => gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, tex(3), 0, 1)),
+    copies: r.stats.feedbackCopies, glError, log,
+  };
+}

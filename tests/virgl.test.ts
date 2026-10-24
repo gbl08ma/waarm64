@@ -631,6 +631,9 @@ test('virgl renderer: an occlusion query without a draw has its result at once; 
 test('virgl renderer: occlusion queries count their own sub-context\'s draws: WebGL\'s one query paused when another draws, or a blit', () => {
   const gl = mockGl();
   gl.keepLog = true;
+  // No result comes until the end (then: samples passed).
+  let available = false;
+  (gl as unknown as { getQueryParameter: unknown }).getQueryParameter = (_q: unknown, p: number) => (p === E.QUERY_RESULT_AVAILABLE ? available : 1);
   const errors: string[] = [];
   const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
   r.createContext(1);
@@ -661,7 +664,56 @@ test('virgl renderer: occlusion queries count their own sub-context\'s draws: We
   at = gl.log.length;
   r.submit(1, new Uint32Array([19 | 1 << 16, 42, ...d.draw, 16 | 21 << 16, 0xf, 0, 0, 3, 0, 67, 0, 0, 0, 4, 4, 1, 4, 0, 67, 0, 0, 0, 4, 4, 1, ...d.draw, 20 | 1 << 16, 42]));
   assert.deepEqual(ops(at), ['beginQuery', 'drawArrays', 'endQuery', 'blitFramebuffer', 'beginQuery', 'drawArrays', 'endQuery']);
+  // A query left active while another context draws: once a span has passed, no more spans (they'd pile up).
+  available = true;
+  r.pollQueries();
+  at = gl.log.length;
+  r.submit(1, new Uint32Array([19 | 1 << 16, 42, ...d.draw]));
+  r.submit(2, new Uint32Array(d.draw));
+  r.submit(1, new Uint32Array(d.draw));
+  r.submit(2, new Uint32Array(d.draw));
+  r.submit(1, new Uint32Array([...d.draw, 20 | 1 << 16, 42]));
+  assert.deepEqual(ops(at), ['beginQuery', 'drawArrays', 'endQuery', 'drawArrays', 'drawArrays', 'drawArrays', 'drawArrays']);
+  assert.equal(r.pollQueries(), 0, 'done when it ended: a span passed');
   assert.deepEqual(errors, []);
+});
+
+test('virgl renderer: a shader object destroyed deletes the programs made with it (the cache grew for good over a desktop session)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  const count = (n: string) => gl.log.filter(([m]) => m === n).length;
+  r.submit(1, new Uint32Array([...d.setup, ...d.draw]));
+  assert.equal(count('linkProgram'), 1);
+  // The fragment shader's object destroyed (DESTROY_OBJECT, shader 11), made again from the same text and drawn.
+  r.submit(1, new Uint32Array([3 | 4 << 8 | 1 << 16, 11]));
+  assert.equal(count('deleteProgram'), 1, 'its program deleted');
+  r.submit(1, new Uint32Array([...d.setup, ...d.draw]));
+  assert.equal(count('linkProgram'), 2, 'linked again for the new object');
+  // The context destroyed: both shaders go, and the program with them.
+  r.destroyContext(1);
+  assert.equal(count('deleteProgram'), 2);
+  assert.deepEqual(errors, []);
+});
+
+test('virgl renderer: a sampler with no view samples nothing: another context\'s texture and sampler unbound from its unit', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const [len, ...t] = text('FRAG\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], CUBE, FLOAT\nIMM[0] FLT32 {0.5, 0.5, 0.5, 0.0}\n  0: TEX OUT[0], IMM[0], SAMP[0], CUBE\n  1: END\n');
+  const at = gl.log.length;
+  r.submit(1, new Uint32Array([...d.setup, 1 | 4 << 8 | (5 + t.length) << 16, 12, 1, len, 0, 0, ...t, 31 | 2 << 16, 12, 1, ...d.draw]));
+  assert.deepEqual(errors, []);
+  const calls = gl.log.slice(at).map(([n, a]) => `${n} ${(a as unknown[]).map((x) => (x === null ? 'null' : typeof x === 'number' ? x : 'obj')).join(' ')}`);
+  assert.ok(calls.includes(`bindTexture ${E.TEXTURE_CUBE_MAP} null`), 'no cube map left on the unit');
+  assert.ok(calls.some((c) => /^bindSampler \d+ null$/.test(c)), 'no sampler left on the unit');
 });
 
 test('virgl renderer: a multisampled source is resolved before a conversion or a flip (dEQP-GLES3 fbo.invalidate unbind_blit_msaa)', () => {

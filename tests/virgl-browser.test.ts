@@ -237,6 +237,18 @@ test('virgl on WebGL2: occlusion queries open at once in two contexts, and in tw
   assert.equal(r.glError, 0);
 });
 
+test('virgl on WebGL2: a draw that samples what it draws into samples a copy (WebGL refuses the feedback loop GL draws)', async () => {
+  type F = { level0: number[]; level1: number[]; layer0: number[]; layer1: number[]; copies: number; glError: number; log: string[] };
+  const r = await page.evaluate(() => (window as unknown as { virgl: { feedbackDraws(): F } }).virgl.feedbackDraws());
+  assert.equal(r.glError, 0, 'no draw refused');
+  assert.deepEqual(r.log, []);
+  assert.deepEqual(r.level0, [0, 0, 255, 255], 'level 0 drawn from its texels before the draw (red through BGRA: blue)');
+  assert.deepEqual(r.level1, [0, 255, 0, 255], 'level 1 untouched');
+  assert.deepEqual(r.layer0, [0, 255, 0, 255], 'layer 0 drawn from layer 1');
+  assert.deepEqual(r.layer1, [0, 255, 0, 255]);
+  assert.equal(r.copies, 2);
+});
+
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; mixed: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
   assert.deepEqual([r.log, r.glError], [[], 0]);

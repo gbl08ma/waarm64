@@ -1,4 +1,4 @@
-// The page's GPU worker (docs/frontend.md "The screen", docs/devices.md "virgl"): a top-level worker that owns the
+// The page's GPU worker (docs/frontend.md "The screen", docs/graphics.md "The GPU worker"): a top-level worker that owns the
 // screen's canvas as WebGL2 on a 3D machine (the G3 kickoff's decision 2). The page starts it with the canvas and a
 // port for the device worker; it answers with the caps this browser backs (web/virgl-caps.ts), or why it can't. Then
 // it runs the device's calls (web/virgl-host.ts) in order: the renderer's (web/virgl-renderer.ts) and the screen's
@@ -133,7 +133,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       stallTimer = undefined;
     }
   };
-  const queue = new CallQueue<WorkerCall>({ run, pending: renderer.videoPending, nudge: () => renderer.videoNudge(), drain: () => renderer.videoDrain(), giveUp: () => renderer.videoGiveUp() });
+  const queue = new CallQueue<WorkerCall>({ run, pending: renderer.videoPending, nudge: () => renderer.videoNudge(), drain: () => renderer.videoDrain(), giveUp: () => renderer.videoGiveUp(), giveUpOld: (before) => renderer.videoGiveUp(before) });
   renderer.onVideoSettled = () => {
     // Settled from inside a call (a picture given up or its buffer destroyed): the queue goes on after it.
     queueMicrotask(() => { queue.progress(); watch(); });
