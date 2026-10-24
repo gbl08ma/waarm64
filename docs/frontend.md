@@ -1376,18 +1376,20 @@ stops if a binary is missing), then builds the page with Vite (below, "The build
   (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
   deflate) and the sound worklet; and the binaries the page fetches, the core (`webpc_core.wasm`), the tailnet client
   (`ts.wasm`) and EDK2 (`QEMU_EFI.fd`). Every name is hashed, so a host's caches never serve a stale file with a new
-  page. 10.6 MiB in all. **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
+  page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
   page is.
 - From `web/app/public/`, copied as they are: `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and
   `.htaccess` (Apache) with the two headers, `.nojekyll`, and `web/app/index.html`, which redirects to the root with
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
-  firmware's), `LICENSE`, and a marker file: the script only empties a directory that has it.
+  firmware's), `LICENSE`, and a marker file (`.webpc-dist`, from `web/app/public/`, so a plain `vite build` has it
+  too): the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**
-with every file (shared memory needs cross-origin isolation), answer range requests, and serve over HTTPS (or
-localhost). GitHub Pages can't set headers. `npm run dist -- --serve` previews the copy with Vite's preview server
+with every file (shared memory needs cross-origin isolation) and serve over HTTPS (or localhost). The page fetches
+its own files whole (Cloudflare's static assets answer a range request with the whole file); range requests matter
+for disks, which aren't in the copy. GitHub Pages can't set headers. `npm run dist -- --serve` previews the copy with Vite's preview server
 (`tools/serve.ts` `startServer` with the copy as its root), which gives the headers and ranges. OPFS is per origin,
 so a disk's saved changes stay with the site they were made on. `tests/dist.test.ts` builds a copy, checks it is the
 bundle (a few hashed files, no source), serves it so and boots Buildroot from it (its images linked in at

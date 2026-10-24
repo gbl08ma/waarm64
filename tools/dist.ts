@@ -12,10 +12,10 @@
 // that allows the page's origin and answers range requests, or a chunked image's manifest from any static host; the
 // deployed copy's images are on their own host, deploy/disks/).
 // The server must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
-// require-corp` with every file (SharedArrayBuffer), and answer range requests (the firmware, disks).
+// require-corp` with every file (SharedArrayBuffer). The page fetches its own files whole; disks need range requests.
 //   npm run dist [-- --out <dir>] [-- --no-prepare] [-- --serve [--port <n>]]
 // --serve previews the copy with Vite's preview server (tools/serve.ts: the same headers and ranges a host must give).
-import { cpSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
@@ -24,7 +24,7 @@ import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
 
 export const OUT = join(ROOT, 'target/dist');
 
-/** Marks a directory as this script's output: the only kind it deletes before writing. */
+/** Marks a directory as a build of the page (web/app/public/ carries it): the only kind this script deletes before writing. */
 const MARK = '.webpc-dist';
 
 /** The binaries the page fetches, as paths in the repository. */
@@ -40,7 +40,6 @@ export async function writeDist(out = OUT) {
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });
   cpSync(join(ROOT, 'target/images/edk2/LICENSES.txt'), join(out, 'EDK2-LICENSES.txt'));
   cpSync(join(ROOT, 'LICENSE'), join(out, 'LICENSE'));
-  writeFileSync(join(out, MARK), '');
   return readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile());
 }
 
