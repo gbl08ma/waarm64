@@ -32,6 +32,10 @@ pub const KEY_FETCH: u32 = 1 << 30;
 /// How long the map stream may be silent before the session is presumed dead (the server
 /// sends a keep-alive about every minute).
 const SILENCE: Duration = Duration::from_secs(150);
+/// How long the registration's long-poll may wait for the user to log in.
+const LOGIN_WAIT: Duration = Duration::from_secs(600);
+/// A connection that brought nothing this long is suspect once a relay's path died.
+const SUSPECT: Duration = Duration::from_secs(15);
 const EARLY_MAGIC: &[u8; 5] = b"\xff\xff\xffTS";
 
 pub struct Config {
@@ -94,6 +98,8 @@ pub struct Session {
     home: Option<u32>,
     retry_at: Option<Instant>,
     silent_at: Option<Instant>,
+    /// When the control connection last brought anything.
+    heard: Option<Instant>,
     failures: u32,
     pub actions: VecDeque<Action>,
     pub updates: Vec<Update>,
@@ -161,6 +167,7 @@ impl Session {
             home: None,
             retry_at: None,
             silent_at: None,
+            heard: None,
             failures: 0,
             actions: VecDeque::new(),
             updates: Vec::new(),
@@ -180,7 +187,8 @@ impl Session {
     }
 
     pub fn start(&mut self, now: Instant) {
-        let _ = now;
+        // A fetch that never comes back is a failure too.
+        self.silent_at = Some(now + Duration::from_secs(30));
         self.set_phase(Phase::FetchingKey);
         let (scheme, host) = self.origin();
         self.actions.push_back(Action::Fetch {
@@ -295,6 +303,7 @@ impl Session {
         if self.conn != Some(conn) {
             return;
         }
+        self.heard = Some(now);
         let Some(n) = self.noise.as_mut() else { return };
         let was_open = n.is_open();
         let plain = match n.input(data) {
@@ -416,7 +425,10 @@ impl Session {
     }
 
     fn send_register(&mut self, now: Instant) {
-        let _ = now;
+        if self.followup.is_some() {
+            // A long-poll that waits for the user's login: quiet for as long as that takes.
+            self.silent_at = Some(now + LOGIN_WAIT);
+        }
         if self.phase != Phase::LoggingOut {
             self.set_phase(if self.followup.is_some() {
                 Phase::NeedsLogin
@@ -524,6 +536,7 @@ impl Session {
     fn send_map(&mut self, now: Instant) {
         let body = self.map_request(true);
         self.map_buf.clear();
+        self.netmap.new_stream();
         if let Some(h) = self.h2.as_mut() {
             self.map = Some(h.post("/machine/map", &[], body));
         }
@@ -675,6 +688,28 @@ impl Session {
 
     pub fn deadline(&self) -> Option<Instant> {
         [self.retry_at, self.silent_at].into_iter().flatten().min()
+    }
+
+    /// The server says our node key expired: register again (with a new key, the old one named;
+    /// or a login, if the server wants one).
+    pub fn reauth(&mut self, now: Instant) {
+        if self.conn.is_some() && self.phase == Phase::Mapping {
+            self.retry(now, "the node key expired: registering again".into());
+        }
+    }
+
+    /// The home relay's path died without a word (derp.rs "Liveness"): unless the control
+    /// connection brought something lately, it went with it, so connect again now rather than
+    /// when the map stream's silence gives it away.
+    pub fn suspect(&mut self, now: Instant) {
+        if self.conn.is_some()
+            && self.phase == Phase::Mapping
+            && self
+                .heard
+                .is_none_or(|t| now.saturating_duration_since(t) >= SUSPECT)
+        {
+            self.retry(now, "the network changed: reconnecting".into());
+        }
     }
 
     pub fn close(&mut self) {

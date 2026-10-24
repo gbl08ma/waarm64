@@ -8,6 +8,7 @@ pub mod client;
 pub mod control;
 pub mod derp;
 pub mod dns;
+pub mod dns_tcp;
 pub mod h2pipe;
 pub mod ip;
 pub mod nat46;

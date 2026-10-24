@@ -1,7 +1,7 @@
 <!--
   The toolbar's Network menu (docs/frontend.md "Network", docs/network-adapters.md §3.3): a section per network
   adapter of the page's machine (one adapter: no heading), each showing its connection and what can be done with it
-  (Log in…, the exit node, the machine's tailcat address, Connect, Disconnect, Log out, Change connection…, which is
+  (Log in…, the exit node, the peers' subnet routes, the machine's tailcat address, Connect, Disconnect, Log out, Change connection…, which is
   the Network wizard, web/app/NetWizard.svelte). Adapter 1's elements keep the ids they always had; adapter n's end in
   `-<n-1>`. Logic is web/app/net-live.ts's, through `page`.
 -->
@@ -80,6 +80,10 @@
           <option value="">Nothing: directly</option>
           {#each v.exitNodes as e (e.id)}<option value={e.id}>{e.online ? e.name : `${e.name} (offline)`}</option>{/each}
         </select>
+      </label>
+      <label id={`net-routes-label${s}`} hidden={!v.subnets} title={v.subnets?.routes.join(', ')}>
+        <input id={`net-routes${s}`} type="checkbox" checked={v.subnets?.on ?? true} onchange={(e) => act(a.index, () => page.netRoutes(a.index, (e.currentTarget as HTMLInputElement).checked))}>
+        Reach the subnets peers route ({v.subnets?.routes.slice(0, 2).join(', ')}{(v.subnets?.routes.length ?? 0) > 2 ? ', …' : ''})
       </label>
       <div id={`net-served${s}`} hidden={!v.served}>
         <label>This machine's tailcat address<input id={`net-served-addr${s}`} type={revealed[a.index] ? 'text' : 'password'} readonly spellcheck="false" value={v.served ?? ''}></label>

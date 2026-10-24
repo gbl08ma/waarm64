@@ -106,6 +106,8 @@ const MAX_CLIENTS: usize = 64;
 const MEOW_EVERY: Duration = Duration::from_secs(1);
 const MEOW_TIMEOUT: Duration = Duration::from_secs(15);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
+/// A relay connection up this long worked: its loss reconnects at once.
+const STABLE: Duration = Duration::from_secs(10);
 const DISCO_MAGIC: &[u8; 6] = b"TS\xf0\x9f\x92\xac";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -146,6 +148,10 @@ pub struct Client {
     by_addr: BTreeMap<[u8; 16], PeerId>,
     next_peer: u32,
     derp: Option<(u32, derp::Conn)>,
+    /// When the relay connection became ready.
+    derp_ready: Option<Instant>,
+    /// The server left the relay: once it meows back, a new WireGuard session (it lost ours).
+    server_gone: bool,
     next_conn: u32,
     state: State,
     /// Whether the page has heard of any state yet.
@@ -172,7 +178,9 @@ pub(crate) fn unpad(p: &[u8]) -> Option<&[u8]> {
         6 if p.len() >= 40 => 40 + u16::from_be_bytes([p[4], p[5]]) as usize,
         _ => return None,
     };
+    // At least its header (a total length under it isn't a packet).
     p.get(..len)
+        .filter(|q| q.len() >= if p[0] >> 4 == 4 { 20 } else { 40 })
 }
 
 /// The disco key a node key implies, so a kept node key keeps its served address. tailcat
@@ -237,6 +245,8 @@ impl Client {
             by_addr: BTreeMap::new(),
             next_peer: SERVER.0 + 1,
             derp: None,
+            derp_ready: None,
+            server_gone: false,
             next_conn: 1,
             state: State::Connecting,
             announced: false,
@@ -337,7 +347,8 @@ impl Client {
         let conn = self.next_conn;
         self.next_conn += 1;
         let url = self.nodes[self.node % self.nodes.len()].clone();
-        self.derp = Some((conn, derp::Conn::new(self.private, self.public, true)));
+        self.derp = Some((conn, derp::Conn::new(self.private, self.public, true, now)));
+        self.derp_ready = None;
         self.actions.push_back(Action::WsOpen {
             conn,
             url,
@@ -349,17 +360,29 @@ impl Client {
         }
     }
 
-    /// Lost the relay (or never got it): try the next node after a backoff.
+    /// Lost the relay (or never got it): try the next node, at once after one that was up, after a
+    /// growing backoff when it keeps failing (one up for under `STABLE` counts as failing).
     fn retry(&mut self, now: Instant, why: String) {
         self.close_derp();
+        let was_up = self.derp_ready.is_some();
+        if self
+            .derp_ready
+            .take()
+            .is_some_and(|t| now.saturating_duration_since(t) >= STABLE)
+        {
+            self.failures = 0;
+        }
         self.failures += 1;
         self.node += 1;
         self.log(format!("DERP: {why}"));
         if self.state != State::Running && self.failures as usize > 2 * self.nodes.len().max(2) {
             return self.fail(&why);
         }
-        let backoff = Duration::from_millis(500u64 << self.failures.min(6));
-        self.reconnect_at = Some(now + backoff.min(Duration::from_secs(30)));
+        let backoff = match self.failures {
+            1 if was_up => Duration::ZERO,
+            f => Duration::from_millis(250u64 << f.min(7)).min(Duration::from_secs(30)),
+        };
+        self.reconnect_at = Some(now + backoff);
     }
 
     pub fn fetched(&mut self, id: u32, ok: bool, body: &[u8], now: Instant) {
@@ -406,7 +429,7 @@ impl Client {
         if *c != conn {
             return;
         }
-        let events = d.input(data);
+        let events = d.input(data, now);
         self.flush_derp();
         match events {
             Err(e) => self.retry(now, e),
@@ -425,6 +448,9 @@ impl Client {
     }
 
     fn derp_event(&mut self, e: derp::Event, now: Instant) {
+        if e == derp::Event::Ready {
+            self.derp_ready = Some(now);
+        }
         match e {
             derp::Event::Ready if self.exit.is_some() => {
                 // Each new relay connection says hello again: the server may have
@@ -446,6 +472,17 @@ impl Client {
                 self.reconnect_at =
                     Some(now + Duration::from_millis(reconnect_ms.clamp(100, 30_000) as u64));
             }
+            derp::Event::PeerGone(k)
+                if self.state == State::Running
+                    && self.exit.as_ref().is_some_and(|ci| ci.server == k) =>
+            {
+                // The server left the relay (a restart forgets its clients): hello again until
+                // it's back, then a new session.
+                self.log("tailcat: the server left the relay; waiting for it".into());
+                self.server_gone = true;
+                self.meow(now);
+                self.phase_deadline = Some(now + MEOW_TIMEOUT);
+            }
             derp::Event::Health(h) if !h.is_empty() => self.log(format!("DERP health: {h}")),
             derp::Event::Health(_) | derp::Event::PeerGone(_) => {}
         }
@@ -457,7 +494,7 @@ impl Client {
         };
         let ping = tailcat::meow_ping(&self.public, &self.disco);
         if let Some((_, d)) = self.derp.as_mut() {
-            d.send(&server, &ping);
+            d.send(&server, &ping, now);
         }
         self.flush_derp();
         self.meow_at = Some(now + MEOW_EVERY);
@@ -487,7 +524,7 @@ impl Client {
                 self.event(json!({ "type": "client", "key": format!("nodekey:{}", hex(&src)), "address6": addr }));
             }
             if let Some((conn, d)) = self.derp.as_mut() {
-                d.send(&src, tailcat::MEOWED);
+                d.send(&src, tailcat::MEOWED, now);
                 queue_frames(&mut self.actions, *conn, d.take_output());
             }
             return;
@@ -499,7 +536,7 @@ impl Client {
             return; // not a client of ours: it never meowed
         }
         let r = self.wg.recv(now, [PacketMut::from(packet)]);
-        self.send_to_peers(r.to_peers);
+        self.send_to_peers(r.to_peers, now);
         for (id, packets) in r.to_local {
             for p in packets {
                 self.on_tunnel_packet(id, p.as_ref());
@@ -515,9 +552,12 @@ impl Client {
                 self.phase_deadline = Some(now + HANDSHAKE_TIMEOUT);
                 // An empty packet starts the handshake now rather than at the guest's first packet.
                 let r = self.wg.send(now, [(SERVER, vec![PacketMut::new(0)])]);
-                self.send_to_peers(r.to_peers);
+                self.send_to_peers(r.to_peers, now);
             } else if self.state == State::Running {
                 self.phase_deadline = None;
+                if std::mem::take(&mut self.server_gone) {
+                    self.new_server_session(now);
+                }
             }
             return;
         }
@@ -531,7 +571,7 @@ impl Client {
             self.phase_deadline = None;
             self.set_state(State::Running, None);
         }
-        self.send_to_peers(r.to_peers);
+        self.send_to_peers(r.to_peers, now);
         for (id, packets) in r.to_local {
             for p in packets {
                 self.on_tunnel_packet(id, p.as_ref());
@@ -539,8 +579,26 @@ impl Client {
         }
     }
 
+    /// The server lost our WireGuard session: drop ours and start another.
+    fn new_server_session(&mut self, now: Instant) {
+        let Some(ci) = self.exit.as_ref() else { return };
+        let cfg = PeerConfig::new(
+            SERVER,
+            NodePublicKey::from_bytes(ci.server),
+            ci.psk.unwrap_or_default(),
+        );
+        self.wg.remove_peer(SERVER);
+        self.wg.upsert_peer(cfg);
+        let r = self.wg.send(now, [(SERVER, vec![PacketMut::new(0)])]);
+        self.send_to_peers(r.to_peers, now);
+    }
+
     /// Sends WireGuard's packets to their peers through the relay.
-    fn send_to_peers(&mut self, to_peers: impl IntoIterator<Item = (PeerId, Vec<PacketMut>)>) {
+    fn send_to_peers(
+        &mut self,
+        to_peers: impl IntoIterator<Item = (PeerId, Vec<PacketMut>)>,
+        now: Instant,
+    ) {
         let Some((conn, d)) = self.derp.as_mut() else {
             return;
         };
@@ -554,7 +612,7 @@ impl Client {
                 },
             };
             for p in packets {
-                d.send(&key, p.as_ref());
+                d.send(&key, p.as_ref(), now);
             }
         }
         queue_frames(&mut self.actions, conn, d.take_output());
@@ -606,13 +664,20 @@ impl Client {
         };
         pad(&mut out);
         let r = self.wg.send(now, [(to, vec![PacketMut::from(out)])]);
-        self.send_to_peers(r.to_peers);
+        self.send_to_peers(r.to_peers, now);
     }
 
     /// Runs what's due at `now`.
     pub fn tick(&mut self, now: Instant) {
         let r = self.wg.dispatch_events(now);
-        self.send_to_peers(r.to_peers);
+        self.send_to_peers(r.to_peers, now);
+        // A relay that died quietly (or never answered) goes.
+        if let Some((_, d)) = self.derp.as_mut() {
+            match d.tick(now) {
+                Ok(()) => self.flush_derp(),
+                Err(e) => self.retry(now, e),
+            }
+        }
         if self.reconnect_at.is_some_and(|t| t <= now) {
             self.reconnect_at = None;
             self.connect(now);
@@ -630,8 +695,9 @@ impl Client {
                 State::Handshaking => {
                     self.fail("the WireGuard handshake with the tailcat server failed")
                 }
-                // A reconnect while running that the server ignores: keep trying.
-                State::Running => self.meow_at = None,
+                // A hello while running that the server ignores (it's away, or restarting):
+                // keep saying it, it answers once it's back.
+                State::Running => self.phase_deadline = Some(now + MEOW_TIMEOUT),
                 State::FetchingMap | State::Failed => {}
             }
         }
@@ -641,6 +707,7 @@ impl Client {
     pub fn deadline(&self) -> Option<Instant> {
         [
             self.wg.next_event().map(|r| r.start()),
+            self.derp.as_ref().and_then(|(_, d)| d.deadline()),
             self.meow_at,
             self.reconnect_at,
             self.phase_deadline,
@@ -930,14 +997,11 @@ mod tests {
         assert_eq!(c.state, State::Running);
         let first = s.conn;
         // The relay goes away: the client stays Running (the guest keeps its
-        // lease) and comes back after a backoff.
+        // lease) and comes back at once.
         c.ws_closed(first, now);
         assert_eq!(c.state, State::Running);
         let at = c.deadline().unwrap();
-        assert!(
-            at > now && at <= now + Duration::from_secs(2),
-            "a short backoff first"
-        );
+        assert!(at <= now, "no backoff for the first loss");
         now = at;
         c.tick(now);
         s.run(&mut c, now);
@@ -947,6 +1011,79 @@ mod tests {
         c.guest_packet(&udp(b"again"), now);
         s.run(&mut c, now);
         assert_eq!(&s.got.pop().expect("the server got it")[48..], b"again");
+    }
+
+    #[test]
+    fn a_relay_that_dies_quietly_or_never_answers_is_replaced() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let mut c = Client::new(config(address(&s.public, &s.psk)), now).unwrap();
+        s.run(&mut c, now);
+        assert_eq!(c.state, State::Running);
+        let first = s.conn;
+        // Quiet: a ping; nothing comes back (the path died, the socket didn't say).
+        let t = now + derp::IDLE_PING;
+        assert!(c.deadline().unwrap() <= t);
+        c.tick(t);
+        while c.poll().is_some() {}
+        let t = t + derp::PONG_WAIT;
+        c.tick(t);
+        let opened = std::iter::from_fn(|| c.poll())
+            .filter_map(|a| match a {
+                Action::WsOpen { conn, .. } => Some(conn),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(opened.len(), 1, "a new connection at once");
+        assert_ne!(opened[0], first);
+        assert_eq!(c.state, State::Running);
+        // That one never answers: replaced too, though the client stays Running.
+        let t = t + derp::CONNECT_WAIT;
+        assert!(c.deadline().unwrap() <= t);
+        c.tick(t);
+        let t = c.deadline().unwrap().max(t);
+        c.tick(t);
+        s.run(&mut c, t);
+        assert_eq!(s.meows, 2, "a working relay again, and a hello on it");
+        c.guest_packet(&udp(b"again"), t);
+        s.run(&mut c, t);
+        assert_eq!(&s.got.pop().expect("the server got it")[48..], b"again");
+    }
+
+    #[test]
+    fn a_server_restart_gets_a_new_session() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let mut c = Client::new(config(address(&s.public, &s.psk)), now).unwrap();
+        s.run(&mut c, now);
+        assert_eq!(c.state, State::Running);
+        // The server restarts with the same key: it knows neither our key nor our session.
+        let pair = NodeKeyPair::from(Export::<NodePrivateKey>::from_bytes([42; 32]).import());
+        s.wg = Endpoint::new(pair);
+        let t = now + Duration::from_secs(3);
+        c.ws_message(s.conn, &s.relay.peer_gone(&s.public), t);
+        s.run(&mut c, t);
+        assert_eq!(s.meows, 2, "it said hello again");
+        c.guest_packet(&udp(b"after"), t);
+        s.run(&mut c, t);
+        assert_eq!(&s.got.pop().expect("the server got it")[48..], b"after");
+    }
+
+    #[test]
+    fn an_empty_ip_packet_is_not_one() {
+        assert_eq!(
+            unpad(&[
+                0x45, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]),
+            None
+        );
+        let mut v6 = [0u8; 40];
+        v6[0] = 0x60;
+        assert_eq!(
+            unpad(&v6).map(|p| p.len()),
+            Some(40),
+            "a bare IPv6 header is"
+        );
     }
 
     #[test]

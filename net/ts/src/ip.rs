@@ -89,23 +89,87 @@ pub fn udp(src: (IpAddr, u16), dst: (IpAddr, u16), payload: &[u8]) -> Vec<u8> {
     seg.extend_from_slice(&(len as u16).to_be_bytes());
     seg.extend_from_slice(&[0, 0]);
     seg.extend_from_slice(payload);
-    match (src.0, dst.0) {
+    packet(src.0, dst.0, UDP, seg, 6)
+}
+
+pub const FIN: u8 = 0x01;
+pub const SYN: u8 = 0x02;
+pub const RST: u8 = 0x04;
+pub const PSH: u8 = 0x08;
+pub const ACK: u8 = 0x10;
+
+/// A TCP segment from `src` to `dst` (no options but a SYN's MSS).
+pub fn tcp(
+    src: (IpAddr, u16),
+    dst: (IpAddr, u16),
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    payload: &[u8],
+) -> Vec<u8> {
+    let opts: &[u8] = if flags & SYN != 0 {
+        &[2, 4, 0x04, 0xc4]
+    } else {
+        &[]
+    }; // MSS 1220
+    let mut seg = Vec::with_capacity(20 + opts.len() + payload.len());
+    seg.extend_from_slice(&src.1.to_be_bytes());
+    seg.extend_from_slice(&dst.1.to_be_bytes());
+    seg.extend_from_slice(&seq.to_be_bytes());
+    seg.extend_from_slice(&ack.to_be_bytes());
+    seg.push((((20 + opts.len()) / 4) << 4) as u8);
+    seg.push(flags);
+    seg.extend_from_slice(&[0xff, 0xff, 0, 0, 0, 0]); // window, checksum, urgent
+    seg.extend_from_slice(opts);
+    seg.extend_from_slice(payload);
+    packet(src.0, dst.0, TCP, seg, 16)
+}
+
+/// An IP packet around transport segment `seg`, its checksum (at `sum`) filled in.
+fn packet(src: IpAddr, dst: IpAddr, proto: u8, mut seg: Vec<u8>, sum: usize) -> Vec<u8> {
+    let len = seg.len();
+    match (src, dst) {
         (IpAddr::V4(s), IpAddr::V4(d)) => {
-            checksum(&mut seg, 6, &pseudo4(&s.octets(), &d.octets(), len, UDP));
-            ip4(s.octets(), d.octets(), UDP, 64, &seg)
+            checksum(
+                &mut seg,
+                sum,
+                &pseudo4(&s.octets(), &d.octets(), len, proto),
+            );
+            ip4(s.octets(), d.octets(), proto, 64, &seg)
         }
         (s, d) => {
             let (s, d) = (v6(s), v6(d));
-            checksum(&mut seg, 6, &pseudo6(&s.octets(), &d.octets(), len, UDP));
+            checksum(
+                &mut seg,
+                sum,
+                &pseudo6(&s.octets(), &d.octets(), len, proto),
+            );
             let mut p = vec![0x60, 0, 0, 0];
             p.extend_from_slice(&(len as u16).to_be_bytes());
-            p.extend_from_slice(&[UDP, 64]);
+            p.extend_from_slice(&[proto, 64]);
             p.extend_from_slice(&s.octets());
             p.extend_from_slice(&d.octets());
             p.extend_from_slice(&seg);
             p
         }
     }
+}
+
+/// A TCP segment's sequence and acknowledgment numbers, flags and payload (as `parse` read it).
+pub fn tcp_segment<'a>(p: &'a [u8], i: &Info) -> Option<(u32, u32, u8, &'a [u8])> {
+    if i.proto != TCP {
+        return None;
+    }
+    let t = p.get(i.l4..)?;
+    let off = (*t.get(12)? >> 4) as usize * 4;
+    let seq = u32::from_be_bytes(t.get(4..8)?.try_into().ok()?);
+    let ack = u32::from_be_bytes(t.get(8..12)?.try_into().ok()?);
+    // An IPv4 packet may carry padding after its total length; read up to it.
+    let end = match p[0] >> 4 {
+        4 => (u16::from_be_bytes([p[2], p[3]]) as usize).min(p.len()),
+        _ => (40 + u16::from_be_bytes([p[4], p[5]]) as usize).min(p.len()),
+    };
+    Some((seq, ack, t[13], p.get(i.l4 + off.max(20)..end)?))
 }
 
 fn v6(a: IpAddr) -> Ipv6Addr {

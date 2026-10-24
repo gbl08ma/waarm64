@@ -1015,7 +1015,8 @@ Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it 
 
 The toolbar's **Network** menu has a section per adapter of the page's machine (headed "Adapter n" when there are
 several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
-**Log in…**, **Internet through** (a tailnet's exit nodes), **This machine's tailcat address** (when it lets clients
+**Log in…**, **Internet through** (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
+peers route subnets), **This machine's tailcat address** (when it lets clients
 in), **Connect** (the attached connection, when it isn't running), **Disconnect**, **Log out**, and **Connect…** or
 **Change connection…**, which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after **New connection…**
@@ -1111,6 +1112,12 @@ and the guest's default way out (below).
   node**: MagicDNS (100.100.100.100, which the lease gives first) answers the tailnet's names and
   sends the rest as plain DNS through the exit node, to the tailnet's resolvers or 1.1.1.1
   (docs/tailnet.md "Tailscale"; the Go client used the exit node's DoH service instead).
+- **Subnet routes:** when peers route subnets (subnet routers, their routes approved by an admin) the menu shows
+  **Reach the subnets peers route** with the first of them, on by default as in Tailscale's own apps (the Linux CLI's
+  `--accept-routes` is off by default). The choice is the client's `setAcceptRoutes(on)`, kept with the connection
+  (`tailnet.acceptRoutes`, absent: on) and given to the client at the next Connect. The netmap lists each peer's
+  `routes` and whether they're installed (`acceptRoutes`); an adapter that isn't the default way out leases them as
+  routes besides the tailnet's own (web/tailscale.ts `subnetsOf`).
   **The guest must take the lease's search domain** (MagicDNS's, e.g. `tail1234.ts.net`): with
   systemd-networkd that's `UseDomains=yes` under `[DHCPv4]` and `[DHCPv6]`, which the page's
   credential, its unit's drop-ins and the Arch image set, with `UseMTU=yes` (the lease's 1280 on the link; IPv6 takes

@@ -182,6 +182,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
       worker.postMessage({ type: 'detach' } satisfies ToTailcat);
     }),
     setExitNode: () => Promise.reject(new Error('a tailcat server is the exit node itself')),
+    setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),
     close: () => worker.terminate(),
   };

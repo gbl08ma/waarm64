@@ -6,7 +6,7 @@
 // the guest no IPv6 default route while it doesn't.
 import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule } from './ts-client.ts';
-import { leaseFrom, type FromTailscale, type ToTailscale } from './tailscale.ts';
+import { leaseFrom, subnetsOf, type FromTailscale, type NetMap, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
 import { ranked, routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
 import { reach6, unreached6, type Reach6, type Reach6Options } from './reach6.ts';
@@ -16,6 +16,10 @@ const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessa
 let ip: MessagePort | undefined;
 let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
+/** The netmap's installed subnet routes: a lease that isn't the default way out routes them too. */
+let subnets = subnetsOf(undefined);
+/** The lease last posted (JSON): a netmap that changes nothing of it (a peer coming online) posts none, so no router advertisement either. */
+let posted = '';
 /** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
 /** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
@@ -26,15 +30,30 @@ let reach: Reach6 | undefined;
 let reachVia = '';
 let probe6: Reach6Options | undefined;
 const offered = () => {
-  const l = routedLease(lease, primary, TAILNET_ROUTES);
-  return ranked(reach && !reach.reached() ? unreached6(l, TAILNET_ROUTES.v6) : l, rank);
+  const routes = { v4: [...TAILNET_ROUTES.v4, ...subnets.v4], v6: [...TAILNET_ROUTES.v6, ...subnets.v6] };
+  const l = routedLease(lease, primary, routes);
+  return ranked(reach && !reach.reached() ? unreached6(l, routes.v6) : l, rank);
 };
+/** Tells the gateway the lease, if it changed (`force`: a new port, which hasn't heard it). */
+function postLease(force = false) {
+  const l = offered();
+  const json = JSON.stringify(l);
+  if (!force && json === posted) return;
+  posted = json;
+  ip?.postMessage({ type: 'lease', lease: l });
+}
+function takeNetmap(nm: NetMap) {
+  lease = leaseFrom(nm);
+  subnets = subnetsOf(nm);
+  probeVia(nm.exitNode ?? '');
+  postLease();
+}
 
 /** The exit node in use (''); another one is probed from scratch (out until it answers). */
 function probeVia(id: string) {
   if (id !== reachVia) {
     reach?.stop();
-    reach = id ? reach6((p) => client?.guest(p), () => ip?.postMessage({ type: 'lease', lease: offered() }), probe6) : undefined;
+    reach = id ? reach6((p) => client?.guest(p), () => postLease(), probe6) : undefined;
     reachVia = id;
   }
   if (lease?.address6) reach?.start(lease.address6);
@@ -49,7 +68,7 @@ function attach(port: MessagePort) {
     const packets = packetsOf(ev.data);
     if (packets) client?.guest(...packets);
   };
-  port.postMessage({ type: 'lease', lease: offered() });
+  postLease(true);
 }
 
 self.onmessage = async (e: MessageEvent<ToTailscale>) => {
@@ -58,12 +77,13 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   if (m.type === 'primary') {
     primary = m.primary;
     rank = m.rank ?? 0;
-    return ip?.postMessage({ type: 'lease', lease: offered() });
+    return postLease();
   }
   if (m.type === 'detach') {
     lease = null;
     probeVia('');
     ip?.postMessage({ type: 'lease', lease: null });
+    posted = 'null';
     if (ip) ip.onmessage = null;
     post({ type: 'detached', ip }, ip ? [ip] : []);
     ip = undefined;
@@ -74,6 +94,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     if (!client) return post({ type: 'exitnode', error: 'the client isn\'t running' });
     return client.setExitNode(m.id);
   }
+  if (m.type === 'routes') return client?.setAcceptRoutes(m.on);
   if (m.type === 'logout') {
     if (!client) return post({ type: 'loggedout' });
     // `loggedout` comes from the client once the control server has expired the key (or couldn't be reached).
@@ -92,6 +113,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
       control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'webpc', ephemeral: !m.persist },
       state: state?.entries() ?? {},
       exitNode: m.exitNode ?? '',
+      acceptRoutes: m.acceptRoutes ?? true,
     }, {
       packet: (p) => { if (!reach?.take(p)) send?.(p); },
       event(ev) {
@@ -102,9 +124,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
           case 'exitnode': return post({ type: 'exitnode', error: ev.error });
           case 'loggedout': return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
           case 'netmap':
-            lease = leaseFrom(ev.netmap);
-            probeVia(ev.netmap.exitNode ?? '');
-            ip?.postMessage({ type: 'lease', lease: offered() });
+            takeNetmap(ev.netmap);
             return post({ type: 'netmap', netmap: ev.netmap });
           case 'state':
             if (ev.state === 'Failed') return post({ type: 'error', error: ev.error ?? 'the client failed' });

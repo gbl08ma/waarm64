@@ -2019,6 +2019,7 @@ Object.assign(page, {
   netDisconnect: (i: number) => net.disconnect(i),
   netLogout: (i: number) => net.logout(i),
   netExit: (i: number, peer: string) => net.setExitNode(i, peer),
+  netRoutes: (i: number, on: boolean) => net.setAcceptRoutes(i, on),
   netEdit: (c: Connection) => net.edit(c),
   netRename: async (c: Connection, name: string) => { await net.conns.put({ ...c, name: name.trim() || c.name }); await net.refresh(); },
   netDelete,

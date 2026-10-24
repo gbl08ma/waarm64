@@ -68,6 +68,8 @@ struct JsConfig {
     state: BTreeMap<String, String>,
     #[serde(default)]
     exit_node: String,
+    /// Peers' subnet routes installed (default: yes, as Tailscale's own apps).
+    accept_routes: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -183,6 +185,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                     },
                     state,
                     exit_node: c.exit_node,
+                    accept_routes: c.accept_routes.unwrap_or(true),
                 };
                 return tailnet::Client::new(cfg, Instant::now())
                     .map(|t| Any::Tailnet(Box::new(t)));
@@ -354,6 +357,16 @@ pub unsafe extern "C" fn ts_exit_node(h: u32, ptr: *mut u8, len: usize) {
     with(h, |c| {
         if let Any::Tailnet(t) = c {
             t.set_exit_node(&id, Instant::now())
+        }
+    });
+}
+
+/// Whether a Tailscale node installs its peers' subnet routes (0: no); the netmap event follows.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_accept_routes(h: u32, on: u32) {
+    with(h, |c| {
+        if let Any::Tailnet(t) = c {
+            t.set_accept_routes(on != 0, Instant::now())
         }
     });
 }

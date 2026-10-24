@@ -83,6 +83,8 @@ export type NetworkView = {
   exitNodes: { id: string; name: string; online: boolean; use: boolean }[];
   /** The machine's own tailcat address, when it lets tailcat clients in. */
   served?: string;
+  /** The subnets the tailnet's peers route (when any do), and whether they're installed. */
+  subnets?: { routes: string[]; on: boolean };
   /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server): it can be the guest's default way out. */
   internet?: boolean;
 };
@@ -139,7 +141,9 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
       const peers = c.netmap?.peers.length ?? 0;
       const exitNodes = (c.netmap?.peers ?? []).filter((p) => p.exitNodeOption || p.id === c.netmap?.exitNode).map((p) => ({ id: p.id, name: p.name.replace(/\.$/, ''), online: p.online !== false, use: p.id === c.netmap?.exitNode }));
       const via = exitNodes.find((e) => e.use);
-      return { phase: 'connected', address, exitNodes, internet: !!via, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}${via ? `, internet through ${via.name}` : ''}` };
+      const routes = [...new Set((c.netmap?.peers ?? []).flatMap((p) => p.routes ?? []))];
+      const subnets = routes.length ? { subnets: { routes, on: c.netmap?.acceptRoutes !== false } } : {};
+      return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}${via ? `, internet through ${via.name}` : ''}` };
     }
     case 'NeedsLogin':
       return loginURL ? { phase: 'login', text: 'Log in to connect', loginURL, exitNodes: [] } : { phase: 'connecting', text: 'Contacting the control server…', exitNodes: [] };
@@ -157,7 +161,7 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
  * `tailcatServe` (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
  * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts).
  */
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; probe6?: Reach6Options };
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; probe6?: Reach6Options };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -168,6 +172,8 @@ export type Network = {
   disconnect(): Promise<void>;
   /** Sends the machine's internet traffic through the peer with this stable ID (see `view().exitNodes`), or with '' directly; rejects with the client's reason. Needs a client. */
   setExitNode(id: string): Promise<void>;
+  /** Installs the tailnet's peers' subnet routes, or stops (`view().subnets` follows). */
+  setAcceptRoutes(on: boolean): void;
   /** Logs the node out of its tailnet and forgets it, then disconnects. */
   logout(): Promise<void>;
   view(): NetworkView;
@@ -226,7 +232,7 @@ export function createNetwork(
       tailcat = !!(c.tailcat || c.tailcatServe);
       const t = tailcat
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, probe6: c.probe6, ip }, onEvent)
-        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
+        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, acceptRoutes: c.acceptRoutes, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
       client = t;
       if (!primary || rank) t.setPrimary(primary, rank);
       t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });
@@ -236,6 +242,9 @@ export function createNetwork(
     async setExitNode(id) {
       if (!client) throw new Error('not connected');
       await client.setExitNode(id);
+    },
+    setAcceptRoutes(on) {
+      client?.setAcceptRoutes(on);
     },
     async logout() {
       await client?.logout();

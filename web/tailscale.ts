@@ -4,14 +4,17 @@
 // (`{type: 'net', adapter: {ip: port}}`, web/gateway.ts `portBackend`). The
 // worker sends `{type: 'lease', lease}` on that port whenever the node's address
 // changes, so the guest's DHCP gets the address the client reports.
-import type { Lease } from './gateway.ts';
+import type { Lease, Routes } from './gateway.ts';
 import type { Reach6Options } from './reach6.ts';
 
 /** What the client reports of the node's network map (net/ts/src/netmap.rs). */
 export type NetMap = {
   name: string;
   addresses: string[];
-  peers: { id: string; name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean }[];
+  /** `routes`: the subnets a peer routes (approved by the tailnet's admin). */
+  peers: { id: string; name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean; routes?: string[] }[];
+  /** Whether the peers' subnet routes are installed. */
+  acceptRoutes?: boolean;
   mtu: number;
   dns: string[] | null;
   domains: string[] | null;
@@ -30,6 +33,8 @@ export type TailscaleConfig = {
   hostname?: string;
   /** A peer's stable ID (an `exitNodeOption` of the netmap): send the guest's internet traffic through it from the start. */
   exitNode?: string;
+  /** Install peers' subnet routes (default: yes). */
+  acceptRoutes?: boolean;
   /** Where the client's module is served from (default: this checkout's target/net/ts.wasm). */
   wasm?: string;
   /**
@@ -49,7 +54,7 @@ export type TailscaleConfig = {
 
 /** Messages to the worker. */
 export type ToTailscale =
-  | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; ip: MessagePort; persist?: string; probe6?: Reach6Options }
+  | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; acceptRoutes?: boolean; ip: MessagePort; persist?: string; probe6?: Reach6Options }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
   /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/network-adapters.md §4). */
@@ -58,6 +63,8 @@ export type ToTailscale =
   | { type: 'detach' }
   /** Use the peer with this stable ID as the exit node ('': none); answered by `exitnode`. */
   | { type: 'exitnode'; id: string }
+  /** Install peers' subnet routes, or stop; a `netmap` follows. */
+  | { type: 'routes'; on: boolean }
   /** Log the node out of the tailnet and forget its saved state. */
   | { type: 'logout' };
 
@@ -96,6 +103,20 @@ const ip4 = (s: string) => {
  * reports; no range is assumed) and its first IPv6 one, the client's MTU, its DNS resolvers that are
  * IP addresses (MagicDNS's service addresses first) and its search domains. Null while there's no IPv4 address.
  */
+/** The subnets the netmap's peers route, when they're installed: what the lease routes besides the tailnet's own addresses. */
+export function subnetsOf(nm: NetMap | undefined): Required<Pick<Routes, 'v4' | 'v6'>> {
+  const out: Required<Pick<Routes, 'v4' | 'v6'>> = { v4: [], v6: [] };
+  if (!nm?.acceptRoutes) return out;
+  for (const r of nm.peers.flatMap((p) => p.routes ?? [])) {
+    const [a, len] = r.split('/');
+    const v4 = ip4(a);
+    const v6 = v4 ? undefined : ip6(a);
+    if (v4) out.v4.push([v4, Number(len)]);
+    else if (v6) out.v6.push([v6, Number(len)]);
+  }
+  return out;
+}
+
 export function leaseFrom(nm: NetMap): Lease | null {
   const address = nm.addresses.map((a) => ip4(a.replace(/\/\d+$/, ''))).find((a) => a);
   if (!address) return null;
@@ -126,6 +147,8 @@ export type Tailscale = {
   detach(): Promise<MessagePort | undefined>;
   /** Sends the internet traffic through the peer with this stable ID (a netmap peer with `exitNodeOption`), or with '' stops; rejects with the client's reason. */
   setExitNode(id: string): Promise<void>;
+  /** Installs peers' subnet routes, or stops (the netmap that follows says which). */
+  setAcceptRoutes(on: boolean): void;
   /** Logs the node out of the tailnet (its control server forgets it) and deletes its saved state; resolves once that's done (at most ~8 s). */
   logout(): Promise<void>;
   close(): void;
@@ -168,7 +191,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   });
   running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(
-    { type: 'start', wasm: config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, ip: port1, persist: config.persist, probe6: config.probe6 } satisfies ToTailscale,
+    { type: 'start', wasm: config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, acceptRoutes: config.acceptRoutes, ip: port1, persist: config.persist, probe6: config.probe6 } satisfies ToTailscale,
     [port1],
   );
   return {
@@ -185,6 +208,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       exitDone = (error) => { clearTimeout(t); error ? reject(new Error(error)) : resolve(); };
       worker.postMessage({ type: 'exitnode', id } satisfies ToTailscale);
     }),
+    setAcceptRoutes: (on) => worker.postMessage({ type: 'routes', on } satisfies ToTailscale),
     logout: () => new Promise<void>((resolve) => {
       const t = setTimeout(resolve, 8000);
       loggedOut = () => { clearTimeout(t); resolve(); };

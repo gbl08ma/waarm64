@@ -7,6 +7,7 @@ pub const AAAA: u16 = 28;
 pub const NOERROR: u8 = 0;
 pub const SERVFAIL: u8 = 2;
 pub const NXDOMAIN: u8 = 3;
+pub const REFUSED: u8 = 5;
 
 #[derive(Debug, PartialEq)]
 pub struct Query {
@@ -14,6 +15,8 @@ pub struct Query {
     /// Lower case, without the trailing dot.
     pub name: String,
     pub qtype: u16,
+    /// The largest answer over UDP the asker takes: its EDNS(0) size, or 512.
+    pub udp_size: usize,
     /// Where the question ends (answers repeat the message up to here).
     end: usize,
 }
@@ -43,12 +46,55 @@ pub fn parse(m: &[u8]) -> Option<Query> {
     }
     let qtype = u16::from_be_bytes([*m.get(at)?, *m.get(at + 1)?]);
     m.get(at + 3)?; // the class
+    let end = at + 4;
+    // An OPT record (the root's name, type 41) first among the additional ones: its class is
+    // the asker's UDP payload size.
+    let opt =
+        u16::from_be_bytes([m[10], m[11]]) > 0 && m.get(end..end + 3) == Some(&[0, 0, 41][..]);
+    let udp_size = match opt {
+        true => (u16::from_be_bytes([*m.get(end + 3)?, *m.get(end + 4)?]) as usize).max(512),
+        false => 512,
+    };
     Some(Query {
         id: u16::from_be_bytes([m[0], m[1]]),
         name: labels.join("."),
         qtype,
-        end: at + 4,
+        udp_size,
+        end,
     })
+}
+
+/// A response's RCODE (SERVFAIL for what isn't one).
+pub fn rcode(m: &[u8]) -> u8 {
+    match m.get(2..4) {
+        Some(&[f, r]) if f & 0x80 != 0 => r & 15,
+        _ => SERVFAIL,
+    }
+}
+
+/// Whether a response was truncated (TC).
+pub fn truncated(m: &[u8]) -> bool {
+    m.get(2).is_some_and(|f| f & 0x02 != 0)
+}
+
+/// Response `m` as it may go over UDP in `max` bytes: as it is if it fits, or else its header
+/// and question with TC set (the asker asks again over TCP), as RFC 1035 has it.
+pub fn fit(m: &[u8], max: usize) -> Vec<u8> {
+    if m.len() <= max || m.len() < 12 {
+        return m.to_vec();
+    }
+    let mut at = 12;
+    while let Some(&n) = m.get(at) {
+        at += 1 + n as usize;
+        if n == 0 || n > 63 {
+            break;
+        }
+    }
+    let mut t = m[..(at + 4).min(m.len())].to_vec();
+    t[2] |= 0x02;
+    t[4..6].copy_from_slice(&[0, 1]);
+    t[6..12].fill(0);
+    t
 }
 
 /// The answer to `q` (from `m`): `rcode` and these addresses (those of the asked type).
@@ -87,14 +133,24 @@ pub fn answer(m: &[u8], q: &Query, rcode: u8, addrs: &[IpAddr], ttl: u32) -> Vec
 /// The DNS-over-HTTPS service of a well-known resolver's address, or Cloudflare's: where a
 /// browser sends what would go to a plain resolver it can't reach (as the Go client does).
 pub fn doh_url(resolver: Option<IpAddr>) -> &'static str {
-    match resolver.map(|a| a.to_string()).as_deref() {
-        Some("8.8.8.8" | "8.8.4.4" | "2001:4860:4860::8888" | "2001:4860:4860::8844") => {
-            "https://dns.google/dns-query"
+    resolver
+        .and_then(known_doh)
+        .unwrap_or("https://cloudflare-dns.com/dns-query")
+}
+
+/// The DNS-over-HTTPS service of a well-known public resolver's address.
+pub fn known_doh(resolver: IpAddr) -> Option<&'static str> {
+    match resolver.to_string().as_str() {
+        "8.8.8.8" | "8.8.4.4" | "2001:4860:4860::8888" | "2001:4860:4860::8844" => {
+            Some("https://dns.google/dns-query")
         }
-        Some("9.9.9.9" | "149.112.112.112" | "2620:fe::fe" | "2620:fe::9") => {
-            "https://dns.quad9.net/dns-query"
+        "9.9.9.9" | "149.112.112.112" | "2620:fe::fe" | "2620:fe::9" => {
+            Some("https://dns.quad9.net/dns-query")
         }
-        _ => "https://cloudflare-dns.com/dns-query",
+        "1.1.1.1" | "1.0.0.1" | "2606:4700:4700::1111" | "2606:4700:4700::1001" => {
+            Some("https://cloudflare-dns.com/dns-query")
+        }
+        _ => None,
     }
 }
 
@@ -136,5 +192,31 @@ mod tests {
         let mut resp = m.clone();
         resp[2] |= 0x80;
         assert_eq!(parse(&resp), None);
+        assert_eq!(q.udp_size, 512, "no EDNS");
+    }
+
+    #[test]
+    fn edns_sizes_and_answers_that_dont_fit() {
+        let mut m = query("big.example", 16);
+        m[11] = 1; // one additional record: OPT, 1232 bytes
+        m.extend_from_slice(&[0, 0, 41, 0x04, 0xd0, 0, 0, 0, 0, 0, 0]);
+        let q = parse(&m).unwrap();
+        assert_eq!(q.udp_size, 1232);
+        // A 2 KB answer: header and question, TC set, no records.
+        let mut a = answer(&m, &q, NOERROR, &[], 60);
+        a[7] = 9;
+        a.resize(2048, 7);
+        assert!(!truncated(&a));
+        let t = fit(&a, q.udp_size);
+        assert!(truncated(&t));
+        assert_eq!(&t[4..12], &[0, 1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(t.len(), 12 + "big.example".len() + 2 + 4);
+        assert_eq!(rcode(&t), NOERROR);
+        assert_eq!(fit(&t, 512), t, "what fits goes as it is");
+        assert_eq!(
+            rcode(b"\x00\x01\x01\x00"),
+            SERVFAIL,
+            "a query isn't an answer"
+        );
     }
 }

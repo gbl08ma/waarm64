@@ -29,6 +29,7 @@ function clients() {
       attach: (ip) => { held = ip; log.push(`${kind}${n} attach`); },
       detach: async () => { log.push(`${kind}${n} detach`); const h = held; held = undefined; return h; },
       setExitNode: async (id) => { log.push(`${kind}${n} exit ${id || '-'}`); },
+      setAcceptRoutes: (on) => { log.push(`${kind}${n} routes ${on}`); },
       logout: async () => { log.push(`${kind}${n} logout`); },
       close: () => {},
     };
@@ -165,6 +166,11 @@ test("the guest's default way out: the adapter that reaches the internet, moving
   p.all[0].set('Running', netmap({ exitNode: 'nEXIT' }));
   assert.equal(p.net.views().findIndex((v) => v.primary), 0);
   assert.equal((await p.net.conns.get(ts.id))!.tailnet!.exitNode, 'nEXIT', 'the exit node is kept with the connection');
+  // Subnet routes: on unless turned off, and the choice is kept with the connection too.
+  assert.equal((p.all[0].config as TailscaleConfig).acceptRoutes, undefined, 'the default: on');
+  await p.net.setAcceptRoutes(0, false);
+  assert.ok(p.log.includes('ts0 routes false'));
+  assert.equal((await p.net.conns.get(ts.id))!.tailnet!.acceptRoutes, false);
   assert.equal(p.log.filter((l) => l.startsWith('cat1 primary')).at(-1), 'cat1 primary false');
   p.close();
 });

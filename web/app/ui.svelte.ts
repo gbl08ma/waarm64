@@ -160,6 +160,7 @@ export type Page = {
   netDisconnect(adapter: number): Promise<void>;
   netLogout(adapter: number): Promise<void>;
   netExit(adapter: number, peer: string): Promise<void>;
+  netRoutes(adapter: number, on: boolean): Promise<void>;
   /** A connection's edit (what changes without a new node), name, deletion (after asking), and tailcat's New address (after asking: false if not). */
   netEdit(c: Connection): Promise<void>;
   netRename(c: Connection, name: string): Promise<void>;

@@ -21,5 +21,5 @@ node --disable-warning=ExperimentalWarning --test tests/net-guest.test.ts tests/
 # data plane) and in the page. One at a time: each brings up the test tailnet (tests/net/tailnet.sh)
 # on the same ports as the guest's test above.
 step 'the tailnet client in Node and the page'
-node --disable-warning=ExperimentalWarning --test --test-concurrency=1 tests/ts-tailnet.test.ts tests/tailscale-browser.test.ts
+node --disable-warning=ExperimentalWarning --test --test-concurrency=1 tests/ts-tailnet.test.ts tests/tailscale-browser.test.ts tests/ts-tailcat.test.ts
 printf '\nCI-NET OK (%d s)\n' "$SECONDS"

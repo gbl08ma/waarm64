@@ -62,3 +62,15 @@ test('the lease comes from what the client reports: its first IPv4 and IPv6 addr
   assert.equal(leaseFrom({ ...nm, addresses: ['fd7a:::3/128', '10.0.0.1/32'] })?.address6, undefined, 'malformed');
   assert.equal(leaseFrom({ ...nm, addresses: ['fd7a:115c:a1e0::3/128'] }), null, 'no IPv4 address, no lease');
 });
+
+test('the subnets peers route, when installed: what a lease that isn\'t the default way out routes besides the tailnet', async () => {
+  const { subnetsOf } = await import('../web/tailscale.ts');
+  const peers = [
+    { id: 'a', name: 'a.', addresses: [], exitNodeOption: false, routes: ['192.168.1.0/24', 'fd00:1::/64'] },
+    { id: 'b', name: 'b.', addresses: [], exitNodeOption: true },
+  ];
+  const nm = { name: 'g.', addresses: ['100.90.0.2/32'], peers, mtu: 1280, dns: [], domains: [], exitNode: '', acceptRoutes: true };
+  assert.deepEqual(subnetsOf(nm), { v4: [[[192, 168, 1, 0], 24]], v6: [[[0xfd, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 64]] });
+  assert.deepEqual(subnetsOf({ ...nm, acceptRoutes: false }), { v4: [], v6: [] }, 'not installed');
+  assert.deepEqual(subnetsOf(undefined), { v4: [], v6: [] });
+});

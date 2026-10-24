@@ -38,6 +38,9 @@ test('the view of the client: contacting, login, approval, connected, stopped, e
   assert.equal(up.address, '100.90.0.2');
   assert.match(up.text, /Connected as guest\.tail\.test \(100\.90\.0\.2\), 1 peer$/);
   assert.match(viewOf({ state: 'Running', netmap: netmap({ peers: [] }) }).text, /0 peers$/);
+  assert.equal(up.subnets, undefined, 'no peer routes a subnet: no choice to offer');
+  const lan = netmap({ peers: [{ id: 'r', name: 'router.', addresses: [], exitNodeOption: false, routes: ['192.168.1.0/24'] }], acceptRoutes: false });
+  assert.deepEqual(viewOf({ state: 'Running', netmap: lan }).subnets, { routes: ['192.168.1.0/24'], on: false });
   assert.equal(viewOf({ state: 'Stopped' }).phase, 'off');
   assert.deepEqual(viewOf({ state: 'Starting', error: 'no route\nmore' }), { phase: 'error', text: "Couldn't connect: no route", exitNodes: [] });
 });
@@ -68,6 +71,7 @@ function fake() {
       attach: (ip) => { held = ip; attached.push(ip); log.push('attach'); },
       detach: async () => { log.push('detach'); const h = held; held = undefined; return h; },
       setExitNode: async (id) => { log.push(`exit ${id || '-'}`); if (id === 'bad') throw new Error('nope'); },
+      setAcceptRoutes: (on) => { log.push(`routes ${on}`); },
       logout: async () => { log.push('logout'); },
       close: () => log.push('close'),
     };
@@ -180,7 +184,7 @@ test('a tailcat connection: the address goes to the tailcat client, not the Tail
     return {
       state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
       setPrimary: () => {}, attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
-      setExitNode: async () => { throw new Error('no'); }, logout: async () => {}, close: () => {},
+      setExitNode: async () => { throw new Error('no'); }, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
     };
   };
   const net = createNetwork(() => {}, ts.start, startCat);
@@ -218,7 +222,7 @@ test('a served machine (tailcat T3): serving alone or beside a tailcat server; t
     return {
       state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
       setPrimary: () => {}, attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
-      setExitNode: async () => { throw new Error('no'); }, logout: async () => {}, close: () => {},
+      setExitNode: async () => { throw new Error('no'); }, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
     };
   };
   const net = createNetwork(() => {}, ts.start, startCat);
@@ -263,7 +267,7 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   const told: (boolean | number)[][] = [];
   const fake = (): Tailscale => ({
     state: () => '', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
-    setPrimary: (p, r) => { told.push([p, r ?? 0]); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, logout: async () => {}, close: () => {},
+    setPrimary: (p, r) => { told.push([p, r ?? 0]); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
   });
   const net = createNetwork(() => {}, fake, fake);
   net.port();

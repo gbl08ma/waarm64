@@ -14,14 +14,14 @@ I/O. It speaks two protocols:
 What the user sees (the Network wizard and menu, the settings, the lease) is
 [frontend.md](frontend.md) "Network". Why our own client and not Tailscale's Go one built to wasm (the
 page's until 2026-10-17): the Go module was 26.9 MB of wasm (4.3 MB Brotli), a Go runtime and heap of
-20 to 26 MB in its worker, and WireGuard in pure Go on one thread; this one is under 0.5 MB Brotli and
+20 to 26 MB in its worker, and WireGuard in pure Go on one thread; this one is about 0.5 MB Brotli (511 KB on 2026-10-24) and
 2 MB of memory with twice the throughput ("Numbers"). The decisions that led here (frames at the
 device, the gateway, the guest as the node) are [plans/networking.md](plans/networking.md)'s.
 
 **The files.** `net/ts/src/`: `wasm.rs` (the exports), `client.rs` (the tailcat client, and the
 actions both clients share), `tailcat.rs` (the address), `cbor.rs`, `nat46.rs`, `derp.rs`, `ip.rs`
 (packet builders), `tailnet.rs` (the Tailscale client's data plane), `control.rs` (the control
-session), `noise.rs`, `h2pipe.rs`, `netmap.rs`, `store.rs` (the kept node), `dns.rs`. The page's
+session), `noise.rs`, `h2pipe.rs`, `netmap.rs`, `store.rs` (the kept node), `dns.rs`, `dns_tcp.rs` (MagicDNS over TCP). The page's
 side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/ts-wasi.ts`,
 `web/tailcat.ts` and `web/tailcat-worker.ts`, `web/tailscale.ts` and `web/tailnet-worker.ts`,
 `web/tailscale-state.ts` (the kept node in IndexedDB). Built by `net/ts/build.sh` to
@@ -39,7 +39,7 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   `ts_deadline` says when to tick next; `ts_poll` returns actions until none is left, read from
   `ts_buf()`: open, send on or close a WebSocket, `fetch` a URL, a packet for the guest, a JSON
   event (`state`, `lease`, `self`, `serving`, `client`, `netmap`, `login`, `store`, `exitnode`,
-  `loggedout`, `log`). Also `ts_exit_node`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
+  `loggedout`, `log`). Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and
@@ -69,9 +69,19 @@ WebSockets:
 
 - **DERP** is `wss://<derp>/derp` with subprotocol `derp`, the same frames as over TCP (`derp.rs`: the
   server's key, our client info sealed to it with a NaCl box, the server's info, then send/recv
-  packet, keep-alive, ping/pong, peer-gone, health, restarting; reconnect with backoff). One
+  packet, keep-alive, ping/pong, peer-gone, health, restarting). One
   connection per region in use: the home region, and each peer's home region when we send to it,
   closed after 60 s unused.
+- **Liveness** (`derp.rs`): a browser's WebSocket can stay open for minutes on a path that died (a
+  laptop that slept, a network that changed, a NAT that forgot the flow; the server's keep-alives come
+  every 60 s), so each connection pings its server after 25 s with nothing heard (which also keeps
+  idle-closing proxies away), or after 2 s of sending with nothing back, and is dropped when 6 s pass
+  with nothing at all from the server; a connection whose handshake isn't done 10 s after it was
+  asked for is dropped too. A dropped connection that was up comes back at once (one up for under
+  10 s counts as failing: a growing backoff, 0.5 s to 30 s), with what it had queued. The home relay
+  dropped by its liveness check also has the control connection reconnect, unless it brought
+  something in the last 15 s. Measured against the tailcat rig: traffic back ~8.3 s after the path
+  died (tests/ts-tailcat.test.ts); before, never (the socket stayed open).
 - **Frames are joined** into messages of up to 4 KiB (`queue_frames`): the server reads the WebSocket
   as a byte stream (frames may straddle messages, as its own 4 KB writes do), so what was queued
   before the host takes the actions (an IP-port batch: `ts_guest` per packet, then one pump) leaves
@@ -107,7 +117,10 @@ WebSockets:
 - **The public relays** are rate-limited, best-effort and revocable; the page recommends one's own
   derper (`tailcat genkey --region=<host>`).
 
-**Going online through a server** (`client.rs`). A fresh node key per connect. The guest's lease: IPv6
+**Going online through a server** (`client.rs`). A fresh node key per connect. Each new relay
+connection meows again (the server may have forgotten us), and so does the server's `PeerGone`
+(it left the relay: a restart forgets its clients), every second until it answers; after a
+`PeerGone` the answer also starts a new WireGuard session, since the server lost ours. The guest's lease: IPv6
 the tunnel address as a /128 (DHCPv6 and the router advertisement), IPv4 `192.0.0.2` (RFC 7335's
 address for a host translator's IPv4 side; nothing outside sees it), resolvers 1.1.1.1 and
 2606:4700:4700::1111 reached through the exit node (no MagicDNS). The IPv6 default route and resolver only while the
@@ -137,11 +150,15 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
   Noise IK handshake (`ts_noise`; the record framing ours, `noise.rs`), HTTP/2 inside (`h2pipe.rs`:
   `h2`'s client over an in-memory pipe, polled with a no-op waker after every input, no runtime), the
   early payload skipped. Register with the auth key only for a node the server doesn't know; without
-  one, the `AuthURL` goes to the page (`login`) and the follow-up long-poll waits for it; an auth key's
-  node is ephemeral. Key expiry; logout is a registration with an expiry in the past. The map stream
+  one, the `AuthURL` goes to the page (`login`) and the follow-up long-poll waits for it (up to 10 min
+  quiet); an auth key's node is ephemeral. Key expiry (at registration, and when the map says our key
+  expired: a registration again); logout is a registration with an expiry in the past. The map stream
   (`/machine/map`, `Stream: true`, `Compress: ""`, frames as 32-bit little-endian lengths): the full
-  netmap, then deltas applied as `controlclient` does (`netmap.rs`); a stream silent for 150 s is
-  presumed dead; reconnect with backoff. Our `Hostinfo` has the hostname and `PreferredDERP`, no
+  netmap, then deltas applied as `controlclient` does (`netmap.rs`; each stream starts the packet
+  filter afresh, as Go's map session); a stream silent for 150 s is presumed dead, a key fetch or
+  handshake after 30 s; reconnect with backoff. A node with an address in one family only (headscale
+  with only `prefixes.v4`) parses: `ts_control_serde` takes exactly an IPv4 then an IPv6 prefix, so such
+  a response is fixed up before it's read again (`netmap.rs` `one_family`). Our `Hostinfo` has the hostname and `PreferredDERP`, no
   endpoints. The capability version is tailscale-rs's (`CapabilityVersion::CURRENT`).
 - **The kept node** (`store.rs`, `web/tailscale-state.ts`): the Go client's own `ipn.StateStore` as the
   page kept it before the switch, IndexedDB `webpc-tailscale`, object store `state`, keys
@@ -155,21 +172,37 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
   `tests/ts-tailnet.test.ts` hands a node between the two both ways.
 - **The home region** is the one answering `/derp/probe` fastest (a `fetch` per region, 3 s at most;
   the map's first otherwise), told to the server in a non-streaming map request.
-- **The data plane:** a `ts_tunnel` peer per netmap peer, each reached through its home region. Routes
-  by longest prefix over each peer's addresses and, for the selected exit node only, the default
-  routes (`ts_exit_node`, the peer's stable ID; other AllowedIPs, subnet routes included, aren't
-  installed); while one is in use the worker probes its IPv6 reach and leases no IPv6 default without it
+- **The data plane:** a `ts_tunnel` peer per netmap peer, each reached through its home region. A
+  peer's new node key (it re-registered) or new disco key (it restarted) makes its WireGuard state
+  anew: ts_tunnel's `upsert_peer` keeps the old handshake, whose MACs are keyed to the old key, and a
+  session the restarted peer forgot would swallow our packets until it expired (up to 3 min). An
+  initiation nobody answered goes again, the same bytes, after 0.25, 0.5, 0.75, 1, 1.5, 2 and 3 s
+  (ts_tunnel's own retry is at 5 s): a peer whose map doesn't have our node yet (a new node, an auth
+  key's ephemeral one at every start) drops it, and a responder that did see it drops the copy as a
+  replay. The first packet to the Podman tailnet's peer: 4.5 s before (5 of 6 runs), 0.76 s (5 of 5). Routes
+  by longest prefix (a table rebuilt on each netmap: host addresses by address, prefixes longest
+  first) over each peer's addresses, its approved subnet routes (its AllowedIPs that aren't its
+  addresses or a default; unless the page turned them off, `ts_accept_routes`, as Tailscale's apps
+  accept them by default) and, for the selected exit node only, the default
+  routes (`ts_exit_node`, the peer's stable ID); while one is in use the worker probes its IPv6 reach and leases no IPv6 default without it
   (web/reach6.ts, docs/network-adapters.md §4 "IPv6 out"). What comes in passes `ts_packetfilter` (with the sender's node attributes), except TCP
   that isn't a new connection (Go's rule) and replies to the guest's own UDP flows and pings (a flow
   table, 2 min, 8,192 flows): the guest is a node, and the tailnet's ACLs apply to it.
-- **MagicDNS** at 100.100.100.100 and `fd7a:115c:a1e0::53` (UDP): A and AAAA for the netmap's names
+- **MagicDNS** at 100.100.100.100 and `fd7a:115c:a1e0::53`, over UDP and TCP (`dns_tcp.rs`: just enough
+  TCP for RFC 7766's queries, what a resolver falls back to after a truncated answer; no
+  retransmission, the gateway's link loses nothing): A and AAAA for the netmap's names
   (peers' AAAA only with the `magicdns-aaaa` node attribute, as Go) and its extra records; NXDOMAIN
   inside the tailnet's own domains; the rest by the longest matching route's resolvers, or the
-  netmap's. A plain resolver the tunnel reaches (a peer, or anything through the exit node; 1.1.1.1
-  through the exit node when the tailnet names none) is asked through it from the node's address
-  (ports 61000–61999, above Linux's ephemeral range; 10 s); otherwise DNS over HTTPS by `fetch`: the
-  route's own `https://` resolver, or the well-known resolver's service (Google, Quad9), Cloudflare's
-  otherwise. Through an exit node, plain DNS where Go uses the exit node's peerapi DoH.
+  netmap's. Every resolver (up to 4) is asked at once and the first answer that isn't SERVFAIL or
+  REFUSED goes back (a failure only when all failed), as Go's forwarder races them: a resolver that's
+  down costs nothing while another answers. A plain resolver the tunnel reaches (a peer, a subnet, or
+  anything through the exit node; 1.1.1.1 through the exit node when the tailnet names none) is asked
+  through it from the node's address (ports 61000–61999, above Linux's ephemeral range; 10 s);
+  otherwise DNS over HTTPS by `fetch`: the route's own `https://` resolver, or the well-known
+  resolver's service (Google, Quad9, Cloudflare), Cloudflare's otherwise. An answer over UDP fits the
+  asker's EDNS(0) size (512 without) and the link: else its header and question with TC set, and the
+  guest asks again over TCP; there, a truncated answer from a well-known public resolver is asked of
+  its DoH service. Through an exit node, plain DNS where Go uses the exit node's peerapi DoH.
 - **Disco:** pings from known peers over DERP get pongs (`ts_disco_protocol`), so peers see us
   properly; none sent (no direct path to offer).
 - **Refused or left out:** a tailnet with Tailnet Lock on fails with that reason (not half-working);
@@ -197,7 +230,8 @@ natively by Go at pinned versions, the relay on `127.0.0.1:8444` with a self-sig
 `tests/tailcat-browser.test.ts`, `tests/net-tailcat.test.ts` and `tests/page-network.test.ts`; the
 test tailnet (`tests/net/tailnet.sh`, headscale and a peer in rootless Podman; natively in a cloud
 session, `tests/net/tailnet-native.sh`) under `tests/ts-tailnet.test.ts`,
-`tests/tailscale-browser.test.ts` and `tests/net-tailnet.test.ts`. Because a tailcat exit node reaches
+`tests/tailscale-browser.test.ts` and `tests/net-tailnet.test.ts`; the tailcat rig again under
+`tests/ts-tailcat.test.ts` (a relay's path cut off while its WebSocket stays open). Because a tailcat exit node reaches
 private addresses, a server on this machine stands in for the internet: the exit-node path is routine
 there, where Tailscale's is opt-in.
 
@@ -213,9 +247,17 @@ a run of `scripts/ci-net.sh`; a tailcat bump, a re-check of the address and the 
 - A tailcat exit node slows to nothing under one UDP flow per packet (a harness's mistake; a guest
   spraying flows would do the same). It doesn't answer IPv6 to its own `[::1]`: the tests use the
   machine's non-link-local IPv6 address (testing.md).
-- The first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry, later
-  clients' first packets 55 ms: the peer's warm-up (the Go client's "5 s first ping" too). Headscale
-  answers the first map ~2 s after registration, for both clients.
+- The first packet to a fresh peer after the tailnet comes up waited ~4.5 s for a WireGuard retry
+  (the Go client's "5 s first ping", bench/net/REPORT.md, too): the peer's map doesn't have our node
+  yet, and drops our initiation. On 2026-10-24 (tests/ts-tailnet.test.ts's first echo, a new auth-key
+  node each run, alternated): the old build 4.5 s in 5 of 6 runs (11 ms in the other), and a log of the
+  answer's time with a resend every 100 ms showed the peer taking us 0.6–0.7 s after our first
+  initiation, every time (the first runs of the day answered in ~10 ms: how often it shows varies).
+  With the resends (above), 0.76 s in 5 of 5. Headscale answers the first map ~2 s after registration,
+  for both clients.
+- A netmap delta that gives a peer its disco key (none before) isn't a restart: resetting WireGuard
+  then lost the handshake in flight, the first echo at 1 s instead of 10 ms in 2 of 3 runs. Only a
+  disco key that changes from one to another resets it.
 - Go's `net/http` in wasm refuses `fetch` under Node: it looks at `process.argv0` (the hand-over test's
   worker gives Go a `process` whose `argv0` isn't "node"). `ts_control_serde`'s `RegisterResponse`
   needs every field of the user (read as JSON instead).

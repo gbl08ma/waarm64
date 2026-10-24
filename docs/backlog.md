@@ -754,24 +754,32 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **tailcat loose ends**: an address that names only a region (tailcat's public relays) fetches
   `https://tailcat.dev/derpmap.json`, run against the real map once by hand (2026-10-23: `tailcat serve exit-node`
   with no `--key` on the Mac, region 303 Frankfurt, the page's Debian through it), never in a test; the relay's loss while running is
-  covered natively (`relay_loss_while_running`), not in a browser (kill derper mid-test); a guest spraying UDP flows
+  covered natively (`relay_loss_while_running`, a server's restart) and in Node against the rig (a path cut off while
+  its WebSocket stays open: tests/ts-tailcat.test.ts), not in a browser; a guest spraying UDP flows
   (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
   `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,
   not fragmented (`nat46.rs`), unchecked with `tcpdump`.
 - **The Rust Tailscale client's loose ends** ([tailnet.md](tailnet.md) "Tailscale"):
-  - Subnet routes aren't installed (only peers' own addresses and the selected exit node's default routes); Go's
-    stored prefs say `RouteAll: false` too, but its `NewPrefs` accepts them: decide with the user.
+  - Subnet routes (on by default, a menu toggle; 2026-10-24): checked by unit tests and `viewOf`'s only, no subnet
+    router in the Podman tailnet; an adapter that isn't the default way out learns a new IPv4 subnet route only at
+    the guest's next DHCP renewal (option 121; IPv6's router advertisement is at once).
+  - A tailnet with IPv6 addresses only gets no lease (the gateway's DHCP needs an IPv4 address: `leaseFrom`).
+  - An exit node that goes offline or stops offering itself stays selected and the guest's internet traffic is
+    dropped, as Go fails closed; the menu shows it "(offline)", but the status line still says "internet through" it.
   - IPv6 extension headers aren't followed by the filter (such a packet is judged by its first next-header).
   - MagicDNS answers A and AAAA only (no PTR for tailnet addresses, no SRV/TXT from extra records; other types
-    forward), over UDP only, and asks one resolver at a time with no retry (the guest's resolver retries); its
-    DNS-over-HTTPS fallback (Cloudflare, Google or Quad9 by `fetch`) is unit-tested only (the cloud has no DNS out).
+    forward); a query that no resolver answers within 10 s gets no answer (the guest's resolver times out and
+    retries; Go answers SERVFAIL); its TCP side (`dns_tcp.rs`) and DNS-over-HTTPS fallback (Cloudflare, Google or
+    Quad9 by `fetch`) are unit-tested only (the cloud has no DNS out; no guest test asks a name whose answer is
+    over 512 bytes); a truncated answer over TCP from a resolver that isn't well-known goes back truncated (no TCP
+    client in the module to ask it again).
   - The exit node's DNS goes as UDP to the tailnet's resolvers or 1.1.1.1, not to the exit node's peerapi DoH as Go's
     does (it would need a TCP client in the module): check against an exit node that blocks plain DNS.
   - Disco answers pings only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet
     Lock is refused, not supported.
-  - The first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry (later ones 55 ms;
-    the Go client's "5 s first ping" too); headscale answers the first map ~2 s after registration for both clients
-    (not ours to fix).
+  - Headscale answers the first map ~2 s after registration for both clients, and a peer takes our new node
+    0.6–0.7 s after our first handshake (docs/tailnet.md "Findings"; not ours to fix). Tailscale's own servers
+    unmeasured: an auth key's ephemeral node there is where to look.
   - The module in the device worker instead of its own (one worker and one hop less): only if its cost there is
     small; the worker spends 3.1 core-ms per Mbit/s (bench/net/REPORT.md "T6"), unmeasured inside the device worker.
   - Go is left only for test fixtures: the Go client (`net/tailscale`) for `tests/ts-tailnet.test.ts`'s hand-over of

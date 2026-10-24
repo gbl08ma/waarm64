@@ -18,7 +18,7 @@ export function connectOf(c: Connection, authKey?: string): Connect {
   }
   const t = c.tailnet!;
   // A stored connection's node is kept under its profile (so it comes back without a login, an auth key's too); an ephemeral one's isn't.
-  return { controlURL: t.controlURL, hostname: t.hostname, authKey: authKey || undefined, exitNode: t.exitNode || undefined, persist: c.ephemeral ? undefined : t.stateKey };
+  return { controlURL: t.controlURL, hostname: t.hostname, authKey: authKey || undefined, exitNode: t.exitNode || undefined, ...(t.acceptRoutes === false ? { acceptRoutes: false } : {}), persist: c.ephemeral ? undefined : t.stateKey };
 }
 
 /** A connection another machine has (in another tab): `holder` is its name, when that tab answered. */
@@ -218,6 +218,14 @@ export class PageNetwork {
     await this.nets[i].setExitNode(peer);
     const c = this.running[i] ? await this.conns.get(this.running[i]!) : undefined;
     if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, exitNode: peer } });
+    await this.refresh();
+  }
+
+  /** Whether adapter `i`'s tailnet installs its peers' subnet routes (kept in its connection). */
+  async setAcceptRoutes(i: number, on: boolean) {
+    this.nets[i].setAcceptRoutes(on);
+    const c = this.running[i] ? await this.conns.get(this.running[i]!) : undefined;
+    if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, acceptRoutes: on } });
     await this.refresh();
   }
 

@@ -4,6 +4,15 @@
 //! tailscale-rs's `ts_derp::frame`): a 5-byte header (type, big-endian length)
 //! per frame; the server's key first, our client info (sealed to it with a
 //! NaCl box), the server's info back, then packets.
+//!
+//! **Liveness.** A browser's WebSocket can stay open for minutes on a path that died (a laptop
+//! that slept, a network that changed, a NAT that forgot the flow), and the server's keep-alives
+//! come only every 60 s. So the connection pings the server when it has been quiet for
+//! [`IDLE_PING`] (which also keeps idle-closing proxies away), and sooner when it has been sending
+//! for [`ACTIVE_PING`] with nothing back; with no answer within [`PONG_WAIT`] it reports itself
+//! dead, as it does when the handshake doesn't finish within [`CONNECT_WAIT`].
+
+use std::time::{Duration, Instant};
 
 use crypto_box::{PublicKey, SalsaBox, SecretKey, aead::Aead};
 
@@ -23,6 +32,15 @@ const PING: u8 = 0x12;
 const PONG: u8 = 0x13;
 const HEALTH: u8 = 0x14;
 const RESTARTING: u8 = 0x15;
+
+/// How long the server may take from the WebSocket's opening to its info.
+pub const CONNECT_WAIT: Duration = Duration::from_secs(10);
+/// Quiet this long (nothing from the server), a ping.
+pub const IDLE_PING: Duration = Duration::from_secs(25);
+/// Sending this long with nothing back, a ping.
+pub const ACTIVE_PING: Duration = Duration::from_secs(2);
+/// A ping unanswered (nothing at all from the server) this long: the connection is dead.
+pub const PONG_WAIT: Duration = Duration::from_secs(6);
 
 #[derive(Debug, PartialEq)]
 pub enum Event {
@@ -46,6 +64,12 @@ pub struct Conn {
     ready: bool,
     buf: Vec<u8>,
     out: Vec<Vec<u8>>,
+    opened: Instant,
+    /// When the server was last heard, and when we last sent it a packet.
+    heard: Instant,
+    sent: Option<Instant>,
+    /// When our unanswered ping went out.
+    ping: Option<Instant>,
 }
 
 fn frame(t: u8, parts: &[&[u8]]) -> Vec<u8> {
@@ -62,7 +86,7 @@ fn frame(t: u8, parts: &[&[u8]]) -> Vec<u8> {
 impl Conn {
     /// A connection for the node with key pair (`private`, `public`); `preferred`
     /// tells the server it is our home region.
-    pub fn new(private: [u8; 32], public: [u8; 32], preferred: bool) -> Self {
+    pub fn new(private: [u8; 32], public: [u8; 32], preferred: bool, now: Instant) -> Self {
         Conn {
             private,
             public,
@@ -71,6 +95,54 @@ impl Conn {
             ready: false,
             buf: Vec::new(),
             out: Vec::new(),
+            opened: now,
+            heard: now,
+            sent: None,
+            ping: None,
+        }
+    }
+
+    /// Checks the connection at `now`: Err if it's dead (the caller drops it and reconnects).
+    /// It may queue a ping: take the output after.
+    pub fn tick(&mut self, now: Instant) -> Result<(), String> {
+        if !self.ready {
+            return match now.saturating_duration_since(self.opened) >= CONNECT_WAIT {
+                true => Err("no answer from the relay".into()),
+                false => Ok(()),
+            };
+        }
+        if let Some(at) = self.ping {
+            if now.saturating_duration_since(at) >= PONG_WAIT {
+                return Err("the relay stopped answering".into());
+            }
+            return Ok(());
+        }
+        if self.ping_due().is_some_and(|t| t <= now) {
+            let mut id = [0u8; 8];
+            getrandom::fill(&mut id).map_err(|e| format!("no randomness: {e}"))?;
+            self.out.push(frame(PING, &[&id]));
+            self.ping = Some(now);
+        }
+        Ok(())
+    }
+
+    /// Sending for [`ACTIVE_PING`] with nothing back, or quiet for [`IDLE_PING`].
+    fn ping_due(&self) -> Option<Instant> {
+        let idle = self.heard + IDLE_PING;
+        Some(match self.sent.filter(|s| *s > self.heard) {
+            Some(s) => idle.min(s + ACTIVE_PING),
+            None => idle,
+        })
+    }
+
+    /// When [`Conn::tick`] must run next.
+    pub fn deadline(&self) -> Option<Instant> {
+        if !self.ready {
+            return Some(self.opened + CONNECT_WAIT);
+        }
+        match self.ping {
+            Some(at) => Some(at + PONG_WAIT),
+            None => self.ping_due(),
         }
     }
 
@@ -85,16 +157,22 @@ impl Conn {
 
     /// Queues `packet` for the node with key `dst`. Before the handshake is
     /// done there is nowhere to send it: false.
-    pub fn send(&mut self, dst: &[u8; 32], packet: &[u8]) -> bool {
+    pub fn send(&mut self, dst: &[u8; 32], packet: &[u8], now: Instant) -> bool {
         if !self.ready || packet.len() > MAX_FRAME - 32 {
             return false;
         }
         self.out.push(frame(SEND_PACKET, &[dst, packet]));
+        if self.sent.is_none_or(|s| s <= self.heard) {
+            self.sent = Some(now);
+        }
         true
     }
 
     /// Takes bytes from the server. An error means the connection is unusable.
-    pub fn input(&mut self, bytes: &[u8]) -> Result<Vec<Event>, String> {
+    pub fn input(&mut self, bytes: &[u8], now: Instant) -> Result<Vec<Event>, String> {
+        // Anything at all from the server says the path works.
+        self.heard = now;
+        self.ping = None;
         self.buf.extend_from_slice(bytes);
         let mut events = Vec::new();
         let mut at = 0;
@@ -223,6 +301,7 @@ pub(crate) mod testserver {
                         out.push(frame(SERVER_INFO, &[&n, &sealed]));
                     }
                     SEND_PACKET => sent.push((b[..32].try_into().unwrap(), b[32..].to_vec())),
+                    PING => out.push(frame(PONG, &[b])),
                     _ => {}
                 }
             }
@@ -230,6 +309,9 @@ pub(crate) mod testserver {
         }
         pub fn deliver(&self, src: &[u8; 32], packet: &[u8]) -> Vec<u8> {
             frame(RECV_PACKET, &[src, packet])
+        }
+        pub fn peer_gone(&self, key: &[u8; 32]) -> Vec<u8> {
+            frame(PEER_GONE, &[key, &[0]])
         }
     }
 }
@@ -248,23 +330,24 @@ mod tests {
     #[test]
     fn handshake_and_packets() {
         let (cp, cpub) = keys(1);
-        let mut c = Conn::new(cp, cpub, true);
+        let now = Instant::now();
+        let mut c = Conn::new(cp, cpub, true, now);
         let mut s = Server::new([2; 32]);
         let mut sent = Vec::new();
         // The server's key arrives split across messages.
         let hello = s.hello();
-        assert_eq!(c.input(&hello[..7]).unwrap(), vec![]);
-        assert_eq!(c.input(&hello[7..]).unwrap(), vec![]);
-        assert!(!c.send(&[9; 32], b"early"));
+        assert_eq!(c.input(&hello[..7], now).unwrap(), vec![]);
+        assert_eq!(c.input(&hello[7..], now).unwrap(), vec![]);
+        assert!(!c.send(&[9; 32], b"early", now));
         let mut replies = Vec::new();
         for m in c.take_output() {
             replies.extend(s.input(&m, &mut sent));
         }
         assert_eq!(s.client, Some(cpub));
-        assert_eq!(c.input(&replies.concat()).unwrap(), vec![Event::Ready]);
+        assert_eq!(c.input(&replies.concat(), now).unwrap(), vec![Event::Ready]);
         // NotePreferred went out with the handshake's end.
         assert_eq!(c.take_output(), vec![vec![NOTE_PREFERRED, 0, 0, 0, 1, 1]]);
-        assert!(c.send(&[9; 32], b"hi"));
+        assert!(c.send(&[9; 32], b"hi", now));
         for m in c.take_output() {
             s.input(&m, &mut sent);
         }
@@ -276,7 +359,7 @@ mod tests {
         ]
         .concat();
         assert_eq!(
-            c.input(&two).unwrap(),
+            c.input(&two, now).unwrap(),
             vec![
                 Event::Recv {
                     src: [7; 32],
@@ -295,8 +378,8 @@ mod tests {
     fn rejects_a_non_derp_server() {
         let (cp, cpub) = keys(1);
         assert!(
-            Conn::new(cp, cpub, false)
-                .input(b"HTTP/1.1 200 OK\r\n")
+            Conn::new(cp, cpub, false, Instant::now())
+                .input(b"HTTP/1.1 200 OK\r\n", Instant::now())
                 .is_err()
         );
     }
@@ -304,14 +387,89 @@ mod tests {
     #[test]
     fn rejects_a_server_that_cant_open_the_box() {
         let (cp, cpub) = keys(1);
-        let mut c = Conn::new(cp, cpub, false);
+        let now = Instant::now();
+        let mut c = Conn::new(cp, cpub, false, now);
         let s = Server::new([2; 32]);
-        c.input(&s.hello()).unwrap();
+        c.input(&s.hello(), now).unwrap();
         c.take_output();
         // Server info sealed by a different key.
         let other = SalsaBox::new(&PublicKey::from(cpub), &SecretKey::from([3; 32]));
         let n = SalsaBox::generate_nonce(&mut crypto_box::aead::OsRng);
         let sealed = other.encrypt(&n, &b"{}"[..]).unwrap();
-        assert!(c.input(&frame(SERVER_INFO, &[&n, &sealed])).is_err());
+        assert!(c.input(&frame(SERVER_INFO, &[&n, &sealed]), now).is_err());
+    }
+
+    /// A connected client and its server, at `now`.
+    fn ready(now: Instant) -> (Conn, Server) {
+        let (cp, cpub) = keys(1);
+        let mut c = Conn::new(cp, cpub, false, now);
+        let mut s = Server::new([2; 32]);
+        c.input(&s.hello(), now).unwrap();
+        let mut replies = Vec::new();
+        for m in c.take_output() {
+            replies.extend(s.input(&m, &mut Vec::new()));
+        }
+        assert_eq!(c.input(&replies.concat(), now).unwrap(), vec![Event::Ready]);
+        c.take_output();
+        (c, s)
+    }
+
+    fn pings(c: &mut Conn) -> usize {
+        c.take_output().iter().filter(|f| f[0] == PING).count()
+    }
+
+    #[test]
+    fn a_relay_that_never_answers_times_out() {
+        let (cp, cpub) = keys(1);
+        let now = Instant::now();
+        let mut c = Conn::new(cp, cpub, false, now);
+        assert_eq!(c.deadline(), Some(now + CONNECT_WAIT));
+        assert!(c.tick(now + CONNECT_WAIT / 2).is_ok());
+        assert!(c.tick(now + CONNECT_WAIT).is_err());
+    }
+
+    #[test]
+    fn a_quiet_relay_is_pinged_and_a_dead_one_dropped() {
+        let now = Instant::now();
+        let (mut c, s) = ready(now);
+        // Quiet: a ping after IDLE_PING; an answer (anything) keeps it.
+        assert_eq!(c.deadline(), Some(now + IDLE_PING));
+        c.tick(now + IDLE_PING / 2).unwrap();
+        assert_eq!(pings(&mut c), 0);
+        let t = now + IDLE_PING;
+        c.tick(t).unwrap();
+        assert_eq!(pings(&mut c), 1);
+        assert_eq!(c.deadline(), Some(t + PONG_WAIT));
+        c.input(&frame(PONG, &[&[0; 8]]), t + Duration::from_millis(30))
+            .unwrap();
+        c.tick(t + PONG_WAIT).unwrap();
+        assert_eq!(pings(&mut c), 0);
+        // Sending with nothing back: a ping after ACTIVE_PING, then dead after PONG_WAIT.
+        let t = t + Duration::from_secs(1);
+        assert!(c.send(&[9; 32], b"hi", t));
+        c.take_output();
+        assert!(c.send(&[9; 32], b"again", t + Duration::from_secs(1)));
+        c.take_output();
+        assert_eq!(
+            c.deadline(),
+            Some(t + ACTIVE_PING),
+            "from the first unanswered send"
+        );
+        c.tick(t + ACTIVE_PING).unwrap();
+        assert_eq!(pings(&mut c), 1);
+        c.tick(t + ACTIVE_PING + PONG_WAIT / 2).unwrap();
+        assert!(c.tick(t + ACTIVE_PING + PONG_WAIT).is_err());
+        // A delivered packet counts as an answer.
+        let (mut c, s2) = ready(now);
+        let _ = s;
+        assert!(c.send(&[9; 32], b"hi", now));
+        c.take_output();
+        c.input(
+            &s2.deliver(&[7; 32], b"back"),
+            now + Duration::from_millis(50),
+        )
+        .unwrap();
+        c.tick(now + ACTIVE_PING + PONG_WAIT).unwrap();
+        assert_eq!(pings(&mut c), 0);
     }
 }

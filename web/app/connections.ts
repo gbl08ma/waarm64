@@ -15,6 +15,8 @@ export type TailnetConnection = {
   hostname: string;
   /** The exit node in use (a peer's stable ID), applied again at the next Connect; empty: none. */
   exitNode: string;
+  /** Install the peers' subnet routes (absent: yes, Tailscale's apps' default). */
+  acceptRoutes?: boolean;
   /** The node's profile prefix in `webpc-tailscale`: the connection's id, or, for the node kept before connections, its control URL. */
   stateKey: string;
 };

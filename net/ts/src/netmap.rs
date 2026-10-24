@@ -39,8 +39,12 @@ impl Node {
 
     #[allow(deprecated)] // the old DERP field, for older control servers
     fn from_wire(n: &ts_control_serde::Node<'_>) -> Self {
+        // Unspecified: the family the node has no address in (`one_family`).
         let (v4, v6) = n.addresses;
-        let addresses = vec![IpNet::V4(v4), IpNet::V6(v6)];
+        let addresses: Vec<IpNet> = [IpNet::V4(v4), IpNet::V6(v6)]
+            .into_iter()
+            .filter(|a| !a.addr().is_unspecified())
+            .collect();
         let caps: Vec<String> = n.cap_map.keys().map(|k| k.to_string()).collect();
         Node {
             id: n.id,
@@ -95,6 +99,9 @@ pub struct NetMap {
     pub filter: Option<ts_packetfilter::BTreeFilter>,
     /// The last response's sequence number, and whether it changed anything the page shows.
     pub seq: i64,
+    /// A new map stream started: its first response starts the filter afresh, as Go's new map
+    /// session does (the server needn't say a named set it no longer has is gone).
+    fresh: bool,
 }
 
 fn resolver(r: &ts_control_serde::DnsResolver<'_>) -> String {
@@ -122,11 +129,67 @@ pub struct Changed {
     pub tailnet_lock: bool,
 }
 
+/// `ts_control_serde` takes a node's `Addresses` as exactly an IPv4 prefix, then an IPv6 one: a
+/// tailnet with one family (headscale with only `prefixes.v4`, say) wouldn't parse. Such nodes
+/// get the other family's unspecified address, which `Node::from_wire` leaves out.
+fn one_family(json: &[u8]) -> Option<Vec<u8>> {
+    let mut v: serde_json::Value = serde_json::from_slice(json).ok()?;
+    let mut fixed = false;
+    let mut fix = |n: &mut serde_json::Value| {
+        let Some(a) = n.get_mut("Addresses").and_then(|a| a.as_array_mut()) else {
+            return;
+        };
+        let family = |a: &serde_json::Value, v4: bool| {
+            a.as_str()
+                .and_then(|s| s.parse::<IpNet>().ok())
+                .is_some_and(|n| n.addr().is_ipv4() == v4)
+        };
+        let v4 = a.iter().find(|x| family(x, true)).cloned();
+        let v6 = a.iter().find(|x| family(x, false)).cloned();
+        let want = vec![
+            v4.unwrap_or(json!("0.0.0.0/32")),
+            v6.unwrap_or(json!("::/128")),
+        ];
+        if *a != want {
+            *a = want;
+            fixed = true;
+        }
+    };
+    if let Some(n) = v.get_mut("Node") {
+        fix(n);
+    }
+    for list in ["Peers", "PeersChanged"] {
+        for n in v
+            .get_mut(list)
+            .and_then(|l| l.as_array_mut())
+            .into_iter()
+            .flatten()
+        {
+            fix(n);
+        }
+    }
+    fixed.then(|| v.to_string().into_bytes())
+}
+
 impl NetMap {
+    /// The next response is a new map stream's first.
+    pub fn new_stream(&mut self) {
+        self.fresh = true;
+    }
+
     /// Applies one map response (its JSON).
     pub fn apply(&mut self, json: &[u8]) -> Result<Changed, String> {
-        let r: MapResponse =
-            serde_json::from_slice(json).map_err(|e| format!("a map response: {e}"))?;
+        let fixed;
+        let r: MapResponse = match serde_json::from_slice(json) {
+            Ok(r) => r,
+            Err(e) => {
+                fixed = one_family(json).ok_or_else(|| format!("a map response: {e}"))?;
+                serde_json::from_slice(&fixed).map_err(|e| format!("a map response: {e}"))?
+            }
+        };
+        if std::mem::take(&mut self.fresh) {
+            self.filter = None;
+        }
         let mut c = Changed {
             keep_alive: r.keep_alive == Some(true),
             browse: r.pop_browser_url.map(str::to_string),
@@ -378,5 +441,40 @@ mod tests {
         assert_eq!(m.filter.as_ref().unwrap().len(), 2);
         m.apply(br#"{"PacketFilters": {"*": null}}"#).unwrap();
         assert_eq!(m.filter.as_ref().unwrap().len(), 0);
+        // A new stream starts the filter afresh: a named set not named again is gone.
+        m.apply(br#"{"PacketFilters": {"ssh": [{"SrcIPs": ["100.90.0.1"], "DstPorts": [{"IP": "*", "Ports": {"First": 22, "Last": 22}}]}]}}"#).unwrap();
+        m.new_stream();
+        m.apply(FULL.as_bytes()).unwrap();
+        assert_eq!(m.filter.as_ref().unwrap().len(), 1, "only base");
+    }
+
+    #[test]
+    fn a_tailnet_with_one_address_family() {
+        let mut m = NetMap::default();
+        let v4only = FULL
+            .replace(
+                r#""Addresses": ["100.90.0.2/32", "fd7a:115c:a1e0::2/128"]"#,
+                r#""Addresses": ["100.90.0.2/32"]"#,
+            )
+            .replace(
+                r#""Addresses": ["100.90.0.1/32", "fd7a:115c:a1e0::1/128"]"#,
+                r#""Addresses": ["fd7a:115c:a1e0::1/128"]"#,
+            );
+        assert_ne!(v4only, FULL);
+        let c = m.apply(v4only.as_bytes()).unwrap();
+        assert!(c.node && c.peers);
+        let addrs = |n: &Node| {
+            n.addresses
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(addrs(m.node.as_ref().unwrap()), ["100.90.0.2/32"]);
+        assert_eq!(addrs(&m.peers[&1]), ["fd7a:115c:a1e0::1/128"]);
+        assert_eq!(
+            m.node.as_ref().unwrap().allowed_ips.len(),
+            2,
+            "its own AllowedIPs"
+        );
     }
 }

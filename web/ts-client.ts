@@ -25,6 +25,7 @@ type Exports = {
   ts_free(h: number): void;
   ts_logout(h: number): void;
   ts_exit_node(h: number, ptr: number, len: number): void;
+  ts_accept_routes(h: number, on: number): void;
 };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
@@ -49,6 +50,8 @@ export type TailnetConfig = {
   state?: Record<string, string>;
   /** A peer's stable ID to send the guest's internet traffic through ('' for none). */
   exitNode?: string;
+  /** Install peers' subnet routes (default: yes, as Tailscale's own apps do). */
+  acceptRoutes?: boolean;
 };
 
 export type TsEvent =
@@ -77,6 +80,9 @@ export type TsHandlers = {
 
 export const DNS4 = [[1, 1, 1, 1], [1, 0, 0, 1]];
 export const DNS6 = [[0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]];
+
+/** How long a fetch (the control server's key, a DERP map or probe, DNS over HTTPS) may take. */
+const FETCH_MS = 15_000;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -160,6 +166,13 @@ export class TsClient {
     this.pump();
   }
 
+  /** Tailscale: installs peers' subnet routes, or stops; a `netmap` event follows. */
+  setAcceptRoutes(on: boolean) {
+    if (this.closed) return;
+    this.m.x.ts_accept_routes(this.h, on ? 1 : 0);
+    this.pump();
+  }
+
   close() {
     if (this.closed) return;
     this.m.x.ts_close(this.h);
@@ -211,7 +224,14 @@ export class TsClient {
   }
 
   private open(conn: number, url: string, protocol: string) {
-    const ws = new WebSocket(url, protocol);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url, protocol);
+    } catch {
+      // A URL the browser refuses: closed at once, as far as the module knows (not from inside this pump).
+      setTimeout(() => { if (!this.closed) { this.m.x.ts_ws_closed(this.h, conn); this.pump(); } });
+      return;
+    }
     ws.binaryType = 'arraybuffer';
     const s = { ws, queue: [] as Uint8Array<ArrayBuffer>[] | null };
     this.sockets.set(conn, s);
@@ -236,7 +256,8 @@ export class TsClient {
     let ok = 0;
     let body = new Uint8Array();
     try {
-      const r = await fetch(url);
+      // A fetch on a path that died could hang for minutes: the module's waits are shorter.
+      const r = await fetch(url, { signal: AbortSignal.timeout(FETCH_MS) });
       body = new Uint8Array(await r.arrayBuffer());
       ok = r.ok ? 1 : 0;
     } catch {
