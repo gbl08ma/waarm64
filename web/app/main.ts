@@ -654,6 +654,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'keyboard') {
       keyboardLive = m.live;
       void syncKeyboard(r);
+    } else if (m.type === 'notice') {
+      notify(m.message, 'error');
     } else if (m.type === 'status') {
       showStatus(m.status);
       alive(m.status);

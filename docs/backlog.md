@@ -316,16 +316,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the renderer's video totals over the stop.
   - `vm.zone_reclaim_mode=1` keeps only ~200 MB more on node 0 (it reclaims only unmapped clean cache), so it isn't
     in the SMBIOS credential.
-- **A full 8 GB ramdisk locked the machine up** (the user, 2026-10-17, by hand on the page: an ext4-formatted 8 GB
-  ramdisk filled to the brim; the machine stopped responding once it was full, with nothing in the console or on the
-  page). Not known whether it's the guest or us. First lead: `web/ramdisk.ts` makes a 1 MiB `SharedArrayBuffer` per
-  chunk on its first write, so a full 8 GB disk holds 8,192 of them beside the guest's RAM in one tab; if an
-  allocation throws in the device worker and the error is lost, that request never completes and the guest waits on
-  its disk for good (the page's memory check counts the ramdisk's size, `ramdiskMiB`, but only warns). Check first:
-  whether the device worker throws (its console, a `RangeError`), whether the vCPUs still run (the status line's
-  MIPS, `loopAgeMs`) and the guest's own view (`dmesg` over the serial console: hung task, I/O errors, ext4 full);
-  then a smaller ramdisk filled the same way, and a full one without ext4 (`dd` to the raw device). Whatever the
-  cause, a failed chunk allocation should complete the request with an I/O error and say so on the page.
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
   firmware.md "Our patches"), no standard items beside SMBIOS (platform.md); the

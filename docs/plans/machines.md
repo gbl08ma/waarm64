@@ -162,6 +162,17 @@ This replaces Suspend's discipline of dropping the copy before any machine runs 
   first write, dropped when a DISCARD or WRITE_ZEROES covers the whole chunk; a missing chunk reads as zeros). The
   disk takes DISCARD (devices.md "blk"), so `fstrim` or a `discard` mount returns the memory. No 4 GiB limit; a map
   lookup per request (checked with fio against one buffer, as bench/io: kept if within noise).
+- **A tab's ArrayBuffers share one pool of 8 GiB** (measured 2026-10-24, Chromium 153 in the dev VM: 8191
+  `SharedArrayBuffer`s of 1 MiB, 4095 of 2 MiB, the same beside a 1 GiB wasm memory; wasm memories aren't in it).
+  A full 8 GiB ramdisk used it up, and from then on every allocation in the tab threw `RangeError: Array buffer
+  allocation failed`: the guest's writeback hung in D state, the page logged an error every 5 s (the user's lock-up,
+  2026-10-17). So a worker's ramdisks keep at most `SAB_BUDGET` (4 GiB) in buffers of their own; past it a chunk is
+  a 1 MiB slot in a shared wasm memory of up to 4 GiB, grown a chunk at a time (address space is reserved for the
+  disk's size, at most 4 GiB a memory). Those slots go back to the ramdisk when dropped (its next chunk takes one)
+  but never to the host (a wasm memory doesn't shrink). A wasm memory per chunk isn't a way out: a tab gets ~125
+  of them (each reserves ~8 GiB of address space). A chunk that can't be had at all fails its write with IOERR,
+  and the device worker's `notice` puts it on the page's message bar. The 8 GiB ramdisk filled to the brim, ext4
+  and raw (`bench/results/local/ramdisk-full/`, not kept), with the guest answering after.
 - Shared memory, so the snapshot writer reads the chunks without a copy through the device worker.
 - The machine's memory check (`hostMemoryGiB`) counts the ramdisk's size (what it may grow to).
 - A snapshot holds its chunks (the `DISK` frames, as an overlay's blocks), a suspended copy too (the ramdisk isn't in

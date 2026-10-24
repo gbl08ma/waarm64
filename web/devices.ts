@@ -55,7 +55,9 @@ export type DeviceSpec =
   | GpuSpec
   | SndSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, SharedArrayBuffer][] };
+export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][] };
+
+const RAMDISK_FULL = "The ramdisk is out of memory: this tab can't have more, so the guest's writes to it fail (I/O errors). Deleting files there and trimming it (fstrim) makes room again.";
 
 /** Whether a disk takes the guest's writes: through an overlay, or a ramdisk. */
 export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
@@ -972,14 +974,15 @@ export class Devices {
   }
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
-  static async open(init: DevicesInit, out: (device: number, text: string) => void) {
+  /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory). */
+  static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (text: string) => void = () => {}) {
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
     const sources = await Promise.all(init.specs.map((d) => {
       if (d.type !== 'blk') return undefined;
       if (d.source) {
         if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
-        return d.source === 'ram' ? ramDisk(d.size, d.ramInit) : zeroSource(d.size);
+        return d.source === 'ram' ? ramDisk(d.size, d.ramInit, { onFull: () => notice(RAMDISK_FULL) }) : zeroSource(d.size);
       }
       if (d.stored) return openStored(d.stored, d.size ?? 0);
       if (d.file) return blobSource(d.file);

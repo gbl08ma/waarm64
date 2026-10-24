@@ -41,7 +41,7 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   ram.fill(0x5a, 8192, 12288); // block 2 of the ramdisk
   const devices = (): DeviceSpec[] => [
     { type: 'blk', source: 'zero', size: SIZE, overlay: name, identity: 'test-disk' },
-    { type: 'blk', source: 'ram', size: SIZE, ramInit: [[0, ram.buffer as SharedArrayBuffer]] },
+    { type: 'blk', source: 'ram', size: SIZE, ramInit: [[0, ram]] },
   ];
   const o: BootOptions = { ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };
   const vm = await bootVm(module, { ...o, devices: devices() });
@@ -71,8 +71,8 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   const vm1 = await bootVm(module, { ...o, devices: keep, restore: r1.restore });
   await vm1.close();
   assert.equal(await byteAt(name, 1), 0x22, 'kept');
-  const chunks = (keep[1] as { ramInit?: [number, SharedArrayBuffer][] }).ramInit!;
-  assert.equal(new Uint8Array(chunks.find(([c]) => c === 0)![1])[8192], 0x5a, "the ramdisk's blocks are its new chunks");
+  const chunks = (keep[1] as { ramInit?: [number, Uint8Array][] }).ramInit!;
+  assert.equal(chunks.find(([c]) => c === 0)![1][8192], 0x5a, "the ramdisk's blocks are its new chunks");
 
   // write: the file's blocks go into a fork, the pinned overlay is untouched.
   const fork = `${name}-fork`;

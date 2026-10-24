@@ -54,3 +54,54 @@ test('the ramdisk reads what was written and zeros elsewhere, and gives whole ch
   assert.equal(await d.read(size, 1), undefined);
   assert.equal(d.discard(-512, 512), false);
 });
+
+test('past its budget of SharedArrayBuffers the ramdisk takes slots in wasm memories, reuses what is dropped, and a write it has no memory for fails', async () => {
+  const size = 12 * RAM_CHUNK + 4096; // a partial last chunk
+  let fulls = 0;
+  const d = ramDisk(size, [], { sabBudget: 4 * RAM_CHUNK, onFull: () => fulls++ });
+  const model = new Uint8Array(size);
+  const g = splitmix64(9n);
+  const fill = (n: number) => Uint8Array.from({ length: n }, () => 1 + Number(g.next().value as bigint % 255n));
+  // Every chunk written: 4 of its own, 9 slots (the last one partial).
+  for (let c = 0; c * RAM_CHUNK < size; c++) {
+    const off = c * RAM_CHUNK + 512;
+    const bytes = fill(Math.min(8192, size - off));
+    assert.ok(await d.write(off, bytes));
+    model.set(bytes, off);
+  }
+  assert.equal(d.chunks(), 13);
+  assert.equal(d.arenaBytes(), 9 * RAM_CHUNK);
+  let got = await d.read(0, size);
+  assert.ok(got && Buffer.compare(got, model) === 0, 'reads back across both kinds');
+  // A slot dropped and taken again reads as zeros but for what the new write put there; the memory doesn't grow.
+  assert.ok(d.discard(10 * RAM_CHUNK, RAM_CHUNK));
+  model.fill(0, 10 * RAM_CHUNK, 11 * RAM_CHUNK);
+  assert.ok(d.discard(0, RAM_CHUNK)); // a SharedArrayBuffer's: the budget has room for one again
+  model.fill(0, 0, RAM_CHUNK);
+  assert.ok(await d.write(10 * RAM_CHUNK + 4096, Uint8Array.of(7)));
+  model[10 * RAM_CHUNK + 4096] = 7;
+  assert.ok(await d.write(5, Uint8Array.of(9)));
+  model[5] = 9;
+  assert.equal(d.arenaBytes(), 9 * RAM_CHUNK);
+  got = await d.read(0, size);
+  assert.ok(got && Buffer.compare(got, model) === 0, 'a reused slot is zeroed');
+  assert.deepEqual(d.written().slice(0, 3), [0, 256, 257]);
+  // Handed over (a restore), the chunks read the same in the ramdisk that takes them.
+  const next = ramDisk(size, d.chunkList(), { sabBudget: 4 * RAM_CHUNK });
+  assert.equal(d.chunks(), 0);
+  got = await next.read(0, size);
+  assert.ok(got && Buffer.compare(got, model) === 0, 'handed over');
+  assert.equal(fulls, 0);
+  // No memory to be had (no budget, no slots: WebAssembly.Memory refused): the write fails, and onFull is told once.
+  const Memory = WebAssembly.Memory;
+  try {
+    (WebAssembly as { Memory: unknown }).Memory = function () { throw new RangeError('could not allocate memory'); };
+    const e = ramDisk(size, [], { sabBudget: 0, onFull: () => fulls++ });
+    assert.equal(await e.write(0, Uint8Array.of(1)), false);
+    assert.equal(await e.write(RAM_CHUNK, Uint8Array.of(1)), false);
+    assert.equal(fulls, 1);
+    assert.equal(e.chunks(), 0);
+  } finally {
+    WebAssembly.Memory = Memory;
+  }
+});

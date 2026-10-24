@@ -199,6 +199,8 @@ export type FromWorker =
   /** The guest has (or no longer has) a driver using the keyboard: while it hasn't, the page sends the screen's keys to the serial console (the firmware's menus, GRUB). */
   | { type: 'keyboard'; live: boolean }
   | { type: 'status'; status: Status }
+  /** Something the devices say while the machine runs on (a ramdisk out of memory): the message bar shows it. */
+  | { type: 'notice'; message: string }
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
   | { type: 'phase'; text: string }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */

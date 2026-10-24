@@ -98,7 +98,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   or `ram`, a **ramdisk** (`web/ramdisk.ts`): writable in itself, with `DISCARD` and `WRITE_ZEROES`, its bytes in
   1 MiB chunks of shared memory made on a chunk's first write and dropped when a discard or a zeroing covers the
   whole chunk (a missing chunk reads as zeros), so an empty ramdisk costs nothing and `fstrim` gives the memory
-  back. It is the device worker's, so every start, the guest's reboot too, finds it empty
+  back. Past 4 GiB of those in one worker (`SAB_BUDGET`: a tab's ArrayBuffers share an 8 GiB pool), chunks are
+  slots in shared wasm memories, reused by the ramdisk when dropped but not given back; a write with no memory to be
+  had fails with IOERR and the page says so (`notice`). It is the device worker's, so every start, the guest's reboot too, finds it empty
   (`tests/ramdisk.test.ts`; on the page `tests/page-machines.test.ts`).
 - **`DISCARD` and `WRITE_ZEROES`** with an overlay and the spec's `discard` (the page's machines;
   the tests' guests and the native twin are without it, as their step counts are): the config

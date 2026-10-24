@@ -523,6 +523,8 @@ export type BootOptions = {
   initrd?: Uint8Array;
   cmdline: string;
   devices?: DeviceSpec[];
+  /** What the devices tell the user while the machine runs on (a ramdisk out of memory): the page's message bar. */
+  onNotice?: (text: string) => void;
   realtime?: boolean;
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
@@ -867,7 +869,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci }, scratch + S_BELL, parallel);
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci }, scratch + S_BELL, parallel, o.onNotice);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1523,13 +1525,13 @@ async function ringAsync(bell: Int32Array) {
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
  * returns once they've taken all of it (deterministic mode).
  */
-async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean) {
+async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean, notice?: (text: string) => void) {
   let text = '';
   const out = (_device: number, t: string) => { text += t; };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
   if (parallel && !inWorker) {
     // The vCPU workers ring the doorbell; this thread serves it between its awaits.
-    const d = await Devices.open(init, out);
+    const d = await Devices.open(init, out, notice);
     let failed: unknown;
     void d.serve(new Int32Array(init.memory.buffer, bellAddr, 2)).catch((e) => { failed = e; });
     return {
@@ -1545,7 +1547,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   }
   if (!inWorker || (init.specs.length === 0 && !init.xhci)) {
     // blk over HTTP needs a worker (Node has no XHR; a page can't make binary sync XHRs); Node reads `file:` images.
-    const d = await Devices.open(init, out);
+    const d = await Devices.open(init, out, notice);
     // Requests complete asynchronously (disk reads return promises), so `run`
     // hands a DEVICE exit to its caller while they're in flight, and the
     // caller awaits `settle` before resuming: the same step as in a worker.
@@ -1586,6 +1588,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       if (e.data.type === 'ready') resolve();
       else if (e.data.type === 'error') reject(new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
+      else if (e.data.type === 'notice') notice?.(e.data.text);
       else if (e.data.type === 'flushed') flushed();
       else if (e.data.type === 'drained') drained.shift()?.();
       else if (e.data.type === 'saved') saved(e.data);

@@ -29,7 +29,7 @@
     { kind: 'stored', icon: 'database-import', name: 'A file, copied into the browser', text: 'The image is copied into this browser\'s storage: no picking again, and it can take an overlay\'s changes into itself or be written in place. It duplicates the file, in storage you can\'t easily see outside this page.' },
     { kind: 'url', icon: 'world-www', name: 'From a URL', text: 'An image on a web server, read in pieces as the guest needs them and kept in this browser (the server must allow this page\'s origin, and range requests unless it is a chunked image\'s manifest). Its first reads go over the network.' },
     { kind: 'blank', icon: 'square-dashed', name: 'Blank', text: 'An empty disk of the size you choose, for the guest to partition and format. It takes space in this browser only as the guest writes.' },
-    { kind: 'ramdisk', icon: 'bolt', name: 'Ramdisk', text: 'An empty disk in this computer\'s memory, empty again at every boot (the guest\'s reboot too): fast scratch space. It takes memory as the guest fills it, and gives it back when the guest trims (fstrim).' },
+    { kind: 'ramdisk', icon: 'bolt', name: 'Ramdisk', text: 'An empty disk in this computer\'s memory, empty again at every boot (the guest\'s reboot too): fast scratch space. It takes memory as the guest fills it, and gives it back when the guest trims (fstrim): all of it on a disk of up to 4 GiB, and the first 4 GiB on a larger one.' },
   ];
 
   let dialog: HTMLDialogElement;

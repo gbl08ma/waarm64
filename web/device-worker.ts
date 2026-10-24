@@ -53,7 +53,7 @@ self.onmessage = (e: MessageEvent) => {
 };
 
 async function start(init: Init) {
-  devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text }));
+  devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text }), (text) => self.postMessage({ type: 'notice', text }));
   // The page's `?iostats` (bench/remote-disk): the blk timers whenever the page asks, between requests.
   if (init.specs.some((d) => d.type === 'blk' && d.stats)) new BroadcastChannel('webpc-iostats').onmessage = (e) => { if (e.data === 'ask') (e.target as BroadcastChannel).postMessage(devices!.stats()); };
   self.postMessage({ type: 'ready' });
