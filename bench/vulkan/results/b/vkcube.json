@@ -1,0 +1,127 @@
+{
+ "file": "target/venus-oracle/captures/vkcube.jsonl",
+ "frameMode": "submit",
+ "group": 2,
+ "framesTotal": 200,
+ "framesSteady": 150,
+ "perFrame": {
+  "submits": 2,
+  "fencedSubmits": 0,
+  "commandBuffers": 2,
+  "commands": 21.99,
+  "streamBytes": 1023.84,
+  "bySource": {
+   "vtest": {
+    "commands": 6.99,
+    "bytes": 167.84
+   },
+   "ring": {
+    "commands": 15,
+    "bytes": 856
+   },
+   "indirect": {
+    "commands": 0,
+    "bytes": 0
+   }
+  },
+  "replies": 0,
+  "replyBytes": 0,
+  "replyCommands": {},
+  "events": {
+   "vtest_submits": 6.99,
+   "ring_batches": 1.79,
+   "ring_wakeups": 0.99,
+   "ring_notifies": 3.99,
+   "fences": 3,
+   "blob_creates": 0,
+   "blob_destroys": 0
+  },
+  "hostVisible": {
+   "devmemMapped": 14457216,
+   "devmemAllocations": 7,
+   "devmemChanged": 2217971.2,
+   "shmMapped": 9572352,
+   "shmChanged": 19906.56,
+   "changedByResource": {
+    "mem 11 3548160 14": 561233.92,
+    "mem 12 3548160 14": 561206.61,
+    "mem 13 3548160 14": 547170.99,
+    "mem 14 3548160 14": 547143.68,
+    "shm 1 135168 0": 15783.25,
+    "shm 3 8388608 0": 4123.31,
+    "mem 5 1216 14": 608,
+    "mem 6 1216 14": 608
+   }
+  },
+  "commandsByName": {
+   "vkSubmitVirtqueueSeqnoMESA": {
+    "count": 3,
+    "bytes": 72
+   },
+   "vkWaitRingSeqnoMESA": {
+    "count": 3,
+    "bytes": 72
+   },
+   "vkQueueSubmit": {
+    "count": 2,
+    "bytes": 220
+   },
+   "vkWaitVirtqueueSeqnoMESA": {
+    "count": 2,
+    "bytes": 32
+   },
+   "vkBeginCommandBuffer": {
+    "count": 1,
+    "bytes": 48
+   },
+   "vkEndCommandBuffer": {
+    "count": 1,
+    "bytes": 16
+   },
+   "vkResetCommandBuffer": {
+    "count": 1,
+    "bytes": 20
+   },
+   "vkCmdBindPipeline": {
+    "count": 1,
+    "bytes": 28
+   },
+   "vkCmdSetViewport": {
+    "count": 1,
+    "bytes": 56
+   },
+   "vkCmdSetScissor": {
+    "count": 1,
+    "bytes": 48
+   },
+   "vkCmdBindDescriptorSets": {
+    "count": 1,
+    "bytes": 64
+   },
+   "vkCmdDraw": {
+    "count": 1,
+    "bytes": 32
+   },
+   "vkCmdPipelineBarrier": {
+    "count": 1,
+    "bytes": 128
+   },
+   "vkCmdBeginRenderPass": {
+    "count": 1,
+    "bytes": 148
+   },
+   "vkCmdEndRenderPass": {
+    "count": 1,
+    "bytes": 16
+   },
+   "vkNotifyRingMESA": {
+    "count": 0.99,
+    "bytes": 23.84
+   }
+  }
+ },
+ "blobs": {
+  "devmem": 11,
+  "shm": 3
+ }
+}

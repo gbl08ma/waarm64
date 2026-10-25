@@ -1,0 +1,170 @@
+{
+ "file": "target/venus-oracle/captures/fish1000.jsonl",
+ "frameMode": "submit",
+ "group": 1,
+ "framesTotal": 83,
+ "framesSteady": 15,
+ "perFrame": {
+  "submits": 1,
+  "fencedSubmits": 0,
+  "commandBuffers": 2,
+  "commands": 2325,
+  "streamBytes": 141588,
+  "bySource": {
+   "vtest": {
+    "commands": 3,
+    "bytes": 72
+   },
+   "ring": {
+    "commands": 14,
+    "bytes": 1132
+   },
+   "indirect": {
+    "commands": 2308,
+    "bytes": 140384
+   }
+  },
+  "replies": 0,
+  "replyBytes": 0,
+  "replyCommands": {},
+  "events": {
+   "vtest_submits": 3,
+   "ring_batches": 1.53,
+   "ring_wakeups": 1,
+   "ring_notifies": 2,
+   "fences": 1,
+   "blob_creates": 0,
+   "blob_destroys": 0
+  },
+  "hostVisible": {
+   "devmemMapped": 47296,
+   "devmemAllocations": 5,
+   "devmemChanged": 23680,
+   "shmMapped": 9572352,
+   "shmChanged": 156740.27,
+   "changedByResource": {
+    "shm 4 8388608 0": 147456,
+    "mem 5 23296 14": 12424.53,
+    "mem 7 23296 14": 10871.47,
+    "shm 1 135168 0": 9284.27,
+    "mem 3 320 14": 170.67,
+    "mem 6 320 14": 149.33,
+    "mem 8 64 14": 64
+   }
+  },
+  "commandsByName": {
+   "vkCmdDrawIndexed": {
+    "count": 1109,
+    "bytes": 39924
+   },
+   "vkCmdPushConstants": {
+    "count": 1015,
+    "bytes": 89220
+   },
+   "vkCmdBindDescriptorSets": {
+    "count": 149,
+    "bytes": 9952
+   },
+   "vkCmdBindPipeline": {
+    "count": 12,
+    "bytes": 336
+   },
+   "vkCmdDraw": {
+    "count": 10,
+    "bytes": 320
+   },
+   "vkCmdPipelineBarrier": {
+    "count": 4,
+    "bytes": 464
+   },
+   "vkCmdBindVertexBuffers": {
+    "count": 3,
+    "bytes": 168
+   },
+   "vkBeginCommandBuffer": {
+    "count": 2,
+    "bytes": 96
+   },
+   "vkEndCommandBuffer": {
+    "count": 2,
+    "bytes": 32
+   },
+   "vkCmdWriteTimestamp": {
+    "count": 2,
+    "bytes": 64
+   },
+   "vkQueueSubmit": {
+    "count": 1,
+    "bytes": 108
+   },
+   "vkUpdateDescriptorSets": {
+    "count": 1,
+    "bytes": 204
+   },
+   "vkResetCommandPool": {
+    "count": 1,
+    "bytes": 28
+   },
+   "vkResetCommandBuffer": {
+    "count": 1,
+    "bytes": 20
+   },
+   "vkCmdSetViewport": {
+    "count": 1,
+    "bytes": 56
+   },
+   "vkCmdSetScissor": {
+    "count": 1,
+    "bytes": 48
+   },
+   "vkCmdBindIndexBuffer": {
+    "count": 1,
+    "bytes": 36
+   },
+   "vkCmdFillBuffer": {
+    "count": 1,
+    "bytes": 44
+   },
+   "vkCmdResetQueryPool": {
+    "count": 1,
+    "bytes": 32
+   },
+   "vkCmdCopyQueryPoolResults": {
+    "count": 1,
+    "bytes": 60
+   },
+   "vkCmdBeginRenderPass": {
+    "count": 1,
+    "bytes": 148
+   },
+   "vkCmdEndRenderPass": {
+    "count": 1,
+    "bytes": 16
+   },
+   "vkExecuteCommandStreamsMESA": {
+    "count": 1,
+    "bytes": 124
+   },
+   "vkNotifyRingMESA": {
+    "count": 1,
+    "bytes": 24
+   },
+   "vkSubmitVirtqueueSeqnoMESA": {
+    "count": 1,
+    "bytes": 24
+   },
+   "vkWaitVirtqueueSeqnoMESA": {
+    "count": 1,
+    "bytes": 16
+   },
+   "vkWaitRingSeqnoMESA": {
+    "count": 1,
+    "bytes": 24
+   }
+  }
+ },
+ "blobs": {
+  "devmem": 63,
+  "shm": 3
+ }
+}

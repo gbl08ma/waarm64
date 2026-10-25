@@ -66,7 +66,8 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   For VK0 (bench/vulkan/REPORT.md): vulkan-devel, vulkan-tools, vulkan-validationlayers, shaderc (glslc), spirv-tools,
   spirv-cross, Mesa-libGLESv3-devel, 7zip (unpacks the macOS SDK); for its tools (`tools/venus-oracle/`,
   `tools/vulkan-tools/`: Venus on lavapipe over vtest, GFXReconstruct, the Profiles layer) cmake, python313-Mako,
-  python313-packaging, bison, flex, glslang-devel, libxshmfence-devel, liblz4-devel, xcb-util-keysyms-devel, gdb. The Venus
+  python313-packaging, bison, flex, glslang-devel, libxshmfence-devel, liblz4-devel, xcb-util-keysyms-devel, gdb,
+  wayland-protocols-devel (the oracle's Wayland WSI), valgrind (callgrind counts the guest's encoding). The Venus
   oracle needs `/dev/udmabuf` open to the user (lavapipe exports host-visible memory through it).
   Add what's missing with `sudo zypper in`, and note it here.
 - **USB rigs** (docs/testing.md "USB"): the VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so
