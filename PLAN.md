@@ -67,8 +67,8 @@ Details of each: the docs (by topic) and `bench/*/REPORT.md` (by date). Numbers 
 **Drive:** something to show for the project. A person runs one command on a fresh clone, opens a
 URL and uses a Linux VM with keyboard and mouse, seeing its screen live, as in v86's demos. Until
 M8 every guest ran headless under a test. Snapshots, networking, graphics, audio and the
-embedding API are scheduled by what that page needs, not as ends in themselves. Kickoff:
-`M8-KICKOFF.md`.
+embedding API are scheduled by what that page needs, not as ends in themselves. Phase A's kickoff
+(`M8-KICKOFF.md`) is in git history; the current brief is `M8-VK0-KICKOFF.md` (the Vulkan plan's VK0).
 
 Decisions (the user, 2026-09-28):
 - **One VM per page**, under the JIT, realtime, parallel SMP. Debian 13 was the page's hardcoded
