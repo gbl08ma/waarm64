@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G0's real-GPU numbers (the user's answer to the G0/G1 kickoff, docs/plans/graphics.md §1): the bench page on the Mac host's
+# G0's real-GPU numbers (the user's answer to the G0/G1 kickoff, docs/graphics.md "Decisions"): the bench page on the Mac host's
 # Chromium (Playwright's Chrome for Testing, headless, temporary profile), served from a small copy in
 # ~/webpc-gpu-bench there, the packages installed there. It needs Node, npm and the Chromium that Playwright
 # installed. Nothing else on the host is touched.

@@ -1,5 +1,5 @@
-// TGSI (Gallium's shader text, what Mesa's virgl driver sends) to GLSL ES 3.00 for WebGL2 (docs/plans/graphics.md §1,
-// docs/graphics.md "The translator"). The parser reads the text tgsi_dump writes (Mesa's tgsi_dump.c, tgsi_strings.c); the generator follows
+// TGSI (Gallium's shader text, what Mesa's virgl driver sends) to GLSL ES 3.00 for WebGL2 (docs/graphics.md "Decisions" and
+// "The translator"). The parser reads the text tgsi_dump writes (Mesa's tgsi_dump.c, tgsi_strings.c); the generator follows
 // virglrenderer's vrend_shader.c (MIT, THIRD_PARTY.md) in its conventions — registers as untyped 32-bit vec4s held in
 // floats, constants as bits, varyings named by semantic — with WebGL2's limits: no texture swizzle or BGRA (the
 // sampler and render-target swizzles of the key are applied in the shader), no 1D or rectangle textures (2D

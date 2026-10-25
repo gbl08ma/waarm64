@@ -130,7 +130,7 @@ left open, most promising first.
   10 frames a second), ~17× and ~14× native (`gl_llvmpipe_jit`, `bench/boot/REPORT.md` "M8:
   llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the FP checks (below), and sway
   itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
-  virgl (plans/graphics.md §1); llvmpipe stays what guests without 3D fall back to.
+  virgl (graphics.md "Decisions"); llvmpipe stays what guests without 3D fall back to.
 - **A browser session past the 320 MiB budget** (`bench/boot/REPORT.md` "M8: the carry timed, and a larger code
   cache", "M8: a machine's JIT budget and the page's memory signal"): Firefox's pages session compiles ~260 MiB and
   doesn't flush; a longer one will, and each flush doubles the threshold's floor (the long stutters at later flushes
@@ -401,6 +401,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in their own browser: it boots the dEQP guest, runs the lists and downloads a results file with the renderer string
   and the limits; and a tool that compares result files across platforms (as G5 compared Metal with SwiftShader).
   Until then, `bench/gpu/sway-mac.sh`'s route (`SCRIPT=deqp-run.ts`) is the way for a host we can reach.
+- **A KDE desktop's session on 3D** (graphics.md "Queries", "Feedback loops"): a user's KDE Plasma session (2026-10-24)
+  found occlusion queries holding every fence and draws refused as feedback loops, both fixed. Run KDE Plasma on the
+  desktop guest to see what else it asks for, and measure what the feedback copies cost there (a copy at every such
+  draw, no write tracking to skip one whose source hasn't changed). KWin, Mutter and Xorg sessions on 3D are
+  unmeasured too (graphics.md "Applications on 3D").
+- **Fuzz virgl's stream decoder**: the renderer parses untrusted guest data (WebGL validates only what it is given).
+  Fuzz the stream's decoder as the device's commands and the virtqueue parser are (`core/fuzz`), on the recording
+  WebGL2 of `tests/virgl-mock-gl.ts`.
+- **Desktop GL 3.0 and 3.1 on WebGL2** (graphics.md "What isn't backed"): they need what WebGL2 lacks or has only as
+  extensions: `gl_ClipDistance` (`WEBGL_clip_cull_distance`), depth clamp (`EXT_depth_clamp`), conditional
+  rendering, the sRGB framebuffer switch, texture buffers, base vertex
+  (`WEBGL_draw_instanced_base_vertex_base_instance`). Caps that follow each extension, where a workload needs one.
+  Geometry and tessellation exist in neither WebGL2 nor WebGPU, so desktop GL above 3.1 isn't reachable on WebGL2
+  (on WebGPU through compute, as plans/graphics.md does for Vulkan, only if a real workload needs it).
+- **A WebGPU backend for virgl** (GLES 3.1: compute, storage buffers), only where `navigator.gpu` gives an adapter.
+  It would share the WebGPU layer the Vulkan plan builds (plans/graphics.md), so it waits for that plan's VK0.
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
