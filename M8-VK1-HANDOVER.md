@@ -25,8 +25,12 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
   `images/debian-vulkan/build.sh` (on demand, ~10 min) makes the tests' Debian with Mesa 25.0.7's Venus ICD, vulkan-tools
   and sway; `tests/page-venus.test.ts` (ci-debian) runs vkcube there: ~50 frames/s on 2 vCPUs, and `vulkaninfo` names the
   device `Virtio-GPU Venus (webpc null renderer (VK1))`. `bench/vulkan/venus-run.ts` runs any guest commands on it.
-- Next: **L7**, the desktop guest (Arch, `vulkan-virtio`) with Venus, and whether Mesa keeps virgl for GL beside it;
-  then **the gate** on the Mac (vkcube, the S scene, GTK4: the guest's CPU on Venus against virgl; B's encoding
+- **The desktop guest (L7)** has Venus (`images/arch/desktop.sh`: `vulkan-virtio`, `vulkan-tools`; Mesa 26.2.5; the
+  previous image kept as `target/arch/desktop-2026-10-23.qcow2`, delete once the gate is in). **Mesa keeps virgl for GL
+  with both capsets**: on a machine with Vulkan, sway (GLES), es2gears and GSK's GL renderer run on virgl, Vulkan
+  programs on Venus. vkcube and GTK4's fishbowl (GSK on Vulkan) present through dma-bufs at the display's 60 in the dev
+  VM. `bench/vulkan/apps-load.ts` measures programs under sway; `bench/vulkan/guest.ts venus` runs VK0's scene on Venus.
+- Next: **the gate** on the Mac (vkcube, the S scene, GTK4: the guest's CPU on Venus against virgl; B's encoding
   estimate; the watch's cost a frame), then the docs and plan §6/§7.
 
 ## Open: one guest oops, not reproduced
@@ -66,4 +70,19 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
 - vk/'s two utils: vkr against Mesa 26.2.4's util fails to compile (API drift); it builds against virglrenderer's own
   copy with its symbols renamed (gen.ts). The module's `sbrk` must start at `__heap_end`: from `__heap_base` it
   overlapped dlmalloc's first region ("function signature mismatch" traps far away).
+- Mesa 26's Venus driver sends `vkWaitVirtqueueSeqnoMESA` on the ring; vkr's `cnd_wait` there blocked the GPU worker for
+  good (the guest: a kworker in `virtio_gpu_queue_fenced_ctrl_buffer`, the page: "virgl: fence N unanswered"). The ring
+  now stalls and resumes (vk/README.md). Debian's Mesa 25.0 never sends it.
+- Mesa's Wayland WSI wants a modifier the device can render into: with the profile's linear features (no colour
+  attachment) `vkGetPhysicalDeviceSurfaceFormatsKHR` failed; Debian's vkcube asserted (`cube.c:4582`), Arch's (release)
+  went on and segfaulted on a NULL swapchain. A segfaulting Venus program's core dump then hung the guest for minutes:
+  `ulimit -c 0` in experiments. Headless pixman sway offers no dma-buf at all (the WSI's CPU path, `MESA_VK_WSI_DEBUG=sw`).
+- GTK's Vulkan renderer asserts `GDK_VULKAN_FEATURE_YCBCR` without `samplerYcbcrConversion` (REPORT D's "aborts on the
+  profile"): the driver advertises it. fishbowl adds icons while it holds 60 frames/s, so its CPU a frame is only
+  comparable at its icon count (on its screenshot).
+- The ring poller stays on `setTimeout(0)`: a MessageChannel loop (to dodge the 4 ms clamp) starved the GPU worker's
+  timers while a ring stayed busy, and the device's fence went unanswered (vkcube on Debian hung); it hadn't lowered
+  vkcube's guest CPU either. Its guest time is kernel time spread thin (no spin in the profile).
+- `images/arch/desktop.sh` with `EXTRA_PACKAGES=gdb --out …` makes a debugging copy (Arch's aarch64 port has no debug
+  packages: backtraces show libraries, not functions).
 - The Mac's disk has ~8.5 GiB free: VK1's files there are `~/webpc-gpu-bench/vulkan-web/target/vk1` (~15 MB).

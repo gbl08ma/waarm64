@@ -483,10 +483,13 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   After each queue submit the window's written pages are taken (web/window.ts) and counted (`VenusRenderer.stats`);
   VK2 uploads them. Calls that come before the module is ready wait in a backlog, and so does the device's fence.
 - **The null driver** (VK1): what it advertises is VK0's Mac profile (`mac_direct`, vk/profile.ts) plus what Venus's
-  WSI shares through (dma-buf memory with the LINEAR modifier, foreign queue transfers, sync-file semaphores); it keeps
+  WSI shares through (dma-buf memory with the LINEAR modifier, foreign queue transfers, sync-file semaphores) and YCbCr
+  conversions (GTK); it keeps
   every object and records every command, and a submit runs only those that write memory the guest reads (fills,
   updates and copies of buffers, queries, timestamps, events: Venus's feedback). It draws nothing. vkcube on sway
-  (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) reaches ~50 frames/s on 2 vCPUs (`tests/page-venus.test.ts`).
+  (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) reaches ~50 frames/s on 2 vCPUs (`tests/page-venus.test.ts`); on the
+  desktop guest's sway (GLES, virgl) vkcube and GTK4's Vulkan renderer present through dma-bufs at the display's 60
+  (bench/vulkan/apps-load.ts, bench/gpu/gtk4-load.ts with `VIRGL_GPU=virgl,vulkan`).
 - On the page: `?gpu=vulkan` (with 3D on) gives a machine Venus (web/app/worker.ts); the Machines page has no setting
   for it yet.
 - Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,

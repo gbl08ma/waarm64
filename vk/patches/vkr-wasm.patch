@@ -125,7 +125,7 @@ index 3867f138..cf2f8b50 100644
  
  enum vkr_context_validate_level {
 diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
-index 7d57c7ce..deb9eee4 100644
+index 7d57c7ce..e6c5403a 100644
 --- a/src/venus/vkr_device_memory.c
 +++ b/src/venus/vkr_device_memory.c
 @@ -303,8 +303,37 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
@@ -197,15 +197,13 @@ index 7d57c7ce..deb9eee4 100644
     vkr_mtl_shm_free(mem->mtl_shm);
     if (mem->gbm_bo)
        vkr_gbm_bo_destroy(mem->gbm_bo);
-@@ -570,6 +608,19 @@ vkr_device_memory_export_blob(struct vkr_device_memory *mem,
+@@ -570,6 +608,17 @@ vkr_device_memory_export_blob(struct vkr_device_memory *mem,
                                        : VIRGL_RENDERER_MAP_CACHE_WC;
     }
  
 +#ifdef __wasi__
-+   if (!mem->wasi_storage) {
-+      vkr_log("mem has no storage to export");
-+      return false;
-+   }
++   /* A device-local memory has no storage: its blob (a WSI image's, shared as a dma-buf) is the renderer's alone, and
++    * not mappable. */
 +   mem->exported = true;
 +   *out_blob = (struct virgl_context_blob){
 +      .type = VIRGL_RESOURCE_FD_SHM,
@@ -414,10 +412,26 @@ index be3ae046..840b6c30 100644
 +
  #endif /* VKR_RENDERER_H */
 diff --git a/src/venus/vkr_ring.c b/src/venus/vkr_ring.c
-index 0d4899ef..ca5264c5 100644
+index 0d4899ef..5ad1e5da 100644
 --- a/src/venus/vkr_ring.c
 +++ b/src/venus/vkr_ring.c
-@@ -348,6 +348,50 @@ out:
+@@ -239,6 +239,15 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
+       const uint32_t cur_ring_head = ring_head + (dec->cur - buffer);
+       vkr_ring_store_head(ring, cur_ring_head);
+       vkr_context_on_ring_seqno_update(ring->dispatch.data, ring->id, cur_ring_head);
++#ifdef __wasi__
++      if (ring->stalled) {
++         /* webpc: the rest waits for the virtqueue (vkr_ring_poll resumes it). */
++         ring->pending_off = (uint32_t)(dec->cur - (const uint8_t *)ring->cmd);
++         ring->pending_size = (uint32_t)(dec->end - (const uint8_t *)ring->cmd);
++         ring->pending_head = cur_ring_head;
++         break;
++      }
++#endif
+    }
+ 
+    vkr_cs_decoder_reset(dec);
+@@ -348,6 +357,64 @@ out:
     return ret;
  }
  
@@ -432,6 +446,20 @@ index 0d4899ef..ca5264c5 100644
 +   if (!ring->started || vkr_context_get_fatal(ctx))
 +      return false;
 +   const uint64_t now = vkr_ring_now();
++   if (ring->stalled) {
++      /* Idle until a submit brings the virtqueue's seqno (the GPU worker polls again after each). */
++      if (ring->virtqueue_seqno < ring->stall_seqno)
++         return false;
++      ring->stalled = false;
++      const uint32_t off = ring->pending_off, size = ring->pending_size - off;
++      if (size && !vkr_ring_submit_cmd(ring, (const uint8_t *)ring->cmd + off, size, ring->pending_head)) {
++         vkr_ring_set_status_bits(ring, VK_RING_STATUS_FATAL_BIT_MESA);
++         vkr_context_on_ring_fatal(ctx);
++         return false;
++      }
++      ring->last_submit = now;
++      return true;
++   }
 +   if (ring->pending_notify) {
 +      ring->pending_notify = false;
 +      vkr_ring_unset_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
@@ -468,7 +496,7 @@ index 0d4899ef..ca5264c5 100644
  void
  vkr_ring_start(struct vkr_ring *ring)
  {
-@@ -355,6 +399,11 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -355,6 +422,11 @@ vkr_ring_start(struct vkr_ring *ring)
  
     assert(!ring->started);
     ring->started = true;
@@ -480,7 +508,7 @@ index 0d4899ef..ca5264c5 100644
     ret = thrd_create(&ring->thread, vkr_ring_thread, ring);
     if (ret != thrd_success)
        ring->started = false;
-@@ -363,6 +412,10 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -363,6 +435,10 @@ vkr_ring_start(struct vkr_ring *ring)
  bool
  vkr_ring_stop(struct vkr_ring *ring)
  {
@@ -491,7 +519,7 @@ index 0d4899ef..ca5264c5 100644
     mtx_lock(&ring->mutex);
     if (thrd_equal(ring->thread, thrd_current())) {
        mtx_unlock(&ring->mutex);
-@@ -381,6 +434,10 @@ vkr_ring_stop(struct vkr_ring *ring)
+@@ -381,6 +457,10 @@ vkr_ring_stop(struct vkr_ring *ring)
  void
  vkr_ring_notify(struct vkr_ring *ring)
  {
@@ -502,22 +530,43 @@ index 0d4899ef..ca5264c5 100644
     mtx_lock(&ring->mutex);
     ring->pending_notify = true;
     cnd_signal(&ring->cond);
+@@ -441,6 +521,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
+ 
+    bool ok = true;
+ 
++#ifdef __wasi__
++   /* webpc: one thread, so no wait: the ring stalls after this command (vkr_ring_submit_cmd, vkr_ring_poll). */
++   if (ring->virtqueue_seqno < seqno) {
++      ring->stalled = true;
++      ring->stall_seqno = seqno;
++   }
++   return true;
++#endif
+    mtx_lock(&ring->mutex);
+    while (ok && ring->started && ring->virtqueue_seqno < seqno)
+       ok = cnd_wait(&ring->cond, &ring->mutex) == thrd_success;
 diff --git a/src/venus/vkr_ring.h b/src/venus/vkr_ring.h
-index 89d8159e..d21b632c 100644
+index 89d8159e..e47fab60 100644
 --- a/src/venus/vkr_ring.h
 +++ b/src/venus/vkr_ring.h
-@@ -102,6 +102,10 @@ struct vkr_ring {
+@@ -102,6 +102,16 @@ struct vkr_ring {
     atomic_bool pending_notify;
     atomic_bool monitor;
     uint64_t virtqueue_seqno;
 +#ifdef __wasi__
 +   /* webpc (vk/README.md): no thread; the GPU worker polls (vkr_ring_poll). */
 +   uint64_t last_submit;
++   /* A ring command waiting for a virtqueue seqno not submitted yet stalls the ring (a wait would block the only
++    * thread, and the seqno comes in a later submit): the rest of its batch, at ring->cmd + pending_off, runs once
++    * virtqueue_seqno reaches stall_seqno. */
++   bool stalled;
++   uint64_t stall_seqno;
++   uint32_t pending_off, pending_size, pending_head;
 +#endif
  };
  
  struct vkr_ring *
-@@ -115,6 +119,11 @@ vkr_ring_destroy(struct vkr_ring *ring);
+@@ -115,6 +125,11 @@ vkr_ring_destroy(struct vkr_ring *ring);
  void
  vkr_ring_start(struct vkr_ring *ring);
  

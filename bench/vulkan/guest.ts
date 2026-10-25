@@ -1,9 +1,10 @@
 // VK0's arm 4 (bench/vulkan/REPORT.md): the scene in our machine's guest on the page, what the guest has today. `vk` on
 // the guest's lavapipe (Vulkan now) and `gles`, the GLES port, on virgl (what Vulkan competes with), from
 // images/vulkan/build.sh's guest (Arch with Mesa and lavapipe) and second disk (/vk0: the binaries, shaders and pack),
-// as root on EGL's surfaceless platform (no compositor). One JSON a setting: the guest's frame time and its CPU a frame
+// as root on EGL's surfaceless platform (no compositor); `vk` on Venus (VK1's gate: a machine with Vulkan, the
+// desktop guest, images/arch/desktop.sh, whose Mesa has Venus's driver). One JSON a setting: the guest's frame time and its CPU a frame
 // (the process's, lavapipe's threads included), with the display's and the GPU worker's stats over the same span.
-//   node bench/vulkan/guest.ts <lavapipe|virgl> [out dir]
+//   node bench/vulkan/guest.ts <lavapipe|virgl|venus> [image|-] [out dir]
 // CHECK=1 first renders frame 300 at 1,000 fish and the toolkit's frame 100 in the guest and compares their 32x18
 // thumbnails (dump.h) with the native frames (bench/results/local/vk0/lvp-1000.ppm, lvp-tk.ppm: vk on lavapipe).
 // FISH, TOOLKIT, MSAA (lists), WARMUP, SAMPLES, FRAMES, NCPUS (default 4), RUN_S; the Mac's GPU through
@@ -12,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
 const arm = process.argv[2];
-if (arm !== 'lavapipe' && arm !== 'virgl') throw new Error('usage: node bench/vulkan/guest.ts <lavapipe|virgl> [image] [out dir]');
+if (arm !== 'lavapipe' && arm !== 'virgl' && arm !== 'venus') throw new Error('usage: node bench/vulkan/guest.ts <lavapipe|virgl|venus> [image] [out dir]');
 const image = process.argv[3] && process.argv[3] !== '-' ? process.argv[3] : 'target/vulkan/guest.qcow2';
 const out = process.argv[4] ?? new URL(`../results/local/vk0/guest-${arm}/`, import.meta.url).pathname;
 mkdirSync(out, { recursive: true });
@@ -23,15 +24,16 @@ const WARMUP = Number(env('WARMUP', slow ? '2' : '30')), SAMPLES = Number(env('S
 const RUN_S = Number(env('RUN_S', '900'));
 const ncpus = Number(env('NCPUS', '4'));
 
-const s = await openSession({ gpu: 'virgl', image, out, disk2: '/target/vulkan/disk.ext4', ncpus, ramMiB: 4096 });
+const s = await openSession({ gpu: arm === 'venus' ? 'virgl,vulkan' : 'virgl', image, out, disk2: '/target/vulkan/disk.ext4', ncpus, ramMiB: 4096 });
 const { log, rootShell, run, display, vmStats, vmDelta } = s;
 await rootShell();
-const info = await run('uname -r; pacman -Q mesa vulkan-swrast | tr "\\n" " "; mkdir -p /mnt/vdb; mount -o ro /dev/vdb /mnt/vdb && ls /mnt/vdb/vk0 | tr "\\n" " "');
+const info = await run('uname -r; pacman -Q mesa vulkan-swrast vulkan-virtio 2>/dev/null | tr "\\n" " "; mkdir -p /mnt/vdb; mount -o ro /dev/vdb /mnt/vdb && ls /mnt/vdb/vk0 | tr "\\n" " "');
 log('info', info);
 const bin = arm === 'lavapipe'
   ? 'env VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json /mnt/vdb/vk0/vk --shaders /mnt/vdb/vk0/shaders'
+  : arm === 'venus' ? '/mnt/vdb/vk0/vk --shaders /mnt/vdb/vk0/shaders' // the desktop guest's only ICD
   : 'env EGL_PLATFORM=surfaceless /mnt/vdb/vk0/gles --shaders /mnt/vdb/vk0/gles-shaders';
-log('device', await run(`${bin.split(' --')[0]} --pack /mnt/vdb/vk0/aquarium.pack --shaders /mnt/vdb/vk0/${arm === 'lavapipe' ? 'shaders' : 'gles-shaders'} --fish 1 --warmup 1 --samples 1 --frames 1 2>&1 | head -1`, 300_000));
+log('device', await run(`${bin.split(' --')[0]} --pack /mnt/vdb/vk0/aquarium.pack --shaders /mnt/vdb/vk0/${arm === 'virgl' ? 'gles-shaders' : 'shaders'} --fish 1 --warmup 1 --samples 1 --frames 1 2>&1 | head -1`, 300_000));
 
 /** A PPM's block means, as dump.h computes them. */
 function thumbOf(path: string, tw: number, th: number): Uint8Array {

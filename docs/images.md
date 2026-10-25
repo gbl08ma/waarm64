@@ -120,7 +120,9 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   Result `target/arch/pkg/webpc-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
 - **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md "The call queue"),
   htop, nano, lsof, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`),
-  gtk4-demos (`gtk4-demo`, for `bench/gpu/gtk4-load.ts`), mesa-utils (`eglinfo`, `glxgears`) and `webpc-va`; sound is the kernel's own `virtio_snd` (udev loads it); Firefox's policies allow autoplay with sound and
+  gtk4-demos (`gtk4-demo`, for `bench/gpu/gtk4-load.ts`), mesa-utils (`eglinfo`, `glxgears`), Mesa's Venus driver
+  (`vulkan-virtio`) with vulkan-tools (`vkcube`, `vulkaninfo`: Vulkan on a machine with it, devices.md "Venus") and `webpc-va`
+  (`EXTRA_PACKAGES` adds more, e.g. `gdb` for a debugging copy); sound is the kernel's own `virtio_snd` (udev loads it); Firefox's policies allow autoplay with sound and
   skip the first-run pages. A **20 GiB root**, mostly free, for packages installed by hand. `images/arch/media.sh`
   makes `/home/arch/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a 1 kHz beep each second,
   VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender Foundation, CC BY 3.0,

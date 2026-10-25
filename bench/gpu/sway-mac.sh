@@ -6,7 +6,7 @@
 # SCRIPT=firefox-load.ts runs the Firefox harness instead (PHASES, PAGES, WARM_S, TIMELINE_ALL, PROFILE, SYSCALLS, QUERY, CHROMIUM_JS_FLAGS passed on), SCRIPT=../audio/avsync.ts the
 # A/V sync one (CLIPS, PHASE_S, MEDIA, PROFILE, SYSCALLS, TIMELINE, DEBUG (DEBUG=pw:browser logs Chromium's output, e.g. CHROMIUM_ARGS=--js-flags=--trace-gc), FF_PREFS, VARIANTS, ROUNDS, NCPUS passed on; CHROMIUM_ARGS=--mute-audio keeps the Mac's speakers quiet), SCRIPT=../video/v1.ts
 # video V1's check (mode `-`: the script takes none; FRAMES, CLIPS, SHIM, CAPTURE passed on; the media disk, target/video/media.ext4, is
-# copied when it exists), SCRIPT=../vulkan/guest.ts VK0's arm 4 (mode lavapipe|virgl, the image target/vulkan/guest.qcow2; FISH, TOOLKIT, MSAA, WARMUP, SAMPLES, FRAMES passed on), SCRIPT=deqp-run.ts dEQP (mode gles2|gles3, the image target/deqp/guest.qcow2; STRIDE, OFFSET, CASES (a file under
+# copied when it exists), SCRIPT=../vulkan/apps-load.ts VK1's gate's programs (mode `-`), SCRIPT=../vulkan/guest.ts VK0's arm 4 (mode lavapipe|virgl|venus, the image target/vulkan/guest.qcow2 or, for venus, the desktop guest; FISH, TOOLKIT, MSAA, WARMUP, SAMPLES, FRAMES passed on), SCRIPT=deqp-run.ts dEQP (mode gles2|gles3, the image target/deqp/guest.qcow2; STRIDE, OFFSET, CASES (a file under
 # the repository, e.g. tests/deqp/gles3.txt), LIMIT_S, DETAIL passed on; images/deqp/build.sh's dEQP disk and tests/deqp/ are copied); the host's `vm_stat 1` over the run, each line after its epoch second (<name>.vmstat: the
 # Mac's memory is overcommitted by the Lima VMs, and swap-ins and decompressions stall Chromium's threads); HEADED=1 opens a visible window on the Mac (the user allows it there, when they aren't using it).
 set -euo pipefail
@@ -25,6 +25,9 @@ rsync -a target/wasm32-unknown-unknown/release/webpc_core.wasm "$HOST:$DEST/targ
 rsync -a target/images/edk2 "$HOST:$DEST/target/images/"
 rsync -a target/images/debian/disk.qcow2 "$HOST:$DEST/target/images/debian/"   # the page's own machine, which starts first
 rsync -a "$IMAGE" "$HOST:$DEST/bench/results/local/disk.qcow2"
+if [ -f target/vk/venus.wasm ]; then   # Venus's renderer (vk/build.sh): a machine with Vulkan (`gpu=virgl,vulkan`)
+  ssh "$HOST" "mkdir -p $DEST/target/vk" && rsync -a target/vk/venus.wasm "$HOST:$DEST/target/vk/"
+fi
 if [ -f target/video/media.ext4 ]; then   # the clips (bench/video/media-disk.sh)
   ssh "$HOST" "mkdir -p $DEST/target/video" && rsync -a target/video/media.ext4 "$HOST:$DEST/target/video/"
 fi

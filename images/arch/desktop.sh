@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # The desktop guest (docs/images.md "Arch Linux"; audio S3, docs/audio.md "Decisions"): Arch Linux (arch.bens.haus's
-# aarch64 port) with sway, foot, Firefox, Chromium (bench/gpu/chromium-flicker.ts), htop, nano, lsof, gtk4-demo (bench/gpu/gtk4-load.ts), mesa-utils and PipeWire (WirePlumber, its PulseAudio and ALSA ends), sound through
+# aarch64 port) with sway, foot, Firefox, Chromium (bench/gpu/chromium-flicker.ts), htop, nano, lsof, gtk4-demo (bench/gpu/gtk4-load.ts), mesa-utils, Mesa's Venus
+# driver and vulkan-tools (Vulkan on a machine with it: docs/devices.md "Venus") and PipeWire (WirePlumber, its PulseAudio and ALSA ends), sound through
 # the kernel's own virtio_snd module, VA-API through webpc's driver (our webpc-va package, docs/plans/video.md), and the
 # media of images/arch/media.sh in /home/arch/media. A 20 GiB root, mostly free (the qcow2 is compressed and keeps
 # none of it), for packages installed by hand. On demand only: not part of images/build.sh, CI or any test (~10 min,
 # mostly pacman and the container builds; the mirror's packages of the day).
-#   images/arch/desktop.sh [--out file.qcow2]     (default target/arch/desktop.qcow2)
+#   images/arch/desktop.sh [--out file.qcow2]     (default target/arch/desktop.qcow2; EXTRA_PACKAGES adds packages, e.g. gdb)
 # Login arch/arch (the screen) or root/root (the serial console); then `sway` (with 3D, WLR_RENDERER=gles2; see
 # docs/frontend.md), and e.g. `firefox file:///home/arch/media/avsync.html?v=sintel.webm`, `mpv ~/media/sintel.webm`,
 # `aplay -l`, `wpctl status`. bench/audio/avsync.ts measures A/V sync and the decode's cost on it; bench/gpu/sway-load.ts,
@@ -22,7 +23,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 PACKAGES="sway foot firefox htop ttf-dejavu pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils mpv libva-utils
-  gtk4-demos mesa-utils chromium nano lsof"
+  gtk4-demos mesa-utils chromium nano lsof vulkan-virtio vulkan-tools ${EXTRA_PACKAGES:-}"
 
 echo "==== webpc-va"
 rm -f "$W"/pkg/webpc-va-*

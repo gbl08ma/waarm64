@@ -29,7 +29,10 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   `__heap_end`, past dlmalloc's initial region, and grows up to 4 GiB without `memory.grow`.
 - **No threads.** vkr's ring, ring-monitor and queue-sync threads become polls under `__wasi__`
   (`vk/patches/vkr-wasm.patch`): `vkr_renderer_poll` runs every ring and retires fences, and a seqno wait polls its
-  ring. The module imports `wasi.thread-spawn`, which the host answers with -1.
+  ring. A ring command that waits for a virtqueue seqno not submitted yet (`vkWaitVirtqueueSeqnoMESA`, which Mesa
+  26's driver sends) can't block the only thread, since that seqno comes in a later submit: the ring stalls after it,
+  keeps the rest of its batch, and its poll resumes once the seqno arrives. The module imports `wasi.thread-spawn`,
+  which the host answers with -1.
 
 ## The parts
 
@@ -42,7 +45,10 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   `wg_memory_rebind`), an unmap copies it back (wasm can't remap pages).
 - `vk/driver/` (prefix `wg`): the driver. In VK1 it is null: Mesa's lite runtime (no shader compiler), what VK0's
   Mac profile advertises (`vk/profile.ts` makes C tables of `bench/vulkan/profiles/webgpu-mac.json`'s `mac_direct`)
-  plus the extensions Venus's WSI shares through; two memory types (device-local; host-visible, coherent, cached and
+  plus the extensions Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's
+  features, since the WSI renders into its images; foreign queue transfers; sync-file semaphores) and YCbCr conversions
+  (GTK's Vulkan renderer won't start without them); a device-local memory exports as a blob with no storage (a WSI
+  image shared as a dma-buf); two memory types (device-local; host-visible, coherent, cached and
   device-local) on a 2 GiB heap, one queue family. Every `vkCmd*` is recorded by the runtime's command queue; a submit
   runs only the commands that write memory the guest reads (buffer fills, updates and copies, queries, timestamps,
   events), then signals. One CPU sync type serves binary and timeline syncs, and sync files of -1.

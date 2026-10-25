@@ -51,10 +51,11 @@ export const MAX_SPILL = 8;
 
 /**
  * The automatic split of `total` bytes of guest RAM (a 64 KiB multiple): memory 0 as large as it goes
- * ({@link MAX_MEMORY0_RAM}), then spill memories of up to 4 GiB (docs/spill-memories.md).
+ * ({@link MAX_MEMORY0_RAM}, less `reserve` bytes memory 0 must also hold: a Venus machine's window and renderer,
+ * web/devices.ts), then spill memories of up to 4 GiB (docs/spill-memories.md).
  */
-export function splitRam(total: number): { ramSize: number; spill: number[] } {
-  const ramSize = Math.min(total, MAX_MEMORY0_RAM);
+export function splitRam(total: number, reserve = 0): { ramSize: number; spill: number[] } {
+  const ramSize = Math.min(total, MAX_MEMORY0_RAM - reserve);
   const spill: number[] = [];
   for (let left = total - ramSize; left > 0; left -= MAX_SPILL_BYTES) spill.push(Math.min(left, MAX_SPILL_BYTES));
   if (spill.length > MAX_SPILL) throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);

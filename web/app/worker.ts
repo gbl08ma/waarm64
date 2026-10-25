@@ -13,7 +13,7 @@ import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
-import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
+import { SEVERAL_ADAPTERS, VENUS_ARENA, VENUS_WINDOW, type DeviceSpec } from '../devices.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
 import { netCredentials } from './guest-net.ts';
@@ -380,7 +380,9 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   let specs: DeviceSpec[] | undefined;
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
   // user's split, else the automatic one; a snapshot's own.
-  let split = m.ramSplit ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20);
+  // A machine with Vulkan keeps its window and its renderer in memory 0 too (docs/devices.md "Venus").
+  const venus = kinds.includes('gpu') && gpuTuning().vulkan && !!m.renderer;
+  let split = m.ramSplit ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20, venus ? VENUS_WINDOW + VENUS_ARENA : 0);
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
     // a resume keeps it: it is as the suspended machine left it).

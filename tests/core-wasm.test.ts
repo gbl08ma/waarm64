@@ -244,6 +244,8 @@ test('guest RAM splits into memory 0 and spill memories', () => {
   assert.deepEqual(splitRam(3 * G - M), { ramSize: 3 * G - M, spill: [] });
   assert.deepEqual(splitRam(4 * G), { ramSize: 3 * G - M, spill: [G + M] });
   assert.deepEqual(splitRam(12 * G), { ramSize: 3 * G - M, spill: [4 * G, 4 * G, G + M] });
+  // A Venus machine's memory 0 also holds its window and renderer (512 MiB).
+  assert.deepEqual(splitRam(4 * G, G / 2), { ramSize: 2.5 * G - M, spill: [1.5 * G + M] });
   assert.throws(() => splitRam(40 * G), RangeError);
   assert.equal(splitError(2 * G, [G, 4 * G]), undefined);
   assert.match(splitError(3 * G, [])!, /at most 3071 MiB/);

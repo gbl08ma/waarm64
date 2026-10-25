@@ -52,6 +52,8 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
 
    struct vk_features features = { 0 };
    wg_profile_features(&features);
+   /* Past the profile: GTK's Vulkan renderer needs YCbCr conversions to start (VK1's gate programs; VK2 lowers them). */
+   features.samplerYcbcrConversion = true;
    struct vk_properties props = {
       .apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 296),
       .driverVersion = 1,
@@ -77,6 +79,7 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    exts.EXT_image_drm_format_modifier = true;
    exts.EXT_queue_family_foreign = true;
    exts.KHR_external_semaphore_fd = true;
+   exts.KHR_sampler_ycbcr_conversion = true;
 
    VkResult result = vk_physical_device_init(&pdev->vk, &instance->vk, &exts, &features, &props,
                                              &dispatch);
@@ -219,16 +222,32 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
          break;
       }
       case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT: {
-         /* One modifier, LINEAR, with the linear tiling's features. */
+         /* One modifier, LINEAR, with the optimal tiling's features: the renderer owns the image as any other (WebGPU
+          * has no tiling to choose), and Venus's WSI renders into images with a modifier. */
          VkDrmFormatModifierPropertiesListEXT *p = (void *)ext;
          VK_OUTARRAY_MAKE_TYPED(VkDrmFormatModifierPropertiesEXT, out, p->pDrmFormatModifierProperties,
                                 &p->drmFormatModifierCount);
-         if (f && f->linear) {
+         if (f && f->optimal) {
             vk_outarray_append_typed(VkDrmFormatModifierPropertiesEXT, &out, m) {
                *m = (VkDrmFormatModifierPropertiesEXT){
                   .drmFormatModifier = 0,
                   .drmFormatModifierPlaneCount = 1,
-                  .drmFormatModifierTilingFeatures = f->linear,
+                  .drmFormatModifierTilingFeatures = f->optimal,
+               };
+            }
+         }
+         break;
+      }
+      case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT: {
+         VkDrmFormatModifierPropertiesList2EXT *p = (void *)ext;
+         VK_OUTARRAY_MAKE_TYPED(VkDrmFormatModifierProperties2EXT, out, p->pDrmFormatModifierProperties,
+                                &p->drmFormatModifierCount);
+         if (f && f->optimal) {
+            vk_outarray_append_typed(VkDrmFormatModifierProperties2EXT, &out, m) {
+               *m = (VkDrmFormatModifierProperties2EXT){
+                  .drmFormatModifier = 0,
+                  .drmFormatModifierPlaneCount = 1,
+                  .drmFormatModifierTilingFeatures = f->optimal,
                };
             }
          }
@@ -249,7 +268,7 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    const struct vk_properties *p = &pdev->vk.properties;
    const struct wg_format *f = wg_format(info->format);
    const VkFormatFeatureFlags features =
-      !f ? 0 : info->tiling == VK_IMAGE_TILING_OPTIMAL ? f->optimal : f->linear;
+      !f ? 0 : info->tiling == VK_IMAGE_TILING_LINEAR ? f->linear : f->optimal; /* a modifier's: the optimal's (above) */
    VkFormatFeatureFlags needed = 0;
    if (info->usage & VK_IMAGE_USAGE_SAMPLED_BIT)
       needed |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
