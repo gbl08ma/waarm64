@@ -125,9 +125,9 @@ for (const e of virgl) {
 
 // Ours: the driver (on the runtime's headers) and the glue (vkr's too).
 compile(`${W}/gen/wg_entrypoints.c`, [...runtimeFlags, `-I${W}/gen`]);
-compile(`${W}/gen/wg_profile.c`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`]);
+compile(`${W}/gen/wg_profile.c`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`, `-I${HERE}/compiler`]);
 for (const f of readdirSync(`${HERE}/driver`).filter((f) => f.endsWith('.c')).sort()) {
-  compile(`${HERE}/driver/${f}`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`]);
+  compile(`${HERE}/driver/${f}`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`, `-I${HERE}/compiler`]);
 }
 for (const f of readdirSync(`${HERE}/compiler`).filter((f) => f.endsWith('.c')).sort()) {
   compile(`${HERE}/compiler/${f}`, [...runtimeFlags, `-I${HERE}/compiler`]);
@@ -139,10 +139,10 @@ compile(`${HERE}/glue.c`, [...vkrFlags, `-I${HERE}/driver`]);
 
 // The module runs on memory 0 at the arena (vk/README.md): data and stack at its fixed base, the heap after them.
 const ARENA = 0xf000_0000;
-const EXPORTS = [`${HERE}/glue.c`, `${HERE}/compiler/wgsl_test.c`].flatMap((f) => readFileSync(f, 'utf8').match(/^EXPORT[^(]*\b(\w+)\(/gm)!.map((l) => l.match(/(\w+)\($/)![1]));
+const EXPORTS = [`${HERE}/glue.c`, `${HERE}/compiler/wgsl_test.c`, `${HERE}/driver/wg_test.c`].flatMap((f) => readFileSync(f, 'utf8').match(/^EXPORT[^(]*\b(\w+)\(/gm)!.map((l) => l.match(/(\w+)\($/)![1]));
 const link = `$cxx --target=wasm32-wasip1-threads --sysroot=${SDK}/share/wasi-sysroot -mexec-model=reactor -O2 ` +
   '-mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false -Wl,--gc-sections ' + (process.env.VK_NAMES ? '' : '-Wl,--strip-all ') +
-  `-Wl,--import-memory -Wl,--shared-memory -Wl,--max-memory=4294967296 -Wl,--global-base=${ARENA} -Wl,-z,stack-size=4194304 ` +
+  `-Wl,--import-memory -Wl,--shared-memory -Wl,--max-memory=4294967296 -Wl,--global-base=${ARENA} -Wl,--no-stack-first -Wl,-z,stack-size=4194304 ` +
   EXPORTS.map((e) => `-Wl,--export=${e}`).join(' ') +
   ' -lsetjmp -lwasi-emulated-mman -lwasi-emulated-process-clocks -lwasi-emulated-signal -lwasi-emulated-getpid $in -o $out';
 lines.push('', 'rule link', `  command = ${link}`, '  description = LINK $out', '');

@@ -2,22 +2,83 @@
  * The driver's instance, physical device, device, memory and objects (wg_private.h). Written on Mesa's Vulkan runtime
  * the way its drivers are (lavapipe's lvp_device.c for the shape); our own code.
  */
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "util/format/u_format.h"
 #include "util/u_math.h"
 #include "vk_common_entrypoints.h"
-#include "vk_cmd_enqueue_entrypoints.h"
 #include "vk_format.h"
+#include "vk_pipeline_cache.h"
 #include "vk_util.h"
 
 #include "wg_private.h"
 
 /* The device's one heap and its two memory types: device-local, and host-visible coherent (a WebGPU device shares
- * the host's memory only through uploads, so "device-local" too: VK2's shadow buffers). */
+ * the host's memory only through uploads, so "device-local" too: its shadow buffers). */
 #define WG_HEAP_SIZE (2ull << 30)
 #define WG_MEMORY_HOST 1
+
+uint32_t wg_features, wg_max_immediates;
+uintptr_t wg_window_at, wg_window_bytes;
+
+/* Ids: a free list over a counter (JS keeps its objects in an array by id). */
+static uint32_t next_id = 1;
+static struct util_dynarray free_ids;
+
+uint32_t
+wg_id(void)
+{
+   if (util_dynarray_num_elements(&free_ids, uint32_t))
+      return util_dynarray_pop(&free_ids, uint32_t);
+   return next_id++;
+}
+
+void
+wg_id_release(uint32_t id)
+{
+   if (!id)
+      return;
+   gpu_destroy(id);
+   util_dynarray_append_typed(&free_ids, uint32_t, id);
+}
+
+void
+wg_json_printf(struct wg_json *j, const char *fmt, ...)
+{
+   for (;;) {
+      va_list ap;
+      va_start(ap, fmt);
+      const int n = vsnprintf(j->data ? j->data + j->len : NULL, j->data ? j->cap - j->len : 0, fmt, ap);
+      va_end(ap);
+      if (n < 0)
+         return;
+      if (j->data && j->len + n < j->cap) {
+         j->len += n;
+         return;
+      }
+      j->cap = MAX2(j->cap * 2, j->len + n + 256);
+      j->data = realloc(j->data, j->cap);
+   }
+}
+
+void
+wg_json_free(struct wg_json *j)
+{
+   free(j->data);
+   *j = (struct wg_json){ 0 };
+}
+
+uint32_t
+wg_create_json(enum wg_kind kind, struct wg_json *j)
+{
+   const uint32_t id = wg_id();
+   gpu_create(kind, id, j->data, j->len);
+   wg_json_free(j);
+   return id;
+}
 
 static const struct vk_instance_extension_table wg_instance_extensions = {
    .KHR_device_group_creation = true,
@@ -52,8 +113,34 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
 
    struct vk_features features = { 0 };
    wg_profile_features(&features);
-   /* Past the profile: GTK's Vulkan renderer needs YCbCr conversions to start (VK1's gate programs; VK2 lowers them). */
+   /* Past the profile: GTK's Vulkan renderer needs YCbCr conversions to start (VK1's gate programs). */
    features.samplerYcbcrConversion = true;
+   /* What the translator can't express yet (M8-VK2-HANDOVER.md "What the direct set must not advertise yet"). */
+   features.shaderFloat16 = false;
+   features.shaderInt16 = false;
+   features.shaderInt64 = false;
+   features.shaderFloat64 = false;
+   features.storageBuffer16BitAccess = false;
+   features.uniformAndStorageBuffer16BitAccess = false;
+   features.storagePushConstant16 = false;
+   features.storageInputOutput16 = false;
+   features.shaderSampledImageArrayDynamicIndexing = false;
+   features.shaderStorageImageArrayDynamicIndexing = false;
+   features.shaderUniformBufferArrayDynamicIndexing = false;
+   features.shaderStorageBufferArrayDynamicIndexing = false;
+   features.descriptorIndexing = false;
+   features.inlineUniformBlock = false;
+   features.descriptorBindingInlineUniformBlockUpdateAfterBind = false;
+   features.shaderSampledImageArrayNonUniformIndexing = false;
+   features.runtimeDescriptorArray = false;
+   features.descriptorBindingPartiallyBound = false;
+   features.descriptorBindingVariableDescriptorCount = false;
+   features.depthClamp = !!(wg_features & WG_FEATURE_DEPTH_CLIP);
+   features.dualSrcBlend = !!(wg_features & WG_FEATURE_DUAL_SOURCE);
+   features.shaderClipDistance = !!(wg_features & WG_FEATURE_CLIP_DISTANCES);
+   features.textureCompressionBC = !!(wg_features & WG_FEATURE_BC);
+   features.textureCompressionETC2 = !!(wg_features & WG_FEATURE_ETC2);
+   features.textureCompressionASTC_LDR = !!(wg_features & WG_FEATURE_ASTC);
    struct vk_properties props = {
       .apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 296),
       .driverVersion = 1,
@@ -64,10 +151,14 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
       .maxBufferSize = 1ull << 30,
    };
    wg_profile_properties(&props);
-   snprintf(props.deviceName, sizeof(props.deviceName), "webpc null renderer (VK1)");
+   /* WebGPU's: immediates (push constants past them aren't offered yet), vertex attributes. */
+   props.maxPushConstantsSize = MIN2(props.maxPushConstantsSize, MAX2(wg_max_immediates, 0));
+   props.maxVertexInputAttributes = MIN2(props.maxVertexInputAttributes, 16);
+   props.maxVertexInputBindings = MIN2(props.maxVertexInputBindings, 8);
+   snprintf(props.deviceName, sizeof(props.deviceName), "webpc WebGPU");
    snprintf(props.driverName, sizeof(props.driverName), "webpc");
-   snprintf(props.driverInfo, sizeof(props.driverInfo), "WebGPU, null renderer (VK1)");
-   memcpy(props.pipelineCacheUUID, "webpc-wg-vk1-000", VK_UUID_SIZE);
+   snprintf(props.driverInfo, sizeof(props.driverInfo), "Vulkan on WebGPU");
+   memcpy(props.pipelineCacheUUID, "webpc-wg-vk2-000", VK_UUID_SIZE);
    memcpy(props.deviceUUID, "webpc-wg-device0", VK_UUID_SIZE);
    memcpy(props.driverUUID, "webpc-wg-driver0", VK_UUID_SIZE);
 
@@ -80,6 +171,9 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    exts.EXT_queue_family_foreign = true;
    exts.KHR_external_semaphore_fd = true;
    exts.KHR_sampler_ycbcr_conversion = true;
+   /* Not translated: inline uniform blocks (a bind group holds buffers, not bytes), texel buffers' alignment rules. */
+   exts.EXT_inline_uniform_block = false;
+   exts.EXT_texel_buffer_alignment = false;
 
    VkResult result = vk_physical_device_init(&pdev->vk, &instance->vk, &exts, &features, &props,
                                              &dispatch);
@@ -193,24 +287,16 @@ wg_GetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physicalDevice, VkPhysica
    };
 }
 
-static const struct wg_format *
-wg_format(VkFormat format)
-{
-   for (uint32_t i = 0; i < wg_profile_format_count; i++)
-      if (wg_profile_formats[i].format == format)
-         return &wg_profile_formats[i];
-   return NULL;
-}
-
 VKAPI_ATTR void VKAPI_CALL
 wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat format,
                                       VkFormatProperties2 *pProps)
 {
-   const struct wg_format *f = wg_format(format);
+   VkFormatFeatureFlags linear, optimal, buffer;
+   wg_format_features(format, &linear, &optimal, &buffer);
    pProps->formatProperties = (VkFormatProperties){
-      .linearTilingFeatures = f ? f->linear : 0,
-      .optimalTilingFeatures = f ? f->optimal : 0,
-      .bufferFeatures = f ? f->buffer : 0,
+      .linearTilingFeatures = linear,
+      .optimalTilingFeatures = optimal,
+      .bufferFeatures = buffer,
    };
    vk_foreach_struct(ext, pProps->pNext) {
       switch (ext->sType) {
@@ -227,12 +313,12 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
          VkDrmFormatModifierPropertiesListEXT *p = (void *)ext;
          VK_OUTARRAY_MAKE_TYPED(VkDrmFormatModifierPropertiesEXT, out, p->pDrmFormatModifierProperties,
                                 &p->drmFormatModifierCount);
-         if (f && f->optimal) {
+         if (optimal) {
             vk_outarray_append_typed(VkDrmFormatModifierPropertiesEXT, &out, m) {
                *m = (VkDrmFormatModifierPropertiesEXT){
                   .drmFormatModifier = 0,
                   .drmFormatModifierPlaneCount = 1,
-                  .drmFormatModifierTilingFeatures = f->optimal,
+                  .drmFormatModifierTilingFeatures = optimal,
                };
             }
          }
@@ -242,12 +328,12 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
          VkDrmFormatModifierPropertiesList2EXT *p = (void *)ext;
          VK_OUTARRAY_MAKE_TYPED(VkDrmFormatModifierProperties2EXT, out, p->pDrmFormatModifierProperties,
                                 &p->drmFormatModifierCount);
-         if (f && f->optimal) {
+         if (optimal) {
             vk_outarray_append_typed(VkDrmFormatModifierProperties2EXT, &out, m) {
                *m = (VkDrmFormatModifierProperties2EXT){
                   .drmFormatModifier = 0,
                   .drmFormatModifierPlaneCount = 1,
-                  .drmFormatModifierTilingFeatures = f->optimal,
+                  .drmFormatModifierTilingFeatures = optimal,
                };
             }
          }
@@ -266,19 +352,27 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
 {
    VK_FROM_HANDLE(wg_physical_device, pdev, physicalDevice);
    const struct vk_properties *p = &pdev->vk.properties;
-   const struct wg_format *f = wg_format(info->format);
+   VkFormatFeatureFlags linear, optimal, buffer;
+   wg_format_features(info->format, &linear, &optimal, &buffer);
    const VkFormatFeatureFlags features =
-      !f ? 0 : info->tiling == VK_IMAGE_TILING_LINEAR ? f->linear : f->optimal; /* a modifier's: the optimal's (above) */
+      info->tiling == VK_IMAGE_TILING_LINEAR ? linear : optimal; /* a modifier's: the optimal's (above) */
    VkFormatFeatureFlags needed = 0;
-   if (info->usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+   if (info->usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       needed |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+   if (info->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+      needed |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+   if (info->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+      needed |= VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
    if (info->usage & VK_IMAGE_USAGE_STORAGE_BIT)
       needed |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
    if (info->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
       needed |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
    if (info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
       needed |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-   if (!features || (features & needed) != needed || info->type > VK_IMAGE_TYPE_3D) {
+   /* WebGPU: no 3D depth or compressed 3D textures, no cube arrays of 1D. */
+   const bool depth = features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+   if (!features || (features & needed) != needed || info->type > VK_IMAGE_TYPE_3D ||
+       (info->type != VK_IMAGE_TYPE_2D && depth)) {
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
@@ -291,8 +385,11 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
       .maxMipLevels = util_logbase2(dim) + 1,
       .maxArrayLayers = info->type == VK_IMAGE_TYPE_3D ? 1 : p->maxImageArrayLayers,
-      .sampleCounts = info->tiling == VK_IMAGE_TILING_OPTIMAL && info->type == VK_IMAGE_TYPE_2D && attachment
-                         ? p->framebufferColorSampleCounts
+      /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage. */
+      .sampleCounts = info->tiling == VK_IMAGE_TILING_OPTIMAL && info->type == VK_IMAGE_TYPE_2D && attachment &&
+                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+                            !(info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
+                         ? VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT
                          : VK_SAMPLE_COUNT_1_BIT,
       .maxResourceSize = 1ull << 31,
    };
@@ -360,10 +457,9 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
    if (!dev)
       return vk_error(pdev, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   /* Ours first, every command recorded in the runtime's queue, then the runtime's own. */
+   /* Ours first, then the runtime's own (pipelines, render passes, dynamic state, the forms it forwards to ours). */
    struct vk_device_dispatch_table dispatch;
    vk_device_dispatch_table_from_entrypoints(&dispatch, &wg_device_entrypoints, true);
-   vk_device_dispatch_table_from_entrypoints(&dispatch, &vk_cmd_enqueue_device_entrypoints, false);
    vk_device_dispatch_table_from_entrypoints(&dispatch, &vk_common_device_entrypoints, false);
    VkResult result = vk_device_init(&dev->vk, &pdev->vk, &dispatch, pCreateInfo, pAllocator);
    if (result != VK_SUCCESS) {
@@ -371,6 +467,12 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
       return result;
    }
    dev->vk.command_buffer_ops = &wg_cmd_buffer_ops;
+   dev->vk.shader_ops = &wg_device_shader_ops;
+   list_inithead(&dev->host_memories);
+   list_inithead(&dev->pending);
+   const VkPipelineCacheCreateInfo cache_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+   const struct vk_pipeline_cache_create_info cache = { .pCreateInfo = &cache_info, .weak_ref = true };
+   dev->vk.mem_cache = vk_pipeline_cache_create(&dev->vk, &cache, NULL);
 
    const float priority = 1.0f;
    const VkDeviceQueueCreateInfo none = {
@@ -387,6 +489,7 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
       return result;
    }
    dev->queue.vk.driver_submit = wg_queue_submit;
+   wg_device_register(dev, true);
    *pDevice = wg_device_to_handle(dev);
    return VK_SUCCESS;
 }
@@ -397,7 +500,11 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    VK_FROM_HANDLE(wg_device, dev, _device);
    if (!dev)
       return;
+   wg_device_register(dev, false);
+   wg_device_drain(dev);
    vk_queue_finish(&dev->queue.vk);
+   if (dev->vk.mem_cache)
+      vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
    vk_device_finish(&dev->vk);
    vk_free(&dev->vk.alloc, dev);
 }
@@ -414,19 +521,41 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
    struct wg_device_memory *mem = vk_device_memory_create(&dev->vk, pAllocateInfo, pAllocator, sizeof(*mem));
    if (!mem)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   mem->size = align64(MAX2(pAllocateInfo->allocationSize, 4), 4);
+   mem->host = pAllocateInfo->memoryTypeIndex == WG_MEMORY_HOST;
    if (mem->vk.host_ptr) {
       /* vkr's storage (its patch: host-visible memory is the renderer's, then the window's). */
       mem->data = mem->vk.host_ptr;
-   } else if (pAllocateInfo->memoryTypeIndex == WG_MEMORY_HOST) {
+      mem->host = true;
+   } else if (mem->host) {
       mem->data = aligned_alloc(4096, align64(pAllocateInfo->allocationSize, 4096));
       if (!mem->data) {
          vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
          return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
       memset(mem->data, 0, pAllocateInfo->allocationSize);
+      mem->owned = true;
+   }
+   if (mem->host) {
+      mem->dirty = true;
+      list_addtail(&mem->link, &dev->host_memories);
    }
    *pMem = wg_device_memory_to_handle(mem);
    return VK_SUCCESS;
+}
+
+uint32_t
+wg_memory_buffer(struct wg_device_memory *mem)
+{
+   if (!mem->gpu) {
+      /* MAP_READ can't go with other usages: readbacks go through staging buffers (gpu_readback). */
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)mem->size,
+                     4 | 8 | 16 | 32 | 64 | 128 | 256 | 512);
+      mem->gpu = wg_create_json(WG_KIND_BUFFER, &j);
+      mem->dirty = mem->host;
+   }
+   return mem->gpu;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -436,8 +565,12 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
    VK_FROM_HANDLE(wg_device_memory, mem, _mem);
    if (!mem)
       return;
-   if (!mem->vk.host_ptr && mem->vk.memory_type_index == WG_MEMORY_HOST)
+   wg_submits_forget(dev, mem);
+   if (mem->host)
+      list_del(&mem->link);
+   if (mem->owned)
       free(mem->data);
+   wg_id_release(mem->gpu);
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
 }
 
@@ -446,6 +579,8 @@ wg_memory_rebind(VkDeviceMemory _mem, void *data)
 {
    VK_FROM_HANDLE(wg_device_memory, mem, _mem);
    mem->data = data;
+   /* Its bytes moved without the write-watch seeing them (the renderer copied them): uploaded whole. */
+   mem->dirty = true;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -534,14 +669,14 @@ wg_GetBufferMemoryRequirements2(VkDevice _device, const VkBufferMemoryRequiremen
                                 VkMemoryRequirements2 *reqs)
 {
    VK_FROM_HANDLE(wg_buffer, buffer, info->buffer);
-   wg_requirements(reqs, MAX2(buffer->vk.size, 1), 256);
+   wg_requirements(reqs, align64(MAX2(buffer->vk.size, 4), 4), 256);
 }
 
 VKAPI_ATTR void VKAPI_CALL
 wg_GetDeviceBufferMemoryRequirements(VkDevice _device, const VkDeviceBufferMemoryRequirements *info,
                                      VkMemoryRequirements2 *reqs)
 {
-   wg_requirements(reqs, MAX2(info->pCreateInfo->size, 1), 256);
+   wg_requirements(reqs, align64(MAX2(info->pCreateInfo->size, 4), 4), 256);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -552,6 +687,7 @@ wg_BindBufferMemory2(VkDevice _device, uint32_t count, const VkBindBufferMemoryI
       VK_FROM_HANDLE(wg_device_memory, mem, infos[i].memory);
       buffer->mem = mem;
       buffer->offset = infos[i].memoryOffset;
+      wg_memory_buffer(mem);
       const VkBindMemoryStatus *status = vk_find_struct_const(infos[i].pNext, BIND_MEMORY_STATUS);
       if (status)
          *status->pResult = VK_SUCCESS;
@@ -587,6 +723,65 @@ wg_image_layout(const struct vk_image *image, uint32_t level, uint32_t layer, Vk
    return at;
 }
 
+/* The texture an image is: every usage its Vulkan usage needs (transfers as copies, but clears and blits draw into
+ * it, and a blit's source is sampled), with its format's sRGB twin as a view format when views may differ. */
+static const char *
+wg_dimension(const struct vk_image *image)
+{
+   switch (image->image_type) {
+   case VK_IMAGE_TYPE_1D:
+      return image->mip_levels == 1 && image->array_layers == 1 && !(image->usage & ~(VK_IMAGE_USAGE_SAMPLED_BIT |
+                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT))
+                ? "1d"
+                : "2d";
+   case VK_IMAGE_TYPE_3D:
+      return "3d";
+   default:
+      return "2d";
+   }
+}
+
+static uint32_t
+wg_texture_create(struct wg_image *image)
+{
+   const struct vk_image *vi = &image->vk;
+   const uint32_t flags = image->fmt->flags;
+   const bool one_d = !strcmp(wg_dimension(vi), "1d");
+   uint32_t usage = 0;
+   if (vi->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+      usage |= 1 | ((flags & WG_FMT_SAMPLE) && vi->samples == 1 ? 4 : 0);
+   if (vi->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+      usage |= 2 | ((flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL)) && !one_d ? 16 : 0);
+   if (vi->usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
+      usage |= 4;
+   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && (flags & WG_FMT_STORAGE))
+      usage |= 8;
+   if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+      usage |= 16;
+   if (flags & WG_FMT_NOCOPY)
+      usage &= ~3u;
+   if (vi->samples > 1)
+      usage = (usage & ~8u) | 16;
+   if (!usage)
+      usage = 4;
+   const VkExtent3D e = vi->extent;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"size\":[%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
+                  "\"format\":\"%s\",\"usage\":%u,\"viewFormats\":[",
+                  e.width, e.height, vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
+                  vi->samples, wg_dimension(vi), image->fmt->name, usage);
+   if (vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) {
+      const VkFormat twin = vk_format_is_srgb(vi->format)
+                               ? vk_format_srgb_to_linear(vi->format)
+                               : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(vi->format)));
+      const struct wg_texture_format *t = twin != vi->format ? wg_texture_format(twin) : NULL;
+      if (t)
+         wg_json_printf(&j, "\"%s\"", t->name);
+   }
+   wg_json_printf(&j, "]}");
+   return wg_create_json(WG_KIND_TEXTURE, &j);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
                VkImage *pImage)
@@ -597,6 +792,12 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    /* A modifier's image is LINEAR, the one modifier offered (GetImageDrmFormatModifierPropertiesEXT). */
    image->size = wg_image_layout(&image->vk, 0, 0, NULL);
+   image->fmt = wg_texture_format(image->vk.format);
+   if (!image->fmt) {
+      vk_image_destroy(&dev->vk, pAllocator, &image->vk);
+      return vk_error(dev, VK_ERROR_FORMAT_NOT_SUPPORTED);
+   }
+   image->tex = wg_texture_create(image);
    *pImage = wg_image_to_handle(image);
    return VK_SUCCESS;
 }
@@ -606,8 +807,10 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
 {
    VK_FROM_HANDLE(wg_device, dev, _device);
    VK_FROM_HANDLE(wg_image, image, _image);
-   if (image)
-      vk_image_destroy(&dev->vk, pAllocator, &image->vk);
+   if (!image)
+      return;
+   wg_id_release(image->tex);
+   vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -691,6 +894,41 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    struct wg_image_view *view = vk_image_view_create(&dev->vk, pCreateInfo, pAllocator, sizeof(*view));
    if (!view)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
+   view->fmt = wg_texture_format(view->vk.view_format);
+   if (!view->fmt)
+      view->fmt = image->fmt;
+   const VkImageAspectFlags aspects = view->vk.aspects;
+   const char *aspect = (image->fmt->flags & WG_FMT_DEPTH) && (image->fmt->flags & WG_FMT_STENCIL)
+                           ? (aspects == VK_IMAGE_ASPECT_DEPTH_BIT     ? "depth-only"
+                              : aspects == VK_IMAGE_ASPECT_STENCIL_BIT ? "stencil-only"
+                                                                       : "all")
+                           : "all";
+   static const char *const dims[] = {
+      [VK_IMAGE_VIEW_TYPE_1D] = "1d", [VK_IMAGE_VIEW_TYPE_2D] = "2d", [VK_IMAGE_VIEW_TYPE_3D] = "3d",
+      [VK_IMAGE_VIEW_TYPE_CUBE] = "cube", [VK_IMAGE_VIEW_TYPE_1D_ARRAY] = "2d-array",
+      [VK_IMAGE_VIEW_TYPE_2D_ARRAY] = "2d-array", [VK_IMAGE_VIEW_TYPE_CUBE_ARRAY] = "cube-array",
+   };
+   const char *dim = view->vk.view_type <= VK_IMAGE_VIEW_TYPE_CUBE_ARRAY ? dims[view->vk.view_type] : "2d";
+   if (!strcmp(dim, "1d") && strcmp(wg_dimension(&image->vk), "1d"))
+      dim = "2d";
+   const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"%s\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
+                  "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
+                  image->tex, view->fmt->name, dim, aspect, view->vk.base_mip_level, view->vk.level_count,
+                  layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
+   view->view = wg_create_json(WG_KIND_VIEW, &j);
+   /* As an attachment: one level and one layer, 2D (3D images aren't rendered into yet). */
+   if (image->vk.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                          VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+       layered && strcmp(wg_dimension(&image->vk), "1d") &&
+       (image->fmt->flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL))) {
+      wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"2d\",\"baseMipLevel\":%u,"
+                     "\"mipLevelCount\":1,\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
+                     image->tex, view->fmt->name, view->vk.base_mip_level, view->vk.base_array_layer);
+      view->att = wg_create_json(WG_KIND_VIEW, &j);
+   }
    *pView = wg_image_view_to_handle(view);
    return VK_SUCCESS;
 }
@@ -700,8 +938,11 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
 {
    VK_FROM_HANDLE(wg_device, dev, _device);
    VK_FROM_HANDLE(wg_image_view, view, _view);
-   if (view)
-      vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);
+   if (!view)
+      return;
+   wg_id_release(view->view);
+   wg_id_release(view->att);
+   vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -733,6 +974,32 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
    struct wg_sampler *sampler = vk_sampler_create(&dev->vk, pCreateInfo, pAllocator, sizeof(*sampler));
    if (!sampler)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   /* Borders and mirror-once aren't WebGPU's: the nearest of its modes (docs/backlog.md). */
+   static const char *const address[] = {
+      [VK_SAMPLER_ADDRESS_MODE_REPEAT] = "repeat", [VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT] = "mirror-repeat",
+      [VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE] = "clamp-to-edge",
+      [VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER] = "clamp-to-edge",
+      [VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE] = "mirror-repeat",
+   };
+   static const char *const compare[] = { "never", "less", "equal", "less-equal", "greater", "not-equal",
+                                          "greater-equal", "always" };
+   const VkSamplerCreateInfo *c = pCreateInfo;
+   const float lod_min = CLAMP(c->minLod, 0.0f, 32.0f), lod_max = CLAMP(c->maxLod, lod_min, 32.0f);
+   const bool linear = c->magFilter == VK_FILTER_LINEAR && c->minFilter == VK_FILTER_LINEAR &&
+                       c->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR;
+   const unsigned aniso = c->anisotropyEnable && linear ? CLAMP((unsigned)c->maxAnisotropy, 1, 16) : 1;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"addressModeU\":\"%s\",\"addressModeV\":\"%s\",\"addressModeW\":\"%s\",\"magFilter\":\"%s\","
+                  "\"minFilter\":\"%s\",\"mipmapFilter\":\"%s\",\"lodMinClamp\":%g,\"lodMaxClamp\":%g,\"maxAnisotropy\":%u",
+                  address[MIN2(c->addressModeU, 4)], address[MIN2(c->addressModeV, 4)],
+                  address[MIN2(c->addressModeW, 4)], c->magFilter == VK_FILTER_LINEAR ? "linear" : "nearest",
+                  c->minFilter == VK_FILTER_LINEAR ? "linear" : "nearest",
+                  c->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? "linear" : "nearest", lod_min, lod_max, aniso);
+   sampler->compare = c->compareEnable;
+   if (c->compareEnable)
+      wg_json_printf(&j, ",\"compare\":\"%s\"", compare[c->compareOp & 7]);
+   wg_json_printf(&j, "}");
+   sampler->id = wg_create_json(WG_KIND_SAMPLER, &j);
    *pSampler = wg_sampler_to_handle(sampler);
    return VK_SUCCESS;
 }
@@ -742,169 +1009,10 @@ wg_DestroySampler(VkDevice _device, VkSampler _sampler, const VkAllocationCallba
 {
    VK_FROM_HANDLE(wg_device, dev, _device);
    VK_FROM_HANDLE(wg_sampler, sampler, _sampler);
-   if (sampler)
-      vk_sampler_destroy(&dev->vk, pAllocator, &sampler->vk);
-}
-
-/* What VK1 only keeps: shader modules, pipelines and their caches, descriptor pools and sets. */
-
-static VkResult
-wg_object_create(struct wg_device *dev, VkObjectType type, const VkAllocationCallbacks *pAllocator, uint64_t *out)
-{
-   struct wg_object *o = vk_object_zalloc(&dev->vk, pAllocator, sizeof(*o), type);
-   if (!o)
-      return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
-   *out = wg_object_to_handle(o);
-   return VK_SUCCESS;
-}
-
-static void
-wg_object_destroy(struct wg_device *dev, uint64_t handle, const VkAllocationCallbacks *pAllocator)
-{
-   if (handle)
-      vk_object_free(&dev->vk, pAllocator, wg_object_from_handle(handle));
-}
-
-#define WG_OBJECT(Type, VK_TYPE)                                                                                   \
-   VKAPI_ATTR void VKAPI_CALL wg_Destroy##Type(VkDevice _device, Vk##Type handle,                                 \
-                                               const VkAllocationCallbacks *pAllocator)                           \
-   {                                                                                                               \
-      VK_FROM_HANDLE(wg_device, dev, _device);                                                                     \
-      wg_object_destroy(dev, (uint64_t)handle, pAllocator);                                                        \
-   }
-
-WG_OBJECT(ShaderModule, VK_OBJECT_TYPE_SHADER_MODULE)
-WG_OBJECT(Pipeline, VK_OBJECT_TYPE_PIPELINE)
-WG_OBJECT(PipelineCache, VK_OBJECT_TYPE_PIPELINE_CACHE)
-WG_OBJECT(DescriptorPool, VK_OBJECT_TYPE_DESCRIPTOR_POOL)
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_CreateShaderModule(VkDevice _device, const VkShaderModuleCreateInfo *pCreateInfo,
-                      const VkAllocationCallbacks *pAllocator, VkShaderModule *pModule)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   return wg_object_create(dev, VK_OBJECT_TYPE_SHADER_MODULE, pAllocator, (uint64_t *)pModule);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_CreatePipelineCache(VkDevice _device, const VkPipelineCacheCreateInfo *pCreateInfo,
-                       const VkAllocationCallbacks *pAllocator, VkPipelineCache *pCache)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   return wg_object_create(dev, VK_OBJECT_TYPE_PIPELINE_CACHE, pAllocator, (uint64_t *)pCache);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_GetPipelineCacheData(VkDevice _device, VkPipelineCache cache, size_t *pSize, void *pData)
-{
-   *pSize = 0;
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_MergePipelineCaches(VkDevice _device, VkPipelineCache dst, uint32_t count, const VkPipelineCache *srcs)
-{
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_CreateGraphicsPipelines(VkDevice _device, VkPipelineCache cache, uint32_t count,
-                           const VkGraphicsPipelineCreateInfo *infos, const VkAllocationCallbacks *pAllocator,
-                           VkPipeline *pPipelines)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   for (uint32_t i = 0; i < count; i++) {
-      VkResult r = wg_object_create(dev, VK_OBJECT_TYPE_PIPELINE, pAllocator, (uint64_t *)&pPipelines[i]);
-      if (r != VK_SUCCESS)
-         return r;
-   }
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_CreateComputePipelines(VkDevice _device, VkPipelineCache cache, uint32_t count,
-                          const VkComputePipelineCreateInfo *infos, const VkAllocationCallbacks *pAllocator,
-                          VkPipeline *pPipelines)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   for (uint32_t i = 0; i < count; i++) {
-      VkResult r = wg_object_create(dev, VK_OBJECT_TYPE_PIPELINE, pAllocator, (uint64_t *)&pPipelines[i]);
-      if (r != VK_SUCCESS)
-         return r;
-   }
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
-                             const VkAllocationCallbacks *pAllocator, VkDescriptorSetLayout *pLayout)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   struct wg_descriptor_set_layout *layout = vk_descriptor_set_layout_zalloc(&dev->vk, sizeof(*layout), pCreateInfo);
-   if (!layout)
-      return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
-   *pLayout = wg_descriptor_set_layout_to_handle(layout);
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-wg_GetDescriptorSetLayoutSupport(VkDevice _device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
-                                 VkDescriptorSetLayoutSupport *pSupport)
-{
-   pSupport->supported = true;
-   VkDescriptorSetVariableDescriptorCountLayoutSupport *v =
-      vk_find_struct(pSupport->pNext, DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
-   if (v)
-      v->maxVariableDescriptorCount = 1024;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_CreateDescriptorPool(VkDevice _device, const VkDescriptorPoolCreateInfo *pCreateInfo,
-                        const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pPool)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   return wg_object_create(dev, VK_OBJECT_TYPE_DESCRIPTOR_POOL, pAllocator, (uint64_t *)pPool);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_ResetDescriptorPool(VkDevice _device, VkDescriptorPool pool, VkDescriptorPoolResetFlags flags)
-{
-   return VK_SUCCESS;
-}
-
-/* Sets are objects of their own, freed with FreeDescriptorSets; a pool's reset or destruction leaks those still held
- * (bounded by what a guest makes: VK2 tracks them by pool). */
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_AllocateDescriptorSets(VkDevice _device, const VkDescriptorSetAllocateInfo *info, VkDescriptorSet *pSets)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   for (uint32_t i = 0; i < info->descriptorSetCount; i++) {
-      VkResult r = wg_object_create(dev, VK_OBJECT_TYPE_DESCRIPTOR_SET, NULL, (uint64_t *)&pSets[i]);
-      if (r != VK_SUCCESS)
-         return r;
-   }
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_FreeDescriptorSets(VkDevice _device, VkDescriptorPool pool, uint32_t count, const VkDescriptorSet *pSets)
-{
-   VK_FROM_HANDLE(wg_device, dev, _device);
-   for (uint32_t i = 0; i < count; i++)
-      wg_object_destroy(dev, (uint64_t)pSets[i], NULL);
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-wg_UpdateDescriptorSets(VkDevice _device, uint32_t writeCount, const VkWriteDescriptorSet *writes,
-                        uint32_t copyCount, const VkCopyDescriptorSet *copies)
-{
-}
-
-VKAPI_ATTR void VKAPI_CALL
-wg_UpdateDescriptorSetWithTemplate(VkDevice _device, VkDescriptorSet set, VkDescriptorUpdateTemplate tmpl,
-                                   const void *pData)
-{
+   if (!sampler)
+      return;
+   wg_id_release(sampler->id);
+   vk_sampler_destroy(&dev->vk, pAllocator, &sampler->vk);
 }
 
 /* Queries and events. */

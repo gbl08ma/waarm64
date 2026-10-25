@@ -60,18 +60,22 @@ async function translator() {
   const dv = () => new DataView(memory.buffer);
   const stub = () => 52;
   const wasi = new Proxy({
-    clock_time_get: (_id: number, _p: bigint, out: number) => { dv().setBigUint64(out, BigInt(Math.round(performance.now() * 1e6)), true); return 0; },
+    clock_time_get: (_id: number, _p: bigint, out: number) => { dv().setBigUint64(out >>> 0, BigInt(Math.round(performance.now() * 1e6)), true); return 0; },
     fd_write: (_fd: number, iovs: number, n: number, written: number) => {
+      iovs >>>= 0;
+      written >>>= 0;
       let len = 0;
       for (let i = 0; i < n; i++) len += dv().getUint32(iovs + i * 8 + 4, true);
       dv().setUint32(written, len, true);
       return 0;
     },
     environ_get: () => 0,
-    environ_sizes_get: (c: number, s: number) => { dv().setUint32(c, 0, true); dv().setUint32(s, 0, true); return 0; },
+    environ_sizes_get: (c: number, s: number) => { dv().setUint32(c >>> 0, 0, true); dv().setUint32(s >>> 0, 0, true); return 0; },
     proc_exit: (code: number) => { throw new Error(`proc_exit(${code})`); },
   } as Record<string, WebAssembly.ImportValue>, { get: (t, k: string) => t[k] ?? stub });
-  const imports = { env: { memory, venus_retire: () => {}, venus_submitted: () => {} }, wasi_snapshot_preview1: wasi, wasi: { 'thread-spawn': () => -1 } };
+  // The driver's WebGPU calls (vk/driver/wg_gpu.h) aren't made: only the translator runs.
+  const wg = new Proxy({}, { get: () => () => 0 });
+  const imports = { env: { memory, venus_retire: () => {}, venus_submitted: () => {} }, wg, wasi_snapshot_preview1: wasi, wasi: { 'thread-spawn': () => -1 } };
   const { instance } = await WebAssembly.instantiate(readFileSync(MODULE), imports);
   const ex = instance.exports as unknown as Exports;
   ex._initialize();

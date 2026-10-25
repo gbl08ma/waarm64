@@ -6,6 +6,7 @@
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withVideo } from './virgl-caps.ts';
 import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type VenusCall, type WorkerCall } from './virgl-host.ts';
+import { deviceRequest } from './venus-gpu.ts';
 import { VenusRenderer } from './venus-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
@@ -100,7 +101,8 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   };
   const settled = () => {
     const queries = renderer.queriesSettled();
-    return () => queries() && !venusBacklog?.length;
+    const vk = venus?.settled();
+    return () => queries() && !venusBacklog?.length && (!vk || vk());
   };
   let held = 0;
   const poll = () => {
@@ -121,7 +123,13 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       (async () => {
         // Not bundled (`@vite-ignore`): the static copy doesn't carry the renderer yet (vk/README.md "Not yet").
         const module = await WebAssembly.compileStreaming(fetch(new URL(/* @vite-ignore */ '../target/vk/venus.wasm', import.meta.url).href));
-        venus = await VenusRenderer.create(module, init.memory, init.window);
+        // The driver's WebGPU device (none: it keeps Venus's objects and draws nothing).
+        const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
+        const device = adapter ? await adapter.requestDevice(deviceRequest(adapter)).catch((err) => { console.warn('venus: no WebGPU device', err); return undefined; }) : undefined;
+        if (!device) console.warn('venus: this browser has no WebGPU adapter here: Vulkan draws nothing');
+        device?.lost.then((info) => console.warn(`venus: the WebGPU device was lost: ${info.message}`));
+        venus = await VenusRenderer.create(module, init.memory, init.window, device);
+        venus.onRetire = () => fenced.release();
         for (const v of venusBacklog!) venusCall(v);
         venusBacklog = undefined;
         fenced.release();

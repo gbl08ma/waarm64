@@ -479,17 +479,18 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   (`VENUS_ARENA`, 256 MiB at 0xF000_0000: a Venus machine's memory 0 is 4 GiB, RAM, then the window, then the arena;
   web/vm.ts). So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
   vkr's threads are polls: a submit, a notify or a fenced command polls the rings, and the worker keeps polling while
-  one is active (`venus_poll`, on a zero timeout). A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence.
-  After each queue submit the window's written pages are taken (web/window.ts) and counted (`VenusRenderer.stats`);
-  VK2 uploads them. Calls that come before the module is ready wait in a backlog, and so does the device's fence.
-- **The null driver** (VK1): what it advertises is VK0's Mac profile (`mac_direct`, vk/profile.ts) plus what Venus's
-  WSI shares through (dma-buf memory with the LINEAR modifier, foreign queue transfers, sync-file semaphores) and YCbCr
-  conversions (GTK); it keeps
-  every object and records every command, and a submit runs only those that write memory the guest reads (fills,
-  updates and copies of buffers, queries, timestamps, events: Venus's feedback). It draws nothing. vkcube on sway
-  (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) reaches ~50 frames/s on 2 vCPUs (`tests/page-venus.test.ts`); on the
-  desktop guest's sway (GLES, virgl) vkcube and GTK4's Vulkan renderer present through dma-bufs at the display's 60
-  (bench/vulkan/apps-load.ts, bench/gpu/gtk4-load.ts with `VIRGL_GPU=virgl,vulkan`).
+  one is active (`venus_poll`, on a zero timeout). A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
+  which happens once the GPU's work before it is done (`VenusRenderer.settled`: the GPU worker holds the device's fence
+  until then). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
+  Calls that come before the module is ready wait in a backlog, and so does the device's fence.
+- **The driver** (vk/README.md "The driver"): Vulkan on the GPU worker's WebGPU device (web/venus-gpu.ts; with no
+  adapter it keeps the objects and draws nothing). What it advertises is VK0's Mac profile (`mac_direct`, vk/profile.ts)
+  less what the translator can't do yet, formats as WebGPU has them, plus what Venus's WSI shares through (dma-buf
+  memory with the LINEAR modifier, foreign queue transfers, sync-file semaphores) and YCbCr conversions (GTK). vkcube on
+  sway (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) runs ~50 frames/s on 2 vCPUs on SwiftShader's WebGPU
+  (`tests/page-venus.test.ts`); in VK1, with the null driver, on the desktop guest's sway (GLES, virgl) vkcube and
+  GTK4's Vulkan renderer presented through dma-bufs at the display's 60 (bench/vulkan/apps-load.ts,
+  bench/gpu/gtk4-load.ts with `VIRGL_GPU=virgl,vulkan`); those dma-bufs aren't shared with virgl yet (VK2's L4).
 - On the page: `?gpu=vulkan` (with 3D on) gives a machine Venus (web/app/worker.ts); the Machines page has no setting
   for it yet.
 - Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,

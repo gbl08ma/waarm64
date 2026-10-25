@@ -594,7 +594,7 @@ On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's 
 wherever the browser has WebGL2 (since G3). The Machine menu's **Graphics** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
-`?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; VK1's renderer draws nothing yet).
+`?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; it draws on WebGPU, but its frames don't reach the screen yet).
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
 them ([graphics.md](graphics.md) "Video", [plans/video.md](plans/video.md)): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);

@@ -14,16 +14,21 @@
 /* The driver's (vk/driver/wg_private.h; not included: its headers are Mesa's, vkr's util is its own copy). */
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
 extern void (*wg_submitted)(void);
+extern uint32_t wg_features, wg_max_immediates;
+extern uintptr_t wg_window_at, wg_window_bytes;
+void wg_format_init(uint32_t features);
+void wg_complete(uint32_t serial);
 
 #define EXPORT __attribute__((visibility("default")))
 #define IMPORT(name) __attribute__((import_module("env"), import_name(name)))
 
-/* The GPU worker's: a fence of `ring_idx` retired (the device answers the guest's fenced command), and a submit ran
- * (the window's written pages are taken then: web/window.ts). */
+/* The GPU worker's: a fence of `ring_idx` retired (the device answers the guest's fenced command), and a submit's
+ * work is done. */
 IMPORT("venus_retire") void venus_retire(uint32_t ctx_id, uint32_t ring_idx, uint64_t fence_id);
 IMPORT("venus_submitted") void venus_submitted(void);
 
-int venus_init(void);
+int venus_init(uint32_t features, uint32_t max_immediates, void *window, uint32_t window_bytes);
+void venus_complete(uint32_t serial);
 uint32_t venus_capset(void *out);
 int venus_context_create(uint32_t ctx_id, const char *name, uint32_t nlen);
 void venus_context_destroy(uint32_t ctx_id);
@@ -62,10 +67,16 @@ vkr_wasi_memory_moved(VkDeviceMemory memory, void *data)
    wg_memory_rebind(memory, data);
 }
 
-/* Starts vkr: 1, or 0 if it couldn't. */
+/* Starts vkr on a WebGPU device with `features` (wg_private.h's wg_feature) and that many bytes of immediates, the
+ * host-visible window at `window`: 1, or 0 if it couldn't. */
 EXPORT int
-venus_init(void)
+venus_init(uint32_t features, uint32_t max_immediates, void *window, uint32_t window_bytes)
 {
+   wg_features = features;
+   wg_max_immediates = max_immediates;
+   wg_window_at = (uintptr_t)window;
+   wg_window_bytes = window_bytes;
+   wg_format_init(features);
    wg_submitted = venus_submitted;
    return vkr_renderer_init(VKR_RENDERER_THREAD_SYNC | VKR_RENDERER_ASYNC_FENCE_CB, &callbacks);
 }
@@ -135,6 +146,13 @@ EXPORT void *
 venus_resource_data(uint32_t ctx_id, uint32_t res_id)
 {
    return vkr_renderer_resource_data(ctx_id, res_id);
+}
+
+/* A submit's GPU work is done (and its readbacks mapped): its syncs signal. */
+EXPORT void
+venus_complete(uint32_t serial)
+{
+   wg_complete(serial);
 }
 
 /* Runs the rings and retires fences: 1 while a ring is active (poll again soon), 0 when all are idle. */

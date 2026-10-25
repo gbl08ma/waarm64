@@ -503,7 +503,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's renderer for users** (VK1, vk/README.md): `target/vk/venus.wasm` isn't in `npm run dist`'s copy or
   `npm start`'s build (vk/build.sh clones and builds Mesa and virglrenderer natively first, minutes, and needs wasi-sdk;
   its licences, THIRD_PARTY.md's row, ship beside it as EDK2's do), and the Machines page has no Vulkan setting
-  (`?gpu=vulkan` only). Waits for a renderer that draws (VK2): until then a user's Vulkan would show nothing.
+  (`?gpu=vulkan` only). Waits for presentation (VK2's L4): until then a user's Vulkan would show nothing.
+- **The Vulkan driver's gaps** (VK2 L2, vk/README.md "The driver"), each for when a program or dEQP-VK needs it:
+  occlusion queries (reported as passing: WebGPU's occlusion query sets, resolved at completion), timestamps (the
+  CPU's at replay; `timestamp-query`), depth and stencil blits, border colours and mirror-once (the nearest WebGPU
+  address mode), triangle fans (an index conversion), a view's sample type the shader didn't declare (a depth view
+  sampled without compare, an unfilterable float format with a filtering sampler: re-print the WGSL with that binding
+  typed, or `float32-filterable`), component swizzles (`texture-component-swizzle` where the browser has it), rendering
+  into 3D images and layered rendering, buffer copies whose offsets aren't multiples of 4 from device-local memory,
+  push constants past the device's immediates (a uniform), the pipeline cache across runs (`vk_shader` serialize), and
+  the caps from the adapter rather than the Mac profile (L7).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

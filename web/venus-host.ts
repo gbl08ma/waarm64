@@ -1,19 +1,23 @@
 // Venus's renderer on the host (docs/devices.md "Venus"; vk/README.md): the module vk/build.sh makes (virglrenderer's
 // vkr over our Vulkan driver), instantiated on the VM's memory 0, so the guest's rings, command streams and mapped
 // memory in the host-visible window are its own pointers. It runs the device's Venus calls (web/virgl-host.ts
-// `VenusCall`), polls the rings while they are active (an idle ring waits for the guest's notify), and at each submit
-// takes the window's written pages (web/window.ts: their count is VK1's statistic; VK2 uploads them).
+// `VenusCall`) and polls the rings while they are active (an idle ring waits for the guest's notify). The driver's
+// WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the driver takes the window's written
+// pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
+// `settled` says when the fences sent so far have.
+import { gpuFeatures, maxImmediates, VenusGpu } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { WindowWatch } from './window.ts';
 
 /** Where the module finds the window: its address in memory 0, its bytes, and the write-watch's words. */
 export type VenusWindow = { at: number; bytes: number; watch: number };
 
-export type VenusStats = { submits: number; fences: number; polls: number; dirtyPages: number; dirtyLooks: number; contexts: number };
+export type VenusStats = { submits: number; completed: number; fences: number; polls: number; dirtyPages: number; dirtyLooks: number; contexts: number };
 
 type Exports = {
   _initialize(): void;
-  venus_init(): number;
+  venus_init(features: number, maxImmediates: number, window: number, windowBytes: number): number;
+  venus_complete(serial: number): void;
   venus_capset(out: number): number;
   venus_context_create(ctx: number, name: number, nlen: number): number;
   venus_context_destroy(ctx: number): void;
@@ -35,8 +39,11 @@ function wasi(memory: WebAssembly.Memory) {
   const EBADF = 8, ENOSYS = 52;
   let line = '';
   return {
-    clock_time_get: (_id: number, _precision: bigint, out: number) => { dv().setBigUint64(out, BigInt(Math.round(performance.now() * 1e6)), true); return 0; },
+    clock_time_get: (_id: number, _precision: bigint, out: number) => { dv().setBigUint64(out >>> 0, BigInt(Math.round(performance.now() * 1e6)), true); return 0; },
+    // Pointers past 2 GiB (the module's stack and heap are in the arena at memory 0's top) come as negative i32s.
     fd_write: (fd: number, iovs: number, n: number, written: number) => {
+      iovs >>>= 0;
+      written >>>= 0;
       let len = 0;
       for (let i = 0; i < n; i++) {
         const p = dv().getUint32(iovs + i * 8, true), l = dv().getUint32(iovs + i * 8 + 4, true);
@@ -48,7 +55,7 @@ function wasi(memory: WebAssembly.Memory) {
       return 0;
     },
     environ_get: () => 0,
-    environ_sizes_get: (count: number, size: number) => { dv().setUint32(count, 0, true); dv().setUint32(size, 0, true); return 0; },
+    environ_sizes_get: (count: number, size: number) => { dv().setUint32(count >>> 0, 0, true); dv().setUint32(size >>> 0, 0, true); return 0; },
     fd_close: () => 0, fd_fdstat_get: () => EBADF, fd_fdstat_set_flags: () => ENOSYS, fd_prestat_get: () => EBADF,
     fd_prestat_dir_name: () => EBADF, fd_read: () => EBADF, fd_seek: () => EBADF, path_open: () => ENOSYS,
     sched_yield: () => 0,
@@ -57,7 +64,7 @@ function wasi(memory: WebAssembly.Memory) {
 }
 
 export class VenusRenderer {
-  readonly stats: VenusStats = { submits: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0 };
+  readonly stats: VenusStats = { submits: 0, completed: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0 };
   /** The VENUS capset vkr writes (the device's `venusCaps`). */
   readonly capset: Uint8Array;
   private readonly ex: Exports;
@@ -67,46 +74,81 @@ export class VenusRenderer {
   private readonly watch: WindowWatch | undefined;
   /** A resource's context (the device names blobs by resource alone). */
   private readonly owner = new Map<number, number>();
-  /** Fences vkr retired, by context, ring and id ("ctx:ring:id"). */
-  private readonly retired = new Set<string>();
+  /** Fences sent to vkr and not yet retired ("ctx:ring:id"). */
+  private readonly pending = new Set<string>();
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Called when fences retire (the GPU worker answers the fences it held for them). */
+  onRetire: (() => void) | undefined;
+  readonly gpu: VenusGpu;
+  /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
+  readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined) {
     const ex = instance.exports as unknown as Exports;
+    this.raw = instance.exports;
     // Its heap is in the arena at memory 0's top: past 2 GiB, which a wasm i32 gives JS as negative.
     this.ex = { ...ex, venus_alloc: (size: number) => ex.venus_alloc(size) >>> 0 };
     [this.memory, this.window] = [memory, window];
     this.watch = window.watch ? new WindowWatch(memory, window.watch) : undefined;
+    this.gpu = gpu;
     this.ex._initialize();
-    if (!this.ex.venus_init()) throw new Error('venus: vkr_renderer_init failed');
+    if (!this.ex.venus_init(gpuFeatures(device), maxImmediates(device), window.at, window.bytes)) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
     const n = this.ex.venus_capset(p);
     this.capset = new Uint8Array(memory.buffer, p, n).slice();
     this.ex.venus_free(p);
   }
 
-  /** The module (vk/build.sh's target/vk/venus.wasm) on `memory`, the VM's memory 0, which must be 4 GiB with its arena unused. */
-  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow) {
+  /**
+   * The module (vk/build.sh's target/vk/venus.wasm) on `memory`, the VM's memory 0, which must be 4 GiB with its arena
+   * unused; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests).
+   */
+  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice) {
     let self: VenusRenderer | undefined;
+    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty());
     const imports = {
       env: {
         memory,
-        venus_retire: (ctx: number, ring: number, fence: bigint) => { self?.retired.add(`${ctx}:${ring}:${fence}`); if (self) self.stats.fences++; },
-        venus_submitted: () => { self?.submitted(); },
+        venus_retire: (ctx: number, ring: number, fence: bigint) => { self?.retire(`${ctx}:${ring}:${fence}`); },
+        venus_submitted: () => {},
       },
+      wg: gpu.imports(),
       wasi_snapshot_preview1: wasi(memory),
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window);
+    self = new VenusRenderer(instance, memory, window, gpu, device);
     return self;
   }
 
-  private submitted() {
-    if (!this.watch) return;
+  /** The window's pages written since the last look (undefined without a watch: all of them count). */
+  private dirty() {
+    if (!this.watch) return undefined;
     const pages = this.watch.take();
     this.stats.dirtyPages += pages.length;
     this.stats.dirtyLooks++;
+    return pages;
+  }
+
+  private completed(serial: number) {
+    this.ex.venus_complete(serial);
+    this.stats.completed++;
+    // The rings' fences retire at their next poll.
+    this.ex.venus_poll();
+    this.wake();
+  }
+
+  private retire(key: string) {
+    this.stats.fences++;
+    this.pending.delete(key);
+    this.onRetire?.();
+  }
+
+  /** Whether the fences sent so far have retired (a closure over them, to check later). */
+  settled(): () => boolean {
+    if (!this.pending.size) return () => true;
+    const keys = [...this.pending];
+    return () => keys.every((k) => !this.pending.has(k));
   }
 
   /** Copies `bytes` into the module's heap for a call, then frees them. */
@@ -120,7 +162,7 @@ export class VenusRenderer {
     }
   }
 
-  /** Runs one of the device's Venus calls; a fenced submit's fence is retired before this returns. */
+  /** Runs one of the device's Venus calls (a fenced submit's fence retires later: `settled`). */
   call(c: VenusCall) {
     switch (c.t) {
       case 'vctx':
@@ -161,12 +203,11 @@ export class VenusRenderer {
         if (!this.withBytes(c.bytes, (p) => this.ex.venus_submit(c.ctx, p, c.bytes.length))) console.warn(`venus: context ${c.ctx}'s submit failed`);
         const fence = c.fence;
         if (fence) {
-          this.ex.venus_submit_fence(c.ctx, fence.flags, fence.ring, fence.id);
+          // Retired once the queue's work before it is done (`settled`); a ring fence of no queue's work retires at
+          // the next poll.
           const key = `${c.ctx}:${fence.ring}:${fence.id}`;
-          // The null driver's work is done at its submit: a poll or two retires it. Bounded: a fence that doesn't come
-          // is answered all the same (the guest waits on its own feedback anyway).
-          for (let k = 0; k < 1000 && !this.retired.has(key); k++) this.ex.venus_poll();
-          this.retired.delete(key);
+          this.pending.add(key);
+          this.ex.venus_submit_fence(c.ctx, fence.flags, fence.ring, fence.id);
         }
         this.wake();
         return;

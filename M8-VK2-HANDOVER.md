@@ -4,6 +4,25 @@ Notes between VK2's sessions (the brief: `M8-VK2-KICKOFF.md`). Newest state firs
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
+## State (2026-10-25, after L2)
+
+- **L2 is done: the driver on WebGPU** (vk/README.md "The driver"; `vk/driver/`: wg_device.c, wg_format.c,
+  wg_descriptor.c, wg_shader.c, wg_cmd.c, wg_gpu.h; web/venus-gpu.ts). Memory as GPU buffers, images as textures,
+  shaders through the runtime's `vk_shader` path, render pipelines made at the first draw by a key of the baked state,
+  bind groups made at replay and kept on the set, commands recorded into our own list and replayed at submit, host
+  writes uploaded from the window's written pages, GPU writes to host-visible memory read back and fills applied
+  before the syncs signal (`venus_complete`), fences retired asynchronously (`VenusRenderer.settled` holds the
+  device's fence). `tests/venus-driver.test.ts` (Chromium, SwiftShader): a Vulkan program of ours in the module
+  (driver/wg_test.c) checks a scene's pixels (texture orientation, depth, a dynamic uniform offset, push constants,
+  culling with a clockwise front face), a compute pass's output and a fill, ~0.6 s; planted bug (front face inverted)
+  caught. vkcube on Debian through Venus: 300 frames in 6.2 s on SwiftShader, no WebGPU errors (its pixels: L3).
+- **The guest oops is found and fixed**: the module's stack was at memory 0's bottom 4 MiB (wasm-ld's `--stack-first`
+  default; `--global-base` moves only the data), so every renderer call wrote the core's low memory; L2's deeper calls
+  (the compiler in vkcube's start) made it 3 of 3 runs, L1's code 0 of 2. `--no-stack-first` (vk/gen.ts) puts it in the
+  arena; then pointers past 2 GiB reach the WASI shims as negative i32s (`>>> 0` there). page-venus now asserts no
+  oops. What the stack overwrote in the core wasn't identified (it's 0 to 4 MiB of memory 0: the core's own data).
+- Gaps left on purpose: docs/backlog.md "The Vulkan driver's gaps". Next: **L3**.
+
 ## State (2026-10-25, after L1)
 
 - **L1 is done: the shader path.** `vk/compiler/` (wgsl.h, wgsl_nir.c, wgsl_print.c, wgsl_test.c): SPIR-V →
@@ -15,11 +34,11 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
   `vk/build.sh native` also builds `target/vk/wgsl` (ASan) for debugging one stage. `wgsl_link` (nir_opt_varyings
   on a VS/FS pair) and printing a VS against its FS's `wgsl_varyings` are written but untested: the units translate
   stages alone. L2's first pipelines exercise them.
-- The driver is still VK1's null driver (vk_cmd_enqueue, draws nothing). Next: **L2**.
 
 ## The plan (loops; each one commit and a short report)
 
-- **L2, the driver on WebGPU.** Replace the null driver's command path with real objects, KosmicKrisp's structure
+- **L2, the driver on WebGPU** (done; as planned below, but the render pipeline's key is filled at record time and
+  the program is made in `compile` from both stages). Replace the null driver's command path with real objects, KosmicKrisp's structure
   (kk_device, kk_shader, kk_cmd_draw: our model, MIT) on the runtime's `vk_shader` path:
   - **Shaders:** `vk_device_shader_ops` (get_nir_options → `wgsl_nir_options()`, get_spirv_options →
     `wgsl_spirv_options()`, preprocess_nir → `wgsl_preprocess`, compile, serialize/deserialize, cmd_bind_shaders,
@@ -106,19 +125,16 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
   lines and errors and says when it stops growing caught VK1's one stuck run. Match local processes with a pattern
   that can't match the monitor's own command line (`pgrep -f "sway-mac.s[h] …"`).
 
-## Open: one guest oops, not reproduced
-
-- 2026-10-25, the first ci.sh with `tests/page-venus.test.ts` (it ran inside `npm test` then, beside every other file;
-  now it's ci-debian's only): Debian's kernel oopsed as vkcube started, `kthreadd` returning through a zeroed frame (pc,
-  lr and x29 0, an instruction abort at 0). Not reproduced since: three runs alone, two under six CPU burners
-  (~54 frames/s each). Ruled out by reading: the arena can't overlap the core's heap or RAM (the reserve stops below
-  0xF000_0000 and a larger one throws), and the device's held replies are written once, as virgl's are. If it recurs,
-  keep the run's directory (`/tmp/webpc-venus-*`: serial log, results.json). The renderer's stale pointers (a blob's
-  storage after its unref, vkr's ring after the guest unmapped it) write the arena or the window, not RAM, so they
-  can't zero a kernel stack. Left to suspect: something else writing guest RAM late, the write-watch's TLB drops
-  under contention, or an SMP race under load that isn't Venus's at all.
-
 ## Things worth not re-discovering
+
+- A driver on the `vk_shader` path must point `cmd->vk.dynamic_graphics_state.vi` (and `ms.sample_locations`) at
+  storage of its own, at create and after each reset: without it the pipeline's vertex input never reaches the state
+  (a render pipeline with no vertex buffers).
+- The module's stack: see "State after L2" (wasm-ld's `--stack-first` default). Check `__stack_pointer`'s initial
+  value (`wasm-tools print target/vk/venus.wasm | grep -m1 global`): it must be in the arena (0xF0xx_xxxx, negative
+  as an i32).
+- Mesa 26.2's common `vkCmdDrawIndirect`, `vkCmdCopyBuffer2`, `vkCmdFillBuffer` and friends forward to the device
+  address forms: the driver implements the classic entry points itself.
 
 - Mesa builds NIR as headers only when no driver that compiles is enabled: the native build enables the Venus ICD
   (`-Dvulkan-drivers=virtio`) just to get libnir whole. Mesa 26.2.4's `spirv2nir` target doesn't link (libnir missing
