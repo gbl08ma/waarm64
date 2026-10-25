@@ -17,7 +17,7 @@ only edits docs: `.md` files or code comments):
   and its presenter, the page's screen: its size, the keys and the pointer on it, the guest's
   cursor; EDID); for guest-visible changes; and at the end of a milestone or a track.
   The page's machines are 3D by default (the GPU worker draws the screen); `WEBPC_PAGE_QUERY=gpu=2d
-  scripts/ci-debian.sh` runs it on the 2D path (every page test adds `WEBPC_PAGE_QUERY` to the page's
+  scripts/ci-debian.sh` runs it on the 2D path (every page test adds `clocksync=0`, the clock catch-up off, and `WEBPC_PAGE_QUERY` to the page's
   query, `tests/page-query.ts`): for changes to the 2D presenter (`web/gpu-present.ts`) or the
   device's 2D display, and at the end of a milestone or a track. That is the canvas 2D screen here (SwiftShader's
   WebGL2 is software, which the presenter leaves to canvas 2D); `gpu=2d,gl2d` runs them on the WebGL2 one.

@@ -669,7 +669,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The network across a snapshot:** the guest keeps its lease and its connections' state; the
   restored machine's card is on whatever the page connects it to now. A link down/up at restore
   would make the guest ask for a lease again; open connections are lost either way.
-- **The guest's clock after a restore**: the opt-in catch-up is done (docs/frontend.md "The guest's clock": the guest
+- **The guest's clock after a restore**: the catch-up is done (on by default) (docs/frontend.md "The guest's clock": the guest
   suspends itself for the file, PSCI SYSTEM_SUSPEND, and wakes with its clock moved on; why moving a running guest's
   counter can't: platform.md "System suspend"), and the virtio-rtc device. What's left:
   - **virtio-rtc against a running driver.** Checked against the driver's message formats only: Debian's kernels (up

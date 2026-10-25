@@ -1,5 +1,5 @@
-// The guest's clock across snapshots with the clock catch-up on (`?clocksync=1`, the Preferences' "Catch the guest's
-// clock up after a snapshot"; docs/frontend.md "The guest's clock"), on Debian: Save snapshot first presses the guest's
+// The guest's clock across snapshots with the clock catch-up on (`?clocksync=1`, the Preferences' "Suspend the guest
+// before taking a snapshot", on by default; the page tests turn it off; docs/frontend.md "The guest's clock"), on Debian: Save snapshot first presses the guest's
 // sleep key, so Debian suspends itself (PSCI SYSTEM_SUSPEND) and the file says it slept; the running machine wakes
 // with its clock on time, and so does the file loaded minutes later in a fresh profile, and a suspended machine
 // resumed after a while. A guest that suspends itself wakes on a key. Off (tests/page-debian.test.ts), a snapshot is a

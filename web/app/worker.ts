@@ -140,8 +140,11 @@ let serialTail = '';
 let snapshotting = false;
 /** The machine was suspended: its run loop ends without a word (the state is `suspended`). */
 let isSuspended = false;
-/** How long a snapshot waits for the guest to suspend itself after its sleep key (logind took ~1 s on Debian). */
-const SLEEP_MS = 15_000;
+/**
+ * How long a snapshot waits for the guest to suspend itself after its sleep key: logind took ~1 s on Debian, and a
+ * guest that never sleeps on it (no logind) costs every snapshot this wait, the catch-up being the default.
+ */
+const SLEEP_MS = 10_000;
 /**
  * The clock catch-up (docs/frontend.md "The guest's clock"): waits up to `SLEEP_MS` for the guest to suspend itself
  * (PSCI SYSTEM_SUSPEND) after the page pressed its sleep key; whether it did.

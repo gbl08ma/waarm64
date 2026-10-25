@@ -50,7 +50,7 @@
   /** The page's preferences (this browser's, for every machine). */
   const PREFERENCES = 'preferences';
   let warnOnLeave = $state(leaveWarning());
-  let catchUpClock = $state(settings().clockSync === true);
+  let catchUpClock = $state(settings().clockSync !== false);
 
   const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
 
@@ -268,7 +268,7 @@
           <Check bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} field="leave-warning"
             note="Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.">Ask before leaving the page while a machine runs</Check>
           <Check bind:checked={catchUpClock} onchange={() => remember({ clockSync: catchUpClock })} field="clock-sync"
-            note="A snapshot or a suspended machine is a pause the guest can hardly tell: its clock is behind by the time it sat until something sets it. With this on, Snapshot and Suspend first press the guest's sleep key, and loading it wakes the guest with its clock caught up, as after a laptop's sleep. Guests that don't sleep on the key (no systemd-logind) are saved as before.">Catch the guest's clock up after a snapshot</Check>
+            note="Snapshot and Suspend first press the guest's sleep key, so the guest suspends itself (as a laptop does when its lid closes) and is woken once the file is written; loading the file wakes it the same way, so its clock catches up with the time the file sat. A guest that doesn't sleep on the key (no systemd-logind) is saved as it is, after waiting up to 10 s. Off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.">Suspend the guest before taking a snapshot</Check>
         </div>
         <div class="tab">
           <h4>Status bar</h4>

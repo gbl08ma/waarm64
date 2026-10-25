@@ -537,15 +537,16 @@ are Start and Boot instead). A failure before that leaves the machine running.
 
 ### The guest's clock
 
-A snapshot is a pause the guest can hardly tell: the counter goes on from where it was saved, so the guest's own clock
-is behind by the time the file sat (or the machine was suspended) until something sets it (`hwclock -s`, timesyncd
-over a network); the RTC shows the host's time. That stays the default, for those who pause a machine so that it
-doesn't notice.
+Without help, a snapshot is a pause the guest can hardly tell: the counter goes on from where it was saved, so the
+guest's own clock is behind by the time the file sat (or the machine was suspended) until something sets it
+(`hwclock -s`, timesyncd over a network); the RTC shows the host's time. Turning the catch-up off keeps that, for
+those who pause a machine so that it doesn't notice.
 
-**The clock catch-up** (Preferences' "Catch the guest's clock up after a snapshot", `settings().clockSync`, off by
-default; `?clocksync=1` or `0` decides for the page: `web/app/settings.ts` `clockSync`) makes it notice as a laptop
+**The clock catch-up** (Preferences' "Suspend the guest before taking a snapshot": the behaviour that shows, the clock being why; `settings().clockSync`, **on by
+default** since 2026-10-25, the user; `?clocksync=1` or `0` decides for the page, the last one if there are several:
+`web/app/settings.ts` `clockSync`; the page tests' `PAGE_QUERY` turns it off, `tests/page-clock.test.ts` on) makes it notice as a laptop
 does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
-keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 15 s for the
+keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 10 s for the
 guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; "Putting the guest to
 sleep" in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
 its header), and **loading it** (a snapshot, or a suspended machine resumed) moves the guest's clock on by the time

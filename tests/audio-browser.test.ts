@@ -170,7 +170,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
-    await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=12&snd=stats`);
+    await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=12&snd=stats&clocksync=0`); // the snd guest doesn't sleep on the key
     await page.mouse.click(5, 5);
     await until(page, /snd: hw params/);
     await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 10_000 });

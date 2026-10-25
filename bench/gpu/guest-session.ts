@@ -129,7 +129,7 @@ export async function openSession(o: SessionOptions) {
   const served = relative(resolve(new URL('../..', import.meta.url).pathname), resolve(o.image));
   const byUrl = !!o.disk2 || !!o.byUrl || !!o.snapshot || !!o.diskUrl;
   if (byUrl && !o.diskUrl && served.startsWith('..')) throw new Error(`an image opened by its URL must be under the repository (${o.image})`);
-  const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=${o.diskUrl ? encodeURIComponent(o.diskUrl) : `/${served}`}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`;
+  const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=${o.diskUrl ? encodeURIComponent(o.diskUrl) : `/${served}`}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}&clocksync=0${o.query ? `&${o.query}` : ''}`; // snapshots' pauses as measured before the clock catch-up (`query` may turn it on)
   const coreServed = o.core ? await routeCore(page, o.core) : undefined;
   await page.goto(url);
   const gl = await page.evaluate(() => {
