@@ -1,0 +1,63 @@
+{
+ "arm": "translated",
+ "label": "mac-arm3",
+ "trace": "vulkan/captures/fish100-trace",
+ "browser": "153.0.8010.12",
+ "chromiumArgs": "--enable-unsafe-webgpu",
+ "platform": "darwin",
+ "adapter": {
+  "vendor": "apple",
+  "architecture": "metal-3",
+  "description": "",
+  "immediates": true
+ },
+ "warmup": 60,
+ "samples": 10,
+ "frames": 60,
+ "inFlight": 2,
+ "gpuFrames": 0,
+ "pipelineMs": 35.99499988555908,
+ "drawsPerFrame": 219,
+ "uploadBytesPerFrame": 23584,
+ "bindGroupsCreatedWhileTimed": 0,
+ "immediateDrawsPerFrame": 110,
+ "ringDrawsPerFrame": 5,
+ "frameMs": {
+  "median": 0.3959166685740153,
+  "iqr": 0.033416684468587254
+ },
+ "jsMs": {
+  "median": 0.06945827802022297,
+  "iqr": 0.004416656494140622
+ },
+ "processCpuMsPerFrame": {
+  "browser": 0.012809999999999952,
+  "renderer": 0.1810766666666667,
+  "GPU": 0.15025999999999995,
+  "network.mojom.NetworkService": 0.00016500000000000312
+ },
+ "frameSamples": [
+  0.4569999853769938,
+  0.4360833485921224,
+  0.3996666590372721,
+  0.4149166742960612,
+  0.4,
+  0.39141666094462074,
+  0.38125,
+  0.3778333346048991,
+  0.38149998982747396,
+  0.39216667811075845
+ ],
+ "jsSamples": [
+  0.10283327102661133,
+  0.08358343442281087,
+  0.07116665840148925,
+  0.07233330408732096,
+  0.069166628519694,
+  0.06974992752075196,
+  0.06791664759318033,
+  0.06616667111714682,
+  0.06866666475931803,
+  0.06758338610331217
+ ]
+}

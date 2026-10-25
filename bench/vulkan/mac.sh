@@ -4,6 +4,11 @@
 # (bench/vulkan/macsdk.ts), the scene's sources and the asset pack go to ~/webpc-gpu-bench/vulkan there, the scene is
 # built there with the Mac's own clang (Command Line Tools), and the loader is pointed at the driver by VK_DRIVER_FILES.
 #   bench/vulkan/mac.sh [kosmickrisp|moltenvk] [name]   -> bench/results/local/vk0/<name>/ (one JSON a setting)
+#   bench/vulkan/mac.sh webgpu [name]                     arm 2: bench/vulkan/webgpu.ts in the Mac's headless Chrome for
+#                                                         Testing (Playwright's, with the packages bench/mac-packages.sh
+#                                                         keeps in ~/webpc-gpu-bench); MODES and the rest pass through
+#   bench/vulkan/mac.sh arm3 [name]                       arm 3: bench/vulkan/arm3.ts over the converted captures
+#                                                         (bench/vulkan/translate/capture.sh; TRACES picks them)
 # DUMP=FRAME renders one frame instead (-> <name>.ppm); VALIDATE=1 runs it under the validation layer; SWEEP's
 # variables (FISH, TOOLKIT, MSAA, SAMPLES, ...) pass through.
 set -euo pipefail
@@ -11,6 +16,40 @@ cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
 DEST=webpc-gpu-bench/vulkan
 DRIVER=${1:-kosmickrisp} NAME=${2:-mac-$DRIVER}
+if [ "$DRIVER" = arm3 ]; then
+  W=webpc-gpu-bench/vulkan-web
+  TRACES=${TRACES:-fish1 fish100 fish1000 fish10000 fish30000 toolkit2000 toolkit8000}
+  ssh "$HOST" "mkdir -p $W/bench $W/target/vulkan/captures"
+  rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
+  for t in $TRACES; do rsync -a --delete "target/vulkan/captures/$t-trace" "$HOST:$W/target/vulkan/captures/"; done
+  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  list=; for t in $TRACES; do list="$list vulkan/captures/$t-trace"; done
+  ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
+    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    rm -rf results/$NAME && WARMUP=${WARMUP:-60} SAMPLES=${SAMPLES:-10} FRAMES=${FRAMES:-60} NO_IMMEDIATES=${NO_IMMEDIATES:-} \
+    perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/arm3.ts results/$NAME $NAME $list; \
+    sw_vers -productVersion > results/$NAME/macos.txt"
+  mkdir -p bench/results/local/vk0
+  rsync -a "$HOST:$W/results/$NAME" bench/results/local/vk0/
+  exit 0
+fi
+if [ "$DRIVER" = webgpu ]; then
+  W=webpc-gpu-bench/vulkan-web
+  [ -f target/vulkan/scene.wasm ] || bench/vulkan/webgpu/build.sh
+  ssh "$HOST" "mkdir -p $W/bench $W/target/vulkan"
+  rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
+  rsync -a target/vulkan/aquarium.pack target/vulkan/scene.wasm "$HOST:$W/target/vulkan/"
+  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
+    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    rm -rf results/$NAME && FISH='${FISH-1 100 1000 10000 30000}' TOOLKIT='${TOOLKIT-2000 8000}' MSAA='${MSAA-1 4}' MODES='${MODES:-storage}' \
+    WARMUP=${WARMUP:-60} SAMPLES=${SAMPLES:-10} FRAMES=${FRAMES:-60} GPU_FRAMES=${GPU_FRAMES:-20} \
+    perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/webgpu.ts results/$NAME $NAME; \
+    sw_vers -productVersion > results/$NAME/macos.txt"
+  mkdir -p bench/results/local/vk0
+  rsync -a "$HOST:$W/results/$NAME" bench/results/local/vk0/
+  exit 0
+fi
 [ -f target/vulkan/macsdk/lib/libvulkan_kosmickrisp.dylib ] || node --disable-warning=ExperimentalWarning bench/vulkan/macsdk.ts
 [ -f target/vulkan/aquarium.pack ] || node --disable-warning=ExperimentalWarning bench/vulkan/assets.ts
 ssh "$HOST" "mkdir -p $DEST/results"

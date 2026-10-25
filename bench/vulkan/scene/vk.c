@@ -154,8 +154,16 @@ static Image image_new(VkFormat format, uint32_t w, uint32_t h, uint32_t mips, u
   CHECK(vkCreateImage(device, &ci, NULL, &im.image));
   VkMemoryRequirements req;
   vkGetImageMemoryRequirements(device, im.image, &req);
-  VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = req.size,
-                             .memoryTypeIndex = memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  // A transient attachment gets lazily allocated memory where the device has it (a tiled GPU keeps it in tile memory).
+  uint32_t type = UINT32_MAX;
+  if (usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; i++)
+      if ((req.memoryTypeBits & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
+        type = i;
+        break;
+      }
+  if (type == UINT32_MAX) type = memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = req.size, .memoryTypeIndex = type};
   CHECK(vkAllocateMemory(device, &ai, NULL, &im.memory));
   CHECK(vkBindImageMemory(device, im.image, im.memory, 0));
   VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = im.image,
@@ -465,7 +473,7 @@ int main(int argc, char **argv) {
     colorMs = image_new(colorFormat, (uint32_t)width, (uint32_t)height, 1, 1, samplesBit,
                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
   Image depth = image_new(depthFormat, (uint32_t)width, (uint32_t)height, 1, 1, samplesBit,
-                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
   VkAttachmentDescription atts[3] = {
     {.format = colorFormat, .samples = samplesBit, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
      .storeOp = msaa == 4 ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE,

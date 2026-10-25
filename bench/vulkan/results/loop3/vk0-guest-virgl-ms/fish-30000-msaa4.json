@@ -1,0 +1,82 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-swrast 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "153.0.8010.12",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 30000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 4,
+ "warmup": 30,
+ "samples": 5,
+ "frames": 30,
+ "frameMs": {
+  "median": 117.016,
+  "iqr": 0.369
+ },
+ "guestCpuMs": 85.521,
+ "line": "virgl aquarium: 117.016 ms a frame (IQR 0.369), CPU 85.521 ms, 30119 draws a frame",
+ "seconds": 24.028818458,
+ "renderer": {
+  "seconds": 24,
+  "busyMs": 882.8610407908758,
+  "submitMs": 882.0093739827474,
+  "drawMs": 0.024375041325887043,
+  "presents": 0.625,
+  "glDraws": 227870.66666666666,
+  "commands": 687024.5416666666,
+  "uploadKB": 2898.8216959635415,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 1.167916735013326,
+  "programs": 72,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 112.58333333333333,
+  "submitKB": 28726.950032552082,
+  "fences": {
+   "n": 117.58333333333333,
+   "meanMs": 106.24762757292544,
+   "maxMs": 132.54999923706055,
+   "heldMs": 13418.25270907084,
+   "behindMs": 473.6227089564006,
+   "fullMs": 528.9437493483225,
+   "heldMax": 16,
+   "toGpuMs": 104.34492994150922,
+   "toGpuMaxMs": 132.539794921875,
+   "backMs": 0.010557135481263288,
+   "backMaxMs": 3.6650390625
+  }
+ },
+ "vm": {
+  "seconds": 23.998435000419615,
+  "Msteps": 652.731823,
+  "irqs": 1380,
+  "exceptions": {
+   "0x15": 506,
+   "0x20": 27,
+   "0x24": 1582,
+   "0x25": 20
+  },
+  "tlbMisses": 3222102,
+  "tlbFlushes": 1049,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 0.504566
+ }
+}

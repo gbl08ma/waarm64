@@ -22,6 +22,11 @@ docs/plans/graphics.md §5). The report is `bench/vulkan/REPORT.md`; this file c
 - **Arm 4**: `gles.c` (the GLES 3.0 port, shaders from `gles-shaders.ts`), `images/vulkan/build.sh` (the guest
   `target/vulkan/guest.qcow2` with lavapipe, the second disk `disk.ext4`), `bench/vulkan/guest.ts <lavapipe|virgl>`
   (`CHECK=1` compares 32x18 thumbnails of the guest's frames with the native ones).
+- **Arm 3** (`bench/vulkan/translate/`): `capture.sh <name> <scene args>` captures the native scene on lavapipe with
+  GFXReconstruct, `convert.ts` makes a command stream (`stream.ts`'s format) and `setup.json`, `shaders.ts` translates
+  each pipeline stage (spirv-opt: spec constants frozen, combined samplers split; bindings renumbered 2b/2b+1; naga,
+  clip space kept and adjusted; spirv-cross reflection); `replay.ts` translates at run time in a worker
+  (`bench/vulkan/arm3.ts`, `mac.sh arm3`). Traces in `target/vulkan/captures/<name>-trace`.
 - **Tools** (a subagent built them): `tools/venus-oracle/` (Venus on lavapipe over vtest: `run.sh <client>`; needs
   `/dev/udmabuf` open to the user: `sudo setfacl -m u:gabriel:rw /dev/udmabuf`, lost at a reboot),
   `tools/vulkan-tools/` (GFXReconstruct: `gfxr-capture.sh out.gfxr q:159-161 <cmd>` captures frames 100-102 of the
@@ -33,12 +38,15 @@ docs/plans/graphics.md §5). The report is `bench/vulkan/REPORT.md`; this file c
   frame (0.14% of pixels off by more than 8 levels).
 - Loop 2: arms 2 and 4 built and checked on the dev VM: every arm draws the same frames (WebGPU 0.24% of pixels off
   by more than 8; the GLES port 0.00%; the guest's virgl and lavapipe thumbnails within 1 level).
+- Loop 3: every arm on the Mac (`bench/vulkan/results/loop3/`), arm 3 built and drawing the native frames. Arm 3
+  1.0-1.8x MoltenVK (the faster native driver; KosmicKrisp is slower), ~220-950x faster than the guest's lavapipe,
+  4-10x faster than virgl: the stop line is far off.
 
 ## Next
 
-1. The Mac: arm 2's sweep (all modes), arm 4 (guest lavapipe and virgl through sway-mac.sh). Check the stop line.
-2. C, D, E, F (bench pages and tools), then arm 3's prototype (GFXR capture -> a Vulkan command stream translated at
-   run time); A (Profiles layer runs), B (Venus captures), G; the NVIDIA script (`bench/vulkan/nvidia.sh`).
+1. C (render-pass breaks, compute pre-passes), E's rest (bundles, calls from wasm), F (uploads, the write-watch), D's
+   rest (naga in wasm, Chromium's shader/pipeline cost), A (Profiles layer runs), B (Venus captures), G (gtk4/mpv on
+   virgl); the NVIDIA script (`bench/vulkan/nvidia.sh`); REPORT.md, plan §4-§7.
 
 ## Notes
 

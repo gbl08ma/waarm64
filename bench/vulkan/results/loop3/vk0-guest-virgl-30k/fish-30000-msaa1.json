@@ -1,0 +1,82 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-swrast 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "153.0.8010.12",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 30000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 30,
+ "samples": 5,
+ "frames": 30,
+ "frameMs": {
+  "median": 122.283,
+  "iqr": 2.9
+ },
+ "guestCpuMs": 66.5,
+ "line": "virgl aquarium: 122.283 ms a frame (IQR 2.900), CPU 66.500 ms, 30119 draws a frame",
+ "seconds": 31.57084725,
+ "renderer": {
+  "seconds": 28,
+  "busyMs": 893.8126791545322,
+  "submitMs": 892.8316077845437,
+  "drawMs": 0.02607137816292899,
+  "presents": 0.7857142857142857,
+  "glDraws": 193630.7142857143,
+  "commands": 583684.0357142857,
+  "uploadKB": 4875.059291294643,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 1.8105357033865792,
+  "programs": 24,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 84.5625,
+  "submitKB": 21549.007934570312,
+  "fences": {
+   "n": 91.96875,
+   "meanMs": 116.63459734960433,
+   "maxMs": 1269.630000114441,
+   "heldMs": 12225.711093693972,
+   "behindMs": 1057.0409375429153,
+   "fullMs": 593.5582819581032,
+   "heldMax": 16,
+   "toGpuMs": 117.73032461071504,
+   "toGpuMaxMs": 1269.630126953125,
+   "backMs": 0.024391664277522936,
+   "backMaxMs": 5.934814453125
+  }
+ },
+ "vm": {
+  "seconds": 32.00347500038147,
+  "Msteps": 507.785476,
+  "irqs": 1110,
+  "exceptions": {
+   "0x15": 841,
+   "0x20": 31,
+   "0x24": 2325,
+   "0x25": 15
+  },
+  "tlbMisses": 39655,
+  "tlbFlushes": 2078,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.090714
+ }
+}

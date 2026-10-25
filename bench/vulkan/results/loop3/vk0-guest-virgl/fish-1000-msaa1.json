@@ -1,0 +1,83 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-swrast 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "153.0.8010.12",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 30,
+ "samples": 5,
+ "frames": 30,
+ "frameMs": {
+  "median": 4.776,
+  "iqr": 0.078
+ },
+ "guestCpuMs": 3.228,
+ "line": "virgl aquarium: 4.776 ms a frame (IQR 0.078), CPU 3.228 ms, 1119 draws a frame",
+ "seconds": 3.683095916999999,
+ "renderer": {
+  "seconds": 4,
+  "busyMs": 251.38250160217285,
+  "submitMs": 249.7800018787384,
+  "drawMs": 0.15124940872192383,
+  "presents": 5,
+  "glDraws": 47621.25,
+  "commands": 174300.5,
+  "uploadKB": 34560.2626953125,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 35.89999985694885,
+  "programs": 48,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 70.25,
+  "submitKB": 5306.7890625,
+  "fences": {
+   "n": 130.75,
+   "meanMs": 2.253183561802822,
+   "maxMs": 138.88500022888184,
+   "heldMs": 324.5737519264221,
+   "behindMs": 20.780001640319824,
+   "fullMs": 0,
+   "heldMax": 10,
+   "toGpuMs": 2.5168212015569,
+   "toGpuMaxMs": 138.885009765625,
+   "backMs": 0.007574439505507663,
+   "backMaxMs": 0.2548828125
+  }
+ },
+ "vm": {
+  "seconds": 4.005494999885559,
+  "Msteps": 365.70008,
+  "irqs": 1405,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 2382,
+   "0x20": 165,
+   "0x24": 17945,
+   "0x25": 243
+  },
+  "tlbMisses": 141919,
+  "tlbFlushes": 9630,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.468638
+ }
+}
