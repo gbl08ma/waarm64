@@ -49,7 +49,7 @@ const TOPOLOGY: Record<string, GPUPrimitiveTopology> = {
 };
 const ADDRESS: Record<string, GPUAddressMode> = { VK_SAMPLER_ADDRESS_MODE_REPEAT: 'repeat', VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE: 'clamp-to-edge', VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT: 'mirror-repeat' };
 const IMMEDIATES = 64;
-const stageKey = (st: Json) => `${st.module}:${(st.spec as { id: number; value: number }[]).map((x) => `${x.id}=${x.value}`).join(',')}`;
+
 const RING = 4 << 20;  // the push-constant ring: 256 bytes a draw, 16,384 draws a frame
 
 type SetState = { layout: number; resources: (number[] | undefined)[]; key: string; dirty: boolean };
@@ -60,7 +60,7 @@ export class Replay {
   setup!: Json;
   stream!: Uint32Array;
   bytes!: Uint8Array;
-  shaders = new Map<string, ShaderMeta>();  // by `${module}:${id}=${value},...`: modules are specialized per pipeline
+  shaders = new Map<string, ShaderMeta>();  // by `${SPIR-V hash}:${id}=${value},...`: modules are specialized per pipeline
   memories = new Map<number, GPUBuffer>();
   mirrors = new Map<number, Uint8Array>();   // host-visible memory as the guest wrote it (for repacked image copies)
   textures = new Map<number, GPUTexture>();
@@ -143,7 +143,7 @@ export class Replay {
     for (const p of Object.values(s.pipelines as Record<string, Json>)) {
       const layout = s.pipelineLayouts[p.layout];
       for (const st of p.stages) {
-        for (const b of this.shaders.get(stageKey(st))!.bindings) {
+        for (const b of this.shaders.get(this.stageKey(st))!.bindings) {
           if (b.kind === 'texture') texInfo.set(`${layout.setLayouts[b.set]}:${b.binding}`, { dimension: b.dimension, sampleType: b.sampleType });
         }
       }
@@ -188,6 +188,10 @@ export class Replay {
     }
   }
 
+  stageKey(st: Json) {
+    return `${this.setup.shaders[st.module].hash}:${(st.spec as { id: number; value: number }[]).map((x) => `${x.id}=${x.value}`).join(',')}`;
+  }
+
   /** A pipeline's WebGPU form for the viewport's orientation (flip: a positive-height Vulkan viewport). */
   async pipeline(id: number, flip: boolean) {
     const key = `${id}:${flip}`;
@@ -195,11 +199,11 @@ export class Replay {
     if (have) return have;
     const p = this.setup.pipelines[id], rp = this.setup.renderPasses[p.renderPass];
     const layout = this.pipelineLayouts.get(p.layout)!;
-    const push = Math.max(...(p.stages as Json[]).map((st) => this.shaders.get(stageKey(st))!.pushBytes));
+    const push = Math.max(...(p.stages as Json[]).map((st) => this.shaders.get(this.stageKey(st))!.pushBytes));
     const immediates = push > 0 && push <= IMMEDIATES && this.hasImmediates;
     const stage = (kind: string) => {
       const st = (p.stages as Json[]).find((x) => x.stage === kind)!;
-      const meta = this.shaders.get(stageKey(st))!;
+      const meta = this.shaders.get(this.stageKey(st))!;
       let code = flip ? meta.wgslFlipped : meta.wgsl;
       // Push constants (naga writes them as immediates; older nagas as var<push_constant>): kept as immediates, or made
       // the ring's uniform (group 3).

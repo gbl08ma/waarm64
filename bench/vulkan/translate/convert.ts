@@ -8,6 +8,7 @@
 //   node bench/vulkan/translate/convert.ts <capture.jsonl> <out dir> [first frame submit]
 // The frames: every vkQueueSubmit from the given one on (default: the first that signals a fence) ends a frame;
 // setup.json's `frameStart` is the stream's word offset where the first frame's commands begin.
+import { createHash } from 'node:crypto';
 import { createReadStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -101,8 +102,12 @@ export async function convert(jsonl: string, out: string, firstFrameSubmit?: num
           push: ((a.pCreateInfo.pPushConstantRanges ?? []) as Json[]).map((r) => ({ stages: parseInt(r.stageFlags, 16), offset: r.offset, size: r.size })) };
         break;
       case 'vkCreateShaderModule':
-        writeFileSync(join(out, 'shaders', `${a.pShaderModule}.spv`), bin(a.pCreateInfo.pCode));
-        setup.shaders[a.pShaderModule] = { spv: `shaders/${a.pShaderModule}.spv` };
+        {
+          const code = bin(a.pCreateInfo.pCode);
+          writeFileSync(join(out, 'shaders', `${a.pShaderModule}.spv`), code);
+          // The module's content names its translation (shaders.ts), whatever handle a capture gave it.
+          setup.shaders[a.pShaderModule] = { spv: `shaders/${a.pShaderModule}.spv`, hash: createHash('sha256').update(code).digest('hex').slice(0, 16) };
+        }
         break;
       case 'vkCreateGraphicsPipelines':
         (a.pCreateInfos as Json[]).forEach((c, i) => { setup.pipelines[a.pPipelines[i]] = graphicsPipeline(c, bin); });

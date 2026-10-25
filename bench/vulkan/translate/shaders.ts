@@ -7,6 +7,9 @@
 //      (push constants come out as immediates: replay.ts keeps them or makes them a uniform);
 //   4. spirv-cross --reflect: the bindings' kinds and texture dimensions, the push constants' size.
 // Each step is timed (natively; question D also wants them in wasm).
+// The translations are keyed by the module's SPIR-V hash and its specialization (a pipeline cache's key), so any
+// capture of the same program finds them: scene-shaders.json, committed, is the scene's (the NVIDIA desktop's script
+// has no naga).
 //   node bench/vulkan/translate/shaders.ts <trace dir> [naga binary]   -> <trace dir>/shaders.json, shaders-timing.json
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -99,7 +102,7 @@ if (import.meta.main) {
   try {
     for (const p of Object.values(setup.pipelines as Record<string, Json>)) {
       for (const st of p.stages as Json[]) {
-        const key = `${st.module}:${(st.spec as { id: number; value: number }[]).map((s) => `${s.id}=${s.value}`).join(',')}`;
+        const key = `${setup.shaders[st.module].hash}:${(st.spec as { id: number; value: number }[]).map((s) => `${s.id}=${s.value}`).join(',')}`;
         if (out[key]) continue;
         const spv = new Uint8Array(readFileSync(join(dir, setup.shaders[st.module].spv)));
         const r = translate(spv, st.spec, naga, tmp);
