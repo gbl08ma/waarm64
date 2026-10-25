@@ -169,7 +169,10 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     Ethernet frames with no gateway in the page, IPv4 only, reproducible binaries with published hashes
     ([docs/plans/networking-local.md](docs/plans/networking-local.md)).
   - Graphics ([docs/graphics.md](docs/graphics.md): what exists; the decisions that bind it, in "Decisions";
-    [docs/plans/graphics.md](docs/plans/graphics.md): Vulkan, proposed): **virtio-gpu 2D is done (G0 and
+    [docs/plans/graphics.md](docs/plans/graphics.md): Vulkan, planned). **Vulkan (the user, 2026-10-25):** Venus
+    translated onto WebGPU on the real GPU, no software rasterizer in the guest or on the host, a per-machine choice
+    until every program that switches to it is no slower than on virgl; a C toolchain for wasm allowed; VK0 next, in
+    the dev VM and on the Mac host: measurements first, a whole scene against native Vulkan the one that can stop it: **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device
     pixels with HiDPI), with damage only and the guest's cursor as the page's; snapshots keep
