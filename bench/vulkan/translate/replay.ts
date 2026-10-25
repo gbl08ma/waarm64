@@ -496,9 +496,13 @@ export class Replay {
       i += len;
     }
     const frames = starts.length - 1;
-    // Compile every pipeline before timing (a pipeline cache's work).
+    // Compile every pipeline before timing (a pipeline cache's work): createShaderModule and createRenderPipelineAsync,
+    // timed apart from the setup.
+    const setupMs = performance.now() - t0;
+    const t1 = performance.now();
     for (const id of Object.keys(s.pipelines)) await this.pipeline(Number(id), false);
-    const pipelineMs = performance.now() - t0;
+    const pipelineMs = performance.now() - t1;
+    this.log?.(`setup ${setupMs.toFixed(0)} ms, ${Object.keys(s.pipelines).length} pipelines ${pipelineMs.toFixed(0)} ms`);
     this.log?.(`pipelines made: ${frames} frames to replay`);
     const pending: Promise<void>[] = [];
     const settle = async (n: number) => { while (pending.length > n) await pending.shift(); };
