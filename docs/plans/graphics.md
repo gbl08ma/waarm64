@@ -1,6 +1,6 @@
 # webpc graphics plan: Vulkan
 
-**Status: planned (the user, 2026-10-25): §2's decisions bind; VK0 is next, in the dev VM and on the Mac host.** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+**Status: planned (the user, 2026-10-25): §2's decisions bind; VK0 is next, in the dev VM and on the Mac host; its brief is `M8-VK0-KICKOFF.md`.** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -132,9 +132,10 @@ Nothing is built for the guest until VK0 answers. It runs on the user's machine:
 oracle, the Profiles layer, our guests, SwiftShader's WebGPU) and **the Mac host it runs on**, which the user allows
 agents in the dev VM to use for WebGPU numbers and validation on its M4 (2026-10-25; headless Chromium as
 bench/gpu/run-mac.sh does, from a copy in `~/webpc-gpu-bench`; **nothing installed on the Mac itself**: whatever else
-runs there is unpacked into that folder). The x86_64 desktop stays off limits. **The user's NVIDIA desktop:** the user
-runs a self-contained script by hand (build steps for its distro, the native arm and the Chromium pages, JSON back);
-VK0 prepares it and doesn't wait for it.
+runs there is unpacked into that folder). The x86_64 desktop stays off limits. **The user's NVIDIA desktop** (x86_64, CachyOS,
+clang installed): the user runs a script by hand that keeps everything it fetches or builds (the Vulkan SDK, the
+scene, any Node or Chrome for Testing, the results) in one directory they can delete, with no `sudo`; it runs the native
+arm and the Chromium pages and writes the JSON they send back. VK0 prepares it and doesn't wait for it.
 Results go into `bench/vulkan/REPORT.md` with the JSON, under CLAUDE.md's measurement rules (real-GPU numbers from the
 Mac; SwiftShader for relative costs and correctness only). The session keeps its notes in `M8-VK0-HANDOVER.md`.
 
@@ -149,7 +150,8 @@ If a whole frame comes out tens of times slower than native, acceleration isn't 
   Aquarium's fish-count knob (1 to 30,000), so a run sweeps from GPU-light to draw-call-heavy. A second setting is
   toolkit-shaped (many textured quads, few pipelines: GTK4's frame). Written the way Vulkan programs are (descriptor
   sets updated per frame, dynamic uniform offsets, push constants, one render pass a frame), not shaped for WebGPU.
-  The Aquarium's own models and textures where its licence allows (BSD, checked into THIRD_PARTY.md), else ours.
+  The Aquarium's own models and textures where their licence allows (checked, and a THIRD_PARTY.md row), else a
+  representative scene of our own design: a technical benchmark, not a pretty one.
 - **The arms**, same scene, size and knob settings:
   1. **Native Vulkan on the Mac's GPU** (KosmicKrisp from LunarG's macOS SDK unpacked into `~/webpc-gpu-bench`, not
      installed; Vulkan on Metal, itself a thin layer, so a slightly generous baseline; if it can't run from the
@@ -278,7 +280,9 @@ for the programs that switch. The user decides whether VK1 starts.
 
 - **The stop line:** judged against today's paths (§5 S), a hard stop only past ~20× native.
 - **The Mac host:** nothing installed on it; the native arm runs from `~/webpc-gpu-bench` or is skipped there.
-- **The NVIDIA desktop:** the user runs a script VK0 prepares.
+- **The NVIDIA desktop:** the user runs a script VK0 prepares, self-contained in one deletable directory (CachyOS, clang
+  installed).
+- **The scene:** the Aquarium's textures if their licence allows, else our own; it needn't be pretty.
 - **Check-ins:** none, unless the stop line is crossed.
 
 ## Sources
