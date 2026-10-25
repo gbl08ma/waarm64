@@ -62,7 +62,8 @@ backends need no code for it, and one that only holds buffers has no state to sa
   sees no jump in CNTVCT and timers that were due fire at once. The PL031 shows **the host's
   current time** (its base is recomputed), as a real RTC does after a suspend; the guest's own
   system clock stays behind by the time the snapshot sat in a file until something sets it
-  (`hwclock -s`, timesyncd over a network).
+  (`hwclock -s`, timesyncd over a network). Opt-in since 2026-10-25, the guest suspends itself
+  before the save and is woken with its clock moved on (docs/frontend.md "The guest's clock").
 
 ### The disk pins the snapshot
 
@@ -202,7 +203,11 @@ for the loops that touch parallel SMP.
 
 The user's (2026-10-01): **Suspend** is built; **the version policy** stands (a state format
 version of its own, not the core build's hash); **the wall clock after a resume** is fine as it is
-(the RTC is right, the guest's system time lags until something sets it).
+(the RTC is right, the guest's system time lags until something sets it). Revisited 2026-10-25 (the user): an
+**opt-in** catch-up, because a pause the guest can hardly tell is a feature too: the guest suspends itself through
+PSCI SYSTEM_SUSPEND for the file and is woken with its clock moved on (moving the counter of a running guest was
+measured and breaks it: platform.md "System suspend"), and a virtio-rtc device gives guests with its driver the
+browser's time (docs/frontend.md "The guest's clock").
 
 Settled by measurement: the codec (loop 4), the base's identity check (loop 6).
 

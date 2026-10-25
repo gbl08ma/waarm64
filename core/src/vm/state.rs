@@ -207,6 +207,12 @@ impl Vm {
         if let Some(x) = &p.xhci {
             x.save(&mut w);
         }
+        // A guest in PSCI SYSTEM_SUSPEND, last and only then (a state from before it had none).
+        if let Some((c, entry, context)) = p.suspended {
+            w.u32(c as u32);
+            w.u64(entry);
+            w.u64(context);
+        }
         w.0
     }
 
@@ -217,9 +223,11 @@ impl Vm {
     /// VM is only good for dropping.
     pub fn snapshot_restore(&mut self, state: &[u8]) -> snapshot::Result<()> {
         let mut r = Reader(state);
-        if r.u32().map_err(|_| Error::Format)? != snapshot::MAGIC
-            || r.u32().map_err(|_| Error::Format)? != snapshot::VERSION
-        {
+        if r.u32().map_err(|_| Error::Format)? != snapshot::MAGIC {
+            return Err(Error::Format);
+        }
+        let version = r.u32().map_err(|_| Error::Format)?;
+        if !(snapshot::VERSION_MIN..=snapshot::VERSION).contains(&version) {
             return Err(Error::Format);
         }
         let config = self.config_words();
@@ -295,6 +303,19 @@ impl Vm {
         }
         if let Some(x) = &mut p.xhci {
             x.restore(&mut r)?;
+        }
+        if version >= 3 && !r.0.is_empty() {
+            let (c, entry, context) = (r.u32()? as usize, r.u64()?, r.u64()?);
+            // Only one that suspended it may be (every vCPU off), and only from a CPU_ON-free state.
+            if c >= n
+                || scheds
+                    .iter()
+                    .any(|&(on, _, _, start)| on || start.is_some())
+            {
+                return Err(Error::Corrupt);
+            }
+            p.suspended = Some((c, entry, context));
+            self.shared.suspended.store(true, Ordering::Release);
         }
         r.end()?;
         // Each vCPU's place in its run loop.

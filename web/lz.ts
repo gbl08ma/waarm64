@@ -10,9 +10,10 @@ const MAX = (1 << 20) + 32;
 
 /**
  * The LZ codec on an instance of the core `wasm` (its bytes or its compiled module), and that
- * core's `snapshot_version` (the format of the machine state it saves and reads).
+ * core's `snapshot_version` (the format of the machine state it saves) and `snapshot_version_min`
+ * (the oldest it reads).
  */
-export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<Codec & { snapshotVersion: number }> {
+export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<Codec & { snapshotVersion: number; snapshotVersionMin: number }> {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const instance = await WebAssembly.instantiate(module, coreImports(memory));
@@ -22,6 +23,7 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
     lz_compress(src: number, len: number, dst: number, cap: number): number;
     lz_decompress(src: number, len: number, dst: number, cap: number): number;
     snapshot_version(): number;
+    snapshot_version_min(): number;
   };
   const cap = ex.lz_bound(MAX) >>> 0;
   const [src, dst] = [ex.thread_alloc(cap, 16), ex.thread_alloc(cap, 16)];
@@ -31,6 +33,7 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
   return {
     id: 2,
     snapshotVersion: ex.snapshot_version(),
+    snapshotVersionMin: ex.snapshot_version_min(),
     async compress(raw) {
       if (raw.length > MAX) throw new RangeError(`a ${raw.length}-byte frame is over the codec's ${MAX}`);
       bytes().set(raw, src);

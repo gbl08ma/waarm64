@@ -250,6 +250,17 @@ puts its functions into the core's table.
 - `jit_helper_report(vcpu) -> *const u8`: NUL-terminated `<Op> <calls>` lines, most frequent
   first (`web/vm.ts` `helperReport`; the benchmarks record it).
 
+## System suspend (ABI 53)
+
+A guest in PSCI SYSTEM_SUSPEND ([platform.md](platform.md) "System suspend") has every vCPU off until the host wakes
+it. All three from any thread (round-robin's `vm_wake` between `vm_run` calls; it takes effect at the next one):
+- `vm_suspended(vm) -> u32`: 1 while the guest is suspended.
+- `vm_wake(vm) -> u32`: its vCPU resumes at the entry it gave, with x0 = its context (parallel mode: the vCPU's wake
+  word is bumped and notified). 0 if it wasn't suspended.
+- `vm_clock_skip(vm, ns) -> u32`: moves a suspended guest's realtime clock on by `ns` (the PL031 keeps showing the
+  host's time); 0, and nothing done, if the guest isn't suspended or time is deterministic. Linux counts the jump as
+  sleep when it resumes.
+
 ## User-mode exports (corpus, differential tests, `bench/interp`)
 
 `vcpu_new`, `mem_new`, `interp_run`, `interp_run_exit` (EL0-style exits, plus trap-to-EL1 and
@@ -441,6 +452,9 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
 - `snapshot_version() -> u32`: `snapshot::VERSION`, for the file's header and the host's refusal
   message. It is bumped when a saved field is added, removed or changes meaning; a unit test
   pins the bytes of a fixed machine's state, so a layout change without the bump fails.
+  `snapshot_version_min() -> u32` (ABI 53): the oldest version a restore still reads (`snapshot::VERSION_MIN`), when a
+  newer layout only added something an older state can lack: version 3 added a suspended guest after the devices, so a
+  version 2 state is a version 3 one without it. The host accepts a file whose version is in that range.
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
@@ -464,6 +478,8 @@ fixed order):
 - Per virtio transport: its registers and queues (addresses, sizes, `last_avail`, `used`), the
   **in-flight chains of each queue in the order they were posted**, and its `DevShared` status,
   features, epoch and config space. The rings are empty by the rules above and aren't saved.
+- Version 3: last, and only when the guest is in PSCI SYSTEM_SUSPEND, the vCPU that suspended it (u32), its entry and
+  context (u64s); every vCPU is then off with no CPU_ON pending, or the state is refused.
 
 **Not saved:** TLBs, code caches, maintenance queues, DSB waits, counters, exits, signal bits.
 A restored vCPU's timer lines are taken from the GIC's saved levels; every vCPU's published IRQ
@@ -550,4 +566,5 @@ implemented by this step).
 | 50 | counter word 120: the ns the block map's prunes took; `heap_probe(size)`: an infallible allocation of `size` bytes, freed at once, so a test can run the heap out through the allocation error hook (tests/heap.test.ts) |
 | 51 | FEAT_SHA512 and FEAT_SHA3: `VmConfig.features` bit 3 (`FEATURE_SHA3`, with bit 0); `ID_AA64ISAR0_EL1` SHA2 = 2, SHA3 = 1 |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
+| 53 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

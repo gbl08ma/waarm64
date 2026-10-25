@@ -669,21 +669,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The network across a snapshot:** the guest keeps its lease and its connections' state; the
   restored machine's card is on whatever the page connects it to now. A link down/up at restore
   would make the guest ask for a lease again; open connections are lost either way.
-- **The guest's clock after a restore** is behind by the time the snapshot sat in its file (the
-  RTC shows the host's time, the counter continues): until something sets it (`hwclock -s`,
-  timesyncd over a network). A hint to the guest (an RTC alarm, a virtio device event) could
-  make it resync. **Moving the counter on by the time away doesn't** (measured 2026-10-25: Debian
-  13's 6.12 restored with CNTVCT an hour on): `date` is right at once, but RCU reports a
-  self-detected stall and systemd kills journald for its watchdog (`WatchdogSec=`, on
-  CLOCK_MONOTONIC: every unit with one would go the same way). arm64 has no "guest was paused"
-  signal for the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`: arm64 takes asm-generic's
-  `kvm_check_and_clear_guest_paused`, which returns false; QEMU's KVM stops the virtual counter
-  while a VM is stopped, as we do, `kvm-no-adjvtime` off; the one in-kernel "host sets the time"
-  path on arm64 is Hyper-V's `hv_utils` timesync over VMBus), and only the guest's own suspend
-  path advances realtime without monotonic, so the fix needs the guest's userspace: Debian's
-  nocloud image runs systemd-networkd and systemd-timesyncd, which re-syncs at once on a link
-  going down and up (a virtio-net `VIRTIO_NET_F_STATUS` flap on restore, networked guests only),
-  and has no qemu-guest-agent (`guest-set-time`: [plans/agent.md](plans/agent.md) step 2).
+- **The guest's clock after a restore**: the opt-in catch-up is done (docs/frontend.md "The guest's clock": the guest
+  suspends itself for the file, PSCI SYSTEM_SUSPEND, and wakes with its clock moved on; why moving a running guest's
+  counter can't: platform.md "System suspend"), and the virtio-rtc device. What's left:
+  - **virtio-rtc against a running driver.** Checked against the driver's message formats only: Debian's kernels (up
+    to 6.17 in trixie-backports) leave `CONFIG_VIRTIO_RTC` out. In the dev VM: our kernel (`images/linux`) with it
+    on, the guest's `/sys/class/rtc/rtc*/since_epoch` and its PTP clock (`phc_ctl`, chrony's `refclock PHC`) against
+    the host; the Arch desktop guest's kernel, if it has it.
+  - **virtio-rtc's cross-timestamps** (READ_CROSS with the ARM virtual counter: the reading and CNTVCT at one instant,
+    which the device worker would need the core's clock for) and **alarms** (an RTC alarm that wakes a suspended
+    guest: `rtcwake`).
+  - **Guests that don't sleep on the key** (no systemd-logind: Alpine with OpenRC; a desktop that takes the key and
+    asks first) are saved as before; an agent (`guest-set-time`, [plans/agent.md](plans/agent.md) step 2) or a link
+    flap for timesyncd (a virtio-net `VIRTIO_NET_F_STATUS` down and up on restore: Debian's networkd and timesyncd
+    re-sync at once on it; networked guests only) would cover them.
+  - **The host's own sleep** (a laptop's lid): `performance.now()` may not count it, so the guest's counter doesn't
+    either and its clock falls behind as after a snapshot. The page could notice `Date.now()` moving away from it and
+    run the catch-up (sleep key, skip, wake) by itself.
 - **One worker compresses RAM** (the core's LZ): 0.44 s for 304 MB of pages. Four would take it
   to 0.15 s (`bench/boot/REPORT.md` "M8 phase C loop 4"); chunks must then be dealt out
   interleaved, not as ranges. And the file's blocks are copied through the codec's own instance

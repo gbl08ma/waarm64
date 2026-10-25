@@ -13,7 +13,7 @@ import '@xterm/xterm/css/xterm.css';
 import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { ask } from './ask.svelte.ts';
-import { leaveWarning, remember, settings } from './settings.ts';
+import { clockSync, leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
@@ -428,7 +428,25 @@ function scheduleSize(now = false) {
 ui.hasGpu = hasGpu;
 
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
-type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; gpu?: Worker; usb?: UsbPorts; usbStarted?: boolean };
+/** `asleep`: the guest has suspended itself (`Status.asleep`): a key or a click wakes it. */
+type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; gpu?: Worker; usb?: UsbPorts; usbStarted?: boolean; asleep?: boolean };
+
+/**
+ * The clock catch-up (Preferences, `?clocksync=`; docs/frontend.md "The guest's clock"): before a snapshot the guest's
+ * sleep key is pressed, so it suspends itself and its own resume counts the time the file sat. Whether it was pressed.
+ */
+function sleepFirst(r: Run) {
+  if (!clockSync()) return false;
+  r.input.chord('Sleep');
+  return true;
+}
+
+/** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
+function wakeOnInput() {
+  if (!run?.asleep) return;
+  run.asleep = false;
+  run.worker.postMessage({ type: 'wake' } satisfies ToWorker);
+}
 
 /**
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
@@ -608,6 +626,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
   input.mouseLock(ui.mouseLock, ui.mouseLockMode);
   ui.hasMouse = !!mouse;
+  canvas.addEventListener('keydown', wakeOnInput);
+  canvas.addEventListener('pointerdown', wakeOnInput);
   const r: Run = { worker, input, serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
   run = r;
   keyboardLive = false;
@@ -660,6 +680,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'notice') {
       notify(m.message, 'error');
     } else if (m.type === 'status') {
+      if (m.status.asleep && !r.asleep && !saving) notify('The guest has gone to sleep (it suspended itself): a key or a click on its screen or terminal wakes it.');
+      r.asleep = !!m.status.asleep;
       showStatus(m.status, alive(m.status));
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
     } else if (m.type === 'profile') {
@@ -719,7 +741,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -1126,7 +1148,7 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
 
 // Snapshots (docs/frontend.md "Snapshots"): the running machine, RAM and disk changes and all, in a file, and back.
 /** The save in progress: the worker's messages for it (the page's `worker.onmessage` forwards them). */
-let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(m: { bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[] }): void; error(message: string): void } | undefined;
+let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(m: { bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }): void; error(message: string): void } | undefined;
 const SNAPSHOT_SUFFIX = '.webpcsnap';
 const mb = bytesText;
 
@@ -1188,14 +1210,14 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   syncButtons();
   const parts: Blob[] = [];
   try {
-    const result = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number }>((resolve, reject) => {
+    const result = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number; slept?: boolean }>((resolve, reject) => {
       snapshotJob = {
         progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
         chunk: (data) => { parts.push(new Blob([data as Uint8Array<ArrayBuffer>])); },
-        done: ({ bytes, pausedMs, stateMs, blobBytes }) => resolve({ bytes, pausedMs, stateMs, blobBytes }),
+        done: ({ bytes, pausedMs, stateMs, blobBytes, slept }) => resolve({ bytes, pausedMs, stateMs, blobBytes, slept }),
         error: (message) => reject(new Error(message)),
       };
-      r.worker.postMessage({ type: 'snapshot', handle, whole: o.whole } satisfies ToWorker);
+      r.worker.postMessage({ type: 'snapshot', handle, whole: o.whole, sleep: sleepFirst(r) } satisfies ToWorker);
     });
     if (!handle) {
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob(parts)), download: suggestedName });
@@ -1206,7 +1228,7 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
     ui.snapshotResult = JSON.stringify(result); // for tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes
     if (run === r && (state === 'running' || state === 'booting')) {
       setState(state);
-      notify(`Saved the snapshot ${handle?.name ?? suggestedName} (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on.`);
+      notify(`Saved the snapshot ${handle?.name ?? suggestedName} (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on.${sleptNote(result.slept)}`);
     }
   } catch (e) {
     if (run === r) { setState(state); notify(`${String((e as Error).message ?? e)}\nThe machine runs on; no file was saved.`, 'error'); }
@@ -1233,21 +1255,21 @@ async function keepSnapshot(name: string) {
     const about = (await aboutMachine())!;
     await askPersist();
     const result = await store.writing(async () => {
-      const done = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[] }>((resolve, reject) => {
+      const done = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }>((resolve, reject) => {
         snapshotJob = {
           progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
           chunk: () => {},
           done: (m) => resolve(m),
           error: (message) => reject(new Error(message)),
         };
-        r.worker.postMessage({ type: 'snapshot', keep: snapshotPath(s.record.id, id) } satisfies ToWorker);
+        r.worker.postMessage({ type: 'snapshot', keep: snapshotPath(s.record.id, id), sleep: sleepFirst(r) } satisfies ToWorker);
       });
       await store.put('snapshots', { id, machine: s.record.id, name, created: Date.now(), bytes: done.bytes, shape: about.shape, shapeHash: about.shapeHash, urls: about.urls, pins: done.pins.map((p) => ({ slot: p.slot, overlay: p.overlay, generation: p.generation, blocks: p.blocks, ram: p.ram })) });
       return done;
     });
     ui.snapshotResult = JSON.stringify({ bytes: result.bytes, pausedMs: result.pausedMs, stateMs: result.stateMs, blobBytes: result.blobBytes, id });
     ui.records++; // this tab's own writes aren't announced to it (Store.onChange)
-    if (run === r && (state === 'running' || state === 'booting')) { setState(state); notify(`Kept the snapshot ${name} in this browser (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on. Rename it on the Machines page.`); }
+    if (run === r && (state === 'running' || state === 'booting')) { setState(state); notify(`Kept the snapshot ${name} in this browser (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on. Rename it on the Machines page.${sleptNote(result.slept)}`); }
   } catch (e) {
     if (run === r) { setState(state); notify(`${String((e as Error).message ?? e)}\nThe machine runs on; nothing was kept.`, 'error'); }
   } finally {
@@ -1281,8 +1303,11 @@ async function suspend() {
       void plugBack(r, unplugged);
     },
   };
-  r.worker.postMessage({ type: 'suspend' } satisfies ToWorker);
+  r.worker.postMessage({ type: 'suspend', sleep: sleepFirst(r) } satisfies ToWorker);
 }
+
+/** What a saved snapshot's message adds under the clock catch-up: whether the guest slept for it (undefined: not asked). */
+const sleptNote = (slept?: boolean) => slept === undefined || !clockSync() ? '' : slept ? ' The guest slept for it: loading it wakes the guest with its clock caught up.' : "\nThe guest didn't go to sleep when asked (its sleep key does nothing there?): its clock will lag after loading it.";
 
 /** Whether `file` starts with the snapshot signature (`WEBPCSNP`): how a chosen or dropped file is told from a disk image. */
 const isSnapshot = async (file: File) => new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';
@@ -1398,7 +1423,7 @@ document.addEventListener('drop', (e) => {
 
 // Keys typed into the terminal go to the PL011 (xterm.js sends what a terminal would: \r for Enter, escape sequences).
 let replaying = false;
-term.onData((d) => { if (!replaying) run?.serial.postMessage(d); });
+term.onData((d) => { if (!replaying) { wakeOnInput(); run?.serial.postMessage(d); } });
 
 // The network (docs/frontend.md "Network", docs/network-adapters.md): the machine's adapters, each with a connection
 // of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Machines page's

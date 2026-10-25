@@ -52,6 +52,8 @@ export type ToWorker =
     /** A relative mouse's and a touchscreen's ports, for a machine that has them (a stored machine's `mouse` and `touch`, a transient one's `?mouse=1`, `?touch=1`). */
     mouse?: MessagePort;
     touch?: MessagePort;
+    /** The clock device (virtio-rtc): a stored machine's `clock`, a transient one's unless `?clock=0`. */
+    clock?: boolean;
     /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
     serial: MessagePort;
     /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */
@@ -135,17 +137,21 @@ export type ToWorker =
   /**
    * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
    * in the overlay) is written beside the overlay, and it stops: state `suspended`. On a failure it
-   * runs on, with a `snapshot-error`. Progress comes as `snapshot-progress`.
+   * runs on, with a `snapshot-error`. Progress comes as `snapshot-progress`. `sleep`: the page has
+   * pressed the guest's sleep key (the clock catch-up, docs/frontend.md "The guest's clock"): it waits
+   * a while for the guest to suspend itself first, and the file then says it slept.
    */
-  | { type: 'suspend' }
+  | { type: 'suspend'; sleep?: boolean }
   /**
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
    * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/plans/machines.md
    * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). Answered by
-   * `snapshot-done` or `snapshot-error`.
+   * `snapshot-done` or `snapshot-error`. `sleep`: as `suspend`'s; the guest is woken once the file is written.
    */
-  | { type: 'snapshot'; handle?: FileSystemFileHandle; keep?: string; whole?: boolean }
+  | { type: 'snapshot'; handle?: FileSystemFileHandle; keep?: string; whole?: boolean; sleep?: boolean }
+  /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
+  | { type: 'wake' }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
@@ -212,7 +218,7 @@ export type FromWorker =
   | { type: 'snapshot-chunk'; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
-  | { type: 'snapshot-done'; bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[] }
+  | { type: 'snapshot-done'; bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }
   /** The save failed (the machine runs on, unless it had ended): a message for the user. */
   | { type: 'snapshot-error'; message: string }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
@@ -268,4 +274,6 @@ export type Status = {
    * undefined in round-robin mode, where vCPU 0's block counts them all.
    */
   cpus?: { steps: number; jitSteps: number }[];
+  /** The guest has suspended itself (PSCI SYSTEM_SUSPEND): it sleeps until a `wake`. */
+  asleep?: boolean;
 };

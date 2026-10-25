@@ -380,6 +380,8 @@ pub struct Shared {
     /// When (ns) the xHCI next has completions to give (`Xhci::due`; u64::MAX: none), for the
     /// vCPUs' run loops to look at without the platform lock.
     pub xhci_due: AtomicU64,
+    /// The guest is in PSCI SYSTEM_SUSPEND (`Platform::suspended`), for the host to read at any time.
+    pub suspended: AtomicBool,
 }
 
 /// A vCPU's words other threads read or write.
@@ -435,6 +437,9 @@ pub struct Platform {
     /// Parallel mode: PSCI CPU_ON requests (entry, context) that their
     /// target's thread carries out.
     start: Vec<Option<(u64, u64)>>,
+    /// PSCI SYSTEM_SUSPEND: the vCPU that called it (every other one is off),
+    /// and where it resumes (entry, context) when the host wakes it.
+    suspended: Option<(usize, u64, u64)>,
 }
 
 /// A vCPU. Round-robin reaches it through `&mut Vm`; in parallel mode only
@@ -632,6 +637,11 @@ impl Clock {
         }
     }
 
+    /// Moves it on by `ns` (nothing reads it meanwhile: every vCPU is off).
+    fn skip(&self, ns: u64) {
+        self.base.fetch_add(ns, Ordering::Relaxed);
+    }
+
     /// Stops it at its reading now, which it returns, until the next `start`.
     /// No vCPU runs meanwhile (a snapshot is taken with every vCPU out of the core).
     fn hold(&self) -> u64 {
@@ -667,6 +677,8 @@ const PSCI_MIGRATE_INFO_TYPE: u32 = 0x8400_0006;
 const PSCI_SYSTEM_OFF: u32 = 0x8400_0008;
 const PSCI_SYSTEM_RESET: u32 = 0x8400_0009;
 const PSCI_FEATURES: u32 = 0x8400_000a;
+const PSCI_SYSTEM_SUSPEND: u32 = 0x8400_000e;
+const PSCI_SYSTEM_SUSPEND_64: u32 = 0xc400_000e;
 // SMCCC 1.1 (same conduit): the version and the vulnerability workarounds.
 const SMCCC_VERSION: u32 = 0x8000_0000;
 const SMCCC_ARCH_FEATURES: u32 = 0x8000_0001;
@@ -679,6 +691,7 @@ const SMCCC_NOT_REQUIRED: i64 = -2;
 const PSCI_SUCCESS: i64 = 0;
 const PSCI_NOT_SUPPORTED: i64 = -1;
 const PSCI_INVALID_PARAMETERS: i64 = -2;
+const PSCI_DENIED: i64 = -3;
 const PSCI_ALREADY_ON: i64 = -4;
 
 /// Steps each vCPU runs before the next one's turn (deterministic round-robin).
@@ -813,6 +826,7 @@ impl Vm {
                     x
                 }),
                 start: vec![None; n],
+                suspended: None,
             }),
             shared,
             exit: ExitInfo::default(),
@@ -869,6 +883,56 @@ impl Vm {
         self.sched[c].power
     }
 
+    /// Records vCPU `c`'s PSCI SYSTEM_SUSPEND (it's off already, as is every other vCPU).
+    fn suspend(&self, c: usize, (entry, context): (u64, u64)) {
+        let mut p = self.plat.lock();
+        p.suspended = Some((c, entry, context));
+        self.shared.suspended.store(true, Ordering::Release);
+    }
+
+    /// Whether the guest is in PSCI SYSTEM_SUSPEND. From any thread.
+    pub fn suspended(&self) -> bool {
+        self.shared.suspended.load(Ordering::Acquire)
+    }
+
+    /// Wakes a guest in PSCI SYSTEM_SUSPEND: the vCPU that suspended it
+    /// resumes at its entry point, as from CPU_ON. False if it isn't
+    /// suspended. Parallel mode: from any thread; round-robin: no vCPU runs.
+    pub fn wake_suspended(&self) -> bool {
+        let mut p = self.plat.lock();
+        let Some((c, entry, context)) = p.suspended.take() else {
+            return false;
+        };
+        self.shared.suspended.store(false, Ordering::Release);
+        p.start[c] = Some((entry, context));
+        drop(p);
+        if self.parallel() {
+            self.wake(c);
+        }
+        // Round-robin takes it at its next `run`.
+        true
+    }
+
+    /// Moves a suspended guest's clock on by `ns` (realtime mode only; false
+    /// otherwise): the time it would have slept through. Linux's resume
+    /// counts the counter's progress over a suspend as sleep (a nonstop
+    /// clocksource), so its realtime clock catches up and its monotonic one
+    /// doesn't move. The RTC still shows the host's time. From any thread.
+    pub fn clock_skip(&self, ns: u64) -> bool {
+        if !self.realtime() || self.clock.ns().saturating_add(ns) >= 1 << 62 {
+            return false;
+        }
+        let mut p = self.plat.lock();
+        if p.suspended.is_none() {
+            return false;
+        }
+        self.clock.skip(ns);
+        if let Some(rtc) = &mut p.rtc {
+            rtc.shift(ns / 1_000_000);
+        }
+        true
+    }
+
     /// The counter value (CNTPCT = CNTVCT), the same for every vCPU.
     pub fn now(&self) -> u64 {
         if self.realtime() {
@@ -918,6 +982,12 @@ impl Vm {
     /// is skipped.
     pub fn run(&mut self, budget: u64) -> u32 {
         assert!(!self.parallel(), "vm_run in parallel mode: vm_run_cpu");
+        // A woken SYSTEM_SUSPEND (`wake_suspended`).
+        for c in 0..self.vcpus.len() {
+            if let Some((entry, context)) = self.plat.get_mut().start[c].take() {
+                self.cpu_on(c, entry, context);
+            }
+        }
         self.clock.start();
         let start = self.steps;
         self.exit = ExitInfo::default();
@@ -1345,9 +1415,29 @@ impl Vm {
                 self.quantum = 0;
                 return None;
             }
+            // Realtime only: a deterministic guest sees PSCI as before (its step counts don't move).
+            PSCI_SYSTEM_SUSPEND | PSCI_SYSTEM_SUSPEND_64 if !self.realtime() => PSCI_NOT_SUPPORTED,
+            PSCI_SYSTEM_SUSPEND | PSCI_SYSTEM_SUSPEND_64 => {
+                if (0..self.vcpus.len()).any(|t| t != c && self.sched[t].power == Power::On) {
+                    PSCI_DENIED
+                } else {
+                    // Doesn't return: the vCPU stops until the host wakes it.
+                    let smc64 = f == PSCI_SYSTEM_SUSPEND_64;
+                    self.sched[c].power = Power::Off;
+                    self.quantum = 0;
+                    self.suspend(c, suspend_args(&x, smc64));
+                    return None;
+                }
+            }
             PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
                 self.exit.x.copy_from_slice(&x[..4]);
                 return Some(exit::PSCI);
+            }
+            PSCI_FEATURES
+                if !self.realtime()
+                    && matches!(x[1] as u32, PSCI_SYSTEM_SUSPEND | PSCI_SYSTEM_SUSPEND_64) =>
+            {
+                PSCI_NOT_SUPPORTED
             }
             f => psci_common(f, x[1]),
         };
@@ -1371,6 +1461,8 @@ fn psci_common(f: u32, x1: u64) -> i64 {
             | PSCI_MIGRATE_INFO_TYPE
             | PSCI_SYSTEM_OFF
             | PSCI_SYSTEM_RESET
+            | PSCI_SYSTEM_SUSPEND
+            | PSCI_SYSTEM_SUSPEND_64
             // Linux takes SMCCC 1.1 only if PSCI_FEATURES lists SMCCC_VERSION.
             | SMCCC_VERSION => PSCI_SUCCESS,
             _ => PSCI_NOT_SUPPORTED,
@@ -1386,6 +1478,15 @@ fn psci_common(f: u32, x1: u64) -> i64 {
             f => psci_common(PSCI_FEATURES, f as u64),
         },
         _ => PSCI_NOT_SUPPORTED,
+    }
+}
+
+/// PSCI SYSTEM_SUSPEND's (entry, context): 32-bit for the SMC32 call.
+fn suspend_args(x: &[u64], smc64: bool) -> (u64, u64) {
+    if smc64 {
+        (x[1], x[2])
+    } else {
+        (x[1] as u32 as u64, x[2] as u32 as u64)
     }
 }
 

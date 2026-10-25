@@ -618,7 +618,7 @@ fn a_state_is_refused_by_another_version_or_machine() {
         b"WPCS",
         b"XPCS\x01\0\0\0",
         b"WPCS\x01\0\0\0",
-        b"WPCS\x03\0\0\0",
+        b"WPCS\x04\0\0\0",
     ] {
         assert_eq!(restore(bad, cfg, &[DEV]), Err(Error::Format), "{bad:?}");
     }
@@ -729,10 +729,10 @@ fn the_saved_bytes_are_pinned_to_the_version() {
     t.vm.shared.console.rx.push(b'k');
     assert_eq!(t.vm.run(5), exit::BUDGET);
     let state = t.save();
-    assert_eq!(snapshot::VERSION, 2);
+    assert_eq!(snapshot::VERSION, 3);
     assert_eq!(
         (state.len(), hash(&state)),
-        (266_617, 13_739_998_675_332_078_785),
+        (266_617, 9_173_920_810_526_671_222),
         "the layout moved"
     );
 }
@@ -796,6 +796,116 @@ fn a_realtime_clock_continues_and_the_rtc_shows_the_hosts_time() {
     let now = c.vm.now();
     std::thread::sleep(std::time::Duration::from_millis(20));
     assert_eq!(c.vm.now(), now, "the clock moved before a vCPU ran");
+}
+
+#[test]
+fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_time() {
+    const LDR_W2_X0: u32 = 0xb940_0002; // ldr w2, [x0]
+    const ENTRY: u64 = RAM_BASE + 0x100;
+    const HOUR: u64 = 3_600_000_000_000;
+    let cfg = VmConfig {
+        deterministic: 0,
+        rtc: 1_700_000_000_000,
+        ..VmConfig::default()
+    };
+    let mut a = T::new(&[HVC, HVC, B_SELF], cfg);
+    for (k, w) in [LDR_W2_X0, B_SELF].into_iter().enumerate() {
+        a.vm.mem.write(ENTRY + 4 * k as u64, 4, w as u64).unwrap();
+    }
+    (a.cpu().x[0], a.cpu().x[1]) = (0x8400_000a, 0xc400_000e); // FEATURES(SYSTEM_SUSPEND)
+    a.vm.run(1);
+    assert_eq!(a.cpu().x[0], 0);
+    assert!(!a.vm.clock_skip(HOUR), "not suspended");
+    // SYSTEM_SUSPEND(entry, context): the context is the RTC's address, which the entry reads.
+    let c = a.cpu();
+    (c.x[0], c.x[1], c.x[2]) = (0xc400_000e, ENTRY, RTC);
+    assert_eq!(a.vm.run(10), exit::IDLE);
+    assert_eq!(a.vm.exit.value, u64::MAX, "nothing wakes it but the host");
+    assert!(a.vm.suspended());
+    let state = a.save();
+    // Restored an hour later: the clock moves on by that hour, the RTC doesn't move twice.
+    let later = VmConfig {
+        rtc: cfg.rtc + 3_600_000,
+        ..cfg
+    };
+    let (mut b, r) = a.restore(&state, later, &[]);
+    assert_eq!(r, Ok(()));
+    assert!(b.vm.suspended());
+    let before = b.vm.now();
+    assert!(b.vm.clock_skip(HOUR));
+    assert_eq!(b.vm.now() - before, 3600 * 62_500_000);
+    assert!(b.vm.wake_suspended());
+    assert!(!b.vm.suspended() && !b.vm.wake_suspended());
+    assert_eq!(b.vm.run(2), exit::BUDGET);
+    assert_eq!((b.cpu().pc, b.cpu().x[0]), (ENTRY + 4, RTC));
+    let s = b.cpu().x[2];
+    assert!((1_700_003_600..1_700_003_602).contains(&s), "{s}");
+    assert!(!b.vm.clock_skip(HOUR), "awake again");
+    // A version 2 state (nothing after the devices) restores awake; one with the field is refused.
+    let mut v2 = state[..state.len() - 20].to_vec();
+    v2[4..8].copy_from_slice(&2u32.to_le_bytes());
+    let (c, r) = a.restore(&v2, later, &[]);
+    assert_eq!(r, Ok(()));
+    assert!(!c.vm.suspended());
+    v2.extend_from_slice(&state[state.len() - 20..]);
+    assert_eq!(a.restore(&v2, later, &[]).1, Err(Error::Corrupt));
+    // A deterministic guest has no SYSTEM_SUSPEND (its PSCI is as it was: step counts don't move).
+    let mut d = T::new(&[HVC, HVC, B_SELF], VmConfig::default());
+    (d.cpu().x[0], d.cpu().x[1]) = (0x8400_000a, 0xc400_000e);
+    d.vm.run(1);
+    assert_eq!(d.cpu().x[0], u64::MAX);
+    let c = d.cpu();
+    (c.x[0], c.x[1], c.x[2]) = (0xc400_000e, ENTRY, 0);
+    assert_eq!(d.vm.run(1), exit::BUDGET);
+    assert_eq!(d.cpu().x[0], u64::MAX);
+    assert!(!d.vm.suspended() && !d.vm.clock_skip(HOUR));
+}
+
+#[test]
+fn system_suspend_is_denied_while_another_vcpu_is_on() {
+    for smp in [0, 1] {
+        let cfg = VmConfig {
+            deterministic: 0,
+            ncpus: 2,
+            smp,
+            ..VmConfig::default()
+        };
+        let mut a = T::new(&[HVC, HVC, B_SELF], cfg);
+        let c = a.cpu();
+        (c.x[0], c.x[1], c.x[2], c.x[3]) = (0xc400_0003, 1, RAM_BASE + 8, 0); // CPU_ON(1)
+        let run = |a: &mut T| {
+            if smp == 1 {
+                // SAFETY: this thread is the only one, and runs one vCPU at a time.
+                unsafe { a.vm.run_cpu(0, 1) }
+            } else {
+                a.vm.run(1)
+            }
+        };
+        run(&mut a);
+        let c = a.cpu();
+        (c.x[0], c.x[1], c.x[2]) = (0x8400_000e, RAM_BASE, 0);
+        run(&mut a);
+        assert_eq!(a.cpu().x[0], -3i64 as u64, "smp {smp}");
+        assert!(!a.vm.suspended());
+    }
+}
+
+#[test]
+fn a_parallel_vcpu_resumes_from_system_suspend_when_woken() {
+    const ENTRY: u64 = RAM_BASE + 0x100;
+    let mut a = T::new(&[HVC, B_SELF], par(1));
+    a.vm.mem.write(ENTRY, 4, B_SELF as u64).unwrap();
+    let c = a.cpu();
+    (c.x[0], c.x[1], c.x[2]) = (0x8400_000e, ENTRY, 0x1_0000_0042); // SMC32: 32-bit arguments
+    // SAFETY: this thread is the only one, and runs one vCPU at a time.
+    unsafe {
+        assert_eq!(a.vm.run_cpu(0, 10), exit::IDLE);
+        assert!(a.vm.suspended());
+        assert_eq!(a.vm.run_cpu(0, 10), exit::IDLE, "stays off");
+        assert!(a.vm.wake_suspended());
+        assert_eq!(a.vm.run_cpu(0, 3), exit::BUDGET);
+    }
+    assert_eq!((a.cpu().pc, a.cpu().x[0]), (ENTRY, 0x42));
 }
 
 /// Parallel mode, realtime, on `ncpus`.

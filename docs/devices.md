@@ -93,6 +93,22 @@ the PL011, [platform.md](platform.md) "PL011"). virtio-rng:
 `crypto.getRandomValues` in the browser's realtime mode; **splitmix64 seeded 0** in deterministic
 mode (and natively in realtime mode: std has no CSPRNG).
 
+### clock (ID 17): virtio-rtc
+
+`{type: 'clock'}` (`web/clock.ts`; Linux's `virtio_rtc`, 6.16 and later, with `CONFIG_VIRTIO_RTC`, which Debian's
+kernels up to 6.17 leave out): no features (no alarms: the requestq alone), no config space. **One clock**, UTC as the
+browser keeps it, typed `UTC_SMEARED` with the smearing unspecified (a JavaScript time value has no leap seconds, and
+Linux makes its RTC device only for that type): Linux gives it a PTP clock (`Virtio PTP type 3/variant 0`, which
+chrony's `refclock PHC` can follow, so the guest's time follows the browser's through snapshots and the host's own
+sleep and NTP) and a read-only RTC. `CFG` says one clock; `CLOCK_CAP` its type; `CROSS_CAP` that it has no counter
+cross-timestamps (chrony brackets plain reads then); `READ` the time in ns, `performance.timeOrigin +
+performance.now()` re-anchored on `Date.now()` whenever the two part by more than 2 ms (`browserClock`: µs steps that
+still follow a step of the host's clock). Everything else (READ_CROSS, the alarm requests) is EOPNOTSUPP, an unknown
+clock ENODEV, a short request EINVAL, each as the 8-byte head alone (an OK response fills its whole struct: the driver
+takes any other size as an error). Deterministic runs read a fixed time (2026-09-01). It is checked against the
+driver's formats (`tests/clock.test.ts`), not yet against a running driver (backlog "Snapshots"). Machines have it as
+a device kind of their own (docs/frontend.md "The guest's clock").
+
 ### blk (ID 2)
 - Features `SEG_MAX` = 126, `RO` (or `FLUSH` when writable: an overlay, or a ramdisk); one queue of 128. `IN`, `GET_ID`,
   `OUT` and `FLUSH` when writable (`IOERR` without), the rest `UNSUPP`. `GET_ID` answers the spec's `serial` (a
@@ -338,6 +354,11 @@ mode (and natively in realtime mode: std has no CSPRNG).
   `ABS_MT_TRACKING_ID` (Linux's virtio_input makes the slots from `ABS_MT_SLOT`'s range).
 - **A config write (`select`/`subsel`) is a `DEVICE` exit that waits for the device worker even
   in realtime mode**: the driver reads `size` right after.
+- Linux's driver freezes for a suspend by deleting its queues **without a reset** (`virtinput_freeze`): a queue turned
+  off (QueueReady 0) drops its in-flight chains in the transport, so a completion for an event buffer the backend held
+  is dropped (it would write a used ring the driver freed), and a snapshot of the suspended guest restores (a queue
+  that isn't ready with chains in flight is a state the restore refuses). The resume resets the device, and the
+  backend drops what it held.
 - Events come from the port as [type, code, value] arrays (`web/input.ts` `attachInput` makes
   them from DOM keyboard, pointer and wheel events, keys by `KeyboardEvent.code`, a US PC
   layout; what's held is released when the element or the window loses the focus, and `chord`

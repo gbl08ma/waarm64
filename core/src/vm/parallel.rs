@@ -678,7 +678,7 @@ impl Vm {
     }
 
     /// Bumps and notifies vCPU `i`'s wake word (after the change it's for).
-    fn wake(&self, i: usize) {
+    pub(super) fn wake(&self, i: usize) {
         let w = &self.shared.cpus[i].wake;
         w.fetch_add(1, Ordering::SeqCst);
         notify(w);
@@ -899,6 +899,24 @@ impl Vm {
                 let _pl = self.plat_of(c);
                 self.shared.cpus[c].par.state.store(OFF, Ordering::SeqCst);
                 return None;
+            }
+            PSCI_SYSTEM_SUSPEND | PSCI_SYSTEM_SUSPEND_64 => {
+                let mut pl = self.plat_of(c);
+                let others = (0..self.vcpus.len()).any(|t| {
+                    t != c
+                        && (self.shared.cpus[t].par.state.load(Ordering::SeqCst) != OFF
+                            || pl.start[t].is_some())
+                });
+                if others {
+                    PSCI_DENIED
+                } else {
+                    // Doesn't return: the vCPU stops until the host wakes it.
+                    self.shared.cpus[c].par.state.store(OFF, Ordering::SeqCst);
+                    let (entry, context) = suspend_args(&x, f == PSCI_SYSTEM_SUSPEND_64);
+                    pl.suspended = Some((c, entry, context));
+                    self.shared.suspended.store(true, Ordering::Release);
+                    return None;
+                }
             }
             PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
                 own.exit.x.copy_from_slice(&x[..4]);

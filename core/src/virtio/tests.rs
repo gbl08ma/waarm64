@@ -352,6 +352,24 @@ fn reset_drops_old_completions() {
     assert_eq!(t.used(0), (1, 0, 4));
 }
 
+#[test]
+fn a_queue_turned_off_drops_its_chains_in_flight() {
+    // Linux's virtio-input freezes for a suspend by turning its queues off, without a reset.
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    t.offer(&[0]);
+    let w0 = t.sh.req.pop_request().unwrap().w0;
+    t.wr(0x030, 0);
+    t.wr(0x044, 0);
+    t.complete(w0, 4);
+    assert_eq!(t.used(0).0, 0, "no completion into the queue's rings");
+    // And the device saves and restores (a snapshot of a suspended guest).
+    assert!(t.t.quiet(&t.sh));
+    let (res, _, _) = restored(&t, &saved(&t));
+    assert_eq!(res, Ok(()));
+}
+
 /// Each malformed ring puts the device in NEEDS_RESET with a config interrupt.
 #[test]
 fn malformed_rings_need_reset() {

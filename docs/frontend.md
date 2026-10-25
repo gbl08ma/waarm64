@@ -535,12 +535,46 @@ are Start and Boot instead). A failure before that leaves the machine running.
   reopens it after a reload (the last machine): a file disk needs the user's click first ("Allow and start", or
   "Pick and start" without a handle), then it resumes.
 
+### The guest's clock
+
+A snapshot is a pause the guest can hardly tell: the counter goes on from where it was saved, so the guest's own clock
+is behind by the time the file sat (or the machine was suspended) until something sets it (`hwclock -s`, timesyncd
+over a network); the RTC shows the host's time. That stays the default, for those who pause a machine so that it
+doesn't notice.
+
+**The clock catch-up** (Preferences' "Catch the guest's clock up after a snapshot", `settings().clockSync`, off by
+default; `?clocksync=1` or `0` decides for the page: `web/app/settings.ts` `clockSync`) makes it notice as a laptop
+does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
+keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 15 s for the
+guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; "Putting the guest to
+sleep" in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
+its header), and **loading it** (a snapshot, or a suspended machine resumed) moves the guest's clock on by the time
+since the header's `created` (`vm_clock_skip`) and wakes it: its resume counts that as sleep, so its wall clock is
+the browser's again and its monotonic clock hasn't jumped (nothing it times runs out). The running machine wakes once
+its file is written, its clock moved on by the time the core held it for the write. A guest that doesn't suspend on
+the key in time (no logind, or the key handled elsewhere) is saved as it is, and the message says its clock will lag;
+with the catch-up off nothing is pressed and nothing moves. Measured on Debian in a cloud session
+(`tests/page-clock.test.ts`): within 0.4 s of the host after its own save, after a resume 20 s on and after a load
+minutes later, against −80 s for a load 80 s on with it off.
+
+**A guest that suspends itself** (`systemctl suspend`, a desktop's idle suspend, the catch-up's key arriving late)
+sleeps until a key or a click on its screen or terminal: the worker's status says `asleep` (`vm_suspended`), the page
+says so once in the message bar, and the next input posts `wake` (`vm_wake`) before going to the guest. Keys typed
+while it resumes (under a second on Debian) may be lost, as on a machine still waking.
+
+**The clock device** (virtio-rtc, [devices.md](devices.md) "clock"): a device kind of its own (`clock`, after the
+pointers and before the disks in `slots`), on transient machines unless `?clock=0`, on machines made from now on
+(their Settings' "Clock device"), and off on machines made before it, whose shape is as it was. A guest with a driver
+for it gets a PTP clock that reads the browser's time (chrony's `refclock PHC` keeps its clock there through
+anything) and a read-only RTC. A snapshot or a suspended machine from before the device restores without it (it holds
+no state: `fromHeader` takes the layout without `clock` when that's the file's).
+
 **Limits.** No hash of the base image is written (nothing computes or caches it off the save path
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
 (name, size, modification time) or URL. The network across a snapshot isn't handled: the guest
 keeps its DHCP lease and its connections are gone with the Tailscale client's. The guest's clock
-lags by the time the file sat around until something sets it (the RTC is current). A snapshot is
-for the core version that made it.
+lags by the time the file sat around until something sets it (the RTC is current), unless the clock catch-up is on
+(above). A snapshot is for the core versions that read its format (`snapshot_version_min` to `snapshot_version`).
 
 ## The screen
 

@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 52;
+pub const ABI_VERSION: u32 = 53;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -772,6 +772,12 @@ pub extern "C" fn snapshot_version() -> u32 {
     snapshot::VERSION
 }
 
+/// The oldest format version [`vm_snapshot_restore`] reads (`snapshot::VERSION_MIN`; ABI 53).
+#[unsafe(no_mangle)]
+pub extern "C" fn snapshot_version_min() -> u32 {
+    snapshot::VERSION_MIN
+}
+
 /// Gets the VM ready to be saved: takes the completions the backends left
 /// (clearing `SIGNAL_DEVICE`), as the run loop would at its next boundary.
 /// Returns the size of the state in bytes; 0 if a device has something for
@@ -823,6 +829,45 @@ pub unsafe extern "C" fn vm_snapshot_restore(vm: *mut vm::Vm, ptr: *const u8, le
     // SAFETY: guaranteed by the caller.
     let (vm, state) = unsafe { (&mut *vm, core::slice::from_raw_parts(ptr, len)) };
     vm.snapshot_restore(state).map_or_else(|e| e as u32, |()| 0)
+}
+
+// PSCI SYSTEM_SUSPEND (ABI 53, docs/abi.md "System suspend").
+
+/// 1 if the guest is in PSCI SYSTEM_SUSPEND (every vCPU off until
+/// [`vm_wake`]), else 0. From any thread.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_suspended(vm: *const vm::Vm) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }.suspended() as u32
+}
+
+/// Wakes a guest in PSCI SYSTEM_SUSPEND: its vCPU resumes at the entry point
+/// it gave, as from CPU_ON (parallel mode: its thread is woken; round-robin:
+/// at the next [`vm_run`]). 1 if it was suspended, else 0. Parallel mode:
+/// from any thread; round-robin: between [`vm_run`] calls.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_wake(vm: *const vm::Vm) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }.wake_suspended() as u32
+}
+
+/// Moves a suspended guest's realtime clock on by `ns` (the time it slept
+/// through while the machine was in a file); the RTC stays on the host's
+/// time. 1 if done; 0 if the guest isn't suspended or time is deterministic.
+/// From any thread.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_clock_skip(vm: *const vm::Vm, ns: u64) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }.clock_skip(ns) as u32
 }
 
 // JIT plumbing (M5 step 1), for tests/jit.test.ts and bench/jit.
