@@ -139,14 +139,35 @@ pub struct VmConfig {
     /// `jit::MAX_BYTES`. A per-machine setting: V8 spends several times
     /// these bytes on their code and metadata.
     pub jit_bytes: u64,
+    /// The host-visible window's bytes (ABI 53, docs/devices.md "virtio-gpu"): guest-physical memory right
+    /// after RAM in memory 0, outside the DT's `/memory`, that a transport whose entry has `shm` reports as
+    /// its shared memory region 1 (Venus's blobs are mapped there). A multiple of 2 MiB, at most
+    /// `MAX_WINDOW`; 0: none.
+    pub window: u64,
 }
 
+/// The largest host-visible window: it comes out of memory 0's 4 GiB with guest RAM.
+pub const MAX_WINDOW: u64 = 1 << 30;
+
 impl VmConfig {
+    /// The host-visible window as (guest PA, size), if there is one: right after RAM, in memory 0.
+    pub fn window_layout(&self) -> Option<(u64, u64)> {
+        (self.window != 0).then(|| (RAM_BASE + self.ram_size, self.window))
+    }
+
+    /// No window, or one of whole 2 MiB units up to `MAX_WINDOW` after RAM of whole 64 KiB pages.
+    pub fn valid_window(&self) -> bool {
+        self.window == 0
+            || (self.window.is_multiple_of(1 << 21)
+                && self.window <= MAX_WINDOW
+                && self.ram_size.is_multiple_of(1 << 16))
+    }
+
     /// The spill memories as (guest PA, size): each starts at the 1 GiB
     /// boundary past the RAM before it, a hole between them, so no guest
     /// buffer is ever contiguous across two memories.
     pub fn spill_layout(&self) -> Vec<(u64, u64)> {
-        let mut end = RAM_BASE + self.ram_size;
+        let mut end = RAM_BASE + self.ram_size + self.window;
         self.spill
             .iter()
             .take_while(|&&n| n != 0)
@@ -232,6 +253,7 @@ impl Default for VmConfig {
             xhci: 0,
             spill: [0; crate::mem::MAX_SPILL],
             jit_bytes: 0,
+            window: 0,
         }
     }
 }
@@ -795,12 +817,19 @@ impl Vm {
                             .all(|(s, w)| (s.phys, s.size) == *w),
                     "the spill memories don't match the configuration"
                 );
+                assert!(
+                    mem.size() >= cfg.ram_size + cfg.window,
+                    "memory 0 doesn't hold the window"
+                );
                 mem
             },
             plat: Lock::new(Platform {
                 gic: Box::new(Gicv3::new(n)),
                 uart: Pl011::default(),
-                virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
+                virtio: devices
+                    .iter()
+                    .map(|&e| Transport::new(e).with_window(cfg.window_layout()))
+                    .collect(),
                 rtc: cfg.has_rtc().then(|| Pl031::new(cfg.rtc)),
                 flash: cfg.firmware().then(|| Flash::new(cfg.flash_size)),
                 fw_cfg: cfg

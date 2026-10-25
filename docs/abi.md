@@ -117,6 +117,7 @@ Design notes for an ABI change go in this file before the code.
 | `xhci` | an xHCI ([usb.md](usb.md)): its USB 2 ports \| USB 3 ports << 8, `0x404` (4 and 4, the only counts built; `vm_new` refuses others) or 0, none (38) |
 | `spill` (8 words) | the spill memories' sizes, memory 1 first, the first 0 ending the list: multiples of 64 KiB, at most 4 GiB each; the core places each at the 1 GiB boundary past the RAM before it (`VmConfig::spill_layout`), a NUMA node in the DT, and reaches it through the `ram` imports ([spill-memories.md](spill-memories.md)). Natively `vm_new` refuses them (a Rust runner passes its own `Mem`) (39) |
 | `jit_bytes` | the JIT's code cache budget in wasm bytes, for `jit` 1 and 4 (JIT-stress and JIT-check keep theirs): the most the live modules hold before a flush ([jit.md](jit.md) "Memory"); 0: the core's default, `jit::MAX_BYTES`. Not part of a snapshot's state: a state restores under any budget. The host's scratch page holds the config's words at 0 and the device entries from 512 (44) |
+| `window` | the host-visible window's bytes: guest-physical memory right after RAM in memory 0 (`vm_new`'s `ram` is followed by them), outside the DT's `/memory`, a multiple of 2 MiB up to 1 GiB (`vm::MAX_WINDOW`) after RAM of whole 64 KiB pages; a transport whose entry has `shm` reports it as its shared memory region 1, and the spill memories start past it; 0: none ([devices.md](devices.md) "virtio-gpu") (53) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1, 2 and 3 unless told `rng: false`, `e0pd: false`, `sha3: false` (the bare-metal tests are); the ABI's 0 means none.
@@ -177,9 +178,10 @@ TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one
 ## Device backends
 
 Layouts in `core/src/virtio.rs` and `web/devices.ts`; the behavior is in [devices.md](devices.md).
-- `DeviceEntry` = 5 u64s: device ID, offered features (the transport masks the reserved bits
+- `DeviceEntry` = 6 u64s: device ID, offered features (the transport masks the reserved bits
   24–40 and adds `VERSION_1`, `INDIRECT_DESC` and `EVENT_IDX`), queue count (≤ 8), QueueNumMax (power of 2,
-  ≤ 1024), config length (≤ 256). Every chain that can be in flight must fit the completion ring
+  ≤ 1024), config length (≤ 256), `shm` (ABI 53: 1, the VM's window is the transport's shared memory region 1,
+  SHMSel/SHMLen/SHMBase; 0, no regions). Every chain that can be in flight must fit the completion ring
   (queues × size × 2 ≤ 4096 words).
 - `vm_device(vm, i) -> *const DevShared`: events u32 at 0 (`EV_REQUEST` 1, `EV_CONFIG` 2,
   `EV_STATUS` 4; the host takes them with a swap), device status at 4, negotiated features (two
@@ -549,5 +551,6 @@ implemented by this step).
 | 49 | the host's type 11 strings: fw_cfg's `opt/webpc/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
 | 50 | counter word 120: the ns the block map's prunes took; `heap_probe(size)`: an infallible allocation of `size` bytes, freed at once, so a test can run the heap out through the allocation error hook (tests/heap.test.ts) |
 | 51 | FEAT_SHA512 and FEAT_SHA3: `VmConfig.features` bit 3 (`FEATURE_SHA3`, with bit 0); `ID_AA64ISAR0_EL1` SHA2 = 2, SHA3 = 1 |
+| 53 | the host-visible window: `VmConfig.window` (memory 0's bytes after RAM), `DeviceEntry.shm` (6 u64s an entry), the transport's SHM registers for region 1 (VK1, docs/plans/graphics.md) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

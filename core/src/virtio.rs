@@ -82,6 +82,9 @@ pub struct DeviceEntry {
     pub queue_size: u64,
     /// Config-space bytes; the host writes them into `DevShared::config` after `vm_new`.
     pub config_len: u64,
+    /// 1: the VM's host-visible window (`VmConfig.window`) is this transport's shared memory region
+    /// 1 (virtio-gpu's `VIRTIO_GPU_SHM_ID_HOST_VISIBLE`); 0: no regions (ABI 53).
+    pub shm: u64,
 }
 
 impl DeviceEntry {
@@ -91,6 +94,7 @@ impl DeviceEntry {
             && self.queue_size.is_power_of_two()
             && self.queue_size <= MAX_QUEUE_SIZE
             && self.config_len <= CONFIG_SIZE as u64
+            && self.shm <= 1
             // Every buffer in flight fits the completion ring, so a backend never waits for room.
             && self.queues * self.queue_size * 2 <= RING_WORDS as u64
     }
@@ -338,7 +342,14 @@ pub struct Transport {
     /// A chain didn't fit the request ring; retried after completions.
     backlog: bool,
     scratch: Vec<u32>,
+    /// Shared memory region 1 as (guest PA, length), when the entry asks for the window.
+    shm: Option<(u64, u64)>,
+    /// SHMSel.
+    shm_sel: u32,
 }
+
+/// The shared memory region ID a transport with `DeviceEntry.shm` reports the window as.
+pub const SHM_ID_WINDOW: u32 = 1;
 
 impl Transport {
     pub fn new(entry: DeviceEntry) -> Transport {
@@ -356,7 +367,15 @@ impl Transport {
             gen_skew: 0,
             backlog: false,
             scratch: Vec::new(),
+            shm: None,
+            shm_sel: 0,
         }
+    }
+
+    /// The transport with the VM's window (PA, length) as its region 1, if its entry asks for it.
+    pub fn with_window(mut self, window: Option<(u64, u64)>) -> Transport {
+        self.shm = window.filter(|_| self.entry.shm == 1);
+        self
     }
 
     /// The device this is the transport of.
@@ -406,7 +425,14 @@ impl Transport {
             0x044 => q.is_some_and(|ready| ready) as u32,
             0x060 => self.isr,
             0x070 => self.status,
-            0x0b0..0x0c0 => u32::MAX, // SHMLen/SHMBase: no shared memory regions
+            // SHMLen and SHMBase (low, high) of the selected region; all ones: none.
+            0x0b0..0x0c0 => match self.shm {
+                Some((base, len)) if self.shm_sel == SHM_ID_WINDOW => {
+                    let v = if off < 0x0b8 { len } else { base };
+                    (v >> (8 * (off & 4))) as u32
+                }
+                _ => u32::MAX,
+            },
             0x0fc => {
                 let g = sh.config_gen.load(Ordering::SeqCst);
                 if g & 1 == 0 {
@@ -466,6 +492,7 @@ impl Transport {
             0x094 => self.queue_reg(|q| set_hi(&mut q.driver, v)),
             0x0a0 => self.queue_reg(|q| set_lo(&mut q.device, v)),
             0x0a4 => self.queue_reg(|q| set_hi(&mut q.device, v)),
+            0x0ac => self.shm_sel = v,
             _ => {}
         }
         Some(ev)
@@ -505,16 +532,18 @@ impl Transport {
         if v == 0 {
             // Reset: everything but the configuration; completions still in
             // the ring (and any posted later for older requests) are dropped.
-            let (entry, epoch, seen, scratch) = (
+            let (entry, epoch, seen, scratch, shm) = (
                 self.entry,
                 self.epoch + 1,
                 self.config_seen,
                 core::mem::take(&mut self.scratch),
+                self.shm,
             );
             *self = Transport {
                 epoch,
                 config_seen: seen,
                 scratch,
+                shm,
                 ..Transport::new(entry)
             };
             sh.epoch.store(epoch, Ordering::Release);

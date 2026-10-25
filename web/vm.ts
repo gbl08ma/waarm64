@@ -11,7 +11,7 @@ import type { GpuState } from './gpu.ts';
 import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
-import { Devices, EV_CONFIG, deviceEntry, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { Devices, ENTRY_WORDS, EV_CONFIG, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
@@ -21,7 +21,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 52;
+export const ABI = 53;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -515,8 +515,14 @@ export const Counter = {
  * of RAM, which `bootVm`'s `framebuffer` locates for web/display.ts.
  */
 export type BootOptions = {
-  /** Guest RAM in memory 0 (at most `MAX_MEMORY0_RAM` (web/ram.ts) for a fixed memory). */
+  /** Guest RAM in memory 0 (at most `MAX_MEMORY0_RAM` (web/ram.ts) for a fixed memory, less the window). */
   ramSize: number;
+  /**
+   * `VmConfig.window` (ABI 53): the host-visible window's bytes, after RAM in memory 0 (a multiple of 2 MiB; 0, the
+   * default, none); a transport whose entry has `shm` reports it as its shared memory region 1 (docs/devices.md
+   * "virtio-gpu").
+   */
+  window?: number;
   /**
    * The spill memories' sizes (`VmConfig.spill`, ABI 39; docs/spill-memories.md): RAM past memory 0, each a
    * shared memory of its own and a CPU-less NUMA node for the guest; `splitRam` (web/ram.ts) makes the usual split.
@@ -743,7 +749,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
   // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
   // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
-  const rest = 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
+  const windowBytes = o.window ?? 0;
+  const rest = 65536 + o.ramSize + windowBytes + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
   const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
   const fixed = o.fixedMemory !== false && pages <= 65536;
   const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
@@ -762,9 +769,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   let ex = unsigned(instance.exports) as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
-  // Scratch page for VmConfig and the command line, then RAM.
+  // Scratch page for VmConfig and the command line, then RAM and the window after it.
   const scratch = memory.grow(1) * 65536;
-  const ram = memory.grow(o.ramSize / 65536) * 65536;
+  const ram = memory.grow((o.ramSize + windowBytes) / 65536) * 65536;
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type !== 'blk' || d.size !== undefined) return d;
@@ -821,11 +828,12 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 33).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 34).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
-    BigInt(o.jitBytes ?? 0)]); // the JIT's code cache budget (ABI 44)
-  new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
+    BigInt(o.jitBytes ?? 0), // the JIT's code cache budget (ABI 44)
+    BigInt(windowBytes)]); // the host-visible window (ABI 53)
+  new BigUint64Array(memory.buffer, scratch + S_DEVICES, ENTRY_WORDS * specs.length).set(specs.flatMap((d) => [...deviceEntry(d).entry, deviceShm(d)]));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB.
@@ -876,7 +884,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
   // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them.
   const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(16 * specs.length) : new ArrayBuffer(16 * specs.length));
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
+  // The devices' view of memory 0 reaches the window too: buffers there are memory 0's, past RAM.
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize + windowBytes, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1063,7 +1072,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     heapUse: () => {
       const w = new Uint32Array(memory.buffer);
       const nonzero = (page: number) => { for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true; return false; };
-      const reserve = (fwCfg ? fwCfgAt + Math.ceil(fwCfg.length / 65536) * 65536 : ram + o.ramSize) / 4096;
+      const reserve = (fwCfg ? fwCfgAt + Math.ceil(fwCfg.length / 65536) * 65536 : ram + o.ramSize + windowBytes) / 4096;
       let below = 0, touched = 0, high = 0;
       const buckets: number[] = []; // MiB touched in each 32 MiB of the reserve
       for (let p = 0; p < scratch / 4096; p++) if (nonzero(p)) below++;

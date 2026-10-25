@@ -407,6 +407,7 @@ const DEV: DeviceEntry = DeviceEntry {
     queues: 1,
     queue_size: 8,
     config_len: 0,
+    shm: 0,
 };
 const DESC: u64 = RAM_BASE + 0x4000;
 const AVAIL: u64 = RAM_BASE + 0x5000;
@@ -1135,5 +1136,64 @@ fn jit_bytes_sets_the_budget() {
         let vm = Vm::new(mem, cfg);
         let got = vm.vcpus[0].jit.cache.as_ref().unwrap().max_bytes();
         assert_eq!(got, want, "jit {jit} jit_bytes {jit_bytes}");
+    }
+}
+
+/// The host-visible window (ABI 53) is memory 0's bytes after RAM, reached at its guest PA like RAM, by the
+/// interpreter and the block interpreter; the spill memories start past it.
+#[test]
+fn the_window_follows_ram_in_memory_0() {
+    const WINDOW: u64 = RAM_BASE + (1 << 20);
+    let prog: [u32; 3] = [
+        0xf900_0001, // str x1, [x0]
+        0xf940_0402, // ldr x2, [x0, #8]
+        B_SELF,
+    ];
+    for jit in [0, 4] {
+        let cfg = VmConfig {
+            ram_size: 1 << 20,
+            jit,
+            window: 2 << 20,
+            ..VmConfig::default()
+        };
+        assert!(cfg.valid_window());
+        assert_eq!(cfg.window_layout(), Some((WINDOW, 2 << 20)));
+        let mut ram = vec![0u128; (3 << 20) / 16];
+        // SAFETY: 16-byte aligned, 3 MiB (RAM and the window), and outlives the Vm.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 3 << 20) };
+        let mut vm = Vm::new(mem, cfg);
+        for (k, w) in prog.iter().enumerate() {
+            vm.mem.write(RAM_BASE + 4 * k as u64, 4, *w as u64).unwrap();
+        }
+        vm.mem.write(WINDOW + 0x1008, 8, 0x5678).unwrap();
+        let c = &mut vm.vcpus[0].cpu;
+        (c.x[0], c.x[1]) = (WINDOW + 0x1000, 0x1234);
+        assert_eq!(vm.run(10), exit::BUDGET);
+        assert_eq!(vm.vcpus[0].cpu.x[2], 0x5678, "jit {jit}");
+        // The store is in the buffer's bytes past RAM.
+        assert_eq!(ram[((1 << 20) + 0x1000) / 16] as u64, 0x1234);
+    }
+    // Past RAM and the window, from the next GiB boundary: 1 GiB less 1 MiB of RAM and a 2 MiB window end
+    // 1 MiB past the first boundary.
+    let cfg = VmConfig {
+        ram_size: (1 << 30) - (1 << 20),
+        window: 2 << 20,
+        spill: [1 << 16, 0, 0, 0, 0, 0, 0, 0],
+        ..VmConfig::default()
+    };
+    assert_eq!(cfg.spill_layout(), [(RAM_BASE + (2 << 30), 1 << 16)]);
+    for (ram_size, window, ok) in [
+        (1 << 20, 0, true),
+        (1 << 20, 1 << 20, false),
+        (1 << 20, MAX_WINDOW, true),
+        (1 << 20, MAX_WINDOW + (2 << 20), false),
+        ((1 << 20) + 4096, 2 << 20, false),
+    ] {
+        let cfg = VmConfig {
+            ram_size,
+            window,
+            ..VmConfig::default()
+        };
+        assert_eq!(cfg.valid_window(), ok, "{ram_size} {window}");
     }
 }

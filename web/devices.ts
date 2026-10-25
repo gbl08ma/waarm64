@@ -161,7 +161,15 @@ const CPL = REQ + 8 + 4 * RING_WORDS;
 const SIGNAL_DEVICE = 4;
 export const EV_CONFIG = 2;
 
-/** virtio::DeviceEntry (u64s) and the initial config space. */
+/** u64s in a `virtio::DeviceEntry`: `deviceEntry`'s five, then `deviceShm`'s (ABI 53). */
+export const ENTRY_WORDS = 6;
+
+/** `DeviceEntry.shm` (ABI 53): 1 when the VM's host-visible window is the device's shared memory region 1. */
+export function deviceShm(_d: DeviceSpec): bigint {
+  return 0n;
+}
+
+/** virtio::DeviceEntry's first five u64s and the initial config space. */
 export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Array } {
   switch (d.type) {
     // id, features, queues, queue size, config length. Console: no optional

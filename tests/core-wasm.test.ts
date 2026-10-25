@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 52);
+  assert.equal(ex.abi_version(), 53);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -120,6 +120,12 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'no GICv2 (ABI 23)');
   new BigUint64Array(mem.buffer, cfg, 13).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 2n, 0n, 1n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'parallel SMP needs realtime (ABI 25)');
+  const window = new BigUint64Array(34);
+  window.set([BigInt(RAM), 1n]);
+  window[33] = 1n << 20n;
+  new BigUint64Array(mem.buffer, cfg, 34).set(window);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a window must be whole 2 MiB units (ABI 53)');
+  new BigUint64Array(mem.buffer, cfg, 34).fill(0n);
   // The firmware configuration (ABI 29): a valid flash bank and the RTC, or neither of them; a well-formed fw_cfg buffer.
   const fw = (firmware: bigint, flash: bigint, rtc: bigint, fwCfgLen = 0n) =>
     new BigUint64Array(mem.buffer, cfg, 18).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 1n, 0n, 0n, rtc, firmware, flash, BigInt(cfg + 1024), fwCfgLen]);

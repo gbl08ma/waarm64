@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 52;
+pub const ABI_VERSION: u32 = 53;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -457,6 +457,7 @@ pub unsafe extern "C" fn vm_new(
         || cfg.mem_pages > 65536
         || !cfg.valid_xhci()
         || !cfg.valid_spill()
+        || !cfg.valid_window()
         // Natively the spill memories are pointers only a Rust caller has.
         || (cfg!(not(target_arch = "wasm32")) && cfg.spill[0] != 0)
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
@@ -492,9 +493,10 @@ pub unsafe extern "C" fn vm_new(
             base: core::ptr::null_mut(),
         })
         .collect();
-    // SAFETY: the host made memory k + 1 `spill[k].size` bytes (ABI 39).
+    // SAFETY: the host made memory k + 1 `spill[k].size` bytes (ABI 39), and memory 0's RAM is followed by
+    // the window's bytes (ABI 53).
     let mem = unsafe {
-        mem::Mem::new(ram, ram_size)
+        mem::Mem::new(ram, ram_size + cfg.window)
             .at(vm::RAM_BASE)
             .with_spill(&spill)
     };

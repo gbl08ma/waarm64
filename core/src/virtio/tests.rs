@@ -23,6 +23,7 @@ fn entry() -> DeviceEntry {
         queues: 2,
         queue_size: QSIZE,
         config_len: 8,
+        shm: 0,
     }
 }
 
@@ -681,7 +682,7 @@ fn shared_layout() {
     assert_eq!(offset_of!(DevShared, config), 24);
     assert_eq!(offset_of!(DevShared, req), 280);
     assert_eq!(offset_of!(DevShared, cpl), 280 + 8 + 4 * RING_WORDS);
-    assert_eq!(size_of::<DeviceEntry>(), 40);
+    assert_eq!(size_of::<DeviceEntry>(), 48); // web/devices.ts ENTRY_WORDS
 }
 
 /// A host config change the way `web/devices.ts` does it: the bytes, then the signal's drain.
@@ -752,4 +753,28 @@ fn a_device_with_a_config_change_not_yet_taken_is_not_quiet() {
     assert!(!t.t.quiet(&t.sh));
     t.t.complete(&t.mem, &t.sh);
     assert!(t.t.quiet(&t.sh));
+}
+
+#[test]
+fn the_window_is_shared_memory_region_1_and_survives_a_reset() {
+    let mut t = T::new();
+    let regs = |t: &mut T, sel: u64| {
+        t.wr(0x0ac, sel);
+        [0x0b0, 0x0b4, 0x0b8, 0x0bc].map(|o| t.rd(o) as u32)
+    };
+    // Without `shm` in the entry, every region is absent (all ones), window or not.
+    t.t = Transport::new(entry()).with_window(Some((0x1_4000_0000, 256 << 20)));
+    assert_eq!(regs(&mut t, 1), [u32::MAX; 4]);
+    t.t = Transport::new(DeviceEntry { shm: 1, ..entry() })
+        .with_window(Some((0x1_4000_0000, 256 << 20)));
+    assert_eq!(regs(&mut t, 1), [256 << 20, 0, 0x4000_0000, 1]);
+    // Region 0 (virtio-gpu's ID 1 is the host-visible one) and others are absent.
+    assert_eq!(regs(&mut t, 0), [u32::MAX; 4]);
+    assert_eq!(regs(&mut t, 2), [u32::MAX; 4]);
+    t.wr(0x070, 0);
+    assert_eq!(regs(&mut t, 1), [256 << 20, 0, 0x4000_0000, 1]);
+    // An entry that asks for it on a VM without one has none.
+    t.t = Transport::new(DeviceEntry { shm: 1, ..entry() }).with_window(None);
+    assert_eq!(regs(&mut t, 1), [u32::MAX; 4]);
+    assert!(!DeviceEntry { shm: 2, ..entry() }.valid());
 }

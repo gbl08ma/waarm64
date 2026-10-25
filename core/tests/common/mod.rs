@@ -195,6 +195,7 @@ impl Dev {
                 queues,
                 queue_size,
                 config_len,
+                shm: 0,
             };
             (entry, config)
         };
