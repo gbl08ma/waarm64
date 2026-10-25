@@ -469,6 +469,24 @@ platform-free `os_misc.c`). Emscripten's own advantages (its POSIX emulation, it
 header under Mesa's MIT), Berkeley SoftFloat 3e (`util/softfloat.c`, BSD-3-Clause), BLAKE3 1.8.2 (CC0-1.0 or
 Apache-2.0), and `c11/impl/threads_posix.c` (BSL-1.0); THIRD_PARTY.md has the rows.
 
+## VK1: the write-watch costs machines without a window nothing measurable
+
+**2026-10-25.** The host-visible window's write-watch (docs/devices.md "The host-visible window") adds, on every
+machine, a compare to each TLB fill and an `Option` test at each chunk boundary and run-loop exit. A/B of the core
+before it (L3's commit) and with it, three rounds alternated in one session, headless Chromium 153 on the dev VM
+(`results/vk1/l4-watch/`; `node bench/interp/ab-summary.ts` on each directory):
+
+| | before (rounds' medians) | with the watch | |
+|---|---|---|---|
+| the block interpreter's yardstick: Alpine's boot, MIPS | 221.1, 219.0, 218.8 | 219.3, 219.3, 219.0 | +0.1% |
+| Buildroot's boot, MIPS | 184.8, 180.8, 182.7 | 181.9, 182.6, 182.1 | −0.4% |
+| the user-mode guest, the VM flat and with the MMU, MIPS | 466–474 | 467–473 | ±0.6% |
+| Alpine's boot under the JIT, total ms | 5574, 5551, 5524 | 5485, 5520, 5523 | −0.6% |
+| Alpine on 1 / 2 / 4 parallel vCPUs, total ms | 6860 / 6380 / 6392 (medians) | 6875 / 6405 / 6396 | +0.2 / +0.4 / +0.1% |
+
+Every row's rounds overlap: below the noise floor (~1%). The guest's cost with a window (a TLB miss for a page's
+first write after each look) is measured with the renderer, at VK1's gate.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

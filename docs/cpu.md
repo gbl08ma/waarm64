@@ -214,6 +214,8 @@ The table is `core/src/interp/sys.rs`.
   it corrupted glibc's heap in dEQP once FEAT_E0PD let a KASLR kernel run without KPTI
   (`c3ae697`; bisected and narrowed with `kpti=1`, `nokaslr` and `transparent_hugepage=never`
   guests).
+- **Watched write entries** (VK1): a write fill of a page of the host-visible window is recorded, and dropping the
+  record marks the page for the host's upload ([devices.md](devices.md) "The host-visible window").
 - The TLB also holds the JIT's **transfer cache** (`Tlb::xc`, VA to compiled block), which every
   flush above drops its share of ([jit.md](jit.md) "Linking").
 - The interpreter has three copies of `exec` over a `Bus`: flat (MMU off), MMU, and `vm::Io`

@@ -270,7 +270,15 @@ impl Vm {
         if p.state.load(Ordering::SeqCst) != OFF {
             p.state.store(RUN, Ordering::SeqCst);
         }
+        // The window's watch: running before the loop's first catch-up, which a host bump after this store waits for.
+        if let Some(w) = self.mem.watch() {
+            w.set_running(c, true);
+        }
         let kind = self.run_loop(c, v, own, budget);
+        if let Some(w) = self.mem.watch() {
+            v.tlb.leave(&self.mem, c);
+            w.set_running(c, false);
+        }
         let _ = p
             .state
             .compare_exchange(RUN, OUT, Ordering::SeqCst, Ordering::SeqCst);
@@ -726,6 +734,7 @@ impl Vm {
 
     /// Applies what other vCPUs queued for vCPU `c`.
     fn drain(&self, c: usize, v: &mut Vcpu) {
+        v.tlb.catch_up(&self.mem, c);
         let p = &self.shared.cpus[c].par;
         if !p.pending.load(Ordering::SeqCst) {
             return;

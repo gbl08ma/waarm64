@@ -807,6 +807,14 @@ impl Vm {
             quantum: if n > 1 { QUANTUM } else { u64::MAX },
             mem: {
                 let mem = mem.at(RAM_BASE);
+                let mem = match cfg.window_layout() {
+                    Some((pa, len))
+                        if mem.watch().is_none() && mem.size() >= cfg.ram_size + len =>
+                    {
+                        mem.with_watch(pa, len, n)
+                    }
+                    _ => mem,
+                };
                 let want = cfg.spill_layout();
                 assert!(
                     mem.spill().len() == want.len()
@@ -950,6 +958,9 @@ impl Vm {
         self.clock.start();
         let start = self.steps;
         self.exit = ExitInfo::default();
+        if let Some(w) = self.mem.watch() {
+            (0..self.vcpus.len()).for_each(|c| w.set_running(c, true));
+        }
         let kind = loop {
             let sig = self.shared.signal.load(Ordering::Acquire);
             if sig & SIGNAL_STOP != 0 {
@@ -998,6 +1009,7 @@ impl Vm {
                 continue;
             }
             let n = CHUNK.min(left).min(self.until_deadline()).min(self.quantum);
+            self.vcpus[c].tlb.catch_up(&self.mem, c);
             let (k, e) = self.chunk(c, n);
             self.retire(k);
             self.publish();
@@ -1008,6 +1020,12 @@ impl Vm {
             }
         };
         self.publish();
+        if let Some(w) = self.mem.watch() {
+            for (c, v) in self.vcpus.iter_mut().enumerate() {
+                v.tlb.leave(&self.mem, c);
+                w.set_running(c, false);
+            }
+        }
         self.exit.kind = kind as u64;
         self.exit.retired = self.steps - start;
         self.exit.cpu = self.cur as u64;

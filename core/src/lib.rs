@@ -592,6 +592,20 @@ pub unsafe extern "C" fn vm_run(vm: *mut vm::Vm, budget: u64) -> u32 {
     unsafe { &mut *vm }.run(budget)
 }
 
+/// The host-visible window's write-watch (ABI 53, `mem::Watch`: u32 words, docs/devices.md "virtio-gpu"), or null
+/// without a window.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_window_watch(vm: *const vm::Vm) -> *const u32 {
+    // SAFETY: guaranteed by the caller.
+    match unsafe { &*vm }.mem.watch() {
+        Some(w) => w.words() as *const u32,
+        None => core::ptr::null(),
+    }
+}
+
 /// Parallel mode (`VmConfig.smp` = 1, ABI 25): runs vCPU `cpu` on the calling
 /// thread for at most `budget` of its steps; returns the exit kind, with the
 /// details in [`vm_exit_cpu`]. Every vCPU has its own thread, and calls for

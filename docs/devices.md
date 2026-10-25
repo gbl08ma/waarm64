@@ -453,6 +453,33 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 
+#### The host-visible window (Venus, VK1)
+For Vulkan through Venus ([plans/graphics.md](plans/graphics.md)): guest-visible memory that the host renderer and the
+guest share without copies (Venus's ring, its command streams, its reply buffers, and the Vulkan memory a program maps).
+- **Where it is** (`VmConfig.window`, ABI 53): memory 0's bytes right after RAM, at the guest PA after RAM, outside the
+  DT's `/memory`; the virtio-gpu transport reports it as shared memory region 1 (`VIRTIO_GPU_SHM_ID_HOST_VISIBLE`;
+  `DeviceEntry.shm`), and Linux maps blobs into it. Memory 0 because Venus writes its whole command stream there: the
+  window's pages are reached by the JIT's inline loads and stores as RAM's are (a memory of its own past memory 1 would
+  go through the interpreter, [spill-memories.md](spill-memories.md)).
+- **The write-watch** (core/src/mem.rs `Watch`, core/src/mmu.rs `fill_watched`, web/window.ts): mappings are coherent,
+  so the guest never says what it wrote, but WebGPU needs the written bytes uploaded at each submit. A write to a
+  window page fills the vCPU's write TLB entry as for any page, and the vCPU records it (at most 64; then it drops them
+  all first); dropping a recorded entry marks the page in a bitmap. To look (`WindowWatch.take`), the host bumps the
+  watch's generation and waits for every vCPU whose running word is set to ack it: a vCPU checks the generation at
+  each chunk boundary (`Tlb::catch_up`, in `drain`), drops its recorded entries and acks. A vCPU also drops them as it
+  leaves its run loop, before it clears its running word, so an idle vCPU is never waited for. Then the host swaps the
+  bitmap's words out. The marks are the pages written since the last look, plus pages whose entry was dropped
+  without a write since; writes through an entry after the look reach the next one, since the entry was dropped
+  first. A vCPU that runs on without reaching a chunk boundary within the host's bound (100 ms) makes every page count
+  as written. Writes with the MMU off (the JIT's flat path) and devices' writes aren't watched: nothing writes the
+  window that way.
+- **What it costs:** a machine without a window pays a compare on each TLB fill and an `Option` test at each chunk
+  boundary (measured: VK1's report). With one, a page's first write after each look takes a TLB miss.
+- **Tests:** `tests/baremetal/watch.c` (`// window`: phases that store to chosen pages in hot loops, a page-crossing
+  store, LSE and exclusive atomics), driven by `core/tests/baremetal.rs` `window_watch` (round-robin and parallel,
+  the interpreter and the block interpreter) and `tests/window-watch.test.ts` (wasm: the interpreter, the block
+  interpreter and the JIT); each look must report exactly the phase's pages.
+
 ### snd (ID 25)
 - `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
   same exits, the same control log). virtio 1.2 §5.14, written from the spec with Linux's `sound/virtio` read for

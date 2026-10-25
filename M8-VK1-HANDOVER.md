@@ -12,17 +12,14 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
   in memory 0 right after RAM (outside `/memory`; spill memories past it), and a transport whose `DeviceEntry.shm` is 1
   reports it as SHM region 1. Why memory 0: Venus writes its whole command stream into host-visible blobs, so the window
   must be on the JIT's inline path (memories past 1 go through the interpreter: spill-memories.md).
-- Next: **L4, the write-watch** (design below), then L5 the device, L6 `vkr` + a null driver in wasm.
+- **The write-watch (L4)** is built (docs/devices.md "The host-visible window"; tests in docs/testing.md): records of
+  watched write fills, marked when dropped; the host's look (`web/window.ts` `WindowWatch.take`) bumps a generation
+  and waits only for running vCPUs. No measurable cost without a window (REPORT.md "VK1: the write-watch costs…").
+  Marking at the fill turned out redundant (a planted bug there was caught by nothing): the drop's mark is the one.
+- Next: **L5 the device** (`web/venus.ts` started, untracked: the capset, blob constants), L6 `vkr` + a null driver.
 
 ## Designs decided, not built yet
 
-- **The write-watch (L4):** in `Mmu::miss`, a write fill of a window page marks its bit in a shared bitmap first and
-  records (slot, tag, PA) in the vCPU's TLB (≤ 64; full: drop them all). The renderer bumps a generation word, waits
-  for every vCPU whose running word is set to ack it, then swaps the bitmap words out. A vCPU checks the generation in
-  `drain` (every chunk boundary) and, when it changed, drops its recorded write entries (marking their pages: they may
-  have been written through them since) and acks; on leaving `run_cpu`/`run` it drops them the same way before
-  clearing its running word, so an idle vCPU is never waited for and adds no stale pages. Draft host side and test
-  program parked in `target/vk1/tmp/` (`window.ts`, `watch.c`: phases {1,2,3}, {5}, {1}, a page-crossing store, atomics).
 - **The renderer module (L6):** `vkr` + a null Mesa driver in one wasm module instantiated **on memory 0** (the ring,
   reply and command-stream blobs and feedback memory are all window pointers), linked at a fixed arena at the top of
   memory 0 (`--global-base`, its own stack, an `sbrk` confined to the arena); `vkr`'s threads (ring, ring monitor,

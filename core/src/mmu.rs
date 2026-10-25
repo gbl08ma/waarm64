@@ -134,6 +134,23 @@ pub struct Tlb {
     /// the EL's transfer cache entries were last dropped: a flush by VA
     /// there drops them all, as the block's other pages may have some.
     xblk: [[bool; 2]; 2],
+    /// The write entries it filled for pages of the watched window (`mem::Watch`), `nwatched` of them; their pages
+    /// may be written without a miss until [`Tlb::unwatch`] drops them. At the end: JIT code reaches nothing here.
+    watched: [Watched; WATCHED],
+    nwatched: u32,
+    /// The watch's generation this TLB last caught up with (`Tlb::catch_up`).
+    pub watch_gen: u32,
+}
+
+/// The most watched write entries a TLB records; the next drops them all first.
+const WATCHED: usize = 64;
+
+/// A watched write entry: its slot, its tag then (it may since hold another), its page's PA.
+#[derive(Clone, Copy, Default)]
+struct Watched {
+    slot: u32,
+    tag: u64,
+    pa: u64,
 }
 
 /// A block's class, 1 to 4: its VA half and level (1 or 2).
@@ -247,6 +264,61 @@ impl Tlb {
                 self.ng[n] = (index(va) * TLB_SLOTS + array) as u16;
             }
             self.ng_len = (n + 1).min(NG_SLOTS + 1) as u32;
+        }
+    }
+
+    /// Caches a write entry for a page of the watched window, recorded: dropping it marks the page written
+    /// (docs/devices.md "virtio-gpu"). Every record is dropped before the host looks, so the marks are exactly the
+    /// pages that had a write entry since the last look.
+    fn fill_watched(&mut self, mem: &Mem, array: usize, va: u64, host: Host, w: &Walk) {
+        if self.nwatched as usize == WATCHED {
+            self.unwatch(mem);
+        }
+        self.fill(array, va, host, w.ng, w.level);
+        let slot = (index(va) * TLB_SLOTS + array) as u32;
+        let tag = self.e[index(va)].0[array].tag;
+        self.watched[self.nwatched as usize] = Watched {
+            slot,
+            tag,
+            pa: w.pa & !0xfff,
+        };
+        self.nwatched += 1;
+    }
+
+    /// Drops the watched write entries it filled, marking their pages written.
+    pub fn unwatch(&mut self, mem: &Mem) {
+        for k in 0..self.nwatched as usize {
+            let w = self.watched[k];
+            mem.mark(w.pa);
+            let s = w.slot as usize;
+            if self.e[s / TLB_SLOTS].0[s % TLB_SLOTS].tag == w.tag {
+                self.drop_slot(s);
+            }
+        }
+        self.nwatched = 0;
+    }
+
+    /// Catches up with the watch's generation (at a chunk boundary): if the host bumped it, drops the watched write
+    /// entries and acks it as vCPU `cpu`.
+    #[inline]
+    pub fn catch_up(&mut self, mem: &Mem, cpu: usize) {
+        if let Some(w) = mem.watch() {
+            let g = w.generation();
+            if g != self.watch_gen {
+                self.unwatch(mem);
+                self.watch_gen = g;
+                w.ack(cpu, g);
+            }
+        }
+    }
+
+    /// Leaves the run loop as vCPU `cpu`: drops the watched write entries and acks the generation, so the host never
+    /// waits for it while it is out (it clears its running word next).
+    pub fn leave(&mut self, mem: &Mem, cpu: usize) {
+        if let Some(w) = mem.watch() {
+            self.unwatch(mem);
+            self.watch_gen = w.generation();
+            w.ack(cpu, self.watch_gen);
         }
     }
 
@@ -757,7 +829,12 @@ impl<'a> Mmu<'a> {
         if let Some(t) = &mut self.tlb
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
-            t.fill(3 * el as usize + u as usize, va, page, w.ng, w.level);
+            let array = 3 * el as usize + u as usize;
+            if u == Use::Write && self.mem.watched(w.pa) {
+                t.fill_watched(self.mem, array, va, page, &w);
+            } else {
+                t.fill(array, va, page, w.ng, w.level);
+            }
         }
         Ok(p)
     }

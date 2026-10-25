@@ -72,6 +72,11 @@ Design notes for an ABI change go in this file before the code.
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
   flash bank's bytes, null without one; ABI 29), `vm_xhci(vm)` (the xHCI's shared block, null without one;
   ABI 38, "USB" below).
+- `vm_window_watch(vm) -> *const u32` (ABI 53; null without a window): the host-visible window's write-watch, u32
+  words read and written with atomics: 0 the generation (the host bumps it to look), 1 the vCPUs, 2 the bitmap's
+  words, 3 the window's pages, from 4 an ack per vCPU (the generation it last dropped its watched write entries for),
+  from 132 a running word per vCPU, from 260 the bitmap (bit `p % 32` of word `p / 32` for page `p`); web/window.ts
+  `WindowWatch` is the host's side ([devices.md](devices.md) "The host-visible window").
 - `vm_jit_gauge(vm) -> *const u64` (ABI 45; null without a JIT; asked once, before any vCPU runs: the words stay
   put): the JIT code cache's gauge, `jit::GAUGE_WORDS` u64s read with atomic loads: the wasm bytes and the modules
   installed since the last flush (what V8 holds code and metadata for), the byte budget now, the epochs (flushes and
@@ -551,6 +556,6 @@ implemented by this step).
 | 49 | the host's type 11 strings: fw_cfg's `opt/webpc/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
 | 50 | counter word 120: the ns the block map's prunes took; `heap_probe(size)`: an infallible allocation of `size` bytes, freed at once, so a test can run the heap out through the allocation error hook (tests/heap.test.ts) |
 | 51 | FEAT_SHA512 and FEAT_SHA3: `VmConfig.features` bit 3 (`FEATURE_SHA3`, with bit 0); `ID_AA64ISAR0_EL1` SHA2 = 2, SHA3 = 1 |
-| 53 | the host-visible window: `VmConfig.window` (memory 0's bytes after RAM), `DeviceEntry.shm` (6 u64s an entry), the transport's SHM registers for region 1 (VK1, docs/plans/graphics.md) |
+| 53 | the host-visible window: `VmConfig.window` (memory 0's bytes after RAM), `DeviceEntry.shm` (6 u64s an entry), the transport's SHM registers for region 1, `vm_window_watch` (VK1, docs/plans/graphics.md) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

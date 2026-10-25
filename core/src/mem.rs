@@ -128,9 +128,109 @@ pub struct Mem {
     /// code takes them at their address ([`Mem::pair_locks`]), which moving
     /// the `Mem` mustn't change.
     pair_locks: Box<[PairLock; PAIR_LOCKS]>,
+    /// The host-visible window's write-watch, and its guest PAs (`watch_len` 0: none).
+    watch: Option<Box<Watch>>,
+    watch_pa: u64,
+    watch_len: u64,
 }
 
 pub(crate) const PAIR_LOCKS: usize = 16;
+
+/// The host-visible window's write-watch (ABI 53; docs/devices.md "virtio-gpu", web/window.ts): which of the window's
+/// pages the guest wrote since the host last looked. A write to a window page fills a vCPU's write TLB entry as any
+/// other, and the vCPU records it (`Mmu::miss`); dropping a recorded entry marks its page. To look, the host bumps the
+/// generation and waits for each vCPU whose `running` word is set to `ack` it (a vCPU drops its records when it sees a
+/// new generation, at a chunk boundary), then swaps the bitmap out. A vCPU drops them likewise as it leaves its run
+/// loop, before clearing `running`, so one that isn't running is never waited for. Writes through an entry after the
+/// look reach the next one, since the entry was dropped before it: the marks are the pages written in between, plus
+/// pages a dropped entry pointed at that weren't written again.
+///
+/// u32 words the host reads with atomics: the generation, the vCPUs, the bitmap's words, the window's pages, an ack and
+/// a running word per vCPU (`WATCH_CPUS` each), then the bitmap (bit `p % 32` of word `p / 32` for page `p`).
+pub struct Watch {
+    words: Box<[AtomicU32]>,
+}
+
+/// The vCPUs a watch has words for (`vm::MAX_CPUS`, rounded up).
+pub const WATCH_CPUS: usize = 128;
+const W_GEN: usize = 0;
+const W_NCPUS: usize = 1;
+const W_WORDS: usize = 2;
+const W_PAGES: usize = 3;
+const W_ACK: usize = 4;
+const W_RUNNING: usize = W_ACK + WATCH_CPUS;
+const W_BITMAP: usize = W_RUNNING + WATCH_CPUS;
+
+impl Watch {
+    pub fn new(pages: u64, ncpus: usize) -> Watch {
+        assert!(ncpus <= WATCH_CPUS);
+        let n = pages.div_ceil(32) as usize;
+        let words: Box<[AtomicU32]> = (0..W_BITMAP + n).map(|_| AtomicU32::new(0)).collect();
+        words[W_NCPUS].store(ncpus as u32, Ordering::Relaxed);
+        words[W_WORDS].store(n as u32, Ordering::Relaxed);
+        words[W_PAGES].store(pages as u32, Ordering::Relaxed);
+        Watch { words }
+    }
+
+    /// The words' address (`vm_window_watch`).
+    pub fn words(&self) -> *const AtomicU32 {
+        self.words.as_ptr()
+    }
+
+    /// Marks page `page` of the window written.
+    #[inline]
+    pub fn mark(&self, page: u64) {
+        self.words[W_BITMAP + (page / 32) as usize].fetch_or(1 << (page % 32), Ordering::SeqCst);
+    }
+
+    /// The host's generation: a vCPU that last acked another drops its write entries.
+    #[inline]
+    pub fn generation(&self) -> u32 {
+        self.words[W_GEN].load(Ordering::SeqCst)
+    }
+
+    pub fn ack(&self, cpu: usize, generation: u32) {
+        self.words[W_ACK + cpu].store(generation, Ordering::SeqCst);
+        #[cfg(target_arch = "wasm32")]
+        // SAFETY: the word is in the shared memory, aligned; notify only wakes waiters.
+        unsafe {
+            core::arch::wasm32::memory_atomic_notify(
+                self.words[W_ACK + cpu].as_ptr() as *mut i32,
+                u32::MAX,
+            );
+        }
+    }
+
+    pub fn set_running(&self, cpu: usize, on: bool) {
+        self.words[W_RUNNING + cpu].store(on as u32, Ordering::SeqCst);
+    }
+
+    /// The host's side, for tests: bumps the generation and returns it.
+    pub fn bump(&self) -> u32 {
+        self.words[W_GEN]
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1)
+    }
+
+    /// The host's side, for tests (after `bump` and the acks): the pages marked since the last call.
+    pub fn take(&self) -> Vec<u64> {
+        let n = self.words[W_WORDS].load(Ordering::Relaxed) as usize;
+        let mut out = Vec::new();
+        for k in 0..n {
+            let mut bits = self.words[W_BITMAP + k].swap(0, Ordering::SeqCst);
+            while bits != 0 {
+                out.push(32 * k as u64 + bits.trailing_zeros() as u64);
+                bits &= bits - 1;
+            }
+        }
+        out
+    }
+
+    /// vCPU `cpu`'s ack (tests).
+    pub fn acked(&self, cpu: usize) -> u32 {
+        self.words[W_ACK + cpu].load(Ordering::SeqCst)
+    }
+}
 
 /// A pair lock's size (and stride): 0 free, 1 taken.
 pub(crate) const PAIR_LOCK_SIZE: usize = 128;
@@ -158,6 +258,41 @@ impl Mem {
             phys: 0,
             spill: Vec::new(),
             pair_locks: Box::new([const { PairLock(AtomicU32::new(0)) }; PAIR_LOCKS]),
+            watch: None,
+            watch_pa: 0,
+            watch_len: 0,
+        }
+    }
+
+    /// Watches writes to the window at guest PA `pa`, `len` bytes of memory 0 (whole pages), for `ncpus` vCPUs.
+    pub fn with_watch(self, pa: u64, len: u64, ncpus: usize) -> Self {
+        assert!(
+            pa.is_multiple_of(4096) && len.is_multiple_of(4096) && self.host0(pa, len).is_some()
+        );
+        Mem {
+            watch: Some(Box::new(Watch::new(len / 4096, ncpus))),
+            watch_pa: pa,
+            watch_len: len,
+            ..self
+        }
+    }
+
+    /// The window's write-watch, if there is a window.
+    pub fn watch(&self) -> Option<&Watch> {
+        self.watch.as_deref()
+    }
+
+    /// Whether `pa` is in the watched window.
+    #[inline(always)]
+    pub fn watched(&self, pa: u64) -> bool {
+        pa.wrapping_sub(self.watch_pa) < self.watch_len
+    }
+
+    /// Marks the window's page holding `pa` written (`pa` is watched).
+    #[inline]
+    pub fn mark(&self, pa: u64) {
+        if let Some(w) = &self.watch {
+            w.mark((pa - self.watch_pa) >> 12);
         }
     }
 

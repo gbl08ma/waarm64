@@ -197,6 +197,112 @@ fn smp_of(bin: &std::path::Path) -> u64 {
         .unwrap_or(1)
 }
 
+/// Whether a test needs a host-visible window and a host that drives its phases (`// window`: [`window_watch`]).
+fn window_of(bin: &std::path::Path) -> bool {
+    let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
+    src.lines().any(|l| l.starts_with("// window"))
+}
+
+/// The pages `watch.c` writes in each phase (docs/devices.md "virtio-gpu"): the pages the watch reports at each
+/// look must be these exactly.
+const WATCH_PHASES: [&[u64]; 5] = [&[1, 2, 3], &[5], &[1], &[3, 7, 8], &[9, 10]];
+const WATCH_MAILBOX: u64 = RAM_BASE + (8 << 20);
+
+/// `watch.c` round-robin (the interpreter, and the block interpreter: JIT code itself runs only in wasm,
+/// tests/window-watch.test.ts) and in parallel mode, where the vCPU spins on its own thread while the host bumps
+/// the generation, waits for its ack and looks.
+#[test]
+fn window_watch() {
+    let image = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/baremetal/watch.bin"
+    ))
+    .unwrap();
+    for (jit, parallel) in [(0, false), (4, false), (0, true), (4, true)] {
+        let window = 2u64 << 20;
+        let mut ram = vec![0u128; (RAM_SIZE + window as usize) / 16];
+        // SAFETY: ram is 16-byte aligned, RAM and the window long, and outlives the Vm.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64 + window) };
+        let cfg = VmConfig {
+            ram_size: RAM_SIZE as u64,
+            window,
+            jit,
+            deterministic: !parallel as u64,
+            smp: parallel as u64,
+            ..VmConfig::default()
+        };
+        let mut vm = Vm::new(mem, cfg);
+        for (k, b) in image.iter().enumerate() {
+            vm.mem.write(RAM_BASE + k as u64, 1, *b as u64).unwrap();
+        }
+        let look = |vm: &Vm, n: usize, waits: bool| {
+            let w = vm.mem.watch().unwrap();
+            let g = w.bump();
+            let t0 = std::time::Instant::now();
+            while waits && w.acked(0) != g {
+                assert!(
+                    t0.elapsed().as_secs() < 10,
+                    "jit {jit}: the vCPU never acked"
+                );
+                std::thread::yield_now();
+            }
+            assert_eq!(
+                w.take(),
+                WATCH_PHASES[n - 1],
+                "jit {jit} parallel {parallel}: phase {n}"
+            );
+            vm.mem.write(WATCH_MAILBOX + 8, 8, n as u64).unwrap();
+        };
+        if parallel {
+            std::thread::scope(|s| {
+                let vm = &vm;
+                let guest = s.spawn(move || {
+                    loop {
+                        // SAFETY: only this thread runs vCPU 0, the VM outlives it.
+                        let kind = unsafe { vm.run_cpu(0, 1 << 20) };
+                        if kind != exit::BUDGET && kind != exit::IDLE {
+                            return (kind, vm.vcpus[0].cpu.x[1]);
+                        }
+                    }
+                });
+                for n in 1..=WATCH_PHASES.len() {
+                    let t0 = std::time::Instant::now();
+                    while vm.mem.read(WATCH_MAILBOX, 8) != Ok(n as u64) {
+                        assert!(
+                            t0.elapsed().as_secs() < 30,
+                            "jit {jit}: phase {n} never came"
+                        );
+                        std::thread::yield_now();
+                    }
+                    look(vm, n, true);
+                }
+                assert_eq!(
+                    guest.join().unwrap(),
+                    (exit::PSCI, 0),
+                    "jit {jit}: watch.c's checks"
+                );
+            });
+        } else {
+            let mut n = 1;
+            let kind = loop {
+                let kind = vm.run(100_000);
+                if kind != exit::BUDGET {
+                    break kind;
+                }
+                if vm.mem.read(WATCH_MAILBOX, 8) == Ok(n as u64) {
+                    look(&vm, n, false);
+                    n += 1;
+                }
+            };
+            assert_eq!(
+                (kind, vm.exit.x[1], n),
+                (exit::PSCI, 0, WATCH_PHASES.len() + 1),
+                "jit {jit}"
+            );
+        }
+    }
+}
+
 #[test]
 fn baremetal() {
     run_all(false, 1, false);
@@ -229,7 +335,7 @@ fn run_all(parallel: bool, runs: usize, snapshots: bool) {
     let mut bins: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|x| x == "bin"))
+        .filter(|p| p.extension().is_some_and(|x| x == "bin") && !window_of(p))
         .collect();
     bins.sort();
     assert!(!bins.is_empty(), "no tests in {dir}");

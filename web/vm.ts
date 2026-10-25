@@ -11,6 +11,7 @@ import type { GpuState } from './gpu.ts';
 import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
+import { WindowWatch } from './window.ts';
 import { Devices, ENTRY_WORDS, EV_CONFIG, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
@@ -44,6 +45,7 @@ type Exports = {
   jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
   vm_set_chunk(vm: number, steps: bigint): void;
+  vm_window_watch(vm: number): number;
   vm_device(vm: number, i: number): number;
   vm_xhci(vm: number): number;
   vm_framebuffer(vm: number): bigint;
@@ -149,7 +151,7 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * RAM puts the core's later allocations there, M8 loop 0).
  */
 /** The core's exports that return an address (every `-> *` export: tests/core-wasm.test.ts checks), past 2 GiB in a big memory. */
-export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'vm_jit_gauge', 'jit_helper_report', 'panic_message'];
+export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'vm_jit_gauge', 'vm_window_watch', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -986,6 +988,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     usb,
     /** Bytes of guest RAM (at `ram`). */
     ramSize: o.ramSize,
+    /** The host-visible window's write-watch (`BootOptions.window`; its bytes follow RAM at `ram + ramSize`). */
+    watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm)) : undefined,
     /** The spill memories (`BootOptions.spill`), memory 1 first: the guest RAM past memory 0. */
     spill,
     /**

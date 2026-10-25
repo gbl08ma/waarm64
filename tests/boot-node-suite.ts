@@ -85,6 +85,8 @@ const poweredOff = (r: Run) => {
 
 // Bare-metal EL1 tests (core/tests/baremetal.rs): linked at the start of 16 MiB of RAM; SYSTEM_OFF with x1 = 0 passes.
 const BAREMETAL = new URL('baremetal/', import.meta.url);
+// A `// window` test needs a host that drives its phases: tests/window-watch.test.ts runs it (core/tests/baremetal.rs `window_of`).
+const windowed = (f: string) => /^\/\/ window/m.test(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8'));
 // The vCPUs from its `// smp: N` marker (core/tests/baremetal.rs `smp_of`).
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
 // Its `// flash` line: the firmware configuration (M8 phase B), for its flash bank.
@@ -95,7 +97,7 @@ const inputOf = (f: string): ConsoleInput | undefined => {
   const text = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ input: (.*)$/m)?.[1];
   return text === undefined ? undefined : { after: 'ready\n', data: `${text}\n` };
 };
-for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
+for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !windowed(f)).sort()) {
   const input = inputOf(f);
   guest(`bare-metal ${f}`, () => bareMetal(f), (r) => {
     poweredOff(r);
@@ -121,7 +123,7 @@ const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => v
     }
   }
 };
-for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
+for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !windowed(f)).sort()) {
   for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3]] as const) {
     test(`parallel: bare-metal ${f} (${mode})`, () => parallel(bareMetal(f), jit, (r) => {
       poweredOff(r);
