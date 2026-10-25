@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds VK0's native scene (bench/vulkan/REPORT.md): the shaders to SPIR-V with glslc and vk.c with the system's C
 # compiler against the Vulkan headers and loader it finds (VULKAN_SDK's when set: the macOS SDK unpacked by
-# bench/vulkan/mac.sh, the Linux SDK of the NVIDIA desktop's script).
-#   bench/vulkan/scene/build.sh [out-dir]     -> target/vulkan/scene/ (vk, shaders/*.spv)
+# bench/vulkan/mac.sh, the Linux SDK of the NVIDIA desktop's script); on Linux also the GLES port (gles.c; NO_GLES=1
+# skips it), its shaders made by gles-shaders.ts where Node is (the guest's build gets them made).
+#   bench/vulkan/scene/build.sh [out-dir]     -> target/vulkan/scene/ (vk, shaders/*.spv, gles, gles-shaders/)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 out=${1:-$here/../../../target/vulkan/scene}
@@ -20,3 +21,11 @@ if [ -n "${VULKAN_SDK:-}" ]; then
 fi
 "$CC" "${flags[@]}" -o "$out/vk" "$here/vk.c" "$here/sim.c" -lvulkan -lm
 echo "built $out/vk"
+# The GLES port (arm 4's virgl side) where EGL and GLES 3 are (Linux): its shaders generated from the same sources.
+if [ "$(uname)" = Linux ] && [ -z "${NO_GLES:-}" ]; then
+  if command -v node >/dev/null; then
+    node --disable-warning=ExperimentalWarning "$here/gles-shaders.ts" "$out/gles-shaders"
+  fi
+  "$CC" "${flags[@]}" -o "$out/gles" "$here/gles.c" "$here/sim.c" -lEGL -lGLESv2 -lm
+  echo "built $out/gles"
+fi

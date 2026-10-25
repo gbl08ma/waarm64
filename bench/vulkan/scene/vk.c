@@ -5,11 +5,12 @@
 // It draws offscreen (no window, no swapchain), so every arm measures the same thing: frames drawn, not presented.
 //
 //   vk --pack aquarium.pack --shaders dir [--fish N] [--toolkit N] [--width W --height H] [--msaa 1|4]
-//      [--warmup F] [--samples S] [--frames F] [--dump FRAME:out.ppm] [--json out.json] [--label s] [--device i]
+//      [--warmup F] [--samples S] [--frames F] [--dump FRAME:out.ppm [--thumb WxH]] [--json out.json] [--label s] [--device i]
 //
 // Measures S samples of F frames each after the warm-up: the wall time a frame (frames complete at a steady rate, two
 // in flight), the process's CPU time a frame (the driver's threads included) and the GPU's time a frame (timestamps
-// around the frame's commands, where the queue has them). --dump renders frames 0..FRAME and writes FRAME's pixels.
+// around the frame's commands, where the queue has them). --dump renders frames 0..FRAME and writes FRAME's pixels;
+// --thumb WxH also prints them block-averaged (dump.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@
 #include "scene.h"
 #include "sim.h"
 #include "toolkit.h"
+#include "dump.h"
 
 #define CHECK(x)                                                                    \
   do {                                                                              \
@@ -339,7 +341,7 @@ static void json_array(FILE *f, const char *name, double *v, int n) {
 int main(int argc, char **argv) {
   const char *packPath = NULL, *shaderDir = NULL, *dumpPath = NULL, *jsonPath = NULL, *label = "";
   int fishTotal = 1000, toolkit = 0, width = 1920, height = 1080, msaa = 1, warmup = 60, samples = 10, frames = 60;
-  int dumpFrame = -1, deviceIndex = -1;
+  int dumpFrame = -1, thumbW = 0, thumbH = 0, deviceIndex = -1;
   for (int i = 1; i < argc; i++) {
     const char *a = argv[i], *v = i + 1 < argc ? argv[i + 1] : NULL;
     if (!v) usage();
@@ -356,7 +358,11 @@ int main(int argc, char **argv) {
     else if (!strcmp(a, "--json")) jsonPath = v;
     else if (!strcmp(a, "--label")) label = v;
     else if (!strcmp(a, "--device")) deviceIndex = atoi(v);
-    else if (!strcmp(a, "--dump")) {
+    else if (!strcmp(a, "--thumb")) {
+      thumbW = atoi(v);
+      const char *c = strchr(v, 'x');
+      thumbH = c ? atoi(c + 1) : 0;
+    } else if (!strcmp(a, "--dump")) {
       dumpFrame = atoi(v);
       const char *c = strchr(v, ':');
       if (!c) usage();
@@ -637,7 +643,7 @@ int main(int argc, char **argv) {
   // Per frame in flight: the frame's uniforms, the objects' uniforms, the toolkit's instances, the descriptor sets,
   // a command pool and buffer, a fence and two timestamps.
   uint32_t objectSlots = pack.propCount;
-  Toolkit tk;
+  Toolkit tk = {0};
   if (toolkit) toolkit_init(&tk, toolkit, width, height);
   struct {
     Buffer globals, objects, quads;
@@ -722,6 +728,8 @@ int main(int argc, char **argv) {
 
     // The frame's data, written into this slot's memory.
     sim_step(&sim);
+    // A dump draws only its frame: the frames before it change nothing but the simulation's state.
+    if (dumpFrame >= 0 && frame < dumpFrame) continue;
     uint32_t ncmds;
     if (toolkit) {
       ncmds = toolkit_frame(&tk, &sim, cmds, (ToolkitQuad *)fr[slot].quads.map);
@@ -838,11 +846,7 @@ int main(int argc, char **argv) {
                                 .imageExtent = {(uint32_t)width, (uint32_t)height, 1}};
     vkCmdCopyImageToBuffer(cb, color.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb.buffer, 1, &region);
     one_time_end(cb);
-    FILE *f = fopen(dumpPath, "wb");
-    fprintf(f, "P6\n%d %d\n255\n", width, height);
-    const uint8_t *px = rb.map;
-    for (int i = 0; i < width * height; i++) fwrite(px + i * 4, 1, 3, f);
-    fclose(f);
+    dump_frame(dumpPath, rb.map, width, height, thumbW, thumbH);
     buffer_free(&rb);
     fprintf(stderr, "frame %d -> %s\n", dumpFrame, dumpPath);
   } else {

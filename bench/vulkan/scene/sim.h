@@ -16,7 +16,7 @@
 #define SIM_LIGHT_RAYS 5
 #define SIM_MAX_PROPS 128
 
-// The per-frame uniforms (std140: every member a multiple of 16 bytes). 256 bytes.
+// The per-frame uniforms (std140: every member a multiple of 16 bytes). 288 bytes.
 typedef struct {
   float viewProjection[16];
   float viewInverse[16];

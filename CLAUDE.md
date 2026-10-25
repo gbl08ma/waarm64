@@ -63,6 +63,11 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   for the virgl oracle virglrenderer-test-server (`virgl_test_server`, vtest),
   Mesa-demo (`eglinfo`, `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug virglrenderer for the oracle, docs/graphics.md "Tools"), sway and foot; dash (tests/keyboard.test.ts runs the keyboard script under it); qemu-ui-opengl is installed but QEMU's
   `virtio-gpu-gl` can't run (no DRM render node in the VM: docs/graphics.md "Findings").
+  For VK0 (bench/vulkan/REPORT.md): vulkan-devel, vulkan-tools, vulkan-validationlayers, shaderc (glslc), spirv-tools,
+  spirv-cross, Mesa-libGLESv3-devel, 7zip (unpacks the macOS SDK); for its tools (`tools/venus-oracle/`,
+  `tools/vulkan-tools/`: Venus on lavapipe over vtest, GFXReconstruct, the Profiles layer) cmake, python313-Mako,
+  python313-packaging, bison, flex, glslang-devel, libxshmfence-devel, liblz4-devel, xcb-util-keysyms-devel, gdb. The Venus
+  oracle needs `/dev/udmabuf` open to the user (lavapipe exports host-visible memory through it).
   Add what's missing with `sudo zypper in`, and note it here.
 - **USB rigs** (docs/testing.md "USB"): the VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so
   `tests/usb/gadget.sh install` can build `dummy_hcd` out of tree (openSUSE doesn't ship it; the source comes from
