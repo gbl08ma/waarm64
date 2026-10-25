@@ -34,6 +34,10 @@ const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a
 /** The bench page's query: the spike worker's name (bench/spike/page.ts); none in Node. */
 const pageQuery = () => new URLSearchParams((globalThis as { name?: string }).name);
 
+/** A path under the repository as a URL. (A template literal written in `new URL(…, import.meta.url)` itself is
+ * Vite's asset pattern: its dev server rewrites it, to `undefined` for files outside its globs.) */
+const url = (rel: string) => new URL(rel, import.meta.url).href;
+
 async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
   const r = await fetch(new URL(rel, import.meta.url));
   if (!r.ok) throw new Error(`${rel}: ${r.status}`);
@@ -162,7 +166,7 @@ async function dd(o: Options): Promise<Sample[]> {
 async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
+  const img = { ...base, kernel, initrd, disk: url(`../../target/images/${a.disk}`), cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
   const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.52-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test', jit }, { cold: 3, warmup: 1, warm: 5 });
   const pre = jit ? 'alpine_jit' : 'alpine';
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
@@ -180,7 +184,7 @@ async function bootMips(o: Options, distro: 'buildroot' | 'alpine', jit: 1 | 4):
   if (distro === 'alpine') {
     const a = DISTROS.alpine;
     const [initrd, kernel] = await Promise.all([get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-    img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
+    img = { ...base, kernel, initrd, disk: url(`../../target/images/${a.disk}`), cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
   }
   const module = await compileCore(img.wasm);
   const n = o.quick ? 2 : distro === 'alpine' ? 3 : 7;
@@ -293,7 +297,7 @@ async function glLlvmpipe(o: Options, ncpus: number, renderer: 'llvmpipe' | 'vir
   // virgl's client is one thread; llvmpipe on 1 vCPU rasterizes on the calling thread.
   const cmdline = `${a.cmdline} webpc.gl=${frames},3,1376,762${ncpus === 1 && !virgl ? ' webpc.lp=0' : ''}${virgl ? ' webpc.gpu=1' : ''}`;
   const disk = renderer === 'llvmpipe' ? 'alpine-gl/rootfs-gl.ext4' : 'alpine-virgl/rootfs-virgl.ext4';
-  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${disk}`, import.meta.url).href, cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const img = { ...base, kernel, initrd, disk: url(`../../target/images/${disk}`), cmdline, ramSize: 1 << 30, jit: 1 as const };
   // The display the page's machine has for the same size (G2: a virtio-gpu with virgl on the null renderer).
   const devices: DeviceSpec[] | undefined = virgl ? [...guestDevices(img.disk), { type: 'gpu', width: 1376, height: 762, virgl: true }] : undefined;
   const module = await compileCore(img.wasm);
