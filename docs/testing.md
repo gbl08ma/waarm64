@@ -10,7 +10,8 @@ only edits docs: `.md` files or code comments):
   that boot no Debian (the gpu guest natively, in Node and in Chromium, `gpu`, `gpu-present`,
   `display`; `network`, `gateway`, `net`, `devices`), and the sound device's (`snd`, the snd guest likewise).
 - **`scripts/ci-debian.sh`** boots Debian on the page: `page-debian`, `page-disk`, `page-machine`'s graphics test,
-  `start`'s run, ~3.5 min in the dev VM ("Debian boots" below). Two run at a time
+  `start`'s run, `page-venus` (vkcube through Venus on images/debian-vulkan/build.sh's Debian, reaching steady frames;
+  skipped without that image or vk/build.sh's renderer), ~3.5 min in the dev VM ("Debian boots" below). Two run at a time
   (`WEBPC_DEBIAN_SLOTS=2` in `tests/debian-lock.ts`: nothing else runs beside them there), so
   `page-debian`'s ~3.5 min is about its wall time (`WEBPC_DEBIAN_TIMES=1` prints each test's hold of a slot). It must pass too when a change touches the
   page, the firmware or UEFI, the devices, disks or overlays, snapshots or the display (virtio-gpu

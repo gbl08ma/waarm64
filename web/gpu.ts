@@ -583,7 +583,9 @@ export class Gpu {
           busy.submits++;
           busy.submitBytes += size;
           this.used.add(ctxId);
-          this.host?.call({ t: 'vsubmit', ctx: ctxId, bytes: cmd.slice(HDR + 8, HDR + 8 + size) });
+          const flags = v.getUint32(4, true);
+          const fence = flags & FLAG_FENCE ? { flags: flags & (FLAG_FENCE | FLAG_INFO_RING_IDX), ring: flags & FLAG_INFO_RING_IDX ? v.getUint8(20) : 0, id: v.getBigUint64(8, true) } : undefined;
+          this.host?.call({ t: 'vsubmit', ctx: ctxId, bytes: cmd.slice(HDR + 8, HDR + 8 + size), ...(fence ? { fence } : {}) });
           this.fenced(cmd);
           return this.reply(OK_NODATA, cmd, room);
         }

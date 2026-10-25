@@ -9,24 +9,19 @@ export const CAPSET_VENUS = 4;
 export const VENUS_CAPSET_BYTES = (5 + 32 + 3) * 4;
 
 /**
- * A capset as `vkr_get_capset` writes it (virglrenderer `src/venus/vkr_renderer.c`): the protocol's versions (venus-protocol
- * 1.1.3: wire format 1, vk.xml 1.4.357, VK_EXT_command_serialization 1, VK_MESA_venus_protocol 4), blob id 0 supported, the
- * extension mask's validity bit with `extensions` (Vulkan extension numbers the renderer's protocol has), waits allowed,
- * timelines per ring, no guest VRAM (the window is ours: blobs map into it). The page's machine is given vkr's own.
+ * The capset `vkr_get_capset` writes (virglrenderer `src/venus/vkr_renderer.c`) in the renderer's build (vk/build.sh):
+ * the protocol's versions (venus-protocol 1.1.3: wire format 1, vk.xml 1.4.357, VK_EXT_command_serialization 1,
+ * VK_MESA_venus_protocol 4), blob id 0 supported, the extension mask (bit N for Vulkan extension N the renderer's
+ * protocol has, bit 0 its validity), waits allowed, timelines per ring, no guest VRAM (the window is ours: blobs map
+ * into it). The guest reads the mask to know what the renderer can carry, so it must be vkr's: tests/venus-renderer.test.ts
+ * checks these words against the built module's.
  */
-export function venusCapset(extensions: number[] = []): Uint8Array {
-  const c = new Uint32Array(VENUS_CAPSET_BYTES / 4);
-  c[0] = 1;
-  c[1] = (1 << 22) | (4 << 12) | 357;
-  c[2] = 1;
-  c[3] = 4;
-  c[4] = 1;
-  for (const n of extensions) c[5 + (n >> 5)] |= 1 << (n & 31);
-  c[5] |= 1;
-  c[37] = 1;
-  c[38] = 1;
-  c[39] = 0;
-  return new Uint8Array(c.buffer);
+export const VENUS_CAPSET_WORDS = [1, 4211045, 1, 4, 1, 536985601, 809508864, 6253551, 3260440768, 4038813977, 2724564492,
+  1093731682, 4041505551, 2519053428, 134481229, 850856538, 3321889331, 1342314299, 524490, 9240912, 135888900,
+  12836865, 2166915143, 536871568, 8396834, 262152, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0];
+
+export function venusCapset(): Uint8Array {
+  return new Uint8Array(Uint32Array.from(VENUS_CAPSET_WORDS).buffer);
 }
 
 /** RESOURCE_CREATE_BLOB's `blob_mem`. */

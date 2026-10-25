@@ -1,0 +1,531 @@
+diff --git a/src/venus/vkr_context.c b/src/venus/vkr_context.c
+index cc82c42d..d33aad3a 100644
+--- a/src/venus/vkr_context.c
++++ b/src/venus/vkr_context.c
+@@ -189,6 +189,11 @@ static inline void
+ vkr_context_free_resource(struct hash_entry *entry)
+ {
+    struct vkr_resource *res = entry->data;
++#ifdef __wasi__
++   free(res->storage);
++   free(res);
++   return;
++#endif
+    if (res->fd_type == VIRGL_RESOURCE_FD_SHM)
+       munmap(res->u.data, res->size);
+    else if (res->u.fd >= 0)
+@@ -237,6 +242,10 @@ vkr_context_import_resource_internal(struct vkr_context *ctx,
+    res->res_id = res_id;
+    res->fd_type = fd_type;
+    res->size = blob_size;
++#ifdef __wasi__
++   res->storage = NULL;
++   res->memory = NULL;
++#endif
+ 
+    /* fd and mmap_ptr cannot be valid at the same time, but allowed to be -1 and NULL */
+    assert(fd < 0 || !mmap_ptr);
+@@ -288,6 +297,26 @@ vkr_context_create_resource_from_shm(struct vkr_context *ctx,
+     */
+    const size_t page_size = getpagesize();
+    const uint64_t alloc_size = (blob_size + page_size - 1) & ~(page_size - 1);
++#ifdef __wasi__
++   /* webpc: the renderer's storage, which a map moves into the window. */
++   uint8_t *storage = aligned_alloc(4096, align64(blob_size, 4096));
++   if (!storage)
++      return false;
++   memset(storage, 0, align64(blob_size, 4096));
++   if (!vkr_context_import_resource_internal(ctx, res_id, align64(blob_size, 4096), VIRGL_RESOURCE_FD_SHM, -1,
++                                             storage)) {
++      free(storage);
++      return false;
++   }
++   vkr_context_get_resource(ctx, res_id)->storage = storage;
++   *out_blob = (struct virgl_context_blob){
++      .type = VIRGL_RESOURCE_FD_SHM,
++      .u.fd = -1,
++      .map_info = VIRGL_RENDERER_MAP_CACHE_CACHED,
++   };
++   (void)alloc_size;
++   return true;
++#endif
+ 
+    int fd = os_create_anonymous_file(alloc_size, "vkr-shmem");
+    if (fd < 0)
+@@ -332,6 +361,13 @@ vkr_context_create_resource_from_device_memory(struct vkr_context *ctx,
+    struct virgl_context_blob blob;
+    if (!vkr_device_memory_export_blob(mem, blob_size, blob_flags, &blob))
+       return false;
++#ifdef __wasi__
++   if (!vkr_context_import_resource_internal(ctx, res_id, blob_size, VIRGL_RESOURCE_FD_SHM, -1, mem->wasi_storage))
++      return false;
++   vkr_context_get_resource(ctx, res_id)->memory = mem;
++   *out_blob = blob;
++   return true;
++#endif
+ 
+    /* If memory might get exported, store a dup'ed fd in vkr_resource for:
+     * - vkAllocateMemory for dma_buf import
+@@ -464,6 +500,18 @@ vkr_context_wait_ring_seqno(struct vkr_context *ctx,
+ 
+    bool ok = true;
+ 
++#ifdef __wasi__
++   /* webpc: one thread, so the ring is run here until it gets there (the guest wrote those commands before it asked;
++    * a ring that runs dry first is the guest's fault, and fatal). */
++   (void)ok;
++   while (!vkr_context_get_fatal(ctx) && !vkr_seqno_ge(vkr_ring_load_head(ring), ring_seqno)) {
++      if (!vkr_ring_poll(ring) && !vkr_seqno_ge(vkr_ring_load_head(ring), ring_seqno)) {
++         vkr_context_set_fatal(ctx);
++         return false;
++      }
++   }
++   return !vkr_context_get_fatal(ctx);
++#endif
+    mtx_lock(&ctx->wait_ring.mutex);
+    ctx->wait_ring.id = ring->id;
+    ctx->wait_ring.seqno = ring_seqno;
+@@ -584,6 +632,11 @@ vkr_context_ring_monitor_init(struct vkr_context *ctx, uint32_t report_period_us
+ 
+    ctx->ring_monitor.report_period_us = report_period_us;
+    ctx->ring_monitor.started = true;
++#ifdef __wasi__
++   /* webpc: vkr_renderer_poll sets the alive bits at the period. */
++   (void)ret;
++   return true;
++#endif
+    ret = thrd_create(&ctx->ring_monitor.thread, vkr_context_ring_monitor_thread, ctx);
+    if (ret != thrd_success)
+       goto err_monitor_thrd_create;
+@@ -607,7 +660,9 @@ vkr_context_ring_monitor_fini(struct vkr_context *ctx)
+    cnd_signal(&ctx->ring_monitor.cond);
+    mtx_unlock(&ctx->ring_monitor.mutex);
+ 
++#ifndef __wasi__
+    thrd_join(ctx->ring_monitor.thread, NULL);
++#endif
+ 
+    cnd_destroy(&ctx->ring_monitor.cond);
+    mtx_destroy(&ctx->ring_monitor.mutex);
+diff --git a/src/venus/vkr_context.h b/src/venus/vkr_context.h
+index 3867f138..cf2f8b50 100644
+--- a/src/venus/vkr_context.h
++++ b/src/venus/vkr_context.h
+@@ -32,6 +32,12 @@ struct vkr_resource {
+    } u;
+ 
+    size_t size;
++#ifdef __wasi__
++   /* webpc (vk/README.md): no fds. A shm resource's bytes are in `storage` (owned), or a device memory's (`memory`),
++    * until vkr_renderer_map_resource moves them into the host-visible window (`u.data` then), and back at the unmap. */
++   uint8_t *storage;
++   struct vkr_device_memory *memory;
++#endif
+ };
+ 
+ enum vkr_context_validate_level {
+diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
+index 7d57c7ce..deb9eee4 100644
+--- a/src/venus/vkr_device_memory.c
++++ b/src/venus/vkr_device_memory.c
+@@ -303,8 +303,37 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+    struct vkr_mtl_shm *mtl_shm = NULL;
+    VkExportMemoryAllocateInfo local_export_info;
+    VkImportMemoryMetalHandleInfoEXT local_metal_import;
+-
++#ifdef __wasi__
++   /* webpc: as the Metal path, but the storage is ours and the driver imports a host pointer to it; it is exported as
++    * a shm resource (no fd), which a map moves into the window. Export infos are dropped: there are no fds. */
++   uint8_t *wasi_storage = NULL;
++   VkImportMemoryHostPointerInfoEXT wasi_import;
++   if (export_info) {
++      void *prev = vkr_find_prev_struct(alloc_info, VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO);
++      vkr_pnext_set_next(prev, export_info->pNext);
++      export_info = NULL;
++   }
++   if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
++      const uint64_t size = align64(alloc_info->allocationSize, 4096);
++      wasi_storage = aligned_alloc(4096, size);
++      if (!wasi_storage) {
++         args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
++         return;
++      }
++      memset(wasi_storage, 0, size);
++      wasi_import = (VkImportMemoryHostPointerInfoEXT){
++         .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
++         .pNext = alloc_info->pNext,
++         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
++         .pHostPointer = wasi_storage,
++      };
++      alloc_info->pNext = &wasi_import;
++      valid_fd_types = 1 << VIRGL_RESOURCE_FD_SHM;
++   }
++   if (false) {
++#else
+    if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
++#endif
+       /* An implementation can support dma_buf import along with opaque fd export/import.
+        * If the client driver is using external memory and requesting dma_buf, without
+        * dma_buf fd export support, we must use gbm bo import path instead of forcing
+@@ -408,6 +437,9 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+ 
+    struct vkr_device_memory *mem = vkr_device_memory_create_and_add(ctx, args);
+    if (!mem) {
++#ifdef __wasi__
++      free(wasi_storage);
++#endif
+       if (local_import_info.fd >= 0)
+          close(local_import_info.fd);
+       if (gbm_bo)
+@@ -425,6 +457,9 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+    mem->mtl_shm = mtl_shm;
+    mem->allocation_size = alloc_info->allocationSize;
+    mem->memory_type_index = alloc_info->memoryTypeIndex;
++#ifdef __wasi__
++   mem->wasi_storage = wasi_storage;
++#endif
+ }
+ 
+ static void
+@@ -532,6 +567,9 @@ vkr_context_init_device_memory_dispatch(struct vkr_context *ctx)
+ void
+ vkr_device_memory_release(struct vkr_device_memory *mem)
+ {
++#ifdef __wasi__
++   free(mem->wasi_storage);
++#endif
+    vkr_mtl_shm_free(mem->mtl_shm);
+    if (mem->gbm_bo)
+       vkr_gbm_bo_destroy(mem->gbm_bo);
+@@ -570,6 +608,19 @@ vkr_device_memory_export_blob(struct vkr_device_memory *mem,
+                                       : VIRGL_RENDERER_MAP_CACHE_WC;
+    }
+ 
++#ifdef __wasi__
++   if (!mem->wasi_storage) {
++      vkr_log("mem has no storage to export");
++      return false;
++   }
++   mem->exported = true;
++   *out_blob = (struct virgl_context_blob){
++      .type = VIRGL_RESOURCE_FD_SHM,
++      .u.fd = -1,
++      .map_info = map_info,
++   };
++   return true;
++#endif
+    if (mem->mtl_shm && mem->mtl_shm->shm_fd >= 0) {
+       mem->exported = true;
+       *out_blob = (struct virgl_context_blob){
+diff --git a/src/venus/vkr_device_memory.h b/src/venus/vkr_device_memory.h
+index 32599664..890b68f0 100644
+--- a/src/venus/vkr_device_memory.h
++++ b/src/venus/vkr_device_memory.h
+@@ -34,6 +34,10 @@ struct vkr_device_memory {
+    uint32_t memory_type_index;
+ 
+    bool exported;
++#ifdef __wasi__
++   /* webpc: a host-visible memory's bytes, which the driver imports as a host pointer (wg_device.c). */
++   uint8_t *wasi_storage;
++#endif
+ };
+ VKR_DEFINE_OBJECT_CAST(device_memory, VK_OBJECT_TYPE_DEVICE_MEMORY, VkDeviceMemory)
+ 
+diff --git a/src/venus/vkr_queue.c b/src/venus/vkr_queue.c
+index d75a2294..89e863f7 100644
+--- a/src/venus/vkr_queue.c
++++ b/src/venus/vkr_queue.c
+@@ -120,7 +120,9 @@ vkr_queue_sync_thread_fini(struct vkr_queue *queue)
+    cnd_signal(&queue->sync_thread.cond);
+    mtx_unlock(&queue->sync_thread.mutex);
+ 
++#ifndef __wasi__
+    thrd_join(queue->sync_thread.thread, NULL);
++#endif
+ 
+    list_for_each_entry_safe (struct vkr_queue_sync, sync, &queue->sync_thread.syncs, head)
+       vkr_queue_sync_retire(queue, sync);
+@@ -147,6 +149,24 @@ vkr_queue_destroy(struct vkr_context *ctx, struct vkr_queue *queue)
+       free(queue);
+ }
+ 
++#ifdef __wasi__
++/* The sync thread's work without waiting (webpc: the GPU worker polls): retires the syncs whose fence has signalled,
++ * in order, up to the first that hasn't. */
++void
++vkr_queue_poll(struct vkr_queue *queue)
++{
++   struct vkr_device *dev = queue->device;
++   struct vn_device_proc_table *vk = &dev->proc_table;
++   while (!list_is_empty(&queue->sync_thread.syncs)) {
++      struct vkr_queue_sync *sync = list_first_entry(&queue->sync_thread.syncs, struct vkr_queue_sync, head);
++      if (!sync->device_lost && vk->GetFenceStatus(dev->base.handle.device, sync->fence) == VK_NOT_READY)
++         return;
++      list_del(&sync->head);
++      vkr_queue_sync_retire(queue, sync);
++   }
++}
++#endif
++
+ static int
+ vkr_queue_thread(void *arg)
+ {
+@@ -211,6 +231,10 @@ vkr_queue_sync_thread_init(struct vkr_queue *queue)
+ 
+    list_inithead(&queue->sync_thread.syncs);
+ 
++#ifdef __wasi__
++   /* webpc: no thread; vkr_queue_poll retires the signalled syncs. */
++   return 0;
++#endif
+    ret = thrd_create(&queue->sync_thread.thread, vkr_queue_thread, queue);
+    if (ret != thrd_success)
+       goto fail_thrd_create;
+diff --git a/src/venus/vkr_queue.h b/src/venus/vkr_queue.h
+index 6a3a909e..41593720 100644
+--- a/src/venus/vkr_queue.h
++++ b/src/venus/vkr_queue.h
+@@ -51,6 +51,11 @@ struct vkr_queue {
+ };
+ VKR_DEFINE_OBJECT_CAST(queue, VK_OBJECT_TYPE_QUEUE, VkQueue)
+ 
++#ifdef __wasi__
++void
++vkr_queue_poll(struct vkr_queue *queue);
++#endif
++
+ struct vkr_fence {
+    struct vkr_object base;
+ };
+diff --git a/src/venus/vkr_renderer.c b/src/venus/vkr_renderer.c
+index d04f11b3..4d15c7fb 100644
+--- a/src/venus/vkr_renderer.c
++++ b/src/venus/vkr_renderer.c
+@@ -232,6 +232,74 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+    return vkr_context_import_resource(ctx, res_id, fd_type, fd, size);
+ }
+ 
++#ifdef __wasi__
++#include "vkr_device_memory.h"
++#include "vkr_queue.h"
++#include "vkr_ring.h"
++
++bool
++vkr_renderer_poll(void)
++{
++   bool active = false;
++   list_for_each_entry (struct vkr_context, ctx, &vkr_state.contexts, head) {
++      list_for_each_entry (struct vkr_ring, ring, &ctx->rings, head) {
++         /* The ring monitor's report, at every poll (at least its period). */
++         if (ring->monitor)
++            vkr_ring_set_status_bits(ring, VK_RING_STATUS_ALIVE_BIT_MESA);
++         active |= vkr_ring_poll(ring);
++      }
++      for (uint32_t i = 1; i < ARRAY_SIZE(ctx->sync_queues); i++) {
++         if (ctx->sync_queues[i])
++            vkr_queue_poll(ctx->sync_queues[i]);
++      }
++   }
++   return active;
++}
++
++void *
++vkr_renderer_resource_data(uint32_t ctx_id, uint32_t res_id)
++{
++   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
++   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
++   return res && res->fd_type == VIRGL_RESOURCE_FD_SHM ? res->u.data : NULL;
++}
++
++static uint8_t *
++vkr_resource_storage(struct vkr_resource *res)
++{
++   return res->memory ? res->memory->wasi_storage : res->storage;
++}
++
++bool
++vkr_renderer_map_resource(uint32_t ctx_id, uint32_t res_id, void *where)
++{
++   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
++   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
++   if (!res || res->fd_type != VIRGL_RESOURCE_FD_SHM || res->u.data != vkr_resource_storage(res))
++      return false;
++   memcpy(where, res->u.data, res->size);
++   res->u.data = where;
++   if (res->memory)
++      vkr_wasi_memory_moved(res->memory->base.handle.device_memory, where);
++   return true;
++}
++
++bool
++vkr_renderer_unmap_resource(uint32_t ctx_id, uint32_t res_id)
++{
++   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
++   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
++   uint8_t *storage = res ? vkr_resource_storage(res) : NULL;
++   if (!storage || res->u.data == storage)
++      return false;
++   memcpy(storage, res->u.data, res->size);
++   res->u.data = storage;
++   if (res->memory)
++      vkr_wasi_memory_moved(res->memory->base.handle.device_memory, storage);
++   return true;
++}
++#endif
++
+ void
+ vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id)
+ {
+diff --git a/src/venus/vkr_renderer.h b/src/venus/vkr_renderer.h
+index be3ae046..840b6c30 100644
+--- a/src/venus/vkr_renderer.h
++++ b/src/venus/vkr_renderer.h
+@@ -74,4 +74,31 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+ void
+ vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id);
+ 
++#ifdef __wasi__
++#include <vulkan/vulkan_core.h>
++
++/* webpc (vk/README.md): one thread, polled; resources are bytes in the module's memory, which is the VM's memory 0. */
++
++/* Runs every context's rings and retires the signalled fences; returns whether a ring is still active (poll again
++ * soon) or all are idle (a notify wakes them). */
++bool
++vkr_renderer_poll(void);
++
++/* A resource's bytes now (its storage, or the window while mapped), or NULL. */
++void *
++vkr_renderer_resource_data(uint32_t ctx_id, uint32_t res_id);
++
++/* Moves a resource's bytes to `where` (its mapping in the host-visible window), and with them a device memory's. */
++bool
++vkr_renderer_map_resource(uint32_t ctx_id, uint32_t res_id, void *where);
++
++/* Moves them back out of the window into the resource's own storage. */
++bool
++vkr_renderer_unmap_resource(uint32_t ctx_id, uint32_t res_id);
++
++/* Told when a device memory's bytes move (the glue points the driver's memory there). */
++void
++vkr_wasi_memory_moved(VkDeviceMemory memory, void *data);
++#endif
++
+ #endif /* VKR_RENDERER_H */
+diff --git a/src/venus/vkr_ring.c b/src/venus/vkr_ring.c
+index 0d4899ef..ca5264c5 100644
+--- a/src/venus/vkr_ring.c
++++ b/src/venus/vkr_ring.c
+@@ -348,6 +348,50 @@ out:
+    return ret;
+ }
+ 
++#ifdef __wasi__
++/* One pass of vkr_ring_thread's loop (webpc: the GPU worker polls instead of a thread): the commands the guest added
++ * since, or once idle_timeout passed without any, the idle status (the guest then notifies). Returns whether the ring
++ * is still active, so its poller stays awake across frames (VK0 B: a wake-up saved a submit). */
++bool
++vkr_ring_poll(struct vkr_ring *ring)
++{
++   struct vkr_context *ctx = ring->dispatch.data;
++   if (!ring->started || vkr_context_get_fatal(ctx))
++      return false;
++   const uint64_t now = vkr_ring_now();
++   if (ring->pending_notify) {
++      ring->pending_notify = false;
++      vkr_ring_unset_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
++      ring->last_submit = now;
++   }
++   const uint32_t cmd_size = vkr_ring_load_tail(ring) - ring->buffer.cur;
++   if (cmd_size) {
++      if (cmd_size > ring->buffer.size) {
++         vkr_log("%s: cmd_size(%u) > ring->buffer.size(%u)", __func__, cmd_size, ring->buffer.size);
++         vkr_ring_set_status_bits(ring, VK_RING_STATUS_FATAL_BIT_MESA);
++         vkr_context_on_ring_fatal(ctx);
++         return false;
++      }
++      const uint32_t ring_head = ring->buffer.cur;
++      vkr_ring_read_buffer(ring, ring->cmd, cmd_size);
++      if (!vkr_ring_submit_cmd(ring, ring->cmd, cmd_size, ring_head)) {
++         vkr_ring_set_status_bits(ring, VK_RING_STATUS_FATAL_BIT_MESA);
++         vkr_context_on_ring_fatal(ctx);
++         return false;
++      }
++      ring->last_submit = now;
++      return true;
++   }
++   if (now >= ring->last_submit + ring->idle_timeout) {
++      vkr_ring_set_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
++      if (ring->buffer.cur == vkr_ring_load_tail(ring))
++         return false;
++      vkr_ring_unset_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
++   }
++   return true;
++}
++#endif
++
+ void
+ vkr_ring_start(struct vkr_ring *ring)
+ {
+@@ -355,6 +399,11 @@ vkr_ring_start(struct vkr_ring *ring)
+ 
+    assert(!ring->started);
+    ring->started = true;
++#ifdef __wasi__
++   ring->last_submit = vkr_ring_now();
++   (void)ret;
++   return;
++#endif
+    ret = thrd_create(&ring->thread, vkr_ring_thread, ring);
+    if (ret != thrd_success)
+       ring->started = false;
+@@ -363,6 +412,10 @@ vkr_ring_start(struct vkr_ring *ring)
+ bool
+ vkr_ring_stop(struct vkr_ring *ring)
+ {
++#ifdef __wasi__
++   ring->started = false;
++   return true;
++#endif
+    mtx_lock(&ring->mutex);
+    if (thrd_equal(ring->thread, thrd_current())) {
+       mtx_unlock(&ring->mutex);
+@@ -381,6 +434,10 @@ vkr_ring_stop(struct vkr_ring *ring)
+ void
+ vkr_ring_notify(struct vkr_ring *ring)
+ {
++#ifdef __wasi__
++   ring->pending_notify = true;
++   return;
++#endif
+    mtx_lock(&ring->mutex);
+    ring->pending_notify = true;
+    cnd_signal(&ring->cond);
+diff --git a/src/venus/vkr_ring.h b/src/venus/vkr_ring.h
+index 89d8159e..d21b632c 100644
+--- a/src/venus/vkr_ring.h
++++ b/src/venus/vkr_ring.h
+@@ -102,6 +102,10 @@ struct vkr_ring {
+    atomic_bool pending_notify;
+    atomic_bool monitor;
+    uint64_t virtqueue_seqno;
++#ifdef __wasi__
++   /* webpc (vk/README.md): no thread; the GPU worker polls (vkr_ring_poll). */
++   uint64_t last_submit;
++#endif
+ };
+ 
+ struct vkr_ring *
+@@ -115,6 +119,11 @@ vkr_ring_destroy(struct vkr_ring *ring);
+ void
+ vkr_ring_start(struct vkr_ring *ring);
+ 
++#ifdef __wasi__
++bool
++vkr_ring_poll(struct vkr_ring *ring);
++#endif
++
+ bool
+ vkr_ring_stop(struct vkr_ring *ring);
+ 

@@ -167,7 +167,9 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'touch': return { type: 'input', kind: 'touch', port: m.touch };
     case 'gpu': {
       const tuning = gpuTuning();
-      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
+      const { vulkan, ...rest } = tuning;
+      // Vulkan through Venus on a 3D machine (its renderer is the GPU worker's: docs/devices.md "Venus").
+      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...rest, virgl: tuning.virgl || !!m.renderer, venus: vulkan && !!m.renderer, renderer: m.renderer, caps: m.caps };
     }
     case 'net': {
       const n = m.nets![slot.adapter!];
@@ -194,11 +196,12 @@ function sndTuning() {
  * message's `renderer`; `?gpu=2d` turns it off). `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
  * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
  * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
+ * `vulkan` offers Vulkan through Venus on a 3D machine (docs/devices.md "Venus"; VK1: on the null renderer).
  */
 function gpuTuning() {
   const knobs = (query.get('gpu') ?? '').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
-  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), capture: knobs.includes('capture'), screen2d: knobs.includes('canvas2d') ? 'canvas2d' as const : knobs.includes('gl2d') ? 'webgl2' as const : 'auto' as const };
+  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), vulkan: knobs.includes('vulkan'), capture: knobs.includes('capture'), screen2d: knobs.includes('canvas2d') ? 'canvas2d' as const : knobs.includes('gl2d') ? 'webgl2' as const : 'auto' as const };
 }
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;

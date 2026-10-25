@@ -172,6 +172,9 @@ export function deviceShm(d: DeviceSpec): bigint {
 /** The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and mapped memory. */
 export const VENUS_WINDOW = 256 << 20;
 
+/** The renderer's arena at memory 0's top on such a machine (vk/gen.ts links the module at 4 GiB less this). */
+export const VENUS_ARENA = 256 << 20;
+
 /** virtio::DeviceEntry's first five u64s and the initial config space. */
 export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Array } {
   switch (d.type) {
@@ -864,6 +867,8 @@ export function ring(bell: Int32Array, wait: boolean) {
 
 export type DevicesInit = {
   memory: WebAssembly.Memory;
+  /** The host-visible window (`BootOptions.window`): its address in `memory`, its bytes and its write-watch's (web/window.ts). */
+  window?: { at: number; bytes: number; watch: number };
   /** Addresses in `memory` of each device's `virtio::DevShared`, of guest RAM and of the signal word. */
   shared: number[];
   ram: number;
@@ -920,7 +925,7 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
@@ -955,6 +960,8 @@ export class Devices {
             // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
             const host = portHost(d.renderer);
             host.call({ t: 'ram', ram: ctx.ram().map((r, k) => ({ buffer: r.buffer, offset: r.byteOffset, length: ctx.layout[k].size })) });
+            // Venus's renderer runs on memory 0 itself (web/venus-host.ts): the memory, and where the window is.
+            if (d.venus && window) host.call({ t: 'venus-init', memory, window });
             b.gpu.host = host;
           }
           if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);

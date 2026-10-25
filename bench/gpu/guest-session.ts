@@ -119,8 +119,10 @@ export async function openSession(o: SessionOptions) {
     const t = m.text();
     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
     if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
-    if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
+    if (t.startsWith('virgl') || t.startsWith('venus')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
+    if (m.type() === 'error' || t.startsWith('venus')) console.log(`[page ${m.type()}] ${t.slice(0, 400)}`);
   });
+  page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 400)}`));
   const t0 = performance.now();
   const at = () => ((performance.now() - t0) / 1000).toFixed(1);
   const log = (...a: unknown[]) => console.log(`[${at()}]`, ...a);
@@ -255,9 +257,10 @@ export async function openSession(o: SessionOptions) {
   const rootShell = async () => {
     await shows(/login:\s*$/, 120_000);
     await onSerial('root\n');
-    await shows(/Password:\s*$|\]#\s*$/);
+    // Arch's prompt ends `]#`, Debian's `:~#`.
+    await shows(/Password:\s*$|\]#\s*$|:~#\s*$/);
     if (/Password:\s*$/.test(await terminal())) await onSerial('root\n');
-    await shows(/\]#\s*$/);
+    await shows(/\]#\s*$|:~#\s*$/);
     await pasteSerial(`cat > /root/load.sh <<'EOF'\n${LOAD_SH}EOF`);
   };
 

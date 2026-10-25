@@ -5,7 +5,8 @@
 // (web/virgl-screen.ts), and answers fences once everything before them has run. With video, what follows a
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withVideo } from './virgl-caps.ts';
-import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type WorkerCall } from './virgl-host.ts';
+import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type VenusCall, type WorkerCall } from './virgl-host.ts';
+import { VenusRenderer } from './venus-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
 import { probeVideo, profileName, webCodecsDecoder, type VideoStats, type VideoStream } from './virgl-video.ts';
@@ -85,6 +86,22 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     port.postMessage({ t: 'fenced', id: c.id, at: now });
   });
   // WebGL's query results come after the task that ended the query: polled while some are pending.
+  // Venus (docs/devices.md "Venus"): its renderer is fetched and made on the device's `venus-init` (only a machine with
+  // Vulkan has one); its calls wait in order until then, and so do the fences behind them.
+  let venus: VenusRenderer | undefined;
+  let venusBacklog: VenusCall[] | undefined;
+  const VENUS_CALLS = new Set(['vctx', 'blob', 'blob-map', 'blob-unmap', 'blob-unref', 'blob-ctx', 'vsubmit']);
+  const venusCall = (c: VenusCall) => {
+    try {
+      venus!.call(c);
+    } catch (err) {
+      console.warn('venus: a call failed', c.t, err);
+    }
+  };
+  const settled = () => {
+    const queries = renderer.queriesSettled();
+    return () => queries() && !venusBacklog?.length;
+  };
   let held = 0;
   const poll = () => {
     pollTimer = undefined;
@@ -98,8 +115,30 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     if (queries) pollTimer = setTimeout(poll, 4);
   };
   const run = (c: WorkerCall) => {
+    if (c.t === 'venus-init') {
+      venusBacklog = [];
+      const init = c;
+      (async () => {
+        // Not bundled (`@vite-ignore`): the static copy doesn't carry the renderer yet (vk/README.md "Not yet").
+        const module = await WebAssembly.compileStreaming(fetch(new URL(/* @vite-ignore */ '../target/vk/venus.wasm', import.meta.url).href));
+        venus = await VenusRenderer.create(module, init.memory, init.window);
+        for (const v of venusBacklog!) venusCall(v);
+        venusBacklog = undefined;
+        fenced.release();
+      })().catch((err) => {
+        console.warn('venus: the renderer could not start', err);
+        venusBacklog = undefined;
+        fenced.release();
+      });
+      return;
+    }
+    if (VENUS_CALLS.has(c.t)) {
+      if (venusBacklog) venusBacklog.push(c as VenusCall);
+      else if (venus) venusCall(c as VenusCall);
+      return;
+    }
     if (c.t === 'fence') {
-      fenced.fence(c, renderer.queriesSettled());
+      fenced.fence(c, settled());
       if (fenced.waiting && !pollTimer) poll();
       return;
     }

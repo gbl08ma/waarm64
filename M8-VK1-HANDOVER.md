@@ -20,32 +20,30 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
   capset, Venus contexts, blobs created/mapped/unmapped by the host (`VenusCall`), Venus submits handed on, snapshots
   refused. Linux's driver takes it (`tests/venus.test.ts`). Found on the way: `vm_boot` sized `/memory` from `Mem`, which
   includes the window (fixed: RAM is `Mem` less the window).
-- Next: **L6, the renderer** (plan below).
+- **The renderer (L6)** is built (vk/README.md; docs/devices.md "Venus"): `vk/build.sh` → `target/vk/venus.wasm`
+  (3.2 MB, 510 KiB gzipped), vkr over our null driver, on memory 0 at the arena; `?gpu=vulkan` on the page.
+  `images/debian-vulkan/build.sh` (on demand, ~10 min) makes the tests' Debian with Mesa 25.0.7's Venus ICD, vulkan-tools
+  and sway; `tests/page-venus.test.ts` (ci-debian) runs vkcube there: ~50 frames/s on 2 vCPUs, and `vulkaninfo` names the
+  device `Virtio-GPU Venus (webpc null renderer (VK1))`. `bench/vulkan/venus-run.ts` runs any guest commands on it.
+- Next: **L7**, the desktop guest (Arch, `vulkan-virtio`) with Venus, and whether Mesa keeps virgl for GL beside it;
+  then **the gate** on the Mac (vkcube, the S scene, GTK4: the guest's CPU on Venus against virgl; B's encoding
+  estimate; the watch's cost a frame), then the docs and plan §6/§7.
+
+## Open: one guest oops, not reproduced
+
+- 2026-10-25, the first ci.sh with `tests/page-venus.test.ts` (it ran inside `npm test` then, beside every other file;
+  now it's ci-debian's only): Debian's kernel oopsed as vkcube started, `kthreadd` returning through a zeroed frame (pc,
+  lr and x29 0, an instruction abort at 0). Not reproduced since: three runs alone, two under six CPU burners
+  (~54 frames/s each). Ruled out by reading: the arena can't overlap the core's heap or RAM (the reserve stops below
+  0xF000_0000 and a larger one throws), and the device's held replies are written once, as virgl's are. If it recurs,
+  keep the run's directory (`/tmp/webpc-venus-*`: serial log, results.json). The renderer's stale pointers (a blob's
+  storage after its unref, vkr's ring after the guest unmapped it) write the arena or the window, not RAM, so they
+  can't zero a kernel stack. Left to suspect: something else writing guest RAM late, the write-watch's TLB drops
+  under contention, or an SMP race under load that isn't Venus's at all.
 
 ## Designs decided, not built yet
 
-- **L6's plan (the renderer):** a top-level `vk/` (C for wasm, like `net/ts`): `vk/build.sh` fetches virglrenderer at
-  the oracle's commit and builds into `target/vk/venus.wasm`, with wasi-sdk and step 1's `gen.ts` approach for Mesa
-  (the native build's compile commands and generated sources): (1) `vkr` (`src/venus/*.c`, its codegen, venus-protocol
-  1.1.3's headers, the bits of virglrenderer's util it needs) with patches (`vk/patches/`): the ring, ring monitor and
-  queue sync threads become polls; resources are pointers, not fds (shmem from the arena; a device memory's storage
-  from our driver); a map moves a resource's storage into the window and an unmap out; the library loader points at
-  our driver's `vk_icdGetInstanceProcAddr`. (2) Our null driver on Mesa's *lite* runtime (`libvulkan_lite_runtime`,
-  `libvulkan_util`, as Venus links them: no NIR yet; VK2 moves to the full runtime): a physical device advertising
-  VK0's direct set as a GPU, memory types (host-visible ones' storage in the window once mapped), objects as runtime
-  structs, command buffers recorded through `vk_cmd_queue` and replayed at submit for their transfers only
-  (fill/update/copy buffer, timestamps, queries, events: Venus's feedback slots), fences and semaphores signalled at
-  submit, draws dropped; at each submit it calls `env.window_dirty()` (the GPU worker's `WindowWatch.take`) and counts
-  the pages. (3) The GPU worker instantiates it on memory 0 at a fixed arena at memory 0's top (256 MiB at 0xF000_0000:
-  `--global-base`, its stack and an `sbrk` inside it; a Venus machine's memory is fixed at 4 GiB, the core's heap
-  reserve stopping below the arena), routes `VenusCall`s to `vkr_renderer_*`, and polls the ring (awake across frames,
-  idle after vkr's timeout). Memory 0 then holds RAM, the window (256 MiB) and the arena (256 MiB): RAM past that
-  spills.
-- **The renderer module (L6):** `vkr` + a null Mesa driver in one wasm module instantiated **on memory 0** (the ring,
-  reply and command-stream blobs and feedback memory are all window pointers), linked at a fixed arena at the top of
-  memory 0 (`--global-base`, its own stack, an `sbrk` confined to the arena); `vkr`'s threads (ring, ring monitor,
-  queue sync) become polls the GPU worker drives. The capset is `vkr_get_capset`'s (`use_guest_vram` 0: our driver
-  allocates mappable memory in the window, so MAP_BLOB is an offset).
+- (L6's plan was built as planned; what changed is in vk/README.md: vkr uses virglrenderer's own util copy, renamed.)
 
 ## Things worth not re-discovering
 
@@ -62,4 +60,10 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
   ports left open kept the file alive; fixed (bounded wait, `t.after` closes them).
 - Don't name a local `window` in `web/vm.ts`'s `bootVm`: `typeof window` decides there whether the thread can block
   (realtime boots in a page worker went idle at virtio probing).
+- Venus's guest driver (Mesa 25.0.7) offers `VK_KHR_swapchain` only if the renderer has dma-buf external memory with
+  `EXT_image_drm_format_modifier`, `EXT_queue_family_foreign` and a sync-file semaphore it can import (Mesa 26.2 no
+  longer asks): vkcube said "failed to find the VK_KHR_swapchain extension" until the null driver advertised them.
+- vk/'s two utils: vkr against Mesa 26.2.4's util fails to compile (API drift); it builds against virglrenderer's own
+  copy with its symbols renamed (gen.ts). The module's `sbrk` must start at `__heap_end`: from `__heap_base` it
+  overlapped dlmalloc's first region ("function signature mismatch" traps far away).
 - The Mac's disk has ~8.5 GiB free: VK1's files there are `~/webpc-gpu-bench/vulkan-web/target/vk1` (~15 MB).

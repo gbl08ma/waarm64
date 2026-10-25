@@ -479,6 +479,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: plan §6's VK4.
+- **Venus's renderer for users** (VK1, vk/README.md): `target/vk/venus.wasm` isn't in `npm run dist`'s copy or
+  `npm start`'s build (vk/build.sh clones and builds Mesa and virglrenderer natively first, minutes, and needs wasi-sdk;
+  its licences, THIRD_PARTY.md's row, ship beside it as EDK2's do), and the Machines page has no Vulkan setting
+  (`?gpu=vulkan` only). Waits for a renderer that draws (VK2): until then a user's Vulkan would show nothing.
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

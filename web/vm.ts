@@ -12,7 +12,7 @@ import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
 import { WindowWatch } from './window.ts';
-import { Devices, ENTRY_WORDS, EV_CONFIG, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
@@ -754,9 +754,15 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says.
   const venus = (o.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
   const windowBytes = o.window ?? (venus ? VENUS_WINDOW : 0);
+  // A Venus machine's renderer lives in an arena at memory 0's top (web/venus-host.ts, vk/README.md): the memory is
+  // then 4 GiB, and the core's heap reserve stops below the arena.
+  const arena = venus ? VENUS_ARENA : 0;
   const rest = 65536 + o.ramSize + windowBytes + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
-  const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
+  const heapPages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - arena - rest))) + rest) / 65536;
+  const pages = venus ? 65536 : heapPages;
+  if (venus && heapPages > 65536 - arena / 65536) throw new RangeError(`a machine with Vulkan holds at most ${(2 ** 32 - arena - HEAP_FLOOR - 65536 - windowBytes) / 2 ** 20} MiB of RAM in memory 0`);
   const fixed = o.fixedMemory !== false && pages <= 65536;
+  if (venus && !fixed) throw new RangeError('a machine with Vulkan needs a fixed memory (its renderer is at a fixed place in it)');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
   // The spill memories (docs/spill-memories.md), each at its final size.
   const spillSizes = o.spill ?? [];
@@ -820,7 +826,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // allocator's rounding leaves, the host grows itself.
   if (fixed) {
     // A RangeError, as a failed grow is (the page's "couldn't reserve" message).
-    if (!ex.heap_reserve(pages)) throw new RangeError(`the core's heap reserve: no memory to grow ${pages} pages into`);
+    if (!ex.heap_reserve(heapPages)) throw new RangeError(`the core's heap reserve: no memory to grow ${heapPages} pages into`);
+    // Then (with Venus) the rest below the arena, unused, and the arena: the host's, as fw_cfg's files are.
     memory.grow(pages - memory.buffer.byteLength / 65536);
     // The memory is at its size: the rest runs on the exact core, here and in every worker. The first instance only
     // laid the memory out (it can grow it; the exact one can't) and isn't called again.
@@ -890,7 +897,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them.
   const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(16 * specs.length) : new ArrayBuffer(16 * specs.length));
   // The devices' view of memory 0 reaches the window too: buffers there are memory 0's, past RAM.
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize + windowBytes, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
+  const venusWindow = windowBytes ? { at: ram + o.ramSize, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize + windowBytes, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();

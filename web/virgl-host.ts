@@ -45,7 +45,10 @@ export type VenusCall =
   | { t: 'blob-unmap'; res: number }
   | { t: 'blob-unref'; res: number }
   | { t: 'blob-ctx'; ctx: number; res: number; attach: boolean }
-  | { t: 'vsubmit'; ctx: number; bytes: Uint8Array };
+  /** A SUBMIT_3D's bytes, and with the fence flag its fence (the renderer retires it before the device answers). */
+  | { t: 'vsubmit'; ctx: number; bytes: Uint8Array; fence?: { flags: number; ring: number; id: bigint } }
+  /** The renderer's place in memory 0 (the GPU worker instantiates it there): the window and its write-watch. */
+  | { t: 'venus-init'; memory: WebAssembly.Memory; window: { at: number; bytes: number; watch: number } };
 
 /** What a host's `save` answers: the renderer's state, or why it can't be saved now. */
 export type HostSave = { state: RendererSnapshot } | { refused: string };
