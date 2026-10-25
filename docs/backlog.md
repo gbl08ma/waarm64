@@ -672,7 +672,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The guest's clock after a restore** is behind by the time the snapshot sat in its file (the
   RTC shows the host's time, the counter continues): until something sets it (`hwclock -s`,
   timesyncd over a network). A hint to the guest (an RTC alarm, a virtio device event) could
-  make it resync.
+  make it resync. **Moving the counter on by the time away doesn't** (measured 2026-10-25: Debian
+  13's 6.12 restored with CNTVCT an hour on): `date` is right at once, but RCU reports a
+  self-detected stall and systemd kills journald for its watchdog (`WatchdogSec=`, on
+  CLOCK_MONOTONIC: every unit with one would go the same way). arm64 has no "guest was paused"
+  signal for the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`), and only the guest's own suspend
+  path advances realtime without monotonic, so the fix needs the guest's userspace: Debian's
+  nocloud image runs systemd-networkd and systemd-timesyncd, which re-syncs at once on a link
+  going down and up (a virtio-net `VIRTIO_NET_F_STATUS` flap on restore, networked guests only),
+  and has no qemu-guest-agent (`guest-set-time`: [plans/agent.md](plans/agent.md) step 2).
 - **One worker compresses RAM** (the core's LZ): 0.44 s for 304 MB of pages. Four would take it
   to 0.15 s (`bench/boot/REPORT.md` "M8 phase C loop 4"); chunks must then be dealt out
   interleaved, not as ranges. And the file's blocks are copied through the codec's own instance
