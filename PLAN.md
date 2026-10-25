@@ -68,7 +68,7 @@ Details of each: the docs (by topic) and `bench/*/REPORT.md` (by date). Numbers 
 URL and uses a Linux VM with keyboard and mouse, seeing its screen live, as in v86's demos. Until
 M8 every guest ran headless under a test. Snapshots, networking, graphics, audio and the
 embedding API are scheduled by what that page needs, not as ends in themselves. Phase A's kickoff
-(`M8-KICKOFF.md`) is in git history; VK1's (`M8-VK1-KICKOFF.md`) too; the next brief is `M8-VK2-KICKOFF.md` (the Vulkan plan's VK2, a draft for the user to approve).
+(`M8-KICKOFF.md`) is in git history; VK1's (`M8-VK1-KICKOFF.md`) too; the next brief is `M8-VK2-KICKOFF.md` (the Vulkan plan's VK2).
 
 Decisions (the user, 2026-09-28):
 - **One VM per page**, under the JIT, realtime, parallel SMP. Debian 13 was the page's hardcoded

@@ -1,6 +1,6 @@
 # M8 VK2 handover
 
-Notes between VK2's sessions (the brief: `M8-VK2-KICKOFF.md`, a draft until the user approves it). Newest state first.
+Notes between VK2's sessions (the brief: `M8-VK2-KICKOFF.md`). Newest state first.
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
@@ -15,7 +15,7 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
 - **The gate** (REPORT.md "VK1: the gate"): Venus costs the guest 2.2–8.7× less a frame than virgl in the scene, a third
   less in fishbowl, 11% more in GTK4's frames (the guest's submit path: docs/backlog.md). The write-watch costs nothing
   measurable a frame.
-- Next: VK2, once the user approves its kickoff. The harnesses: `bench/vulkan/guest.ts <virgl|venus|venus-nowatch>` (VK0's
+- Next: VK2 (its kickoff approved 2026-10-25). The harnesses: `bench/vulkan/guest.ts <virgl|venus|venus-nowatch>` (VK0's
   scene), `bench/vulkan/apps-load.ts` (programs under sway), `bench/gpu/gtk4-load.ts` with `VIRGL_GPU=virgl,vulkan`
   and `RENDERERS=gl,vulkan,…` (alternated rounds), all on the Mac through `bench/gpu/sway-mac.sh` (`SCRIPT=`), which
   copies the renderer there.

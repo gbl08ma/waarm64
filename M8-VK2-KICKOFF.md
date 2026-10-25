@@ -1,5 +1,4 @@
-**A draft, written 2026-10-25 at the user's request by the session that finished VK1. The content is the user's to
-approve or change; until then nothing here binds.** Covers **VK2** of the Vulkan plan
+**Drafted 2026-10-25, at the user's request, by the session that finished VK1; the user approved the content (2026-10-25).** Covers **VK2** of the Vulkan plan
 ([docs/plans/graphics.md](docs/plans/graphics.md) §6), M8's graphics track. VK3 and later get their own kickoffs.
 
 Start **VK2: core translation, the direct set.** VK1 built what the guest sees (the device, the host-visible window
@@ -18,7 +17,7 @@ and THIRD_PARTY.md. `M8-VK2-HANDOVER.md` carries VK1's findings worth not re-dis
 working rules apply. Work as in the other tracks: short loops, one commit and a short report each, without check-ins,
 except as below.
 
-## Decisions (binding once approved)
+## Decisions (binding)
 
 - **Everything in plan §2 still binds**, and VK1's choices stand: Vulkan a per-machine choice, off by default (a
   machine without it sees exactly today's device; `tests/steps.txt` unmoved), the renderer on memory 0 in its arena,
