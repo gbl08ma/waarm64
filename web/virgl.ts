@@ -1,4 +1,4 @@
-// The virgl command stream (docs/plans/graphics.md §1; docs/graphics.md "The caps"): what Mesa's virgl driver sends in a virtio-gpu
+// The virgl command stream (docs/graphics.md "Decisions", "The caps"): what Mesa's virgl driver sends in a virtio-gpu
 // SUBMIT_3D. The names and the header's layout are virglrenderer's src/virgl_protocol.h (MIT,
 // THIRD_PARTY.md). G2's device runs a null renderer: the stream is walked and counted, never drawn.
 

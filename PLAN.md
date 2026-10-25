@@ -168,8 +168,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     of ours in its own repository, about 250 lines over gvisor-tap-vsock, reached by a WebSocket on loopback,
     Ethernet frames with no gateway in the page, IPv4 only, reproducible binaries with published hashes
     ([docs/plans/networking-local.md](docs/plans/networking-local.md)).
-  - Graphics ([docs/graphics.md](docs/graphics.md): what exists; [docs/plans/graphics.md](docs/plans/graphics.md):
-    the decisions and what's open): **virtio-gpu 2D is done (G0 and
+  - Graphics ([docs/graphics.md](docs/graphics.md): what exists; the decisions that bind it, in "Decisions";
+    [docs/plans/graphics.md](docs/plans/graphics.md): Vulkan, proposed): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device
     pixels with HiDPI), with damage only and the guest's cursor as the page's; snapshots keep
@@ -181,7 +181,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     2026-10-09):** no software rendering or translation layers in the guest; OpenGL ES first,
     through Mesa's upstream **virgl** driver onto **our own virgl renderer on WebGL2** (the
     baseline), a WebGPU backend only where the browser has one, Vulkan (Venus, Zink) deferred
-    (plans/graphics.md §1). **G2 is done (2026-10-09, docs/graphics.md "Measurements"): the gate passed.** On a
+    (docs/graphics.md "Decisions"). **G2 is done (2026-10-09, docs/graphics.md "Measurements"): the gate passed.** On a
     virtio-gpu with virgl and a null renderer, a sway frame costs the guest 6.6 ms of CPU against
     llvmpipe's 81 (60 frames a second against 28), and glcomp's ~1/190 of llvmpipe's work; Mesa
     is cheap, the kernel's submit path is what's left. **G3 is done (2026-10-09, docs/graphics.md "The renderer"): 3D
@@ -197,7 +197,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     kickoff): **dEQP on a real GPU is done** (2026-10-19, docs/graphics.md "Testing": the whole lists on the Mac's
     M4, ANGLE on Metal, found four bugs of ours SwiftShader hid, fixed; 85 GLES2 and 129 GLES3 failures remain, all the
     GPU's: the filter switch near level 0, one invariance case); other platforms, GtkGLArea's offload and breadth (a
-    desktop's compositor, Chromium in the guest) are open items in docs/backlog.md and plans/graphics.md §2, with no handover.
+    desktop's compositor, Chromium in the guest) are open items in docs/backlog.md, with no handover.
     **Snapshots while 3D is in use are done** (built ahead of it, 2026-10-18 to 10-19, docs/graphics.md "Snapshots with 3D in use": the
     renderer's state as data, its contents read back, BLOB frames in the file; refused only while a video decodes).
     On the desktop guest with sway, Firefox on WebGL and GTK4 running: 96 resources, 119 MB of 3D state stored as
