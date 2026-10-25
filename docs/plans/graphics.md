@@ -1,7 +1,7 @@
 # webpc graphics plan: Vulkan
 
 **Status: planned (the user, 2026-10-25): §2's decisions bind. VK0 is done (2026-10-25,
-[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is under way (its brief `M8-VK1-KICKOFF.md`, notes `M8-VK1-HANDOVER.md`): step 1, route (b)'s premise, passed (2026-10-25, REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is next (`M8-VK2-KICKOFF.md`, a draft; notes `M8-VK2-HANDOVER.md`).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -259,10 +259,16 @@ for the programs that switch. The user decides whether VK1 starts.
   feedback slots copied back into the window after each submit that carries one; the write-watch in the TLB. Checks
   that the guest's Mesa keeps virgl for GL with both capsets. *Gate (as G2's for virgl):* vkcube's, the scene's and
   GTK4's frames cost the guest no more than on virgl (G's numbers: gtk4-demo 8 ms of CPU a frame in fishbowl, 2.3 in
-  frames; B estimates Venus's encoding at about virgl's).
+  frames; B estimates Venus's encoding at about virgl's). **Done** (REPORT.md "VK1: the gate"): the scene 2.2–8.7×
+  less, fishbowl a third less, frames 11% more (the guest's submit path, §7), the watch nothing measurable. What the
+  null driver advertises past the profile for the gate's programs (dma-buf with a LINEAR modifier, foreign queues,
+  sync-file semaphores; YCbCr for GTK4) the real driver must honor or drop (vk/README.md).
 - **VK2, core translation, the direct set:** vkcube, vkmark, mpv and vkQuake on Vulkan drawing right on SwiftShader,
   the Mac and NVIDIA; the dEQP-VK subset of the direct rows as pass lists; pipelines cached as WGSL by SPIR-V hash and
-  specialization (~10 ms a pipeline end to end). GTK4 isn't brought (no YCbCr, no modifiers). *Gate:* mpv meets its
+  specialization (~10 ms a pipeline end to end); the window's written pages (the write-watch's, counted in VK1)
+  uploaded at each submit. GTK4 isn't brought (YCbCr and modifiers: VK1's null driver advertised them so GTK4's
+  renderer would start; VK2 either drops them until VK3 emulates them, so GTK4 stays on GL, or keeps them and brings
+  GTK4 to its bar: its choice, by measurement). *Gate:* mpv meets its
   bar (the video track's: no drops, the guest 19–27% busy), which needs VA-API's surfaces imported as dma-bufs.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
   render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it.
@@ -283,14 +289,21 @@ for the programs that switch. The user decides whether VK1 starts.
   at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
   fast (NVIDIA).
 - **Route (b)'s size in wasm**: `spirv_to_nir`, NIR's passes and a NIR → shading-language backend measured in VK1 step 1
-  (0.42 MiB brotli, 0.27 ms a stage in Chromium; wasi-sdk the toolchain); Mesa's Vulkan runtime and `vkr` not yet built
-  for wasm (`vkr` ~1.4 MB of native code: an estimate).
-- **The guest's cost is Venus's encoding**: about virgl's at light settings (B's estimate), so a CPU-bound GL program
-  (GTK4's iconscroll) gains nothing by switching; a program that switches only if it meets G's numbers.
+  (0.42 MiB brotli, 0.27 ms a stage in Chromium; wasi-sdk the toolchain); vkr with Mesa's lite runtime and the null
+  driver is 3.2 MB, 510 KiB gzipped (VK1). VK2 adds the compiler and the WebGPU backend.
+- **The guest's cost is its submit path, not Venus's encoding** (VK1's gate): encoding costs ≤0.55 µs a command, half
+  virgl's, but Venus's driver makes ~2× virgl's execbuffers (9 a frame for GTK4's frames against 4), each ~0.17 ms of
+  the emulated kernel's time. A light program pays more on Venus (+0.3 ms a frame); a heavy one gains. Levers: the
+  emulator's virtqueue notify and the guest kernel's execbuffer path (cheaper exits), or fewer submits from the guest's
+  driver (Mesa's choice: not ours to change).
+- **vkr assumes threads**: on one thread, its waits become polls; a wait the guest satisfies only later (the ring's
+  wait for a virtqueue seqno, Mesa 26) must stall and resume, not block (VK1 found it as a hang). Its resources outlive
+  their memories (VK1 found a use-after-free). Each new vkr wait or lifetime is checked against that.
 - **Adapters differ** (limits, features, formats, precision), as WebGL2 stacks did for dEQP-GLES: the caps per
   adapter, and dEQP-VK on more than SwiftShader and Metal.
-- **The 4 GiB budget**: the host-visible window shares it with guest RAM and the core's heap unless it gets a memory
-  of its own.
+- **The 4 GiB budget**: a Vulkan machine's memory 0 holds RAM, the window (256 MiB) and the renderer's arena (256 MiB)
+  beside the core's heap, so RAM past 2.5 GiB spills (`splitRam`'s reserve); the arena caps the renderer's heap (blob
+  storage included) until VK2 sizes it from what programs map.
 
 ## 8. Alternatives considered
 

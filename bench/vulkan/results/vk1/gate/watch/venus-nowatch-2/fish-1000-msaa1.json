@@ -1,0 +1,83 @@
+{
+ "arm": "guest-venus-nowatch",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "153.0.8010.12",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 30,
+ "samples": 10,
+ "frames": 60,
+ "frameMs": {
+  "median": 1.49,
+  "iqr": 0.07
+ },
+ "guestCpuMs": 1.462,
+ "line": "venus-nowatch aquarium: 1.490 ms a frame (IQR 0.070), CPU 1.462 ms, GPU 0.004 ms, 1119 draws a frame",
+ "seconds": 3.5130322080000043,
+ "renderer": {
+  "seconds": 3,
+  "busyMs": 1.6150000890096028,
+  "submitMs": 0,
+  "drawMs": 0.1983327865600586,
+  "presents": 5.333333333333333,
+  "glDraws": 0,
+  "commands": 0,
+  "uploadKB": 0,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 0,
+  "programs": 0,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 238.66666666666666,
+  "submitKB": 5.631510416666667,
+  "fences": {
+   "n": 250.66666666666666,
+   "meanMs": 0.11617686647049924,
+   "maxMs": 2.0349998474121094,
+   "heldMs": 44.69999885559082,
+   "behindMs": 15.464997291564941,
+   "fullMs": 0.27666664123535156,
+   "heldMax": 16,
+   "toGpuMs": 0.09395383284395972,
+   "toGpuMaxMs": 2.01513671875,
+   "backMs": 0.023293811376498004,
+   "backMaxMs": 0.260009765625
+  }
+ },
+ "vm": {
+  "seconds": 3.002210000038147,
+  "Msteps": 209.875844,
+  "irqs": 2003,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 9201,
+   "0x20": 96,
+   "0x24": 11724,
+   "0x25": 322
+  },
+  "tlbMisses": 99713,
+  "tlbFlushes": 15884,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.321181
+ }
+}

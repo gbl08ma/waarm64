@@ -8,7 +8,7 @@
 // their own frame rate on the screen.
 //   node bench/gpu/gtk4-load.ts <virgl|2d> <image.qcow2> [outdir]
 // DEMOS (default fishbowl,frames,iconscroll,themes,gears,shadertoy,image_scaling,listview_clocks,mask,path_fill),
-// RENDERERS (default gl), WARM_S (15), PHASE_S (10); GTK_ENV adds environment (`WAYLAND_DEBUG=1`: a demo that dies
+// RENDERERS (default gl; listed again, alternated rounds), WARM_S (15), PHASE_S (10); GTK_ENV adds environment (`WAYLAND_DEBUG=1`: a demo that dies
 // gets its last Wayland messages and sway's log in the results); PROFILE=1 samples the guest's PCs over each phase.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from './guest-session.ts';
@@ -37,9 +37,13 @@ results.sway = await s.startSway('gles2');
 log('sway', results.sway);
 
 const kill = () => run('pkill -x gtk4-demo; for i in $(seq 30); do pgrep -x gtk4-demo >/dev/null || break; sleep 1; done; pkill -9 -x gtk4-demo; true', 60_000);
+// A renderer listed again (`gl,vulkan,gl,vulkan`: alternated rounds) gets its round in its tag from the second on.
+const rounds = new Map<string, number>();
 for (const renderer of RENDERERS) {
+  const round = (rounds.get(renderer) ?? 0) + 1;
+  rounds.set(renderer, round);
   for (const demo of DEMOS) {
-    const tag = `${demo}-${renderer}`;
+    const tag = `${demo}-${renderer}${round > 1 ? `-${round}` : ''}`;
     await kill();
     // Started by sway (the user's session), its stderr kept.
     await run(asUser(`swaymsg exec '${process.env.GTK_ENV ?? ''} GSK_RENDERER=${renderer} GSK_DEBUG=renderer gtk4-demo --run=${demo} > /tmp/gtk-${tag}.log 2>&1'`));

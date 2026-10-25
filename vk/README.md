@@ -42,7 +42,8 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
 - `vk/patches/vkr-wasm.patch`: the polls; device memory as vkr's own `aligned_alloc` storage, imported into the driver
   as a host pointer (`VkImportMemoryHostPointerInfoEXT`) and exported as a blob of shared memory with no fd; a blob's
   map into the window copies its storage there and rebinds the driver's memory to it (`vkr_wasi_memory_moved` →
-  `wg_memory_rebind`), an unmap copies it back (wasm can't remap pages).
+  `wg_memory_rebind`), an unmap copies it back (wasm can't remap pages). A memory freed while its blob lives hands the
+  blob its storage.
 - `vk/driver/` (prefix `wg`): the driver. In VK1 it is null: Mesa's lite runtime (no shader compiler), what VK0's
   Mac profile advertises (`vk/profile.ts` makes C tables of `bench/vulkan/profiles/webgpu-mac.json`'s `mac_direct`)
   plus the extensions Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's

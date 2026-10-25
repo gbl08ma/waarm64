@@ -148,6 +148,8 @@ export type GpuOptions = {
    * Off by default, a per-machine choice: without it the device is what it was.
    */
   venus?: boolean;
+  /** With `venus`: the window's written pages aren't taken at each submit (`?gpu=vulkan,nowatch`: the write-watch's cost, A/B). */
+  noWatch?: boolean;
   /** The VENUS capset (the renderer's, `vkr_get_capset`); default web/venus.ts `venusCapset()`. */
   venusCaps?: Uint8Array;
   /** The host-visible window's bytes (with `venus`): where RESOURCE_MAP_BLOB may put a blob. */

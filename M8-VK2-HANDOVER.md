@@ -1,37 +1,28 @@
-# M8 VK1 handover
+# M8 VK2 handover
 
-Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state first.
+Notes between VK2's sessions (the brief: `M8-VK2-KICKOFF.md`, a draft until the user approves it). Newest state first.
+VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
+lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
 ## State (2026-10-25)
 
-- **Step 1, route (b)'s premise: passed** (bench/vulkan/REPORT.md "VK1 step 1", `bench/vulkan/results/vk1/step1/`):
-  `spirv_to_nir` + NIR's passes + KosmicKrisp's `nir_to_msl` in wasm, 0.42 MiB brotli, 0.27 ms a stage at the median in
-  Chromium on the M4, 108/108 stages, NIR identical to native. Toolchain: **wasi-sdk 34** (beat Emscripten 6.0.13 cold
-  by 11–17%, equal warm). `bench/vulkan/nir/build.sh` rebuilds it all from `target/venus-oracle/mesa`.
-- THIRD_PARTY.md audited (its own commit). **The window (L3, ABI 53)**: `VmConfig.window` puts the host-visible window
-  in memory 0 right after RAM (outside `/memory`; spill memories past it), and a transport whose `DeviceEntry.shm` is 1
-  reports it as SHM region 1. Why memory 0: Venus writes its whole command stream into host-visible blobs, so the window
-  must be on the JIT's inline path (memories past 1 go through the interpreter: spill-memories.md).
-- **The write-watch (L4)** is built (docs/devices.md "The host-visible window"; tests in docs/testing.md): records of
-  watched write fills, marked when dropped; the host's look (`web/window.ts` `WindowWatch.take`) bumps a generation
-  and waits only for running vCPUs. No measurable cost without a window (REPORT.md "VK1: the write-watch costs…").
-  Marking at the fill turned out redundant (a planted bug there was caught by nothing): the drop's mark is the one.
-- **The device (L5)** is built (docs/devices.md "Venus"): `GpuOptions.venus` (with `virgl`), features, the VENUS
-  capset, Venus contexts, blobs created/mapped/unmapped by the host (`VenusCall`), Venus submits handed on, snapshots
-  refused. Linux's driver takes it (`tests/venus.test.ts`). Found on the way: `vm_boot` sized `/memory` from `Mem`, which
-  includes the window (fixed: RAM is `Mem` less the window).
-- **The renderer (L6)** is built (vk/README.md; docs/devices.md "Venus"): `vk/build.sh` → `target/vk/venus.wasm`
-  (3.2 MB, 510 KiB gzipped), vkr over our null driver, on memory 0 at the arena; `?gpu=vulkan` on the page.
-  `images/debian-vulkan/build.sh` (on demand, ~10 min) makes the tests' Debian with Mesa 25.0.7's Venus ICD, vulkan-tools
-  and sway; `tests/page-venus.test.ts` (ci-debian) runs vkcube there: ~50 frames/s on 2 vCPUs, and `vulkaninfo` names the
-  device `Virtio-GPU Venus (webpc null renderer (VK1))`. `bench/vulkan/venus-run.ts` runs any guest commands on it.
-- **The desktop guest (L7)** has Venus (`images/arch/desktop.sh`: `vulkan-virtio`, `vulkan-tools`; Mesa 26.2.5; the
-  previous image kept as `target/arch/desktop-2026-10-23.qcow2`, delete once the gate is in). **Mesa keeps virgl for GL
-  with both capsets**: on a machine with Vulkan, sway (GLES), es2gears and GSK's GL renderer run on virgl, Vulkan
-  programs on Venus. vkcube and GTK4's fishbowl (GSK on Vulkan) present through dma-bufs at the display's 60 in the dev
-  VM. `bench/vulkan/apps-load.ts` measures programs under sway; `bench/vulkan/guest.ts venus` runs VK0's scene on Venus.
-- Next: **the gate** on the Mac (vkcube, the S scene, GTK4: the guest's CPU on Venus against virgl; B's encoding
-  estimate; the watch's cost a frame), then the docs and plan §6/§7.
+- **VK1 is done.** On a machine with Vulkan (`?gpu=vulkan` with 3D; Debian's tests' image with Venus is
+  `images/debian-vulkan/build.sh`, the desktop guest has it too): the device, the host-visible window (256 MiB after
+  RAM in memory 0) and its write-watch, and the renderer (`vk/build.sh` → `target/vk/venus.wasm`: vkr over a null
+  driver on Mesa's lite runtime, instantiated on memory 0 in its 256 MiB arena at 0xF000_0000). vkcube, VK0's scene and
+  GTK4 (GSK on Vulkan) run on it and draw nothing. `tests/page-venus.test.ts` (ci-debian) and
+  `tests/venus-renderer.test.ts` test it.
+- **The gate** (REPORT.md "VK1: the gate"): Venus costs the guest 2.2–8.7× less a frame than virgl in the scene, a third
+  less in fishbowl, 11% more in GTK4's frames (the guest's submit path: docs/backlog.md). The write-watch costs nothing
+  measurable a frame.
+- Next: VK2, once the user approves its kickoff. The harnesses: `bench/vulkan/guest.ts <virgl|venus|venus-nowatch>` (VK0's
+  scene), `bench/vulkan/apps-load.ts` (programs under sway), `bench/gpu/gtk4-load.ts` with `VIRGL_GPU=virgl,vulkan`
+  and `RENDERERS=gl,vulkan,…` (alternated rounds), all on the Mac through `bench/gpu/sway-mac.sh` (`SCRIPT=`), which
+  copies the renderer there.
+- How to watch a Mac run (it has no stall check of its own): its log is
+  `~/webpc-gpu-bench/bench/results/local/<name>.log` on the Mac; a monitor that greps it every minute for result
+  lines and errors and says when it stops growing caught VK1's one stuck run. Match local processes with a pattern
+  that can't match the monitor's own command line (`pgrep -f "sway-mac.s[h] …"`).
 
 ## Open: one guest oops, not reproduced
 
@@ -44,10 +35,6 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
   storage after its unref, vkr's ring after the guest unmapped it) write the arena or the window, not RAM, so they
   can't zero a kernel stack. Left to suspect: something else writing guest RAM late, the write-watch's TLB drops
   under contention, or an SMP race under load that isn't Venus's at all.
-
-## Designs decided, not built yet
-
-- (L6's plan was built as planned; what changed is in vk/README.md: vkr uses virglrenderer's own util copy, renamed.)
 
 ## Things worth not re-discovering
 
@@ -83,6 +70,11 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
 - The ring poller stays on `setTimeout(0)`: a MessageChannel loop (to dodge the 4 ms clamp) starved the GPU worker's
   timers while a ring stayed busy, and the device's fence went unanswered (vkcube on Debian hung); it hadn't lowered
   vkcube's guest CPU either. Its guest time is kernel time spread thin (no spin in the profile).
+- A blob outlives its device memory: the scene frees its 68 MB staging memory while the blob is still mapped, and the
+  unmap's copy-back (and the driver's rebind) wrote into freed heap, which vkr had reused for its objects
+  ("failed to look up object 149 of type 9" for a buffer just created). The memory now hands its storage to its
+  resource at its free. Not covered by a test yet (it needs Venus commands encoded by hand); the scene's probe
+  (`FISH=1 TOOLKIT= bench/vulkan/guest.ts venus`) is the check.
 - `images/arch/desktop.sh` with `EXTRA_PACKAGES=gdb --out …` makes a debugging copy (Arch's aarch64 port has no debug
   packages: backtraces show libraries, not functions).
 - The Mac's disk has ~8.5 GiB free: VK1's files there are `~/webpc-gpu-bench/vulkan-web/target/vk1` (~15 MB).

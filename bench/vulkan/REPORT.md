@@ -487,6 +487,43 @@ before it (L3's commit) and with it, three rounds alternated in one session, hea
 Every row's rounds overlap: below the noise floor (~1%). The guest's cost with a window (a TLB miss for a page's
 first write after each look) is measured with the renderer, at VK1's gate.
 
+## VK1: the gate — Venus costs the guest less than virgl, but for GTK4's frames
+
+**2026-10-25.** What a frame costs the guest's CPU on Venus (the null renderer: VK1's renderer draws nothing, so the
+host's side is absent and only the guest's counts) against virgl, as G2 measured virgl: the Mac host (Chrome for
+Testing 153, ANGLE on Metal, macOS 26.6.2, M4), the desktop guest (images/arch/desktop.sh: Arch Linux, Mesa 26.2.5
+with Venus's driver, GTK 4.24.1, sway 1.12 on GLES through virgl), 4 vCPUs, one machine with both (`?gpu=virgl,vulkan`)
+for every program but the scene's GLES arm (`?gpu=virgl`). JSON in `results/vk1/gate/`.
+
+| Workload | virgl | Venus | |
+|---|---|---|---|
+| VK0's scene, 1 fish: the process's CPU a frame (`bench/vulkan/guest.ts`) | 1.237 ms (GLES) | 0.442 ms (Vulkan) | 2.8× less |
+| the scene, 1,000 fish | 3.357 ms | 1.549 ms | 2.2× less |
+| the scene's toolkit, 2,000 quads | 3.576 ms | 0.412 ms | 8.7× less |
+| GTK4's fishbowl (`bench/gpu/gtk4-load.ts`, GSK's GL renderer against its Vulkan one): gtk4-demo's CPU a frame | 7.8 ms (53 icons, 54.8 frames/s) | 5.24 ms (59.5 frames/s; icons unseen) | less |
+| GTK4's frames, three alternated rounds | 2.72, 2.75, 2.35 ms | 3.35, 3.03, 2.97 ms | **+11% (+0.3 ms)** |
+| vkcube against es2gears (`bench/vulkan/apps-load.ts`; different programs, both at the display's 60) | es2gears 1.16 ms | vkcube 1.82 ms | not a pair |
+
+- **The scene and fishbowl pass by a wide margin.** Venus's encoding is cheaper than virgl's in the guest: from 1 to
+  1,000 fish the scene adds 1.11 ms a frame on Venus for ~2,000 more commands (B: 320 → 2,325), **≤0.55 µs a command**
+  with the program's own work per fish in it, against 2.12 ms on virgl. At the JIT's few hundred to a thousand MIPS
+  B's estimate (≈280 guest instructions a command) is 0.3–0.6 µs: confirmed as an upper bound, not refined (the
+  scene's instruction counts cover its whole run, loading included). fishbowl's icon count on Vulkan can't be read (the
+  screen is black), but fishbowl adds icons while it holds the display's rate, which Vulkan did and GL didn't: it drew
+  at least as many for a third less CPU.
+- **GTK4's frames costs more on Venus**, in every round. gtk4-demo's user time halves (31 against 65 ms a second) but
+  its kernel time grows (113, plus 38 in Venus's WSI thread, against 99 ms a second): 9 guest submits a frame against 4
+  on GL, ~0.17 ms of kernel time for each extra one (52 ms a second for 300 more). It is B's finding: Venus doesn't
+  take submits off the kernel path. A light
+  program pays it; a heavy one (the scene, fishbowl) gains more on encoding than it loses there. The lever is the
+  guest's submit path (fewer execbuffers a vkQueueSubmit, a cheaper virtqueue notify in the emulator; plan §7).
+- **The write-watch costs nothing measurable a frame**: the scene at 1,000 fish (3 submits a frame, each taking the
+  window's written pages), three rounds alternated with and without it (`?gpu=vulkan,nowatch`): 1.472, 1.428, 1.541 ms
+  against 1.514, 1.462, 1.485 ms. The rounds overlap.
+- vkcube on Venus costs 1.82 ms a frame (all of it kernel time: 7 submits a frame); no GL program draws the same.
+- **Verdict:** Venus doesn't clearly cost the guest more than virgl: it costs 2–9× less where a frame has real work and
+  ~0.3 ms more where it has almost none. VK2 can proceed; the submit path's cost goes to plan §7 and the backlog.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

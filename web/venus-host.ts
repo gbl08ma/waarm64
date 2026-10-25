@@ -63,7 +63,8 @@ export class VenusRenderer {
   private readonly ex: Exports;
   private readonly memory: WebAssembly.Memory;
   private readonly window: VenusWindow;
-  private readonly watch: WindowWatch;
+  /** The window's write-watch; none with `watch` 0 (`?gpu=vulkan,nowatch`). */
+  private readonly watch: WindowWatch | undefined;
   /** A resource's context (the device names blobs by resource alone). */
   private readonly owner = new Map<number, number>();
   /** Fences vkr retired, by context, ring and id ("ctx:ring:id"). */
@@ -75,7 +76,7 @@ export class VenusRenderer {
     // Its heap is in the arena at memory 0's top: past 2 GiB, which a wasm i32 gives JS as negative.
     this.ex = { ...ex, venus_alloc: (size: number) => ex.venus_alloc(size) >>> 0 };
     [this.memory, this.window] = [memory, window];
-    this.watch = new WindowWatch(memory, window.watch);
+    this.watch = window.watch ? new WindowWatch(memory, window.watch) : undefined;
     this.ex._initialize();
     if (!this.ex.venus_init()) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
@@ -102,6 +103,7 @@ export class VenusRenderer {
   }
 
   private submitted() {
+    if (!this.watch) return;
     const pages = this.watch.take();
     this.stats.dirtyPages += pages.length;
     this.stats.dirtyLooks++;

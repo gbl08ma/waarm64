@@ -479,6 +479,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: plan §6's VK4.
+- **Venus's submit path costs the guest** (VK1's gate, REPORT.md "VK1: the gate"): GTK4's frames +11% on Venus (9
+  execbuffers a frame against virgl's 4, ~0.17 ms of the emulated kernel each). Ideas, unmeasured: a cheaper virtqueue
+  notify (the MMIO write's exit), profiling the guest kernel's execbuffer and syncobj paths under our emulator.
+- **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
+  is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
+  encoded by hand (or a recorded stream replayed through `venus_submit`).
 - **Venus's renderer for users** (VK1, vk/README.md): `target/vk/venus.wasm` isn't in `npm run dist`'s copy or
   `npm start`'s build (vk/build.sh clones and builds Mesa and virglrenderer natively first, minutes, and needs wasi-sdk;
   its licences, THIRD_PARTY.md's row, ship beside it as EDK2's do), and the Machines page has no Vulkan setting

@@ -1,0 +1,1867 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "warmS": 30,
+ "phaseS": 10,
+ "info": "7.2.11-arch1-1gtk4 1:4.24.1-1 gtk4-demos 1:4.24.1-1 sway 1:1.12-4 mesa 1:26.2.5-1",
+ "sway": "",
+ "frames-vulkan": {
+  "alive": true,
+  "flushes": 60,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 6,
+    "user": 0,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 13,
+    "user": 2,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 14,
+    "user": 2,
+    "sys": 12,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 11,
+    "user": 1,
+    "sys": 10,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 201,
+    "user": 33,
+    "sys": 168,
+    "threads": 6,
+    "runs": 255,
+    "wait": 1
+   },
+   {
+    "process": "sway",
+    "cpu": 177,
+    "user": 40,
+    "sys": 137,
+    "threads": 4,
+    "runs": 183,
+    "wait": 1
+   },
+   {
+    "process": "kworker/u16:1+events_unbound",
+    "cpu": 15,
+    "user": 0,
+    "sys": 15,
+    "threads": 1,
+    "runs": 90,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 250,
+    "wait": 10
+   },
+   {
+    "process": "kworker/u16:2-events_unbound",
+    "cpu": 7,
+    "user": 0,
+    "sys": 7,
+    "threads": 1,
+    "runs": 43,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "threads": 2,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 4,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 35,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:4-events_unbound",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:1H-kblockd",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "ksoftirqd/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "process": "jbd2/vda2-8",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 177,
+    "user": 40,
+    "sys": 137,
+    "runs": 183,
+    "wait": 1
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 159,
+    "user": 32,
+    "sys": 129,
+    "runs": 131,
+    "wait": 1
+   },
+   {
+    "thread": "gtk4-demo/vn_wsi[0,0]",
+    "cpu": 40,
+    "user": 0,
+    "sys": 41,
+    "runs": 124,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:1+events_unbound/kworker/u16:1+events_unbound",
+    "cpu": 14,
+    "user": 0,
+    "sys": 15,
+    "runs": 90,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "runs": 250,
+    "wait": 10
+   },
+   {
+    "thread": "kworker/u16:2-events_unbound/kworker/u16:2-events_unbound",
+    "cpu": 6,
+    "user": 0,
+    "sys": 7,
+    "runs": 43,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 4,
+    "user": 5,
+    "sys": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 4,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "runs": 35,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 660.9090909090909,
+   "commands": {
+    "SET_SCANOUT": 59.99999999999999,
+    "RESOURCE_FLUSH": 59.99999999999999,
+    "SUBMIT_3D": 540.909090909091
+   },
+   "fences": {
+    "n": 240.9090909090909,
+    "meanMs": 0.18487734200819483,
+    "maxMs": 1.9149999618530273,
+    "heldMs": 4900.452725497159,
+    "behindMs": 2397.095454649492,
+    "fullMs": 0,
+    "heldMax": 9,
+    "toGpuMs": 0.17590649754809504,
+    "toGpuMaxMs": 2.02490234375,
+    "backMs": 0.012763764003537736,
+    "backMaxMs": 0.860107421875
+   },
+   "flushes": 60,
+   "submits": 540.9090909090909,
+   "submitKB": 505.48544034090907,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 7.726820685646751,
+   "draws": 60,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 5.138635635375977,
+    "submitMs": 4.78681755065918,
+    "drawMs": 0.7590918974442915,
+    "presents": 45.09090909090909,
+    "glDraws": 62,
+    "commands": 855,
+    "uploadKB": 126.53125,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 5,
+    "errors": 2262,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 11.003409999847412,
+    "Msteps": 80.530378,
+    "irqs": 2386,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 8932,
+     "0x20": 82,
+     "0x24": 384,
+     "0x25": 22
+    },
+    "tlbMisses": 72013,
+    "tlbFlushes": 1001,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.555604
+   }
+  },
+  "stderr": [
+   "2",
+   "1 (gtk4-demo:545): Gdk-WARNING **: 20:46:54.779: vkGetPipelineCacheData(): A return array was too small for the result. (VK_INCOMPLETE) (5)",
+   "1 (gtk4-demo:545): Gdk-WARNING **: 20:46:42.677: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”"
+  ]
+ },
+ "frames-gl": {
+  "alive": true,
+  "flushes": 59.90909090909091,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 10,
+    "user": 2,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 5,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 10,
+    "user": 2,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 12,
+    "user": 3,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 13,
+    "user": 3,
+    "sys": 9,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sway",
+    "cpu": 165,
+    "user": 31,
+    "sys": 134,
+    "threads": 4,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "process": "gtk4-demo",
+    "cpu": 163,
+    "user": 69,
+    "sys": 94,
+    "threads": 6,
+    "runs": 127,
+    "wait": 1
+   },
+   {
+    "process": "kworker/u16:1+events_unbound",
+    "cpu": 24,
+    "user": 0,
+    "sys": 24,
+    "threads": 1,
+    "runs": 122,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "threads": 1,
+    "runs": 234,
+    "wait": 11
+   },
+   {
+    "process": "swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "threads": 2,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 4,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0-events_unbound",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 13,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 24,
+    "wait": 0
+   },
+   {
+    "process": "at-spi2-registr",
+    "cpu": 2,
+    "user": 1,
+    "sys": 1,
+    "threads": 4,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kworker/2:2-mm_percpu_wq",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "ksoftirqd/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kcompactd1",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 165,
+    "user": 31,
+    "sys": 134,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 161,
+    "user": 69,
+    "sys": 93,
+    "runs": 127,
+    "wait": 1
+   },
+   {
+    "thread": "kworker/u16:1+events_unbound/kworker/u16:1+events_unbound",
+    "cpu": 24,
+    "user": 0,
+    "sys": 24,
+    "runs": 122,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "runs": 234,
+    "wait": 11
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:0-events_unbound/kworker/u16:0-events_unbound",
+    "cpu": 2,
+    "user": 0,
+    "sys": 3,
+    "runs": 13,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 360.45454545454544,
+   "commands": {
+    "SET_SCANOUT": 59.9090909090909,
+    "RESOURCE_FLUSH": 59.9090909090909,
+    "SUBMIT_3D": 240.63636363636363
+   },
+   "fences": {
+    "n": 180.72727272727272,
+    "meanMs": 0.0963581399898414,
+    "maxMs": 16.800000190734863,
+    "heldMs": 594.9899949160489,
+    "behindMs": 95.91681645133279,
+    "fullMs": 0,
+    "heldMax": 5,
+    "toGpuMs": 0.07298760826678823,
+    "toGpuMaxMs": 1.764892578125,
+    "backMs": 0.02629436285682847,
+    "backMaxMs": 16.7099609375
+   },
+   "flushes": 59.90909090909091,
+   "submits": 240.63636363636363,
+   "submitKB": 984.7379261363636,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 6.586369601162997,
+   "draws": 59.90909090909091,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 7.344545104286888,
+    "submitMs": 7.070000301707875,
+    "drawMs": 0.8463645414872603,
+    "presents": 59.45454545454545,
+    "glDraws": 122.9090909090909,
+    "commands": 1527.3636363636363,
+    "uploadKB": 135.37357954545453,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 17,
+    "errors": 2824,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 10.997515000343324,
+    "Msteps": 82.265196,
+    "irqs": 1926,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 6009,
+     "0x20": 97,
+     "0x24": 449,
+     "0x25": 27
+    },
+    "tlbMisses": 77249,
+    "tlbFlushes": 821,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.369096
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:812): Gdk-WARNING **: 20:47:34.116: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "frames-vulkan-2": {
+  "alive": true,
+  "flushes": 60,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 12,
+    "user": 2,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 10,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 182,
+    "user": 32,
+    "sys": 150,
+    "threads": 6,
+    "runs": 250,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 172,
+    "user": 34,
+    "sys": 138,
+    "threads": 4,
+    "runs": 202,
+    "wait": 2
+   },
+   {
+    "process": "kworker/u16:1-events_unbound",
+    "cpu": 21,
+    "user": 0,
+    "sys": 21,
+    "threads": 1,
+    "runs": 134,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 12,
+    "user": 0,
+    "sys": 12,
+    "threads": 1,
+    "runs": 250,
+    "wait": 19
+   },
+   {
+    "process": "sh",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "threads": 2,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 3,
+    "user": 1,
+    "sys": 2,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 36,
+    "wait": 0
+   },
+   {
+    "process": "systemd-timesyn",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "systemd",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:4-events_unbound",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 9,
+    "wait": 0
+   },
+   {
+    "process": "kworker/1:2-events",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 172,
+    "user": 34,
+    "sys": 139,
+    "runs": 202,
+    "wait": 2
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 143,
+    "user": 31,
+    "sys": 113,
+    "runs": 128,
+    "wait": 0
+   },
+   {
+    "thread": "gtk4-demo/vn_wsi[0,0]",
+    "cpu": 37,
+    "user": 0,
+    "sys": 38,
+    "runs": 122,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:1-events_unbound/kworker/u16:1+events_unbound",
+    "cpu": 21,
+    "user": 0,
+    "sys": 21,
+    "runs": 134,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 11,
+    "user": 0,
+    "sys": 12,
+    "runs": 250,
+    "wait": 19
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "thread": "systemd-resolve/systemd-resolve",
+    "cpu": 2,
+    "user": 1,
+    "sys": 2,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 3,
+    "runs": 36,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 661.2,
+   "commands": {
+    "SET_SCANOUT": 60,
+    "RESOURCE_FLUSH": 60,
+    "SUBMIT_3D": 541.2
+   },
+   "fences": {
+    "n": 241,
+    "meanMs": 0.1707614249708247,
+    "maxMs": 4.2300004959106445,
+    "heldMs": 3260.9274991989137,
+    "behindMs": 1581.5374974250794,
+    "fullMs": 0,
+    "heldMax": 9,
+    "toGpuMs": 0.16148350563466618,
+    "toGpuMaxMs": 0.9150390625,
+    "backMs": 0.013928577217323651,
+    "backMaxMs": 3.89501953125
+   },
+   "flushes": 60,
+   "submits": 541.2,
+   "submitKB": 506.25078125,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 8.431502532958984,
+   "draws": 60,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 5.857726964083585,
+    "submitMs": 5.567726308649236,
+    "drawMs": 0.9545463215221058,
+    "presents": 59.81818181818182,
+    "glDraws": 62,
+    "commands": 855,
+    "uploadKB": 126.53125,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 17,
+    "errors": 5241,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 9.996514999389648,
+    "Msteps": 78.493373,
+    "irqs": 2430,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 8406,
+     "0x20": 71,
+     "0x24": 314,
+     "0x25": 21
+    },
+    "tlbMisses": 64588,
+    "tlbFlushes": 625,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.184589
+   }
+  },
+  "stderr": [
+   "2",
+   "1 (gtk4-demo:1019): Gdk-WARNING **: 20:48:38.779: vkGetPipelineCacheData(): A return array was too small for the result. (VK_INCOMPLETE) (5)",
+   "1 (gtk4-demo:1019): Gdk-WARNING **: 20:48:26.783: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”"
+  ]
+ },
+ "frames-gl-2": {
+  "alive": true,
+  "flushes": 59.90909090909091,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 10,
+    "user": 2,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 11,
+    "user": 3,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 9,
+    "user": 1,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 16,
+    "user": 3,
+    "sys": 12,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 165,
+    "user": 65,
+    "sys": 100,
+    "threads": 6,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "process": "sway",
+    "cpu": 160,
+    "user": 31,
+    "sys": 129,
+    "threads": 4,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "process": "kworker/u16:3-events_power_efficient",
+    "cpu": 18,
+    "user": 0,
+    "sys": 18,
+    "threads": 1,
+    "runs": 101,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "threads": 1,
+    "runs": 180,
+    "wait": 7
+   },
+   {
+    "process": "sh",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "threads": 2,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:1-events_unbound",
+    "cpu": 4,
+    "user": 0,
+    "sys": 4,
+    "threads": 1,
+    "runs": 26,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 25,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:4-events_unbound",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 9,
+    "wait": 0
+   },
+   {
+    "process": "ksoftirqd/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 163,
+    "user": 65,
+    "sys": 99,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 160,
+    "user": 31,
+    "sys": 129,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "thread": "kworker/u16:3-events_power_efficient/kworker/u16:3-events_power_efficient",
+    "cpu": 18,
+    "user": 0,
+    "sys": 18,
+    "runs": 101,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 8,
+    "user": 0,
+    "sys": 9,
+    "runs": 180,
+    "wait": 7
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 4,
+    "user": 4,
+    "sys": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:1-events_unbound/kworker/u16:1+events_unbound",
+    "cpu": 4,
+    "user": 0,
+    "sys": 4,
+    "runs": 26,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 360.8181818181818,
+   "commands": {
+    "SET_SCANOUT": 59.90909090909091,
+    "RESOURCE_FLUSH": 59.90909090909091,
+    "SUBMIT_3D": 241
+   },
+   "fences": {
+    "n": 181,
+    "meanMs": 0.09426922417357601,
+    "maxMs": 13.430000305175781,
+    "heldMs": 3016.7377268184314,
+    "behindMs": 685.234544580633,
+    "fullMs": 0,
+    "heldMax": 6,
+    "toGpuMs": 0.07526385826061024,
+    "toGpuMaxMs": 3.135009765625,
+    "backMs": 0.021928267045454544,
+    "backMaxMs": 13.330078125
+   },
+   "flushes": 59.90909090909091,
+   "submits": 241,
+   "submitKB": 985.7801846590909,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 6.288637421347878,
+   "draws": 59.90909090909091,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 7.527725739912554,
+    "submitMs": 7.19408841566606,
+    "drawMs": 0.791820612820712,
+    "presents": 46.09090909090909,
+    "glDraws": 122,
+    "commands": 1515.3636363636363,
+    "uploadKB": 134.96875,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 29,
+    "errors": 5764,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 10.99514999961853,
+    "Msteps": 68.961146,
+    "irqs": 1799,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 5324,
+     "0x20": 87,
+     "0x24": 408,
+     "0x25": 24
+    },
+    "tlbMisses": 62021,
+    "tlbFlushes": 757,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.119581
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1228): Gdk-WARNING **: 20:49:19.479: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "frames-vulkan-3": {
+  "alive": true,
+  "flushes": 59.90909090909091,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 10,
+    "user": 1,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 9,
+    "user": 1,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 11,
+    "user": 1,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 10,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 9,
+    "user": 1,
+    "sys": 8,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 178,
+    "user": 32,
+    "sys": 146,
+    "threads": 6,
+    "runs": 250,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 152,
+    "user": 29,
+    "sys": 123,
+    "threads": 4,
+    "runs": 200,
+    "wait": 2
+   },
+   {
+    "process": "kworker/u16:4+events_unbound",
+    "cpu": 14,
+    "user": 0,
+    "sys": 14,
+    "threads": 1,
+    "runs": 95,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 11,
+    "user": 0,
+    "sys": 11,
+    "threads": 1,
+    "runs": 277,
+    "wait": 13
+   },
+   {
+    "process": "kworker/u16:1-events_power_efficient",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 45,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "threads": 2,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 35,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "ksoftirqd/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 6,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 152,
+    "user": 30,
+    "sys": 123,
+    "runs": 200,
+    "wait": 2
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 143,
+    "user": 31,
+    "sys": 113,
+    "runs": 127,
+    "wait": 0
+   },
+   {
+    "thread": "gtk4-demo/vn_wsi[0,0]",
+    "cpu": 35,
+    "user": 0,
+    "sys": 36,
+    "runs": 122,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:4+events_unbound/kworker/u16:4+events_unbound",
+    "cpu": 14,
+    "user": 0,
+    "sys": 14,
+    "runs": 95,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 10,
+    "user": 0,
+    "sys": 11,
+    "runs": 277,
+    "wait": 13
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:1-events_power_efficient/kworker/u16:1-events_power_efficient",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 45,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "runs": 35,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 660.0909090909091,
+   "commands": {
+    "SET_SCANOUT": 59.9090909090909,
+    "RESOURCE_FLUSH": 59.9090909090909,
+    "SUBMIT_3D": 540.2727272727273
+   },
+   "fences": {
+    "n": 240.63636363636363,
+    "meanMs": 0.19833207139439255,
+    "maxMs": 13.489999771118164,
+    "heldMs": 1357.088637785478,
+    "behindMs": 629.6963647495617,
+    "fullMs": 0,
+    "heldMax": 9,
+    "toGpuMs": 0.173876011993339,
+    "toGpuMaxMs": 2.809814453125,
+    "backMs": 0.027290070421703817,
+    "backMaxMs": 12.844970703125
+   },
+   "flushes": 59.90909090909091,
+   "submits": 540.2727272727273,
+   "submitKB": 505.46022727272725,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 8.402728427540172,
+   "draws": 59.90909090909091,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 5.460453553633257,
+    "submitMs": 5.101363615556196,
+    "drawMs": 0.9300000450827859,
+    "presents": 50.90909090909091,
+    "glDraws": 61.72727272727273,
+    "commands": 852.3636363636364,
+    "uploadKB": 115.3309659090909,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 29,
+    "errors": 8157,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 11,
+    "Msteps": 79.4693,
+    "irqs": 2388,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 8539,
+     "0x20": 86,
+     "0x24": 404,
+     "0x25": 25
+    },
+    "tlbMisses": 62102,
+    "tlbFlushes": 764,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.160815
+   }
+  },
+  "stderr": [
+   "2",
+   "1 (gtk4-demo:1434): Gdk-WARNING **: 20:50:23.783: vkGetPipelineCacheData(): A return array was too small for the result. (VK_INCOMPLETE) (5)",
+   "1 (gtk4-demo:1434): Gdk-WARNING **: 20:50:12.245: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”"
+  ]
+ },
+ "frames-gl-3": {
+  "alive": true,
+  "flushes": 60,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 9,
+    "user": 2,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 13,
+    "user": 4,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 7,
+    "user": 1,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 13,
+    "user": 2,
+    "sys": 10,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sway",
+    "cpu": 147,
+    "user": 30,
+    "sys": 117,
+    "threads": 4,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "process": "gtk4-demo",
+    "cpu": 141,
+    "user": 54,
+    "sys": 87,
+    "threads": 6,
+    "runs": 125,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:3+events_unbound",
+    "cpu": 13,
+    "user": 0,
+    "sys": 13,
+    "threads": 1,
+    "runs": 77,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:1-events_unbound",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "threads": 1,
+    "runs": 55,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "threads": 1,
+    "runs": 186,
+    "wait": 9
+   },
+   {
+    "process": "sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "threads": 2,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "systemd-timesyn",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 27,
+    "wait": 0
+   },
+   {
+    "process": "xdg-desktop-por",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 6,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "migration/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "kworker/2:2-events",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "ksoftirqd/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kcompactd0",
+    "cpu": 1,
+    "user": 1,
+    "sys": 0,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 145,
+    "user": 30,
+    "sys": 116,
+    "runs": 128,
+    "wait": 1
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 140,
+    "user": 54,
+    "sys": 86,
+    "runs": 125,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:3+events_unbound/kworker/u16:3+events_unbound",
+    "cpu": 13,
+    "user": 0,
+    "sys": 13,
+    "runs": 77,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:1-events_unbound/kworker/u16:1-events_unbound",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "runs": 55,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 9,
+    "user": 0,
+    "sys": 9,
+    "runs": 186,
+    "wait": 9
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 360.90909090909093,
+   "commands": {
+    "SET_SCANOUT": 59.99999999999999,
+    "RESOURCE_FLUSH": 59.99999999999999,
+    "SUBMIT_3D": 240.9090909090909
+   },
+   "fences": {
+    "n": 180.9090909090909,
+    "meanMs": 0.06732664443739694,
+    "maxMs": 0.5399999618530273,
+    "heldMs": 2809.9490914778276,
+    "behindMs": 644.3018178072842,
+    "fullMs": 0,
+    "heldMax": 5,
+    "toGpuMs": 0.061953812028894474,
+    "toGpuMaxMs": 0.304931640625,
+    "backMs": 0.008452050290515075,
+    "backMaxMs": 0.465087890625
+   },
+   "flushes": 60,
+   "submits": 240.9090909090909,
+   "submitKB": 985.3515625,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 5.772724758494984,
+   "draws": 60,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 6.1245455308393995,
+    "submitMs": 5.831819187511098,
+    "drawMs": 1.0277286876331677,
+    "presents": 59.90909090909091,
+    "glDraws": 122.0909090909091,
+    "commands": 1515.7272727272727,
+    "uploadKB": 123.734375,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 41,
+    "errors": 8706,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 11.001125,
+    "Msteps": 86.791115,
+    "irqs": 1788,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 5931,
+     "0x20": 99,
+     "0x24": 472,
+     "0x25": 26
+    },
+    "tlbMisses": 61921,
+    "tlbFlushes": 830,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.180857
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1647): Gdk-WARNING **: 20:51:04.953: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "warnings": {
+  "virgl: ctx 3: command 49 isn't supported": 5,
+  "virgl: ctx 3: resource 21 isn't attached": 1,
+  "virgl: ctx 3: resource 28 isn't attached": 1,
+  "virgl: ctx 3: resource 29 isn't attached": 1,
+  "virgl: ctx 3: resource 31 isn't attached": 1,
+  "virgl: ctx 3: resource 32 isn't attached": 1,
+  "venus: vkr: destroying context 7 (gtk4-demo) with a valid instance": 3,
+  "venus: vkr: destroying device with valid objects": 3
+ }
+}

@@ -27,7 +27,8 @@ These bind the graphics work; changing one is the user's call (PLAN.md).
 - **The caps follow the browser**: never more than the renderer backs there (a snapshot restored where its caps can't
   be backed runs with 3D off).
 - **virgl's resources are guest-backed**: no `HOSTMEM` window, blob resources or coherent-memory tracking. (Vulkan
-  through Venus would need all three: [plans/graphics.md](plans/graphics.md).)
+  through Venus needs all three, and a machine with Vulkan has them since VK1: [devices.md](devices.md) "Venus" and
+  "The host-visible window", [vk/README.md](../vk/README.md); the plan in [plans/graphics.md](plans/graphics.md).)
 - **3D is the page's default where WebGL2 is**, with the Machine menu's Graphics choice; the 2D path stays and stays
   tested (`?gpu=2d`, `WEBPC_PAGE_QUERY=gpu=2d scripts/ci-debian.sh`).
 - **Snapshots while 3D is in use save the renderer's state as data** (objects decoded, contents read back), never a
@@ -227,7 +228,8 @@ screen than on the simple framebuffer (backlog).
   resource whenever `glBufferData` changes a buffer's size or rewrites a busy one; its winsys reuses a released buffer
   for 1 s, only if idle and between the size asked and twice it): the guest's behavior, and not a cost (the whole 3D
   driver stack in the guest's kernel is 1–1.5% of the vCPUs' samples).
-- **GTK4** tries Vulkan first (Mesa's virtio ICD, without Venus) and takes GSK's GL renderer on GLES 3.0. **Its graphics
+- **GTK4** tries Vulkan first (Mesa's virtio ICD, without Venus) and takes GSK's GL renderer on GLES 3.0 (on a machine
+  with Vulkan, `?gpu=vulkan`, it takes GSK's Vulkan renderer on Venus: VK1's null renderer draws nothing). **Its graphics
   offload kills a GtkGLArea**: GTK hands the compositor the GL area's texture as a dmabuf, and Mesa's virgl backs a
   texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both ways
   (`COPY_TRANSFER_BOTH_DIRECTIONS`), so the dmabuf is smaller than stride × height and sway disconnects the client

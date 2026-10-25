@@ -961,7 +961,7 @@ export class Devices {
             const host = portHost(d.renderer);
             host.call({ t: 'ram', ram: ctx.ram().map((r, k) => ({ buffer: r.buffer, offset: r.byteOffset, length: ctx.layout[k].size })) });
             // Venus's renderer runs on memory 0 itself (web/venus-host.ts): the memory, and where the window is.
-            if (d.venus && window) host.call({ t: 'venus-init', memory, window });
+            if (d.venus && window) host.call({ t: 'venus-init', memory, window: d.noWatch ? { ...window, watch: 0 } : window });
             b.gpu.host = host;
           }
           if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);

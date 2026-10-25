@@ -197,11 +197,12 @@ function sndTuning() {
  * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
  * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
  * `vulkan` offers Vulkan through Venus on a 3D machine (docs/devices.md "Venus"; VK1: on the null renderer).
+ * `nowatch` (with `vulkan`) skips the window's write-watch at each submit: its cost, measured against the default.
  */
 function gpuTuning() {
   const knobs = (query.get('gpu') ?? '').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
-  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), vulkan: knobs.includes('vulkan'), capture: knobs.includes('capture'), screen2d: knobs.includes('canvas2d') ? 'canvas2d' as const : knobs.includes('gl2d') ? 'webgl2' as const : 'auto' as const };
+  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), vulkan: knobs.includes('vulkan'), noWatch: knobs.includes('nowatch'), capture: knobs.includes('capture'), screen2d: knobs.includes('canvas2d') ? 'canvas2d' as const : knobs.includes('gl2d') ? 'webgl2' as const : 'auto' as const };
 }
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;

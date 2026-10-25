@@ -4,6 +4,7 @@
  * hands out the arena from there to its end (`ARENA_END`, the top of memory 0) instead of growing the memory. */
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <unistd.h>
 
 extern unsigned char __heap_end;
@@ -18,6 +19,10 @@ sbrk(intptr_t increment)
       brk_at = (uintptr_t)&__heap_end;
    uintptr_t old = brk_at;
    if (increment < 0 || (uint64_t)old + (uint64_t)increment > ARENA_END) {
+      static int said;
+      if (!said++)
+         fprintf(stderr, "the renderer's arena is full: %lld more bytes at %#llx\n", (long long)increment,
+                 (unsigned long long)old);
       errno = ENOMEM;
       return (void *)-1;
    }
