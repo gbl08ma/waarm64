@@ -87,16 +87,18 @@ const compile = (src: string, f: string[]) => {
 
 // Mesa: util, its C11 threads, BLAKE3, vulkan util and the lite runtime.
 const MESA_LIBS = ['src/util/libmesa_util.a', 'src/c11/impl/libmesa_util_c11.a', 'src/util/blake3/libblake3.a',
-  'src/vulkan/util/libvulkan_util.a', 'src/vulkan/runtime/libvulkan_lite_runtime.a', 'src/vulkan/runtime/libvulkan_lite_instance.a'];
+  'src/vulkan/util/libvulkan_util.a', 'src/vulkan/runtime/libvulkan_lite_runtime.a', 'src/vulkan/runtime/libvulkan_runtime.a',
+  'src/vulkan/runtime/libvulkan_instance.a', 'src/compiler/nir/libnir.a', 'src/compiler/spirv/libvtn.a', 'src/compiler/libcompiler.a'];
 const mesa = commands(`${W}/build-mesa`);
 let runtimeFlags: string[] = [];
+let nativeFlags: string[] = [];
 for (const e of mesa) {
   const lib = MESA_LIBS.find((l) => e.output.startsWith(`${l}.p/`));
   if (!lib) continue;
   const src = resolve(e.directory, e.file);
   if (SKIP.test(src)) continue;
   const f = flags(e);
-  if (lib.endsWith('libvulkan_lite_runtime.a') && !runtimeFlags.length) runtimeFlags = f;
+  if (lib.endsWith('libvulkan_runtime.a') && !runtimeFlags.length) { runtimeFlags = f; nativeFlags = split(e.command).slice(1); }
   compile(src, f);
 }
 
@@ -127,6 +129,9 @@ compile(`${W}/gen/wg_profile.c`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driv
 for (const f of readdirSync(`${HERE}/driver`).filter((f) => f.endsWith('.c')).sort()) {
   compile(`${HERE}/driver/${f}`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`]);
 }
+for (const f of readdirSync(`${HERE}/compiler`).filter((f) => f.endsWith('.c')).sort()) {
+  compile(`${HERE}/compiler/${f}`, [...runtimeFlags, `-I${HERE}/compiler`]);
+}
 compile(`${HERE}/wasi/os_misc.c`, runtimeFlags);
 compile(`${HERE}/wasi/os_misc_virgl.c`, ['-include', PREFIX]);
 compile(`${HERE}/wasi/arena.c`, []);
@@ -134,7 +139,7 @@ compile(`${HERE}/glue.c`, [...vkrFlags, `-I${HERE}/driver`]);
 
 // The module runs on memory 0 at the arena (vk/README.md): data and stack at its fixed base, the heap after them.
 const ARENA = 0xf000_0000;
-const EXPORTS = readFileSync(`${HERE}/glue.c`, 'utf8').match(/^EXPORT[^(]*\b(\w+)\(/gm)!.map((l) => l.match(/(\w+)\($/)![1]);
+const EXPORTS = [`${HERE}/glue.c`, `${HERE}/compiler/wgsl_test.c`].flatMap((f) => readFileSync(f, 'utf8').match(/^EXPORT[^(]*\b(\w+)\(/gm)!.map((l) => l.match(/(\w+)\($/)![1]));
 const link = `$cxx --target=wasm32-wasip1-threads --sysroot=${SDK}/share/wasi-sysroot -mexec-model=reactor -O2 ` +
   '-mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false -Wl,--gc-sections ' + (process.env.VK_NAMES ? '' : '-Wl,--strip-all ') +
   `-Wl,--import-memory -Wl,--shared-memory -Wl,--max-memory=4294967296 -Wl,--global-base=${ARENA} -Wl,-z,stack-size=4194304 ` +
@@ -143,4 +148,21 @@ const link = `$cxx --target=wasm32-wasip1-threads --sysroot=${SDK}/share/wasi-sy
 lines.push('', 'rule link', `  command = ${link}`, '  description = LINK $out', '');
 lines.push(`build venus.wasm: link ${objs.map(esc).join(' ')}`, 'default venus.wasm', '');
 writeFileSync(`${W}/wasm.ninja`, lines.join('\n'));
+
+// The translator natively (target/vk/wgsl: one stage's WGSL, for debugging with ASan; gdb can't run in the dev VM),
+// on the native build's own libraries.
+const keep = (a: string) => !/^-(o|c|MD|MQ|MF)$/.test(a) && !a.startsWith('-O');
+const nflags: string[] = [];
+for (let i = 0; i < nativeFlags.length; i++) {
+  const a = nativeFlags[i];
+  if (a === '-o' || a === '-MQ' || a === '-MF' || a === '-c') { i++; continue; }
+  if (!keep(a)) continue;
+  nflags.push(a.startsWith('-I') ? `-I${resolve(`${W}/build-mesa`, a.slice(2))}` : a);
+}
+const nlibs = ['src/compiler/spirv/libvtn.a', 'src/compiler/nir/libnir.a', 'src/compiler/libcompiler.a', 'src/util/libmesa_util.a',
+  'src/c11/impl/libmesa_util_c11.a', 'src/util/blake3/libblake3.a'].map((l) => `${W}/build-mesa/${l}`);
+writeFileSync(`${W}/native.ninja`, [
+  'rule cc', `  command = cc ${nflags.map(shq).join(' ').replace(/\$/g, '$$$$')} -I${HERE}/compiler -O1 -g -fsanitize=address -fno-omit-frame-pointer $in ${nlibs.join(' ')} -lSPIRV-Tools -lzstd -lz -ldl -lstdc++ -lm -lpthread -o $out`,
+  `build wgsl: cc ${readdirSync(`${HERE}/compiler`).filter((f) => f.endsWith('.c')).sort().map((f) => esc(`${HERE}/compiler/${f}`)).join(' ')}`, '',
+].join('\n'));
 console.log(`target/vk/wasm.ninja: ${objs.length} objects -> venus.wasm`);

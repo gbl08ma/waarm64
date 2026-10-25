@@ -175,7 +175,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     bench/vulkan/REPORT.md): a whole Vulkan frame translated onto WebGPU at 1.0–1.8× native on the M4 and 1.9–3.6× on
     the user's NVIDIA, 200–950× the guest's lavapipe, so it continues, by route (b) (Mesa's runtime and NIR in wasm);
     **VK1 is done** (2026-10-25: the device, the window and its write-watch, a null Venus renderer in wasm; the gate passed
-    but for GTK4's frames, REPORT.md "VK1: the gate"); VK2 is next. **virtio-gpu 2D is done (G0 and
+    but for GTK4's frames, REPORT.md "VK1: the gate"); VK2 is current (L1, the shader path, done; `M8-VK2-HANDOVER.md` has its loops). **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device
     pixels with HiDPI), with damage only and the guest's cursor as the page's; snapshots keep

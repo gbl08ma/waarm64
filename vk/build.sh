@@ -5,6 +5,7 @@
 # sources (gen.ts reads both); their C is compiled again for wasm32-wasip1 with our shims (vk/wasi/) and patches
 # (vk/patches/). Idempotent: built trees are reused.
 #   vk/build.sh            -> target/vk/venus.wasm
+#   vk/build.sh native     -> also target/vk/wgsl (the translator natively, with ASan: one stage's WGSL)
 # Needs what tools/venus-oracle/build.sh needs (meson, ninja, python313-Mako, …) and network the first time.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -35,9 +36,10 @@ if [ ! -d "$W/build-mesa" ]; then
     -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled -Dllvm=disabled \
     -Dvideo-codecs= -Dvulkan-layers= -Dtools= -Dbuild-tests=false -Dshared-glapi=disabled >/dev/null
 fi
-ninja -C "$W/build-mesa" src/vulkan/runtime/libvulkan_lite_runtime.a src/vulkan/runtime/libvulkan_lite_instance.a \
-  src/vulkan/util/libvulkan_util.a src/util/libmesa_util.a src/c11/impl/libmesa_util_c11.a src/util/blake3/libblake3.a \
-  >/dev/null
+ninja -C "$W/build-mesa" src/vulkan/runtime/libvulkan_lite_runtime.a src/vulkan/runtime/libvulkan_runtime.a \
+  src/vulkan/runtime/libvulkan_instance.a src/vulkan/util/libvulkan_util.a src/util/libmesa_util.a \
+  src/c11/impl/libmesa_util_c11.a src/util/blake3/libblake3.a src/compiler/nir/libnir.a src/compiler/spirv/libvtn.a \
+  src/compiler/libcompiler.a >/dev/null
 
 # virglrenderer: Venus only, the Vulkan library linked (our driver's vkGetInstanceProcAddr), no render server use.
 if [ ! -d "$W/virglrenderer" ]; then
@@ -62,4 +64,5 @@ python3 "$W/mesa/src/vulkan/util/vk_entrypoints_gen.py" --xml "$W/mesa/src/vulka
 node "$ROOT/vk/profile.ts" "$ROOT/bench/vulkan/profiles/webgpu-mac.json" mac_direct "$G/wg_profile.c" >/dev/null
 node "$ROOT/vk/gen.ts" "$W" "$W/$WASI_SDK"
 ninja -C "$W" -f wasm.ninja >/dev/null
+if [ "${1:-}" = native ]; then ninja -C "$W" -f native.ninja >/dev/null; fi
 ls -l "$W/venus.wasm"

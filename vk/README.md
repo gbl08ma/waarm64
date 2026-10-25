@@ -2,12 +2,15 @@
 
 The host side of Vulkan through Venus ([docs/plans/graphics.md](../docs/plans/graphics.md) route (b);
 [docs/devices.md](../docs/devices.md) "Venus"): virglrenderer's Venus decoder (`vkr`) over a Vulkan driver of ours
-on Mesa's common Vulkan runtime, built as one wasm module, `target/vk/venus.wasm` (3.2 MB, ~510 KiB gzipped), which
-the GPU worker instantiates on the VM's memory 0 (web/venus-host.ts).
+on Mesa's common Vulkan runtime, with Mesa's `spirv_to_nir`, NIR and our NIR → WGSL backend, built as one wasm module,
+`target/vk/venus.wasm` (12.4 MB, 1.18 MB gzipped: most of the raw size is NIR's tables), which the GPU worker
+instantiates on the VM's memory 0 (web/venus-host.ts).
 
 ```sh
 vk/build.sh     # -> target/vk/venus.wasm (the first run clones and builds natively, a few minutes; later ones are quick)
+vk/build.sh native   # also target/vk/wgsl: the translator natively with ASan (`target/vk/wgsl <0|4|5> stage.spv`)
 node --test tests/venus-renderer.test.ts   # the module in Node: its capset, a blob's map and unmap
+node --test tests/wgsl.test.ts             # the translator: SPIR-V stages to WGSL in Node, compiled by Chromium's WebGPU
 node --test tests/page-venus.test.ts       # vkcube on the page (needs images/debian-vulkan/build.sh's image)
 ```
 
@@ -33,6 +36,27 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   26's driver sends) can't block the only thread, since that seqno comes in a later submit: the ring stalls after it,
   keeps the rest of its batch, and its poll resumes once the seqno arrives. The module imports `wasi.thread-spawn`,
   which the host answers with -1.
+
+## The shader path
+
+`vk/compiler/` (wgsl.h has the model): SPIR-V → NIR (`spirv_to_nir`, buffers as index and offset, no physical
+pointers) → `wgsl_preprocess` (KosmicKrisp's pass list: inlining, splitting, outputs through temporaries, input
+attachments as 2D textures, scalarized ALU) → `wgsl_lower` against a layout (descriptors to slots: slot s of a set is
+WGSL `@binding(2s)`, a combined image-sampler's sampler `2s + 1`; I/O to locations; explicit memory; NIR's
+optimization loop) → `wgsl_link` for a vertex and fragment pair (`nir_opt_varyings`) → `wgsl_print`, out of SSA. The
+printed WGSL keeps every value in a function-scope `var` of u32 or bool and bitcasts at each operation, so it needs no
+type inference and no const-expression can overflow or make a NaN (shader-creation errors in WGSL); textures and
+samplers come from the tex instruction's indices; push constants are immediates (a struct of vec4s, since immediates
+can't be arrays, copied into an array the shader indexes); a vertex shader's outputs are typed and interpolated as its
+fragment shader reads them, and its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport). What
+WGSL can't express fails the stage with a reason: 16-bit values, a fifth descriptor set, texel buffers, dynamically
+indexed descriptors, image atomics, interpolation at an offset, `textureQueryLod`.
+
+`tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
+`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 118 of 127
+translate (0.4 ms a stage at the median in Node, 25 ms GTK4's largest) and all 118 compile in Chromium; the nine
+others are vkQuake's and use what the direct set doesn't offer (fp16, set 4, texel buffers, dynamic indexing). It
+checks that Tint accepts the WGSL, not what it computes: that is the driver's tests' and dEQP-VK's.
 
 ## The parts
 
