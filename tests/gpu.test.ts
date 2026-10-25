@@ -740,3 +740,89 @@ test('virgl: random 3D commands never throw, never write RAM, and answer in the 
   assert.ok(oks > 2000, `the random commands got somewhere (${oks} ok)`);
   assert.equal(Buffer.compare(before, r.ram), 0, 'guest RAM unchanged');
 });
+
+// Venus (docs/devices.md "The host-visible window"): contexts for the VENUS capset, blob resources mapped into the
+// window, Venus's submits handed on, with a host that records the calls.
+const VN = { ASSIGN_UUID: 0x10b, CREATE_BLOB: 0x10c, SCANOUT_BLOB: 0x10d, MAP_BLOB: 0x208, UNMAP_BLOB: 0x209 };
+const OK_UUID = 0x1105, OK_MAP_INFO = 0x1106;
+/** CTX_CREATE with `context_init` (the capset in its low byte) and a debug name. */
+const ctxCreate = (ctx: number, capset: number, name = 'vk') => {
+  const n = new TextEncoder().encode(name);
+  const c = ctxCmd(ctx, V.CTX_CREATE, n.length, capset, ...new Array(16).fill(0));
+  c.set(n, 32);
+  return c;
+};
+/** RESOURCE_CREATE_BLOB: id, blob_mem, blob_flags, nr_entries, blob_id (u64), size (u64). */
+const blob = (ctx: number, id: number, size: number, flags = 1, mem = 2, blobId = 0n) => ctxCmd(ctx, VN.CREATE_BLOB, id, mem, flags, 0, blobId, BigInt(size));
+
+test('venus: off without the option; with it the features, the third capset and Venus contexts', async () => {
+  const { deviceEntry } = await import('../web/devices.ts');
+  assert.equal(deviceEntry({ type: 'gpu', width: 640, height: 480, virgl: true }).entry[1], 3n);
+  const on = deviceEntry({ type: 'gpu', width: 640, height: 480, virgl: true, venus: true });
+  assert.equal(on.entry[1], 0x1fn, 'VIRGL, EDID, RESOURCE_UUID, RESOURCE_BLOB, CONTEXT_INIT');
+  assert.equal(new DataView(on.config.buffer).getUint32(12, true), 3, 'num_capsets');
+  const plain = rig({ virgl: true });
+  assert.equal(plain.run(blob(1, 1, 4096)).type, ERR_UNSPEC, 'no blobs without venus');
+  const r = rig({ virgl: true, venus: true, window: 1 << 20 });
+  const info = r.run(cmd(V.CAPSET_INFO, 2, 0));
+  const iv = new DataView(info.r.buffer, info.r.byteOffset);
+  assert.deepEqual([info.type, iv.getUint32(24, true), iv.getUint32(28, true), iv.getUint32(32, true)], [OK_CAPSET_INFO, 4, 0, 160]);
+  const caps = r.run(cmd(V.CAPSET, 4, 0));
+  const cv = new DataView(caps.r.buffer, caps.r.byteOffset + 24);
+  assert.deepEqual([caps.type, cv.getUint32(0, true), cv.getUint32(4, true) >>> 12 & 0x3ff, cv.getUint32(16, true), cv.getUint32(20, true) & 1], [OK_CAPSET, 1, 4, 1, 1]);
+  assert.equal(r.run(ctxCreate(1, 9)).type, ERR_PARAM, 'no such capset');
+  r.ok(ctxCreate(1, 4));
+  r.ok(ctxCreate(2, 0));
+  assert.equal(r.run(blob(2, 1, 4096)).type, ERR_CTX, "a virgl context makes no blobs");
+});
+
+test('venus: blobs, their mapping in the window, uuids and submits reach the host in order', async () => {
+  const calls: { t: string }[] = [];
+  let fences = 0;
+  const r = rig({ virgl: true, venus: true, window: 1 << 20 });
+  r.gpu.host = { call: (c) => calls.push(JSON.parse(JSON.stringify(c, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v instanceof Uint8Array ? [...v] : v)))), fence: () => { fences++; return Promise.resolve(); } };
+  r.ok(ctxCreate(3, 4, 'vkcube'));
+  r.ok(blob(3, 10, 64 << 10, 1, 2, 7n));
+  assert.equal(r.run(blob(3, 10, 4096)).type, ERR_RES, 'an id in use');
+  assert.equal(r.run(blob(3, 11, 100)).type, ERR_PARAM, 'not whole pages');
+  assert.equal(r.run(blob(3, 11, 4096, 1, 1)).type, ERR_PARAM, 'guest memory blobs are not offered');
+  r.ok(blob(3, 11, 8192, 0));
+  r.ok(ctxCmd(3, V.CTX_ATTACH, 10, 0));
+  // MAP_BLOB: resource, padding, offset (u64): in the window, page-aligned, over no other mapping, mappable only.
+  const map = (id: number, off: number) => r.run(ctxCmd(3, VN.MAP_BLOB, id, 0, BigInt(off)));
+  assert.equal(map(10, (1 << 20) - 4096).type, ERR_PARAM, 'past the window');
+  assert.equal(map(10, 100).type, ERR_PARAM, 'not page-aligned');
+  assert.equal(map(11, 0).type, ERR_PARAM, 'not mappable');
+  const m = map(10, 0x8000);
+  assert.deepEqual([m.type, new DataView(m.r.buffer, m.r.byteOffset).getUint32(24, true)], [OK_MAP_INFO, 1]);
+  assert.equal(map(10, 0x20000).type, ERR_PARAM, 'mapped already');
+  r.ok(blob(3, 12, 4096));
+  assert.equal(map(12, 0x10000).type, ERR_PARAM, 'over the first');
+  assert.equal(map(12, 0x18000).type, OK_MAP_INFO);
+  const uuid = r.run(cmd(VN.ASSIGN_UUID, 10, 0));
+  assert.deepEqual([uuid.type, uuid.r.length, new DataView(uuid.r.buffer, uuid.r.byteOffset).getUint32(36, false)], [OK_UUID, 40, 10]);
+  assert.equal(r.run(cmd(VN.ASSIGN_UUID, 99, 0)).type, ERR_RES);
+  // A Venus submit is handed on as its bytes, and a fenced one on a ring answers with its ring.
+  const s = submit(3, [0x11223344, 5]);
+  const sv = new DataView(s.buffer);
+  sv.setUint32(4, 1 | 2, true);
+  sv.setBigUint64(8, 77n, true);
+  sv.setUint8(20, 2);
+  const sr = r.run(s);
+  const rv = new DataView(sr.r.buffer, sr.r.byteOffset);
+  assert.deepEqual([sr.type, rv.getUint32(4, true), rv.getBigUint64(8, true), rv.getUint8(20)], [OK, 3, 77n, 2]);
+  r.ok(ctxCmd(3, VN.UNMAP_BLOB, 10, 0));
+  assert.equal(r.run(ctxCmd(3, VN.UNMAP_BLOB, 10, 0)).type, ERR_PARAM, 'not mapped');
+  r.ok(cmd(T.UNREF, 12, 0));
+  assert.equal(r.run(cmd(VN.SCANOUT_BLOB)).type, ERR_UNSPEC);
+  assert.deepEqual(calls.map((c) => c.t), ['vctx', 'blob', 'blob', 'blob-ctx', 'blob-map', 'blob', 'blob-map', 'vsubmit', 'blob-unmap', 'blob-unref']);
+  assert.deepEqual(calls[0], { t: 'vctx', id: 3, create: true, name: 'vkcube' });
+  assert.deepEqual(calls[1], { t: 'blob', ctx: 3, res: 10, mem: 2, flags: 1, blobId: '7n', size: 65536 });
+  assert.deepEqual(calls[4], { t: 'blob-map', res: 10, offset: 0x8000 });
+  assert.deepEqual(calls[7], { t: 'vsubmit', ctx: 3, bytes: [0x44, 0x33, 0x22, 0x11, 5, 0, 0, 0] });
+  assert.ok(fences >= 7, 'creates, maps and unmaps wait for the host');
+  // Not saved while a Venus context exists; a reset forgets them.
+  assert.match((await r.gpu.save()).unsaveable ?? '', /Vulkan/);
+  r.gpu.reset();
+  assert.equal((await r.gpu.save()).unsaveable, undefined);
+});

@@ -30,7 +30,22 @@ export type HostCall =
   | { t: 'damage'; rect: Rect }
   | { t: 'reset' }
   /** A snapshot's 3D state (`VirglRenderer.save`) in place of what the renderer has (a restore). */
-  | { t: 'load'; state: RendererSnapshot };
+  | { t: 'load'; state: RendererSnapshot }
+  | VenusCall;
+
+/**
+ * Venus's (docs/devices.md "The host-visible window"): its contexts, its blob resources (host memory the renderer
+ * keeps, mapped into the window at an offset the guest picked, and out of it again), their attachments, and its
+ * submits as the guest wrote them. The virgl renderer passes them over (`runCall`); Venus's renderer takes them.
+ */
+export type VenusCall =
+  | { t: 'vctx'; id: number; create: boolean; name?: string }
+  | { t: 'blob'; ctx: number; res: number; mem: number; flags: number; blobId: bigint; size: number }
+  | { t: 'blob-map'; res: number; offset: number }
+  | { t: 'blob-unmap'; res: number }
+  | { t: 'blob-unref'; res: number }
+  | { t: 'blob-ctx'; ctx: number; res: number; attach: boolean }
+  | { t: 'vsubmit'; ctx: number; bytes: Uint8Array };
 
 /** What a host's `save` answers: the renderer's state, or why it can't be saved now. */
 export type HostSave = { state: RendererSnapshot } | { refused: string };
@@ -74,6 +89,7 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
     }
     case 'load': return r.load(c.state);
     case 'ram': return;
+    default: return; // Venus's calls: its own renderer's
   }
 }
 

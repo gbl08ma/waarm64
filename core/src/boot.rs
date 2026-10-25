@@ -277,7 +277,8 @@ impl Vm {
                 return Err("Image base not 2 MiB aligned");
             }
         }
-        let ram = self.mem.size();
+        // RAM: memory 0 less the host-visible window after it (outside `/memory`).
+        let ram = self.mem.size() - self.cfg.window;
         let dtb_pa = RAM_BASE + ram - DTB_SPACE;
         let fb = framebuffer(&self.cfg);
         let initrd = initrd.map(|(pa, len)| (pa, pa + len));

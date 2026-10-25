@@ -14,6 +14,7 @@
 import { bytes, gather, locate, scatter, type Ctx, type Ram, type RamLayout, type Request, type Segment } from './devices.ts';
 import { EDID_MAX, EDID_MIN, edid } from './edid.ts';
 import { VirglStats, virglCaps, walk } from './virgl.ts';
+import { BLOB_FLAG_USE_MAPPABLE, BLOB_MEM_HOST3D, CAPSET_VENUS, CONTEXT_INIT_CAPSET_ID_MASK, FLAG_INFO_RING_IDX, MAP_CACHE_CACHED, venusCapset } from './venus.ts';
 import { FORMATS as VIRGL_FORMATS, boxBytes } from './virgl-formats.ts';
 import { encodeRecord } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
@@ -25,24 +26,35 @@ import { capsBacked } from './virgl-caps.ts';
 const GET_DISPLAY_INFO = 0x100, RESOURCE_CREATE_2D = 0x101, RESOURCE_UNREF = 0x102, SET_SCANOUT = 0x103;
 const RESOURCE_FLUSH = 0x104, TRANSFER_TO_HOST_2D = 0x105, RESOURCE_ATTACH_BACKING = 0x106;
 const RESOURCE_DETACH_BACKING = 0x107, GET_CAPSET_INFO = 0x108, GET_CAPSET = 0x109, GET_EDID = 0x10a;
+const RESOURCE_ASSIGN_UUID = 0x10b, RESOURCE_CREATE_BLOB = 0x10c, SET_SCANOUT_BLOB = 0x10d;
+const RESOURCE_MAP_BLOB = 0x208, RESOURCE_UNMAP_BLOB = 0x209;
 const CTX_CREATE = 0x200, CTX_DESTROY = 0x201, CTX_ATTACH_RESOURCE = 0x202, CTX_DETACH_RESOURCE = 0x203;
 const RESOURCE_CREATE_3D = 0x204, TRANSFER_TO_HOST_3D = 0x205, TRANSFER_FROM_HOST_3D = 0x206, SUBMIT_3D = 0x207;
 const UPDATE_CURSOR = 0x300, MOVE_CURSOR = 0x301;
 const OK_NODATA = 0x1100, OK_DISPLAY_INFO = 0x1101, OK_CAPSET_INFO = 0x1102, OK_CAPSET = 0x1103, OK_EDID = 0x1104;
+const OK_RESOURCE_UUID = 0x1105, OK_MAP_INFO = 0x1106;
 const ERR_UNSPEC = 0x1200, ERR_OUT_OF_MEMORY = 0x1201, ERR_INVALID_SCANOUT_ID = 0x1202;
 const ERR_INVALID_RESOURCE_ID = 0x1203, ERR_INVALID_CONTEXT_ID = 0x1204, ERR_INVALID_PARAMETER = 0x1205;
 const FLAG_FENCE = 1;
 const HDR = 24;
 const EVENT_DISPLAY = 1;
-/** The capsets with `virgl` (VIRTIO_GPU_CAPSET_VIRGL, VIRGL2) from the VIRGL2 blob: id, max version, the blob (VIRGL is its v1 part, max_version 1). */
-function capsets(caps: Uint8Array) {
+/**
+ * The capsets with `virgl` (VIRTIO_GPU_CAPSET_VIRGL, VIRGL2) from the VIRGL2 blob: id, max version, the blob (VIRGL is
+ * its v1 part, max_version 1); with Venus also VIRTIO_GPU_CAPSET_VENUS (version 0), third (its index is what
+ * GET_CAPSET_INFO takes).
+ */
+function capsets(caps: Uint8Array, venus?: Uint8Array) {
   const v1 = caps.slice(0, 77 * 4);
   new DataView(v1.buffer).setUint32(0, 1, true);
-  return [[1, 1, v1], [2, 2, caps]] as const;
+  const out: (readonly [number, number, Uint8Array])[] = [[1, 1, v1], [2, 2, caps]];
+  if (venus) out.push([CAPSET_VENUS, 0, venus]);
+  return out;
 }
 /** Contexts and 3D resources a guest may hold (a bound for a guest that leaks them: the null renderer keeps no host memory for most). */
 const MAX_CONTEXTS = 1024;
 const MAX_RESOURCES = 65536;
+/** Blob resources' bytes a guest may hold at once (Venus's memory: the renderer keeps it). */
+const MAX_BLOB_TOTAL = 4 * 2 ** 30;
 /** PIPE_TEXTURE_2D: a 3D resource that can be shown on the scanout. */
 const TARGET_2D = 2;
 
@@ -84,6 +96,11 @@ type Resource = {
   changed?: boolean;
   /** A virgl resource (RESOURCE_CREATE_3D): gallium's target and bind flags. It has `pixels` only once it is shown (black: nothing renders). */
   three?: { target: number; bind: number; depth: number; arraySize: number; lastLevel: number; samples: number };
+  /**
+   * A blob resource (RESOURCE_CREATE_BLOB, Venus): host memory the renderer keeps, of `size` bytes, made in context `ctx`
+   * for its object `blobId` (0: plain shared memory); `mapped` its offset in the host-visible window while mapped.
+   */
+  blob?: { ctx: number; mem: number; flags: number; blobId: bigint; size: number; mapped?: number };
 };
 
 /** What the null renderer counted (`state().virgl`): the 3D commands, the bytes each way, and each context's stream. */
@@ -124,6 +141,17 @@ export type GpuOptions = {
   virgl?: boolean;
   /** The VIRGL2 caps blob to advertise (the browser's, web/virgl-caps.ts); default `virglCaps(2)`, WebGL2's minimums. */
   caps?: Uint8Array;
+  /**
+   * Vulkan through Venus, with `virgl` (docs/devices.md "The host-visible window"; docs/plans/graphics.md): features
+   * RESOURCE_UUID, RESOURCE_BLOB and CONTEXT_INIT, the VENUS capset, contexts made for it, blob resources mapped into
+   * the host-visible window (`window` bytes: the machine's, `BootOptions.window`), their commands handed to the host.
+   * Off by default, a per-machine choice: without it the device is what it was.
+   */
+  venus?: boolean;
+  /** The VENUS capset (the renderer's, `vkr_get_capset`); default web/venus.ts `venusCapset()`. */
+  venusCaps?: Uint8Array;
+  /** The host-visible window's bytes (with `venus`): where RESOURCE_MAP_BLOB may put a blob. */
+  window?: number;
   /**
    * A test hook: after this many RESOURCE_FLUSHes the display changes to the size given (a
    * display event, as a page resize would raise), so the resize path is exact in deterministic runs.
@@ -205,6 +233,10 @@ export class Gpu {
   private contexts = new Map<number, Set<number>>();
   /** Contexts that have submitted work: they have objects in the renderer (a context alone is only an id). */
   private used = new Set<number>();
+  /** Contexts made for the VENUS capset (`venus`): their submits are the renderer's protocol, not virgl's. */
+  private venusContexts = new Set<number>();
+  /** Blob resources' bytes, against a bound (the renderer keeps them). */
+  private blobBytes = 0;
   /** Why 3D is off on this machine (a snapshot restored where the browser can't back the caps its guest was given). */
   private off3d: string | undefined;
   private virgl: VirglCounts = { commands: {}, toHostBytes: 0, fromHostBytes: 0, stream: new VirglStats().json() };
@@ -232,7 +264,7 @@ export class Gpu {
     [this.ram, this.layout, this.o] = [ram, layout, o];
     this.wanted = { width: clampSize(o.width), height: clampSize(o.height) };
     [this.width, this.height] = [this.wanted.width, this.wanted.height];
-    this.capsets = capsets(o.caps ?? virglCaps(2));
+    this.capsets = capsets(o.caps ?? virglCaps(2), o.venus ? o.venusCaps ?? venusCapset() : undefined);
   }
 
   /** The wait a fenced command left for the host, if any: its reply waits for it. */
@@ -298,6 +330,11 @@ export class Gpu {
         for (const set of this.contexts.values()) set.delete(res.id);
         if (this.scanout?.id === res.id) this.setScanout(null);
         if (res.three) this.host?.call({ t: 'unref', id: res.id });
+        if (res.blob) {
+          this.blobBytes -= res.blob.size;
+          this.host?.call({ t: 'blob-unref', res: res.id });
+          this.hold();
+        }
         return this.reply(OK_NODATA, cmd, room);
       }
       case SET_SCANOUT: {
@@ -405,15 +442,25 @@ export class Gpu {
         count('CTX_CREATE');
         if (ctxId === 0 || this.contexts.has(ctxId) || this.contexts.size >= MAX_CONTEXTS) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
         if (this.off3d) return this.reply(ERR_UNSPEC, cmd, room);
+        // CONTEXT_INIT (with `venus`): the capset the context speaks in `context_init`'s low byte; 0 is virgl's.
+        const capset = this.o.venus && need(HDR + 8) ? u32(4) & CONTEXT_INIT_CAPSET_ID_MASK : 0;
+        if (capset !== 0 && capset !== 1 && capset !== 2 && capset !== CAPSET_VENUS) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         this.contexts.set(ctxId, new Set());
-        this.host?.call({ t: 'ctx', id: ctxId, create: true });
+        if (capset === CAPSET_VENUS) {
+          this.venusContexts.add(ctxId);
+          const nlen = Math.min(u32(0), 64, Math.max(0, cmd.length - HDR - 8));
+          this.host?.call({ t: 'vctx', id: ctxId, create: true, name: new TextDecoder().decode(cmd.subarray(HDR + 8, HDR + 8 + nlen)) });
+        } else this.host?.call({ t: 'ctx', id: ctxId, create: true });
         return this.reply(OK_NODATA, cmd, room);
       }
       case CTX_DESTROY: {
         count('CTX_DESTROY');
         if (!this.contexts.delete(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
         this.used.delete(ctxId);
-        this.host?.call({ t: 'ctx', id: ctxId, create: false });
+        if (this.venusContexts.delete(ctxId)) {
+          this.host?.call({ t: 'vctx', id: ctxId, create: false });
+          this.hold();
+        } else this.host?.call({ t: 'ctx', id: ctxId, create: false });
         return this.reply(OK_NODATA, cmd, room);
       }
       case CTX_ATTACH_RESOURCE: case CTX_DETACH_RESOURCE: {
@@ -424,8 +471,78 @@ export class Gpu {
         if (!this.resources.has(u32(0))) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (type === CTX_ATTACH_RESOURCE) set.add(u32(0));
         else set.delete(u32(0));
-        if (this.resources.get(u32(0))?.three) this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
+        const res = this.resources.get(u32(0))!;
+        if (res.three) this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
+        else if (res.blob && this.venusContexts.has(ctxId)) this.host?.call({ t: 'blob-ctx', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
         return this.reply(OK_NODATA, cmd, room);
+      }
+      case RESOURCE_CREATE_BLOB: {
+        count('RESOURCE_CREATE_BLOB');
+        if (!this.o.venus) return this.reply(ERR_UNSPEC, cmd, room);
+        if (!need(HDR + 32)) return this.reply(ERR_UNSPEC, cmd, room);
+        const [id, mem, flags, entries] = [u32(0), u32(4), u32(8), u32(12)];
+        const blobId = v.getBigUint64(HDR + 16, true), size = Number(v.getBigUint64(HDR + 24, true));
+        if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        // Host memory of a Venus context only (Venus's shared memory and its objects' memory): guest-backed blobs
+        // (BLOB_MEM_GUEST, HOST3D_GUEST) aren't offered (the capset says no guest VRAM).
+        if (!this.venusContexts.has(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        if (mem !== BLOB_MEM_HOST3D || entries !== 0 || size === 0 || size % 4096 || flags & ~7) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (this.blobBytes + size > MAX_BLOB_TOTAL) return this.reply(ERR_OUT_OF_MEMORY, cmd, room);
+        this.blobBytes += size;
+        this.resources.set(id, { id, format: 0, width: 0, height: 0, pixels: new Uint8Array(0), backing: null, blob: { ctx: ctxId, mem, flags, blobId, size } });
+        this.host?.call({ t: 'blob', ctx: ctxId, res: id, mem, flags, blobId, size });
+        this.hold();
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case RESOURCE_MAP_BLOB: {
+        count('RESOURCE_MAP_BLOB');
+        if (!need(HDR + 16)) return this.reply(ERR_UNSPEC, cmd, room);
+        const res = this.resources.get(u32(0));
+        const offset = Number(v.getBigUint64(HDR + 8, true));
+        if (!res?.blob) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        const b = res.blob;
+        if (!(b.flags & BLOB_FLAG_USE_MAPPABLE) || b.mapped !== undefined) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        // In the window, page-aligned, and over no other mapping (Linux's allocator picks the offset).
+        if (offset % 4096 || offset + b.size > (this.o.window ?? 0)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        for (const r of this.resources.values()) {
+          const m = r.blob?.mapped;
+          if (m !== undefined && offset < m + r.blob!.size && m < offset + b.size) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        }
+        b.mapped = offset;
+        this.host?.call({ t: 'blob-map', res: res.id, offset });
+        this.hold();
+        const r = new Uint8Array(HDR + 8);
+        new DataView(r.buffer).setUint32(HDR, MAP_CACHE_CACHED, true);
+        return this.reply(OK_MAP_INFO, cmd, room, r);
+      }
+      case RESOURCE_UNMAP_BLOB: {
+        count('RESOURCE_UNMAP_BLOB');
+        if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
+        const res = this.resources.get(u32(0));
+        if (!res?.blob) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        if (res.blob.mapped === undefined) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        res.blob.mapped = undefined;
+        this.host?.call({ t: 'blob-unmap', res: res.id });
+        this.hold();
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case RESOURCE_ASSIGN_UUID: {
+        count('RESOURCE_ASSIGN_UUID');
+        if (!this.o.venus) return this.reply(ERR_UNSPEC, cmd, room);
+        if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
+        if (!this.resources.has(u32(0))) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        // A stable UUID a resource is known by across devices: its id, in a version 4 shape.
+        const r = new Uint8Array(HDR + 16);
+        const w = new DataView(r.buffer);
+        w.setUint32(HDR, 0x77656270, false); // "webp"
+        w.setUint32(HDR + 4, 0x4000, false);
+        w.setUint32(HDR + 8, 0x80000000, false);
+        w.setUint32(HDR + 12, u32(0), false);
+        return this.reply(OK_RESOURCE_UUID, cmd, room, r);
+      }
+      case SET_SCANOUT_BLOB: {
+        count('SET_SCANOUT_BLOB');
+        return this.reply(ERR_UNSPEC, cmd, room);
       }
       case RESOURCE_CREATE_3D: {
         count('RESOURCE_CREATE_3D');
@@ -461,6 +578,15 @@ export class Gpu {
         if (!this.contexts.has(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
         const size = u32(0);
         if (size % 4 || cmd.length < HDR + 8 + size) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (this.venusContexts.has(ctxId)) {
+          // Venus's commands (the renderer decodes them): handed on as they are.
+          busy.submits++;
+          busy.submitBytes += size;
+          this.used.add(ctxId);
+          this.host?.call({ t: 'vsubmit', ctx: ctxId, bytes: cmd.slice(HDR + 8, HDR + 8 + size) });
+          this.fenced(cmd);
+          return this.reply(OK_NODATA, cmd, room);
+        }
         const words = new Uint32Array(cmd.buffer.slice(cmd.byteOffset + HDR + 8, cmd.byteOffset + HDR + 8 + size));
         const ok = this.stream.count(words) >= 0;
         busy.submits++;
@@ -536,6 +662,11 @@ export class Gpu {
   /** A command with a fence waits for the host to have run everything before its reply goes. */
   private fenced(cmd: Uint8Array) {
     if (this.host && new DataView(cmd.buffer, cmd.byteOffset, 8).getUint32(4, true) & FLAG_FENCE) this.wait = this.host.fence();
+  }
+
+  /** The reply waits for the host whatever the command's flags: a blob's map must be in the window before the guest reads it. */
+  private hold() {
+    if (this.host) this.wait = this.host.fence();
   }
 
   /** A 2D resource's pixels: in shared memory when a host's screen shows them. */
@@ -787,8 +918,11 @@ export class Gpu {
     if (cmd.length >= HDR) {
       const c = new DataView(cmd.buffer, cmd.byteOffset, cmd.length);
       if (c.getUint32(4, true) & FLAG_FENCE) {
-        v.setUint32(4, FLAG_FENCE, true);
+        // A fence on a ring (FLAG_INFO_RING_IDX, Venus's timelines) answers with its ring.
+        const flags = c.getUint32(4, true) & (FLAG_FENCE | FLAG_INFO_RING_IDX);
+        v.setUint32(4, flags, true);
         v.setBigUint64(8, c.getBigUint64(8, true), true);
+        if (flags & FLAG_INFO_RING_IDX) v.setUint8(20, c.getUint8(20));
       }
       v.setUint32(16, c.getUint32(16, true), true); // ctx_id
     }
@@ -834,6 +968,8 @@ export class Gpu {
     this.resources.clear();
     this.contexts.clear();
     this.used.clear();
+    this.venusContexts.clear();
+    this.blobBytes = 0;
     this.host?.call({ t: 'reset' });
     this.total = 0;
     this.cursorImage = null;
@@ -855,7 +991,8 @@ export class Gpu {
   async save() {
     const inUse = this.used.size > 0 || [...this.resources.values()].some((r) => r.three);
     let renderer: RendererSnapshot | undefined, unsaveable: string | undefined;
-    if (inUse && this.host && !this.off3d) {
+    if (this.venusContexts.size > 0) unsaveable = "the machine is using Vulkan (Venus), whose state can't be saved yet";
+    else if (inUse && this.host && !this.off3d) {
       const got = this.host.save ? await this.host.save() : { refused: 'the machine is using 3D (virgl), and this renderer can\'t be saved' };
       if ('refused' in got) unsaveable = got.refused;
       else renderer = got.state;

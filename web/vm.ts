@@ -12,7 +12,7 @@ import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
 import { WindowWatch } from './window.ts';
-import { Devices, ENTRY_WORDS, EV_CONFIG, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { Devices, ENTRY_WORDS, EV_CONFIG, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
@@ -751,7 +751,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
   // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
   // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
-  const windowBytes = o.window ?? 0;
+  // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says.
+  const venus = (o.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
+  const windowBytes = o.window ?? (venus ? VENUS_WINDOW : 0);
   const rest = 65536 + o.ramSize + windowBytes + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
   const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
   const fixed = o.fixedMemory !== false && pages <= 65536;
@@ -776,6 +778,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const ram = memory.grow((o.ramSize + windowBytes) / 65536) * 65536;
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
+    if (d.type === 'gpu' && d.venus) return { ...d, window: windowBytes };
     if (d.type !== 'blk' || d.size !== undefined) return d;
     if (d.source || d.stored) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : d.stored ? 'stored disk' : 'blank disk'} needs a size`);
     if (!d.url && !d.file) throw new Error('a disk with no image (url, file or source)');

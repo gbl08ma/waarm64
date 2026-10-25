@@ -16,10 +16,31 @@ Notes between VK1's sessions (the brief: `M8-VK1-KICKOFF.md`). Newest state firs
   watched write fills, marked when dropped; the host's look (`web/window.ts` `WindowWatch.take`) bumps a generation
   and waits only for running vCPUs. No measurable cost without a window (REPORT.md "VK1: the write-watch costs…").
   Marking at the fill turned out redundant (a planted bug there was caught by nothing): the drop's mark is the one.
-- Next: **L5 the device** (`web/venus.ts` started, untracked: the capset, blob constants), L6 `vkr` + a null driver.
+- **The device (L5)** is built (docs/devices.md "Venus"): `GpuOptions.venus` (with `virgl`), features, the VENUS
+  capset, Venus contexts, blobs created/mapped/unmapped by the host (`VenusCall`), Venus submits handed on, snapshots
+  refused. Linux's driver takes it (`tests/venus.test.ts`). Found on the way: `vm_boot` sized `/memory` from `Mem`, which
+  includes the window (fixed: RAM is `Mem` less the window).
+- Next: **L6, the renderer** (plan below).
 
 ## Designs decided, not built yet
 
+- **L6's plan (the renderer):** a top-level `vk/` (C for wasm, like `net/ts`): `vk/build.sh` fetches virglrenderer at
+  the oracle's commit and builds into `target/vk/venus.wasm`, with wasi-sdk and step 1's `gen.ts` approach for Mesa
+  (the native build's compile commands and generated sources): (1) `vkr` (`src/venus/*.c`, its codegen, venus-protocol
+  1.1.3's headers, the bits of virglrenderer's util it needs) with patches (`vk/patches/`): the ring, ring monitor and
+  queue sync threads become polls; resources are pointers, not fds (shmem from the arena; a device memory's storage
+  from our driver); a map moves a resource's storage into the window and an unmap out; the library loader points at
+  our driver's `vk_icdGetInstanceProcAddr`. (2) Our null driver on Mesa's *lite* runtime (`libvulkan_lite_runtime`,
+  `libvulkan_util`, as Venus links them: no NIR yet; VK2 moves to the full runtime): a physical device advertising
+  VK0's direct set as a GPU, memory types (host-visible ones' storage in the window once mapped), objects as runtime
+  structs, command buffers recorded through `vk_cmd_queue` and replayed at submit for their transfers only
+  (fill/update/copy buffer, timestamps, queries, events: Venus's feedback slots), fences and semaphores signalled at
+  submit, draws dropped; at each submit it calls `env.window_dirty()` (the GPU worker's `WindowWatch.take`) and counts
+  the pages. (3) The GPU worker instantiates it on memory 0 at a fixed arena at memory 0's top (256 MiB at 0xF000_0000:
+  `--global-base`, its stack and an `sbrk` inside it; a Venus machine's memory is fixed at 4 GiB, the core's heap
+  reserve stopping below the arena), routes `VenusCall`s to `vkr_renderer_*`, and polls the ring (awake across frames,
+  idle after vkr's timeout). Memory 0 then holds RAM, the window (256 MiB) and the arena (256 MiB): RAM past that
+  spills.
 - **The renderer module (L6):** `vkr` + a null Mesa driver in one wasm module instantiated **on memory 0** (the ring,
   reply and command-stream blobs and feedback memory are all window pointers), linked at a fixed arena at the top of
   memory 0 (`--global-base`, its own stack, an `sbrk` confined to the arena); `vkr`'s threads (ring, ring monitor,

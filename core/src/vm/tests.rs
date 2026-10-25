@@ -1173,6 +1173,22 @@ fn the_window_follows_ram_in_memory_0() {
         // The store is in the buffer's bytes past RAM.
         assert_eq!(ram[((1 << 20) + 0x1000) / 16] as u64, 0x1234);
     }
+    // The DTB goes to the top of RAM, not of memory 0 (whose last bytes are the window's).
+    let cfg = VmConfig {
+        ram_size: 4 << 20,
+        window: 2 << 20,
+        ..VmConfig::default()
+    };
+    let mut ram = vec![0u128; (6 << 20) / 16];
+    // SAFETY: 16-byte aligned, RAM and the window long, outlives the Vm.
+    let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 6 << 20) };
+    let mut vm = Vm::new(mem, cfg);
+    vm.boot(RAM_BASE, None, "").unwrap();
+    assert_eq!(
+        vm.mem.read(RAM_BASE + (2 << 20), 4),
+        Ok(0xedfe_0dd0),
+        "the DTB's magic at RAM's top 2 MiB"
+    );
     // Past RAM and the window, from the next GiB boundary: 1 GiB less 1 MiB of RAM and a 2 MiB window end
     // 1 MiB past the first boundary.
     let cfg = VmConfig {

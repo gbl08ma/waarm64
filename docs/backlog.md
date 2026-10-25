@@ -476,6 +476,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   slices are all I by rewriting it as an IDR (NAL type 5, an `idr_pic_id`, `dec_ref_pic_marking` without MMCO; the
   slice header re-encoded). Worth it only if TS playback or such streams matter (MP4 and WebM seek to key pictures).
 
+- **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
+  Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
+  snapshot's RAM chunks don't cover yet) and the window itself: plan §6's VK4.
+
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
 - **The remaining DSB waits** (~3K per userspace run on 4 vCPUs, 20–60 µs each: same-ASID

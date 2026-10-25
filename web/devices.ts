@@ -165,9 +165,12 @@ export const EV_CONFIG = 2;
 export const ENTRY_WORDS = 6;
 
 /** `DeviceEntry.shm` (ABI 53): 1 when the VM's host-visible window is the device's shared memory region 1. */
-export function deviceShm(_d: DeviceSpec): bigint {
-  return 0n;
+export function deviceShm(d: DeviceSpec): bigint {
+  return d.type === 'gpu' && d.virgl && d.venus ? 1n : 0n;
 }
+
+/** The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and mapped memory. */
+export const VENUS_WINDOW = 256 << 20;
 
 /** virtio::DeviceEntry's first five u64s and the initial config space. */
 export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Array } {
@@ -218,11 +221,13 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'input': return { entry: [18n, 0n, 2n, 64n, 136n], config: new Uint8Array(136) };
     // Feature EDID (1); controlq and cursorq; config: events_read, events_clear, num_scanouts = 1, num_capsets = 0.
     case 'gpu': {
-      // Features EDID (1) and, with `virgl`, VIRGL (0); config: num_scanouts (u32 at 8), num_capsets (at 12: VIRGL, VIRGL2).
+      // Features EDID (1) and, with `virgl`, VIRGL (0); with `venus` also RESOURCE_UUID (2), RESOURCE_BLOB (3) and
+      // CONTEXT_INIT (4). Config: num_scanouts (u32 at 8), num_capsets (at 12: VIRGL, VIRGL2, and VENUS).
       const config = new Uint8Array(16);
       new DataView(config.buffer).setUint32(8, 1, true);
-      if (d.virgl) new DataView(config.buffer).setUint32(12, 2, true);
-      return { entry: [16n, d.virgl ? 3n : 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
+      const venus = !!d.virgl && !!d.venus;
+      if (d.virgl) new DataView(config.buffer).setUint32(12, venus ? 3 : 2, true);
+      return { entry: [16n, venus ? 0x1fn : d.virgl ? 3n : 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
     }
     // No features, or with `mixer` CTLS (0); controlq, eventq, txq, rxq; config: jacks 0, streams 2 (out, in), chmaps 0,
     // and with CTLS controls 2 (the Master volume and switch).

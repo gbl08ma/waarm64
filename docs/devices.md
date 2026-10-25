@@ -453,6 +453,29 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 
+#### Venus (Vulkan, VK1)
+- `{type: 'gpu', …, virgl: true, venus: true}` (`GpuOptions.venus`, off by default: a per-machine choice; without it
+  the device is exactly the virgl one, bytes and steps unmoved). Adds features `RESOURCE_UUID` (2), `RESOURCE_BLOB` (3)
+  and `CONTEXT_INIT` (4), a third capset, VENUS (ID 4, version 0, 160 bytes: `GpuOptions.venusCaps`, the renderer's
+  `vkr_get_capset`; web/venus.ts `venusCapset` by default), the host-visible window as the transport's shared memory
+  region 1 (`bootVm` gives such a machine `VENUS_WINDOW`, 256 MiB, unless told), and the commands Venus's kernel path
+  uses: `CTX_CREATE` with `context_init` (capset 4 makes a Venus context, 0 to 2 a virgl one, others
+  `ERR_INVALID_PARAMETER`), `RESOURCE_CREATE_BLOB` (host memory of a Venus context only: `BLOB_MEM_HOST3D`, no entries,
+  whole pages, at most 4 GiB together; guest-memory blobs aren't offered, the capset says no guest VRAM),
+  `RESOURCE_MAP_BLOB` (a mappable blob, into the window at the guest's offset: page-aligned, inside it, over no other
+  mapping; answers `MAP_CACHE_CACHED`), `RESOURCE_UNMAP_BLOB`, `RESOURCE_ASSIGN_UUID` (the resource ID in a fixed
+  pattern), and `SUBMIT_3D` to a Venus context, whose bytes go to the host as they are (the renderer decodes Venus).
+  `SET_SCANOUT_BLOB` is `ERR_UNSPEC`. A fenced reply on a ring (`FLAG_INFO_RING_IDX`, Venus's timelines) answers with
+  its ring.
+- **The renderer owns the blobs' bytes** (web/virgl-host.ts `VenusCall`): it gives a blob storage when it is made, and
+  a map copies it into the window at the guest's offset and makes that the blob's storage until the unmap copies it
+  out (wasm can't remap pages, and Linux picks the offset). So a create, a map, an unmap, an unref and a Venus
+  context's destruction hold their reply until the host has run them, fence flag or not.
+- Snapshots are refused while a Venus context exists ("the machine is using Vulkan (Venus), whose state can't be saved
+  yet"; docs/backlog.md).
+- Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,
+  `features: +virgl +edid +resource_blob +host_visible`, `+context_init`, `cap set 2: id 4, max-version 0, max-size 160`.
+
 #### The host-visible window (Venus, VK1)
 For Vulkan through Venus ([plans/graphics.md](plans/graphics.md)): guest-visible memory that the host renderer and the
 guest share without copies (Venus's ring, its command streams, its reply buffers, and the Vulkan memory a program maps).
