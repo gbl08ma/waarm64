@@ -67,7 +67,9 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   spirv-cross, Mesa-libGLESv3-devel, 7zip (unpacks the macOS SDK); for its tools (`tools/venus-oracle/`,
   `tools/vulkan-tools/`: Venus on lavapipe over vtest, GFXReconstruct, the Profiles layer) cmake, python313-Mako,
   python313-packaging, bison, flex, glslang-devel, libxshmfence-devel, liblz4-devel, xcb-util-keysyms-devel, gdb,
-  wayland-protocols-devel (the oracle's Wayland WSI), valgrind (callgrind counts the guest's encoding). The Venus
+  wayland-protocols-devel (the oracle's Wayland WSI), valgrind (callgrind counts the guest's encoding); for question A's
+  programs gtk4-devel-tools, vkmark, vkd3d-demos, vkquake, supertuxkart (mpv and ffmpeg 8 would move Chromium on: they were
+  unpacked into target/vk0a/root instead). The Venus
   oracle needs `/dev/udmabuf` open to the user (lavapipe exports host-visible memory through it).
   Add what's missing with `sudo zypper in`, and note it here.
 - **USB rigs** (docs/testing.md "USB"): the VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so
