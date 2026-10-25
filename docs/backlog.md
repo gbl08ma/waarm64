@@ -277,6 +277,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
+- **The host's pollers and their timers** (2026-10-25): a nested `setTimeout(f, 0)` costs **4.6 ms a turn** in a
+  Chromium 153 worker (the HTML spec's clamp after five nested timers), against 0.010 ms for a MessageChannel turn and
+  0.006 ms for `scheduler.postTask` (`bench/results/local/vk1/clamp.ts`, not committed: 200 turns of each). A poller
+  rescheduled that way answers ~4 ms late every turn, a quarter of a 60 Hz frame. Found: Venus's ring poller
+  (web/venus-host.ts `wake`, `setTimeout(tick, 0)`), the GPU worker's occlusion-query poll (web/gpu-worker.ts,
+  `setTimeout(poll, 4)`), its 20 ms stall check, `Vm.wait`'s yield (web/vm.ts, one turn, not nested), the sound
+  pump (web/snd.ts, `setInterval` at 5 ms) and gpu-present's 4 ms lag probes (measurement, meant to tick). To do:
+  inspect each (and any beyond web/), measure how late it actually answers, and pick per poller. A MessageChannel or
+  `postTask` loop has no clamp but must not starve the worker's timers: VK1 tried one for Venus's ring and the
+  device's fence, answered from a timer, went unanswered (M8-VK2-HANDOVER.md). So first take timers out of paths that
+  must answer (the fence), then poll within a time budget (~0.5–1 ms a task while active, then one timer), or
+  `postTask` with a priority; `Atomics.waitAsync` only where the guest notifies (its JIT writes Venus's ring tail
+  with plain stores). VK1's measurement: removing the ring poller's clamp didn't lower vkcube's guest CPU, so measure
+  each poller's wait latency on the guest's side before changing it.
+
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
   firmware.md "Our patches"), no standard items beside SMBIOS (platform.md); the
