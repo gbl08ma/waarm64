@@ -320,6 +320,8 @@ export async function openSession(o: SessionOptions) {
   /** The user's session on the screen (GUEST_USER, its password the same), then sway with `WLR_RENDERER=<renderer>`; returns what sway's log
    * says of its renderer. `asUser(cmd)` runs a command in that session (its environment) from the root shell. */
   const startSway = async (renderer: string) => {
+    // The keys typed on the screen are US ones: a guest whose console has another keymap would get other characters.
+    await run('loadkeys us 2>/dev/null; true');
     await onScreen(`${GUEST_USER}\n`);
     await page.waitForTimeout(3000);
     await onScreen(`${GUEST_USER}\n`);

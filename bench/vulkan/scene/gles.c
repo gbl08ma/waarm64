@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
   const char *packPath = NULL, *shaderDir = NULL, *dumpPath = NULL, *jsonPath = NULL, *label = "";
   int fishTotal = 1000, toolkit = 0, width = 1920, height = 1080, msaa = 1, warmup = 60, samples = 10, frames = 60;
   int dumpFrame = -1, thumbW = 0, thumbH = 0;
-  for (int i = 1; i < argc; i++) {
+  for (int i = 1; i < argc; i += 2) {  // every option takes a value
     const char *a = argv[i], *v = i + 1 < argc ? argv[i + 1] : NULL;
     if (!v) usage();
     if (!strcmp(a, "--pack")) packPath = v;
@@ -220,7 +220,6 @@ int main(int argc, char **argv) {
       if (!c) usage();
       dumpPath = c + 1;
     } else usage();
-    i++;  // the option's value
   }
   if (!packPath || !shaderDir || (msaa != 1 && msaa != 4) || samples > MAX_SAMPLES || samples < 1) usage();
 
