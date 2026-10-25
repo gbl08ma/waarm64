@@ -396,7 +396,8 @@ results; at the end `vk0-nvidia-results.tar.gz`. Test hooks (`VK0_SDK`, `VK0_NOD
 
 ## Not done in VK0, ranked
 
-1. **`spirv_to_nir` and NIR built to wasm** (route (b)'s premise): download size, ms a stage. VK1's first step.
+1. **`spirv_to_nir` and NIR built to wasm** (route (b)'s premise): download size, ms a stage. VK1's first step:
+   done, "VK1 step 1" below.
 2. **Tint's SPIR-V reader** on D's 110 stages (needs Dawn's tree): route (a)'s other frontend; it matters only if
    route (b) fails its first step.
 3. **C (5): the scene's fish through a geometry-shader pre-pass**, the cost in a whole frame (C's isolated geometry
@@ -407,8 +408,72 @@ results; at the end `vk0-nvidia-results.tar.gz`. Test hooks (`VK0_SDK`, `VK0_NOD
    bimodal; a second run would settle the 0.25 ms floor's spread.
 6. **mpv on the direct profile with VA-API**: whether libplacebo imports the decoded surfaces or falls back (G).
 
+## VK1 step 1: route (b)'s premise in wasm
+
+**2026-10-25. Passed, far inside the bar** (the kickoff's: within ~5 MiB compressed, ~5 ms a stage at the median).
+Mesa's `spirv_to_nir`, NIR and the passes a translator runs, with KosmicKrisp's NIR → MSL backend standing in for our
+NIR → WGSL one, built for wasm: **0.42 MiB with brotli (0.64 MiB gzip -9), 0.27 ms a stage at the median in Chromium
+on the M4 (p90 3.5 ms), and every one of the 108 stages reaches NIR and MSL**, with the same NIR as the native build.
+JSON in `results/vk1/step1/`; `bench/vulkan/nir/` builds and runs it (`build.sh`, `run.ts`, `mac.sh nir`).
+
+**What runs** (`nir/spike.c`, over Mesa 26.2.4, the Venus oracle's tree): `spirv_to_nir` with Vulkan's options;
+KosmicKrisp's preprocessing (`msl_preprocess_nir`: inlining, variable splitting, `vars_to_ssa`, sinking), the I/O and
+explicit-memory lowering and `msl_optimize_nir`'s loop (copy propagation, CSE, DCE, algebraic, `opt_if`, `opt_loop`,
+scalarizing), as its `kosmicomp` tool and `kk_shader.c` run them; the lowerings VK0's D found naga's chain lacking
+(input attachments as textures, `vars_to_scratch` for indexed temporaries; varyings are I/O-lowered to vector slots
+anyway); a descriptor lowering of ours in place of the driver's, which needs its set layouts (each set and binding a
+slot in a table: the shape of a WebGPU binding map); then `nir_to_msl`. The stages are D's programs' again
+(`translate/programs.sh` with `SPIRV_DIR`): 108, not D's 110, since GTK4's demo compiled 14 stages in each of two runs
+here, not 16.
+
+| a stage, ms (warm: a stage's median of 5 rounds) | median | p90 | max | the phases at the median: to NIR / passes / to MSL | 108 stages cold, once each |
+|---|---|---|---|---|---|
+| natively, the dev VM (gcc -O2) | 0.17 | 2.6 | 16 | 0.02 / 0.11 / 0.03 | 110 ms |
+| wasm in Node 26, the dev VM | 0.29 | 4.0 | 22.5 | 0.03 / 0.17 / 0.07 | 203 ms |
+| **wasm in Chromium 153, the dev VM** | **0.28** | **3.7** | 22 | 0.03 / 0.17 / 0.07 | 211 ms |
+| **wasm in Chrome for Testing 153, the Mac's M4** | **0.27** | **3.5** | 21 | 0.03 / 0.16 / 0.07 | 181 ms |
+
+- **wasm costs 1.6× native**; the module compiles in 2–3 ms (V8's lazy tiers) and instantiates in 1–2; its memory is
+  32 MiB.
+- **The tail is GTK4's**: its two uber-shaders take ~20 ms each, nearly all in the optimization loop (~15 ms natively
+  too), and its 14 stages 2.8 ms at the median; every other program's stages take 0.2–0.35 ms. Chromium's own part of
+  a pipeline is ~9 ms (D), so GTK4's are the only stages where the translator's share is comparable, once each per
+  program run before a WGSL cache keeps it.
+- **The NIR is the native build's**: the NIR printed after the passes hashes the same for all 108 stages in Node and in
+  Chromium. The MSL differs in 7 (mpv's and vkQuake's fragment stages), where a fragment input's type reaches the
+  backend's `UNREACHABLE` because the harness lacks a pipeline's linked-stage state; release builds make that undefined
+  behaviour, which each build resolves its own way. It is the stand-in backend's gap, not wasm's.
+- **The size**: 9.2 MB raw (1.3 MB of code, 7.9 MB of data, mostly zeros), **426 KiB brotli -11, 653 KiB gzip -9, 460
+  KiB zstd -19**. Not counted yet: virglrenderer's Venus decoder (`vkr`, 1.4 MB of native text in the oracle's build,
+  so ~1.4 MB more raw in wasm, an estimate) and Mesa's Vulkan runtime. Even at several times the estimate the whole
+  stays well inside 5 MiB.
+
+**The toolchain: wasi-sdk 34** (clang 23.1 and wasi-libc; the module a WASI reactor; `spirv_to_nir`'s setjmp/longjmp
+as wasm exception handling). Emscripten 6.0.13 built the same sources with no shims (its libc has what wasi-libc
+stubs), and was measured against it in three alternated rounds on each host (`results/vk1/step1/ab-*`):
+
+| Chromium, a stage's median ms (rounds) / the 108 stages cold, ms | dev VM | the M4 |
+|---|---|---|
+| wasi-sdk | 0.282, 0.287, 0.280 / 210, 213, 211 | 0.267, 0.275, 0.273 / 180, 181, 182 |
+| Emscripten (binaryen's `wasm-opt` at -O2 in its link) | 0.282, 0.275, 0.275 / 246, 244, 250 | 0.265, 0.267, 0.267 / 202, 199, 203 |
+| wasi-sdk through `wasm-opt -O2` | 0.275, 0.272, 0.283 / 246, 244, 253 | |
+
+Warm, they are the same (the rounds overlap). Cold, the plain wasi-sdk build is 11–17% faster (the rounds don't
+overlap): binaryen's inlining makes V8 compile more before the code runs, and a translator's shaders mostly run once.
+Compressed sizes are within 3% either way. So wasi-sdk: one pinned tarball (Emscripten's SDK is 1.8 GB with its own
+Python and Node), plain clang, a module whose imports are ours (the WebGPU calls will be imports too, E: from wasm they
+cost what calls from JS do), at the price of ~60 lines of shims (`nir/wasi/`: uid calls, signal masks, syslog, a
+platform-free `os_misc.c`). Emscripten's own advantages (its POSIX emulation, its WebGPU bindings) aren't needed.
+
+**Licences**: the module compiles 334 of Mesa's files: MIT (88 with SPDX tags, 236 with the MIT text, 5 without a
+header under Mesa's MIT), Berkeley SoftFloat 3e (`util/softfloat.c`, BSD-3-Clause), BLAKE3 1.8.2 (CC0-1.0 or
+Apache-2.0), and `c11/impl/threads_posix.c` (BSL-1.0); THIRD_PARTY.md has the rows.
+
 ## Tools
 
+- `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
+  toolchains, `gen.ts`'s ninja files), `spike.c`, `spike.ts` (the module with stubbed WASI), `run.ts` (native, Node,
+  Chromium), `page.ts`; `mac.sh nir`.
 - `scene/` (`build.sh`: vk, gles and their shaders), `assets.ts` (the pack), `sweep.sh` (the native sweep),
   `mac.sh` (`kosmickrisp`, `moltenvk`, `webgpu`, `arm3`, `micro` on the Mac host), `macsdk.ts` (the SDK's parts),
   `nvidia.sh` (the user's desktop).

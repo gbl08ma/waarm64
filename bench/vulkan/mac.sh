@@ -8,6 +8,7 @@
 #                                                         Testing (Playwright's, with the packages bench/mac-packages.sh
 #                                                         keeps in ~/webpc-gpu-bench); MODES and the rest pass through
 #   bench/vulkan/mac.sh micro [name]                      C, E, F: bench/vulkan/micro.ts (ONLY= one benchmark)
+#   bench/vulkan/mac.sh nir [name]                        VK1 step 1: bench/vulkan/nir/run.ts (Node, Chromium; WASM=, ARMS=)
 #   bench/vulkan/mac.sh arm3 [name]                       arm 3: bench/vulkan/arm3.ts over the converted captures
 #                                                         (bench/vulkan/translate/capture.sh; TRACES picks them)
 # DUMP=FRAME renders one frame instead (-> <name>.ppm); VALIDATE=1 runs it under the validation layer; SWEEP's
@@ -28,6 +29,24 @@ if [ "$DRIVER" = micro ]; then
     mkdir -p results && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/micro.ts results/$NAME.json ${ONLY:+--only $ONLY}"
   mkdir -p bench/results/local/vk0
   rsync -a "$HOST:$W/results/$NAME.json" bench/results/local/vk0/
+  exit 0
+fi
+if [ "$DRIVER" = nir ]; then
+  # VK1 step 1: bench/vulkan/nir/run.ts's Node and Chromium arms over the stages (target/vk1/spirv) and the wasm
+  # build(s) (WASM: target/vk1/<toolchain>/spike.wasm, default the wasi one) -> bench/results/local/vk1/<name>.json
+  W=webpc-gpu-bench/vulkan-web
+  WASM=${WASM:-target/vk1/wasi/spike.wasm}
+  ssh "$HOST" "mkdir -p $W/bench $W/target/vk1 $W/$(dirname "$WASM")"
+  rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
+  rsync -a --delete --exclude '*.log' target/vk1/spirv "$HOST:$W/target/vk1/"
+  rsync -a "$WASM" "$HOST:$W/$WASM"
+  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
+    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    mkdir -p results && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/nir/run.ts \
+      results/$NAME.json --arm ${ARMS:-node,chromium} --reps ${REPS:-5} --wasm $WASM"
+  mkdir -p bench/results/local/vk1
+  rsync -a "$HOST:$W/results/$NAME.json" bench/results/local/vk1/
   exit 0
 fi
 if [ "$DRIVER" = arm3 ]; then

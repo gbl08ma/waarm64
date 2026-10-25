@@ -1,7 +1,7 @@
 # webpc graphics plan: Vulkan
 
 **Status: planned (the user, 2026-10-25): §2's decisions bind. VK0 is done (2026-10-25,
-[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is next; its brief is `M8-VK1-KICKOFF.md`.** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is under way (its brief `M8-VK1-KICKOFF.md`, notes `M8-VK1-HANDOVER.md`): step 1, route (b)'s premise, passed (2026-10-25, REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -282,7 +282,9 @@ for the programs that switch. The user decides whether VK1 starts.
 - **WebGPU's per-call cost** in Chromium caps a frame at ~5,000 Vulkan-style draws a millisecond on the M4 (E): games
   at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
   fast (NVIDIA).
-- **Route (b)'s size in wasm**: Mesa's runtime, `spirv_to_nir` and NIR as a download, unmeasured (VK1's first step).
+- **Route (b)'s size in wasm**: `spirv_to_nir`, NIR's passes and a NIR → shading-language backend measured in VK1 step 1
+  (0.42 MiB brotli, 0.27 ms a stage in Chromium; wasi-sdk the toolchain); Mesa's Vulkan runtime and `vkr` not yet built
+  for wasm (`vkr` ~1.4 MB of native code: an estimate).
 - **The guest's cost is Venus's encoding**: about virgl's at light settings (B's estimate), so a CPU-bound GL program
   (GTK4's iconscroll) gains nothing by switching; a program that switches only if it meets G's numbers.
 - **Adapters differ** (limits, features, formats, precision), as WebGL2 stacks did for dEQP-GLES: the caps per

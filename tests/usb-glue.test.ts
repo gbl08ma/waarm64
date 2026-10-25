@@ -56,7 +56,7 @@ test('Gadget Zero sources and sinks the pattern, loops back, and answers 0x5b/0x
   assert.equal((await control(ss, 0x80, 6, 0x200, 0, 255)).data![2], 9 + 9 + 2 * (7 + 6));
 });
 
-test('the glue turns request records into TDs and results into completion records', async () => {
+test('the glue turns request records into TDs and results into completion records', async (t) => {
   const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
   const u32 = new Uint32Array(memory.buffer);
   const RAM = 65536;
@@ -65,6 +65,8 @@ test('the glue turns request records into TDs and results into completion record
   const states: UsbFromWorker[] = [];
   channel.port2.onmessage = (e) => states.push(e.data);
   const usb = new Usb({ memory, shared: 0, ram: RAM, ramSize: 65536, deterministic: true, kick: () => kicks++, port: channel.port1 });
+  // The ports keep the process alive: closed whatever happens, or a failed assertion hangs the file instead of failing.
+  t.after(() => { usb.close(); channel.port2.close(); });
   const CPL = (8 + 8 + 4 * 4096) / 4;
   const completions = () => {
     const out: number[][] = [];
@@ -100,11 +102,10 @@ test('the glue turns request records into TDs and results into completion record
   post([10, 0 | 3 << 8, 4, 1 | 6 << 16, 512, 0x200, 512]);
   usb.poll();
   assert.deepEqual(completions(), []);
-  await new Promise((r) => setTimeout(r, 10));
+  // The states arrive through the port: under load, later than any fixed wait (a 10 ms one failed in ci.sh).
+  for (const t0 = Date.now(); states.length < 4 && Date.now() - t0 < 5000;) await new Promise((r) => setTimeout(r, 5));
   assert.deepEqual(states.map((s) => s.state), ['attached', 'error', 'error', 'detached']);
   assert.ok(kicks >= 4);
-  usb.close();
-  channel.port2.close();
 });
 
 /** A glue on its own shared block, with helpers to post records and read completions. */

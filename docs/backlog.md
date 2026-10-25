@@ -818,10 +818,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **`tests/usb-glue.test.ts` hung once in `scripts/ci.sh`** (2026-10-22): its process sat idle (0% CPU) for 12
-  minutes inside `npm test` until killed; alone it passes in 0.1 s, and the next CI run passed (411 s). No stack
-  was taken. If it recurs, `kill -USR1` the test's node process and attach an inspector (or run the file in a loop
-  under `timeout`) to see what it awaits; a per-file timeout in `npm test` would turn the next hang into a failure.
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
   hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long

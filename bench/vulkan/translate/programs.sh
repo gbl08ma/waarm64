@@ -7,7 +7,8 @@
 # vkquake (LibreQuake's data in target/vk0a/lq-dl), the scene. Wayland ones beside a headless sway
 # (tools/venus-oracle/wayland.sh), vkQuake under Xvfb. Each runs through A's Mac profile (PROFILE, default mac:
 # bench/vulkan/profiles/run.sh; none for lavapipe as it is), so a program compiles the shaders it would on our device
-# (libplacebo also needs the device to say GPU).
+# (libplacebo also needs the device to say GPU). SPIRV_DIR=<dir> keeps the dumps there (<dir>/<program>/*.spv: VK1's
+# bench/vulkan/nir/ reads them), else they go to a temporary directory.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 OUT=$(realpath -m "${1:-$ROOT/bench/vulkan/results/d}"); shift || true
@@ -15,10 +16,14 @@ PROGRAMS=${*:-vkcube vkmark gtk4 mpv vkquake scene}
 W="$ROOT/tools/venus-oracle/wayland.sh env PROFILE=${PROFILE:-mac} $ROOT/bench/vulkan/profiles/run.sh"
 R=$ROOT/target/vk0a/root
 mkdir -p "$OUT"
-dumps=$(mktemp -d "${TMPDIR:-/tmp}/vk0-spv.XXXXXX")
-trap 'rm -rf "$dumps"' EXIT
+if [ -n "${SPIRV_DIR:-}" ]; then
+  dumps=$(realpath -m "$SPIRV_DIR"); mkdir -p "$dumps"
+else
+  dumps=$(mktemp -d "${TMPDIR:-/tmp}/vk0-spv.XXXXXX")
+  trap 'rm -rf "$dumps"' EXIT
+fi
 for p in $PROGRAMS; do
-  d=$dumps/$p; mkdir -p "$d"
+  d=$dumps/$p; rm -rf "$d"; mkdir -p "$d"
   export MESA_SPIRV_DUMP_PATH=$d
   case $p in
     vkcube) timeout 60 $W vkcube --wsi wayland --c 30 ;;
