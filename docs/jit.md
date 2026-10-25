@@ -89,7 +89,8 @@ the interpreter's own code.
   cold code (a boot compiles ~60 MiB) meets 1000 and a browser's working set 2000 once the cache holds 3/8 of it (120 MiB)
   (`Config::threshold`, `threshold_max`, `PRESSURE_KNEE`), and each flush doubles the floor it
   starts from. Code that fits is compiled early; a working set that doesn't fills the rest of the
-  budget with the code that runs most. JIT-stress, JIT-check, the dispatcher-only mode and the
+  budget with the code that runs most. One threshold for every block: one by the block's length, mix or rate was
+  measured and won nothing ([Tried and not kept](#tried-and-not-kept)). JIT-stress, JIT-check, the dispatcher-only mode and the
   user-mode `jit_new` keep a fixed threshold.
   Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
   ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
@@ -1068,6 +1069,20 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   phases' steps interpreted (6–16% of their few dispatches), about 1% of a phase at most, and
   multi-entry would put an entry parameter on every function (`bench/boot/REPORT.md` "M8: what a
   region entered at more than one block could win").
+- **A per-block compile threshold** (2026-10-25; `bench/interp/REPORT.md` "Compile by expected benefit against
+  cost", the patch in `bench/interp/results/m8-cp/`): measured first, then screened against the floor and the
+  pressure rule. Cost: a compiled guest instruction is ~94 wasm bytes and ~3.3 µs of the vCPU's time (the emit ~12.7
+  µs a KB, Liftoff's lazy compile ~22-25 µs a KB; V8's validation ~1.2 µs a KB on the compile worker), the fixed
+  costs small (~40 µs each a module, nothing a function), so cost grows with the region's length. Benefit under
+  Liftoff: integer code saves 1-2.5 ns a step against the block interpreter, SIMD&FP 13-18 (the generic path). So
+  the length shouldn't move the threshold, and a **threshold in steps** (dispatches × length) lost as predicted
+  (the churn page 17% slower, 16% more wasm, a flush). **Weighting by the mix** (the threshold divided by `1 + 9 ×
+  slow / len`, slow the SIMD&FP instructions, or every generic-path one: the regime's MSRs, ERET and ISB are helper
+  calls compiled too) compiled FP blocks earlier (2% fewer steps interpreted in Firefox) and won nothing: the pages
+  session, the boots and `smp_user_jit_4` even, the `go build` loop 1.5% slower; a browser's session interprets ~4%
+  of its steps. **Decaying a block's count** while it isn't reported changed nothing. **Without the pressure rule**
+  (a flat 2000) the wasm fell 9-11% but Alpine's boot ran 2.8% slower and Firefox's pages interpreted 27% more steps:
+  a cold boot wants 1000, a browser's working set under pressure 2000, which the rule gives.
 
 ## Validation
 

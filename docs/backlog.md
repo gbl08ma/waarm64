@@ -51,31 +51,6 @@ left open, most promising first.
   (a measuring build, UB under parallel SMP, written at loop 0: port it to `mem.rs` as it stands) on the yardstick,
   on a stable host (the user's desktop by hand, or a cloud session with many rounds). If it costs: plain loads with atomic stores only where another vCPU can observe
   them, or plain accesses with one vCPU or round-robin and atomics only in parallel SMP (the user's decision).
-- **Compile by expected benefit against cost, not one floor** (the user's idea, 2026-10-21; supersedes tuning the
-  floor alone). 1000 and 2000 each win on different workloads because one dispatch count stands in for a trade-off
-  that varies per block. Three candidate inputs:
-  - **Size.** Cost is the emit, V8's compile and the code's memory, which grow with the region, plus fixed costs:
-    ~8.5 KB per function and ~16 KB per module ([jit.md](jit.md) "Memory"). The benefit per dispatch grows with the
-    block's length too, so the threshold should count **steps** (dispatches × length), not dispatches; the batch
-    already weighs steps (`BATCH_STEPS`). The fixed costs make small regions relatively dearer, so a size-scaled
-    floor may want small regions *higher*, against the first guess. Measure it before assuming either way.
-  - **Instruction mix.** Since M8-INTERP's handlers, the interpreter is near Liftoff on some code (MOV runs, MRS,
-    plain loads and stores) and far on other code (the generic path, SIMD, flag-heavy arithmetic). A per-block
-    speedup estimate, fixed at decode, could scale its threshold.
-  - **Rate.** A boot's code mostly runs once, while a browser's runs for minutes. Promoting by dispatches per
-    interval rather than by total count would compile what is hot *now*.
-
-  **To measure first:**
-  - the cost model: emit ns, V8 compile ns and V8 memory against wasm bytes, regions and modules
-  - the benefit model: interpreted against compiled ns per step, by instruction class (the M8-INTERP mix tooling
-    and the fixed diagnostic core)
-
-  **Then screen,** as lanes do (the churn page, the pages session, Alpine's boot, the gates): steps-weighted,
-  size-scaled, mix-scaled and rate-based thresholds against fixed 1000 and 2000. The aim is a policy that beats
-  both: 2000's less wasm and memory where code runs long, 1000's speed on cold code. The pressure rule already gives
-  part of that (loop 11: floor 1000, maximum 2000 from 3/8 of the cache, −13% wasm and +6% busy MIPS in Firefox's
-  pages session, the boots unchanged); a per-block policy has to beat it, judged by the gates of docs/benchmarking.md
-  "Screening an A/B" (the `go build` loop by its build times).
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
   MSRs that change the regime and DAIFClr; ISB and DSB leave with `Exit::Resync` under parallel SMP anyway. A

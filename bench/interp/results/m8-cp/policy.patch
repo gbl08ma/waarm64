@@ -1,0 +1,460 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index c480964..5c2f15f 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -2497,6 +2497,35 @@ fn slot(key: u64) -> usize {
+     (key >> 2) as usize & (SLOTS - 1)
+ }
+ 
++/// What the JIT's compile policy knows of a block ([`crate::jit`]'s
++/// `need`): its length, and the instructions of it that are slow here and
++/// fast compiled ([`slow`]).
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub struct Shape {
++    pub len: u32,
++    pub slow: u32,
++}
++
++/// Whether word `w`, run as micro-op kind `k`, is slow here and fast
++/// compiled: a SIMD&FP instruction on the generic path (~17 ns a step
++/// against ~0.7 compiled; an integer micro-op saves 1-2.5 ns). The other
++/// generic forms (the regime's MSRs, ERET, ISB) are helper calls compiled
++/// too: nothing to gain.
++fn slow(w: u32, k: K) -> bool {
++    k == K::Generic && (w >> 25 & 7 == 7 || w >> 25 & 7 == 6)
++}
++
++/// The shape of the block at `key` (a JIT block key), decoded from `mem`.
++pub fn shape(mem: &Mem, key: u64) -> Shape {
++    let u = crate::jit::block::form_with(mem, key & !3, |w, op| {
++        slow(w, uop_el(w, op, key & 1 != 0).k)
++    });
++    Shape {
++        len: u.len() as u32,
++        slow: u.iter().filter(|&&g| g).count() as u32,
++    }
++}
++
+ impl Cache {
+     /// A cache of `budget` micro-ops.
+     pub fn new(budget: usize) -> Cache {
+@@ -2605,14 +2634,21 @@ impl Cache {
+         (start, len)
+     }
+ 
+-    /// Decodes the block at `key` if it isn't yet, and returns its length
+-    /// then (0: no instructions; `None`: it was decoded before, maybe from
+-    /// words an IC has since dropped that this table hasn't caught up with).
+-    pub fn decode(&mut self, key: u64, mem: &Mem) -> Option<u32> {
++    /// Decodes the block at `key` if it isn't yet, and returns its shape
++    /// then (length 0: no instructions; `None`: it was decoded before, maybe
++    /// from words an IC has since dropped that this table hasn't caught up
++    /// with).
++    pub fn decode(&mut self, key: u64, mem: &Mem) -> Option<Shape> {
+         if self.map.contains_key(&key) {
+             return None;
+         }
+-        Some(self.miss(key, mem).map_or(0, |(_, len)| len))
++        Some(self.miss(key, mem).map_or(Shape::default(), |(start, len)| {
++            let u = &self.arena[start as usize..(start + len) as usize];
++            Shape {
++                len,
++                slow: u.iter().filter(|u| slow(u.w, u.kind())).count() as u32,
++            }
++        }))
+     }
+ 
+     /// Counts a dispatch of the block at `key` if it's decoded and hasn't
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index 9902902..cb8b515 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -506,12 +506,12 @@ fn a_block_out_of_its_slot_keeps_its_quota() {
+         t.mem.write(k + 4, 4, 0xd65f_03c0).unwrap();
+     }
+     let mut c = Cache::new(MAX_BUDGET);
+-    assert_eq!(c.decode(a, &t.mem), Some(2));
++    assert_eq!(c.decode(a, &t.mem).map(|s| s.len), Some(2));
+     c.quota(a, REPORT);
+     for _ in 0..5 {
+         assert!(c.count(a));
+     }
+-    assert_eq!(c.decode(b, &t.mem), Some(2)); // a goes out of the slot
++    assert_eq!(c.decode(b, &t.mem).map(|s| s.len), Some(2)); // a goes out of the slot
+     assert!(!c.slotted(a));
+     // A quota set while a block is out of its slot counts too.
+     c.quota(a, REPORT);
+@@ -534,7 +534,7 @@ fn an_empty_block_is_remembered_until_its_page_goes() {
+     t.mem.write(CODE, 4, 0xd400_0001).unwrap(); // svc #0
+     let mut c = Cache::new(MAX_BUDGET);
+     assert!(!c.empty(CODE));
+-    assert_eq!(c.decode(CODE, &t.mem), Some(0));
++    assert_eq!(c.decode(CODE, &t.mem).map(|s| s.len), Some(0));
+     assert!(c.empty(CODE) && c.get(CODE, &t.mem).is_none() && !c.count(CODE));
+     assert_eq!(c.decode(CODE, &t.mem), None, "decoded before");
+     // A quota doesn't make it a block to run (the dispatcher would run no
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index b0ac829..6b14915 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -121,6 +121,25 @@ pub struct Config {
+     /// blocks only), so the edge into it stays in the function instead of a
+     /// jump-cache probe and an indirect call (docs/jit.md "Compile policy").
+     pub warm: u32,
++    /// SCREEN: the compile threshold divided by `1 + gain × slow / len` for a
++    /// block with `slow` of its `len` instructions on the interpreter's
++    /// generic path (0: off); a threshold in steps (`threshold × steps /
++    /// len`, 0: off); a block's count halved every `decay` ticks it wasn't
++    /// reported (0: off).
++    pub gain: u32,
++    pub steps: u32,
++    pub decay: u32,
++}
++
++/// SCREEN: a build-time knob (`WEBPC_CP_*`), or `d`.
++const fn knob(v: Option<&str>, d: u32) -> u32 {
++    let Some(v) = v else { return d };
++    let (b, mut n, mut i) = (v.as_bytes(), 0u32, 0);
++    while i < b.len() {
++        n = n * 10 + (b[i] - b'0') as u32;
++        i += 1;
++    }
++    n
+ }
+ 
+ impl Config {
+@@ -128,8 +147,8 @@ impl Config {
+         // Raised with the cache's pressure (docs/jit.md "Compile policy");
+         // 1000 since the block interpreter's hot loop (M8-INTERP loop 6 and
+         // its second round), up to 2000 past the knee (loop 11).
+-        threshold: 1000,
+-        threshold_max: 2000,
++        threshold: knob(option_env!("WEBPC_CP_FLOOR"), 1000),
++        threshold_max: knob(option_env!("WEBPC_CP_MAX"), 2000),
+         batch: 512,
+         capacity: 262_144,
+         max_bytes: MAX_BYTES,
+@@ -139,6 +158,9 @@ impl Config {
+         spill: [0; crate::mem::MAX_SPILL],
+         decoded: interp::block::MAX_BUDGET as u32,
+         warm: WARM,
++        gain: knob(option_env!("WEBPC_CP_GAIN"), 0),
++        steps: knob(option_env!("WEBPC_CP_STEPS"), 0),
++        decay: knob(option_env!("WEBPC_CP_DECAY"), 0),
+     };
+     /// Compile everything on first sight, one block per module, and flush
+     /// constantly: room for 4 regions besides the miss functions.
+@@ -154,6 +176,9 @@ impl Config {
+         spill: [0; crate::mem::MAX_SPILL],
+         decoded: interp::block::MAX_BUDGET as u32,
+         warm: 0,
++        gain: 0,
++        steps: 0,
++        decay: 0,
+     };
+     /// JIT-check: compile everything on first sight into a full-size cache,
+     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
+@@ -332,7 +357,11 @@ struct Info {
+     covered: bool,
+     /// The cache's tick ([`Cache::tick`]) at its last report.
+     age: u8,
++    /// Its instructions on the block interpreter's generic path
++    /// ([`interp::block::Shape`]).
++    slow: u8,
+ }
++const _: () = assert!(core::mem::size_of::<Info>() == 16, "Info");
+ 
+ impl Info {
+     /// Whether the cache needs it whatever its count: compiled (the jump
+@@ -856,8 +885,8 @@ impl Cache {
+     }
+ 
+     /// The entry for `key`, created (and filed under its page) if new.
+-    fn info(&mut self, key: u64, len: impl FnOnce() -> u32) -> &mut Info {
+-        info(&mut self.map, &mut self.pages, key, len)
++    fn info(&mut self, key: u64, shape: impl FnOnce() -> interp::block::Shape) -> &mut Info {
++        info(&mut self.map, &mut self.pages, key, shape)
+     }
+ 
+     /// The stale-code checker at a region's entry: all its blocks' words.
+@@ -902,17 +931,22 @@ impl Cache {
+         va: u64,
+         mem: &Mem,
+         n: u32,
+-        len: Option<u32>,
++        shape: Option<interp::block::Shape>,
+     ) -> (Result<(u32, u32), u32>, u32) {
+         self.room(&mut t.stats);
+         let (keys, tick) = (self.map.len(), self.tick());
+         let info = info(&mut self.map, &mut self.pages, key, || {
+-            len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
++            shape.unwrap_or_else(|| interp::block::shape(mem, key))
+         });
++        if self.cfg.decay != 0 {
++            let idle = tick.wrapping_sub(info.age) as u32 / self.cfg.decay;
++            info.hits >>= idle.min(15);
++        }
+         info.age = tick;
++        let due = need(&self.cfg, self.threshold, info);
+         if info.idx == 0 && !self.off && info.len > 0 {
+             info.hits = info.hits.saturating_add(n.min(u16::MAX as u32) as u16);
+-            if info.hits as u32 > self.threshold && !info.queued {
++            if info.hits as u32 > due && !info.queued {
+                 info.queued = true;
+                 self.pending.push((key, va));
+             } else if info.queued {
+@@ -944,7 +978,7 @@ impl Cache {
+                 } else {
+                     interp::block::REPORT_IDLE
+                 }
+-                .min(self.threshold.saturating_sub(i.hits as u32)),
++                .min(need(&self.cfg, self.threshold, i).saturating_sub(i.hits as u32)),
+             ),
+             Some(i) => (Err(i.len.max(1) as u32), report),
+             None => (Err(1), 0), // flushed by the emit
+@@ -1308,7 +1342,7 @@ impl Cache {
+             } else {
+                 0
+             };
+-            let i = self.info(key, || 0);
++            let i = self.info(key, interp::block::Shape::default);
+             (i.idx, i.len, i.word) = (idx + k as u32, len as u8, word);
+             if self.cfg.check {
+                 let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
+@@ -1816,7 +1850,7 @@ impl Jit {
+         let mut c = if Arc::strong_count(&self.cache) > 1 {
+             let Some(c) = self.cache.try_lock() else {
+                 self.table.stats.lock_skipped += 1;
+-                return Err(len.unwrap_or(1));
++                return Err(len.map_or(1, |s| s.len));
+             };
+             self.table.stats.locks += 1;
+             c
+@@ -2065,21 +2099,36 @@ fn info<'a>(
+     map: &'a mut Map<Info>,
+     pages: &mut PageIndex,
+     key: u64,
+-    len: impl FnOnce() -> u32,
++    shape: impl FnOnce() -> interp::block::Shape,
+ ) -> &'a mut Info {
+     use std::collections::hash_map::Entry;
+     match map.entry(key) {
+         Entry::Occupied(e) => e.into_mut(),
+         Entry::Vacant(e) => {
+             pages.file(key);
++            let s = shape();
+             e.insert(Info {
+-                len: len() as u8,
++                len: s.len as u8,
++                slow: s.slow as u8,
+                 ..Info::default()
+             })
+         }
+     }
+ }
+ 
++/// The dispatches block `i` counts before it joins the batch, at compile
++/// threshold `t` (docs/jit.md "Compile policy").
++fn need(cfg: &Config, t: u32, i: &Info) -> u32 {
++    let (mut t, len) = (t as u64, i.len.max(1) as u64);
++    if cfg.steps != 0 {
++        t = t * cfg.steps as u64 / len;
++    }
++    if cfg.gain != 0 {
++        t = t * len / (len + cfg.gain as u64 * i.slow as u64);
++    }
++    t.min(u32::MAX as u64) as u32
++}
++
+ fn now_ns() -> u64 {
+     #[cfg(target_arch = "wasm32")]
+     // SAFETY: a host function with no preconditions.
+@@ -2573,6 +2622,9 @@ mod tests {
+             spill: [0; crate::mem::MAX_SPILL],
+             decoded: 0,
+             warm: 0,
++            gain: 0,
++            steps: 0,
++            decay: 0,
+         });
+         let s = &mut Stats::default();
+         c.map.insert(0x100, Info::default());
+@@ -2698,7 +2750,7 @@ mod tests {
+         });
+         // Every block was dispatched and is pending, but 0x118 (not queued).
+         for k in [0x110, 0x100, 0x104, 0x10c, 0x120, 0x128, 0x12c, 0x118] {
+-            let i = c.info(k, || 1);
++            let i = c.info(k, || interp::block::Shape { len: 1, slow: 0 });
+             (i.hits, i.queued) = (51, k != 0x118);
+             if k != 0x118 {
+                 c.pending.push((k, k));
+@@ -2750,11 +2802,11 @@ mod tests {
+         }
+         let plan = |hits: [u32; 3], idx10c: u32| {
+             let mut c = Cache::new(Config::DEFAULT);
+-            let i = c.info(0x100, || 1);
++            let i = c.info(0x100, || interp::block::Shape { len: 1, slow: 0 });
+             (i.hits, i.queued) = (51, true);
+             c.pending.push((0x100, 0x100));
+             for (k, h) in [0x104, 0x10c, 0x114].into_iter().zip(hits) {
+-                let i = c.info(k, || 1);
++                let i = c.info(k, || interp::block::Shape { len: 1, slow: 0 });
+                 i.hits = h as u16;
+                 if k == 0x10c {
+                     i.idx = idx10c;
+@@ -2816,14 +2868,14 @@ mod tests {
+         let (mut t, mut u) = (Table::new(&mut c), Table::new(&mut c));
+         let s = &mut Stats::default();
+         for k in [0x1000, 0x1ff8 | block::KEY_EL1, 0x2000, 0x3000, 0x4000] {
+-            c.info(k, || 1).idx = 7;
++            c.info(k, || interp::block::Shape { len: 1, slow: 0 }).idx = 7;
+             t.fill(k, 7, 1);
+             u.fill(k, 7, 1);
+         }
+         // 0x3000 chains to 0x1000, and 0x4000 to 0x3000: both go with page 1.
+         c.linkers.insert(0x1000, vec![0x3000]);
+         c.linkers.insert(0x3000, vec![0x4000]);
+-        c.info(0x1004, || 1).queued = true;
++        c.info(0x1004, || interp::block::Shape { len: 1, slow: 0 }).queued = true;
+         c.pending.push((0x1004, 0));
+         let drops = c.drops.load(Ordering::Relaxed);
+         c.invalidate(0x1ab0, s); // IC IVAU on page 1
+@@ -2870,8 +2922,8 @@ mod tests {
+         }
+         // Compiled 0x2000 links to compiled 0x1000: an IC on page 1 drops both
+         // compiled blocks, and only page 1's decoded one.
+-        c.info(0x1000, || 2).idx = 7;
+-        c.info(0x2000, || 2).idx = 8;
++        c.info(0x1000, || interp::block::Shape { len: 2, slow: 0 }).idx = 7;
++        c.info(0x2000, || interp::block::Shape { len: 2, slow: 0 }).idx = 8;
+         c.linkers.insert(0x1000, vec![0x2000]);
+         c.invalidate(0x1040, s);
+         assert!(c.map.is_empty());
+@@ -2945,7 +2997,7 @@ mod tests {
+         let mut j = Jit::new(Cache::new(Config::DEFAULT));
+         let key = 0x1000;
+         // Compiled (as if) in slot 7, which the table has installed.
+-        j.cache.lock().info(key, || 2).idx = 7;
++        j.cache.lock().info(key, || interp::block::Shape { len: 2, slow: 0 }).idx = 7;
+         j.table.limit = 8;
+         let locks = |j: &Jit| j.table.stats.locks;
+         assert_eq!(j.miss(key, key, &mem), Ok((7, 2)));
+@@ -3024,7 +3076,7 @@ mod tests {
+         (t.xmiss, t.base) = (true, 1);
+         let (a, b) = (0x1000, 0x1010);
+         for k in [a, b] {
+-            c.info(k, || 2).queued = true;
++            c.info(k, || interp::block::Shape { len: 2, slow: 0 }).queued = true;
+             c.pending.push((k, k));
+         }
+         let regions = c.plan(&mem);
+@@ -3121,7 +3173,7 @@ mod tests {
+         // 3.2M keys, 256 a page; an IC on an older page every 16 pages.
+         for k in 0..3_200_000u64 {
+             let key = ((1 << 32) + k * 16) | block::KEY_MMU;
+-            let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
++            let _ = c.miss(&mut t, key, key, &mem, 1, Some(interp::block::Shape { len: 4, slow: 0 }));
+             if k % 4096 == 4095 {
+                 c.invalidate(key - (64 << 12), s);
+             }
+@@ -3167,7 +3219,7 @@ mod tests {
+         for p in 0..(live + 16_000) as u64 {
+             for k in 0..256 {
+                 let key = ((1 << 32) + (p << 12) + k * 16) | block::KEY_MMU;
+-                let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
++                let _ = c.miss(&mut t, key, key, &mem, 1, Some(interp::block::Shape { len: 4, slow: 0 }));
+             }
+             if p >= live as u64 {
+                 c.invalidate((1 << 32) + ((p - live as u64) << 12), s);
+@@ -3194,13 +3246,13 @@ mod tests {
+         let (compiled, queued, tiering, hot, warm, cold, now) =
+             (0x1000, 0x1004, 0x1008, 0x2000, 0x2004, 0x3000, 0x2008);
+         for k in [compiled, queued, tiering, hot, warm, cold] {
+-            let _ = c.miss(&mut t, k, k, &mem, 1, Some(4));
++            let _ = c.miss(&mut t, k, k, &mem, 1, Some(interp::block::Shape { len: 4, slow: 0 }));
+         }
+-        c.info(compiled, || 4).idx = 7;
+-        c.info(queued, || 4).queued = true;
+-        c.info(tiering, || 4).tiering = true;
+-        let _ = c.miss(&mut t, hot, hot, &mem, 600, Some(4));
+-        let _ = c.miss(&mut t, warm, warm, &mem, 600, Some(4));
++        c.info(compiled, || interp::block::Shape { len: 4, slow: 0 }).idx = 7;
++        c.info(queued, || interp::block::Shape { len: 4, slow: 0 }).queued = true;
++        c.info(tiering, || interp::block::Shape { len: 4, slow: 0 }).tiering = true;
++        let _ = c.miss(&mut t, hot, hot, &mem, 600, Some(interp::block::Shape { len: 4, slow: 0 }));
++        let _ = c.miss(&mut t, warm, warm, &mem, 600, Some(interp::block::Shape { len: 4, slow: 0 }));
+         c.linkers.insert(compiled, vec![0x5000]);
+         c.linkers.insert(cold, vec![0x5000]);
+         let at = |c: &mut Cache, tick: u64| c.added = tick << TICK_SHIFT;
+@@ -3218,9 +3270,9 @@ mod tests {
+         assert_eq!(keys(&c), [compiled, queued, tiering, hot, warm]);
+         // `hot` reports again; `warm` doesn't for WARM_TICKS and goes, with
+         // its count; `now`, a cold key just reported, stays.
+-        let _ = c.miss(&mut t, hot, hot, &mem, 1, Some(4));
++        let _ = c.miss(&mut t, hot, hot, &mem, 1, Some(interp::block::Shape { len: 4, slow: 0 }));
+         at(&mut c, WARM_TICKS as u64);
+-        let _ = c.miss(&mut t, now, now, &mem, 1, Some(4));
++        let _ = c.miss(&mut t, now, now, &mem, 1, Some(interp::block::Shape { len: 4, slow: 0 }));
+         c.prune(s);
+         assert_eq!(keys(&c), [compiled, queued, tiering, hot, now]);
+         assert_eq!(c.map[&hot].hits, 602, "its count kept");
+@@ -3233,7 +3285,7 @@ mod tests {
+         c.invalidate(0x1000, s);
+         assert_eq!(keys(&c), [hot, now]);
+         // Run again, a pruned key counts from zero.
+-        let _ = c.miss(&mut t, cold, cold, &mem, 1, Some(4));
++        let _ = c.miss(&mut t, cold, cold, &mem, 1, Some(interp::block::Shape { len: 4, slow: 0 }));
+         assert_eq!(c.map[&cold].hits, 1);
+     }
+ 
+@@ -3246,22 +3298,22 @@ mod tests {
+         // Warm, not recent, too many: the needed and the recent ones stay.
+         c.added = (RECENT_TICKS as u64) << TICK_SHIFT;
+         for k in 0..(MAP_KEYS / 2 + 10) as u64 {
+-            let i = c.info(k << 2, || 4);
++            let i = c.info(k << 2, || interp::block::Shape { len: 4, slow: 0 });
+             (i.hits, i.age) = (KEEP_HITS, 0);
+         }
+-        c.info(1 << 40, || 4).idx = 9;
+-        c.info(1 << 41, || 4).age = RECENT_TICKS;
++        c.info(1 << 40, || interp::block::Shape { len: 4, slow: 0 }).idx = 9;
++        c.info(1 << 41, || interp::block::Shape { len: 4, slow: 0 }).age = RECENT_TICKS;
+         c.prune(s);
+         assert_eq!(c.map.len(), 2, "the compiled and the recent one");
+         // Recent, too many: the needed ones.
+         for k in 0..(MAP_KEYS / 2 + 10) as u64 {
+-            c.info(k << 2, || 4).age = RECENT_TICKS;
++            c.info(k << 2, || interp::block::Shape { len: 4, slow: 0 }).age = RECENT_TICKS;
+         }
+         c.prune(s);
+         assert_eq!(c.map.len(), 1, "only the compiled one");
+         assert_eq!(s.flushes, 0);
+         for k in 0..(MAP_KEYS / 2 + 10) as u64 {
+-            c.info(k << 2, || 4).idx = 9;
++            c.info(k << 2, || interp::block::Shape { len: 4, slow: 0 }).idx = 9;
+         }
+         c.prune(s);
+         assert!(c.map.is_empty());
+@@ -3274,7 +3326,7 @@ mod tests {
+         let mut c = Cache::new(Config::DEFAULT);
+         let s = &mut Stats::default();
+         for k in 0..10_000u64 {
+-            c.info(k << 2, || 4).idx = 9;
++            c.info(k << 2, || interp::block::Shape { len: 4, slow: 0 }).idx = 9;
+         }
+         c.rescue(s);
+         assert!(c.map.capacity() == 0 && c.pages.own.capacity() == 0 && c.pages.bytes() == 0);
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 356aa4c..905455a 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -325,6 +325,9 @@ pub extern "C" fn jit_new(
+         spill: [0; crate::mem::MAX_SPILL],
+         decoded: interp::block::MAX_BUDGET as u32,
+         warm: 0,
++        gain: 0,
++        steps: 0,
++        decay: 0,
+     }))));
+     Box::into_raw(v)
+ }

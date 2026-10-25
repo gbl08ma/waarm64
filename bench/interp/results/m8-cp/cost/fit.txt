@@ -1,0 +1,26 @@
+boot {
+  modules: 306,
+  fns: 8365,
+  kb: 11741,
+  words: 127538,
+  bytesPerWord: 94.3,
+  bytesPerFn: 1437
+}
+ totals ms: emit 151 module(lazy) 29 module(eager liftoff) 285
+ emit us ~ 1, fns, KB: { coef: [ 66.9, -2.56, 12.9 ], r2: 0.87 }
+ emit us ~ 1, fns, words: { coef: [ 67, -0.547, 1.06 ], r2: 0.865 }
+ lazy us ~ 1, fns, KB: { coef: [ 45.9, 0.0717, 1.18 ], r2: 0.902 }
+ eager us ~ 1, fns, KB: { coef: [ 41.2, -1.99, 24.6 ], r2: 0.999 }
+user {
+  modules: 546,
+  fns: 11212,
+  kb: 16237,
+  words: 175961,
+  bytesPerWord: 94.5,
+  bytesPerFn: 1483
+}
+ totals ms: emit 208 module(lazy) 44 module(eager liftoff) 367
+ emit us ~ 1, fns, KB: { coef: [ 44.8, -1.95, 12.6 ], r2: 0.886 }
+ emit us ~ 1, fns, words: { coef: [ 44.3, 0.255, 1.03 ], r2: 0.879 }
+ lazy us ~ 1, fns, KB: { coef: [ 42.5, -0.0247, 1.29 ], r2: 0.863 }
+ eager us ~ 1, fns, KB: { coef: [ 35.4, 0.162, 21.3 ], r2: 0.942 }

@@ -1,0 +1,18 @@
+{
+ "bench/results/local/cp/churn1/base-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 71.29,
+   "flushes": 0,
+   "modules": 21336,
+   "mib": 249.8,
+   "overdue": 0,
+   "parks": 56422,
+   "locks": 28838180,
+   "interpGsteps": 6.09,
+   "share": 0.914,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

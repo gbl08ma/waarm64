@@ -1,0 +1,25 @@
+[    0 s] log: bench/results/local/cp/go2/mix9-1.jsonl
+[    5 s] restored {"file":"target/snapbench/debian-go.webpcsnap","bytes":186833887,"loadMs":2728,"created":"2026-10-24T23:38:39.347Z","coreVersion":2,"abi":52,"scene":"debian-shell","madeBy":"97ecf7eacaaec076","madeAt":"92b6edb-dirty","core":"8b47843f27189832","sameCore":false}
+[    6 s] load started (2 commands); sampling every 5 s for 420 s
+[   36 s] running, 1294 MIPS, interp 1.0%, flushes +0 (0), compiling 5 ms/s, 55 MiB compiled, JIT 38322, status age 921 ms, renderer 2073 MiB, vCPU longest 216 ms
+[   66 s] running, 1886 MIPS, interp 0.2%, flushes +0 (0), compiling 3 ms/s, 71 MiB compiled, JIT 50399, status age 29 ms, renderer 2207 MiB, vCPU longest 216 ms
+[   96 s] running, 1165 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 79 MiB compiled, JIT 57410, status age 133 ms, renderer 2303 MiB, vCPU longest 216 ms
+[  126 s] running, 782 MIPS, interp 0.2%, flushes +0 (0), compiling 1 ms/s, 85 MiB compiled, JIT 62439, status age 136 ms, renderer 2341 MiB, vCPU longest 216 ms
+[  156 s] running, 850 MIPS, interp 0.1%, flushes +0 (0), compiling 1 ms/s, 90 MiB compiled, JIT 66467, status age 242 ms, renderer 2406 MiB, vCPU longest 216 ms
+[  186 s] running, 1225 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 94 MiB compiled, JIT 69917, status age 361 ms, renderer 2410 MiB, vCPU longest 265 ms
+[  216 s] running, 1561 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 97 MiB compiled, JIT 72465, status age 356 ms, renderer 2441 MiB, vCPU longest 265 ms
+[  246 s] running, 1440 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 99 MiB compiled, JIT 74473, status age 462 ms, renderer 2479 MiB, vCPU longest 265 ms
+[  276 s] running, 1231 MIPS, interp 0.2%, flushes +0 (0), compiling 2 ms/s, 101 MiB compiled, JIT 76406, status age 566 ms, renderer 2510 MiB, vCPU longest 265 ms
+[  306 s] running, 1403 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 103 MiB compiled, JIT 78142, status age 673 ms, renderer 2546 MiB, vCPU longest 265 ms
+[  336 s] running, 1617 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 107 MiB compiled, JIT 81444, status age 674 ms, renderer 2568 MiB, vCPU longest 265 ms
+[  366 s] running, 1679 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 109 MiB compiled, JIT 83392, status age 784 ms, renderer 2608 MiB, vCPU longest 309 ms
+[  396 s] running, 1519 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 111 MiB compiled, JIT 84895, status age 890 ms, renderer 2641 MiB, vCPU longest 309 ms
+[  426 s] running, 1540 MIPS, interp 0.1%, flushes +0 (0), compiling 2 ms/s, 112 MiB compiled, JIT 86260, status age 995 ms, renderer 2662 MiB, vCPU longest 309 ms
+
+samples 84 over 426 s, final page state running
+MIPS median 1431 (first third 1480, last third 1408); JIT blocks 86260
+renderer memory 2402 to 2662 MiB after warm-up, slope 3709 MiB/h
+longest vm_run_cpu / host handling per vCPU (ms): 0: 273/1  1: 298/0  2: 287/0  3: 309/0
+run loop max 65 ms, status gap max 5214 ms, main-thread lag max 44 ms
+guest console probes: 26/26 answered, slowest 1017 ms
+no findings

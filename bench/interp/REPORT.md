@@ -1577,3 +1577,74 @@ profiling the feature allows.
 **After the export fixes** (`jit_run`, `interp_run` and their `_exit` twins derive the dispatch bytes; `interp::run`
 and `run_system` take the debug interpreter while an EL is armed; every hot function is the same wasm as measured):
 `dec_mips` +0.3%, `interp_mips` −0.2%, `jit_mips` +1.5%, rounds overlapping.
+
+## Compile by expected benefit against cost: measured, screened, not kept
+
+2026-10-25, the dev VM, Chromium 153.0.8010.52, Node 26.7.0, on main at `92b6edb`; raw data `results/m8-cp/` (the
+policy's patch `policy.patch`, the cost diagnostic `cost/`, the benefit microbenchmark `benefit/`, the sessions
+`churn1/`, `pages1/`, `pages2/`, `gates1/`, `gates2/`, `go2/`). The backlog's item (the user's idea, 2026-10-21):
+replace the one dispatch threshold by a per-block one from the block's size, its instruction mix or its rate.
+
+**The cost model** (`cost/`: `diag.patch` puts each module's emit ns, regions and instructions in a custom section
+and dumps the modules from a Node run, Alpine's boot and its userspace benchmark under the JIT; `analyze.ts` times
+`new WebAssembly.Module` per module, lazily and with `--liftoff-only --no-wasm-lazy-compilation --single-threaded`;
+`fit.ts` fits time against modules, functions and KB; `fit.txt`). Per KB of wasm: the emit ~12.7 µs (r² 0.87-0.89),
+V8's validation ~1.2 µs, Liftoff ~22-25 µs (r² 0.94-0.999); per module ~40 µs each of the three; per function
+nothing measurable. A guest instruction is ~94 wasm bytes, so **a compiled instruction costs ~3.3 µs of the vCPU's
+time** (the emit and Liftoff's lazy compile at the first call run there; validation on the compile worker), plus
+~10× its bytes in V8's memory (docs/jit.md "Memory"). The fixed costs are small next to that (~5 µs a region in a
+module of ~27), so cost grows with the region's length almost exactly.
+
+**The benefit model** (`benefit/`: `classes.S`, twelve loops of 16 instructions by class, run 20M steps at a time on
+a vCPU whose cache never compiles, the block interpreter, and one that compiles at once, regions included; Liftoff
+with the tiering budget set out of reach before the JIT's modules are made, `liftoff.json`; TurboFan after a warm-up,
+`turbo.json`). Interpreted against compiled ns a step, Liftoff:
+
+| class | interpreted | compiled | saved a step |
+|---|---|---|---|
+| ALU, MOV runs, loads/stores, pairs, flags, multiplies, bitfields | 1.2-3.0 | 0.2-0.9 | 1.0-2.5 |
+| short blocks (2 instructions, B to the next) / calls and returns | 2.8 / 2.4 | 0.4 / 0.9 | 2.4 / 1.5 |
+| plain MRS/MSR | 6.2 | 4.5 | 1.7 |
+| scalar FP | 18.6 | 0.66 | **18** |
+| NEON | 16.8 | 3.7 | **13** |
+
+So integer code repays its compile after ~1,500-3,000 more runs of an instruction and SIMD&FP code after ~200; and
+since cost and benefit both grow with the block's length, **length should not move the threshold**: a threshold in
+steps (dispatches × length) penalizes short blocks for nothing. The mix should: SIMD&FP gains ~10× per step.
+
+**The screen.** Arms built from one patch (`policy.patch`: a block's shape, its length and its instructions on the
+interpreter's generic path, made at decode; an `Info` byte for it, which stays 16 bytes; `need()` scaling the
+threshold): `mix9` (threshold × len / (len + 9 × slow), slow = generic path), `mixfp9` (the same, slow = SIMD&FP on
+the generic path only: the other generic forms, the regime's MSRs, ERET, ISB, are helper calls compiled too),
+`steps5` (a threshold of 1000 × 5 steps), `decay16` (a block's count halved every 16 ticks it wasn't reported),
+`f2000` (a flat 2000: the pressure rule removed) and `f2000mix9`.
+
+The churn page from `pages.webpcsnap` (one session each, an A/A: 262 against 259 MB, `doneS` 103.1 against 102.7):
+
+| | base | mix9 | decay16 | f2000 | f2000mix9 | steps5 |
+|---|---|---|---|---|---|---|
+| flushes / wasm MB | 0 / 262 | 0 / 268 | 0 / 263 | 0 / **237** | 0 / 237 | **1** / 305 |
+| compiled share / `doneS` | 0.914 / 103.1 | 0.915 / 102.8 | 0.914 / 103.0 | 0.904 / 103.0 | 0.906 / 103.1 | 0.911 / **120.8** |
+
+Steps-weighting lost as the model said (+17%, a flush); decay changed nothing. Firefox's pages session (`pages1/`,
+one round): f2000 −11% wasm but 27% more steps interpreted, busy MIPS 198 → 190 and the heavy pages a second slower.
+The gates (`gates1/`, three rounds alternated): Alpine's boot **+2.8%** with f2000 and +2.9% with f2000mix9 (rounds
+apart), userspace +0.8/+0.9%, `smp_user_jit_4` −1.4/−2.4%; mix9 +0.4%, −0.8%, −0.6% (overlapping). **The pressure
+rule pays for itself**: a cold boot wants 1000, a browser's working set under pressure 2000.
+
+Then the mix arms against a base from the same code (`pages2/`, `gates2/`, `go2/`):
+
+| | base | mix9 | mixfp9 |
+|---|---|---|---|
+| pages: wasm MB / interpreted G steps | 136 / 3.51 | 137 / 3.44 | 137 / 3.45 |
+| pages: busy MIPS / wiki, BBC load s (medians of 3) | 198 / 10.6, 11.5 | 198 / 10.6, 12.3 | 197 / 10.7, 12.1 |
+| Alpine's boot / userspace / `smp_user_jit_4` (ms) | 5536 / 13861 / 14123 | +0.6% / +0.4% / +1.0% | +0.5% / −0.3% / −0.4% |
+| `go build` sessions (s) | 31.73, 31.89 | 32.22, 32.37 (+1.5%) | 32.14, 33.76 |
+
+Every gate's rounds overlap but `go build`'s mix9 (slower). Weighting by the mix compiles FP blocks earlier (2% fewer
+steps interpreted in Firefox), but at ~4% of the session's steps interpreted there is nothing left for it to win.
+**Not kept:** no arm beat the floor and the pressure rule on any workload past noise, nor saved memory without
+losing a gate; the per-block hook's code goes with it (the user's call: sub-noise differences are what tuning the
+floor gives, and the old mechanism is simpler). Also found: the boot benchmarks had fetched `bench/boot/undefined`
+since the page moved to Vite (fixed in `9470549`), and the warm snapshots needed making again (machine state format
+2).

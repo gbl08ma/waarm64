@@ -1,0 +1,26 @@
+{
+ "bench/results/local/cp/pages1/f2000mix9-1/pages-all.timeline.json": {
+  "seconds": 310,
+  "mips": 277,
+  "busyMips": 197,
+  "busyShare": 0.35,
+  "stallsAtLeastMs": {
+   "20": 2,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 24,
+  "stalledMsPerSecondPerVcpu": 0.04,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

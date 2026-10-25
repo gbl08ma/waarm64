@@ -1,0 +1,29 @@
+[0.6] WebGL2: ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) | 153.0.8010.52
+[17.0] restored {"file":"target/snapbench/pages.webpcsnap","bytes":701310584,"loadMs":12361,"created":"2026-10-24T23:35:08.952Z","coreVersion":2,"abi":52,"scene":"pages","madeBy":"97ecf7eacaaec076","madeAt":"92b6edb-dirty","core":"3579bbbbaea5afa9","sameCore":false}
+[17.0] core bench/results/local/cp/f2000.wasm 3579bbbbaea5afa9
+[17.0] running
+[20.4] mesa 574 firefox 6;
+[42.8] churn started 18.1 rate=60&total=4000
+[170.0] churn {"made":4000,"jit":{"blocks":194819,"modules":21320,"bytes":236643248,"compileNs":2757318656,"steps":63662888996,"dispatches":453591111,"invalidations":9233,"flushes":0,"inline":2339822,"helpers":174,"inlineSteps":63622893386,"flagsStored":323164,"flagsElided":3466,"condDirect":158595,"condComputed":20898,"condMemory":2366,"regionBlocks":470576,"backEdges":18379,"tierUps":13378,"stale":0,"decSteps":6806927127,"decoded":4589669,"decClears":4,"workerInstalls":85280,"overdue":0,"parks":56995,"parkExits":56529,"locks":29201166,"lockContended":55493,"lockWaitNs":2790457856,"emitNs":3892304896,"emitLockedNs":3892304896,"planNs":1252426496,"prunes":1,"rescues":0,"lagFlushes":0,"decBytes":207749120,"knownBytes":4456448,"lockSkipped":2745051,"pruneNs":46519808}}
+[177.5] firefox stderr 34
+28   Stack:
+27 console.error: services.settings:
+25   Message: TypeError: NetworkError: Network request failed
+25     fetch/</request.onerror@resource://services-settings/Utils.sys.mjs:264:26
+10 Exiting due to channel error.
+4 JavaScript warning: resource://gre/modules/Troubleshoot.sys.mjs, line 748: WebGL context was lost.
+3 getRecipesFromCollection@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:816:13
+3 console.error: RSLoader:
+3   Message: Error: Could not sync nimbus-desktop-experiments: get-exception
+3   Failed to retrieve recipes from Remote Settings
+3     RemoteSettingsSyncError@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:1562:5
+2 void main() {}
+2 console.warn: TopSitesFeed: Failed to fetch data from MARS server: NetworkError when attempting to fetch resource.
+2 GetShaderSource() ->
+2 GetShaderInfoLog() ->
+2 0:2(12): error: extension `GL_EXT_shader_texture_lod' unsupported in fragment shader
+2 #extension GL_EXT_shader_texture_lod: require
+2   Remote Settings startup changesets bundle could not be extracted (TypeError: NetworkError: Network request failed)
+1 JavaScript error: moz-src:///browser/components/sidebar/SidebarState.sys.mjs, line 545: TypeError: this[#launcherEl].requestUpdate is not a function
+1 1792884889564 addons.xpi      ERROR   System addon update list error Error: Failed downloading XML, status: 0, channelStatus: 2152398878, errorCode: 2, reason: error
+[177.5] done {}

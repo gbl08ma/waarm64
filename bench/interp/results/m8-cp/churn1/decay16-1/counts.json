@@ -1,0 +1,18 @@
+{
+ "bench/results/local/cp/churn1/decay16-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 71.6,
+   "flushes": 0,
+   "modules": 21499,
+   "mib": 251,
+   "overdue": 0,
+   "parks": 56508,
+   "locks": 29006851,
+   "interpGsteps": 6.14,
+   "share": 0.914,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

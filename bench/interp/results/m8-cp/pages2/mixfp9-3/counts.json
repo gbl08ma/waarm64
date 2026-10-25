@@ -1,0 +1,18 @@
+{
+ "bench/results/local/cp/pages2/mixfp9-3/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 88.2,
+   "flushes": 0,
+   "modules": 2703,
+   "mib": 130.6,
+   "overdue": 0,
+   "parks": 9373,
+   "locks": 18676380,
+   "interpGsteps": 3.46,
+   "share": 0.961,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}
