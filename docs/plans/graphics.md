@@ -131,8 +131,10 @@ storage that an earlier draw in the pass wrote, behind a self-dependency barrier
 Nothing is built for the guest until VK0 answers. It runs on the user's machine: **the dev VM** (lavapipe, the
 oracle, the Profiles layer, our guests, SwiftShader's WebGPU) and **the Mac host it runs on**, which the user allows
 agents in the dev VM to use for WebGPU numbers and validation on its M4 (2026-10-25; headless Chromium as
-bench/gpu/run-mac.sh does, from a copy in `~/webpc-gpu-bench`; anything else installed there is listed in the report).
-The x86_64 desktop stays off limits; a run on the user's NVIDIA desktop is the user's, by hand, from a script we give.
+bench/gpu/run-mac.sh does, from a copy in `~/webpc-gpu-bench`; **nothing installed on the Mac itself**: whatever else
+runs there is unpacked into that folder). The x86_64 desktop stays off limits. **The user's NVIDIA desktop:** the user
+runs a self-contained script by hand (build steps for its distro, the native arm and the Chromium pages, JSON back);
+VK0 prepares it and doesn't wait for it.
 Results go into `bench/vulkan/REPORT.md` with the JSON, under CLAUDE.md's measurement rules (real-GPU numbers from the
 Mac; SwiftShader for relative costs and correctness only). The session keeps its notes in `M8-VK0-HANDOVER.md`.
 
@@ -149,8 +151,9 @@ If a whole frame comes out tens of times slower than native, acceleration isn't 
   sets updated per frame, dynamic uniform offsets, push constants, one render pass a frame), not shaped for WebGPU.
   The Aquarium's own models and textures where its licence allows (BSD, checked into THIRD_PARTY.md), else ours.
 - **The arms**, same scene, size and knob settings:
-  1. **Native Vulkan on the Mac's GPU** (KosmicKrisp from LunarG's SDK: Vulkan on Metal, itself a thin layer, so a
-     slightly generous baseline), and on the user's NVIDIA desktop if they run it.
+  1. **Native Vulkan on the Mac's GPU** (KosmicKrisp from LunarG's macOS SDK unpacked into `~/webpc-gpu-bench`, not
+     installed; Vulkan on Metal, itself a thin layer, so a slightly generous baseline; if it can't run from the
+     folder, the arm is skipped on the Mac), and on the user's NVIDIA desktop (their run).
   2. **WebGPU in Chromium, written as a WebGPU author would**: the cost of WebGPU's model and the browser.
   3. **WebGPU in Chromium, as our translator would emit it**: arm 1's calls recorded with GFXReconstruct, translated
      offline by a throwaway prototype of §3's mapping (SPIR-V → WGSL through naga or Tint, descriptor sets → bind
@@ -167,8 +170,13 @@ If a whole frame comes out tens of times slower than native, acceleration isn't 
 - **Not measured here:** the guest's cost of encoding Venus (no device yet). Estimated from B's bytes and commands per
   frame and virgl's measured guest cost per submit (graphics.md "Measurements"), stated as an estimate; VK1's gate
   measures it.
-- **Order:** arms 1, 2, 4 and 5 first (no prototype needed): if arm 2 alone is far off native, stop and report. Arm 3
-  after D and E have shaped the prototype.
+- **The stop line (the user, 2026-10-25): judged against today.** Continue if arm 3 is several times faster than the
+  guest's lavapipe (arm 4, what Vulkan programs get now) at the light settings (up to ~1,000 fish, the toolkit
+  setting); the ratio to native is context, with a hard stop only past ~20× native. The ratio a user feels is the
+  one against today's path.
+- **Order and check-ins:** arms 1, 2, 4 and 5 first (no prototype needed); arm 3 after D and E have shaped the
+  prototype. VK0 runs through without check-ins, as milestone loops do, **except that it stops and reports at once if
+  an arm already crosses the stop line** (arm 2 alone past it, for example).
 
 ### The other questions
 
@@ -209,8 +217,8 @@ If a whole frame comes out tens of times slower than native, acceleration isn't 
 **Tools to install** (dev-only unless VK1 needs them; each noted in CLAUDE.md's development environment when added):
 in the dev VM, lavapipe and the Vulkan tools and validation layers from zypper, glslc or glslang, GFXReconstruct and
 the Profiles layer (from source if not packaged), virglrenderer with Venus and Mesa's Venus driver built natively for
-the oracle (as `tools/virgl-oracle/` does for virgl), naga's CLI, Tint, and the wasm C toolchain; on the Mac, only
-what the native arm needs (the user's OK pending, §9).
+the oracle (as `tools/virgl-oracle/` does for virgl), naga's CLI, Tint, and the wasm C toolchain; on the Mac, nothing
+installed: the native arm's SDK and binaries unpacked into `~/webpc-gpu-bench`.
 
 **Exit:** `bench/vulkan/REPORT.md` with S's ratios (arm 3 against arm 1, and against arm 4's lavapipe and virgl), the
 route chosen, the advertised set and its emulation order, the render-pass rule, and whether the bar looks reachable
@@ -266,15 +274,12 @@ for the programs that switch. The user decides whether VK1 starts.
   serialized WebGPU): a guest-side client library and a virtio-gpu context type of our own, with no upstream guest
   support. Demos, not a graphics stack.
 
-## 9. Open questions for the user
+## 9. The user's answers before VK0 (2026-10-25)
 
-Asked 2026-10-25, before VK0 starts:
-- **The stop line:** which whole-frame ratio in S stops the effort, and against which arm (native Vulkan, the guest's
-  lavapipe, virgl's GLES port).
-- **The Mac host:** whether the native arm may install LunarG's Vulkan SDK (KosmicKrisp) and the Xcode command-line
-  tools there, or the native baseline comes only from the user's NVIDIA desktop.
-- **The NVIDIA desktop:** whether the user will run a script by hand there (the native arm and the Chromium pages).
-- **Check-ins:** whether VK0 stops for the user after S's first arms, or runs through to its report.
+- **The stop line:** judged against today's paths (§5 S), a hard stop only past ~20× native.
+- **The Mac host:** nothing installed on it; the native arm runs from `~/webpc-gpu-bench` or is skipped there.
+- **The NVIDIA desktop:** the user runs a script VK0 prepares.
+- **Check-ins:** none, unless the stop line is crossed.
 
 ## Sources
 
