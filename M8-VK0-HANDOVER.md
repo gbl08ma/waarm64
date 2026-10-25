@@ -34,19 +34,16 @@ docs/plans/graphics.md §5). The report is `bench/vulkan/REPORT.md`; this file c
 
 ## Done
 
-- Loop 1: the scene, arms 1 (Mac, KosmicKrisp) and 5 (lavapipe natively). KosmicKrisp and lavapipe draw the same
-  frame (0.14% of pixels off by more than 8 levels).
-- Loop 2: arms 2 and 4 built and checked on the dev VM: every arm draws the same frames (WebGPU 0.24% of pixels off
-  by more than 8; the GLES port 0.00%; the guest's virgl and lavapipe thumbnails within 1 level).
-- Loop 3: every arm on the Mac (`bench/vulkan/results/loop3/`), arm 3 built and drawing the native frames. Arm 3
-  1.0-1.8x MoltenVK (the faster native driver; KosmicKrisp is slower), ~220-950x faster than the guest's lavapipe,
-  4-10x faster than virgl: the stop line is far off.
+VK0 is done (2026-10-25): `bench/vulkan/REPORT.md` holds S's ratios, A to G, the route (b), the advertised set and
+its order, the render-pass rule and the bar; the plan's §3 to §7 are updated from it. The NVIDIA desktop's results are
+in `bench/vulkan/results/nvidia/`, G's in `results/g/`, D's program coverage in `results/d/`
+(`translate/programs.sh`).
 
 ## Next
 
-1. C (render-pass breaks, compute pre-passes), E's rest (bundles, calls from wasm), F (uploads, the write-watch), D's
-   rest (naga in wasm, Chromium's shader/pipeline cost), A (Profiles layer runs), B (Venus captures), G (gtk4/mpv on
-   virgl); the NVIDIA script (`bench/vulkan/nvidia.sh`); REPORT.md, plan §4-§7.
+The user decides whether VK1 starts (it gets its own kickoff; this handover and `M8-VK0-KICKOFF.md` go in that
+commit). REPORT.md "Not done in VK0, ranked" lists what VK0 left; the first is VK1's first step (`spirv_to_nir` and
+NIR built to wasm).
 
 ## Notes
 

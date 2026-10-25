@@ -1,6 +1,7 @@
 # webpc graphics plan: Vulkan
 
-**Status: planned (the user, 2026-10-25): §2's decisions bind; VK0 is next, in the dev VM and on the Mac host; its brief is `M8-VK0-KICKOFF.md`.** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+**Status: planned (the user, 2026-10-25): §2's decisions bind. VK0 is done (2026-10-25,
+[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b); the user decides whether VK1 starts.** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -67,7 +68,8 @@ resources stay guest-backed. The guest writes Venus commands into a ring in shar
 ioctl per submit: cheaper for the guest than virgl's execbuffers (G2 found the kernel's submit path to be virgl's
 remaining guest cost).
 
-**The translator**, in the GPU worker, talking to WebGPU. Two routes; VK0's measurements choose:
+**The translator**, in the GPU worker, talking to WebGPU. Two routes; **VK0 chose (b)** (REPORT.md "The route"), with
+(a) the fallback should (b)'s pieces come out too large or slow in wasm (VK1's first measurement):
 
 - **(a) Our own crate in Rust**: a Venus decoder generated from `venus-protocol` (MIT) by a `build.rs`, SPIR-V → WGSL
   through naga (MIT/Apache-2.0; or Tint, C++), Vulkan's objects mapped by hand. Small and ours, the way the virgl
@@ -83,8 +85,11 @@ remaining guest cost).
   for wasm (allowed, §2) and larger downloads; the libraries are all MIT.
 
 Route (b) is "outside in" with a GPU underneath: start from validated infrastructure and fill in the backend. Route
-(a) is less to build at first and more to build for each feature. The choice rests on VK0's C (how much emulation the
-programs need) and D (shader coverage).
+(a) is less to build at first and more to build for each feature. VK0's D decided it: naga with spirv-opt translated
+every stage of the plainly written programs (vkcube, vkmark, libplacebo, the scene) but none of GTK4's 16 and 33 of
+vkQuake's 51, each failure a lowering NIR already has (varyings split into vectors, input attachments, specialization
+constants); `spirv_to_nir` took all 110. WebGPU calls from wasm cost what calls from JS do (E), and Chromium's own
+part of a pipeline (~9 ms on the M4) dwarfs a frontend's, so C in wasm costs little where it runs.
 
 **Mapping** (both routes): command buffers record and translate at submit (so a whole render pass is visible before
 it is encoded: §4 "Render pass breaks"); render passes and dynamic rendering → render passes, subpasses split into
@@ -114,9 +119,10 @@ on the GPU worker.
 |---|---|---|
 | **Direct** | Draws (indexed, instanced, indirect), base vertex, compute, occlusion queries, copies, blits (as draws), mipmaps, BC/ETC2/ASTC where the adapter has them, MSAA at 4 samples, depth bias, stencil, depth clip off | Core WebGPU, or `depth-clip-control` |
 | **The adapter's features** | Clip distances, dual-source blending, `shaderFloat16`, subgroups, first instance in indirect draws, timestamp queries, 16-bit normalized formats and read-write storage images | `clip-distances`, `dual-source-blending`, `shader-f16`, `subgroups`, `indirect-first-instance`, `timestamp-query`, `texture-formats-tier1/2` |
-| **Shader rewrites** (no extra passes) | Combined image-samplers (split); vertex formats and strides WebGPU lacks (the shader fetches from a storage buffer); push constants; points larger than a pixel (a quad per point, instanced); arrays of textures with constant indices (separate bindings) | At translation, in WGSL |
+| **Shader rewrites** (no extra passes) | Combined image-samplers (split); specialization constants (frozen per pipeline, `OpSpecConstantOp` evaluated); matrix and array varyings (split into vectors: GTK4's every stage); input attachments (read as textures); vertex formats and strides WebGPU lacks, and more than 8 vertex bindings (the shader fetches from a storage buffer); push constants past 64 bytes (a uniform); `CLAMP_TO_BORDER` and `mipLodBias` (in the shader); points larger than a pixel (a quad per point, instanced); arrays of textures with constant indices (separate bindings) | At translation, in WGSL |
 | **Compute before the pass** | Geometry shaders and tessellation (expand into vertex and index buffers, then draw: libpoly's way); transform feedback (the vertex shader run as compute: WebGPU allows no writable storage in vertex shaders); `vkCmdDrawIndirectCount` (a pass writes the indirect buffer, unused slots as zero-count draws) | A compute pass, its outputs left on the GPU |
 | **Copies on the GPU** | Formats WebGPU lacks (3-component, some packed), converted when written; image views that reinterpret a format (WebGPU allows only sRGB variants); memory aliasing between resources | Copy or compute passes: bandwidth, no readback |
+| **Below Vulkan's minimums** (VK0 A: advertised as Vulkan 1.2 with the 1.3 features WebGPU backs, or 1.3 knowingly short) | `bufferDeviceAddress` and `vulkanMemoryModel` (1.3 requires both); multiview (1.1: replayed per view); per-stage resources 86 or 50 (128 required) and per-set counts; `R32_UINT` storage-image atomics; texel buffers; buffer↔image copies at any row pitch (WebGPU: 256 bytes); attachment-less passes; depth copies | Lowered where cheap (row pitch by a staging copy, texel buffers as storage buffers), else the limit reported short |
 | **Not offered** | Sparse resources; 64-bit floats and integers in shaders; logic ops; pipeline statistics queries; sample counts other than 1 and 4; buffer device address and full bindless (until WebGPU's binding arrays exist: DXVK and VKD3D need them); geometry and tessellation until §6's VK3 | |
 
 **Render pass breaks** are the emulation's real cost: WebGPU can't run compute inside a render pass, and ending one
@@ -126,7 +132,24 @@ render pass and can **run all its pre-passes before it begins**; Vulkan forbids 
 input for a later draw in the same render pass, so the hoist is almost always legal. Where it isn't (a draw reading
 storage that an earlier draw in the pass wrote, behind a self-dependency barrier), the pass is split.
 
+**The render-pass rule (VK0 C):** translate at submit; hoist every compute pre-pass a render pass needs before it
+begins (a break per object made a frame 10× the hoisted one on the M4, 2.6× on NVIDIA); split only for the
+self-dependency case; never break for transfers or clears (before the pass, as its load operations, or as draws);
+count breaks as a budget, a handful a frame (~40 µs each at 1080p on the M4, 70–160 µs with 4× MSAA, ~8 µs on NVIDIA).
+
+**The advertised set and its order (VK0 A):** the device reports itself a GPU (libplacebo, GTK4, Dawn and wlroots
+turn CPU devices away). The direct set alone brings vkcube, vkmark, mpv and vkQuake; then, each row for the stack it
+brings: dynamically indexed descriptor arrays and sample-rate shading (Dawn: the guest's Chromium WebGPU); the
+provoking vertex, more than 12 uniform buffers and transform feedback (ANGLE's ES3); draw parameters (vkd3d); YCbCr
+conversion with dma-buf modifiers (GTK4, the lever of §1: only once Venus meets GTK4's bar); geometry, tessellation,
+large points, multi-draw indirect and 3-component formats last (they brought no program on their own).
+
 ## 5. VK0: validate and measure
+
+**Done (2026-10-25):** bench/vulkan/REPORT.md, the JSON in `bench/vulkan/results/`. A whole Vulkan frame translated at
+run time onto WebGPU costs 1.0–1.8× native Vulkan on the M4 (MoltenVK) and 1.9–3.6× on the user's RTX 3070 (a fixed
+~0.25 ms a frame of Chromium's), and runs 200–950× faster than the guest's lavapipe and 3–19× faster than virgl's GLES
+for the same frame: far from the stop line. The rest of this section is VK0's brief as it ran.
 
 Nothing is built for the guest until VK0 answers. It runs on the user's machine: **the dev VM** (lavapipe, the
 oracle, the Profiles layer, our guests, SwiftShader's WebGPU) and **the Mac host it runs on**, which the user allows
@@ -226,28 +249,42 @@ installed: the native arm's SDK and binaries unpacked into `~/webpc-gpu-bench`.
 route chosen, the advertised set and its emulation order, the render-pass rule, and whether the bar looks reachable
 for the programs that switch. The user decides whether VK1 starts.
 
-## 6. After VK0 (sketch; VK0 revises it)
+## 6. After VK0 (as VK0 revised it)
 
-- **VK1, the device and a null renderer:** the features, blob resources, the window and the Venus capset; a null
-  Venus renderer that answers what must be answered and draws nothing. *Gate (as G2's for virgl):* vkcube's and
-  GTK4's frames cost the guest no more than on virgl.
-- **VK2, core translation:** vkcube, vkmark, GTK4 on Vulkan drawing right on SwiftShader and the Mac; the dEQP-VK
-  subset of the direct rows as pass lists. *Gate:* GTK4 meets the bar (§5 G).
-- **VK3, emulation in A's order:** each layer a translation pass with its dEQP-VK groups as its gate and C's rules
-  applied.
+- **VK1, the device and a null renderer:** first, route (b)'s premise measured: `spirv_to_nir` and NIR's passes built
+  to wasm (download size, ms a stage against naga's 1.1; too large or slow and route (a) takes over). Then the
+  features, blob resources, the window and the Venus capset; a null Venus renderer that answers what must be answered
+  (replies come only from setup: B) and draws nothing, servicing the ring and the virtqueue independently (they wait
+  on each other) and keeping the ring's poller awake across frames (it saves a wake-up execbuffer a submit); the
+  feedback slots copied back into the window after each submit that carries one; the write-watch in the TLB. Checks
+  that the guest's Mesa keeps virgl for GL with both capsets. *Gate (as G2's for virgl):* vkcube's, the scene's and
+  GTK4's frames cost the guest no more than on virgl (G's numbers: gtk4-demo 8 ms of CPU a frame in fishbowl, 2.3 in
+  frames; B estimates Venus's encoding at about virgl's).
+- **VK2, core translation, the direct set:** vkcube, vkmark, mpv and vkQuake on Vulkan drawing right on SwiftShader,
+  the Mac and NVIDIA; the dEQP-VK subset of the direct rows as pass lists; pipelines cached as WGSL by SPIR-V hash and
+  specialization (~10 ms a pipeline end to end). GTK4 isn't brought (no YCbCr, no modifiers). *Gate:* mpv meets its
+  bar (the video track's: no drops, the guest 19–27% busy), which needs VA-API's surfaces imported as dma-bufs.
+- **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
+  render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it.
 - **VK4, breadth and the default:** the programs of A, snapshots while Vulkan is in use (state as data, as for virgl:
   objects, device memory and the window read back), on by default where every switching program meets the bar.
 
 ## 7. Risks
 
-- **Venus leans on host-driver behavior beyond the spec** (Mesa's docs say it violates the spec in places and relies
-  on implementation-defined behavior, and the renderer assumes host-visible memory can be exported as a mappable
-  dma-buf). We are the host driver, so we can choose those behaviors, but they must be found first: B's captures and
-  reading `vkr`.
-- **Pipeline creation stalls.** Each Vulkan pipeline becomes a WGSL module and a WebGPU pipeline compiled by Chromium's
-  Tint and the platform's compiler; D measures it, and a cache across sessions may be needed.
-- **WebGPU's validation and per-call cost** in Chromium (every call crosses to the GPU process) may cap the draw rate
-  below what games want (E).
+- **Venus leans on host-driver behavior beyond the spec.** VK0's B found it in `vkr`: host-visible memory forced
+  exportable and bound to resources made without external-memory info, mappings assumed coherent with no flushes
+  reaching the host (hence the write-watch), GPU writes to feedback slots visible without a guest wait,
+  `vkQueueWaitIdle` refused, the ring and the virtqueue waiting on each other. We are the host driver: the window
+  makes the first three free; the rest our worker must do.
+- **Pipeline creation stalls.** ~10 ms a pipeline end to end on the M4 (Chromium's Tint and Metal's compiler ~9 of
+  it), so a program making hundreds at load stalls for seconds: a cache of WGSL by SPIR-V hash and specialization,
+  and Chromium's own cache of compiled pipelines.
+- **WebGPU's per-call cost** in Chromium caps a frame at ~5,000 Vulkan-style draws a millisecond on the M4 (E): games
+  at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
+  fast (NVIDIA).
+- **Route (b)'s size in wasm**: Mesa's runtime, `spirv_to_nir` and NIR as a download, unmeasured (VK1's first step).
+- **The guest's cost is Venus's encoding**: about virgl's at light settings (B's estimate), so a CPU-bound GL program
+  (GTK4's iconscroll) gains nothing by switching; a program that switches only if it meets G's numbers.
 - **Adapters differ** (limits, features, formats, precision), as WebGL2 stacks did for dEQP-GLES: the caps per
   adapter, and dEQP-VK on more than SwiftShader and Metal.
 - **The 4 GiB budget**: the host-visible window shares it with guest RAM and the core's heap unless it gets a memory

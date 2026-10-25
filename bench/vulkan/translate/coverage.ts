@@ -13,7 +13,7 @@ const [name, dir, outPath] = process.argv.slice(2);
 if (!name || !dir) throw new Error('usage: coverage.ts <name> <spv dir> [out.json]');
 const naga = join(process.env.HOME ?? '', '.cargo/bin/naga');
 const tmp = mkdtempSync(join(tmpdir(), 'vk0-cov-'));
-const reason = (s: string) => (s.split('\n').find((l) => l.trim() && !/^(error|Could not|Error)\b:?\s*$/.test(l.trim())) ?? s).trim().replace(/%\d+/g, '%N').replace(/\[\d+\]/g, '[N]').slice(0, 140);
+const reason = (s: string) => (s.split('\n').find((l) => l.trim() && !/^\[WARN|^(error|Could not|Error)\b:?\s*$/.test(l.trim())) ?? s).trim().replace(/%\d+/g, '%N').replace(/\[\d+\]/g, '[N]').slice(0, 140);
 const rows: { file: string; bytes: number; direct: string; chain: string }[] = [];
 try {
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.spv')).sort()) {

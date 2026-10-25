@@ -1,0 +1,25 @@
+{
+ "program": "vkcube",
+ "modules": 2,
+ "direct": {
+  "ok": 1,
+  "invalid id %N": 1
+ },
+ "chain": {
+  "ok": 2
+ },
+ "rows": [
+  {
+   "file": "0x06320a67cd76def4a8d2b1796a340562fa64e3ba0497047a420956f28bb1b291.vert.spv",
+   "bytes": 1560,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x31aaca2745f0d8fb9281a1e2fcbc2fb001b8d36903a774abd532cc82ea030dce.frag.spv",
+   "bytes": 2644,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  }
+ ]
+}

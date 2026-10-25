@@ -7,6 +7,7 @@
 #   bench/vulkan/mac.sh webgpu [name]                     arm 2: bench/vulkan/webgpu.ts in the Mac's headless Chrome for
 #                                                         Testing (Playwright's, with the packages bench/mac-packages.sh
 #                                                         keeps in ~/webpc-gpu-bench); MODES and the rest pass through
+#   bench/vulkan/mac.sh micro [name]                      C, E, F: bench/vulkan/micro.ts (ONLY= one benchmark)
 #   bench/vulkan/mac.sh arm3 [name]                       arm 3: bench/vulkan/arm3.ts over the converted captures
 #                                                         (bench/vulkan/translate/capture.sh; TRACES picks them)
 # DUMP=FRAME renders one frame instead (-> <name>.ppm); VALIDATE=1 runs it under the validation layer; SWEEP's
@@ -16,6 +17,19 @@ cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
 DEST=webpc-gpu-bench/vulkan
 DRIVER=${1:-kosmickrisp} NAME=${2:-mac-$DRIVER}
+if [ "$DRIVER" = micro ]; then
+  W=webpc-gpu-bench/vulkan-web
+  ssh "$HOST" "mkdir -p $W/bench/spike"
+  rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
+  rsync -a bench/stats.ts "$HOST:$W/bench/" && rsync -a bench/spike/page.ts bench/spike/worker.ts bench/spike/benchmarks.ts "$HOST:$W/bench/spike/"
+  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
+    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    mkdir -p results && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/micro.ts results/$NAME.json ${ONLY:+--only $ONLY}"
+  mkdir -p bench/results/local/vk0
+  rsync -a "$HOST:$W/results/$NAME.json" bench/results/local/vk0/
+  exit 0
+fi
 if [ "$DRIVER" = arm3 ]; then
   W=webpc-gpu-bench/vulkan-web
   TRACES=${TRACES:-fish1 fish100 fish1000 fish10000 fish30000 toolkit2000 toolkit8000}

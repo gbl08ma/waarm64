@@ -1,0 +1,328 @@
+{
+ "program": "vkquake",
+ "modules": 51,
+ "direct": {
+  "ok": 17,
+  "invalid id %N": 17,
+  "unsupported image dimension %N": 9,
+  "unsupported instruction SpecConstantOp at Type": 6,
+  "invalid image [N]": 1,
+  "unsupported storage class %N": 1
+ },
+ "chain": {
+  "ok": 33,
+  "unsupported image dimension %N": 10,
+  "unsupported instruction SpecConstantOp at Type": 5,
+  "Global variable [N] '' is invalid:": 1,
+  "invalid image [N]": 1,
+  "unsupported storage class %N": 1
+ },
+ "rows": [
+  {
+   "file": "0x02d2d2ef88590e87887fe4db36a0a9e5a637d78889c3a999f2849ea02293dcd4.frag.spv",
+   "bytes": 2944,
+   "direct": "unsupported instruction SpecConstantOp at Type",
+   "chain": "unsupported instruction SpecConstantOp at Type"
+  },
+  {
+   "file": "0x09a04a4e467f3202d7752b434673c2caa22340817566bd77a4fde0aea8f8e4d6.vert.spv",
+   "bytes": 3836,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x0b1d52047d172cceacd05355a73073f0b2c1f1433d1799072a12bc1bcb03430d.frag.spv",
+   "bytes": 2652,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x0cb4a1334982541ff965437ecd9e133f6f43775dc4708c8a3f16629684472281.comp.spv",
+   "bytes": 9140,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x0f61f8fd97ca80c2ee7aad45fc7c7beb67d0f886906e413b6bedc94969c04396.comp.spv",
+   "bytes": 17952,
+   "direct": "unsupported instruction SpecConstantOp at Type",
+   "chain": "unsupported instruction SpecConstantOp at Type"
+  },
+  {
+   "file": "0x1389c94b66cfef164c593b5dd3a87fdb5e0a5f3b5ceeada597aecf2907f3196e.frag.spv",
+   "bytes": 5884,
+   "direct": "unsupported instruction SpecConstantOp at Type",
+   "chain": "unsupported instruction SpecConstantOp at Type"
+  },
+  {
+   "file": "0x185b8bdfab6caa1a96e43f8d7714435af084f56cdf5452104a1ad9bc6c97ee71.frag.spv",
+   "bytes": 1172,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x1f829a44c5021454ea9c96e1ee5755af202d435b68c56c6c1b2125f4258877d3.frag.spv",
+   "bytes": 4524,
+   "direct": "invalid id %N",
+   "chain": "Global variable [N] '' is invalid:"
+  },
+  {
+   "file": "0x343d0de3085969321d5ddff629d3551ff56de6046a98c76815e3f7ca53f9a2b9.comp.spv",
+   "bytes": 18072,
+   "direct": "invalid image [N]",
+   "chain": "invalid image [N]"
+  },
+  {
+   "file": "0x38c53d8ef35a987535ff1eaa8df6e5597473524e55a364332993a2fe5290bc78.comp.spv",
+   "bytes": 9196,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x3998e6c0f4a1172ab5c80f8462deb8f683838bb674a9df47b430c529407a16d7.frag.spv",
+   "bytes": 4276,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x3ad457cf7eb956b094c868659644f0691098b0992f92530c626b1648f7208bd1.vert.spv",
+   "bytes": 748,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x3c5a412d5146fef8a64873b0365b83fbc78672b27b51666868c0927fdd10c09f.frag.spv",
+   "bytes": 2444,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x3c67a9ff128b742fa73245496045ae3fb2ed74423a95c0a4dfffad00c8ac5edb.frag.spv",
+   "bytes": 4708,
+   "direct": "unsupported instruction SpecConstantOp at Type",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x3ec63e87c9e7d3cf36de0367da23bdab7c31f828819018e81699126c0b27316c.frag.spv",
+   "bytes": 1620,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x47447a4ae7f2e6048306d2558920e84e5e336e9837f67899b8f471ac1502d087.vert.spv",
+   "bytes": 1112,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x48fbe8ba2f3f9535077c6cedf9ad89032c9c6db2ecc49a7e3c74ee55d9254367.frag.spv",
+   "bytes": 4852,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x4d81e3c082ed250ab8b3bc7ba8edb7d202cd72251833f2423a3c37a119ad4e6e.frag.spv",
+   "bytes": 2528,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x51f0710eca575559e3f5bafbdd814bc77587c69c968e8af6381c836aaaf8d60b.frag.spv",
+   "bytes": 4852,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x52afefe88995941e6b871347134031d480580aac91ac88333add60f352c6e404.frag.spv",
+   "bytes": 2568,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x5419cc47de92818a3c2176e4f876f959838145e784a90942a2171d9e8d6290a0.vert.spv",
+   "bytes": 1436,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x545f1ce57e76c52b0e5535f5e2f1f045f5158bf9a3e045f141324740174a4ee7.frag.spv",
+   "bytes": 1104,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x55d47383faaccc36217bd979a5cf5b834d42d157b127eff1dce84a45622ecb32.frag.spv",
+   "bytes": 25772,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x6100fd1c435d32d0ba1f5359ced1bcc086356f6995be790a7259c58cc1c378c2.comp.spv",
+   "bytes": 2424,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x64804fd06e6afa38a02d3824b5e28ca9005bc8807f7decebe5dcb4b3559db3f5.frag.spv",
+   "bytes": 4768,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x663dc62a436dbf079e88489196a133dc654f8d23fbf1ec67b5b0bda3482a0e07.frag.spv",
+   "bytes": 1456,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x718b3084c3be1dfc3af3497c539c45820cb03d1aa58fb5247848e8f1d17d152e.frag.spv",
+   "bytes": 3684,
+   "direct": "unsupported instruction SpecConstantOp at Type",
+   "chain": "unsupported instruction SpecConstantOp at Type"
+  },
+  {
+   "file": "0x748165216058d2f8b463cc181d39a3bcf9ebb437acf37242cf2f95d3229aa4cd.frag.spv",
+   "bytes": 1512,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x812f1413470bff5a3f480951ae0bddb81cdc2ceef4c215a7292c2a8a61dfbd80.comp.spv",
+   "bytes": 5060,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x81443b1fa7955a35acd4a056479a4db34fe713fd289988c65d74283dcbe749f0.vert.spv",
+   "bytes": 7048,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x83d3562bdd0fd404ed9e8b5da54cd3ddba1423020a01757a21d150ffff0c8704.frag.spv",
+   "bytes": 25636,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x927e6c4adb599986b49b4b1f598b9112f2e85493ee426d73743bc3d5d8767938.comp.spv",
+   "bytes": 33292,
+   "direct": "unsupported storage class %N",
+   "chain": "unsupported storage class %N"
+  },
+  {
+   "file": "0x93ab96efc232c53eb81f87446bc423d1bf2fbbf3a496eb7a37f41fdcc5c12c82.vert.spv",
+   "bytes": 1184,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0x9b1088dbbc4eb2245788e8909c1ab064fb042b47e3419f9fe332f3cf29a4b80a.frag.spv",
+   "bytes": 4768,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x9cafb63651bb581ac60224e58a150fce71183d75f78fbb5df60b197ade189c95.comp.spv",
+   "bytes": 1696,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0x9d01f0c3a4d207b0f31d6bcc158ccfaae59ea64ed7881b3fb0c2e16b0608409d.frag.spv",
+   "bytes": 900,
+   "direct": "unsupported image dimension %N",
+   "chain": "unsupported image dimension %N"
+  },
+  {
+   "file": "0x9db9cba01d7e9435c324c47daec713085dbdd3a09b989b6e56418831b25ef0a3.vert.spv",
+   "bytes": 7328,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0xaf28568bd92bb6c44cf9e00d045e93b51c0be7b21fec7b2dc62d5430d638c49e.frag.spv",
+   "bytes": 1476,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0xaf612a9141c6e3782fc119ef4689ceb8f602c28331bcfba316cc36349945341d.frag.spv",
+   "bytes": 1832,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xb0b67388811c624ed7d461c9f3d24875de75e46334ca772b0ef687611f758728.vert.spv",
+   "bytes": 3044,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0xb82e189cc6b02f31f3af773f59692078a8391b620dc77c811c8e32634881392b.comp.spv",
+   "bytes": 992,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0xb95df2dba20dadea08e9e4596bc99bca3bee767d8a3ecfe97c5c181210837609.frag.spv",
+   "bytes": 3556,
+   "direct": "unsupported instruction SpecConstantOp at Type",
+   "chain": "unsupported instruction SpecConstantOp at Type"
+  },
+  {
+   "file": "0xbf08a5f32de610f73528c505a8fbf6fbcc9e50660afab33b5a2bb4d353c77fe5.vert.spv",
+   "bytes": 1012,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0xbf7a060dde600f1f87f6d00f0b68c0b9722b87e447083dd0710db693de7d5769.frag.spv",
+   "bytes": 1296,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xd560ec538d55aa7cbe00a5666b4a1afadbde2099f979aab4aaa788dee0628c37.frag.spv",
+   "bytes": 1928,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xd59f0f1325476cc5de2da7a3d2446b84c1891a09cf5ef5f5b895c4075e096264.frag.spv",
+   "bytes": 1420,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xdbdd24c00c8a15a445d23ffba9b691f885993fa9548131b2a85e377279632e5d.frag.spv",
+   "bytes": 1272,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xe4d1a7f96070e6ac6e5e1483d24e1800381b8033d0b95cc18ee3f20f977a3334.frag.spv",
+   "bytes": 1908,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xedf983d471e0d7b7507d82759cbf49c0ef2301b599c81f9937fc366b4eaff4d9.vert.spv",
+   "bytes": 2572,
+   "direct": "ok",
+   "chain": "ok"
+  },
+  {
+   "file": "0xf79e2b12d69148152d33dd09fc01abfe6b0a8feffa997f32c613ee5805170e97.frag.spv",
+   "bytes": 1916,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  },
+  {
+   "file": "0xfffc1a82e541eaaa08b19c218996280931076604de9b6f39853112a76d6e950a.frag.spv",
+   "bytes": 2456,
+   "direct": "invalid id %N",
+   "chain": "ok"
+  }
+ ]
+}
