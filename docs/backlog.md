@@ -676,7 +676,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   13's 6.12 restored with CNTVCT an hour on): `date` is right at once, but RCU reports a
   self-detected stall and systemd kills journald for its watchdog (`WatchdogSec=`, on
   CLOCK_MONOTONIC: every unit with one would go the same way). arm64 has no "guest was paused"
-  signal for the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`), and only the guest's own suspend
+  signal for the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`: arm64 takes asm-generic's
+  `kvm_check_and_clear_guest_paused`, which returns false; QEMU's KVM stops the virtual counter
+  while a VM is stopped, as we do, `kvm-no-adjvtime` off; the one in-kernel "host sets the time"
+  path on arm64 is Hyper-V's `hv_utils` timesync over VMBus), and only the guest's own suspend
   path advances realtime without monotonic, so the fix needs the guest's userspace: Debian's
   nocloud image runs systemd-networkd and systemd-timesyncd, which re-syncs at once on a link
   going down and up (a virtio-net `VIRTIO_NET_F_STATUS` flap on restore, networked guests only),
