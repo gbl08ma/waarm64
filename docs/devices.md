@@ -478,10 +478,14 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   fetches on the device's `venus-init` and instantiates **on the VM's memory 0**, at a fixed arena at its top
   (`VENUS_ARENA`, 256 MiB at 0xF000_0000: a Venus machine's memory 0 is 4 GiB, RAM, then the window, then the arena;
   web/vm.ts). So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
-  vkr's threads are polls: a submit, a notify or a fenced command polls the rings, and the worker keeps polling while
-  one is active (`venus_poll`, on a zero timeout). A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
+  vkr's threads are polls: a submit, a notify, a completion or a fenced command polls the rings, and the worker keeps
+  polling while one is active or a submit is in flight (`venus_poll`; web/venus-host.ts `VenusPoll`: turns ~0.25 ms
+  apart on `Atomics.waitAsync`'s timeout, never a nested `setTimeout`, whose ~4.5 ms clamp made every fence late, VK3
+  L2), and nudges WebGPU with an empty submit at most every 1 ms while one is in flight (Dawn on Vulkan says done only
+  at Chromium's slow look otherwise). A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
   which happens once the GPU's work before it is done (`VenusRenderer.settled`: the GPU worker holds the device's fence
-  until then). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
+  until then). The render stats (`?displaystats`) carry the way back a second (`venus`: submits done in, polls apart,
+  nudges, fences retired in). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
   Calls that come before the module is ready wait in a backlog, and so does the device's fence.
 - **The driver** (vk/README.md "The driver"): Vulkan on the GPU worker's WebGPU device (web/venus-gpu.ts; with no
   adapter it keeps the objects and draws nothing). What it advertises follows the browser's WebGPU device, its limits

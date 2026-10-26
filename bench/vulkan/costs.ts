@@ -3,7 +3,7 @@
 // draw with a pipeline made before, alternated with a submit whose pipeline is made anew from a new fragment shader
 // (a specialization constant's value). Prints and writes medians and IQRs of the ms in the call and to the fence, and
 // of a hand-written WGSL pipeline of the same kind made with createRenderPipelineAsync (the browser's compile alone).
-//   node bench/vulkan/costs.ts [out.json]     (N, default 40; SEED fixes the shaders' values, so a second run finds them in
+//   node bench/vulkan/costs.ts [out.json]     (N, default 40; POLL, the renderer's poller (web/venus-host.ts `VenusPoll`: `timeout` the old way); SEED fixes the shaders' values, so a second run finds them in
 //   the GPU's own shader cache (Metal keeps one on disk), a random one otherwise; CHROMIUM, CHROMIUM_ARGS as the tests take them;
 //   on the Mac through bench/vulkan/mac-costs.sh)
 import { spawnSync } from 'node:child_process';
@@ -33,15 +33,15 @@ try {
   page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.error(`page: ${m.text().slice(0, 500)}`); });
   await page.goto(`${base}/bench/vulkan/costs/index.html`);
   await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-  const r = await page.evaluate(([n, seed]) => (window as unknown as { costs: { run(s: object, n: number, seed?: number): Promise<Record<string, unknown>> } }).costs.run({
-    vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv', costs: '/target/vk/test/costs.frag.spv' }, n, seed), [N, process.env.SEED ? Number(process.env.SEED) : undefined] as const);
+  const r = await page.evaluate(([n, seed, poll]) => (window as unknown as { costs: { run(s: object, n: number, seed?: number, poll?: string): Promise<Record<string, unknown>> } }).costs.run({
+    vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv', costs: '/target/vk/test/costs.frag.spv' }, n, seed, poll), [N, process.env.SEED ? Number(process.env.SEED) : undefined, process.env.POLL || undefined] as const);
   if (r.error || r.skipped) throw new Error(String(r.error ?? r.skipped));
   const q = (v: number[], p: number) => { const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
   const sum = (rows: { call: number; total: number }[]) => Object.fromEntries((['call', 'total'] as const).map((k) => {
     const v = rows.map((x) => x[k]);
     return [k, { median: +q(v, 0.5).toFixed(3), iqr: +(q(v, 0.75) - q(v, 0.25)).toFixed(3) }];
   }));
-  const res = { date: new Date().toISOString(), chromium: browser.version(), platform: process.platform, adapter: r.adapter, n: N, seed: process.env.SEED ?? 'random',
+  const res = { date: new Date().toISOString(), poll: process.env.POLL || 'pump', chromium: browser.version(), platform: process.platform, adapter: r.adapter, n: N, seed: process.env.SEED ?? 'random',
     submit: sum(r.submit as { call: number; total: number }[]), pipeline: sum(r.pipeline as { call: number; total: number }[]),
     handWritten: sum((r.hand as number[]).map((x) => ({ call: x, total: x }))).total, errors: r.errors, stats: r.stats, raw: { submit: r.submit, pipeline: r.pipeline } };
   mkdirSync(dirname(out), { recursive: true });

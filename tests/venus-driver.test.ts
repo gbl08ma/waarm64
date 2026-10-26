@@ -1,7 +1,8 @@
 // The Vulkan driver on WebGPU (vk/README.md "The driver"): its own test program (vk/driver/wg_test.c), run in the
 // renderer module on headless Chromium's WebGPU (SwiftShader in the dev VM), checks a scene's pixels, a compute pass's
 // output, a fill of host-visible memory (all read back before the submit's fence signals) and a pipeline cache's data; and an
-// image on memory imported from a dma-buf (web/venus-import.ts: VK2 L6). Skipped without the
+// image on memory imported from a dma-buf (web/venus-import.ts: VK2 L6); and a submit's fence coming back without the
+// browser's slow look at its GPU (web/venus-host.ts's pump and its nudges: VK3 L2). Skipped without the
 // module, glslc or a WebGPU adapter.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -32,8 +33,8 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const s of ['vert', 'frag', 'comp']) {
-    const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `driver.${s}.spv`), join(root, `tests/venus/driver.${s}`)], { encoding: 'utf8' });
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag']]) {
+    const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
   const page = await browser.newPage();
@@ -70,4 +71,26 @@ test('an image bound to imported dma-buf memory has its resource\'s bytes, and a
   // At the bind: the resource's bytes read back; after a picture: the picture's.
   assert.deepEqual(first.bytes, Array.from({ length: 16 }, (_, i) => 10 + i));
   assert.deepEqual(second.bytes, Array.from({ length: 16 }, (_, i) => 200 + i));
+});
+
+test('a submit\'s fence comes back without waiting for the browser\'s slow look at the GPU (the pump nudges it)', { skip, timeout: 120_000 }, async (t) => {
+  // After the first test, which compiled the shaders.
+  const page = await browser.newPage();
+  page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+  await page.goto(`${base}/tests/browser/venus-driver.html`);
+  await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+  type R = { median: number; nudges: number; empty: number; adapter: string; skipped?: string; error?: string };
+  const run = (poll: string) => page.evaluate((poll) => (window as unknown as { venus: { runFences(s: object, poll: string, n: number): Promise<R> } }).venus.runFences({
+    vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv', costs: '/target/vk/test/costs.frag.spv' }, poll, 20), poll);
+  const old = await run('timeout'), pump = await run('pump');
+  await page.close();
+  if (old.skipped) return t.skip(`SKIPPED: ${old.skipped}`);
+  for (const r of [old, pump]) assert.equal(r.error, undefined, String(r.error));
+  // The times are logged, not asserted (they follow the machine's load: under CI's both were 5-6 ms); on a quiet
+  // SwiftShader the old way's fence is ~3 ms and the pump's ~1 ms (bench/vulkan/costs.ts, REPORT.md "VK3 L2").
+  console.log(JSON.stringify({ adapter: old.adapter, timeout: old.median, pump: pump.median, nudges: pump.nudges, empty: pump.empty }));
+  assert.equal(old.empty, 0, 'the old poller sends no empty submits');
+  // While a submit is in flight, at most one a ms (a fence back within a turn, as on Metal, may need none).
+  assert.ok(pump.empty > 0, 'the pump sent no empty submit');
+  assert.equal(pump.empty, pump.nudges, 'every nudge reached the queue');
 });

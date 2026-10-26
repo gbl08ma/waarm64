@@ -1,0 +1,89 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "153.0.8010.12",
+ "ncpus": 4,
+ "scene": "toolkit",
+ "fish": 0,
+ "quads": 2000,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 3.274,
+  "iqr": 0.037
+ },
+ "guestCpuMs": 3.223,
+ "line": "virgl toolkit: 3.274 ms a frame (IQR 0.037), CPU 3.223 ms, 400 draws a frame",
+ "seconds": 8.259679792000002,
+ "renderer": {
+  "seconds": 8,
+  "busyMs": 279.56562519073486,
+  "submitMs": 278.57375049591064,
+  "drawMs": 0.12875008583068848,
+  "presents": 4.875,
+  "glDraws": 80750,
+  "commands": 525890.375,
+  "uploadKB": 19398.981201171875,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 0.838749885559082,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 40,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 209.375,
+  "submitKB": 17358.28564453125,
+  "fences": {
+   "n": 212.25,
+   "meanMs": 1.41179622609708,
+   "maxMs": 11.219999313354492,
+   "heldMs": 301.79437375068665,
+   "behindMs": 1.232499122619629,
+   "fullMs": 0,
+   "heldMax": 4,
+   "toGpuMs": 1.4027058646182886,
+   "toGpuMaxMs": 11.150146484375,
+   "backMs": 0.011040246107553003,
+   "backMaxMs": 0.4697265625
+  }
+ },
+ "vm": {
+  "seconds": 7.998740000724792,
+  "Msteps": 742.539545,
+  "irqs": 1733,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 2778,
+   "0x20": 83,
+   "0x24": 770,
+   "0x25": 124
+  },
+  "tlbMisses": 34862,
+  "tlbFlushes": 2390,
+  "jitFlushes": 0,
+  "jitInvalidations": 1,
+  "jitCompileMs": 1.397692
+ }
+}

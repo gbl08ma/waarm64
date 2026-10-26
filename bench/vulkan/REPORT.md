@@ -826,6 +826,82 @@ interop, a path neither the M4 (Metal/IOSurface) nor SwiftShader (no WebGPU canv
 interop or a missed semaphore would each give black or stale copies, which the check now catches: the next run's
 forced arms say which way works there.
 
+## VK3 L2: the fence's round trip — a clamped poller and Dawn's slow look, not the prime blit
+
+**2026-10-26.** Why a Venus frame waited ~4.5 ms on its fence on the user's NVIDIA desktop ("VK2: the NVIDIA run"),
+found and shortened on the M4 (Chrome for Testing 153.0.8010.12, macOS 26.6.2, Metal) and the dev VM's SwiftShader
+(Chromium 153.0.8010.52). JSON in `results/vk3/l2/`.
+
+**The prime blit explains none of it.** VK0's scene draws offscreen (`vkWaitForFences` on a fence a frame, no
+swapchain), so Mesa's WSI, where the prime blit lives, never runs. With `?gpu=vkvendor=nvidia` (the device reporting
+0x10de, as in VK2's run) against without, three alternated rounds, 1 fish: the M4 0.831, 0.848, 0.872 ms against
+0.867, 0.829, 0.910 (`scene-mac-vendor-*`); SwiftShader 10.13, 10.21, 10.05 against 9.99, 10.04, 10.03
+(`scene-swiftshader-{nvidia,pump}-*`). The same.
+
+**Two waits instead.** Measured with the fence's breakdown, now in the render stats (`venus`, a second: the GPU's
+submits and their ms until WebGPU said done, then until completed in order; the ring polls and their gaps; the nudges;
+the guest's fences and their ms until retired) and in `guest.ts`'s JSON (`renderer.venus`):
+
+1. **The ring poller was a nested `setTimeout(f, 0)`**, which Chromium clamps from the fifth turn: 4.42 ms a turn in a
+   worker on Linux, **6.02 ms on the Mac** (`fence.ts`, `fence-*.json`). The guest sends a fenced `SUBMIT_3D` every two
+   frames (269 a second at 1 fish on the M4; VK2 L5's runs saw ~1 a second: backlog "The guest fences each frame
+   through the virtqueue"), and a fence retires at a poll: **4.3 ms after it was sent** on the M4 though its submit was
+   done in 1.3, and the scene at 1 fish took **3.0 ms a frame on the M4 too** (VK2 L5's 0.93 isn't reproduced with
+   today's guest and build, at its own short settings either: 2.9 ms). Now web/venus-host.ts's pump sleeps 0.25 ms on
+   `Atomics.waitAsync`'s timeout between turns (0.49 ms a turn on Linux, 1.55 ms on the Mac), polls at once on a
+   submit, a notify and a completion, and never nests a timer; each turn goes through the timer queue, so the
+   worker's own timers aren't starved (VK2's MessageChannel loop starved them). `?gpu=vkpoll=timeout` keeps the old
+   way for A/B.
+2. **Dawn on Vulkan says done late.** A trivial submit's `onSubmittedWorkDone` comes back after **3.4 ms** on
+   SwiftShader (an error scope's round trip, the IPC alone: 0.36 ms), and after 0.32 ms when the worker sends empty
+   submits meanwhile: Chromium's GPU process looks at a device with pending work on a slow timer, but at once when
+   commands arrive. On Metal it is 1.3 ms either way (completions by callback). So while a submit is in flight the
+   pump sends an empty submit at most every 1 ms (web/venus-gpu.ts `nudge`). Every 0.5 ms cost SwiftShader's
+   GPU-bound scene ~3% (10.17–10.29 against 9.82–10.01 ms, three rounds apart: the GPU process's CPU; those runs
+   weren't kept), every 1 ms nothing (the table below); an unbounded flood made Metal's done 19.8 ms (`fence-mac.json`). Dawn on NVIDIA's Vulkan most likely shares the slow look (VK2's run:
+   fences 4.1–5.3 ms for 0.3 ms of GPU): the next run's `fence` step says.
+
+**A submit's fence** (`costs.ts`, the driver's test program on the page's WebGPU, one draw, 40 submits a round, three
+alternated rounds; medians, IQR in brackets; `costs-*.json`):
+
+| ms from the submit to its fence | old poller (`timeout`) | the pump |
+| --- | --- | --- |
+| SwiftShader | 3.24 (0.47), 3.13 (0.61), 3.06 (0.51) | **1.03 (0.16), 1.02 (0.20), 1.01 (0.18)** |
+| M4 | 0.32 (0.09), 0.33 (0.23), 0.32 (0.04) | 0.36 (0.23), 0.35 (0.17), 0.32 (0.10) |
+
+**VK0's scene** (`guest.ts`, the desktop guest, 4 vCPUs, MSAA 1, WARMUP 200, 5 samples of 300 frames, so the stats'
+seconds hold the steady state; three alternated rounds; ms a frame, medians, and the guest's CPU a frame):
+
+| M4, 1920×1080 | the pump | old poller | virgl |
+| --- | --- | --- | --- |
+| 1 fish | **0.877, 0.852, 0.847** (0.43, 0.42, 0.40) | 3.022, 3.054, 3.038 (0.72) | 0.867, 0.957, 0.898 (0.78, 0.76, 0.77) |
+| 1,000 fish | **2.542, 2.547, 2.502** (1.63) | 3.263, 3.200, 3.170 (1.58) | 4.607, 4.601, 4.553 (3.06–3.25) |
+| toolkit, 2,000 quads | **0.810, 0.815, 0.806** (0.36) | 2.866, 2.854, 2.843 (0.63) | 3.344, 3.274, 3.458 (3.22–3.40) |
+| SwiftShader, 320×180 (at 1080p both ~58–60 ms) | | | |
+| 1 fish | 9.99, 10.04, 10.03 (1.91–2.12) | 9.96, 10.05, 10.01 (1.94–2.29) | 13.09, 10.38, 11.84 (IQR 1.2–3.3; 1.17–1.24) |
+
+**The breakdown with the pump** (means over the runs' steady seconds):
+
+| | the GPU's submit to done | done to completed | ring polls a second, gap | nudges a second | the guest's fence, sent to retired |
+| --- | --- | --- | --- | --- | --- |
+| M4, 1 fish | 0.96 ms | 0.00 | ~2,200, 0.21 ms | ~260 | **1.05 ms** (old poller: 4.32) |
+| M4, 1,000 fish | 1.86 | 0.00 | ~1,800, 0.37 | ~400 | 1.72 (2.88) |
+| M4, toolkit | 0.25 | 0.00 | ~2,100, 0.19 | ~240 | 0.82 (3.81) |
+| SwiftShader, 1 fish (320×180) | 15.6 (two frames queued on its CPU rendering) | 0.01 | ~1,750, 0.42 | ~510 | 16.9 (16.7) |
+
+- **The bar holds on the M4 and SwiftShader**: at 1 fish Venus's frame is virgl's (the M4's rounds overlap, 0.85–0.88
+  against 0.87–0.96; SwiftShader's Venus 10.0 against virgl's 10.4–13.1, both bound by its rendering), and the guest's
+  CPU a frame is half virgl's or less; at 1,000 fish and the toolkit Venus is 1.8× and 4× ahead. The old poller's
+  floor (~3 ms on the M4) is gone; the guest's CPU a frame dropped with it (0.72 → 0.41 ms at 1 fish: less spinning
+  on its fence).
+- **Expected on NVIDIA**: VK2's run had both waits (Linux's 4.4 ms clamp, and Dawn on Vulkan), about its 4.1–5.3 ms
+  fences. The next run (`nvidia.sh page`'s `fence` and `scene` steps, the pump against `vkpoll=timeout`) confirms.
+- Tried and dropped: turning without any delay for 2 ms after work (MessageChannel hops, each timer set from a
+  message's task): ~100,000 polls a second, the same frames (M4 1 fish 0.88–0.93 against 0.87 without; one round, not kept). Completing
+  a submit that reads nothing back before its work is done (the "fences with nothing to read back"): the guest's
+  fence would no longer hold it back, and it could queue frames without limit; not done. The presentation copy's place
+  in the frame isn't in this scene (offscreen); vkcube and mpv are vsync-paced.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
@@ -838,6 +914,10 @@ forced arms say which way works there.
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK3 L2: `fence.ts` and `fence/` (a worker's turns: nested `setTimeout`, messages, `postTask`, `Atomics.waitAsync`'s
+  sleeps; WebGPU's done alone and nudged; in `nvidia.sh page`'s `fence` step, `mac-costs.sh` with `SCRIPT=fence.ts`
+  on the Mac); `costs.ts` takes `POLL=timeout`; `guest.ts` takes `GPU_KNOBS` and `SIZE` and logs Venus's fence
+  breakdown.
 - VK3 L1: `present.ts` (the page's screen against the guest's frames, way by way; in `nvidia.sh page`'s `present` step,
   and through `../gpu/sway-mac.sh` with `SCRIPT=../vulkan/present.ts`).
 - VK2 L7: `costs.ts` and `costs/` (a submit's and a pipeline's costs; `mac-costs.sh` on the Mac), `adapter.ts` (the

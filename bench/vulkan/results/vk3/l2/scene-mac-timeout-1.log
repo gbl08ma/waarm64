@@ -1,0 +1,19 @@
+[0.5] WebGL2: ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version) | 153.0.8010.12
+[page log] venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies
+[27.5] running
+[31.9] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[34.4] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[42.6] fish-1-msaa1 3.022 ms a frame (IQR 0.056), guest CPU 0.722 ms; GPU worker busy 1 ms/s, 0 draws/s
+[42.6] fish-1-msaa1 venus: 404 submits/s done in 1.34 ms (max 17.1), then 0.00 ms in order (by second: 2.276 0 1.649 1.234 1.222 1.248 1.325 1.438 1.333); 891 polls/s 0.00 ms apart (max 0.0); 0 nudges/s; 202 fences/s retired in 4.27 ms
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[51.0] fish-1000-msaa1 3.263 ms a frame (IQR 0.018), guest CPU 1.605 ms; GPU worker busy 1 ms/s, 0 draws/s
+[51.0] fish-1000-msaa1 venus: 417 submits/s done in 1.92 ms (max 16.7), then 0.00 ms in order (by second: 0 0 1.832 1.883 1.892 1.984 1.982 1.895); 1071 polls/s 0.00 ms apart (max 0.0); 0 nudges/s; 208 fences/s retired in 2.85 ms
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[58.4] toolkit-2000-msaa1 2.866 ms a frame (IQR 0.037), guest CPU 0.638 ms; GPU worker busy 1 ms/s, 0 draws/s
+[58.4] toolkit-2000-msaa1 venus: 462 submits/s done in 0.97 ms (max 14.5), then 0.00 ms in order (by second: 1.849 0 0.942 0.921 0.894 0.906 0.948); 955 polls/s 0.00 ms apart (max 0.0); 0 nudges/s; 231 fences/s retired in 3.82 ms

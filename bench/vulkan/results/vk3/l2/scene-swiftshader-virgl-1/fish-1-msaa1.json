@@ -1,0 +1,89 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1,
+ "quads": 0,
+ "width": 320,
+ "height": 180,
+ "msaa": 1,
+ "warmup": 60,
+ "samples": 5,
+ "frames": 100,
+ "frameMs": {
+  "median": 13.086,
+  "iqr": 3.127
+ },
+ "guestCpuMs": 1.174,
+ "line": "virgl aquarium: 13.086 ms a frame (IQR 3.127), CPU 1.174 ms, 120 draws a frame",
+ "seconds": 10.036704262999999,
+ "renderer": {
+  "seconds": 9,
+  "busyMs": 56.089999900923836,
+  "submitMs": 54.73777769671546,
+  "drawMs": 0.10999998781416151,
+  "presents": 3.5555555555555554,
+  "glDraws": 7493.333333333333,
+  "commands": 45913.666666666664,
+  "uploadKB": 16340.555989583334,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 12.752777801619636,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 24,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 56.5,
+  "submitKB": 1319.52890625,
+  "fences": {
+   "n": 70.3,
+   "meanMs": 16.63394025515018,
+   "maxMs": 1418.2599999904633,
+   "heldMs": 3293.8674998641013,
+   "behindMs": 1080.569499874115,
+   "fullMs": 2.9835000038146973,
+   "heldMax": 16,
+   "toGpuMs": 15.750195312499999,
+   "toGpuMaxMs": 1418.135009765625,
+   "backMs": 0.06233458085493608,
+   "backMaxMs": 12.005126953125
+  }
+ },
+ "vm": {
+  "seconds": 9.999549999952317,
+  "Msteps": 113.823349,
+  "irqs": 792,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 1482,
+   "0x20": 71,
+   "0x24": 3808,
+   "0x25": 99
+  },
+  "tlbMisses": 37184,
+  "tlbFlushes": 3860,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.608879
+ }
+}

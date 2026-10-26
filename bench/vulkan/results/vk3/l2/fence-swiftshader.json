@@ -1,0 +1,163 @@
+{
+ "date": "2026-10-26T13:01:03.128Z",
+ "chromium": "153.0.8010.52",
+ "platform": "linux",
+ "n": 60,
+ "timers": {
+  "setTimeout": {
+   "median": 4.42,
+   "p10": 4.035,
+   "p90": 5.445,
+   "iqr": 0.735,
+   "n": 60
+  },
+  "message": {
+   "median": 0.01,
+   "p10": 0.005,
+   "p90": 0.035,
+   "iqr": 0.005,
+   "n": 60
+  },
+  "postTask": {
+   "median": 0.005,
+   "p10": 0,
+   "p90": 0.01,
+   "iqr": 0,
+   "n": 60
+  },
+  "setTimeout-from-message": {
+   "median": 0.01,
+   "p10": 0.005,
+   "p90": 0.02,
+   "iqr": 0,
+   "n": 60
+  },
+  "setTimeout1-from-message": {
+   "median": 1.655,
+   "p10": 1.38,
+   "p90": 2.005,
+   "iqr": 0.225,
+   "n": 60
+  },
+  "waitAsync-0.25": {
+   "median": 0.485,
+   "p10": 0.48,
+   "p90": 0.5,
+   "iqr": 0.01,
+   "n": 60
+  },
+  "waitAsync-0.5": {
+   "median": 0.88,
+   "p10": 0.715,
+   "p90": 0.91,
+   "iqr": 0.035,
+   "n": 60
+  },
+  "waitAsync-1": {
+   "median": 1.645,
+   "p10": 1.37,
+   "p90": 1.665,
+   "iqr": 0.13,
+   "n": 60
+  }
+ },
+ "gpu": {
+  "adapter": {
+   "vendor": "google",
+   "architecture": "swiftshader",
+   "device": "",
+   "description": ""
+  },
+  "errorScope": {
+   "median": 0.355,
+   "p10": 0.285,
+   "p90": 0.54,
+   "iqr": 0.165,
+   "n": 60
+  },
+  "emptySubmitDone": {
+   "median": 3.12,
+   "p10": 0.43,
+   "p90": 3.81,
+   "iqr": 3.06,
+   "n": 60
+  },
+  "copyDone": {
+   "median": 3.41,
+   "p10": 0.62,
+   "p90": 3.965,
+   "iqr": 1.035,
+   "n": 60
+  },
+  "copyMap": {
+   "median": 0.845,
+   "p10": 0.435,
+   "p90": 3.615,
+   "iqr": 2.965,
+   "n": 60
+  },
+  "copyDoneAndMap": {
+   "median": 3.36,
+   "p10": 0.62,
+   "p90": 3.995,
+   "iqr": 3.055,
+   "n": 60
+  },
+  "copyDone+messages": {
+   "median": 3.13,
+   "p10": 2.29,
+   "p90": 3.435,
+   "iqr": 0.465,
+   "n": 60
+  },
+  "copyDone+emptySubmits": {
+   "median": 0.32,
+   "p10": 0.25,
+   "p90": 0.49,
+   "iqr": 0.105,
+   "n": 60
+  },
+  "copyDone+writeBuffer": {
+   "median": 0.445,
+   "p10": 0.34,
+   "p90": 0.875,
+   "iqr": 0.265,
+   "n": 60
+  },
+  "copyDone+submit-0.25ms": {
+   "median": 0.56,
+   "p10": 0.335,
+   "p90": 0.68,
+   "iqr": 0.075,
+   "n": 60
+  },
+  "copyDone+submit-1ms-timer": {
+   "median": 0.375,
+   "p10": 0.295,
+   "p90": 0.595,
+   "iqr": 0.22,
+   "n": 60
+  },
+  "copyDone+scope": {
+   "median": 0.82,
+   "p10": 0.565,
+   "p90": 1.05,
+   "iqr": 0.375,
+   "n": 60
+  },
+  "copyDone+submit+scope": {
+   "median": 0.61,
+   "p10": 0.405,
+   "p90": 1.085,
+   "iqr": 0.21,
+   "n": 60
+  },
+  "copyDoneAndMap+submit-1ms-timer": {
+   "median": 0.59,
+   "p10": 0.37,
+   "p90": 0.745,
+   "iqr": 0.195,
+   "n": 60
+  }
+ }
+}

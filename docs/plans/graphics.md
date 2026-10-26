@@ -281,8 +281,9 @@ for the programs that switch. The user decides whether VK1 starts.
   images reach the screen as a copy into virgl's texture (~0.8 ms a 1080p frame on the M4); the module is 0.69 MiB
   with brotli, far under step 1's 5 MiB. **On the user's NVIDIA desktop** the frames are right (the replays) and the
   guest's CPU a frame half virgl's or less, but what Venus presents is black (mpv's picture: VK3 L1 found the
-  device's NVIDIA vendor ID sending Venus's WSI down its prime-blit path, whose buffers weren't shared) and a frame waits ~4.5 ms on its fence (the scene at 1 fish slower than virgl): the gate holds on the M4
-  and SwiftShader, not yet there. VK3 starts with both.
+  device's NVIDIA vendor ID sending Venus's WSI down its prime-blit path, whose buffers weren't shared) and a frame waits ~4.5 ms on its fence (the scene at 1 fish slower than virgl; VK3 L2
+  found it on the M4 too, ~3 ms, as two waits: a ring poller on a clamped `setTimeout(0)` and Dawn on Vulkan's slow look
+  at a submit's done, both shortened): the gate holds on the M4 and SwiftShader, not yet there. VK3 starts with both.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
   render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: Venus's
   frames on NVIDIA (black, and ~4.5 ms a fence: backlog), libplacebo's advanced path (the M4's green chroma), the
@@ -304,6 +305,11 @@ for the programs that switch. The user decides whether VK1 starts.
   and ~1.5 ms once Metal's on-disk cache has it; SwiftShader 27 ms (REPORT.md "VK2 L7"). So a program making hundreds
   at load stalls for seconds on its first run on a machine: pipelines made asynchronously with the ring stalled, and a
   cache of WGSL across runs, are VK3's.
+- **The browser's timers and its look at the GPU** (VK3 L2): a worker's nested `setTimeout(0)` is clamped to ~4.5 ms
+  (6 ms on the Mac), and Chromium's GPU process notices a Dawn device's finished work on Vulkan only at a slow timer
+  (~3 ms late on SwiftShader) unless commands arrive. Venus's poller sleeps on `Atomics.waitAsync` and nudges with
+  empty submits; a host whose browser changes either can bring a fence's floor back, so the render stats carry the
+  fence's breakdown (`venus`) and `nvidia.sh` measures it.
 - **WebGPU's per-call cost** in Chromium caps a frame at ~5,000 Vulkan-style draws a millisecond on the M4 (E): games
   at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
   fast (NVIDIA).

@@ -9,7 +9,13 @@
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
 const COPY_SRC = 4, COPY_DST = 8, UNIFORM = 64, MAP_READ = 1, MAP_MODE_READ = 1;
 
-export type VenusGpuStats = { submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number };
+export type VenusGpuStats = {
+  submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
+  /** Of a submit's way back (VK3 L2): submits done, the ms from `queue.submit` until WebGPU said done (its work and its
+   * readbacks' maps), the longest, and the ms from then until it completed in submit order; empty submits sent to
+   * make the browser look at the GPU sooner (`nudge`). */
+  done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number;
+};
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number; tex: GPUTexture };
@@ -82,7 +88,11 @@ export function deviceRequest(adapter: GPUAdapter): GPUDeviceDescriptor {
 }
 
 export class VenusGpu {
-  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0 };
+  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0 };
+  /** Submits not yet completed. */
+  inFlight = 0;
+  /** Called after each submit (the host's poller then runs until it completes: web/venus-host.ts). */
+  onSubmit: (() => void) | undefined;
   private readonly objs: (Obj | undefined)[] = [];
   private enc: GPUCommandEncoder | undefined;
   private pass: GPURenderPassEncoder | GPUComputePassEncoder | undefined;
@@ -306,16 +316,29 @@ export class VenusGpu {
         self.temps = [];
         const slots = self.submitSlots;
         self.submitSlots = [];
-        const done = Promise.all([d.queue.onSubmittedWorkDone(), ...slots.map((s) => self.slots.get(s)!.buffer.mapAsync(MAP_MODE_READ))]);
+        const t0 = performance.now();
+        let doneAt = t0;
+        const done = Promise.all([d.queue.onSubmittedWorkDone(), ...slots.map((s) => self.slots.get(s)!.buffer.mapAsync(MAP_MODE_READ))]).finally(() => {
+          doneAt = performance.now();
+          const ms = doneAt - t0;
+          self.stats.done++;
+          self.stats.doneMs += ms;
+          self.stats.doneMaxMs = Math.max(self.stats.doneMaxMs, ms);
+        });
+        self.inFlight++;
         // In submit order: a later submit's work can't be done before an earlier one's, but its maps may resolve first.
-        self.chain = self.chain.then(() => done).then(() => {
+        const finish = () => {
+          self.inFlight--;
+          self.stats.orderMs += performance.now() - doneAt;
           self.complete(serial);
-        }, (err) => {
+        };
+        self.chain = self.chain.then(() => done).then(finish, (err) => {
           self.warn(`a submit's readbacks failed: ${err}`);
-          self.complete(serial);
+          finish();
         }).finally(() => {
           for (const s of slots) { self.slots.get(s)!.buffer.destroy(); self.slots.delete(s); }
         });
+        self.onSubmit?.();
       },
       gpu_readback_copy(slot: number, dst: number, size: number) {
         const s = self.slots.get(slot);
@@ -324,6 +347,20 @@ export class VenusGpu {
         new Uint8Array(self.mem(), dst >>> 0, n).set(new Uint8Array(s.buffer.getMappedRange(0, n)));
       },
     };
+  }
+
+  /**
+   * An empty submit while work is in flight. Chromium's GPU process looks at a Dawn device whose work is pending on a
+   * slow timer (on Vulkan: a trivial submit's onSubmittedWorkDone came back after ~3.4 ms on SwiftShader) but at once
+   * when commands arrive: an empty submit every 1 ms (web/venus-host.ts's pump) brings a submit's fence back in ~1 ms
+   * there, and changes nothing on Metal, whose completions come by callback (bench/vulkan/REPORT.md "VK3 L2"). A flood
+   * of them slows Metal down (19.8 ms). Returns whether it sent one.
+   */
+  nudge() {
+    if (!this.device || !this.inFlight) return false;
+    this.device.queue.submit([]);
+    this.stats.nudges++;
+    return true;
   }
 
   private dirtyInto(ptr: number, max: number) {

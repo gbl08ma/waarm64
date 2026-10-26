@@ -234,7 +234,16 @@ export async function openSession(o: SessionOptions) {
       video = { frames: (b.frames - a.frames) / vs.length, decoded: n / vs.length, dropped: (b.dropped - a.dropped) / vs.length, errors: b.errors - a.errors, latencyMs: n ? (b.latencyMs - a.latencyMs) / n : 0,
         latencyMaxMs: Math.max(0, ...vs.map((x) => x.latencyMaxMs)), writeMs: n ? (b.writeMs - a.writeMs) / n : 0, ahead: (b.ahead - a.ahead) / vs.length, maxWaitMs: Math.max(0, ...vs.map((x) => x.maxWaitMs)) };
     }
-    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), shareRefreshes: rper('shareRefreshes'), shareMs: rper('shareMs'), importBinds: rper('importBinds'), importPictures: rper('importPictures'), importKB: rper('importBytes') / 1024, importMs: rper('importMs'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors, ...(video ? { video } : {}) } : undefined;
+    // Venus's fences' way back (web/venus-host.ts `VenusTimes`, VK3 L2): a second's counts, and means and maxima of ms.
+    const vt = r.map((x) => (x as unknown as { venus?: Record<string, number> }).venus).filter((x): x is Record<string, number> => !!x);
+    const vsum = (k: string) => vt.reduce((n, x) => n + (x[k] ?? 0), 0);
+    const vmax = (k: string) => Math.max(0, ...vt.map((x) => x[k] ?? 0));
+    const venus = vt.length ? { polls: vsum('polls') / vt.length, gapMs: vsum('gapMs') / Math.max(1, vsum('gaps')), gapMaxMs: vmax('gapMaxMs'), submits: vsum('submits') / vt.length,
+      doneMs: vsum('doneMs') / Math.max(1, vsum('done')), doneMaxMs: vmax('doneMaxMs'), orderMs: vsum('orderMs') / Math.max(1, vsum('done')), nudges: vsum('nudges') / vt.length,
+      fences: vsum('fences') / vt.length, fenceMs: vsum('fenceMs') / Math.max(1, vsum('fences')), fenceMaxMs: vmax('fenceMaxMs'),
+      // Each second's mean ms to done (a pipeline's first compile lifts its second's alone).
+      doneMsBySecond: vt.map((x) => +(x.doneMs / Math.max(1, x.done)).toFixed(3)) } : undefined;
+    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), shareRefreshes: rper('shareRefreshes'), shareMs: rper('shareMs'), importBinds: rper('importBinds'), importPictures: rper('importPictures'), importKB: rper('importBytes') / 1024, importMs: rper('importMs'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors, ...(video ? { video } : {}), ...(venus ? { venus } : {}) } : undefined;
     const commands: Record<string, number> = {};
     for (const x of s) for (const [k, n] of Object.entries(x.busy.commands ?? {})) commands[COMMANDS[k] ?? k] = (commands[COMMANDS[k] ?? k] ?? 0) + n / Math.max(1, s.length);
     // Fenced replies a second, the mean and longest wait for the host; every held reply's time held (ms a second).

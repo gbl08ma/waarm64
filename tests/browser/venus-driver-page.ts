@@ -2,7 +2,7 @@
 // (tests/venus-driver.test.ts): its scene's pixels, its compute pass's output and a filled buffer, read back once the
 // submit's fence signalled.
 import { deviceRequest } from '../../web/venus-gpu.ts';
-import { VenusRenderer } from '../../web/venus-host.ts';
+import { VenusRenderer, type VenusPoll } from '../../web/venus-host.ts';
 import { VenusImport } from '../../web/venus-import.ts';
 
 type Test = {
@@ -10,6 +10,7 @@ type Test = {
   wgt_done(): number; wgt_pixels(): number; wgt_storage(): number; wgt_filled(): number; wgt_error(): number;
   venus_alloc(n: number): number;
   wgt_import(res: number): number; wgt_imported(): number;
+  wgt_draw(fs: number, fn: number, variant: number): number; wgt_draw_done(): number;
 };
 
 export async function run(spirv: { vert: string; frag: string; comp: string }) {
@@ -78,4 +79,40 @@ export async function runImport() {
   importer.plane(7, Uint8Array.from({ length: 16 }, (_, i) => 200 + i), 4, 2, 2);
   const b = await copy();
   return { first: a, second: b, binds, stats: importer.stats, errors };
+}
+
+/**
+ * A submit's way back (VK3 L2): `n` submits of one draw (the test program's `wgt_draw`, its pipeline made before) with
+ * the rings polled by `poll`, each awaited on a MessageChannel's turns (unclamped). The median ms from the submit to its
+ * fence, the nudges counted (web/venus-gpu.ts `nudge`) and the empty submits that reached the queue.
+ */
+export async function runFences(spirv: { vert: string; frag: string; comp: string; costs: string }, poll: VenusPoll, n: number) {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  // The empty submits that reach the queue (the nudges as WebGPU sees them).
+  let empty = 0;
+  const submit = device.queue.submit.bind(device.queue);
+  device.queue.submit = (buffers: Iterable<GPUCommandBuffer>) => { if (![...buffers].length) empty++; submit(buffers); };
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, device, poll);
+  const ex = v.raw as unknown as Test;
+  const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+  const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
+  const [vs, vn] = put(await words(spirv.vert)), [fs, fn] = put(await words(spirv.frag)), [cs, cn] = put(await words(spirv.comp)), [ks, kn] = put(await words(spirv.costs));
+  const tick = () => new Promise<void>((r) => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+  const wait = async (done: () => number) => { const t = performance.now(); while (!done()) { if (performance.now() - t > 20_000) throw new Error('a fence never signalled'); await tick(); } };
+  if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: 'wgt_run failed' };
+  await wait(() => ex.wgt_done());
+  const ms: number[] = [];
+  for (let i = 0; i < n + 3; i++) {
+    const t0 = performance.now();
+    if (ex.wgt_draw(ks, kn, 0)) return { error: 'wgt_draw failed' };
+    await wait(() => ex.wgt_draw_done());
+    if (i >= 3) ms.push(performance.now() - t0);
+  }
+  ms.sort((a, b) => a - b);
+  device.destroy();
+  return { median: ms[ms.length >> 1], nudges: v.gpu.stats.nudges, empty, adapter: adapter.info.architecture };
 }

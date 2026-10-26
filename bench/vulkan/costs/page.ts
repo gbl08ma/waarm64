@@ -5,7 +5,7 @@
 // For each: the ms in the call (the module records, translates, and replays the submit into WebGPU) and the ms until
 // its fence signalled (the GPU's work, and for a new pipeline its compile, done and read back).
 import { deviceRequest } from '../../../web/venus-gpu.ts';
-import { VenusRenderer } from '../../../web/venus-host.ts';
+import { VenusRenderer, type VenusPoll } from '../../../web/venus-host.ts';
 
 type Test = {
   wgt_run(vs: number, vn: number, fs: number, fn: number, cs: number, cn: number): number;
@@ -16,7 +16,7 @@ type Test = {
 /** Yields to the event loop without setTimeout's clamp, so a fence is seen as soon as the worker's callbacks ran. */
 const tick = () => new Promise<void>((r) => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
 
-export async function run(spirv: { vert: string; frag: string; comp: string; costs: string }, n: number, fixedSeed?: number) {
+export async function run(spirv: { vert: string; frag: string; comp: string; costs: string }, n: number, fixedSeed?: number, poll?: VenusPoll) {
   const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -24,7 +24,7 @@ export async function run(spirv: { vert: string; frag: string; comp: string; cos
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, device, poll);
   const ex = v.raw as unknown as Test;
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
   const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };

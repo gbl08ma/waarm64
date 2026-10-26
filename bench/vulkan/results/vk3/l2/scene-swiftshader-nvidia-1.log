@@ -1,0 +1,11 @@
+[0.5] WebGL2: ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) | 153.0.8010.52
+[page log] venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback
+[32.5] running
+[37.0] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[40.2] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[48.4] fish-1-msaa1 10.131 ms a frame (IQR 0.226), guest CPU 2.03 ms; GPU worker busy 1 ms/s, 0 draws/s
+[48.4] fish-1-msaa1 venus: 139 submits/s done in 17.91 ms (max 823.5), then 0.01 ms in order (by second: 799.087 0 1.63 15.493 15.837 15.843 16.417 15.817); 1744 polls/s 0.41 ms apart (max 22.0); 503 nudges/s; 70 fences/s retired in 18.66 ms

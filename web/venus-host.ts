@@ -1,9 +1,9 @@
 // Venus's renderer on the host (docs/devices.md "Venus"; vk/README.md): the module vk/build.sh makes (virglrenderer's
 // vkr over our Vulkan driver), instantiated on the VM's memory 0, so the guest's rings, command streams and mapped
 // memory in the host-visible window are its own pointers. It runs the device's Venus calls (web/virgl-host.ts
-// `VenusCall`) and polls the rings while they are active (an idle ring waits for the guest's notify). The driver's
-// WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the driver takes the window's written
-// pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
+// `VenusCall`) and polls the rings while they are active or a submit is in flight (`VenusPoll`; an idle ring waits for
+// the guest's notify). The driver's WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the
+// driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `settled` says when the fences sent so far have.
 import { gpuFeatures, gpuLimits, VenusGpu, type GpuCaps } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
@@ -12,7 +12,34 @@ import { WindowWatch } from './window.ts';
 /** Where the module finds the window: its address in memory 0, its bytes, and the write-watch's words. */
 export type VenusWindow = { at: number; bytes: number; watch: number };
 
-export type VenusStats = { submits: number; completed: number; fences: number; polls: number; dirtyPages: number; dirtyLooks: number; contexts: number };
+export type VenusStats = {
+  submits: number; completed: number; fences: number; polls: number; dirtyPages: number; dirtyLooks: number; contexts: number;
+  /** The poller's (VK3 L2): ms between its polls while it ran (sum, longest) and how many; fences' ms from sent to
+   * retired (sum, longest). */
+  gaps: number; gapMs: number; gapMaxMs: number; fenceMs: number; fenceMaxMs: number;
+};
+
+/**
+ * How the rings are polled while active (`?gpu=vkpoll=timeout` the old way, for A/B). `timeout` reschedules with a
+ * nested `setTimeout(f, 0)`, which Chromium clamps to ~4.5 ms a turn from the fifth (6 ms on the Mac): the guest's
+ * fences, which retire at a poll, came back ~4 ms late, a floor of ~3 ms a frame on the M4 (bench/vulkan/REPORT.md
+ * "VK3 L2"). `pump` (the default) waits `PERIOD_MS` between turns on `Atomics.waitAsync`'s timeout (~0.5 ms a turn in
+ * Chromium on Linux, ~1.55 ms on the Mac; a timer set from a message's task, ~1.6 ms, where there is no shared
+ * memory), so no timer is nested and the worker's own timers keep their turns (a loop of messages alone starved them
+ * in VK2). A submit, a notify and a completion poll at once besides. While a submit is in flight each turn also nudges WebGPU (web/venus-gpu.ts `nudge`).
+ * Turning without any delay after work (VK3 L2's first try) polled ~100,000 times a second for nothing: the scene's
+ * frame was the same.
+ */
+export type VenusPoll = 'timeout' | 'pump';
+/**
+ * A fence's way back, over a span (the render stats' `venus`, a second): sums and counts, so spans add up. Polls and the
+ * ms between them while the pump ran (`gap*`); the GPU's submits, the ms until WebGPU said done (`done*`) and then until
+ * they completed in order (`orderMs`), the nudges; the fences the guest sent and their ms until retired.
+ */
+export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs: number; submits: number; done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number; fences: number; fenceMs: number; fenceMaxMs: number };
+
+/** The pump's wait between turns, and how often it nudges at most (ms). */
+const PERIOD_MS = 0.25, NUDGE_MS = 1;
 
 type Exports = {
   _initialize(): void;
@@ -66,7 +93,7 @@ function wasi(memory: WebAssembly.Memory) {
 }
 
 export class VenusRenderer {
-  readonly stats: VenusStats = { submits: 0, completed: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0 };
+  readonly stats: VenusStats = { submits: 0, completed: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0, gaps: 0, gapMs: 0, gapMaxMs: 0, fenceMs: 0, fenceMaxMs: 0 };
   /** The VENUS capset vkr writes (the device's `venusCaps`). */
   readonly capset: Uint8Array;
   private readonly ex: Exports;
@@ -85,13 +112,21 @@ export class VenusRenderer {
   private fenceWatch: ReturnType<typeof setInterval> | undefined;
   private readonly warnedStuck = new Set<string>();
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly poll: VenusPoll;
+  /** The pump's: it runs (the rings active or a submit in flight), a turn is scheduled; when it last polled and nudged. */
+  private running = false;
+  private queued = false;
+  private lastPoll = 0;
+  private lastNudge = 0;
+  private wait: (() => void) | undefined;
   /** Called when fences retire (the GPU worker answers the fences it held for them). */
   onRetire: (() => void) | undefined;
   readonly gpu: VenusGpu;
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll) {
+    this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
     // Its heap is in the arena at memory 0's top: past 2 GiB, which a wasm i32 gives JS as negative.
@@ -118,7 +153,7 @@ export class VenusRenderer {
    * unused; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
    * what `caps` has (the device's features and limits; a test's stand-in, or WebGPU's defaults).
    */
-  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device) {
+  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump') {
     let self: VenusRenderer | undefined;
     const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty());
     const imports = {
@@ -132,7 +167,8 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll);
+    gpu.onSubmit = () => self?.worked();
     return self;
   }
 
@@ -149,13 +185,26 @@ export class VenusRenderer {
     this.ex.venus_complete(serial);
     this.stats.completed++;
     // The rings' fences retire at their next poll.
-    this.ex.venus_poll();
     this.wake();
+  }
+
+  /** A submit to the GPU: the pump runs until it completes. */
+  private worked() {
+    if (this.poll === 'timeout' || this.queued) return;
+    // Called from inside the module (its submit): the turn comes later.
+    this.running = this.queued = true;
+    this.schedule();
   }
 
   private retire(key: string) {
     this.stats.fences++;
     this.pending.delete(key);
+    const at = this.sentAt.get(key);
+    if (at !== undefined) {
+      const ms = performance.now() - at;
+      this.stats.fenceMs += ms;
+      this.stats.fenceMaxMs = Math.max(this.stats.fenceMaxMs, ms);
+    }
     this.sentAt.delete(key);
     this.onRetire?.();
   }
@@ -265,6 +314,20 @@ export class VenusRenderer {
     return ctx === undefined ? 0 : this.ex.venus_resource_data(ctx, res) >>> 0;
   }
 
+  private lastTimes: VenusTimes | undefined;
+  /** The fence's way back since the last call (`VenusTimes`); the longest times start again. */
+  times(): VenusTimes {
+    const r = this.stats, g = this.gpu.stats;
+    const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs };
+    const last = this.lastTimes;
+    this.lastTimes = now;
+    r.gapMaxMs = g.doneMaxMs = r.fenceMaxMs = 0;
+    if (!last) return now;
+    const d = { ...now };
+    for (const k of Object.keys(d) as (keyof VenusTimes)[]) if (!k.endsWith('MaxMs')) d[k] -= last[k];
+    return d;
+  }
+
   /** Whether `res` is one of Venus's blobs. */
   has(res: number) { return this.owner.has(res); }
 
@@ -282,14 +345,63 @@ export class VenusRenderer {
     return id ? this.gpu.texture(id) : undefined;
   }
 
-  /** Polls the rings until they are all idle again (a notify, a submit, wakes them). */
+  /** Polls the rings now, and then until they are all idle again and no submit is in flight (a notify, a submit wakes them). */
   wake() {
-    if (this.pollTimer) return;
-    const tick = () => {
-      this.pollTimer = undefined;
-      this.stats.polls++;
-      if (this.ex.venus_poll()) this.pollTimer = setTimeout(tick, 0);
-    };
-    tick();
+    if (this.poll === 'timeout') {
+      if (this.pollTimer) return;
+      const tick = () => {
+        this.pollTimer = undefined;
+        this.stats.polls++;
+        if (this.ex.venus_poll()) this.pollTimer = setTimeout(tick, 0);
+      };
+      tick();
+      return;
+    }
+    this.turn();
+  }
+
+  /** One of the pump's turns: polls, nudges WebGPU while a submit is in flight, and schedules the next turn. */
+  private turn() {
+    const now = performance.now();
+    if (this.running) {
+      const gap = now - this.lastPoll;
+      this.stats.gaps++;
+      this.stats.gapMs += gap;
+      this.stats.gapMaxMs = Math.max(this.stats.gapMaxMs, gap);
+    }
+    this.lastPoll = now;
+    this.stats.polls++;
+    const active = this.ex.venus_poll();
+    if (this.gpu.inFlight && now - this.lastNudge >= NUDGE_MS && this.gpu.nudge()) this.lastNudge = now;
+    this.running = !!active || this.gpu.inFlight > 0;
+    if (this.running && !this.queued) {
+      this.queued = true;
+      this.schedule();
+    }
+  }
+
+  private schedule() {
+    if (!this.wait) {
+      const next = () => {
+        this.queued = false;
+        this.turn();
+      };
+      const waitAsync = (Atomics as unknown as { waitAsync?(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
+      if (waitAsync && typeof SharedArrayBuffer !== 'undefined') {
+        // A word nobody notifies: the wait ends at its timeout.
+        const word = new Int32Array(new SharedArrayBuffer(4));
+        this.wait = () => {
+          const r = waitAsync(word, 0, 0, PERIOD_MS);
+          if (r.async) void (r.value as Promise<string>).then(next);
+          else setTimeout(next, 1);
+        };
+      } else {
+        const c = new MessageChannel();
+        // Set from a message's task, the timer isn't nested in another timer: Chromium doesn't clamp it.
+        c.port1.onmessage = () => setTimeout(next, 1);
+        this.wait = () => c.port2.postMessage(0);
+      }
+    }
+    this.wait();
   }
 }

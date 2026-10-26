@@ -165,8 +165,13 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   the module would leave its state half updated.
 - **Completion**: the worker calls `venus_complete(serial)` in submit order once the work is done and its staging
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
-  feedback slots) applied there too, and the submit's syncs signal; vkr's fences retire at the next poll. Only the
-  window and the arena are written then (anything else is logged and dropped).
+  feedback slots) applied there too, and the submit's syncs signal; vkr's fences retire at the next poll, which the
+  completion runs at once. Only the window and the arena are written then (anything else is logged and dropped).
+  While a submit is in flight the host's poller sends an empty submit at most every 1 ms (web/venus-gpu.ts `nudge`):
+  Chromium looks at a Dawn device on Vulkan whose work is pending only on a slow timer, but at once when commands
+  arrive, so a submit's done came ~3 ms after its work on SwiftShader (1 ms nudged; the same on Metal either way,
+  whose completions come by callback: bench/vulkan/REPORT.md "VK3 L2"). A submit with nothing to read back still
+  completes only when its work is done: completing it early would let the guest queue frames without limit.
 - **Shared images** (Venus's WSI): see "Presentation".
 - **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): occlusion queries (reported as
   passing), timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component

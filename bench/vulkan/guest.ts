@@ -7,7 +7,9 @@
 //   node bench/vulkan/guest.ts <lavapipe|virgl|venus|venus-nowatch> [image|-] [out dir]
 // CHECK=1 first renders frame 300 at 1,000 fish and the toolkit's frame 100 in the guest and compares their 32x18
 // thumbnails (dump.h) with the native frames (bench/results/local/vk0/lvp-1000.ppm, lvp-tk.ppm: vk on lavapipe).
-// FISH, TOOLKIT, MSAA (lists), WARMUP, SAMPLES, FRAMES, NCPUS (default 4), RUN_S; the Mac's GPU through
+// FISH, TOOLKIT, MSAA (lists), WARMUP, SAMPLES, FRAMES, NCPUS (default 4), RUN_S, GPU_KNOBS (more of `?gpu=` for Venus,
+// comma-separated: e.g. `vkvendor=nvidia`), SIZE (the frame's, default 1920x1080: SwiftShader's
+// software GPU draws a 1080p frame for ~60 ms, so its floor shows only smaller); the Mac's GPU through
 // bench/gpu/sway-mac.sh (SCRIPT=../vulkan/guest.ts, which copies the second disk when VK0=1).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
@@ -25,8 +27,11 @@ const slow = arm === 'lavapipe';
 const WARMUP = Number(env('WARMUP', slow ? '2' : '30')), SAMPLES = Number(env('SAMPLES', slow ? '3' : '5')), FRAMES = Number(env('FRAMES', slow ? '3' : '30'));
 const RUN_S = Number(env('RUN_S', '900'));
 const ncpus = Number(env('NCPUS', '4'));
+const [width, height] = env('SIZE', '1920x1080').split('x').map(Number);
+const sizeArgs = width === 1920 && height === 1080 ? '' : ` --width ${width} --height ${height}`;
 
-const s = await openSession({ gpu: venus ? `virgl,vulkan${arm === 'venus-nowatch' ? ',nowatch' : ''}` : 'virgl', image, out, disk2: '/target/vulkan/disk.ext4', ncpus, ramMiB: 4096 });
+const knobs = venus && process.env.GPU_KNOBS ? `,${process.env.GPU_KNOBS}` : '';
+const s = await openSession({ gpu: venus ? `virgl,vulkan${arm === 'venus-nowatch' ? ',nowatch' : ''}${knobs}` : 'virgl', image, out, disk2: '/target/vulkan/disk.ext4', ncpus, ramMiB: 4096 });
 const { log, rootShell, run, display, vmStats, vmDelta } = s;
 await rootShell();
 const info = await run('uname -r; pacman -Q mesa vulkan-swrast vulkan-virtio 2>/dev/null | tr "\\n" " "; mkdir -p /mnt/vdb; mount -o ro /dev/vdb /mnt/vdb && ls /mnt/vdb/vk0 | tr "\\n" " "');
@@ -86,15 +91,15 @@ for (const st of settings) {
   await display();
   const v0 = await vmStats();
   const t0 = performance.now();
-  const line = await run(`timeout ${RUN_S} ${bin} --pack /mnt/vdb/vk0/aquarium.pack ${st.args} --warmup ${WARMUP} --samples ${SAMPLES} --frames ${FRAMES} --label ${arm} --json /tmp/${st.name}.json 2>&1 | tail -1`, (RUN_S + 60) * 1000);
+  const line = await run(`timeout ${RUN_S} ${bin} --pack /mnt/vdb/vk0/aquarium.pack ${st.args}${sizeArgs} --warmup ${WARMUP} --samples ${SAMPLES} --frames ${FRAMES} --label ${arm} --json /tmp/${st.name}.json 2>&1 | tail -1`, (RUN_S + 60) * 1000);
   const seconds = (performance.now() - t0) / 1000;
   const v1 = await vmStats();
   const d = await display();
   const m = /: ([\d.]+) ms a frame \(IQR ([\d.]+)\), CPU ([\d.]+) ms/.exec(line);
   if (!m) { log(st.name, 'failed:', line); continue; }
   const result = {
-    arm: `guest-${arm}`, info, gl: s.gl, browser: s.browser.version(), ncpus, scene: st.toolkit ? 'toolkit' : 'aquarium', fish: st.fish, quads: st.toolkit,
-    width: 1920, height: 1080, msaa: st.msaa, warmup: WARMUP, samples: SAMPLES, frames: FRAMES,
+    arm: `guest-${arm}`, knobs: knobs.slice(1) || undefined, info, gl: s.gl, browser: s.browser.version(), ncpus, scene: st.toolkit ? 'toolkit' : 'aquarium', fish: st.fish, quads: st.toolkit,
+    width, height, msaa: st.msaa, warmup: WARMUP, samples: SAMPLES, frames: FRAMES,
     frameMs: { median: Number(m[1]), iqr: Number(m[2]) }, guestCpuMs: Number(m[3]), line, seconds,
     // The host's side over the whole run (warm-up included): the GPU worker's busy ms a second and the display's.
     renderer: d.renderer, display: { submits: d.submits, submitKB: d.submitKB, fences: d.fences }, vm: vmDelta(v0, v1),
@@ -102,5 +107,7 @@ for (const st of settings) {
   writeFileSync(`${out}/${st.name}.json`, JSON.stringify(result, null, 1) + '\n');
   log(st.name, `${result.frameMs.median} ms a frame (IQR ${result.frameMs.iqr}), guest CPU ${result.guestCpuMs} ms;`,
     d.renderer ? `GPU worker busy ${d.renderer.busyMs.toFixed(0)} ms/s, ${d.renderer.glDraws.toFixed(0)} draws/s` : '');
+  const v = d.renderer?.venus;
+  if (v) log(st.name, `venus: ${v.submits.toFixed(0)} submits/s done in ${v.doneMs.toFixed(2)} ms (max ${v.doneMaxMs.toFixed(1)}), then ${v.orderMs.toFixed(2)} ms in order (by second: ${v.doneMsBySecond.join(" ")}); ${v.polls.toFixed(0)} polls/s ${v.gapMs.toFixed(2)} ms apart (max ${v.gapMaxMs.toFixed(1)}); ${v.nudges.toFixed(0)} nudges/s; ${v.fences.toFixed(0)} fences/s retired in ${v.fenceMs.toFixed(2)} ms`);
 }
 await s.close();

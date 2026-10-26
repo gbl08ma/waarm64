@@ -277,20 +277,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **The host's pollers and their timers** (2026-10-25): a nested `setTimeout(f, 0)` costs **4.6 ms a turn** in a
-  Chromium 153 worker (the HTML spec's clamp after five nested timers), against 0.010 ms for a MessageChannel turn and
-  0.006 ms for `scheduler.postTask` (`bench/results/local/vk1/clamp.ts`, not committed: 200 turns of each). A poller
-  rescheduled that way answers ~4 ms late every turn, a quarter of a 60 Hz frame. Found: Venus's ring poller
-  (web/venus-host.ts `wake`, `setTimeout(tick, 0)`), the GPU worker's occlusion-query poll (web/gpu-worker.ts,
-  `setTimeout(poll, 4)`), its 20 ms stall check, `Vm.wait`'s yield (web/vm.ts, one turn, not nested), the sound
-  pump (web/snd.ts, `setInterval` at 5 ms) and gpu-present's 4 ms lag probes (measurement, meant to tick). To do:
-  inspect each (and any beyond web/), measure how late it actually answers, and pick per poller. A MessageChannel or
-  `postTask` loop has no clamp but must not starve the worker's timers: VK1 tried one for Venus's ring and the
-  device's fence, answered from a timer, went unanswered (VK2's handover, in git history at cd03da82). So first take timers out of paths that
-  must answer (the fence), then poll within a time budget (~0.5–1 ms a task while active, then one timer), or
-  `postTask` with a priority; `Atomics.waitAsync` only where the guest notifies (its JIT writes Venus's ring tail
-  with plain stores). VK1's measurement: removing the ring poller's clamp didn't lower vkcube's guest CPU, so measure
-  each poller's wait latency on the guest's side before changing it.
+- **virgl's occlusion-query poll waits 4 ms a turn** (web/gpu-worker.ts `poll`, `setTimeout(poll, 4)`; what's left of
+  "The host's pollers and their timers", VK3 L2): a GL program waiting on a query's result waits up to ~4.5 ms for the
+  next look. Venus's ring poller, the one that cost a frame (REPORT.md "VK3 L2"), is now web/venus-host.ts's pump
+  (`Atomics.waitAsync`'s 0.25 ms timeout, no nested timer); the same sleep would serve here. Measure a program that
+  waits on queries (KDE's, "A KDE desktop's session on 3D") before changing it. The others were inspected and need
+  nothing: the GPU worker's 20 ms stall check and 4 ms snapshot wait, `Vm.wait` (on `Atomics.waitAsync`), the sound
+  pump (`setInterval` at 5 ms, above the clamp), the screens' frame pacing (a frame's wait), gpu-present's 4 ms lag
+  probes (meant to tick), web/profiler.ts (a dev tool). In a Chromium 153 worker a nested `setTimeout(f, 0)` turn is
+  4.4 ms on Linux and 6.0 ms on the Mac; a timer set from a message's task isn't clamped; `Atomics.waitAsync`'s timeout
+  of 0.25 ms is a 0.49 ms turn on Linux and 1.55 ms on the Mac (`bench/vulkan/fence.ts`).
 
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
@@ -541,12 +537,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name
   the memory's GPUBuffer, writes to buffers tracked like textures' and a buffer-to-texture copy with the import's
   stride. Not needed while no guest takes that path.
-- **Venus's frames wait ~4.5 ms on their fence on NVIDIA** (the same run): VK0's scene at 1 fish 4.8 ms a frame on
-  Venus against virgl's 2.5 (the M4: 0.9 against 1.4), the display's fences 4.1–5.3 ms on average to come back
-  against 0.7 ms on the M4, though the GPU works 0.3 ms. Where the time goes (Dawn's `onSubmittedWorkDone` on Vulkan,
-  the bitmap copy, the GPU's clocks at light load) isn't known: instrument the fence's path and add it to
-  `bench/vulkan/nvidia.sh`. The first suspect is "The host's pollers and their timers" below (a nested
-  `setTimeout(f, 0)` turn costs 4.6 ms in a Chromium worker); why the M4 doesn't show it is part of the question.
+- **Venus's ~4.5 ms fence floor on NVIDIA: the fix awaits the user's run** (VK3 L2, bench/vulkan/REPORT.md "VK3 L2"):
+  found on the M4 and SwiftShader as two waits, both gone. The guest fences each frame through the virtqueue, and a
+  fence retired only at the ring poller's next turn, a nested `setTimeout(0)` clamped to ~4.5 ms (the M4's scene at 1
+  fish: 3.0 ms a frame, fences 4.3 ms; now 0.86 and 1.05, virgl's 0.87–0.96). And Dawn on Vulkan (SwiftShader, and so
+  likely NVIDIA's) says a submit is done only at Chromium's slow look at the device, ~3 ms after its work: an empty
+  submit every ~1 ms while one is in flight brings it back in ~1 ms (a submit's fence 3.1–3.2 → 1.0 ms). The prime
+  blit explains none of it (the scene draws offscreen; `vkvendor=nvidia` changes nothing). `nvidia.sh page`'s `fence`
+  and `scene` steps (the pump against `vkpoll=timeout`, each run's breakdown in `renderer.venus`) confirm it. Close
+  this once they do.
+- **The guest fences each frame through the virtqueue** (VK3 L2): in VK2 L5 the scene's guest sent ~1 fenced
+  `SUBMIT_3D` a second, now one every two frames (269 a second at 1 fish on the M4; 109–208 in VK2's NVIDIA run), likely
+  since L6/L7 advertised sync-file semaphores and external fences to Venus's guest driver. Each costs the guest an
+  execbuffer and the host a held reply. Not looked into: which Vulkan call makes them, and whether its feedback path
+  could serve instead.
 - **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
   screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't

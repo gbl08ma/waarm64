@@ -1,0 +1,5 @@
+[0.5] WebGL2: ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) | 153.0.8010.52
+[35.0] running
+[39.9] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[44.1] device renderer: virgl (webpc) (OpenGL ES 3.0 Mesa 26.2.5-arch1.1)
+[53.6] fish-1-msaa1 11.835 ms a frame (IQR 3.288), guest CPU 1.24 ms; GPU worker busy 52 ms/s, 6360 draws/s
