@@ -1,4 +1,4 @@
-# Backlog (PLAN.md "M9")
+# Backlog
 
 Open items no milestone owns yet, by area. Pick one up when a milestone touches the area or a
 measurement says it matters, and move it into that milestone's plan when it's scheduled. **Add to
@@ -286,7 +286,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   pump (web/snd.ts, `setInterval` at 5 ms) and gpu-present's 4 ms lag probes (measurement, meant to tick). To do:
   inspect each (and any beyond web/), measure how late it actually answers, and pick per poller. A MessageChannel or
   `postTask` loop has no clamp but must not starve the worker's timers: VK1 tried one for Venus's ring and the
-  device's fence, answered from a timer, went unanswered (M8-VK2-HANDOVER.md). So first take timers out of paths that
+  device's fence, answered from a timer, went unanswered (VK2-HANDOVER.md). So first take timers out of paths that
   must answer (the fence), then poll within a time budget (~0.5–1 ms a task while active, then one timer), or
   `postTask` with a priority; `Atomics.waitAsync` only where the guest notifies (its JIT writes Venus's ring tail
   with plain stores). VK1's measurement: removing the ring poller's clamp didn't lower vkcube's guest CPU, so measure

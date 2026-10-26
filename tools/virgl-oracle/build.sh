@@ -2,7 +2,7 @@
 # The virgl oracle (docs/graphics.md "Tools"): virglrenderer at a pinned commit, built natively in debug mode (so
 # VREND_DEBUG=shader prints the GLSL it makes) with capture.patch, which writes every submit, resource creation,
 # transfer and capset to the file named by VTEST_DUMP. Dev VM only (needs meson, ninja, libepoxy-devel,
-# libdrm-devel, libgbm-devel: CLAUDE.md). Result: target/virgl-oracle/build/vtest/virgl_test_server.
+# libdrm-devel, libgbm-devel: docs/devenv.md). Result: target/virgl-oracle/build/vtest/virgl_test_server.
 #   tools/virgl-oracle/build.sh
 set -euo pipefail
 COMMIT=c8e3fc3bd2f367d92fb1027061fe51afeec5136e

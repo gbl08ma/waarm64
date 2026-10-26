@@ -1,6 +1,6 @@
 # M8 VK2 handover
 
-Notes between VK2's sessions (the brief: `M8-VK2-KICKOFF.md`). Newest state first.
+Notes between VK2's sessions (the brief: `VK2-KICKOFF.md`). Newest state first.
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 

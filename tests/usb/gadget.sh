@@ -4,7 +4,7 @@
 #
 #   tests/usb/gadget.sh install        once per machine (and after a kernel update): builds dummy_hcd for the running
 #                                      kernel, installs it with the udev rule, the modprobe blocklist and Chromium's
-#                                      policy (CLAUDE.md "Development environment")
+#                                      policy (docs/devenv.md "The USB rigs")
 #   tests/usb/gadget.sh up [name...]   makes the gadgets (default: zero) and binds each to a dummy UDC
 #   tests/usb/gadget.sh down [name...] unbinds and removes them (default: all of ours), and unloads dummy_hcd when none is left
 #   tests/usb/gadget.sh status         what is up, with each gadget's bus path

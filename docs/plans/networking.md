@@ -190,7 +190,7 @@ header.
   `ipnlocal`), which changes between releases. Since `tsconnect` is in-tree, Tailscale keeps it
   building: a bump is a diff of `cmd/tsconnect/wasm/wasm_js.go` between the two tags, applied to
   our ~60 lines.
-- The Go toolchain: from zypper in the dev VM (note it in CLAUDE.md), with go.mod's `toolchain`
+- The Go toolchain: from zypper in the dev VM (noted in docs/devenv.md), with go.mod's `toolchain`
   line pinning the version.
 
 ### 4.4 The download

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GFXReconstruct (LunarG, MIT; docs/plans/graphics.md §5 S arm 3, B, D): the Vulkan capture layer and its tools,
 # at the Vulkan SDK 1.4.363.0 tag (the system's Vulkan), built natively into target/vulkan-tools/gfxreconstruct/.
-# Dev-only. Needs cmake, ninja, liblz4-devel, libzstd-devel, the X11/xcb/wayland -devel packages (CLAUDE.md).
+# Dev-only. Needs cmake, ninja, liblz4-devel, libzstd-devel, the X11/xcb/wayland -devel packages (docs/devenv.md).
 # Idempotent: a built tree is reused.
 #   tools/vulkan-tools/build-gfxr.sh
 # Then: target/vulkan-tools/gfxreconstruct/bin/{gfxrecon-capture-vulkan.py,gfxrecon-convert,gfxrecon-info,

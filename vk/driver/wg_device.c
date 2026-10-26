@@ -115,7 +115,7 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    wg_profile_features(&features);
    /* Past the profile: GTK's Vulkan renderer needs YCbCr conversions to start (VK1's gate programs). */
    features.samplerYcbcrConversion = true;
-   /* What the translator can't express yet (M8-VK2-HANDOVER.md "What the direct set must not advertise yet"). */
+   /* What the translator can't express yet (VK2-HANDOVER.md "What the direct set must not advertise yet"). */
    features.shaderFloat16 = false;
    features.shaderInt16 = false;
    features.shaderInt64 = false;

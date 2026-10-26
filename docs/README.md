@@ -1,6 +1,6 @@
 # webpc documentation
 
-What exists and how it works, by topic. Plans and decisions are in [`../PLAN.md`](../PLAN.md);
+What exists and how it works, by topic. Decisions, and every track with its state, are in [`../PLAN.md`](../PLAN.md);
 measurement journals in `bench/*/REPORT.md`; third-party code and licenses in
 [`../THIRD_PARTY.md`](../THIRD_PARTY.md). These pages describe the current state: when something
 changes, edit the page rather than appending a dated note (dates and "how we got here" belong in
@@ -27,8 +27,9 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [benchmarking.md](benchmarking.md) | the harness, every benchmark, the rules, current numbers, profiling |
 | [images.md](images.md) | guest images: how they're built, what each is for, gotchas |
 | [firmware.md](firmware.md) | booting unmodified images through UEFI: which EDK2 and what it needs of the machine, our patches, Linux under it, DT vs ACPI, the guests (credentials, seed disks), gotchas |
+| [devenv.md](devenv.md) | the dev VM, what's installed and why, the USB rigs, deploying, dev-only tools, every command |
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
-| [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
+| [backlog.md](backlog.md) | open loose ends by area |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/networking-p2p.md](plans/networking-p2p.md) | peer-to-peer rooms over WebRTC: addresses that are keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory, names that are keys (proposed, not scheduled) |
 | [plans/networking-local.md](plans/networking-local.md) | a local network helper: a Go program of ours on the user's computer, over gvisor-tap-vsock, that the page reaches by a WebSocket on loopback; Ethernet frames, no gateway in the page, IPv4 only, reproducible binaries (proposed, not started) |

@@ -13,7 +13,7 @@ Read docs/plans/graphics.md whole (§2 the decisions, §3 the shape, §4 the map
 risks) and bench/vulkan/REPORT.md (C, D, E, F, "The route", "The bar", "VK1 step 1", "VK1: the gate"). Then
 vk/README.md, docs/devices.md "Venus" and "The host-visible window", docs/graphics.md ("Decisions", "The GPU worker",
 "Findings", "Tools"), docs/plans/video.md (mpv's bar and VA-API's surfaces), docs/testing.md "dEQP", docs/benchmarking.md
-and THIRD_PARTY.md. `M8-VK2-HANDOVER.md` carries VK1's findings worth not re-discovering. CLAUDE.md's conventions and
+and THIRD_PARTY.md. `VK2-HANDOVER.md` carries VK1's findings worth not re-discovering. CLAUDE.md's conventions and
 working rules apply. Work as in the other tracks: short loops, one commit and a short report each, without check-ins,
 except as below.
 
@@ -83,4 +83,4 @@ pixels, skipping where the page has no WebGPU adapter.
 - Plan §6 and §7 revised from what VK2 learned, with loose ends in docs/backlog.md.
 - `scripts/ci.sh`, and the CI scripts the change touches, passing.
 
-Notes between sessions go in `M8-VK2-HANDOVER.md`. I decide whether VK3 starts.
+Notes between sessions go in `VK2-HANDOVER.md`. I decide whether VK3 starts.

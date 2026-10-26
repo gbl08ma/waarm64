@@ -579,8 +579,7 @@ Lima's `vz` passes no host USB devices through, so the test devices come from th
 
 - **Setup, once per machine** (and after a kernel update): `tests/usb/gadget.sh install` (passwordless sudo). It
   builds `dummy_hcd` for the running kernel and installs it with a udev rule, a modprobe blocklist (`usbtest` and
-  `cdc_acm` stay off the host's side of the gadgets) and Chromium's managed policy (CLAUDE.md "Development
-  environment"). `tests/usb/gadget.sh check` says what's missing.
+  `cdc_acm` stay off the host's side of the gadgets) and Chromium's managed policy ([devenv.md](devenv.md) "The USB rigs"). `tests/usb/gadget.sh check` says what's missing.
 - **The gadgets** (`tests/usb/gadget.sh up|down|status [name...]`): configfs gadgets on `dummy_hcd`'s four UDCs,
   at high speed. `zero` is Gadget Zero (`0525:a4a0`, serial `webpc-zero`), with configuration 1 source/sink
   (pattern 1: `i % 63`) and configuration 2 loopback. `zero-a` and `zero-b` are two without a serial, which differ

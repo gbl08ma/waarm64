@@ -4,7 +4,7 @@
 # A Vulkan client on Mesa's Venus talks vtest to `virgl_test_server --venus`, whose render server runs the commands
 # on the host's Vulkan (lavapipe in the dev VM). tools/venus-oracle/run.sh runs a client through it.
 # Dev VM only: needs meson, ninja, cmake, python313-Mako, python313-PyYAML, python313-packaging, bison, flex,
-# glslang-devel, libdrm-devel, libxshmfence-devel, vulkan-devel, libepoxy-devel, libgbm-devel (CLAUDE.md).
+# glslang-devel, libdrm-devel, libxshmfence-devel, vulkan-devel, libepoxy-devel, libgbm-devel (docs/devenv.md).
 # Running it needs /dev/udmabuf open to the user (run.sh says how). Idempotent: a built tree is reused.
 #   tools/venus-oracle/build.sh   -> target/venus-oracle/install/{bin,libexec,lib64,share}
 # Two variants, each in its own source/build/install dirs so the plain oracle stays as it is:

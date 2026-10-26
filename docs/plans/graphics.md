@@ -1,7 +1,7 @@
 # webpc graphics plan: Vulkan
 
 **Status: planned (the user, 2026-10-25): §2's decisions bind. VK0 is done (2026-10-25,
-[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is current (`M8-VK2-KICKOFF.md`; notes and loops `M8-VK2-HANDOVER.md`; L1, the shader path, done: vk/README.md).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is current (`VK2-KICKOFF.md`; notes and loops `VK2-HANDOVER.md`; L1 to L3 done: vk/README.md).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -239,7 +239,7 @@ If a whole frame comes out tens of times slower than native, acceleration isn't 
 - **G. The bar's baseline.** GTK4's gtk4-demo and mpv on virgl today (frame times, guest CPU; `bench/gpu/gtk4-load.ts`)
   on the Mac host, so each switching program has a number to meet.
 
-**Tools to install** (dev-only unless VK1 needs them; each noted in CLAUDE.md's development environment when added):
+**Tools to install** (dev-only unless VK1 needs them; each noted in docs/devenv.md when added):
 in the dev VM, lavapipe and the Vulkan tools and validation layers from zypper, glslc or glslang, GFXReconstruct and
 the Profiles layer (from source if not packaged), virglrenderer with Venus and Mesa's Venus driver built natively for
 the oracle (as `tools/virgl-oracle/` does for virgl), naga's CLI, Tint, and the wasm C toolchain; on the Mac, nothing
