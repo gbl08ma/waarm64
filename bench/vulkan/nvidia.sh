@@ -62,6 +62,8 @@ if [ "${1:-}" = page ]; then
   DIR=$(realpath -m "${3:-$HOME/webpc-vk2}")
   for t in curl tar xz; do command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }; done
   [ "$(uname -m)" = x86_64 ] || [ -n "${VK0_ANY_ARCH:-}" ] || { echo "this script is for x86_64 Linux" >&2; exit 1; }
+  # A run's results only (the run of f55eacd7 carried an earlier run's arms along).
+  rm -rf "$DIR/results"
   mkdir -p "$DIR"/{dl,t,cache,results}
   export TMPDIR=$DIR/t XDG_CACHE_HOME=$DIR/cache npm_config_cache=$DIR/cache/npm PLAYWRIGHT_BROWSERS_PATH=$DIR/browsers
   export __GL_SHADER_DISK_CACHE_PATH=$DIR/cache/nvidia && mkdir -p "$__GL_SHADER_DISK_CACHE_PATH"
