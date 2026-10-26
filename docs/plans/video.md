@@ -488,5 +488,11 @@ Learned on the way (from the track's handover; for whoever works on video again)
   (AV1's `lr_unit_size` isn't copied), and Mesa's VA frontend for what it fills when (the film grain target comes after
   the desc is sent).
 - **libaom through FFmpeg takes `-aom-params` keys, not every aomenc option** (`superres-mode` isn't one).
+- **mpv on Vulkan (VK2 L6, 2026-10-26) takes the same surfaces as dma-bufs** imported into Venus
+  ([vk/README.md](../../vk/README.md) "Imports"): no frame dropped, the guest 13% busy against GL's 12% in the same boot
+  (bench/vulkan/REPORT.md "VK2 L6"). It needed webpc-va 3: Mesa's virgl VA driver says an exported object is its
+  dma-buf's size, a page for a decoder's host-only resources, and libplacebo refuses an image larger than its object.
+  `avsync.ts` takes `MPV_ARGS` and `MPV_VARIANTS`; mpv's default VO is gpu-next now, which needs GL 3 (virgl gives mpv
+  GLES 2): its GL runs are `--vo=gpu`.
 - **The PC sampler slows the guest** (Firefox's drops doubled): drop counts from unsampled runs only; and it charges
   a chunk to the instruction after the last exit, so exit sites (`arch_counter_get_cntvct`) look hot.

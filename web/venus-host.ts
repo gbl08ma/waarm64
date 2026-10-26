@@ -25,6 +25,7 @@ type Exports = {
   venus_submit_fence(ctx: number, flags: number, ring: number, fence: bigint): number;
   venus_resource_create(ctx: number, res: number, blobId: bigint, size: bigint, flags: number): number;
   venus_resource_destroy(ctx: number, res: number): void;
+  venus_resource_import(ctx: number, res: number, size: bigint): number;
   venus_resource_map(ctx: number, res: number, where: number): number;
   venus_resource_unmap(ctx: number, res: number): number;
   venus_poll(): number;
@@ -58,7 +59,7 @@ function wasi(memory: WebAssembly.Memory) {
     environ_get: () => 0,
     environ_sizes_get: (count: number, size: number) => { dv().setUint32(count >>> 0, 0, true); dv().setUint32(size >>> 0, 0, true); return 0; },
     fd_close: () => 0, fd_fdstat_get: () => EBADF, fd_fdstat_set_flags: () => ENOSYS, fd_prestat_get: () => EBADF,
-    fd_prestat_dir_name: () => EBADF, fd_read: () => EBADF, fd_seek: () => EBADF, path_open: () => ENOSYS,
+    fd_prestat_dir_name: () => EBADF, fd_read: () => EBADF, fd_pread: () => EBADF, fd_seek: () => EBADF, path_open: () => ENOSYS,
     sched_yield: () => 0,
     proc_exit: (code: number) => { throw new Error(`venus: proc_exit(${code})`); },
   };
@@ -75,8 +76,14 @@ export class VenusRenderer {
   private readonly watch: WindowWatch | undefined;
   /** A resource's context (the device names blobs by resource alone). */
   private readonly owner = new Map<number, number>();
+  /** Virgl resources imported into Venus contexts ("ctx:res"). */
+  private readonly imported = new Set<string>();
   /** Fences sent to vkr and not yet retired ("ctx:ring:id"). */
   private readonly pending = new Set<string>();
+  /** When each pending fence was sent (performance.now()), for the stuck-fence warning (`watchFences`). */
+  private readonly sentAt = new Map<string, number>();
+  private fenceWatch: ReturnType<typeof setInterval> | undefined;
+  private readonly warnedStuck = new Set<string>();
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
   /** Called when fences retire (the GPU worker answers the fences it held for them). */
   onRetire: (() => void) | undefined;
@@ -142,7 +149,26 @@ export class VenusRenderer {
   private retire(key: string) {
     this.stats.fences++;
     this.pending.delete(key);
+    this.sentAt.delete(key);
     this.onRetire?.();
+  }
+
+  /** Warns of a fence still pending 5 s after it was sent (the guest is waiting on it), with what the driver's queue did. */
+  private watchFences() {
+    if (this.fenceWatch) return;
+    this.fenceWatch = setInterval(() => {
+      if (!this.pending.size) {
+        clearInterval(this.fenceWatch);
+        this.fenceWatch = undefined;
+        return;
+      }
+      const now = performance.now();
+      for (const [k, t] of this.sentAt) {
+        if (now - t < 5000 || this.warnedStuck.has(k)) continue;
+        this.warnedStuck.add(k);
+        console.warn(`venus: fence ${k} unretired for ${((now - t) / 1000).toFixed(0)} s (submits ${this.stats.submits}, GPU submits ${this.gpu.stats.submits}, completed ${this.stats.completed}, pending fences ${this.pending.size})`);
+      }
+    }, 2000);
   }
 
   /** Whether the fences sent so far have retired (a closure over them, to check later). */
@@ -175,6 +201,7 @@ export class VenusRenderer {
           this.ex.venus_context_destroy(c.id);
           this.stats.contexts--;
           for (const [res, ctx] of this.owner) if (ctx === c.id) this.owner.delete(res);
+          for (const k of this.imported) if (k.startsWith(`${c.id}:`)) this.imported.delete(k);
         }
         return;
       case 'blob':
@@ -198,7 +225,14 @@ export class VenusRenderer {
         return;
       }
       case 'blob-ctx':
-        return; // a blob lives in the context that made it; importing it into another isn't needed by Venus alone
+        // A virgl resource (`size`) attached to a Venus context: the guest imports it as a dma-buf (web/venus-import.ts).
+        // A blob lives in the context that made it; importing it into another isn't needed by Venus alone.
+        if (c.size === undefined) return;
+        if (c.attach && !this.imported.has(`${c.ctx}:${c.res}`)) {
+          if (this.ex.venus_resource_import(c.ctx, c.res, BigInt(c.size))) this.imported.add(`${c.ctx}:${c.res}`);
+          else console.warn(`venus: resource ${c.res} couldn't be imported into context ${c.ctx}`);
+        } else if (!c.attach && this.imported.delete(`${c.ctx}:${c.res}`)) this.ex.venus_resource_destroy(c.ctx, c.res);
+        return;
       case 'vsubmit': {
         this.stats.submits++;
         if (!this.withBytes(c.bytes, (p) => this.ex.venus_submit(c.ctx, p, c.bytes.length))) console.warn(`venus: context ${c.ctx}'s submit failed`);
@@ -208,6 +242,8 @@ export class VenusRenderer {
           // the next poll.
           const key = `${c.ctx}:${fence.ring}:${fence.id}`;
           this.pending.add(key);
+          this.sentAt.set(key, performance.now());
+          this.watchFences();
           this.ex.venus_submit_fence(c.ctx, fence.flags, fence.ring, fence.id);
         }
         this.wake();

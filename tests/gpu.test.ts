@@ -826,3 +826,22 @@ test('venus: blobs, their mapping in the window, uuids and submits reach the hos
   r.gpu.reset();
   assert.equal((await r.gpu.save()).unsaveable, undefined);
 });
+
+test('venus: a virgl resource attached to a Venus context is imported there with its size, not attached in virgl', () => {
+  const calls: { t: string }[] = [];
+  const r = rig({ virgl: true, venus: true, window: 1 << 20 });
+  r.gpu.host = { call: (c) => calls.push(JSON.parse(JSON.stringify(c, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v)))), fence: () => Promise.resolve() };
+  r.ok(ctxCreate(3, 4, 'mpv'));
+  r.ok(ctxCreate(4, 0, 'mpv-va'));
+  r.ok(create3d(20, 2, 864, 480));
+  r.ok(ctxCmd(4, V.CTX_ATTACH, 20, 0));
+  r.ok(ctxCmd(3, V.CTX_ATTACH, 20, 0));
+  r.ok(ctxCmd(3, V.CTX_DETACH, 20, 0));
+  // A VA-API surface's plane: the virgl context attaches it, the Venus one imports it (a dma-buf of its texels at 4
+  // bytes each, at least: the guest's import may say so many) and lets it go.
+  assert.deepEqual(calls.filter((c) => c.t === 'ctxres' || c.t === 'blob-ctx'), [
+    { t: 'ctxres', ctx: 4, res: 20, attach: true },
+    { t: 'blob-ctx', ctx: 3, res: 20, attach: true, size: 864 * 480 * 4 },
+    { t: 'blob-ctx', ctx: 3, res: 20, attach: false, size: 864 * 480 * 4 },
+  ]);
+});

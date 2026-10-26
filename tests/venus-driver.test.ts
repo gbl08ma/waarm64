@@ -1,6 +1,7 @@
 // The Vulkan driver on WebGPU (vk/README.md "The driver"): its own test program (vk/driver/wg_test.c), run in the
 // renderer module on headless Chromium's WebGPU (SwiftShader in the dev VM), checks a scene's pixels, a compute pass's
-// output and a fill of host-visible memory, all read back before the submit's fence signals. Skipped without the
+// output, a fill of host-visible memory (all read back before the submit's fence signals) and a pipeline cache's data; and an
+// image on memory imported from a dma-buf (web/venus-import.ts: VK2 L6). Skipped without the
 // module, glslc or a WebGPU adapter.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -51,4 +52,22 @@ test('the driver draws a scene, runs a compute pass and fills host-visible memor
   assert.deepEqual([storage[0], storage[1], storage[100], storage[255]], [7, 10, 307, 772]);
   const filled = r.filled as number[];
   assert.deepEqual(filled.slice(3, 13).map((x) => x.toString(16)), ['0', ...Array(8).fill('deadbeef'), '0']);
+});
+
+test('an image bound to imported dma-buf memory has its resource\'s bytes, and a picture written into it after', { skip, timeout: 60_000 }, async (t) => {
+  const page = await browser.newPage();
+  page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+  await page.goto(`${base}/tests/browser/venus-driver.html`);
+  await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+  const r = await page.evaluate(() => (window as unknown as { venus: { runImport(): Promise<Record<string, unknown>> } }).venus.runImport());
+  await page.close();
+  if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+  const first = r.first as { bytes?: number[]; error?: string }, second = r.second as { bytes?: number[]; error?: string };
+  assert.equal(first.error, undefined, String(first.error));
+  assert.equal(second.error, undefined, String(second.error));
+  assert.deepEqual(r.errors, [], 'WebGPU errors');
+  assert.deepEqual(r.binds, [7]);
+  // At the bind: the resource's bytes read back; after a picture: the picture's.
+  assert.deepEqual(first.bytes, Array.from({ length: 16 }, (_, i) => 10 + i));
+  assert.deepEqual(second.bytes, Array.from({ length: 16 }, (_, i) => 200 + i));
 });

@@ -44,7 +44,8 @@ export type VenusCall =
   | { t: 'blob-map'; res: number; offset: number }
   | { t: 'blob-unmap'; res: number }
   | { t: 'blob-unref'; res: number }
-  | { t: 'blob-ctx'; ctx: number; res: number; attach: boolean }
+  /** A blob attached to a context, or with `size` a virgl resource attached to a Venus context (its bytes as the guest sees them): imported (web/venus-import.ts). */
+  | { t: 'blob-ctx'; ctx: number; res: number; attach: boolean; size?: number }
   /** A SUBMIT_3D's bytes, and with the fence flag its fence (the renderer retires it before the device answers). */
   | { t: 'vsubmit'; ctx: number; bytes: Uint8Array; fence?: { flags: number; ring: number; id: bigint } }
   /** The renderer's place in memory 0 (the GPU worker instantiates it there): the window and its write-watch. */

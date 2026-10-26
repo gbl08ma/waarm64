@@ -490,6 +490,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   GOP: ~10 s for x264's defaults). Idea, not tried: after an error, restart the decoder at the next picture whose
   slices are all I by rewriting it as an IDR (NAL type 5, an `idr_pic_id`, `dec_ref_pic_marking` without MMCO; the
   slice header re-encoded). Worth it only if TS playback or such streams matter (MP4 and WebM seek to key pictures).
+- **mpv on virgl's GL with VA-API pauses on another frame** (VK2 L6, bench/vulkan/REPORT.md "VK2 L6",
+  `bench/vulkan/mpv-frames.ts`): paused at 20 s in Sintel's trailer, `--vo=gpu --gpu-api=opengl --hwdec=vaapi` shows a
+  picture a frame or two away from the one mpv shows decoding in software, or on Vulkan with VA-API (those three agree
+  to the byte on the M4), on the Mac and SwiftShader alike. Playback looks right; not looked into (a stale plane
+  sampled through the picture texture, `Res.picture`, or mpv's own GL interop at a seek are the candidates).
 
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
@@ -511,6 +516,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   window); a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
+- **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
+  - **libplacebo renders without FBOs on Venus** ("Failed creating FBO texture! Disabling advanced rendering"): its
+    1- and 2-component FBO formats must have every capability of its 4-component one (`rgba16float`: storage,
+    read-write), and `r16float`/`rg16float` are storage formats only with WebGPU's `texture-formats-tier1` (read-write:
+    `tier2`). Advertising them where the adapter has the features (and printing their WGSL texel formats) would give
+    mpv its scalers, debanding and HDR peak detection; GL's GLES 2 path has none of them either.
+  - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
+    syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
+    host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the
+    swapchain's destruction; not looked into. avsync.ts and mpv-frames.ts kill it.
+  - **Every frame's planes are written again** (libplacebo imports a surface each time it shows it): ~0.2 ms of the
+    GPU worker and 0.6 MB a frame at 480p, ~3 MB at 1080p. A Venus texture per resource, kept while the resource lives
+    and written only when a picture changes it, would make a bind free.
+  - A resource with no picture written yet is read back once at its first import (WebGL's synchronous `readPixels`);
+    what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
+    Venus's copy. Ordering relies on the guest syncing the surface before it maps it (mpv's `vaSyncSurface`).
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of

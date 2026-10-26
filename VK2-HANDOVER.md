@@ -4,6 +4,43 @@ Notes between VK2's sessions (the brief: `VK2-KICKOFF.md`). Newest state first.
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
+## State (2026-10-26, after L6)
+
+- **L6 is done: the gate passes. mpv on Vulkan** (`--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi`, the desktop guest,
+  Sintel's H.264 trailer, the media disk) **drops no frame and keeps the guest 13% busy on the M4** (3 rounds, H.264
+  in hardware; 2 rounds with `swvideo`, the bar's conditions: the same), against GL (`--vo=gpu`) 12% in the same boot
+  and the bar's 19–27%. mpv's CPU +8–15%, sway's 5–20% less; the GPU worker ~0.2 ms a frame for the planes. Frames: on
+  the M4 Vulkan with VA-API is byte-identical to Vulkan decoding in software (SwiftShader: 243 of 3.1 M bytes off >24).
+  REPORT.md "VK2 L6", JSON `results/vk2/l6/`. No check-in was needed: nothing unpriced (no stall, no call cost).
+- **How it works** (vk/README.md "Imports"): the device hands a virgl resource attached to a Venus context to Venus's
+  renderer (`blob-ctx` with `size`) instead of virgl; `venus_resource_import` makes it a vkr dma-buf resource whose
+  "fd" is its id (vkr patch: no dup under wasi); the driver's memory imported from it keeps `import_res`, an image bound
+  there calls `gpu_texture_import`, and web/venus-import.ts writes the resource's bytes into the texture
+  (`writeTexture`): the last picture at the bind (kept per imported resource; else a one-off `readResource`), and every
+  later picture (`VirglRenderer.onPlane`). `wg_GetMemoryFdPropertiesKHR` answers device-local.
+- **Three guest-visible fixes it needed:** webpc-va 3 (images/arch/webpc-va/: exported objects sized by their planes;
+  Mesa says a page, libplacebo refused every surface); dma-buf images (external or DRM-modifier) have tight rows
+  (`wg_image_dma_buf`: libplacebo checks the image fits the plane's object); `wg_GetPipelineCacheData` returns the
+  header alone (the runtime's said `VK_INCOMPLETE` to its own size: libplacebo failed every pass). **The desktop image
+  was rebuilt** with webpc-va 3 (`target/arch/desktop.qcow2`; the L5 one is `desktop-l5.qcow2`, delete when happy).
+- **Tests:** `tests/venus-driver.test.ts` second test (`wgt_import`: an R8G8 LINEAR-modifier image on imported memory,
+  copied out, before and after a picture; planted: no `COPY_DST`, no write at a picture: both caught) and the scene
+  test's pipeline-cache check (planted `VK_INCOMPLETE`: caught); `tests/gpu.test.ts` the device's hand-over.
+- **Tools:** `bench/audio/avsync.ts` `MPV_ARGS`, `MPV_VARIANTS='vk:…|gl:…'` + `ROUNDS` (alternated), `SHIM=1`;
+  `bench/vulkan/mpv-frames.ts` (four arms' screenshots compared in the guest); both through `sway-mac.sh`. For quick
+  guest work: `bench/gpu/guest-shell.ts` (a session driven by files in /tmp/guest-shell/: commands, raw keys, screenshots);
+  `runLines` drops output without a trailing newline, and a heredoc can't go through `run`/`runLines` (use
+  `pasteSerial`). `venus: fence … unretired for N s` now warns of a stuck Venus fence.
+- **Worth not re-discovering:** mpv's default VO is gpu-next, which needs GL 3; virgl gives mpv GLES 2, so GL arms are
+  `--vo=gpu`. With a Venus device mpv's `gpu-api=auto` takes Vulkan. mpv on Vulkan doesn't exit (vo thread in a DRM
+  syncobj wait while sway shows its window; no host fence pending): kill -9 (backlog). libplacebo renders without FBOs
+  on our device (r16float/rg16float lack storage: backlog). mpv on GL with VA-API pauses on a different frame than the
+  other three ways (virgl's GL path; backlog). The guest has python3 and ffmpeg but not grim.
+- **CI at the commit:** ci.sh OK (507 s), ci-debian.sh OK (334 s), ci-deqp.sh OK (284 s), ci-deqp-vk.sh OK (247 s).
+- **For L7** (unchanged plan) plus: the NVIDIA run is still unscripted (mpv there would show the software-H.264 case on
+  the user's host); r16float/rg16float storage (texture-formats-tier1) for libplacebo's FBOs fits "caps from the
+  adapter"; regenerate `images/vkframes/venus-profile.json` when the caps change.
+
 ## State (2026-10-26, after L5)
 
 - **L5 is done: vkmark's and vkQuake's frames right, dEQP-VK's pass list in CI** (REPORT.md "VK2 L5", JSON in
@@ -183,8 +220,9 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
   above): the direct rows' dEQP-VK groups as pass lists in a CI script of their own
   (`scripts/ci-deqp-vk.sh`, as ci-deqp.sh for GLES; images/deqp/build.sh needs deqp-vk). Frame times on the Mac
   (bench/gpu/sway-mac.sh, `SCRIPT=`) against VK1 and against virgl where there's a GL path.
-- **L6, mpv (the gate):** VA-API surfaces (virgl resources decoded by WebCodecs) imported into Venus as dma-bufs;
-  libplacebo's import of NV12 planes. Bar: no drops, the guest 19–27% busy.
+- **L6, mpv (the gate)** (done 2026-10-26: no drops, the guest 13% busy; above): VA-API surfaces (virgl resources
+  decoded by WebCodecs) imported into Venus as dma-bufs; libplacebo's import of NV12 planes. Bar: no drops, the guest
+  19–27% busy.
 - **L7, the rest of the deliverable:** caps from the adapter at start (port bench/vulkan/profiles/make.ts's mapping to
   the worker; pass them to `venus_init`; drop vk/profile.ts's compiled-in Mac profile); YCbCr and modifiers kept or
   dropped by measurement (GTK4 then switches); the Machines page's Vulkan setting; the module in `npm run dist` with

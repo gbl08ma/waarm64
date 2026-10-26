@@ -13,6 +13,7 @@ node --test tests/venus-renderer.test.ts   # the module in Node: its capset, a b
 node --test tests/wgsl.test.ts             # the translator: SPIR-V stages to WGSL in Node, compiled by Chromium's WebGPU
 node --test tests/venus-driver.test.ts     # the driver: a Vulkan program of ours (driver/wg_test.c) drawn on Chromium's WebGPU
 node --test tests/venus-share.test.ts      # presentation: a WebGPU texture into the virgl renderer's (Chromium)
+                                           # (imports, the reverse: tests/venus-driver.test.ts's second test)
 node --test tests/page-venus.test.ts       # vkcube on the page, and the captures' frames (images/debian-vulkan/build.sh, images/vkframes/build.sh)
 scripts/ci-deqp-vk.sh                      # dEQP-VK's pass list on the page (images/deqp/build.sh vk)
 ```
@@ -121,7 +122,9 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   same buffer further on (`wg_vertex_slots`). A texture the shader declared filterable float but bound to a view
   WebGPU can't filter (a depth view, `r32float` without `float32-filterable`) draws with a variant of the program
   (`wg_program_variant`, by a mask of such bindings): those bindings unfilterable, the samplers they're sampled with
-  non-filtering and given the sampler's nearest twin.
+  non-filtering and given the sampler's nearest twin. Shaders aren't serialized yet, so a pipeline cache's data is its
+  header alone (`wg_GetPipelineCacheData`: the runtime's own answered `VK_INCOMPLETE` to the size it had given, and
+  libplacebo failed every pass it made).
 - **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views and samplers; bind groups are made at a
   replay, for the program's layout and the set's version (group 3's for its sets' uids and versions hashed), and kept
   on the group's first set, keyed by the layout's uid (ids are reused: a stale bind group of a freed layout's id once
@@ -228,6 +231,41 @@ the readback way ~0.7 ms and holds the compositor's submit up to 8 ms (bench/vul
 
 `tests/venus-share.test.ts` checks the bytes both ways (the bitmap way only where the page doesn't render in software:
 on the Mac, not in the dev VM); `tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim.
+
+## Imports
+
+The reverse of presentation: a guest program imports a virgl resource into Vulkan as a dma-buf. mpv on Vulkan
+(`--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi`) maps each VA-API surface it shows, whose planes (NV12: an R8 luma and
+an RG8 chroma) are virgl textures the host's WebCodecs pictures are written into (docs/plans/video.md), and libplacebo
+makes an image of each plane on memory imported from its dma-buf. Every frame: `vaExportSurfaceHandle`, two imports,
+two images, a draw, and the images and memories freed again.
+
+- **The guest's side:** Venus's driver resolves the dma-buf to its resource (a classic virgl resource, not a blob), the
+  kernel attaches the resource to the Venus context, and `vkAllocateMemory` names it (`VkImportMemoryResourceInfoMESA`).
+  Mesa's virgl VA driver says an exported surface's objects are their dma-bufs' size, a page for a decoder's host-only
+  resources, and libplacebo refuses an image larger than its object ("Imported object requires 16384 bytes, larger than
+  the provided size 4096"): our VA driver (webpc-va 3, images/arch/webpc-va/) says what the planes span instead.
+- **The device and the renderer:** the device hands a virgl resource attached to a Venus context to Venus's renderer
+  with its size (`blob-ctx` with `size`: its pages, or its texels at 4 bytes each, whichever is more) instead of to the
+  virgl renderer; `venus_resource_import` makes it a dma-buf resource in vkr whose "fd" is its id (wasm has no fds:
+  vkr's patch passes it on undup'ed), and `GetMemoryResourcePropertiesMESA` answers device-local memory
+  (`wg_GetMemoryFdPropertiesKHR`).
+- **The driver:** memory imported from such a dma-buf keeps the resource's id (`wg_device_memory.import_res`, no storage
+  of its own); an image bound to it is shared, made with `COPY_DST`, and the worker is told its texture is the
+  resource's (`gpu_texture_import`). A dma-buf image's layout has tight rows (an external or DRM-modifier image's:
+  `wg_image_dma_buf`), so the plane's own dma-buf is as large as the image needs; others keep rows 256 bytes apart.
+- **The bytes** (web/venus-import.ts `VenusImport`): `queue.writeTexture` into the image's texture, so in the queue's
+  order before the submits that sample it. At the bind, the last picture written into the resource (kept for every
+  resource imported before; a surface is imported again at every frame it shows), or the virgl texture read back (its
+  first import); and every picture the video path writes into a plane afterwards goes to the textures imported from it
+  too (`VirglRenderer.onPlane`, the decoded bytes the host has anyway). mpv syncs a surface (`vaSyncSurface`: a virgl
+  fence, which the call queue answers only once its picture is written) before it maps it, so the bind sees the
+  picture.
+
+`tests/venus-driver.test.ts` imports a resource in the driver's test program (`wgt_import`: an R8G8 image with the
+LINEAR modifier on imported memory, copied to a buffer) through `VenusImport` with a fake renderer, before and after a
+picture; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
+`bench/audio/avsync.ts` (`MPV_VARIANTS`): bench/vulkan/REPORT.md "VK2 L6".
 
 ## Not yet
 

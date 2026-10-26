@@ -4,14 +4,14 @@
 # installs it in the desktop image.
 #   makepkg -s && sudo pacman -U webpc-va-*.pkg.tar.*
 pkgname=webpc-va
-pkgver=2
+pkgver=3
 pkgrel=1
-pkgdesc='VA-API driver for webpc guests: Mesa virgl with NV12-only decode surfaces, AV1 film grain shown'
+pkgdesc='VA-API driver for webpc guests: Mesa virgl with NV12-only decode surfaces, AV1 film grain shown, exported surfaces sized by their planes'
 arch=('aarch64')
 url='https://github.com/gbl08ma/webpc'
 license=('MIT')
 depends=('libva' 'mesa')
-makedepends=('gcc')
+makedepends=('gcc' 'libdrm')
 options=('!debug')
 source=(webpc_drv_video.c)
 sha256sums=('SKIP')

@@ -499,6 +499,11 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   written it since. The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
   `ERR_UNSPEC`): sway composited vkcube's tiled window; a fullscreen window, which wlroots may scan out directly, isn't
   tried yet (docs/backlog.md).
+- **Imports** (VK2 L6, [vk/README.md](../vk/README.md) "Imports"): the other way, a virgl resource attached to a Venus
+  context (a VA-API surface's plane that mpv on Vulkan imports as a dma-buf) isn't attached in virgl: the device hands
+  it to Venus's renderer as `blob-ctx` with its size (its backing's pages, or its texels at 4 bytes, whichever is more),
+  which makes it a dma-buf resource of the context; the driver's images on memory imported from it are written with
+  the resource's bytes (web/venus-import.ts). A detach drops it there.
 - On the page: `?gpu=vulkan` (with 3D on) gives a machine Venus (web/app/worker.ts); the Machines page has no setting
   for it yet.
 - Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,

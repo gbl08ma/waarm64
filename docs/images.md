@@ -125,7 +125,8 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   logged `DHCP error: no netmask` and never configured IPv4 (found on ALARM, 2026-10-01); see [devices.md](devices.md) "net".
 - **The `webpc-va` package** (`images/arch/webpc-va/`, built and checked by `images/arch/webpc-va.sh` in a container of
   the base as a user would: `makepkg`, `pacman -U`; ~1 min): webpc's VA-API driver, Mesa's virgl with NV12 decode
-  surfaces only and AV1 film grain decoded into the shown surface, `LIBVA_DRIVER_NAME=webpc` for every session
+  surfaces only, AV1 film grain decoded into the shown surface and (version 3, VK2 L6) exported surfaces' objects
+  sized by what their planes span (a Vulkan importer checks; vk/README.md "Imports"), `LIBVA_DRIVER_NAME=webpc` for every session
   ([plans/video.md](plans/video.md)). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
   Result `target/arch/pkg/webpc-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
 - **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md "The call queue"),

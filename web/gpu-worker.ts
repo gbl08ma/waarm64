@@ -8,6 +8,7 @@ import { capsFromGl, withVideo } from './virgl-caps.ts';
 import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type VenusCall, type WorkerCall } from './virgl-host.ts';
 import { deviceRequest } from './venus-gpu.ts';
 import { VenusRenderer } from './venus-host.ts';
+import { VenusImport } from './venus-import.ts';
 import { shareMode, VenusShare, type ShareMode } from './venus-share.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
@@ -38,7 +39,7 @@ export type FromGpuWorker =
    */
   | { type: 'stats'; renderer: string; vendor: string; software: boolean; presents: number; submits: number; commands: number; draws: number; errors: number; video: GpuVideoStats }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** Vulkan's frames copied into virgl's textures (web/venus-share.ts) and the thread's ms for them, in the second. */ shareRefreshes: number; shareMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
+  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** Vulkan's frames copied into virgl's textures (web/venus-share.ts) and the thread's ms for them, in the second. */ shareRefreshes: number; shareMs: number; /** Virgl's resources written into Vulkan's textures imported from them (web/venus-import.ts): binds, pictures, bytes and the thread's ms, in the second. */ importBinds: number; importPictures: number; importBytes: number; importMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
 
 /** The video part of `stats`. */
 export type GpuVideoStats = { enabled: boolean; offered: { profile: string; hardware: boolean }[]; streams: VideoStream[]; frames: number; decoded: number; dropped: number; errors: number; decoderErrors: number };
@@ -94,6 +95,8 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   let venusBacklog: VenusCall[] | undefined;
   // Vulkan's frames into virgl's textures (web/venus-share.ts), once the renderer and its device are made.
   let share: VenusShare | undefined;
+  // Virgl's resources into Vulkan's textures (web/venus-import.ts: VA-API's surfaces into mpv on Vulkan).
+  let imports: VenusImport | undefined;
   const VENUS_CALLS = new Set(['vctx', 'blob', 'blob-map', 'blob-unmap', 'blob-unref', 'blob-ctx', 'vsubmit']);
   const venusCall = (c: VenusCall) => {
     try {
@@ -138,6 +141,9 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
           const mode = vkShare ?? shareMode(adapter, glInfo(gl).renderer);
           share = new VenusShare(device, mode, renderer, (id) => v.shared(id));
           console.log(`venus: Vulkan's frames reach virgl by ${mode}`);
+          const im = imports = new VenusImport(device, renderer);
+          v.gpu.onImport = (t, res) => im.bind(t, res);
+          renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);
         }
         renderer.external = { has: (id) => v.has(id), refresh: (r) => share?.refresh(r) };
         for (const v of venusBacklog!) venusCall(v);
@@ -191,6 +197,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       ram = c.ram.map((m) => new Uint8Array(m.buffer, m.offset, m.length));
       return;
     }
+    if (c.t === 'unref') imports?.forget(c.id);
     const t0 = performance.now();
     try {
       runCall(c, renderer, screen);
@@ -225,15 +232,17 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   if (stats) {
     let last = { ...renderer.stats };
     let lastShare = { refreshes: 0, ms: 0 };
+    let lastImport = { binds: 0, pictures: 0, bytes: 0, ms: 0 };
     screen.presentAt = [];
     setInterval(() => {
       const s = renderer.stats;
-      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, presentAt: screen.presentAt!.splice(0), drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, shareRefreshes: (share?.stats.refreshes ?? 0) - lastShare.refreshes, shareMs: (share?.stats.ms ?? 0) - lastShare.ms, video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs } });
+      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, presentAt: screen.presentAt!.splice(0), drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, shareRefreshes: (share?.stats.refreshes ?? 0) - lastShare.refreshes, shareMs: (share?.stats.ms ?? 0) - lastShare.ms, importBinds: (imports?.stats.binds ?? 0) - lastImport.binds, importPictures: (imports?.stats.pictures ?? 0) - lastImport.pictures, importBytes: (imports?.stats.bytes ?? 0) - lastImport.bytes, importMs: (imports?.stats.ms ?? 0) - lastImport.ms, video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs } });
       fences = fenceMs = fenceMaxMs = 0;
       queue.maxWaitMs = 0;
       renderer.videoStats.latencyMaxMs = 0;
       last = { ...s };
       lastShare = { refreshes: share?.stats.refreshes ?? 0, ms: share?.stats.ms ?? 0 };
+      lastImport = { ...(imports?.stats ?? lastImport) };
       busyMs = submitMs = 0;
       screen.presents = 0;
       screen.drawMs = 0;

@@ -18,6 +18,7 @@
 #include "vk_pipeline.h"
 
 #include "wg_private.h"
+#include "vk_pipeline_cache.h"
 
 static const struct nir_shader_compiler_options *
 wg_get_nir_options(struct vk_physical_device *pdev, mesa_shader_stage stage,
@@ -422,6 +423,29 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       p->compute = wg_create_json(WG_KIND_COMPUTE, &j);
       p->compute_module = shaders[0]->module;
    }
+   return VK_SUCCESS;
+}
+
+/* A pipeline cache's data: its header and no objects, our shaders not being serializable yet (wg_serialize). The
+ * runtime's own would reserve room for every object before learning it can't be written, and answer VK_INCOMPLETE to
+ * a buffer of the size it gave (libplacebo then fails every pass it makes: mpv on Vulkan drew nothing). */
+VKAPI_ATTR VkResult VKAPI_CALL
+wg_GetPipelineCacheData(VkDevice _device, VkPipelineCache pipelineCache, size_t *pDataSize, void *pData)
+{
+   VK_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
+   const size_t size = sizeof(cache->header) + sizeof(uint32_t);
+   if (!pData) {
+      *pDataSize = size;
+      return VK_SUCCESS;
+   }
+   if (*pDataSize < size) {
+      *pDataSize = 0;
+      return VK_INCOMPLETE;
+   }
+   const uint32_t count = 0;
+   memcpy(pData, &cache->header, sizeof(cache->header));
+   memcpy((uint8_t *)pData + sizeof(cache->header), &count, sizeof(count));
+   *pDataSize = size;
    return VK_SUCCESS;
 }
 

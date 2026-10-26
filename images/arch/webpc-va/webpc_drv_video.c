@@ -11,7 +11,16 @@
 // picture goes (docs/plans/video.md §10). Here such a frame's decode target is its display surface, and the reference
 // map names display surfaces too (a decoder keeps a frame's display surface while the frame is a reference): the
 // host, which keeps the references itself, writes the grained picture where it's shown.
+//
+// And exported surfaces' sizes (VK2 L6: mpv on Vulkan). Mesa's virgl driver says an exported object's size is its
+// dma-buf's, and a decoder's surfaces are host-only resources whose dma-bufs are a page whatever the planes hold; a
+// Vulkan importer checks the image fits (libplacebo: "Imported object requires N bytes, larger than the provided size
+// 4096") and fails every surface. Here an object's size is at least what its planes span (offset + pitch × rows); the
+// host's Venus renderer imports the resource by its id and gives it that many bytes (web/venus-import.ts).
 #define _GNU_SOURCE
+#include <libdrm/drm_fourcc.h>
+#include <stdint.h>
+#include <va/va_drmcommon.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <va/va.h>
@@ -161,6 +170,35 @@ static VAStatus end_picture(VADriverContextP ctx, VAContextID context) {
   return mesa_end(ctx, context);
 }
 
+static VAStatus (*mesa_export)(VADriverContextP, VASurfaceID, uint32_t, uint32_t, void *);
+
+/** Rows a plane of a layer has: the surface's, or half for 4:2:0's chroma (a second plane, or a 2-component layer). */
+static uint32_t plane_rows(uint32_t height, uint32_t fourcc, uint32_t plane) {
+  int half = plane > 0 ? (fourcc == DRM_FORMAT_NV12 || fourcc == DRM_FORMAT_P010 || fourcc == DRM_FORMAT_P016 ||
+                          fourcc == DRM_FORMAT_YUV420 || fourcc == DRM_FORMAT_YVU420)
+                       : (fourcc == DRM_FORMAT_GR88 || fourcc == DRM_FORMAT_RG88 || fourcc == DRM_FORMAT_GR1616 ||
+                          fourcc == DRM_FORMAT_RG1616);
+  return half ? (height + 1) / 2 : height;
+}
+
+static VAStatus export_surface(VADriverContextP ctx, VASurfaceID surface, uint32_t mem_type, uint32_t flags, void *out) {
+  VAStatus s = mesa_export(ctx, surface, mem_type, flags, out);
+  if (s != VA_STATUS_SUCCESS || mem_type != VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2) return s;
+  VADRMPRIMESurfaceDescriptor *d = out;
+  // A separate layer's chroma (GR88) is half the surface's height; so is a composed layer's second plane.
+  for (uint32_t l = 0; l < d->num_layers && l < 4; l++) {
+    int chroma = (flags & VA_EXPORT_SURFACE_SEPARATE_LAYERS) && l > 0;
+    for (uint32_t p = 0; p < d->layers[l].num_planes && p < 4; p++) {
+      uint32_t o = d->layers[l].object_index[p];
+      if (o >= d->num_objects || o >= 4) continue;
+      uint32_t rows = chroma ? (d->height + 1) / 2 : plane_rows(d->height, d->layers[l].drm_format, p);
+      uint64_t end = (uint64_t)d->layers[l].offset[p] + (uint64_t)d->layers[l].pitch[p] * rows;
+      if (end > d->objects[o].size && end < (1ull << 32)) d->objects[o].size = (uint32_t)end;
+    }
+  }
+  return s;
+}
+
 #define INIT_NAME(major, minor) __vaDriverInit_##major##_##minor
 #define INIT(major, minor) INIT_NAME(major, minor)
 
@@ -194,5 +232,6 @@ VAStatus INIT(VA_MAJOR_VERSION, VA_MINOR_VERSION)(VADriverContextP ctx) {
   mesa_begin = v->vaBeginPicture, v->vaBeginPicture = begin_picture;
   mesa_render = v->vaRenderPicture, v->vaRenderPicture = render_picture;
   mesa_end = v->vaEndPicture, v->vaEndPicture = end_picture;
+  if (v->vaExportSurfaceHandle) mesa_export = v->vaExportSurfaceHandle, v->vaExportSurfaceHandle = export_surface;
   return s;
 }

@@ -23,6 +23,8 @@ const uint8_t *wgt_pixels(void);
 const uint8_t *wgt_storage(void);
 const uint8_t *wgt_filled(void);
 const char *wgt_error(void);
+int wgt_import(uint32_t res);
+const uint8_t *wgt_imported(void);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -34,13 +36,14 @@ FN(CreateGraphicsPipelines); FN(CreateComputePipelines); FN(CreateCommandPool); 
 FN(BeginCommandBuffer); FN(EndCommandBuffer); FN(CmdPipelineBarrier); FN(CmdCopyBufferToImage); FN(CmdBeginRenderPass);
 FN(CmdEndRenderPass); FN(CmdBindPipeline); FN(CmdBindDescriptorSets); FN(CmdBindVertexBuffers); FN(CmdBindIndexBuffer);
 FN(CmdPushConstants); FN(CmdDrawIndexed); FN(CmdDraw); FN(CmdSetViewport); FN(CmdSetScissor); FN(CmdCopyImageToBuffer);
-FN(CmdDispatch); FN(CmdFillBuffer); FN(CreateFence); FN(GetFenceStatus); FN(QueueSubmit);
+FN(CmdDispatch); FN(CmdFillBuffer); FN(CreateFence); FN(GetFenceStatus); FN(QueueSubmit); FN(ResetFences);
+FN(GetMemoryFdPropertiesKHR); FN(CreatePipelineCache); FN(GetPipelineCacheData);
 
 static VkInstance instance;
 static VkDevice dev;
 static VkQueue queue;
 static VkFence fence;
-static uint8_t *pixels, *storage, *filled;
+static uint8_t *pixels, *storage, *filled, *imported;
 static char error[256];
 
 #define CHECK(x)                                                                                                       \
@@ -125,8 +128,12 @@ init(void)
    const float priority = 1;
    const VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueCount = 1,
                                         .pQueuePriorities = &priority };
+   /* wgt_import's: dma-buf memory and the LINEAR modifier. */
+   const char *exts[] = { "VK_KHR_external_memory_fd", "VK_EXT_external_memory_dma_buf",
+                          "VK_EXT_image_drm_format_modifier" };
    const VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,
-                                   .pQueueCreateInfos = &qi };
+                                   .pQueueCreateInfos = &qi, .enabledExtensionCount = 3,
+                                   .ppEnabledExtensionNames = exts };
    CHECK(CreateDevice(pdev, &di, NULL, &dev));
 #define DLOAD(name) name = (PFN_vk##name)GetDeviceProcAddr(dev, "vk" #name)
    DLOAD(GetDeviceQueue); DLOAD(AllocateMemory); DLOAD(MapMemory); DLOAD(CreateBuffer); DLOAD(BindBufferMemory);
@@ -139,7 +146,8 @@ init(void)
    DLOAD(CmdBindPipeline); DLOAD(CmdBindDescriptorSets); DLOAD(CmdBindVertexBuffers); DLOAD(CmdBindIndexBuffer);
    DLOAD(CmdPushConstants); DLOAD(CmdDrawIndexed); DLOAD(CmdDraw); DLOAD(CmdSetViewport); DLOAD(CmdSetScissor);
    DLOAD(CmdCopyImageToBuffer); DLOAD(CmdDispatch); DLOAD(CmdFillBuffer); DLOAD(CreateFence); DLOAD(GetFenceStatus);
-   DLOAD(QueueSubmit);
+   DLOAD(QueueSubmit); DLOAD(ResetFences); DLOAD(GetMemoryFdPropertiesKHR); DLOAD(CreatePipelineCache);
+   DLOAD(GetPipelineCacheData);
    GetDeviceQueue(dev, 0, 0, &queue);
    return 0;
 }
@@ -329,6 +337,20 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
       .layout = clayout,
    };
    CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &cpi, NULL, &cpipeline));
+   /* A pipeline cache holding a pipeline gives its data in a buffer of the size it says (libplacebo's passes). */
+   VkPipelineCache pcache;
+   VkPipeline cached;
+   const VkPipelineCacheCreateInfo pci = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+   CHECK(CreatePipelineCache(dev, &pci, NULL, &pcache));
+   CHECK(CreateComputePipelines(dev, pcache, 1, &cpi, NULL, &cached));
+   size_t cache_size = 0;
+   CHECK(GetPipelineCacheData(dev, pcache, &cache_size, NULL));
+   uint8_t cache_data[4096];
+   if (cache_size > sizeof(cache_data)) {
+      snprintf(error, sizeof(error), "a pipeline cache of %zu bytes", cache_size);
+      return 1;
+   }
+   CHECK(GetPipelineCacheData(dev, pcache, &cache_size, cache_data));
 
    VkCommandPool cpool;
    const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
@@ -419,4 +441,87 @@ EXPORT const char *
 wgt_error(void)
 {
    return error;
+}
+
+/* A dma-buf import (vk/README.md "Imports"): an R8G8 image of 4×2 texels with the LINEAR modifier, bound to memory
+ * imported from "dma-buf" `res` (another renderer's resource: the GPU worker writes its bytes into the image's texture,
+ * web/venus-import.ts), copied into a host-visible buffer (wgt_imported, 16 bytes) by a submit; wgt_done then says
+ * when. Called again, the same image is copied again (the resource's bytes may have changed since). */
+EXPORT int
+wgt_import(uint32_t res)
+{
+   static VkImage img;
+   static VkBuffer buf;
+   static VkCommandBuffer cmd;
+   if (!dev && init())
+      return 1;
+   if (!img) {
+      VkMemoryFdPropertiesKHR props = { .sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR };
+      CHECK(GetMemoryFdPropertiesKHR(dev, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, (int)res, &props));
+      if (props.memoryTypeBits != 1) {
+         snprintf(error, sizeof(error), "a dma-buf's memory types: %#x", props.memoryTypeBits);
+         return 1;
+      }
+      const uint64_t linear = 0;
+      const VkImageDrmFormatModifierListCreateInfoEXT mods = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT, .drmFormatModifierCount = 1,
+         .pDrmFormatModifiers = &linear,
+      };
+      const VkExternalMemoryImageCreateInfo ext = { .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+                                                     .pNext = &mods,
+                                                     .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT };
+      const VkImageCreateInfo info = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = &ext, .imageType = VK_IMAGE_TYPE_2D,
+         .format = VK_FORMAT_R8G8_UNORM, .extent = { 4, 2, 1 }, .mipLevels = 1, .arrayLayers = 1,
+         .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+         .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+      };
+      CHECK(CreateImage(dev, &info, NULL, &img));
+      VkMemoryRequirements req;
+      GetImageMemoryRequirements(dev, img, &req);
+      /* A dma-buf's rows are tight (4 texels of 2 bytes): the image fits a dma-buf of its texels alone. */
+      if (req.size > 16) {
+         snprintf(error, sizeof(error), "an imported image needs %llu bytes", (unsigned long long)req.size);
+         return 1;
+      }
+      const VkImportMemoryFdInfoKHR fd = { .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+                                           .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                           .fd = (int)res };
+      const VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &fd,
+                                        .allocationSize = 4096, .memoryTypeIndex = 0 };
+      VkDeviceMemory mem;
+      CHECK(AllocateMemory(dev, &ai, NULL, &mem));
+      CHECK(BindImageMemory(dev, img, mem, 0));
+      if (buffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &buf, (void **)&imported))
+         return 1;
+      VkCommandPool pool;
+      const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+      CHECK(CreateCommandPool(dev, &cpo, NULL, &pool));
+      const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                                .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                                .commandBufferCount = 1 };
+      CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+      const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+      CHECK(BeginCommandBuffer(cmd, &begin));
+      const VkBufferImageCopy down = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                       .imageExtent = { 4, 2, 1 } };
+      CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buf, 1, &down);
+      CHECK(EndCommandBuffer(cmd));
+   }
+   if (fence) {
+      CHECK(ResetFences(dev, 1, &fence));
+   } else {
+      const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fi, NULL, &fence));
+   }
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, fence));
+   return 0;
+}
+
+EXPORT const uint8_t *
+wgt_imported(void)
+{
+   return imported;
 }

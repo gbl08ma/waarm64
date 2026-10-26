@@ -37,6 +37,7 @@ int venus_submit(uint32_t ctx_id, void *cmd, uint32_t size);
 int venus_submit_fence(uint32_t ctx_id, uint32_t flags, uint32_t ring_idx, uint64_t fence_id);
 int venus_resource_create(uint32_t ctx_id, uint32_t res_id, uint64_t blob_id, uint64_t size, uint32_t flags);
 void venus_resource_destroy(uint32_t ctx_id, uint32_t res_id);
+int venus_resource_import(uint32_t ctx_id, uint32_t res_id, uint64_t size);
 int venus_resource_map(uint32_t ctx_id, uint32_t res_id, void *where);
 int venus_resource_unmap(uint32_t ctx_id, uint32_t res_id);
 void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
@@ -123,6 +124,15 @@ venus_resource_create(uint32_t ctx_id, uint32_t res_id, uint64_t blob_id, uint64
    uint32_t map_info;
    struct virgl_resource_vulkan_info info;
    return vkr_renderer_create_resource(ctx_id, res_id, blob_id, size, flags, &type, &fd, &map_info, &info);
+}
+
+/* Another renderer's resource attached to a Venus context (a virgl texture the guest imports as a dma-buf: a VA-API
+ * surface's plane), `size` bytes as the guest sees it: a dma-buf whose "fd" is its id (vkr's patch), which the driver
+ * imports as memory whose images' textures the GPU worker fills (web/venus-import.ts). */
+EXPORT int
+venus_resource_import(uint32_t ctx_id, uint32_t res_id, uint64_t size)
+{
+   return vkr_renderer_import_resource(ctx_id, res_id, VIRGL_RESOURCE_FD_DMABUF, (int)res_id, size);
 }
 
 EXPORT void

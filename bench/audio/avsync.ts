@@ -20,7 +20,8 @@
 // seconds measured (default 20), from WARM_S (default 5) after the clip starts playing. MEDIA=disk plays them from
 // bench/video/media-disk.sh's disk instead (the page's second disk: the sync clip in VP9 and H.264 too, the trailer's
 // H.264 MP4), for the video track (docs/plans/video.md V2: VIRGL_GPU=virgl decodes VP9 and H.264 on the host, and
-// virgl,novideo in the guest). Firefox's frames and dropped frames are counted over the phase.
+// virgl,novideo in the guest). Firefox's frames and dropped frames are counted over the phase. MPV_ARGS adds to mpv's
+// options (VK2 L6: `--vo=gpu-next --gpu-api=vulkan` with VIRGL_GPU=virgl,vulkan); SHIM=1 (with MEDIA=disk) installs the media disk's VA driver.
 // PROFILE=1 samples the guest's PCs over each clip's phase and symbolizes the kernel's (the clip's `profile`); SYSCALLS=1
 // counts the guest's syscalls by thread over it (guest-session.ts `load`: a tracepoint on every syscall, so drops only
 // from runs without it). FF_PREFS=<pref>=<value>;... adds prefs to Firefox's profile (docs/plans/video.md §8);
@@ -43,14 +44,19 @@ const PHASE_S = Number(process.env.PHASE_S ?? 20);
 const WARM_S = Number(process.env.WARM_S ?? 5);
 
 const disk = process.env.MEDIA === 'disk';
+// MPV_ARGS: more of mpv's options for the mpv:<file> phases (e.g. `--vo=gpu-next --gpu-api=vulkan`: VK2 L6).
+const MPV_ARGS = process.env.MPV_ARGS ?? '';
 const MEDIA = disk ? '/mnt/media' : '/home/arch/media';
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, ncpus: Number(process.env.NCPUS ?? 4), query: 'snd=&avprobe', disk2: disk ? '/target/video/media.ext4' : undefined });
-const { page, log, pasteSerial, rootShell, load, run, asUser } = s;
+const { page, log, pasteSerial, rootShell, load, run, runLines, asUser } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), phaseS: PHASE_S };
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, slow: s.slow }, null, 1));
 
 await rootShell();
 if (disk) await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
+// SHIM=1: the VA driver on the media disk (bench/video/media-disk.sh's target/video/shim/) as the guest's (an image
+// whose webpc-va is older: VK2 L6's webpc-va 3 sizes exported surfaces).
+if (disk && process.env.SHIM) log('shim', await run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/ && echo shim installed'));
 results.info = await run('uname -r; pacman -Q linux firefox pipewire wireplumber mesa webpc-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
 log('info', results.info);
 const userPrefs = (list: string) => list.split(';').filter(Boolean).map((kv) => {
@@ -118,10 +124,16 @@ function offsets(flashes: number[], onsets: number[]) {
 const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 
 // mpv:<file>: the video too, in sway (`--hwdec=vaapi`, mpv's default output), its frames and drops from its status.
-for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) {
-  const file = name.slice(4), clip = `mpv-${file.replace(/\W/g, '-')}`;
+// MPV_VARIANTS=<label>:<options>|<label>:<options>...: each mpv:<file> clip under each set of mpv's options in turn
+// (added to MPV_ARGS), ROUNDS times, alternating; their records are mpv-<file>@<label>-r<round> (VK2 L6: mpv on virgl's
+// GL against Vulkan in one boot).
+const mpvVariants = process.env.MPV_VARIANTS ? process.env.MPV_VARIANTS.split('|').map((v) => ({ label: v.slice(0, v.indexOf(':')), args: v.slice(v.indexOf(':') + 1) })) : [{ label: '', args: '' }];
+results.mpvVariants = process.env.MPV_VARIANTS;
+for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) for (let round = 0; round < (process.env.MPV_VARIANTS ? ROUNDS : 1); round++) for (const v of mpvVariants) {
+  const file = name.slice(4), clip = `mpv-${file.replace(/\W/g, '-')}${v.label ? `@${v.label}-r${round}` : ''}`;
+  const args = [MPV_ARGS, v.args].filter(Boolean).join(' ');
   // Under `script` (mpv prints its status line only to a terminal), from a script (no quoting through su and script).
-  await pasteSerial(`cat > /home/arch/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec mpv --hwdec=vaapi --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/arch/mpv-run.sh`);
+  await pasteSerial(`cat > /home/arch/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec mpv --hwdec=vaapi ${args} --log-file=/tmp/mpv-full.log --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/arch/mpv-run.sh`);
   await run(asUser('script -qfc /home/arch/mpv-run.sh /tmp/mpv.log >/dev/null 2>&1 &'));
   await page.waitForTimeout(WARM_S * 1000);
   const status = async () => (await run(`grep -a -o 'MPV [0-9]* [0-9]* [0-9]* [a-z0-9-]*' /tmp/mpv.log | tail -1`)).trim().split(' ');
@@ -130,10 +142,13 @@ for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) {
   const r = await load(clip, PHASE_S, process.env.TIMELINE ? s.timeline : undefined, async () => { s1 = await status(); });
   const timeline = process.env.TIMELINE ? await s.timelineSummary(clip) : undefined;
   const log1 = await run(`tr '\\r' '\\n' < /tmp/mpv.log | grep -a -v 'MPV [0-9]' | grep -a . | head -20`);
-  await run('pkill -x mpv; sleep 1');
+  // What mpv said of its output and decoder (its log: errors and warnings, the decoder it used, a failed import).
+  const mpvLog = await runLines(`grep -a -E '\\]\\[[ew]\\]|Using hardware|Imported|interop' /tmp/mpv-full.log | grep -av 'Setting option' | grep -av 'libplacebo\\] \\[' | cut -c1-200 | uniq | head -${process.env.MPV_LOG_LINES ?? 20}`);
+  // mpv on Vulkan may not exit (VK2 L6: its vo thread waits on a swapchain image the compositor still shows): killed.
+  await run('pkill -x mpv; for i in $(seq 10); do pgrep -x mpv >/dev/null || break; sleep 0.5; done; pkill -9 -x mpv; sleep 1');
   const quality = s0.length >= 4 && s1.length >= 4 ? { frames: +s1[1] - +s0[1], dropped: +s1[2] - +s0[2], decoderDropped: +s1[3] - +s0[3], hwdec: s1[4] } : undefined;
-  results[clip] = { quality, status: [s0.join(' '), s1.join(' ')], log: log1, ...r, ...(timeline ? { timeline } : {}) };
-  log(clip, 'phase', JSON.stringify(quality), 'video', JSON.stringify(r.display.renderer?.video), '\n' + log1);
+  results[clip] = { quality, status: [s0.join(' '), s1.join(' ')], log: log1, mpvLog, mpvArgs: args, ...r, ...(timeline ? { timeline } : {}) };
+  log(clip, 'phase', JSON.stringify(quality), 'busy', JSON.stringify(r.cpus?.find((c: { cpu: string }) => c.cpu === 'cpu')), 'video', JSON.stringify(r.display.renderer?.video), '\n' + log1, '\n' + mpvLog.join('\n'));
   save();
 }
 

@@ -156,6 +156,10 @@ struct wg_device_memory {
     * its resource: web/venus-share.ts), on the device's shared_memories while set. */
    struct wg_image *image;
    struct list_head shared_link;
+   /* Imported from a dma-buf that is another renderer's resource (vkr passes its id as the fd): a virgl texture, e.g. a
+    * VA-API surface's plane, whose bytes the GPU worker writes into the textures of images bound here
+    * (gpu_texture_import; web/venus-import.ts). 0: not imported. */
+   uint32_t import_res;
 };
 
 /* The texture of the shared image bound to a memory, or 0 (glue.c's venus_resource_texture). */
@@ -180,6 +184,7 @@ struct wg_image {
     * each submit's start and stored back at its end (wg_cmd.c), so the guest's maps see it. */
    bool linear_host;
    struct list_head linear_link;
+   bool imported;   /* bound to imported memory: its texture is another renderer's resource's (gpu_texture_import) */
 };
 /* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
 void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);

@@ -602,6 +602,42 @@ result through one), triangle fans, depth clip off, 1D images, compressed sizes 
 attachments, attributes past their stride, depth and stencil copies (realigned or skipped instead of invalidating the
 submit), `indirect-first-instance`, NaN clear values, and bind groups cached by layout ids that WebGPU's ids reuse.
 
+## VK2 L6: the gate — mpv on Vulkan
+
+**2026-10-26.** mpv with `--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi` on the desktop guest (Arch Linux, mpv with
+libplacebo 7.360, Mesa 26.2.5, webpc-va 3; sway 1.12 on GLES), Sintel's H.264 trailer (854×480, 24 frames/s) from the
+media disk, 4 vCPUs, the screen at 1376×762, the video fullscreen. VA-API's surfaces reach libplacebo as dma-bufs
+imported into Venus (vk/README.md "Imports"). Against mpv on virgl's GL in the same boot (`--vo=gpu --gpu-api=opengl`:
+gpu-next needs GL 3, and virgl's EGL gives mpv GLES 2 here; the video track's runs were `vo=gpu` too), alternated
+(`bench/audio/avsync.ts` with `MPV_VARIANTS`, `ROUNDS`; `WARM_S=8`, `PHASE_S=20`; JSON in `results/vk2/l6/`):
+
+| Apple M4, Chrome for Testing 153.0.8010.12, macOS 26.6.2 | frames shown, dropped | the guest busy | mpv's CPU (ms a second) | sway's | the GPU worker: imports, ms a second |
+| --- | --- | --- | --- | --- | --- |
+| Vulkan, H.264 decoded in hardware (3 rounds) | 527–528, **0** | **13, 13, 13%** | 336, 325, 325 | 79, 94, 89 | 5.4, 5.1, 5.1 (48 planes, 14 MB) |
+| GL, the same | 524–526, 0 | 12, 12, 12% | 300, 300, 294 | 99, 101, 95 | — |
+| Vulkan, decoded in software (`swvideo`, the bar's own conditions; 2 rounds) | 528–529, **0** | **13, 13%** | 343, 327 | 81, 91 | 5.2, 5.1 |
+| GL, the same | 527–528, 0 | 12, 12% | 294, 290 | 99, 98 | — |
+| SwiftShader, dev VM, Chromium 153.0.8010.52 (1 round): Vulkan / GL | 306 / 293, 0 / 0 | 18 / 14% | 447 / 307 | 96 / 93 | 5.9 |
+
+- **The gate passes:** no frame dropped, the guest 13% busy, under the bar's 19–27% (the video track's, measured
+  2026-10-14 on an older image; GL in the same boot today is 12%). Rounds don't overlap: Vulkan costs the guest +1
+  point of busy and mpv +8–15% of its CPU (libplacebo makes two images on imported memory every frame, and Venus
+  encodes them), sway 5–20% less (it composites the frame from a dma-buf instead of mpv's GL buffer). The host's side:
+  ~0.2 ms of the GPU worker a frame for the planes' `writeTexture` (the bytes the host decoded anyway) and ~0.08 ms
+  for the presentation's copy. Nothing the plan didn't price: no stall, no WebGPU call cost of note.
+- **Frames right** (`mpv-frames.ts`: mpv paused at 20 s, its window's screenshot; H.264 decodes exactly, so a
+  renderer's two ways must match): on the M4, Vulkan with VA-API's surfaces and Vulkan decoding in the guest are
+  **byte-identical**; on SwiftShader 243 of 3.1 M bytes differ by more than 24 (max 82, mean 0.03). Vulkan and GL
+  decoding in software differ by at most 4 (renderers' rounding). GL with VA-API pauses on another frame than the
+  other three (13% of bytes off by more than 24, the same moment by eye a frame or two apart, on both hosts): virgl's
+  GL path's, not Vulkan's (docs/backlog.md).
+- On the way: libplacebo failed every pass on Venus (`vkGetPipelineCacheData` answered `VK_INCOMPLETE` to the size it
+  had given: the runtime reserves room for objects it then can't serialize; the driver answers the header alone now),
+  and with every pass it rendered without FBOs ("Failed creating FBO texture! Disabling advanced rendering": its
+  1- and 2-component FBO formats must have every capability of its 4-component one, and `r16float`/`rg16float` aren't
+  storage formats in WebGPU without `texture-formats-tier1`): mpv on Vulkan scales bilinearly, as mpv on virgl's GLES 2
+  does (it disables its scalers: "GLSL version too old"). Backlog.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
@@ -614,3 +650,6 @@ submit), `indirect-first-instance`, NaN clear values, and bind groups cached by 
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK2 L6: `mpv-frames.ts` (mpv's frames on Vulkan against software decoding and GL), and `../audio/avsync.ts`'s
+  `MPV_ARGS`, `MPV_VARIANTS` (mpv's options in alternated rounds) and `SHIM` (the media disk's VA driver), all through
+  `../gpu/sway-mac.sh`.

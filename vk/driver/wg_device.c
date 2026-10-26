@@ -534,7 +534,13 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    mem->size = align64(MAX2(pAllocateInfo->allocationSize, 4), 4);
    mem->host = pAllocateInfo->memoryTypeIndex == WG_MEMORY_HOST;
-   if (mem->vk.host_ptr) {
+   const VkImportMemoryFdInfoKHR *fd_info = vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
+   if (fd_info && fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT && fd_info->fd > 0) {
+      /* A dma-buf is another renderer's resource, by id (vkr's patch): its bytes are the GPU worker's to write into
+       * the textures bound here; it has no storage of ours, even in a host-visible type. */
+      mem->import_res = (uint32_t)fd_info->fd;
+      mem->host = false;
+   } else if (mem->vk.host_ptr) {
       /* vkr's storage (its patch: host-visible memory is the renderer's, then the window's). */
       mem->data = mem->vk.host_ptr;
       mem->host = true;
@@ -585,6 +591,17 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
       free(mem->data);
    wg_id_release(mem->gpu);
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
+}
+
+/* A dma-buf's memory types: device-local (an import is another renderer's resource: vkr's patch, wg_AllocateMemory). */
+VKAPI_ATTR VkResult VKAPI_CALL
+wg_GetMemoryFdPropertiesKHR(VkDevice _device, VkExternalMemoryHandleTypeFlagBits handleType, int fd,
+                            VkMemoryFdPropertiesKHR *pProps)
+{
+   if (handleType != VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT || fd <= 0)
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   pProps->memoryTypeBits = 1u << 0; /* device-local */
+   return VK_SUCCESS;
 }
 
 /* The texture of the image bound to a memory (a resource's: web/venus-share.ts shares it with the virgl renderer), or 0. */
@@ -716,6 +733,13 @@ wg_BindBufferMemory2(VkDevice _device, uint32_t count, const VkBindBufferMemoryI
    return VK_SUCCESS;
 }
 
+/* An image whose memory may be a dma-buf (shared with or imported from the guest's other users): tight rows. */
+static bool
+wg_image_dma_buf(const struct vk_image *image)
+{
+   return image->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT || image->external_handle_types;
+}
+
 /* An image's bytes, linear and tightly packed by mip then layer, rows 256-byte aligned (WebGPU's copy pitch): the
  * layout GetImageSubresourceLayout reports for linear images, which the guest maps (its WSI's CPU path). */
 static VkDeviceSize
@@ -727,7 +751,11 @@ wg_image_layout(const struct vk_image *image, uint32_t level, uint32_t layer, Vk
    VkDeviceSize at = 0;
    for (uint32_t l = 0; l < image->mip_levels; l++) {
       const VkExtent3D e = vk_image_mip_level_extent(image, l);
-      const VkDeviceSize row = align64((VkDeviceSize)DIV_ROUND_UP(e.width, bw) * bytes, 256);
+      /* Rows 256 bytes apart (WebGPU's copies), but a dma-buf's (an external image's, or a DRM modifier's: LINEAR),
+       * whose rows are tight: an imported dma-buf (a VA-API surface's plane, its rows the plane's width) must be as large
+       * as the image says it needs. (A shared image's memory is never copied to or from its texture: wg_image.shared.) */
+      const VkDeviceSize tight = (VkDeviceSize)DIV_ROUND_UP(e.width, bw) * bytes;
+      const VkDeviceSize row = wg_image_dma_buf(image) ? tight : align64(tight, 256);
       const VkDeviceSize slice = row * DIV_ROUND_UP(e.height, bh);
       const VkDeviceSize level_size = slice * e.depth * image->array_layers * image->samples;
       if (out && l == level) {
@@ -789,6 +817,9 @@ wg_texture_create(struct wg_image *image)
    const bool shared = image->shared;
    if (shared && vi->samples == 1 && !(flags & WG_FMT_NOCOPY))
       usage |= 1 | ((flags & WG_FMT_SAMPLE) ? 4 : 0);
+   /* ... or bound to memory imported from another renderer's resource, whose bytes the worker writes into it. */
+   if (shared && vi->samples == 1 && !(flags & WG_FMT_NOCOPY))
+      usage |= 2;
    /* WebGPU wants a compressed texture's size in whole blocks (Vulkan doesn't): rounded up, and copies with it. */
    const VkExtent3D e = vi->extent;
    struct wg_json j = { 0 };
@@ -847,6 +878,8 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
    }
    if (image->linear_host)
       list_del(&image->linear_link);
+   if (image->imported)
+      gpu_texture_import(image->tex, 0);
    wg_id_release(image->tex);
    vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
@@ -856,7 +889,7 @@ wg_GetImageMemoryRequirements2(VkDevice _device, const VkImageMemoryRequirements
                                VkMemoryRequirements2 *reqs)
 {
    VK_FROM_HANDLE(wg_image, image, info->image);
-   wg_requirements(reqs, MAX2(image->size, 1), 4096);
+   wg_requirements(reqs, MAX2(image->size, 1), wg_image_dma_buf(&image->vk) ? 1 : 4096);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -866,7 +899,8 @@ wg_GetDeviceImageMemoryRequirements(VkDevice _device, const VkDeviceImageMemoryR
    VK_FROM_HANDLE(wg_device, dev, _device);
    struct vk_image image;
    vk_image_init(&dev->vk, &image, info->pCreateInfo);
-   wg_requirements(reqs, MAX2(wg_image_layout(&image, 0, 0, NULL), 1), 4096);
+   wg_requirements(reqs, MAX2(wg_image_layout(&image, 0, 0, NULL), 1),
+                   wg_image_dma_buf(&image) ? 1 : 4096);
    vk_image_finish(&image);
 }
 
@@ -898,7 +932,10 @@ wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInf
          image->linear_host = true;
          list_addtail(&image->linear_link, &dev->linear_images);
       }
-      if (image->shared) {
+      if (mem->import_res) {
+         image->imported = true;
+         gpu_texture_import(image->tex, mem->import_res);
+      } else if (image->shared) {
          if (!mem->image)
             list_addtail(&mem->shared_link, &dev->shared_memories);
          mem->image = image;

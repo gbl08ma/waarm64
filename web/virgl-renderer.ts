@@ -239,6 +239,8 @@ export class VirglRenderer {
   onVideoSettled?: () => void;
   /** Another renderer's blobs, imported by the guest (`ExternalResource`). */
   external?: ExternalSource;
+  /** A video picture's plane written into a resource (rows of `w` texels of `bpp` bytes): Venus's textures imported from it take it too (web/venus-import.ts). */
+  onPlane?: (res: number, data: Uint8Array, w: number, h: number, bpp: number) => void;
   private externals = new Set<Res>();
   /** External resources whose bytes are on their way (`externalWait`): what may see them waits, as for a picture. */
   private externalWaits = new Set<number>();
@@ -998,6 +1000,7 @@ export class VirglRenderer {
       r.picture = undefined;
       const p = padPlane(data, w, h, bpp, r.width, r.height);
       this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(p.w, r.width), h: Math.min(p.h, r.height), d: 1 }, p.data, p.w * bpp, 0);
+      this.onPlane?.(res, p.data, p.w, p.h, bpp);
       const t = r.tex && r.fmt && r.target === PIPE_TEXTURE_2D && r.lastLevel === 0 && (w < r.width || h < r.height)
         ? (prev?.width === w && prev.height === h ? prev : this.pictureTexture(r, w, h)) : undefined;
       if (prev && prev !== t) this.gl.deleteTexture(prev.tex!);
@@ -3033,6 +3036,12 @@ void main() {
   }
 
   /** Reads a 2D resource's RGBA as stored (rows top first), for tests and screenshots. */
+  /** A resource's format (virgl's) and size, if it exists. */
+  resourceInfo(id: number): { format: number; width: number; height: number } | undefined {
+    const r = this.resources.get(id);
+    return r && { format: r.format, width: r.width, height: r.height };
+  }
+
   readResource(id: number): Uint8Array | null {
     const r = this.resources.get(id);
     if (!r) return null;

@@ -383,6 +383,10 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
   makes a 2D texture of the format, attached to the context, whose texels web/venus-share.ts copies from the image's
   WebGPU texture before a submit that may sample it ([vk/README.md](../vk/README.md) "Presentation"); colour formats
   only. The texture goes with the blob's unref.
+- **Resources another renderer imports** (VK2 L6): the reverse, a virgl resource the guest imports into Vulkan as a
+  dma-buf (mpv on Vulkan maps VA-API's surfaces), stays the virgl renderer's; each video picture written into a plane
+  is also handed to web/venus-import.ts (`onPlane`), which writes it into the Venus textures imported from it, and a
+  resource with no picture yet is read back once (`readResource`) ([vk/README.md](../vk/README.md) "Imports").
 - **Blits** go through GL's framebuffer blit for the same stored layout (and between integer formats of one
   signedness, which can't be sampled as floats), a draw through both formats' swizzles otherwise; a drawn blit has
   only its destination attached (a texture still attached from the last draw and sampled is a feedback loop WebGL

@@ -474,7 +474,13 @@ export class Gpu {
         if (type === CTX_ATTACH_RESOURCE) set.add(u32(0));
         else set.delete(u32(0));
         const res = this.resources.get(u32(0))!;
-        if (res.three) this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
+        // A virgl resource attached to a Venus context: the guest imports it into Vulkan as a dma-buf (a VA-API
+        // surface's plane: web/venus-import.ts), as many bytes as its pages (the guest's dma-buf), or its texels at 4 a texel.
+        if (res.three && this.venusContexts.has(ctxId)) {
+          const t = res.three, pages = (res.backing ?? []).reduce((n, s) => n + s.len, 0);
+          const size = Math.ceil(Math.max(pages, res.width * res.height * t.depth * t.arraySize * 4, 4096) / 4096) * 4096;
+          this.host?.call({ t: 'blob-ctx', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE, size });
+        } else if (res.three) this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
         else if (res.blob && this.venusContexts.has(ctxId)) this.host?.call({ t: 'blob-ctx', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
         return this.reply(OK_NODATA, cmd, room);
       }

@@ -62,6 +62,8 @@ export class VenusGpu {
   /** The submit (its count in `stats.submits`) that last wrote each texture, and those the open encoder writes. */
   private readonly written = new WeakMap<GPUTexture, number>();
   private touched = new Set<GPUTexture>();
+  /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts. */
+  onImport: ((texture: GPUTexture, res: number) => void) | undefined;
 
   /**
    * `memory`: memory 0. `complete(serial)`: the module's export. `dirty()`: the window's written pages since the last
@@ -154,6 +156,10 @@ export class VenusGpu {
         self.stats.uploadBytes += size;
       },
       gpu_dirty: (ptr: number, max: number) => this.dirtyInto(ptr, max),
+      gpu_texture_import(tex: number, res: number) {
+        const t = self.get<GPUTexture>(tex);
+        if (t instanceof GPUTexture) self.onImport?.(t, res);
+      },
       gpu_encoder() { self.enc = d.createCommandEncoder(); },
       gpu_copy_bb(src: number, so: number, dst: number, dO: number, size: number) {
         if (size) self.enc!.copyBufferToBuffer(buf(src), so, buf(dst), dO, size);
@@ -594,4 +600,4 @@ const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_write', 'gpu_di
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
   'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
-  'gpu_resolve_queries', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy'];
+  'gpu_resolve_queries', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import'];
