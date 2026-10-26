@@ -65,13 +65,26 @@ export type GpuCaps = { readonly features: ReadonlySet<string>; readonly limits:
  */
 export const VENDORS: Record<string, number> = { apple: 0x106b, nvidia: 0, amd: 0x1002, ati: 0x1002, intel: 0x8086, google: 0x1ae0, arm: 0x13b5, qualcomm: 0x5143, 'img-tec': 0x1010, imagination: 0x1010, microsoft: 0x1414, samsung: 0x144d };
 
-/** The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`), and whether there is a device. */
+/**
+ * The adapter's features the device doesn't take by default (VK3 L4; vk/README.md "The driver"): with them libplacebo's
+ * FBOs, and with those its advanced rendering, under which mpv's VA-API chroma reads as zeros on the M4 in about a third
+ * of fresh sessions (a green picture; bench/vulkan/REPORT.md "VK3 L4"). `?gpu=vkformats=all` takes them.
+ */
+export const HELD_FEATURES = ['float32-blendable', 'tier1-storage'];
+
+/**
+ * The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`), and whether there is a device.
+ * Bit 14 is storage for texture-formats-tier1's formats, a part of that feature the driver can take apart (`tier1-storage`).
+ * `hold` names features the driver doesn't take, as if the adapter lacked them (`HELD_FEATURES`; `?gpu=vkhold=<name>`).
+ */
 const FEATURES = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
   'depth-clip-control', 'dual-source-blending', 'clip-distances', 'indirect-first-instance', 'texture-formats-tier1', 'texture-formats-tier2',
   'rg11b10ufloat-renderable', 'float32-blendable', 'bgra8unorm-storage'];
-export function gpuFeatures(caps: GpuCaps | undefined, device: boolean) {
+export function gpuFeatures(caps: GpuCaps | undefined, device: boolean, hold: readonly string[] = HELD_FEATURES) {
   let flags = device ? 1 << 31 : 0;
-  FEATURES.forEach((f, i) => { if (caps?.features.has(f)) flags |= 1 << i; });
+  const has = (f: string) => !!caps?.features.has(f) && !hold.includes(f);
+  FEATURES.forEach((f, i) => { if (has(f)) flags |= 1 << i; });
+  if (has('texture-formats-tier1') && !hold.includes('tier1-storage')) flags |= 1 << FEATURES.length;
   return flags;
 }
 

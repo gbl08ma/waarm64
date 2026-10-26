@@ -12,11 +12,11 @@ import { VENUS_CAPSET_WORDS } from '../web/venus.ts';
 const MODULE = new URL('../target/vk/venus.wasm', import.meta.url);
 const skip = !existsSync(MODULE) && 'SKIPPED: run vk/build.sh';
 
-async function renderer(caps?: GpuCaps) {
+async function renderer(caps?: GpuCaps, options: { hold?: string[]; allFormats?: boolean } = {}) {
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   // A window of 1 MiB at 256 MiB, and an empty write-watch (no vCPUs, no pages) below it.
   const window = { at: 0x1000_0000, bytes: 1 << 20, watch: 0x0100_0000 };
-  const v = await VenusRenderer.create(await WebAssembly.compile(readFileSync(MODULE)), memory, window, undefined, caps);
+  const v = await VenusRenderer.create(await WebAssembly.compile(readFileSync(MODULE)), memory, window, undefined, caps, undefined, options);
   return { v, memory, window };
 }
 
@@ -53,8 +53,8 @@ function adapter(file: string, vendor: string): GpuCaps {
 }
 
 test("what the driver advertises follows the WebGPU device's features and limits", { skip }, async () => {
-  const caps = async (c?: GpuCaps) => {
-    const { v, memory } = await renderer(c);
+  const caps = async (c?: GpuCaps, options: { hold?: string[]; allFormats?: boolean } = {}) => {
+    const { v, memory } = await renderer(c, options);
     const at = (v.raw.wgt_caps as () => number)() >>> 0;
     assert.ok(at, 'wgt_caps failed');
     const w = new Uint32Array(memory.buffer, at, 16);
@@ -80,10 +80,10 @@ test("what the driver advertises follows the WebGPU device's features and limits
   // Subgroups of one invocation, basic operations only (the translator has none of WebGPU's yet).
   assert.deepEqual([mac.subgroupSize, mac.subgroupOps], [1, 1]);
   // Features: BC and depth clamp where the adapter has them; texture-formats-tier1 (the Mac's) adds the 16-bit normalized
-  // formats and makes rg11b10ufloat renderable; its storage formats are held back (vk/driver/wg_format.c: mpv's VA-API
-  // frames on Metal), as is float32-blendable.
+  // formats and makes rg11b10ufloat renderable. Its storage formats and float32-blendable are held back by default
+  // (web/venus-gpu.ts `HELD_FEATURES`: mpv's VA-API chroma on the M4, VK3 L4).
   assert.deepEqual([mac.bc, mac.depthClamp, swiftshader.bc, none.bc, none.depthClamp], [1, 1, 1, 0, 0]);
-  assert.deepEqual([mac.extendedFormats, swiftshader.extendedFormats], [1, 0]);
+  assert.deepEqual([mac.extendedFormats, swiftshader.extendedFormats], [0, 0]);
   assert.equal(mac.r16float & (STORAGE | COLOR | BLEND | FILTER), COLOR | BLEND | FILTER);
   assert.equal(mac.r16unorm & (SAMPLED | STORAGE | COLOR | FILTER), SAMPLED | COLOR, 'r16unorm: unfilterable (WebGPU says so)');
   assert.equal(swiftshader.r16unorm, 0);
@@ -91,4 +91,14 @@ test("what the driver advertises follows the WebGPU device's features and limits
   // float32-filterable (both adapters'): r32float filtered; not blended (float32-blendable held back).
   assert.equal(swiftshader.r32float & (FILTER | BLEND), FILTER);
   assert.equal(none.r32float & (FILTER | BLEND), 0);
+  // `?gpu=vkformats=all`: the held features too (8- and 16-bit storage with tier1, 32-bit floats blended).
+  const all = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { allFormats: true });
+  assert.equal(all.r16float & (STORAGE | COLOR | BLEND | FILTER), STORAGE | COLOR | BLEND | FILTER);
+  assert.equal(all.r16unorm & (SAMPLED | STORAGE | COLOR | FILTER), SAMPLED | STORAGE | COLOR);
+  assert.equal(all.r32float & (FILTER | BLEND), FILTER | BLEND);
+  assert.equal(all.extendedFormats, 1);
+  // `?gpu=vkhold=<feature>`: one of them held again.
+  const one = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { allFormats: true, hold: ['tier1-storage'] });
+  assert.equal(one.r16float & STORAGE, 0);
+  assert.equal(one.r32float & BLEND, BLEND);
 });

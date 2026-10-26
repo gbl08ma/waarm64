@@ -6,7 +6,7 @@
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `settled` says when the fences sent so far have.
 import type { ShaderCache } from './venus-cache.ts';
-import { gpuFeatures, gpuLimits, VenusGpu, type GpuCaps } from './venus-gpu.ts';
+import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { WindowWatch } from './window.ts';
 
@@ -48,7 +48,10 @@ export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs:
 export type VenusOptions = { syncPipelines?: boolean; cache?: (buildId: string) => Promise<ShaderCache | undefined>;
   /** `?gpu=vknudge=<ms>`: the pump's nudges at most this often (0: none; default `NUDGE_MS`); `?gpu=vkgputime`: each
    * submit's passes timed on the GPU (VK3 L2b, A/B and diagnosis). */
-  nudgeMs?: number; gpuTime?: boolean };
+  nudgeMs?: number; gpuTime?: boolean;
+  /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take besides `HELD_FEATURES` (web/venus-gpu.ts
+   * `gpuFeatures`), which `allFormats` (`?gpu=vkformats=all`) takes too. */
+  hold?: readonly string[]; allFormats?: boolean };
 
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
@@ -138,7 +141,7 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = HELD_FEATURES) {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
@@ -152,7 +155,7 @@ export class VenusRenderer {
     const limits = gpuLimits(caps);
     const at = this.ex.venus_alloc(limits.byteLength);
     new Uint32Array(memory.buffer, at, limits.length).set(limits);
-    const ok = this.ex.venus_init(gpuFeatures(caps, !!device), at, limits.length, window.at, window.bytes);
+    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold), at, limits.length, window.at, window.bytes);
     this.ex.venus_free(at);
     if (!ok) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
@@ -180,7 +183,7 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.allFormats ? [] : HELD_FEATURES), ...(options.hold ?? [])]);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.

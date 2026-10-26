@@ -121,7 +121,7 @@ wg_caps_features(struct vk_features *f)
       .textureCompressionASTC_LDR = HAS(ASTC),
       .textureCompressionBC = HAS(BC),
       .fragmentStoresAndAtomics = true,
-      .shaderStorageImageExtendedFormats = HAS(TIER1),
+      .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE),
       .shaderClipDistance = HAS(CLIP_DISTANCES),
       /* A tree of ifs over the elements (wgsl_nir.c); other arrays only with constant indices. */
       .shaderSampledImageArrayDynamicIndexing = true,

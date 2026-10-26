@@ -33,7 +33,14 @@ stack. L3's: async pipelines 3.7× sooner, WebGL's longest wait 2 s → 74 ms; v
 25 ms of translation, Chromium's pipelines kept in the profile (74 ms for 17). Also: nvidia.sh doesn't clear
 `~/webpc-vk2/results` before a run (the earlier run's `venus-timeout` arms came along).
 
-**Open for the next run:** nothing yet (L2c was stopped; later loops add theirs).
+**Open for the next run:**
+- (L4) `mpv-frames-default`: as the page has it, libplacebo complains "Failed creating FBO texture" and VA-API's frame is
+  byte for byte the software one (`vkva ~ vkno` 0) — the same as on the M4?
+- (L4) `mpv-frames-all`, `mpv-frames-all2` (`?gpu=vkformats=all`: libplacebo's advanced path): no complaint; is VA-API's
+  chroma right (`vkva ~ vkno` near 0) or green (~2.28 M bytes off by more than 24, mean ~77) in either session? Which
+  FBO family did NVIDIA's adapter give (the log's `venus` line has no format; `texture-formats-tier1` in
+  `adapter.json` says `rg16float`)?
+- (L4) `mpv-all`: mpv on Vulkan with the advanced path on meets the bar (no drops, the guest no busier than 19–27%)?
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -69,13 +76,60 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   after L2b" and the backlog (bind groups remade each frame).
 - [x] L3b (done 2026-10-26): **`scripts/ci-machines.sh` passing again.** The kept-snapshots test's off-the-record
   profile ran out of room; it runs on an on-disk profile now (State after L3b).
-- [ ] L4: libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats).
+- [~] L4 (2026-10-26: **reproduced and narrowed, not found; stopped for the user's call**, "State after L4"):
+  libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats). The formats
+  stay held by default, `?gpu=vkformats=all` takes them; the NVIDIA run's questions above.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
   dEQP-VK on the Mac's GPU).
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
 - [ ] L8: the track's end (REPORT.md's VK3 section, docs, plan §6/§7, the final NVIDIA run scripted).
+
+## State (2026-10-26, after L4)
+
+- **Not done: the M4's green VA-API chroma is reproduced and narrowed, but its cause isn't found**, so `float32-blendable`
+  and tier1's storage formats stay held back by default and mpv on Vulkan renders as in VK2 L6 (REPORT.md "VK3 L4",
+  JSON in `bench/vulkan/results/vk3/l4/`). **The user's call** (below): ship the advanced path anyway, keep it off, or
+  have a later loop go on with the leads.
+- **What libplacebo needs:** its 1- and 2-component FBO formats must have every capability of the 4-component one
+  (`rgba16float`: renders, blends, filters, storage). So `r16float`/`rg16float` need tier1's storage, or
+  `r32float`/`rg32float` need `float32-blendable`. Without either: "Failed creating FBO texture! Disabling advanced
+  rendering", then "Failed dispatching scaler.. disabling". The M4 has both features, SwiftShader `float32-blendable` only.
+- **Built:** the driver takes both features (`WG_FEATURE_FLOAT32_BLEND`; tier1's storage as a bit of its own,
+  `WG_FEATURE_TIER1_STORAGE`, which also says `shaderStorageImageExtendedFormats`: VK2 said that feature without the
+  formats' storage bit). The worker holds them back by default (web/venus-gpu.ts `HELD_FEATURES`). `?gpu=vkformats=all`
+  passes them, `?gpu=vkhold=<feature>` holds one more. tests/venus-renderer.test.ts covers both settings (planted: an empty
+  hold list, caught). Tools: `mpv-frames.ts` (`GPU_KNOBS`, `MPV_ARMS`, `PAIRS`, `SHOT2`, libplacebo's complaints, Venus's
+  submits), `upload-race.ts`. nvidia.sh's `mpv` step runs mpv-frames as the page has it and twice with the advanced
+  path, plus the gate once with it on (~+11 min: ~56 min whole). Not run end to end (no bundle built; the steps' commands
+  ran on the M4 and SwiftShader).
+- **The green:** on the M4 with the advanced path on, the session's first mpv on Vulkan with VA-API shows chroma = 0. It
+  is VK2 L7's picture byte for byte, and also the picture with the import never writing chroma. It happens in ~1/3 of
+  fresh sessions, with either FBO family; later mpv runs in the session were right. It persists for that frame through
+  a re-render (debanding toggled, new FBOs, planes imported again) and mpv's screenshot. It never showed on SwiftShader.
+  The worker's calls (imports, binds, textures, views, destroys, held submits) and the 12 WGSL modules are identical in
+  green and right sessions. Each bind writes the same non-zero bytes. Completions put back nothing the CPU wrote.
+  WebGPU's orderings in isolation are right on Metal.
+- **It hides under any probe**: 0 green in 22 sessions with a CPU scan of a few µs in each bind, 0 in 22 with probes that
+  add GPU work, against 7 of 23 bare and 4 of 7 with a JS-only trace (`green-sessions-m4.json`).
+- **Numbers** (M4): formats held, mpv's VA-API frame = the software one (0 bytes), Vulkan vs GL within 4. Advanced path on
+  (right sessions): VA-API = software (0), Vulkan's lanczos vs GL's bilinear 544 bytes > 24 (max 47). SwiftShader advanced:
+  360 bytes > 24 (VK2 L7's). **The bar with the advanced path on: 0 drops, the guest 14, 13%** (default 14, 13%; GL
+  12–13%), mpv's CPU 342–376 ms a second against 326–359.
+- **Leads, ranked** (backlog "Imports' gaps"):
+  1. libplacebo's filter LUTs: made once, at the first frame, from host-visible memory. They are the chroma-only object
+     every later render reuses. Test: `--cscale=bicubic` (no LUT) in bare sessions. If that holds, look at the
+     write-watch's view of the guest's stores into that memory (a store form that writes a page without marking it).
+  2. libplacebo's trace log in a green session (`--msg-level=vo=trace`; perturbs, like any probe).
+  3. The first frame's held submits against `?gpu=vkpipelines=sync`, though VK2 L7 saw the green before async pipelines
+     existed.
+  Each test needs ~10 bare sessions (~3 min each on the Mac; `/tmp/claude-501/loop2.sh` was the loop, not kept: a for
+  loop over `sway-mac.sh` with `SCRIPT=../vulkan/mpv-frames.ts PAIRS='vkva~vkno'`).
+- **Left:** the user's decision; the NVIDIA run's three mpv questions (above). dEQP-VK's list doesn't change: the formats
+  aren't advertised by default, and CI runs on SwiftShader without tier1.
+- **CI at the commit:** ci.sh OK (440 s), ci-debian.sh OK (396 s), ci-deqp-vk.sh OK (244 s). ci-machines.sh not run (no stored-machine code changed).
+- **Worth not re-discovering:** see "Things worth not re-discovering" (L4's).
 
 ## State (2026-10-26, after L3b)
 
@@ -320,3 +374,12 @@ findings. Add VK3's here.
   scene ~50 MB, ~3 MB gzipped.
 - (L2) Completing a submit with nothing to read back before its work is done would hide its latency, but the guest's
   fences would then stop holding it back (unbounded queued frames): not done.
+- (L4) The M4's green chroma is a heisenbug: any probe in the GPU worker hides it, even a few µs of CPU per bind or one
+  extra submit. Count greens only in bare sessions, at least ~10 each (~1/3 rate). Only the session's first mpv on
+  Vulkan shows it. Keep traces in memory, dumped by the grab hook, never `console.log` in the hot path. `mpv-frames.ts`
+  with `MPV_ARMS='vkva=…|vkno=…' PAIRS='vkva~vkno'` takes ~2.5 min a session on the Mac.
+- (L4) libplacebo's FBO formats need every capability of `rgba16float` (blend, filter, storage, render) in their 1- and
+  2-component siblings; `float32-blendable` gives the `rg32float` family, tier1's storage the `rg16float` one (taken
+  first). Software decoding gives three R8 planes, VA-API an R8 and an RG8, so only VA-API needs the 2-component FBO.
+- (L4) `grep -f`/`pgrep -f` patterns: a kill pipeline whose pattern (`ssh macmini`) appeared later in the same command
+  line killed its own shell (exit 144). Find PIDs with `ps` first, in a command of their own.

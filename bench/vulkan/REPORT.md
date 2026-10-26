@@ -1145,6 +1145,90 @@ async 0.51–0.54 s (**3.7× sooner**) with WebGL's longest wait 74 ms. vkQuake:
 misses; warm across a restart **25 ms, 0 misses**, Chromium's pipelines ready in 74 ms for 17 (kept in the profile,
 as on Metal); load time 1.05 → 0.97 s. L3's gate holds on NVIDIA.
 
+## VK3 L4: libplacebo's advanced path — the M4's green chroma reproduced and narrowed, not found; its formats stay held
+
+**2026-10-26.** JSON in `results/vk3/l4/`. Hosts as in L3: the M4 (Metal, Chrome for Testing 153.0.8010.12, macOS
+26.6.2) through `bench/gpu/sway-mac.sh`, and the dev VM's SwiftShader (Chromium 153.0.8010.52). mpv 0.41, libplacebo
+7.360.1, Mesa 26.2.5 in the desktop guest.
+
+**What libplacebo needs** (its `renderer.c` `find_fbo_format`): a 4-component float format of at least 16 bits that
+renders and filters, then 1-, 2- and 3-component formats of the same type with *every* capability of that one. Our
+`rgba16float` renders, blends, filters and is a storage format (core WebGPU), so `r16float`/`rg16float` must be
+storage formats too (WebGPU's `texture-formats-tier1`), or `r32float`/`rg32float` must blend (`float32-blendable`). With
+neither, the 1- and 2-component FBO formats are missing: "Failed creating FBO texture! Disabling advanced rendering",
+then "Failed dispatching scaler.. disabling" (its separated scalers render their first half into an FBO), and mpv
+scales bilinearly, as VK2 L6 measured. The M4 has both features (and tier2), SwiftShader `float32-blendable` only.
+
+**Built** (vk/README.md "The driver"): the driver takes `float32-blendable` (32-bit floats blend) and tier1's storage
+(a bit of its own, `WG_FEATURE_TIER1_STORAGE`, which also says `shaderStorageImageExtendedFormats`: VK2 said that
+feature with tier1 while those formats had no storage bit, which Vulkan doesn't allow) when the worker passes them.
+The worker holds both back by default (web/venus-gpu.ts `HELD_FEATURES`); `?gpu=vkformats=all` passes them,
+`?gpu=vkhold=<feature>` holds one more. `tests/venus-renderer.test.ts` checks both settings against the Mac's adapter.
+
+**The green chroma reproduced, and not tied to the format.** `bench/vulkan/mpv-frames.ts` (each arm a fresh mpv paused
+at 20 s, its window's screenshot; mpv with VA-API against mpv decoding in software) on the M4 with the advanced path
+on: mpv's VA-API frame comes out with its chroma at zero, the VK2 L7 picture byte for byte (2,280,642 of 3,145,536 bytes
+off by more than 24, mean 77.5), in about a third of fresh sessions, with either FBO family (`rg16float` with tier1's
+storage, `rg32float` with tier1's storage held), always on the session's first mpv on Vulkan; the arms after it in a
+session were right. Forcing the import never to write the chroma plane gives the same bytes exactly
+(`frames-mac-chroma-unwritten.json`). By what each session carried (`green-sessions-m4.json`):
+
+| M4 sessions, the advanced path on | green |
+| --- | --- |
+| no instrumentation | 7 of 23 (5 of 18 with `rg16float` FBOs, 2 of 5 with `rg32float`) |
+| a JS trace of the worker's imports, textures, views, destroys and shaders (no GPU work) | 4 of 7 |
+| the same trace and a CPU scan of every import's bytes (a few µs in each bind) | 0 of 22 |
+| probes adding GPU work (readbacks of the imported planes and FBOs at their destroy, after each write, or at 11 s) | 0 of 22 |
+| a copy-back detector in the driver (8 MB copied at each readback's completion) | 0 of 3 |
+
+**What it isn't** (each checked in a green session against a right one, or in isolation):
+- Not libplacebo's frame cache alone: a second screenshot after debanding is turned on (the frame rendered anew, new FBOs,
+  the planes imported again) is green too (`frames-mac-green-rerender.json`), and a session green once stays green for
+  that frame.
+- Not the import's bytes: every bind of the chroma plane writes the same bytes, read back from virgl's texture at its
+  first import (non-zero) and kept since; mpv's screenshot imports the planes anew, written again, and is still green.
+- Not the worker's order of calls: the traces of green and right sessions are the same call for call (imports, binds,
+  textures and views made, destroys, the submits held for their pipelines), and the 12 WGSL modules mpv's run makes are
+  the same in both (hashes).
+- Not a completion's copy-back over the guest's newer writes: the only readbacks while mpv runs are its screenshot's
+  (8 MB of host-visible memory, after the picture is already green), and they put back nothing the CPU wrote.
+- Not WebGPU's ordering on Metal in isolation (`bench/vulkan/upload-race.ts`, `upload-race-mac.json`, 300 rounds each):
+  a texture written with `queue.writeTexture` and read right after by a compute or render pass, with the GPU idle or
+  busy (8 rounds in flight behind long compute passes); a storage texture written by one dispatch and sampled by the
+  next, in one pass or two, fresh or kept: no wrong texel in any.
+- Never seen on SwiftShader (the VK2 L7 run and this one, `rg32float` FBOs: right).
+
+**Not found.** The leads left (backlog "Imports' gaps"): libplacebo's filter LUTs, made once at the first frame from
+host-visible memory (the one chroma-only object every later render reuses; `--cscale=bicubic` has none), and so the
+write-watch's view of what the guest wrote there (a store form that writes a page without marking it would leave the
+GPU's copy stale until another store marks the page); libplacebo's trace log in a green session; the first frame's
+submits held for their pipelines against `?gpu=vkpipelines=sync` (VK2 L7 saw the green before async pipelines existed).
+A CPU scan of a few µs in each bind hid it 22 times out of 22, so whatever races is that tight, and any probe must add
+neither GPU work nor time in the worker.
+
+**So the formats stay held by default**: mpv on Vulkan renders as in VK2 L6 (`frames-mac-default.json`: VA-API's frame
+byte for byte the software one; Vulkan's and GL's within 4). With `?gpu=vkformats=all`, when it isn't green, the
+advanced path's frames are as VK2 L7 had them (`frames-mac-all.json`, `frames-swiftshader-all.json`):
+
+| mpv's paused frame, bytes off by more than 24 (largest, mean) | the M4, formats held | the M4, `vkformats=all` | SwiftShader, `vkformats=all` |
+| --- | --- | --- | --- |
+| Vulkan: VA-API against software | 0 | 0 (green sessions: 2.28 M, mean 77.4) | 360 (115, 0.03) |
+| Vulkan against GL, both decoding in software | 0 (4, 0.23) | 544 (47, 1.06): lanczos against bilinear | 426 (46, 1.04) |
+
+**mpv's bar holds with the advanced path on** (`mpv-mac-all.json` against `mpv-mac-default.json`, two sessions: Sintel's
+H.264 trailer, `bench/audio/avsync.ts`, two alternated rounds of Vulkan with VA-API and GL each, as VK2 L6):
+
+| the M4, 4 vCPUs | frames shown, dropped | the guest busy | mpv's CPU (ms a second) | sway's | imports (ms a second) |
+| --- | --- | --- | --- | --- | --- |
+| Vulkan, advanced path on | 532, 529; **0** | **14, 13%** | 376, 342 | 86, 94 | 5.6, 5.4 |
+| Vulkan, formats held (the default) | 533, 530; 0 | 14, 13% | 359, 326 | 90, 97 | 5.8, 5.6 |
+| GL (the two sessions) | 524–528; 0 | 12–13% | 303–309 | 102–107 | — |
+
+The scalers cost mpv ~5% more of its CPU and the guest nothing measurable, under the bar's 19–27%.
+
+**nvidia.sh** (`page`, the `mpv` step) runs `mpv-frames.ts` as the page has it and twice with `vkformats=all`, then the
+gate as before and once more on Vulkan with the advanced path on: whether NVIDIA shows the green, and its bar.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
@@ -1157,6 +1241,9 @@ as on Metal); load time 1.05 → 0.97 s. L3's gate holds on NVIDIA.
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK3 L4: `upload-race.ts` (orderings libplacebo's advanced path leans on, in WebGPU alone; `mac-costs.sh` with
+  `SCRIPT=upload-race.ts`); `mpv-frames.ts` takes `GPU_KNOBS`, `MPV_ARMS`, `PAIRS` and `SHOT2` (through `sway-mac.sh` too)
+  and records libplacebo's complaints and Venus's submits; the page takes `?gpu=vkformats=all` and `?gpu=vkhold=<feature>`.
 - VK3 L2: `fence.ts` and `fence/` (a worker's turns: nested `setTimeout`, messages, `postTask`, `Atomics.waitAsync`'s
   sleeps; WebGPU's done alone and nudged; in `nvidia.sh page`'s `fence` step, `mac-costs.sh` with `SCRIPT=fence.ts`
   on the Mac); `costs.ts` takes `POLL=timeout`; `guest.ts` takes `GPU_KNOBS` and `SIZE` and logs Venus's fence

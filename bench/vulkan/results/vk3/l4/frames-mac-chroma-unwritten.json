@@ -1,0 +1,35 @@
+{
+ "chromium": "153.0.8010.12",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "info": "mpv 1:0.41.0-6 libplacebo 7.360.1-7 mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 webpc-va 3-1",
+ "sway": "",
+ "vkva": {
+  "args": "--hwdec=vaapi --vo=gpu-next --gpu-api=vulkan",
+  "size": "1376,762",
+  "hardwareDecoding": true,
+  "placebo": ""
+ },
+ "vkno": {
+  "args": "--hwdec=no --vo=gpu-next --gpu-api=vulkan",
+  "size": "1376,762",
+  "hardwareDecoding": false,
+  "placebo": ""
+ },
+ "vkva ~ vkno": {
+  "bytes": 3145536,
+  "off24": 2280642,
+  "differ": 2599576,
+  "max": 250,
+  "mean": 77.478
+ },
+ "warnings": {
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1,
+  "venus-share: resource 79 (854x480) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: the bitmap way checked right (3 frames)": 1,
+  "venus-share: resource 90 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 91 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 107 (854x480) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 120 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 121 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown": 1
+ }
+}

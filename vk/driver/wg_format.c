@@ -118,12 +118,12 @@ wg_format_init(uint32_t features)
       if ((tier1 && (f->flags & WG_FMT_T1_RENDER)) ||
           ((features & WG_FEATURE_RG11B10_RENDER) && (f->flags & WG_FMT_RG11B10)))
          f->flags |= WG_FMT_RENDER | WG_FMT_BLEND;
-      /* Held back (VK2 L7, docs/backlog.md): blending 32-bit floats (float32-blendable) gave mpv's libplacebo a family
-       * of FBO formats, and on its advanced rendering VA-API's imported chroma read as zeros on the M4's Metal (a
-       * green picture; right on SwiftShader, and decoded in software). Storage for the 8- and 16-bit formats tier1
-       * allows (WG_FMT_T1_STORAGE) would give it another family: held back too, not tried on that path. Without both
-       * mpv renders as in L6, byte for byte right; WG_FEATURE_FLOAT32_BLEND and WG_FMT_T1_STORAGE say what the
-       * adapter could. */
+      /* Both off by default (the worker holds them back: web/venus-gpu.ts `HELD_FEATURES`, mpv's VA-API chroma on the
+       * M4 under libplacebo's advanced rendering, VK3 L4); `?gpu=vkformats=all` passes them on. */
+      if ((features & WG_FEATURE_TIER1_STORAGE) && (f->flags & WG_FMT_T1_STORAGE))
+         f->flags |= WG_FMT_STORAGE;
+      if ((features & WG_FEATURE_FLOAT32_BLEND) && (f->flags & WG_FMT_FLOAT32))
+         f->flags |= WG_FMT_BLEND;
       if ((features & WG_FEATURE_BGRA8_STORAGE) && (f->flags & WG_FMT_BGRA8))
          f->flags |= WG_FMT_STORAGE;
    }

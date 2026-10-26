@@ -45,7 +45,10 @@
 #   5. pipelines (VK3 L3): pipelines made one by one against all at once (bench/vulkan/pipelines.ts), and vkQuake's and
 #      a vkmark scene's replays with pipelines made at once and no shader store, then cold and warm across a restart on
 #      one kept profile (bench/vulkan/venus-run.ts; ~8 min);
-#   6. mpv: the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds (bench/audio/avsync.ts).
+#   6. mpv: its frames on Vulkan (VA-API, software) and GL compared, with libplacebo's complaints, as the page has it and
+#      twice with libplacebo's advanced path on (`vkformats=all`, VK3 L4; bench/vulkan/mpv-frames.ts; ~3 min each), then
+#      the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds, and once more on Vulkan with the
+#      advanced path on (bench/audio/avsync.ts).
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz: send that file back.
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
@@ -177,8 +180,20 @@ if [ "${1:-}" = page ]; then
       }' "$R") || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" mpv "* ]]; then
+    # VK3 L4: mpv's paused frame on Vulkan (VA-API's surfaces, and decoded in software) and on GL, compared, with
+    # libplacebo's complaints: as the page has it (libplacebo without FBOs: "Failed creating FBO texture"), then with its
+    # advanced path (`vkformats=all`: no complaint; on the M4 VA-API's chroma came out zeros, a green picture, in about
+    # a third of sessions: "all ... vkva ~ vkno" off by >24 in ~2.3 M bytes). Two sessions of the latter.
+    for f in default all all2; do
+      knobs=; [ $f != default ] && knobs=vkformats=all
+      step "mpv-frames-$f" 900 env SHIM=1 GPU_KNOBS="$knobs" node bench/vulkan/mpv-frames.ts target/arch/desktop.qcow2 "$R/mpv-frames-$f"
+      grep -hE "^\[[0-9.]+\] (vk|gl)" "$R/mpv-frames-$f.log" | grep -v ' venus ' | cut -c1-200 | sed "s/^/  $f /" || true
+    done
     step mpv 1800 env VIRGL_GPU=virgl,vulkan MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=2 \
       MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan|gl:--vo=gpu --gpu-api=opengl" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv"
+    # The gate with libplacebo's advanced path on (VK3 L4).
+    step mpv-all 1800 env VIRGL_GPU=virgl,vulkan,vkformats=all MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=1 \
+      MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv-all"
   fi
   { uname -a; nvidia-smi --query-gpu=name,driver_version --format=csv 2>/dev/null || true; "$CHROMIUM" --version 2>/dev/null || true; cat "$P/BUNDLE.txt"; } > "$R/host.txt"
 

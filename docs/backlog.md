@@ -571,15 +571,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
 - **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
-  - **libplacebo renders without FBOs on Venus** ("Failed creating FBO texture! Disabling advanced rendering"): its
-    1- and 2-component FBO formats must have every capability of its 4-component one. VK2 L7 found that advertising
-    `float32-blendable` (the adapter's) gives it the 32-bit float family, and with it mpv's advanced rendering: right
-    when decoding in software (within 47 of GL's bilinear picture), and right with VA-API on SwiftShader, but on the
-    M4's Metal VA-API's imported chroma plane reads as zeros (a green picture, `bench/vulkan/mpv-frames.ts`;
-    `results/vk2/l7/`). So `float32-blendable` and tier1's storage formats are held back (vk/driver/wg_format.c) until
-    that is found: suspects are how the advanced path samples or copies the imported RG8 plane on Metal (a blit, a
-    gather) and the import's texture usage. Then mpv gets its scalers, debanding and HDR peak detection; GL's GLES 2
-    path has none of them either.
+  - **libplacebo renders without FBOs on Venus** ("Failed creating FBO texture! Disabling advanced rendering"), since
+    the device holds back `float32-blendable` and tier1's storage formats by default (web/venus-gpu.ts `HELD_FEATURES`;
+    `?gpu=vkformats=all` takes them: then mpv gets its FBOs, scalers and debanding). With them, **mpv's VA-API chroma
+    reads as zeros on the M4 in about a third of fresh sessions** (bench/vulkan/REPORT.md "VK3 L4"; a green picture,
+    byte for byte the one with the imported chroma never written). Found so far: it isn't the FBO family (32-bit and
+    16-bit floats both), happens at the session's first mpv on Vulkan, and stays for that frame whatever renders it
+    again (a re-render with debanding toggled, a screenshot that imports the planes anew); the worker's calls and the
+    translated WGSL are the same in green and right runs, the import writes the right bytes, completions put back
+    nothing the CPU wrote, and `queue.writeTexture` then a compute pass that samples it is right in isolation
+    (`bench/vulkan/upload-race.ts`). Any probe in the GPU worker hides it: 0 green in 47 sessions with a few µs of CPU in each
+    bind or extra GPU work, against 11 of 30 without (`results/vk3/l4/green-sessions-m4.json`). Never seen on SwiftShader. Leads not taken: libplacebo's filter LUTs (made once at the first frame from
+    host-visible memory: the persistent chroma-only object, `--cscale=bicubic` has none), libplacebo's trace log in a
+    green run, the first frame's held submits (async pipelines) against `?gpu=vkpipelines=sync` (VK2 L7 saw it before
+    async pipelines existed). The user's NVIDIA run says whether NVIDIA shows it (`nvidia.sh`'s `mpv-frames` steps).
   - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
     syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
     host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the

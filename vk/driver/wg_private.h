@@ -54,6 +54,8 @@ enum wg_feature {
    WG_FEATURE_RG11B10_RENDER = 1 << 11, /* rg11b10ufloat-renderable */
    WG_FEATURE_FLOAT32_BLEND = 1 << 12, /* float32-blendable */
    WG_FEATURE_BGRA8_STORAGE = 1 << 13, /* bgra8unorm-storage */
+   WG_FEATURE_TIER1_STORAGE = 1 << 14, /* storage for tier1's formats: the worker sets it with texture-formats-tier1 unless
+                                        * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 

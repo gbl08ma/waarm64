@@ -117,11 +117,16 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types (device-local; host-visible, coherent, cached and
   device-local) on a 2 GiB heap, one queue family. `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
-- **Held back from the adapter's** (VK2 L7): `float32-blendable` and tier1's storage formats. Blending 32-bit floats
-  gave mpv's libplacebo FBOs for its advanced rendering, on which VA-API's imported chroma read as zeros on the M4's
-  Metal (a green picture; right on SwiftShader and when decoded in software); tier1's storage would give it another
-  family of FBO formats, untried. Without them mpv renders as in L6, its VA-API frames byte for byte its software
-  ones (backlog "Imports' gaps").
+- **Held back from the adapter's by default** (VK2 L7, VK3 L4; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable`
+  and tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
+  `shaderStorageImageExtendedFormats`). Either gives mpv's libplacebo a family of FBO formats (32-bit floats, or
+  16-bit floats with tier1's storage), and with them its advanced rendering (scalers, debanding, its frame cache). Under
+  it mpv's VA-API chroma reads as zeros on the M4 in about a third of fresh sessions: a green picture that stays for the
+  frame, however it's rendered again (bench/vulkan/REPORT.md "VK3 L4": not the FBO format, not the translation, not
+  the import's bytes; not found). Without them libplacebo has no FBOs and mpv renders as in VK2 L6, its VA-API frames
+  byte for byte its software ones. The driver takes both where the adapter has them once `?gpu=vkformats=all` asks
+  (the advanced path on; tests, the NVIDIA run); `?gpu=vkhold=<feature>` holds one more (`tier1-storage` is tier1's
+  storage alone).
 - **YCbCr conversions aren't advertised** (VK2 L7's choice, by measurement): advertised and not honoured, GTK4's
   Vulkan renderer (`GSK_RENDERER=vulkan`) drew black or near-empty frames for more CPU than its GL one (REPORT.md "VK2
   L7"); without them GTK4 stays on GL, its default here anyway (forced onto Vulkan it aborts on its own assertion).
