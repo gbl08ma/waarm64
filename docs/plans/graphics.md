@@ -1,7 +1,7 @@
 # webpc graphics plan: Vulkan
 
 **Status: planned (the user, 2026-10-25): §2's decisions bind. VK0 is done (2026-10-25,
-[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is current (`VK2-KICKOFF.md`; notes and loops `VK2-HANDOVER.md`; L1 to L3 done: vk/README.md).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is done (2026-10-26; its brief and notes in git history, at cd03da82): the direct set draws right through Venus on WebGPU, mpv on Vulkan meets its bar on the M4, but what Venus presents is black on the user's NVIDIA desktop (§6). VK3 is next (`VK3-KICKOFF.md`).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -271,7 +271,7 @@ for the programs that switch. The user decides whether VK1 starts.
   renderer would start; VK2 either drops them until VK3 emulates them, so GTK4 stays on GL, or keeps them and brings
   GTK4 to its bar: its choice, by measurement). *Gate:* mpv meets its
   bar (the video track's: no drops, the guest 19–27% busy), which needs VA-API's surfaces imported as dma-bufs.
-  **Done 2026-10-26 but for the user's NVIDIA run** (REPORT.md "VK2 L3"–"VK2 L7"; vk/README.md): mpv on Vulkan with
+  **Done 2026-10-26** (REPORT.md "VK2 L3"–"VK2 L7", "VK2: the NVIDIA run"; vk/README.md): mpv on Vulkan with
   VA-API's surfaces drops no frame and keeps the guest 13% busy on the M4; vkcube's, vkmark's and vkQuake's frames match
   lavapipe's on SwiftShader and the M4; 1,463 dEQP-VK cases as a pass list; the scene 1.4–1.9× cheaper a frame than on
   virgl. What VK2 learned: the caps follow the adapter at start (the device's own limits and features, so SwiftShader's
@@ -279,9 +279,13 @@ for the programs that switch. The user decides whether VK1 starts.
   honoured, GTK4's Vulkan renderer drew wrong for more CPU; GTK4 takes GL by default here anyway; the modifiers stay,
   Venus's WSI needs them); a pipeline's first compile is Metal's ~75 ms, not the translation (0.6 ms); Venus's WSI
   images reach the screen as a copy into virgl's texture (~0.8 ms a 1080p frame on the M4); the module is 0.69 MiB
-  with brotli, far under step 1's 5 MiB.
+  with brotli, far under step 1's 5 MiB. **On the user's NVIDIA desktop** the frames are right (the replays) and the
+  guest's CPU a frame half virgl's or less, but what Venus presents is black (mpv's picture; the bitmap way is the
+  suspect) and a frame waits ~4.5 ms on its fence (the scene at 1 fish slower than virgl): the gate holds on the M4
+  and SwiftShader, not yet there. VK3 starts with both.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
-  render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: the
+  render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: Venus's
+  frames on NVIDIA (black, and ~4.5 ms a fence: backlog), libplacebo's advanced path (the M4's green chroma), the
   adapter's features the translator still lacks (`subgroups`, `shader-f16`, read-write storage with `tier2`), the
   driver's gaps dEQP-VK found (backlog "The Vulkan driver's gaps": per-face stencil, occlusion queries, texel
   buffers, copies WebGPU refuses), and pipelines made asynchronously with a cache across runs (§7).
@@ -303,6 +307,10 @@ for the programs that switch. The user decides whether VK1 starts.
 - **WebGPU's per-call cost** in Chromium caps a frame at ~5,000 Vulkan-style draws a millisecond on the M4 (E): games
   at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
   fast (NVIDIA).
+- **The browser's interop between WebGPU and WebGL differs by platform.** Venus's frames reach the screen as a copy
+  from a WebGPU texture into WebGL's; the way that costs 0.8 ms a 1080p frame on the M4 gave black on the user's
+  NVIDIA desktop (Linux: Dawn on Vulkan, ANGLE on GL), and a WebGPU canvas on SwiftShader loses the GPU channel. Each
+  way needs a check at run time and a fallback, and the user's run to confirm a platform the agents can't reach.
 - **Route (b)'s size in wasm**: `spirv_to_nir`, NIR's passes and a NIR → shading-language backend measured in VK1 step 1
   (0.42 MiB brotli, 0.27 ms a stage in Chromium; wasi-sdk the toolchain); vkr with Mesa's lite runtime and the null
   driver is 3.2 MB, 510 KiB gzipped (VK1). VK2's whole module (vkr, the full runtime, the compiler, the driver) is

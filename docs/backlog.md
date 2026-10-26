@@ -286,7 +286,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   pump (web/snd.ts, `setInterval` at 5 ms) and gpu-present's 4 ms lag probes (measurement, meant to tick). To do:
   inspect each (and any beyond web/), measure how late it actually answers, and pick per poller. A MessageChannel or
   `postTask` loop has no clamp but must not starve the worker's timers: VK1 tried one for Venus's ring and the
-  device's fence, answered from a timer, went unanswered (VK2-HANDOVER.md). So first take timers out of paths that
+  device's fence, answered from a timer, went unanswered (VK2's handover, in git history at cd03da82). So first take timers out of paths that
   must answer (the fence), then poll within a time budget (~0.5–1 ms a task while active, then one timer), or
   `postTask` with a priority; `Atomics.waitAsync` only where the guest notifies (its JIT writes Venus's ring tail
   with plain stores). VK1's measurement: removing the ring poller's clamp didn't lower vkcube's guest CPU, so measure
@@ -529,6 +529,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **GTK4 on Venus drew black or near-empty frames** (VK2 L7, with YCbCr advertised: `bench/gpu/gtk4-load.ts`
   `RENDERERS=vulkan`, frames' window black, fishbowl one icon at 6 frames/s): not looked into; VK3's YCbCr row starts
   there.
+- **Venus's frames are black on the user's NVIDIA desktop** (VK2's NVIDIA run, `bench/vulkan/REPORT.md` "VK2: the
+  NVIDIA run"; Linux, Chromium 153, ANGLE on NVIDIA's GL, Dawn on Vulkan): mpv on Vulkan's screenshots black where GL's
+  show the film, and the user saw the screen black for seconds at a time during the run; the replays (frames checked in
+  the guest, not presented) are right. The suspect is the bitmap way (a WebGPU canvas, `transferToImageBitmap`,
+  `texSubImage2D` into WebGL), run only on the M4 before. Not reproducible on the dev VM (SwiftShader takes the readback
+  way, and a WebGPU canvas there loses the GPU channel) nor on the Mac: a fix needs a check of its own at run time (a
+  first copy compared through a one-off readback, falling back to readback) and the user's run to confirm. VK3's first.
+- **Venus's frames wait ~4.5 ms on their fence on NVIDIA** (the same run): VK0's scene at 1 fish 4.8 ms a frame on
+  Venus against virgl's 2.5 (the M4: 0.9 against 1.4), the display's fences 4.1–5.3 ms on average to come back
+  against 0.7 ms on the M4, though the GPU works 0.3 ms. Where the time goes (Dawn's `onSubmittedWorkDone` on Vulkan,
+  the bitmap copy, the GPU's clocks at light load) isn't known: instrument the fence's path and add it to
+  `bench/vulkan/nvidia.sh`.
 - **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
   screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't

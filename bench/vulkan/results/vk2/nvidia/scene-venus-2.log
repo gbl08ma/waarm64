@@ -1,0 +1,16 @@
+[0.9] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap
+[40.8] running
+[46.6] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[49.5] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[53.0] fish-1-msaa1 4.902 ms a frame (IQR 0.183), guest CPU 1.092 ms; GPU worker busy 1 ms/s, 0 draws/s
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[56.7] fish-1000-msaa1 6.781 ms a frame (IQR 0.426), guest CPU 3.136 ms; GPU worker busy 1 ms/s, 0 draws/s
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[59.5] toolkit-2000-msaa1 3.748 ms a frame (IQR 0.135), guest CPU 1.118 ms; GPU worker busy 1 ms/s, 0 draws/s

@@ -723,6 +723,54 @@ guests' images, 3.4 GB) runs the programs' replays (REPLAY=all), the scene on Ve
 and mpv's gate (two), in Chrome for Testing headless if it gets the NVIDIA adapter, else headed in the user's own
 Chromium, and packs the results. The dev VM ran it whole on SwiftShader (its test hooks).
 
+## VK2: the NVIDIA run — right offscreen, faster than virgl where there's work, but mpv's picture black
+
+**2026-10-26.** The user ran `bench/vulkan/nvidia.sh page` on their desktop with the bundle of cd03da82 (`results/vk2/nvidia/`):
+an RTX 3070 with NVIDIA's 615.71.09, CachyOS (kernel 7.2.9), Arch's Chromium 153.0.8010.52; the page's WebGL2 is
+ANGLE on NVIDIA's OpenGL ES 3.2, its WebGPU Dawn on Vulkan ("nvidia ampere"); the frames reach virgl by bitmap. One
+session, two alternated rounds of the scene and of mpv, on the user's working desktop.
+
+**The programs' frames are right** (`replay/results.json`; the share of a frame's bytes off by more than 24, worst
+frame, against lavapipe): vkcube 0.001% (tolerance 0.2%), vkmark's 13 scenes ≤ 0.11% (0.3%; `texture` the worst, as on
+the M4), vkQuake 1.67% (3%; the same 1.67–1.68% as on the M4 and SwiftShader: systematic). Replay rates 57 (vkcube),
+67–126 (vkmark), 79 (vkQuake) frames/s. The run's warnings name two leads for vkQuake's difference: a shader that
+didn't translate (`a texture of sampler dim 5`: texel buffers, its palettization) and depth and stencil copies into
+`depth32float-stencil8` that WebGPU refused and the worker skipped.
+
+**VK0's scene, desktop guest, 1080p, MSAA 1** (`scene-*`, medians of two rounds each; the M4's from "VK2 L5"):
+
+| ms a frame (the guest's CPU a frame) | 1 fish | 1,000 fish | toolkit 2,000 |
+| --- | --- | --- | --- |
+| NVIDIA, Venus | 4.77, 4.90 (1.32, 1.09) | 6.59, 6.78 (3.07, 3.14) | 3.86, 3.75 (1.04, 1.12) |
+| NVIDIA, virgl | 2.48, 2.65 (2.39, 2.43) | 9.14, 8.83 (6.16, 5.90) | 7.14, 7.02 (6.89, 6.68) |
+| M4, Venus | 0.93–1.06 | 2.53–2.71 | 0.86–0.90 |
+| M4, virgl | 1.43–1.45 | 4.83–5.46 | 3.40–3.60 |
+
+- **The guest's CPU a frame is half virgl's or less everywhere** (toolkit: a sixth), as on the M4.
+- **But Venus has a ~4.5 ms floor a frame on NVIDIA** (the M4's: ~0.9): at 1 fish it is 1.9× *slower* than virgl,
+  though the renderer's GPU time is 0.28 ms and the worker is busy 4 ms a second. The display's fences take 4.1–5.3 ms
+  on average to come back (`display.fences.meanMs`; `toGpuMs` 4.3–4.9), against L7's 0.7 ms for a submit's fence on
+  the M4: the frame waits on its fence's round trip. Where Dawn on Vulkan (or Chromium's GPU process on Linux)
+  spends it (`onSubmittedWorkDone`'s polling, the bitmap copy, the clocks of a lightly loaded GPU: "The NVIDIA
+  desktop" saw bimodal light loads) isn't known: VK3.
+
+**mpv's gate: no drops, the guest 11–13% busy, but nothing on the screen** (`mpv/`, Sintel's H.264 trailer, VA-API):
+
+| two rounds | frames shown, dropped | the guest busy | mpv's CPU (ms a second) | sway's | the page's screenshot |
+| --- | --- | --- | --- | --- | --- |
+| Vulkan (`--vo=gpu-next --gpu-api=vulkan`) | 536, 531; **0** | 13, 11% | 340, 272 | 76, 63 | **black** (mean 0.4 of 255) |
+| GL (`--vo=gpu`) | 529, 530; 0 | 9, 8% | 215, 184 | 64, 55 | the film (mean ~100) |
+
+The timing bar holds, but **Vulkan's frames don't reach the screen on NVIDIA**: both rounds' screenshots are black but for
+sway's "Click to type", while GL's show the film; the M4's screenshots of the same harness show it on Vulkan
+(`bench/results/local/vk2-l7-mpv-mac`, not committed: mean 31 of 255 against GL's 34). The imports ran (48 pictures a second,
+14 MB), and the replays, which check frames inside the guest without presenting them, are right: the suspect is L4's
+presentation by bitmap (a WebGPU canvas on Dawn's Vulkan, `transferToImageBitmap`, `texSubImage2D` into ANGLE's
+OpenGL), which only the M4 had run. The user, watching the run, saw the screen black for several seconds at a time,
+repeatedly: every Venus window is likely black there (vkcube on the desktop wasn't in the run to say). **So the gate isn't met on NVIDIA**, the user's own GPU: VK3's first work. libplacebo said "Failed
+creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
+bytes, larger than the provided size 8192" once a run, as on the M4.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

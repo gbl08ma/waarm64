@@ -1,0 +1,89 @@
+{
+ "arm": "guest-venus",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 30,
+ "samples": 5,
+ "frames": 30,
+ "frameMs": {
+  "median": 6.588,
+  "iqr": 0.219
+ },
+ "guestCpuMs": 3.071,
+ "line": "venus aquarium: 6.588 ms a frame (IQR 0.219), CPU 3.071 ms, GPU 1.223 ms, 1119 draws a frame",
+ "seconds": 3.697392903,
+ "renderer": {
+  "seconds": 4,
+  "busyMs": 1.3137500286102295,
+  "submitMs": 0,
+  "drawMs": 0.11375010013580322,
+  "presents": 5.25,
+  "glDraws": 0,
+  "commands": 0,
+  "uploadKB": 0,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 0,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 0,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 249.75,
+  "submitKB": 5.8818359375,
+  "fences": {
+   "n": 151.75,
+   "meanMs": 4.30965403473554,
+   "maxMs": 53.02500009536743,
+   "heldMs": 1410.2537510991096,
+   "behindMs": 744.9112507104874,
+   "fullMs": 0.01750004291534424,
+   "heldMax": 16,
+   "toGpuMs": 4.333129060790194,
+   "toGpuMaxMs": 52.999755859375,
+   "backMs": 0.026466696962665015,
+   "backMaxMs": 0.365234375
+  }
+ },
+ "vm": {
+  "seconds": 4.008045000076294,
+  "Msteps": 127.340569,
+  "irqs": 1614,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 5270,
+   "0x20": 72,
+   "0x24": 5522,
+   "0x25": 114
+  },
+  "tlbMisses": 127808,
+  "tlbFlushes": 7830,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 0.956157
+ }
+}
