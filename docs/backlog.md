@@ -544,7 +544,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name
   the memory's GPUBuffer, writes to buffers tracked like textures' and a buffer-to-texture copy with the import's
   stride. Not needed while no guest takes that path.
-- **Venus's ~4.5 ms fence floor on NVIDIA: the fix awaits the user's run** (VK3 L2, bench/vulkan/REPORT.md "VK3 L2"):
+- **Venus at 1 fish on NVIDIA: 2.4–2.6 ms a frame against virgl's 1.5, parked by the user** (2026-10-26: 1 fish isn't
+  representative; likely NVIDIA's driver latency or its GPU leaving low power slowly; Venus is ahead at 1,000 fish and
+  the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
+  scene's pass ~0.9 ms of GPU (the M4's 0.41), a frame's `Queue::Submit` ~1.55 ms in the GPU process (REPORT.md "VK3:
+  the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`). History below.
+- **Bind groups remade every frame** (VK3 L2c, unmeasured): a descriptor set keeps bind groups for 4 pipeline layouts
+  only, and every pipeline has layouts of its own, so the scene remakes ~14 a frame. A cache keyed by the layout's
+  shape (or layouts shared across pipelines with equal sets) would keep them; worth it where draws switch pipelines.
+- **Venus's ~4.5 ms fence floor on NVIDIA: the poller's part fixed** (VK3 L2, bench/vulkan/REPORT.md "VK3 L2"):
   found on the M4 and SwiftShader as two waits, both gone. The guest fences each frame through the virtqueue, and a
   fence retired only at the ring poller's next turn, a nested `setTimeout(0)` clamped to ~4.5 ms (the M4's scene at 1
   fish: 3.0 ms a frame, fences 4.3 ms; now 0.86 and 1.05, virgl's 0.87–0.96). And Dawn on Vulkan (SwiftShader, and so

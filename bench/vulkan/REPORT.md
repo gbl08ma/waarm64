@@ -1124,9 +1124,16 @@ Presentation, the replays and mpv as in the run of 5b9654ac (right, at the bar).
 **Chromium on NVIDIA notices a lone real pass done ~2.2 ms after it ends** (a trivial copy: 0.14 ms), 1.2 ms when
 nudged, at once while submits keep coming: hypothesis (2)/(5), not the clocks for this tiny pass (0.03 ms of GPU).
 
-**The scene's own GPU time is large** (`scene-venus-gputime-*`, `?gpu=vkgputime`): **0.87–0.89 ms a submit, ~1.8 ms a
-pass submit** (49% of submits have the pass) at 1 fish, against the M4's 0.41 ms a pass and the synthetic pass's
-0.03. So a frame at 1 fish is ~1.8 ms of GPU plus Chromium's late look: done 3.4 ms.
+**The scene's own GPU time is large** (`scene-venus-gputime-*`, `?gpu=vkgputime`): **0.87–0.89 ms a pass** at 1 fish
+(only submits with a pass are timed; a first reading here of ~1.8 ms was wrong), against the M4's 0.41 ms and the
+synthetic pass's 0.03. So a frame at 1 fish is ~0.9 ms of GPU plus Chromium's late look: done 3.4 ms.
+
+**Parked by the user (2026-10-26):** 1 fish isn't representative of real workloads; the user suspects NVIDIA's driver
+latency or its GPU leaving the low-power state slowly (the M4's leaves it fast). L2c, started on it, was stopped; what
+it saw before (not committed): in the trace (tracing halved the frame rate, so inflated) the GPU process's main
+thread is busy ~750 ms a second and a frame's `Queue::Submit` takes ~1.55 ms (the M4: under 0.1), the frame's whole
+command batch ~2.7 ms; and the driver remakes ~14 bind groups a frame (a descriptor set keeps bind groups for 4
+layouts only, and every pipeline has layouts of its own: backlog).
 
 **1 fish, ms a frame (two rounds):** Venus 1.81, 2.59 (the first round's low value unexplained); `vkgputime` 2.54,
 2.56; `vknudge=0.25` **2.46, 2.39** (done 3.1); no nudges 3.16, 3.08 (done 4.5); virgl **1.52, 1.55**. 1,000 fish:

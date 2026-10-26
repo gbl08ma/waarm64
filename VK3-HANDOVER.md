@@ -27,14 +27,13 @@ done in 0.10–0.15 ms, nudged or not; the pump took ~1.1 ms off every size; **V
 
 **Answered by the run of f55eacd7 (2026-10-26; REPORT.md "VK3: the NVIDIA run after L2b", `results/vk3/nvidia-l2b/`):**
 L2b's: a lone real pass is noticed done ~2.2 ms after it ends (0.03 ms of GPU; 1.2 ms nudged; at once while submits
-keep coming); **the scene's pass costs ~1.8 ms of GPU** (`vkgputime`: 0.88 ms a submit, half of them passes; the M4's
-0.41); `vknudge=0.25` 2.4 ms a frame at 1 fish, no nudges 3.1, the default 2.5, virgl 1.5: the bar still not met. The
+keep coming); **the scene's pass costs ~0.9 ms of GPU** (`vkgputime`, per pass; the M4's 0.41); `vknudge=0.25` 2.4 ms a frame at 1 fish, no nudges 3.1, the default 2.5, virgl 1.5: the bar still not met. The
 trace (134 MB, `bench/results/local/vk3-nvidia-l2b/`, not committed) wasn't summarized: its summarizer overflowed the
 stack. L3's: async pipelines 3.7× sooner, WebGL's longest wait 2 s → 74 ms; vkQuake warm across a restart 0 misses,
 25 ms of translation, Chromium's pipelines kept in the profile (74 ms for 17). Also: nvidia.sh doesn't clear
 `~/webpc-vk2/results` before a run (the earlier run's `venus-timeout` arms came along).
 
-**Open for the next run:** (L2c scripts them.)
+**Open for the next run:** nothing yet (L2c was stopped; later loops add theirs).
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -61,18 +60,14 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   The bar: Venus at 1 fish no slower than virgl on NVIDIA; if it needs another user run to settle, script it and
   move on.
 - [x] L3 (done 2026-10-26): pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
-- [ ] L2c (added by the supervisor after the NVIDIA run of f55eacd7): **why a scene pass takes ~1.8 ms of GPU on
-  NVIDIA** (the M4 0.41, the synthetic 120-draw pass 0.03), then Chromium's late look (~1.2 ms nudged). Check the
-  measurement first (timestamps around one pass, Dawn's own `timestamp-query` quantization on NVIDIA); then which part
-  of the pass costs: per-draw or per-pipeline timestamps, the full-screen background, the translated shaders (compare
-  the WGSL with what virgl's GLSL does for the same draw; Tint's output for NVIDIA through Dawn's dumps if reachable),
-  load/store ops, attachments' formats, MSAA resolve. The GPU's clocks at a light load: an arm that keeps the GPU busy
-  (a background WebGL load) to see whether the scene's pass shrinks. The trace in `bench/results/local/vk3-nvidia-l2b/`:
-  fix the summarizer (no spread of big arrays) and summarize it here (the GPU process's main thread, the gaps between
-  `PerformPollingWork`). nvidia.sh: clear `results/` at the start; the next run's questions. A default `vknudge` per host
-  if the numbers say so. The bar stays Venus at 1 fish ≤ virgl; if what's left is the GPU's clocks or Chromium's
-  scheduling and nothing of ours, say so: the supervisor takes it to the user.
-- [ ] L3b (added by the supervisor after L3, runs after L2c): **`scripts/ci-machines.sh` passing again.**
+- [-] L2c (added after the NVIDIA run of f55eacd7; **stopped 2026-10-26 by the user's decision**): the 1-fish gap on
+  NVIDIA (2.4–2.6 ms a frame against virgl's 1.5) is parked: 1 fish isn't representative of real workloads, and the
+  user suspects NVIDIA's driver latency or its GPU leaving the low-power state slowly. Venus is well ahead of virgl
+  there at 1,000 fish and the toolkit (5.5 against 8.8 ms, 3.2 against 6.4). So the gate's scene clause ("no more a
+  frame than virgl at every size") is held at 1,000 fish and the toolkit only, unless the user reopens it. Kept from
+  L2c: nvidia.sh clears `results/` before a run (22e10916). Its other findings are in REPORT.md "VK3: the NVIDIA run
+  after L2b" and the backlog (bind groups remade each frame).
+- [ ] L3b (added by the supervisor after L3, next): **`scripts/ci-machines.sh` passing again.**
   `tests/page-snapshots.test.ts` "kept snapshots…" has failed since VK2 L7 at its first Restore ("the disk's changes
   can't be written to the browser's storage (is it full?)"; backlog). Not VK3's doing, but the track's end needs
   ci-machines.sh green: find whether it's the test's profile quota or a real storage bug and fix it.
