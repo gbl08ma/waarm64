@@ -31,7 +31,10 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
 - [x] L1 (done 2026-10-26): presentation on NVIDIA (why the bitmap way is black; a run-time check of the first copy and the readback
   fallback; nvidia.sh's presentation check).
 - [ ] L2: the fence's round trip (instrumented on every host; the pollers' `setTimeout(0)` first; the bar: Venus at
-  1 fish no slower than virgl on any host).
+  1 fish no slower than virgl on any host). Supervisor's note after L1: VK2's NVIDIA scene numbers ran with the
+  guest's WSI on Mesa's prime blit (vendor 0x10de: an extra copy into a linear buffer a frame), so part of the ~4.5 ms
+  floor may be that path, not the fence. Split the two first: the scene's frame with `?gpu=vkvendor=nvidia` against
+  without, on the M4 and SwiftShader, before blaming the pollers; the next NVIDIA run then shows the floor without it.
 - [ ] L3: pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
 - [ ] L4: libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats).
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
