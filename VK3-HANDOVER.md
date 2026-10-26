@@ -79,12 +79,63 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
 - [~] L4 (2026-10-26: **reproduced and narrowed, not found; stopped for the user's call**, "State after L4"):
   libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats). The formats
   stay held by default, `?gpu=vkformats=all` takes them; the NVIDIA run's questions above.
+- [ ] L4b (the user's decision, 2026-10-26: chase the green, **structured and methodical**): one fresh subagent per
+  step, serial, each time-boxed, each reading and extending "The green: investigation log" below, the supervisor
+  reviewing and re-ranking between steps. Not parallel: the green is timing-sensitive on the Mac's one GPU (runs side by
+  side would change the rate), and each step must know every theory already tried. Steps: L4b-0 the harness, the
+  baseline and an independent review of L4's evidence (re-ranking the leads); then one step per lead in the log's
+  order. Ends when the cause is found and fixed (the advanced path on by default, if right everywhere), or when the
+  ranked leads are spent: then the log says what's left and the supervisor takes it to the user.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
   dEQP-VK on the Mac's GPU).
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
 - [ ] L8: the track's end (REPORT.md's VK3 section, docs, plan §6/§7, the final NVIDIA run scripted).
+
+## The green: investigation log (L4b)
+
+Kept by L4b's steps: each step reads all of it first, and adds its row and findings before it ends. The supervisor
+re-ranks "Leads" between steps. Facts here are measured; say how (sessions, the JSON).
+
+**The symptom** (L4; REPORT.md "VK3 L4", `results/vk3/l4/green-sessions-m4.json`): on the M4 with `?gpu=vkformats=all`,
+the session's first mpv on Vulkan with VA-API (`--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi`) shows chroma = 0 in ~1/3
+of fresh sessions (7 of 23 bare), with either FBO family; byte for byte VK2 L7's green picture, and the picture of an
+import that never writes chroma. Later mpv runs in a session are right. It persists through a re-render of that frame.
+Never on SwiftShader. Not seen with the formats held (the default).
+
+**Established by L4 (to re-check, not to trust blindly):** the worker's calls and the 12 WGSL modules are identical in
+green and right sessions; each bind writes the same non-zero bytes; completions put back nothing the CPU wrote;
+WebGPU's orderings in isolation are right on Metal (`upload-race.ts`). Any probe hides it: 0 of 22 with a few µs of CPU
+per bind, 0 of 22 with extra GPU work, 4 of 7 with a JS-only trace.
+
+**Method** (binding for every step):
+- **Statistics.** At a base rate of ~0.3, 12 sessions with no green happen by chance ~1.4% of the time
+  (0.7^12); one green in a run disproves "this fixes it" at once. A change counts as "hides or fixes" only at 0 of
+  ≥12, confirmed by a second 12. A rate change counts only with the counts given (k of n) for both arms, alternated
+  in one sitting.
+- **Hiding is not fixing.** Any perturbation hides it, so a change that makes it go away proves little unless it also
+  explains the mechanism. Prefer tests that **raise** the rate (a delay injected at one place, without reading data)
+  towards a deterministic repro; a deterministic repro, then bisected, beats any number of hiding tests.
+- **One variable per arm**; the bare arm alternated with it in the same sitting (the Mac's state drifts).
+- **Time box** per step as its brief says; when it runs out, write what was learned and stop.
+
+**Leads** (ranked by the supervisor; L4b-0 re-ranks after its review):
+1. L4's ranked leads: (a) libplacebo's filter LUTs, made once at the first frame from host-visible memory: test
+   `--cscale=bicubic` (no LUT), then the write-watch's view of the guest's stores there; (b) libplacebo's trace log in a
+   green session (perturbs); (c) `?gpu=vkpipelines=sync`.
+2. Amplification: delays (no data reads) injected at single points in the worker (before an import's chroma write,
+   between an import and its bind, at a completion, at the first submit sampling a new texture) to find one that makes
+   it frequent.
+
+**Tried** (step, theory, arm, result k/n, conclusion):
+
+| step | theory | arm | result | conclusion |
+| --- | --- | --- | --- | --- |
+| L4 | baseline | bare, `vkformats=all` | 7/23 green | the rate |
+| L4 | worker CPU probe | a scan of a few µs per bind | 0/22 | hides (not evidence of cause) |
+| L4 | GPU probe | extra GPU work | 0/22 | hides |
+| L4 | JS-only trace | trace of calls | 4/7 | doesn't hide; calls identical green/right |
 
 ## State (2026-10-26, after L4)
 
