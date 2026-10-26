@@ -771,6 +771,61 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK3 L1: NVIDIA's black frames — the vendor ID, not the bitmap way
+
+**2026-10-26.** Why what Venus presented on the user's NVIDIA desktop was black ("VK2: the NVIDIA run"), found without
+the desktop. JSON in `results/vk3/l1/`.
+
+**The cause.** VK2's run already said it: its render stats show `shareRefreshes` 0 during mpv on Vulkan there (24 a
+second on the M4 with the same guest and the same virtio command mix): web/venus-share.ts never copied a frame, so the
+bitmap way never ran. The device reports the adapter's maker as its vendor (VK2 L7's caps), and on NVIDIA that is
+0x10de. Venus's guest driver in Mesa 26 (`vn_wsi_init`: "Normally Venus on Nvidia GPUs takes the prime blit path")
+then makes the device fail Mesa's same-GPU check, and Mesa's WSI renders into an optimal image and copies each frame
+into a linear buffer it exports: sway imports a blob that is a buffer's memory, `venus_resource_texture` names no
+texture, and nothing is shared. Debian's Mesa 25.0 (the tests' guest) has no such branch; the desktop guest's 26.2.5
+has. Reproduced on SwiftShader with `?gpu=vkvendor=nvidia` on the desktop guest (`present.ts`, 1280×720, VA-API):
+
+| SwiftShader, the device's vendor 0x10de | vkcube: its clear grey on the page | mpv: the page's mean | mpv's own frame's mean | the pictures' mean difference |
+| --- | --- | --- | --- | --- |
+| before (`swiftshader-vendor-nvidia-before.json`) | 3% (black) | **0** | 55.8 | 55.8 |
+| after, NVIDIA reported as an unknown maker (`…-after.json`) | 82% | 42.2 (the film, letterboxed) | 55.8 | 3.0 |
+
+The user's run: mpv's page mean 0.4 of 255, the same black.
+
+**The fix and the safety net.** The device reports an NVIDIA adapter as an unknown maker (0; web/venus-gpu.ts
+`VENDORS`, tests/venus-renderer.test.ts; a planted 0x10de is caught). And the page checks a GPU way at its first
+copies: 8 rows of the image read back from WebGPU against the virgl texture's, the submit held meanwhile; a dark frame
+decides nothing, three right ones settle it, a wrong one drops the way for the next (bitmap, canvas, readback) and the
+frame gets the next way's copy before it shows (vk/README.md "Presentation"). `?gpu=vkbitmap|vkcanvas|vkreadback`
+force a way, `vkbreak=<way>` breaks one (tests).
+
+**The ways, way by way, in the desktop guest** (`present.ts`: vkcube's window, mpv paused fullscreen on Vulkan with
+VA-API against its own screenshot, both cropped to the picture and brought to 64×36):
+
+| | the page's own choice | vkcube | mpv (mean difference of 255) |
+| --- | --- | --- | --- |
+| M4, Chrome for Testing 153, Metal (`mac-ways.json`) | bitmap, checked right (3 frames) | right, all four arms | right, 8.6, all four arms |
+| M4, the bitmap way broken (`mac-bitmap-broken.json`) | bitmap dropped at its first lit frame ("4000 of 4000 texels differ"), canvas checked right | right | right, 8.6 |
+| SwiftShader, dev VM (`swiftshader-nvidia-sh.json`: `nvidia.sh page` end to end) | readback (the reference) | right | right, 3.0 |
+
+(The GPU ways aren't run where the page renders in software: a WebGPU canvas there loses the GPU channel.)
+
+**Found on the way.** The readback way made and destroyed a buffer a frame; on SwiftShader Chromium's GPU process grew
+by about one a frame (1.7 → 3.3 GB in 4 s at vkcube's 6.8 MB rgba16float frames, 60 a second) until the OOM killer:
+the destroyed buffers aren't freed while the queue stays busy. Each resource now keeps its buffer (the GPU process
+steady at ~300 MB). VK2 didn't see it: its readback runs were short or small. And a Playwright screenshot of the page
+waits for a compositor frame that SwiftShader's busy GPU process may not give for minutes: `present.ts` reads the
+screen canvas as drawn instead (`window.__webpcGrab`).
+
+**What Chromium does on the bitmap way** (read for the hypotheses the next run tests): `transferToImageBitmap` on a
+WebGPU canvas exports the swap buffer's shared image (`WebGPUSwapBufferProvider::ExportCurrentSharedImage`) as an
+`AcceleratedStaticBitmapImage` with a sync token, no copy; if the export fails it returns a transparent image without
+an error. `texSubImage2D` from it copies GPU to GPU through the shared image into WebGL's texture: on Linux with Dawn
+on Vulkan and ANGLE on NVIDIA's GL that is a Vulkan-backed shared image read by GL through memory-object and semaphore
+interop, a path neither the M4 (Metal/IOSurface) nor SwiftShader (no WebGPU canvas) takes. A failed export, missing
+interop or a missed semaphore would each give black or stale copies, which the check now catches: the next run's
+forced arms say which way works there.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
@@ -783,6 +838,8 @@ bytes, larger than the provided size 8192" once a run, as on the M4.
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK3 L1: `present.ts` (the page's screen against the guest's frames, way by way; in `nvidia.sh page`'s `present` step,
+  and through `../gpu/sway-mac.sh` with `SCRIPT=../vulkan/present.ts`).
 - VK2 L7: `costs.ts` and `costs/` (a submit's and a pipeline's costs; `mac-costs.sh` on the Mac), `adapter.ts` (the
   adapter a Chromium gets), `nvidia-bundle.sh` and `nvidia.sh page` (the page on the user's NVIDIA desktop).
 - VK2 L6: `mpv-frames.ts` (mpv's frames on Vulkan against software decoding and GL), and `../audio/avsync.ts`'s

@@ -280,8 +280,8 @@ for the programs that switch. The user decides whether VK1 starts.
   Venus's WSI needs them); a pipeline's first compile is Metal's ~75 ms, not the translation (0.6 ms); Venus's WSI
   images reach the screen as a copy into virgl's texture (~0.8 ms a 1080p frame on the M4); the module is 0.69 MiB
   with brotli, far under step 1's 5 MiB. **On the user's NVIDIA desktop** the frames are right (the replays) and the
-  guest's CPU a frame half virgl's or less, but what Venus presents is black (mpv's picture; the bitmap way is the
-  suspect) and a frame waits ~4.5 ms on its fence (the scene at 1 fish slower than virgl): the gate holds on the M4
+  guest's CPU a frame half virgl's or less, but what Venus presents is black (mpv's picture: VK3 L1 found the
+  device's NVIDIA vendor ID sending Venus's WSI down its prime-blit path, whose buffers weren't shared) and a frame waits ~4.5 ms on its fence (the scene at 1 fish slower than virgl): the gate holds on the M4
   and SwiftShader, not yet there. VK3 starts with both.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
   render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: Venus's

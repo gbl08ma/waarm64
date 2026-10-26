@@ -224,19 +224,43 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
   names the WebGPU texture. Shared images are made with `COPY_SRC` and `TEXTURE_BINDING` and their sRGB twin as a view
   format. web/venus-gpu.ts records the submit that last wrote each texture (attachments, copies and blits into it):
   an image is copied only when it was written since its last copy.
-- **The bitmap way** (where the page doesn't render in software): at the start of the compositor's submit, the image
-  is drawn into a WebGPU canvas context's texture (an OffscreenCanvas of its size, `bgra8unorm`), its colours the
-  virgl texture's stored channels (virgl keeps B8G8R8A8 as its bytes in an RGBA8 texture, so a `bgra8unorm` image is
-  drawn `.bgra`; an X format's alpha written as 1), then `transferToImageBitmap` and `texSubImage2D` from the bitmap
-  (premultiplied alpha passed as it is). A float image (`rgba16float`: vkcube's choice, Mesa's WSI offers every
-  renderable format) goes through the canvas's 8 bits, as the compositor's output does anyway.
-- **The readback way** (SwiftShader, llvmpipe; `?gpu=vkreadback` forces it, `vkbitmap` the other): when the
-  compositor's submit reaches the worker, `copyTextureToBuffer` and `mapAsync`, and the submit is held in the call
-  queue until the bytes are uploaded (as a pending video picture holds what may see it), so a frame is never stale.
-- **Why not try the bitmap way and fall back:** a WebGPU canvas whose swap chain can't be made (SwiftShader's, in
-  headless Chromium: "Could not find SharedImageBackingFactory … WebgpuSwapChainTexture") loses the GPU channel, and
-  with it every WebGPU device and WebGL context of the page; a probe in a worker of its own took the page's down too.
-  So the choice is by the adapter and WebGL's renderer (`shareMode`).
+- **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-gpu.ts `VENDORS`), but
+  never NVIDIA's 0x10de: Venus's guest driver (Mesa 26's `vn_wsi_init`) then takes the device for Venus on NVIDIA's own
+  driver, which can't render to linear images, and its WSI renders into an optimal image and copies each frame into a
+  buffer it exports instead (the prime blit). That buffer has no texture to share, so every Vulkan window was black
+  on the user's NVIDIA desktop (bench/vulkan/REPORT.md "VK3 L1"; reproduced on SwiftShader with `?gpu=vkvendor=nvidia`
+  and the desktop guest's Mesa 26.2; Debian's 25.0 has no such branch). An external resource that isn't an image's
+  memory is warned of (`venus-share: resource N … isn't (or no longer) a Vulkan image's memory`; vkcube's first 500×500
+  swapchain is one, gone before it shows) and counted (`unshared` in the render stats).
+- **Three ways** (bench/vulkan/REPORT.md "VK2 L4"):
+  - **bitmap** (where the page doesn't render in software): at the start of the compositor's submit, the image is
+    drawn into a WebGPU canvas context's texture (an OffscreenCanvas of its size, `bgra8unorm`), its colours the virgl
+    texture's stored channels (virgl keeps B8G8R8A8 as its bytes in an RGBA8 texture, so a `bgra8unorm` image is drawn
+    `.bgra`; an X format's alpha written as 1), then `transferToImageBitmap` and `texSubImage2D` from the bitmap
+    (premultiplied alpha passed as it is). A float image (`rgba16float`: vkcube's choice, Mesa's WSI offers every
+    renderable format) goes through the canvas's 8 bits, as the compositor's output does anyway.
+  - **canvas:** the same draw, then `texSubImage2D` from the canvas itself.
+  - **readback** (SwiftShader, llvmpipe): when the compositor's submit reaches the worker, `copyTextureToBuffer` and
+    `mapAsync`, and the submit is held in the call queue until the bytes are uploaded (as a pending video picture holds
+    what may see it), so a frame is never stale. Each resource keeps its readback buffer: one made and destroyed a
+    frame grew Chromium's GPU process by about its size a frame on SwiftShader (6.8 MB at 60 a second for vkcube's
+    window: out of memory in seconds).
+- **The check of the first copies:** a GPU way's copies are held, as the readback way's are, while 8 rows of the image
+  are read back from WebGPU and compared with the same rows of the virgl texture (`readExternalRows`; within 1.5/255 a
+  channel, colour where the image is opaque, alpha unless an X format). A frame whose sampled texels are all dark
+  decides nothing; three right frames settle the way; a wrong one drops it for the next (bitmap, canvas, readback),
+  and that frame gets the next way's copy before the submit runs, so a way that copies black never shows. The readback
+  way is the reference and isn't checked. Where it stands is in the render stats (`share`: the way, `checking`,
+  `right` or `reference`, the ways dropped and why) and on the console (`venus-share: the bitmap way checked right`).
+- **Switches** (`?gpu=`): `vkbitmap`, `vkcanvas`, `vkreadback` force a way (still checked, never dropped: a wrong copy
+  is only warned of); `vkbreak=<way>` (tests) makes that way's copies black without a WebGPU canvas and starts at the
+  bitmap way even where the page renders in software; `vkvendor=<maker>` gives the device another maker (tests:
+  `nvidia`).
+- **Why not try a GPU way where the page renders in software:** a WebGPU canvas whose swap chain can't be made
+  (SwiftShader's, in headless Chromium: "Could not find SharedImageBackingFactory … WebgpuSwapChainTexture") loses the
+  GPU channel, and with it every WebGPU device and WebGL context of the page; a probe in a worker of its own took the
+  page's down too. So the first way is chosen by the adapter and WebGL's renderer (`shareMode`), and the check only
+  drops ways that work but copy wrong.
 
 Per frame at 1920×1080 (`bench/vulkan/share.ts`: an app's frame, the copy, a compositor's draw sampling it; medians
 of 5 rounds, IQR ≤ 0.07 ms; `bench/vulkan/results/vk2/l4/`):
@@ -251,8 +275,12 @@ of 5 rounds, IQR ≤ 0.07 ms; `bench/vulkan/results/vk2/l4/`):
 1080p screen on the M4 holds 60 frames/s both ways; the bitmap way takes ~0.08 ms of the GPU worker's thread a frame,
 the readback way ~0.7 ms and holds the compositor's submit up to 8 ms (bench/vulkan/REPORT.md "VK2 L4").
 
-`tests/venus-share.test.ts` checks the bytes both ways (the bitmap way only where the page doesn't render in software:
-on the Mac, not in the dev VM); `tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim.
+`tests/venus-share.test.ts` checks the bytes every way (the GPU ways only where the page doesn't render in software:
+on the Mac, not in the dev VM), the check's fallback with the GPU ways broken (everywhere) and its verdicts (Node);
+`tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim, the page's GPU ways broken so its check
+falls back to the readback way. `bench/vulkan/present.ts` compares the page's screen (`window.__webpcGrab`: the
+screen canvas as drawn, read back in the GPU worker) with the guest's own frames in the desktop guest, way by way
+(vkcube's window; mpv's paused frame against its own screenshot), and runs in `bench/vulkan/nvidia.sh page`.
 
 ## Imports
 

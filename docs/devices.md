@@ -497,7 +497,10 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   virgl: the blob isn't a 3D resource) and types it with `PIPE_RESOURCE_SET_TYPE` in a submit; the virgl renderer then
   makes a texture of it and web/venus-share.ts fills it from the image's WebGPU texture (the driver's
   `venus_resource_texture`: the image bound to the memory the blob was exported from) whenever the driver has
-  written it since. The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
+  written it since, by one of three ways (bitmap, canvas, readback), a GPU way checked at its first copies against a
+  readback and dropped for the next if it copies wrong. The device never reports NVIDIA's vendor ID: Venus's guest
+  driver would then export a buffer it copies each frame into (the prime blit) instead of the image, which isn't
+  shared (black windows on the user's NVIDIA desktop, VK3 L1). The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
   `ERR_UNSPEC`): sway composited vkcube's tiled window; a fullscreen window, which wlroots may scan out directly, isn't
   tried yet (docs/backlog.md).
 - **Imports** (VK2 L6, [vk/README.md](../vk/README.md) "Imports"): the other way, a virgl resource attached to a Venus

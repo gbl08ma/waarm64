@@ -506,6 +506,22 @@ export class VirglRenderer {
     this.stats.uploads++;
   }
 
+  /**
+   * An external resource's texels in rows `ys`, each `w` wide from x 0, as its format stores them (web/venus-share.ts
+   * checks a copy against its source); null if it can't be read.
+   */
+  readExternalRows(id: number, ys: number[], w: number): Uint8Array[] | null {
+    const r = this.resources.get(id);
+    if (!r?.external || r.dead || !r.tex) return null;
+    const rows: Uint8Array[] = [];
+    for (const y of ys) {
+      const row = this.readback(r, 0, { x: 0, y, z: 0, w, h: 1, d: 1 }, 0, 0);
+      if (!row) return null;
+      rows.push(row);
+    }
+    return rows;
+  }
+
   /** Whether an external resource's bytes are on their way: a submit that may sample it waits until they arrive. */
   externalWait(id: number, waiting: boolean) {
     if (waiting) this.externalWaits.add(id);

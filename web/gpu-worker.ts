@@ -9,18 +9,19 @@ import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, ST
 import { deviceRequest } from './venus-gpu.ts';
 import { VenusRenderer } from './venus-host.ts';
 import { VenusImport } from './venus-import.ts';
-import { shareMode, VenusShare, type ShareMode } from './venus-share.ts';
+import { shareMode, VenusShare, type ShareCheck, type ShareMode } from './venus-share.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
 import { probeVideo, profileName, webCodecsDecoder, type VideoStats, type VideoStream } from './virgl-video.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'snapshotBytes'; id: number } | { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swvideo`: every codec decoded in software, H.264 offered (experiments on a host with hardware decoders). */ softwareVideo?: boolean; /** `?gpu=vkbitmap` or `vkreadback`: how Vulkan's frames reach virgl (web/venus-share.ts), instead of the probe's choice. */ vkShare?: ShareMode };
+export type ToGpuWorker = { type: 'snapshotBytes'; id: number } | /** Bench hook (`window.__webpcGrab`): the screen drawn now and read back, top row first, RGBA. */ { type: 'grab'; id: number } | { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swvideo`: every codec decoded in software, H.264 offered (experiments on a host with hardware decoders). */ softwareVideo?: boolean; /** `?gpu=vkbitmap`, `vkcanvas` or `vkreadback`: how Vulkan's frames reach virgl (web/venus-share.ts), that way only, instead of the probe's choice and the check's fallbacks. */ vkShare?: ShareMode; /** `?gpu=vkbreak=<way>` (tests): that way's copies come out black, and the GPU ways are tried even where the page renders in software. */ vkBreak?: ShareMode[]; /** `?gpu=vkvendor=<maker>` (e.g. `nvidia`): the adapter's maker as the Vulkan device takes it (web/venus-gpu.ts `VENDORS`; tests). */ vkVendor?: string };
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }
   /** The bytes a snapshot would hold for the 3D resources, before compression (`VirglRenderer.snapshotBytes`): Save snapshot warns past a size. */
   | { type: 'snapshotBytes'; id: number; bytes: number }
+  | { type: 'grab'; id: number; width: number; height: number; pixels: Uint8Array }
   | { type: 'failed'; reason: string }
   | { type: 'lost' }
   /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
@@ -39,21 +40,23 @@ export type FromGpuWorker =
    */
   | { type: 'stats'; renderer: string; vendor: string; software: boolean; presents: number; submits: number; commands: number; draws: number; errors: number; video: GpuVideoStats }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** Vulkan's frames copied into virgl's textures (web/venus-share.ts) and the thread's ms for them, in the second. */ shareRefreshes: number; shareMs: number; /** Virgl's resources written into Vulkan's textures imported from them (web/venus-import.ts): binds, pictures, bytes and the thread's ms, in the second. */ importBinds: number; importPictures: number; importBytes: number; importMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
+  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** Vulkan's frames copied into virgl's textures (web/venus-share.ts) and the thread's ms for them, in the second. */ shareRefreshes: number; shareMs: number; /** Virgl's resources written into Vulkan's textures imported from them (web/venus-import.ts): binds, pictures, bytes and the thread's ms, in the second. */ importBinds: number; importPictures: number; importBytes: number; importMs: number; /** How Vulkan's frames reach virgl now, and where the check of a GPU way stands (web/venus-share.ts). */ share?: ShareCheck & { checks: number; checksWrong: number; unshared: number }; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
 
 /** The video part of `stats`. */
 export type GpuVideoStats = { enabled: boolean; offered: { profile: string; hardware: boolean }[]; streams: VideoStream[]; frames: number; decoded: number; dropped: number; errors: number; decoderErrors: number };
 
 let ram: Uint8Array[] = [];
 let snapshotBytes = () => 0;
+let grab = (id: number) => void (self as unknown as Worker).postMessage({ type: 'grab', id, width: 0, height: 0, pixels: new Uint8Array(0) } satisfies FromGpuWorker);
 
 self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   if (e.data?.type === 'snapshotBytes') {
     (self as unknown as Worker).postMessage({ type: 'snapshotBytes', id: e.data.id, bytes: snapshotBytes() } satisfies FromGpuWorker);
     return;
   }
+  if (e.data?.type === 'grab') return grab(e.data.id);
   if (e.data?.type !== 'init') return;
-  const { canvas, port, stats, debug, probe, video, softwareVideo, vkShare } = e.data;
+  const { canvas, port, stats, debug, probe, video, softwareVideo, vkShare, vkBreak, vkVendor } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }) as WebGL2RenderingContext | null;
   if (!gl) {
@@ -75,6 +78,10 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   });
   const screen = new Screen(gl, renderer);
   snapshotBytes = () => renderer.snapshotBytes();
+  grab = (id) => {
+    const g = screen.grab();
+    (self as unknown as Worker).postMessage({ type: 'grab', id, ...g } satisfies FromGpuWorker, [g.pixels.buffer]);
+  };
   if (probe) screen.probe = flashProbe((t) => post({ type: 'flash', t }));
   let busyMs = 0, submitMs = 0, queries = 0;
   // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
@@ -135,13 +142,13 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         if (!device) console.warn('venus: this browser has no WebGPU adapter here: Vulkan draws nothing');
         device?.lost.then((info) => console.warn(`venus: the WebGPU device was lost: ${info.message}`));
         // What the device advertises follows the device's features and limits and the adapter's maker.
-        venus = await VenusRenderer.create(module, init.memory, init.window, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: adapter.info } : undefined);
+        venus = await VenusRenderer.create(module, init.memory, init.window, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined);
         venus.onRetire = () => fenced.release();
         const v = venus;
         if (device && adapter) {
-          const mode = vkShare ?? shareMode(adapter, glInfo(gl).renderer);
-          share = new VenusShare(device, mode, renderer, (id) => v.shared(id));
-          console.log(`venus: Vulkan on ${adapter.info.vendor || 'an unnamed'} ${adapter.info.architecture} adapter; its frames reach virgl by ${mode}`);
+          const mode = vkShare ?? (vkBreak?.length ? 'bitmap' : shareMode(adapter, glInfo(gl).renderer));
+          share = new VenusShare(device, mode, renderer, (id) => v.shared(id), { forced: !!vkShare, broken: new Set(vkBreak) });
+          console.log(`venus: Vulkan on ${adapter.info.vendor || 'an unnamed'} ${adapter.info.architecture} adapter; its frames reach virgl by ${mode}${vkShare ? ' (forced)' : mode === 'readback' ? '' : ', checked at the first copies'}`);
           const im = imports = new VenusImport(device, renderer);
           v.gpu.onImport = (t, res) => im.bind(t, res);
           renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);
@@ -237,7 +244,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     screen.presentAt = [];
     setInterval(() => {
       const s = renderer.stats;
-      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, presentAt: screen.presentAt!.splice(0), drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, shareRefreshes: (share?.stats.refreshes ?? 0) - lastShare.refreshes, shareMs: (share?.stats.ms ?? 0) - lastShare.ms, importBinds: (imports?.stats.binds ?? 0) - lastImport.binds, importPictures: (imports?.stats.pictures ?? 0) - lastImport.pictures, importBytes: (imports?.stats.bytes ?? 0) - lastImport.bytes, importMs: (imports?.stats.ms ?? 0) - lastImport.ms, video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs } });
+      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, presentAt: screen.presentAt!.splice(0), drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, shareRefreshes: (share?.stats.refreshes ?? 0) - lastShare.refreshes, shareMs: (share?.stats.ms ?? 0) - lastShare.ms, importBinds: (imports?.stats.binds ?? 0) - lastImport.binds, importPictures: (imports?.stats.pictures ?? 0) - lastImport.pictures, importBytes: (imports?.stats.bytes ?? 0) - lastImport.bytes, importMs: (imports?.stats.ms ?? 0) - lastImport.ms, share: share && { ...share.check, dropped: [...share.check.dropped], checks: share.stats.checks, checksWrong: share.stats.checksWrong, unshared: share.stats.unshared }, video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs } });
       fences = fenceMs = fenceMaxMs = 0;
       queue.maxWaitMs = 0;
       renderer.videoStats.latencyMaxMs = 0;

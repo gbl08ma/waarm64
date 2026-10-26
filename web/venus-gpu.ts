@@ -18,8 +18,14 @@ type Obj = GPUBuffer | GPUTexture | View | GPUSampler | GPUBindGroupLayout | GPU
 /** What the driver advertises follows (vk/driver/wg_caps.c): a device's features and limits, or a stand-in's in tests. */
 export type GpuCaps = { readonly features: ReadonlySet<string>; readonly limits: object; readonly adapterInfo?: { readonly vendor: string } };
 
-/** The adapter's maker (`GPUAdapterInfo.vendor`) as a PCI vendor ID, which the device reports as its own. */
-export const VENDORS: Record<string, number> = { apple: 0x106b, nvidia: 0x10de, amd: 0x1002, ati: 0x1002, intel: 0x8086, google: 0x1ae0, arm: 0x13b5, qualcomm: 0x5143, 'img-tec': 0x1010, imagination: 0x1010, microsoft: 0x1414, samsung: 0x144d };
+/**
+ * The adapter's maker (`GPUAdapterInfo.vendor`) as a PCI vendor ID, which the device reports as its own. Not NVIDIA's
+ * (0x10de): Venus's guest driver (Mesa 26's vn_wsi.c) takes a device of that ID for Venus on NVIDIA's own driver,
+ * which can't render to linear images, and makes its WSI copy every frame into a buffer it exports instead of the image
+ * (the prime blit): the buffer isn't a texture web/venus-share.ts can share, so every Vulkan window was black on the
+ * user's NVIDIA desktop (bench/vulkan/REPORT.md "VK3 L1"). An NVIDIA adapter is reported as an unknown maker (0).
+ */
+export const VENDORS: Record<string, number> = { apple: 0x106b, nvidia: 0, amd: 0x1002, ati: 0x1002, intel: 0x8086, google: 0x1ae0, arm: 0x13b5, qualcomm: 0x5143, 'img-tec': 0x1010, imagination: 0x1010, microsoft: 0x1414, samsung: 0x144d };
 
 /** The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`), and whether there is a device. */
 const FEATURES = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',

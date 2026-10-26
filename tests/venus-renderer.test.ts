@@ -67,13 +67,16 @@ test("what the driver advertises follows the WebGPU device's features and limits
   const mac = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'));
   const swiftshader = await caps(adapter('2026-10-01-vm-swiftshader.json', 'google'));
   const none = await caps();
+  const nvidia = await caps(adapter('2026-10-01-vm-swiftshader.json', 'nvidia'));
   // The adapters' own limits (the Mac's Metal: 16384, 1024, 8, 48; SwiftShader's 8192, 256, 4, 16), WebGPU's defaults
   // without a device.
   assert.deepEqual([mac.dim2D, mac.invocations, mac.sizeX, mac.storageImages, mac.sampledImages, mac.storageRange], [16384, 1024, 1024, 8, 48, 4294967292]);
   assert.deepEqual([swiftshader.dim2D, swiftshader.invocations, swiftshader.sizeX, swiftshader.storageImages, swiftshader.sampledImages, swiftshader.storageRange], [8192, 256, 256, 4, 16, 1073741824]);
   assert.deepEqual([none.dim2D, none.invocations, none.storageImages, none.storageRange], [8192, 256, 4, 134217728]);
-  // The adapter's maker as the device's vendor (Apple's, Google's; none known: 0).
-  assert.deepEqual([mac.vendor, swiftshader.vendor, none.vendor], [0x106b, 0x1ae0, 0]);
+  // The adapter's maker as the device's vendor (Apple's, Google's; none known: 0), but never NVIDIA's: Venus's guest
+  // driver then copies every WSI frame into a buffer, which isn't shared, and Vulkan's windows are black
+  // (web/venus-gpu.ts `VENDORS`).
+  assert.deepEqual([mac.vendor, swiftshader.vendor, none.vendor, nvidia.vendor], [0x106b, 0x1ae0, 0, 0]);
   // Subgroups of one invocation, basic operations only (the translator has none of WebGPU's yet).
   assert.deepEqual([mac.subgroupSize, mac.subgroupOps], [1, 1]);
   // Features: BC and depth clamp where the adapter has them; texture-formats-tier1 (the Mac's) adds the 16-bit normalized

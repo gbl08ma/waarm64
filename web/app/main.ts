@@ -17,6 +17,7 @@ import { leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
+import type { ShareMode } from '../venus-share.ts';
 import { attachInput, type Input, type LockMode } from '../input.ts';
 import { PageAudio } from '../audio.ts';
 import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
@@ -441,6 +442,15 @@ if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }
 if (benchHooks) (window as unknown as { __webpcTimeline?: (on: boolean) => void }).__webpcTimeline = (on) => run?.worker.postMessage({ type: 'timeline', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
 if (benchHooks) (window as unknown as { __webpcHeap?: () => void }).__webpcHeap = () => run?.worker.postMessage({ type: 'heap' } satisfies ToWorker);
+/** `window.__webpcGrab()`: the 3D screen as the page draws it, read back in the GPU worker (RGBA, top row first): bench/vulkan/present.ts
+ * (a Playwright screenshot waits for a compositor frame, which SwiftShader's busy GPU process may not give for minutes). */
+const grabs = new Map<number, (g: { width: number; height: number; pixels: Uint8Array }) => void>();
+if (benchHooks) (window as unknown as { __webpcGrab?: () => Promise<unknown> }).__webpcGrab = () => new Promise((resolve) => {
+  const id = grabs.size + Math.random();
+  grabs.set(id, resolve);
+  if (run?.gpu) run.gpu.postMessage({ type: 'grab', id } satisfies ToGpuWorker);
+  else resolve({ width: 0, height: 0, pixels: new Uint8Array(0) });
+});
 /** `?iostats`: `window.__ioStats()` resolves to the disks' timers and base-read traces (web/iostats.ts), by device (bench/remote-disk). */
 if (params.has('iostats')) (window as unknown as { __ioStats?: () => Promise<unknown> }).__ioStats = () => new Promise((resolve) => {
   const ch = new BroadcastChannel('webpc-iostats');
@@ -728,7 +738,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     const gpu = new Worker(new URL('../gpu-worker.ts', import.meta.url), { type: 'module' });
     r.gpu = gpu;
     const channel = new MessageChannel();
-    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'), softwareVideo: gpuKnobs.includes('swvideo'), vkShare: gpuKnobs.includes('vkreadback') ? 'readback' : gpuKnobs.includes('vkbitmap') ? 'bitmap' : undefined } satisfies ToGpuWorker, [screen, channel.port1]);
+    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'), softwareVideo: gpuKnobs.includes('swvideo'), vkShare: (['readback', 'canvas', 'bitmap'] as const).find((w) => gpuKnobs.includes(`vk${w}`)), vkBreak: gpuKnobs.filter((k) => k.startsWith('vkbreak=')).map((k) => k.slice(8) as ShareMode), vkVendor: gpuKnobs.find((k) => k.startsWith('vkvendor='))?.slice(9) } satisfies ToGpuWorker, [screen, channel.port1]);
     gpu.onmessage = (e: MessageEvent<FromGpuWorker>) => {
       if (run !== r) return;
       const m = e.data;
@@ -756,6 +766,10 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         ((window as unknown as { __presents?: number[] }).__presents ??= []).push(...m.presentAt);
       }
       else if (m.type === 'flash') flashed(m.t);
+      else if (m.type === 'grab') {
+        grabs.get(m.id)?.(m);
+        grabs.delete(m.id);
+      }
     };
     gpu.onerror = (e) => {
       if (run !== r) return;

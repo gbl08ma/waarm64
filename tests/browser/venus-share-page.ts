@@ -1,7 +1,9 @@
 // web/venus-share.ts on this page's WebGPU and WebGL2 (tests/venus-share.test.ts): a WebGPU texture (a Venus WSI
 // image) imported by a virgl context (PIPE_RESOURCE_SET_TYPE) reaches the virgl renderer's texture byte for byte at
-// the context's next submit, again only once the image is written again, and an X format's colour survives alpha 0.
-import { shareMode, VenusShare, type ShareMode, type SharedTexture } from '../../web/venus-share.ts';
+// the context's next submit, again only once the image is written again, and an X format's colour survives alpha 0;
+// and the check of a GPU way's first copies (`fallback`): a way whose copies come out black (`broken`, as the bitmap way
+// was feared to on NVIDIA) is dropped for the next, down to the readback way, before the frame shows.
+import { shareMode, VenusShare, type ShareMode, type ShareOptions, type SharedTexture } from '../../web/venus-share.ts';
 import { VirglRenderer } from '../../web/virgl-renderer.ts';
 
 // Rows of 240 bytes: the readback's are 256 apart.
@@ -54,7 +56,7 @@ export async function run(modes: ShareMode[]) {
   const bitmap = shareMode(adapter, String(gl0.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl0.RENDERER))) === 'bitmap';
   const out: Record<string, unknown> = { bitmap, errors };
   for (const mode of modes) {
-    if (mode === 'bitmap' && !bitmap) { out[mode] = 'skipped: the page renders in software'; continue; }
+    if (mode !== 'readback' && !bitmap) { out[mode] = 'skipped: the page renders in software'; continue; }
     const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
     const log: string[] = [];
     const r = new VirglRenderer(gl, { ram: () => [], log: (m) => log.push(m) });
@@ -79,7 +81,7 @@ export async function run(modes: ShareMode[]) {
     put(8, px);
     // R8G8B8A8_UNORM from an rgba8unorm texture: the same bytes.
     put(9, p2);
-    // R16G16B16X16_FLOAT from an rgba16float texture (vkcube's choice): exact the readback way, 8 bits the bitmap way.
+    // R16G16B16X16_FLOAT from an rgba16float texture (vkcube's choice): exact the readback way, 8 bits the GPU ways.
     const pf = floats();
     put(10, pf);
     await submit([...setType(7, 1), ...setType(8, 2), ...setType(9, 67), ...setType(10, 236)]);
@@ -89,7 +91,7 @@ export async function run(modes: ShareMode[]) {
       for (let k = 0; k < a.length; k++) if ((!rgbOnly || k % 4 !== 3) && a[k] !== b[k]) return `byte ${k}: ${a[k]} for ${b[k]} (${[...a.subarray(k & ~3, (k & ~3) + 4)]} for ${[...b.subarray(k & ~3, (k & ~3) + 4)]})`;
       return 'same';
     };
-    const res: Record<string, string> = { first: same(read(7), p1), x: same(read(8), px, true), rgba: same(read(9), p2), float: sameFloats(read(10), pf, mode === 'bitmap' ? 0.6 / 255 : 0) };
+    const res: Record<string, string> = { first: same(read(7), p1), x: same(read(8), px, true), rgba: same(read(9), p2), float: sameFloats(read(10), pf, mode === 'readback' ? 0 : 0.6 / 255) };
     // Written on the GPU but not said to be (no submit of Venus's wrote it): not copied again; then said, copied.
     put(7, p2);
     await submit([0]);
@@ -99,7 +101,72 @@ export async function run(modes: ShareMode[]) {
     res.written = same(read(7), p2);
     res.log = log.join(' | ') || 'none';
     res.stats = JSON.stringify(share.stats);
+    // A GPU way's check: never wrong here, and the way kept.
+    res.check = share.check.dropped.length || share.stats.checksWrong ? `dropped: ${JSON.stringify(share.check)}` : share.mode === mode ? 'kept' : `now ${share.mode}`;
     out[mode] = res;
   }
+  return out;
+}
+
+/** A virgl renderer with one context importing blob 7, a bgra8unorm image, and the submits as the GPU worker runs them. */
+async function rig(device: GPUDevice, mode: ShareMode, options: ShareOptions) {
+  const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
+  const log: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [], log: (m) => log.push(m) });
+  const src: SharedTexture = { texture: device.createTexture({ size: [W, H], format: 'bgra8unorm', usage: 1 | 2 | 4 | 16 }), written: 1 };
+  const share = new VenusShare(device, mode, r, (id) => (id === 7 ? src : undefined), options);
+  r.external = { has: (id) => id === 7, refresh: (x) => share.refresh(x) };
+  let settled: () => void = () => {};
+  r.onVideoSettled = () => settled();
+  r.createContext(1);
+  const submit = async (words: number[]) => {
+    share.prepare(1);
+    while (r.videoPending.ctx(1)) await new Promise<void>((res) => { settled = res; });
+    r.submit(1, new Uint32Array(words));
+  };
+  const put = (bytes: Uint8Array) => {
+    device.queue.writeTexture({ texture: src.texture }, bytes, { bytesPerRow: W * 4 }, [W, H]);
+    src.written++;
+  };
+  await submit([49 | (10 << 16), 7, 1, 2, W, H, 0, 0, 0, W * 4, 0]);
+  return { share, submit, put, read: () => r.readResource(7)!, log };
+}
+
+/**
+ * The check of a GPU way and its fallback: the bitmap and canvas ways broken (black), so the first lit frame is
+ * dropped by both and shown by the readback way, before the submit that samples it runs; a dark frame before it decides
+ * nothing; a forced way that copies wrong is kept (and said to). The broken ways make no WebGPU canvas, so this runs on
+ * SwiftShader too.
+ */
+export async function fallback() {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice();
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const same = (a: Uint8Array, b: Uint8Array, rgbOnly = false) => {
+    for (let k = 0; k < a.length; k++) if ((!rgbOnly || k % 4 !== 3) && a[k] !== b[k]) return `byte ${k}: ${a[k]} for ${b[k]}`;
+    return 'same';
+  };
+  const out: Record<string, unknown> = { errors };
+  const lit = pattern(1, false), lit2 = pattern(77, false), dark = new Uint8Array(W * H * 4);
+  for (let k = 3; k < dark.length; k += 4) dark[k] = 255;
+
+  const a = await rig(device, 'bitmap', { broken: new Set(['bitmap', 'canvas']) });
+  a.put(dark);
+  await a.submit([0]);
+  out.dark = { way: a.share.mode, unclear: a.share.stats.checksUnclear, wrong: a.share.stats.checksWrong, shown: same(a.read(), dark, true) };
+  a.put(lit);
+  await a.submit([0]);
+  out.lit = { way: a.share.mode, state: a.share.check.state, dropped: a.share.check.dropped.map((d) => d.way), wrong: a.share.stats.checksWrong, shown: same(a.read(), lit) };
+  a.put(lit2);
+  await a.submit([0]);
+  out.next = { way: a.share.mode, readbacks: a.share.stats.readbacks, shown: same(a.read(), lit2) };
+  out.log = a.log.join(' | ') || 'none';
+
+  const f = await rig(device, 'bitmap', { forced: true, broken: new Set(['bitmap']) });
+  f.put(lit);
+  await f.submit([0]);
+  out.forced = { way: f.share.mode, wrong: f.share.stats.checksWrong, dropped: f.share.check.dropped.length };
   return out;
 }

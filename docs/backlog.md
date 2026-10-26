@@ -529,13 +529,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **GTK4 on Venus drew black or near-empty frames** (VK2 L7, with YCbCr advertised: `bench/gpu/gtk4-load.ts`
   `RENDERERS=vulkan`, frames' window black, fishbowl one icon at 6 frames/s): not looked into; VK3's YCbCr row starts
   there.
-- **Venus's frames are black on the user's NVIDIA desktop** (VK2's NVIDIA run, `bench/vulkan/REPORT.md` "VK2: the
-  NVIDIA run"; Linux, Chromium 153, ANGLE on NVIDIA's GL, Dawn on Vulkan): mpv on Vulkan's screenshots black where GL's
-  show the film, and the user saw the screen black for seconds at a time during the run; the replays (frames checked in
-  the guest, not presented) are right. The suspect is the bitmap way (a WebGPU canvas, `transferToImageBitmap`,
-  `texSubImage2D` into WebGL), run only on the M4 before. Not reproducible on the dev VM (SwiftShader takes the readback
-  way, and a WebGPU canvas there loses the GPU channel) nor on the Mac: a fix needs a check of its own at run time (a
-  first copy compared through a one-off readback, falling back to readback) and the user's run to confirm. VK3's first.
+- **Venus's frames on the user's NVIDIA desktop: the fix awaits the user's run** (VK3 L1, bench/vulkan/REPORT.md "VK3
+  L1"): the black came from the device reporting NVIDIA's vendor ID, for which Venus's guest driver (Mesa 26) takes
+  Mesa's prime-blit path: the shared blob is a buffer, not the image, and nothing was copied (`shareRefreshes` 0 in
+  VK2's run; reproduced on SwiftShader with `?gpu=vkvendor=nvidia`). NVIDIA is reported as an unknown maker now, and a
+  GPU way is checked at its first copies with a fallback to readback. `bench/vulkan/nvidia.sh page`'s `present` step
+  confirms it, way by way; whether the bitmap way itself copies right through ANGLE's GL on NVIDIA is the other thing
+  it answers. Close this once it does.
+- **A WSI image exported as a buffer isn't shared** (VK3 L1): Mesa's prime blit (a device Venus takes for another
+  GPU's, or NVIDIA's) exports a linear buffer each frame is copied into; web/venus-share.ts shares only images
+  (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name
+  the memory's GPUBuffer, writes to buffers tracked like textures' and a buffer-to-texture copy with the import's
+  stride. Not needed while no guest takes that path.
 - **Venus's frames wait ~4.5 ms on their fence on NVIDIA** (the same run): VK0's scene at 1 fish 4.8 ms a frame on
   Venus against virgl's 2.5 (the M4: 0.9 against 1.4), the display's fences 4.1–5.3 ms on average to come back
   against 0.7 ms on the M4, though the GPU works 0.3 ms. Where the time goes (Dawn's `onSubmittedWorkDone` on Vulkan,

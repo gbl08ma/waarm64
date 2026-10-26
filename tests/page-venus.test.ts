@@ -35,7 +35,9 @@ const vkcube = (frames: number) => 'S=$(date +%s%N); XDG_RUNTIME_DIR=/tmp/xdg WA
 // Presentation (vk/README.md "Presentation"): a second sway, rendering with GLES on virgl, imports vkcube's WSI images
 // as dma-bufs into virgl (web/venus-share.ts copies them into virgl's textures); grim's two screenshots a second apart,
 // of sway's output read back through virgl, show vkcube's clear colour (0.2: 51) over most of the window and its cube,
-// and differ (frames keep coming). Without the sharing the window is black.
+// and differ (frames keep coming). Without the sharing the window is black. The page runs with the bitmap and canvas
+// ways broken (`?gpu=vkbreak=…`: their copies black, no WebGPU canvas made): its check of the first copies drops both
+// for the readback way, and the window is right all the same.
 const SWAY_GL = 'mkdir -p -m 700 /tmp/xdg2; printf "output HEADLESS-1 resolution 640x480\\n" > /tmp/sway2.conf; '
   + '(XDG_RUNTIME_DIR=/tmp/xdg2 WLR_BACKENDS=headless WLR_RENDERER=gles2 WLR_LIBINPUT_NO_DEVICES=1 sway -c /tmp/sway2.conf > /tmp/sway2.log 2>&1 &); '
   + 'for i in $(seq 50); do [ -S /tmp/xdg2/wayland-1 ] && break; sleep 0.2; done; echo sway $(ls /tmp/xdg2 | grep -cx wayland-1)';
@@ -57,7 +59,7 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
   let passed = false;
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/vulkan/venus-run.ts', out], {
-      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, IMAGE, REPLAY: frames ? 'all' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
+      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, GPU_KNOBS: 'vkbreak=bitmap,vkbreak=canvas', IMAGE, REPLAY: frames ? 'all' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
     });
     assert.equal(r.status, 0, `venus-run.ts failed (its output and the serial log: ${out}): ${(r.stdout + r.stderr).slice(-2000)}`);
     const res = JSON.parse(readFileSync(join(out, 'results.json'), 'utf8')) as Record<string, string>;
@@ -84,6 +86,8 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
     // The window fills sway's output; the clear colour is most of it (~75% on SwiftShader), the cube the rest.
     for (const s of shots) assert.ok(s.grey >= 40 && s.colours >= 100, `vkcube's frame isn't on sway's output: ${JSON.stringify(s)} (${res[PRESENT]})`);
     assert.match(res[PRESENT], /frames differ/, `vkcube's frames stopped reaching virgl: ${res[PRESENT]}`);
+    const share = res.share as unknown as { way: string; dropped: { way: string }[] } | null;
+    assert.deepEqual([share?.way, share?.dropped.map((d) => d.way)], ['readback', ['bitmap', 'canvas']], `the check of the broken ways: ${JSON.stringify(share)}`);
     if (frames) {
       const names = Object.keys(res).filter((k) => /^replay [^ ]+$/.test(k)).map((k) => k.slice(7));
       for (const p of ['vkcube', 'vkmark-texture', 'vkquake']) assert.ok(names.includes(p), `${p} wasn't replayed (rebuild images/vkframes/build.sh's disk): ${names.join(' ')}`);

@@ -25,12 +25,15 @@
 # the headless Chrome for Testing if it gets the NVIDIA adapter, else in your own Chromium (VK2_CHROMIUM=<path>, by
 # default the first of chromium, google-chrome-stable, google-chrome on the PATH), headed with a temporary profile: a
 # window opens for each run and must stay visible (minimised, Chromium throttles it). Each run is a machine on the page,
-# as on the dev VM and the Mac (VK2_STEPS="replay scene mpv" picks some):
-#   1. replay: the programs' frames (vkcube, vkmark's 13 scenes, vkQuake) replayed on the Venus device and compared with
+# as on the dev VM and the Mac (VK2_STEPS="present replay scene mpv" picks some):
+#   1. present (VK3 L1): what Venus presents on the page's screen, against the guest's own frames, for each way Vulkan's
+#      frames reach virgl (the page's own choice and its run-time check, then the bitmap, canvas and readback ways
+#      forced): vkcube in sway's window, mpv paused fullscreen (bench/vulkan/present.ts, the desktop guest; ~10 min);
+#   2. replay: the programs' frames (vkcube, vkmark's 13 scenes, vkQuake) replayed on the Venus device and compared with
 #      lavapipe's (bench/vulkan/venus-run.ts REPLAY=all, the tests' Debian; ~5 min);
-#   2. scene: VK0's scene in the desktop guest on Venus and on virgl, two alternated rounds (bench/vulkan/guest.ts);
-#   3. mpv: the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds (bench/audio/avsync.ts).
-# At the end it writes <dir>/vk2-nvidia-results.tar.gz: send that file back.
+#   3. scene: VK0's scene in the desktop guest on Venus and on virgl, two alternated rounds (bench/vulkan/guest.ts);
+#   4. mpv: the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds (bench/audio/avsync.ts).
+# At the end it writes <dir>/vk3-nvidia-results.tar.gz: send that file back.
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
 trap 'echo "nvidia.sh: stopped at line $LINENO (exit $?): $BASH_COMMAND" >&2' ERR
@@ -96,6 +99,14 @@ if [ "${1:-}" = page ]; then
     say "$name"
     if (cd "$P" && timeout "$limit" "$@") > "$R/$name.log" 2>&1; then echo "  done"; else echo "  (failed or timed out: $R/$name.log; going on)"; fi
   }
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" present "* ]]; then
+    step present 2400 env SHIM=1 node bench/vulkan/present.ts target/arch/desktop.qcow2 "$R/present"
+    # The page's choice and each way's verdict, on the terminal too.
+    (cd "$P" && node -e '
+      const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+      for (const w of r.ways) { const x = r[w] ?? {}; console.log(`  ${w}: ${x.skipped ?? x.error ?? `vkcube ${x.vkcube?.ok ? "right" : "WRONG"}, mpv ${x.mpv?.ok ? "right" : x.mpv?.black ? "BLACK" : "WRONG"}; the page took ${x.shareAfterMpv?.way ?? x.shareAfterVkcube?.way} (${x.shareAfterMpv?.state ?? x.shareAfterVkcube?.state})`}`); }
+    ' "$R/present/results.json") || true
+  fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" replay "* ]]; then
     step replay 1800 env REPLAY=all node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/replay"
   fi
@@ -113,8 +124,8 @@ if [ "${1:-}" = page ]; then
   { uname -a; nvidia-smi --query-gpu=name,driver_version --format=csv 2>/dev/null || true; "$CHROMIUM" --version 2>/dev/null || true; cat "$P/BUNDLE.txt"; } > "$R/host.txt"
 
   say "results"
-  ( cd "$DIR" && tar -czf vk2-nvidia-results.tar.gz results )
-  echo "Send back: $DIR/vk2-nvidia-results.tar.gz"
+  ( cd "$DIR" && tar -czf vk3-nvidia-results.tar.gz results )
+  echo "Send back: $DIR/vk3-nvidia-results.tar.gz"
   echo
   echo "Everything this script fetched, unpacked and wrote is in $DIR (Node, Chrome for Testing, the page and its"
   echo "images, the results). To remove it all:"

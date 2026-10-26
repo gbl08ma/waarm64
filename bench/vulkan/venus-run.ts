@@ -6,7 +6,8 @@
 // a Khronos profile there (`vulkaninfo --json`): images/vkframes/venus-profile.json, which the frames' captures take,
 // is made so (`PROFILE=images/vkframes/venus-profile.json`, on SwiftShader, whenever what the device advertises changes).
 //   node bench/vulkan/venus-run.ts [image] [outdir]   (the image also IMAGE=, default target/images/debian-vulkan/disk.qcow2;
-//   the form bench/gpu/sway-mac.sh calls with SCRIPT=../vulkan/venus-run.ts, mode `-`)
+//   the form bench/gpu/sway-mac.sh calls with SCRIPT=../vulkan/venus-run.ts, mode `-`); GPU_KNOBS: more of `?gpu=`, comma-separated
+//   (e.g. `vkvendor=nvidia,vkreadback`: web/app/main.ts)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { openSession } from '../gpu/guest-session.ts';
@@ -16,7 +17,7 @@ const out = args.at(-1) ?? new URL('../results/local/vk1/venus-run/', import.met
 mkdirSync(out, { recursive: true });
 const image = (args.length > 1 ? args[0] : process.env.IMAGE) ?? new URL('../../target/images/debian-vulkan/disk.qcow2', import.meta.url).pathname;
 const replay = (process.env.REPLAY ?? '').split(',').filter(Boolean);
-const s = await openSession({ gpu: 'virgl,vulkan', image, out, byUrl: true, disk2: replay.length ? '/target/vkframes/vkframes.ext4' : undefined, ncpus: Number(process.env.NCPUS ?? 2), ramMiB: Number(process.env.RAM_MIB ?? 1024) });
+const s = await openSession({ gpu: `virgl,vulkan${process.env.GPU_KNOBS ? `,${process.env.GPU_KNOBS}` : ''}`, image, out, byUrl: true, disk2: replay.length ? '/target/vkframes/vkframes.ext4' : undefined, ncpus: Number(process.env.NCPUS ?? 2), ramMiB: Number(process.env.RAM_MIB ?? 1024) });
 const results: Record<string, unknown> = { chromium: s.browser.version(), gl: s.gl };
 try {
   // The page's WebGPU adapter (VK2's renderer draws on it; tests/page-venus.test.ts skips without one), null for none.
@@ -43,6 +44,8 @@ try {
     results[`replay ${name}`] = await s.run(`/vkf/run.sh ${name}`, 300_000);
     results[`replay ${name} s`] = ((performance.now() - t0) / 1000).toFixed(1);
   }
+  // How Vulkan's frames reached virgl in the end (web/venus-share.ts: the way and its check), if any were shared.
+  results.share = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { share?: unknown }[] }).__renderStats ?? []).at(-1)?.share ?? null);
 } finally {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
   for (const [k, v] of Object.entries(results)) console.log(`== ${k}\n${v}`);

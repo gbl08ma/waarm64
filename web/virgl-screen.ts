@@ -208,4 +208,16 @@ export class Screen {
     }
     this.onPresent?.();
   }
+
+  /** The screen drawn now and read back (bench hooks: `window.__webpcGrab`): RGBA, top row first; 0×0 before a scanout. */
+  grab(): { width: number; height: number; pixels: Uint8Array } {
+    this.draw();
+    const s = this.src, gl = this.gl;
+    if (!s) return { width: 0, height: 0, pixels: new Uint8Array(0) };
+    const { w, h } = s.rect, px = new Uint8Array(w * h * 4), out = new Uint8Array(w * h * 4);
+    gl.bindFramebuffer(E.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, w, h, E.RGBA, E.UNSIGNED_BYTE, px);
+    for (let y = 0; y < h; y++) out.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+    return { width: w, height: h, pixels: out };
+  }
 }
