@@ -4,6 +4,36 @@ Notes between VK2's sessions (the brief: `VK2-KICKOFF.md`). Newest state first.
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
+## State (2026-10-26, after L4)
+
+- **L4 is done: Vulkan's frames reach the screen through virgl** (vk/README.md "Presentation", web/venus-share.ts).
+  sway on GLES imports a WSI image (a Venus blob) into virgl and types it (`PIPE_RESOURCE_SET_TYPE`, virgl command 49,
+  unsupported until now); the virgl renderer makes a texture (`ExternalResource`) and VenusShare fills it from the
+  image's WebGPU texture (`venus_resource_texture`: vkr's resource → its device memory → the driver's shared image)
+  when the driver wrote it since (web/venus-gpu.ts records each texture's last writing submit). Two ways, chosen by
+  `shareMode` (`?gpu=vkbitmap|vkreadback` force one): **bitmap** (a draw into a WebGPU canvas, `transferToImageBitmap`,
+  `texSubImage2D`) on a GPU, **readback** (`mapAsync`, the compositor's submit held in the call queue meanwhile) where
+  the page renders in software.
+- **Measured at 1080p** (bench/vulkan/share.ts, results/vk2/l4/): M4 bitmap 0.80 ms a frame, canvas `texSubImage2D`
+  0.93, readback 1.89 (rgba16float 0.96 / 1.09 / 3.57); SwiftShader readback 6.97 / 10.47 ms. In place (desktop guest,
+  vkcube at 1080p on the M4, apps-load.ts with `SCREEN`, `GPU_KNOBS`): 60 frames/s both ways; bitmap ~0.08 ms of the
+  worker a frame, readback ~0.7 ms plus holds up to 8 ms, and vkcube's guest CPU 2.05–2.56 vs 3.1–3.2 ms a frame.
+  REPORT.md "VK2 L4". A fullscreen window (direct scanout) wasn't tried: apps-load's APPS/PRE don't pass through
+  sway-mac.sh (they'd need quoting there).
+- **Tests:** `tests/venus-share.test.ts` (Chromium: bytes through both ways, staleness, an X format, rgba16float;
+  bitmap only where not software: run by hand on the Mac, passes; planted bugs caught: no staleness check, the
+  readback's row pitch ignored, a wrong swizzle on the Mac). `tests/page-venus.test.ts` adds a GLES sway with vkcube and
+  grim (images/debian-vulkan/build.sh now installs grim: **rebuild that image**): ~74% of the shot is vkcube's clear
+  colour and two shots differ; without the sharing the window is black (planted: caught).
+- **Worth not re-discovering:** a WebGPU canvas whose swap chain can't be made (SwiftShader in headless Chromium) loses
+  the page's whole GPU channel, WebGL contexts and every WebGPU device included, even from a worker of its own: never
+  probe it, decide by the renderer's name. Mesa's Wayland WSI offers every format with `COLOR_ATTACHMENT` (it doesn't
+  check modifiers), and vkcube takes R16G16B16A16_SFLOAT: hiding the modifier for it made swapchain creation fail
+  (cube.c:1486), so float images are shared too. vk/build.sh hid compile errors (`ninja >/dev/null` under `set -e`):
+  it now prints the log's tail; check venus.wasm's time after a build.
+- **For L5:** the gaps are docs/backlog.md "Presentation's gaps" (fullscreen/direct scanout untried, compute-written
+  images, other formats). dEQP-VK as planned.
+
 ## State (2026-10-26, after L3)
 
 - **L3 is done: vkcube draws right** (vk/README.md "Checking frames"). Its calls are captured with GFXReconstruct on
@@ -97,7 +127,8 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
   WSI copies the image to a host-visible buffer and reads it on the CPU: the whole path without presentation. Check
   pixels (e.g. `grim` in the guest, or vkcube's frame read from sway) against the Venus oracle's
   (tools/venus-oracle, lavapipe) within a small difference.
-- **L4, presentation on the desktop guest:** sway on GLES imports Venus's WSI images as dma-bufs into virgl
+- **L4, presentation on the desktop guest** (done 2026-10-26, as planned; the bitmap way won, the readback way is
+  SwiftShader's: above). Planned as: sway on GLES imports Venus's WSI images as dma-bufs into virgl
   (`blob-ctx`, today ignored). Share by resource: a WebGPU texture → the WebGL2 texture of the same resource
   (candidates: a WebGPU canvas context on an OffscreenCanvas + `texImage2D` from it, or `transferToImageBitmap`;
   measure per-frame cost at 1080p; a CPU readback is the slow fallback). `SET_SCANOUT_BLOB` only if a guest scans

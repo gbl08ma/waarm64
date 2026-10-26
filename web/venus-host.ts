@@ -29,6 +29,7 @@ type Exports = {
   venus_resource_unmap(ctx: number, res: number): number;
   venus_poll(): number;
   venus_resource_data(ctx: number, res: number): number;
+  venus_resource_texture(ctx: number, res: number): number;
   venus_alloc(size: number): number;
   venus_free(p: number): void;
 };
@@ -219,6 +220,23 @@ export class VenusRenderer {
   address(res: number) {
     const ctx = this.owner.get(res);
     return ctx === undefined ? 0 : this.ex.venus_resource_data(ctx, res) >>> 0;
+  }
+
+  /** Whether `res` is one of Venus's blobs. */
+  has(res: number) { return this.owner.has(res); }
+
+  /**
+   * The WebGPU texture of the image a blob was exported from (a WSI image, which the guest's compositor imports into
+   * virgl: web/venus-share.ts), with the submit that last wrote it; the rings run first, so what the guest asked of
+   * the queue before now has been submitted. Undefined: not an image's memory, or no device.
+   */
+  shared(res: number) {
+    const ctx = this.owner.get(res);
+    if (ctx === undefined) return undefined;
+    this.stats.polls++;
+    if (this.ex.venus_poll()) this.wake();
+    const id = this.ex.venus_resource_texture(ctx, res);
+    return id ? this.gpu.texture(id) : undefined;
   }
 
   /** Polls the rings until they are all idle again (a notify, a submit, wakes them). */

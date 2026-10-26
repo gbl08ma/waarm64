@@ -1,7 +1,8 @@
 // Vulkan through Venus on the page (docs/devices.md "Venus"): images/debian-vulkan/build.sh's Debian on a 3D machine
 // with `?gpu=vulkan` (vk/build.sh's renderer, target/vk/venus.wasm), its Vulkan device the renderer's, and vkcube on
 // sway (headless, pixman; the WSI's CPU path) reaching steady frames: a short run and a long one both finish, and the
-// frames between them come at a rate, drawn by the renderer's driver on the page's WebGPU device; and, with
+// frames between them come at a rate, drawn by the renderer's driver on the page's WebGPU device; vkcube's frames
+// presented on a sway that renders with GLES on virgl (the WSI's images shared into virgl's textures); and, with
 // images/vkframes/build.sh's disk, vkcube's capture replayed on the device and its frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
 // the dev VM), as without the image or the renderer. In scripts/ci-debian.sh, ~1.5 min.
 import assert from 'node:assert/strict';
@@ -30,6 +31,19 @@ const SWAY = 'mkdir -p -m 700 /tmp/xdg; printf "output HEADLESS-1 resolution 640
 const vkcube = (frames: number) => 'S=$(date +%s%N); XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-1 MESA_VK_WSI_DEBUG=sw '
   + `timeout 120 vkcube --wsi wayland --c ${frames} > /tmp/vkcube.log 2>&1; echo "vkcube $? $(( ($(date +%s%N) - S) / 1000000 ))"; head -c 300 /tmp/vkcube.log`;
 
+// Presentation (vk/README.md "Presentation"): a second sway, rendering with GLES on virgl, imports vkcube's WSI images
+// as dma-bufs into virgl (web/venus-share.ts copies them into virgl's textures); grim's two screenshots a second apart,
+// of sway's output read back through virgl, show vkcube's clear colour (0.2: 51) over most of the window and its cube,
+// and differ (frames keep coming). Without the sharing the window is black.
+const SWAY_GL = 'mkdir -p -m 700 /tmp/xdg2; printf "output HEADLESS-1 resolution 640x480\\n" > /tmp/sway2.conf; '
+  + '(XDG_RUNTIME_DIR=/tmp/xdg2 WLR_BACKENDS=headless WLR_RENDERER=gles2 WLR_LIBINPUT_NO_DEVICES=1 sway -c /tmp/sway2.conf > /tmp/sway2.log 2>&1 &); '
+  + 'for i in $(seq 50); do [ -S /tmp/xdg2/wayland-1 ] && break; sleep 0.2; done; echo sway $(ls /tmp/xdg2 | grep -cx wayland-1)';
+const GL_ENV = 'XDG_RUNTIME_DIR=/tmp/xdg2 WAYLAND_DISPLAY=wayland-1';
+const PPM = `perl -e 'for $f (@ARGV) { open F, "<", $f; binmode F; local $/; $d = <F>; $d =~ s/^P6\\s+\\d+\\s+\\d+\\s+255\\s//s; %c = (); `
+  + `for ($i = 0; $i < length($d); $i += 3) { $c{substr($d, $i, 3)}++ } print "shot grey ", int(100 * ($c{"\\x33\\x33\\x33"} // 0) / (length($d) / 3)), " colours ", scalar(keys %c), "\\n" }'`;
+const PRESENT = `(${GL_ENV} timeout 60 vkcube --wsi wayland --c 1500 > /tmp/vkcube2.log 2>&1 &); sleep 8; ${GL_ENV} grim -t ppm /tmp/a.ppm; sleep 1; ${GL_ENV} grim -t ppm /tmp/b.ppm; `
+  + `${PPM} /tmp/a.ppm /tmp/b.ppm; cmp -s /tmp/a.ppm /tmp/b.ppm && echo frames same || echo frames differ; pkill -x vkcube; head -c 300 /tmp/vkcube2.log`;
+
 // The renderer once wrote memory 0's bottom 4 MiB through its stack (vk/README.md "The build"): the guest's kernel
 // oopsed as vkcube started.
 const OOPS = 'echo oopses $(dmesg | grep -c "Internal error")';
@@ -42,7 +56,7 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
   let passed = false;
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/vulkan/venus-run.ts', out], {
-      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, IMAGE, REPLAY: frames ? 'vkcube' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
+      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, IMAGE, REPLAY: frames ? 'vkcube' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
     });
     assert.equal(r.status, 0, `venus-run.ts failed (its output and the serial log: ${out}): ${(r.stdout + r.stderr).slice(-2000)}`);
     const res = JSON.parse(readFileSync(join(out, 'results.json'), 'utf8')) as Record<string, string>;
@@ -62,6 +76,13 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
     console.log(`vkcube: ${SHORT} frames in ${ran[0]} ms, ${LONG} in ${ran[1]} ms: ${fps.toFixed(1)} frames/s steady`);
     // SwiftShader's WebGPU on 2 vCPUs: ~50 frames/s in the dev VM; a stall (a fence or the ring not serviced) is far under.
     assert.ok(fps > 5, `${fps.toFixed(1)} frames/s`);
+    assert.match(res[SWAY_GL], /sway 1/, `sway on GLES started: ${res[SWAY_GL]}`);
+    const shots = [...(res[PRESENT] ?? '').matchAll(/shot grey (\d+) colours (\d+)/g)].map((m) => ({ grey: Number(m[1]), colours: Number(m[2]) }));
+    console.log(`vkcube presented through virgl: ${res[PRESENT]}`);
+    assert.equal(shots.length, 2, `grim's screenshots: ${res[PRESENT]}`);
+    // The window fills sway's output; the clear colour is most of it (~75% on SwiftShader), the cube the rest.
+    for (const s of shots) assert.ok(s.grey >= 40 && s.colours >= 100, `vkcube's frame isn't on sway's output: ${JSON.stringify(s)} (${res[PRESENT]})`);
+    assert.match(res[PRESENT], /frames differ/, `vkcube's frames stopped reaching virgl: ${res[PRESENT]}`);
     if (frames) {
       const replay = res['replay vkcube'] ?? '';
       console.log(`vkcube's capture replayed: ${replay}`);

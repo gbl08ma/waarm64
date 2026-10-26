@@ -324,10 +324,10 @@ index 6a3a909e..41593720 100644
     struct vkr_object base;
  };
 diff --git a/src/venus/vkr_renderer.c b/src/venus/vkr_renderer.c
-index d04f11b3..4d15c7fb 100644
+index d04f11b3..a1fa1160 100644
 --- a/src/venus/vkr_renderer.c
 +++ b/src/venus/vkr_renderer.c
-@@ -232,6 +232,74 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+@@ -232,6 +232,82 @@ vkr_renderer_import_resource(uint32_t ctx_id,
     return vkr_context_import_resource(ctx, res_id, fd_type, fd, size);
  }
  
@@ -361,6 +361,14 @@ index d04f11b3..4d15c7fb 100644
 +   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
 +   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
 +   return res && res->fd_type == VIRGL_RESOURCE_FD_SHM ? res->u.data : NULL;
++}
++
++VkDeviceMemory
++vkr_renderer_resource_memory(uint32_t ctx_id, uint32_t res_id)
++{
++   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
++   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
++   return res && res->memory ? res->memory->base.handle.device_memory : VK_NULL_HANDLE;
 +}
 +
 +static uint8_t *
@@ -403,10 +411,10 @@ index d04f11b3..4d15c7fb 100644
  vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id)
  {
 diff --git a/src/venus/vkr_renderer.h b/src/venus/vkr_renderer.h
-index be3ae046..840b6c30 100644
+index be3ae046..f0a01814 100644
 --- a/src/venus/vkr_renderer.h
 +++ b/src/venus/vkr_renderer.h
-@@ -74,4 +74,31 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+@@ -74,4 +74,35 @@ vkr_renderer_import_resource(uint32_t ctx_id,
  void
  vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id);
  
@@ -423,6 +431,10 @@ index be3ae046..840b6c30 100644
 +/* A resource's bytes now (its storage, or the window while mapped), or NULL. */
 +void *
 +vkr_renderer_resource_data(uint32_t ctx_id, uint32_t res_id);
++
++/* The device memory a resource was exported from (the driver's handle), or VK_NULL_HANDLE. */
++VkDeviceMemory
++vkr_renderer_resource_memory(uint32_t ctx_id, uint32_t res_id);
 +
 +/* Moves a resource's bytes to `where` (its mapping in the host-visible window), and with them a device memory's. */
 +bool

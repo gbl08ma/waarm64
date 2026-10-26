@@ -59,6 +59,22 @@ type Res = ResourceDesc & {
   /** Contexts holding it (unref'd by the guest while attached somewhere: the GL objects live until the last goes). */
   refs: Set<number>;
   dead?: boolean;
+  /** Another renderer's blob, typed by the guest (`ExternalResource`): its texture holds that renderer's bytes. */
+  external?: true;
+};
+
+/**
+ * A blob resource of another renderer (Venus's: a Vulkan program's WSI image, docs/devices.md "Venus") that the guest's
+ * compositor imported (a dma-buf) and typed (PIPE_RESOURCE_SET_TYPE): a texture of the format and size the guest said,
+ * whose bytes the other renderer writes (`ExternalSource`, `VirglRenderer.writeExternal`).
+ */
+export type ExternalResource = { readonly id: number; readonly width: number; readonly height: number; readonly format: number; readonly dead?: boolean };
+/** Where external resources' bytes come from (web/venus-share.ts). */
+export type ExternalSource = {
+  /** Whether `id` is one of its blobs (the guest may type it). */
+  has(id: number): boolean;
+  /** At the start of a submit of a context it is attached to: its bytes written again if they changed. */
+  refresh(r: ExternalResource): void;
 };
 
 type Blend = { independent: boolean; logicop: boolean; alphaToCoverage: boolean; rt: { enable: boolean; rgbFunc: number; rgbSrc: number; rgbDst: number; aFunc: number; aSrc: number; aDst: number; mask: number }[] };
@@ -219,8 +235,13 @@ export class VirglRenderer {
   readonly videoStats: VideoStats = videoStats();
   /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
   private video?: { decoders: DecoderFactory; hardware: readonly number[] };
-  /** Called when a picture is written or given up (the GPU worker's queue goes on: `videoPending`). */
+  /** Called when a picture is written or given up, or an external resource's awaited bytes arrive (the GPU worker's queue goes on: `videoPending`). */
   onVideoSettled?: () => void;
+  /** Another renderer's blobs, imported by the guest (`ExternalResource`). */
+  external?: ExternalSource;
+  private externals = new Set<Res>();
+  /** External resources whose bytes are on their way (`externalWait`): what may see them waits, as for a picture. */
+  private externalWaits = new Set<number>();
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -433,8 +454,67 @@ export class VirglRenderer {
       this.debug?.(`life ${id} ${r.fmt?.name ?? r.format} ${r.width}x${r.height} target ${r.target} bind ${r.bind.toString(16)}: ${(performance.now() - l.t0).toFixed(0)} ms, ${l.uploads} uploads of ${l.bytes} bytes, ${l.staged} bytes staged`);
     }
     for (const c of r.refs) this.contexts.get(c)?.attached.delete(id);
+    if (r.external) {
+      this.externals.delete(r);
+      this.externalWait(id, false);
+    }
     this.freeResource(r);
     return true;
+  }
+
+  /**
+   * PIPE_RESOURCE_SET_TYPE (handle, format, bind, width, height, usage, modifier, plane strides and offsets): the
+   * guest's import of another renderer's blob (a Vulkan program's WSI image in the compositor): a 2D texture of that
+   * format and size, attached to the context, whose bytes `external` writes before each submit that may use it.
+   */
+  private setType(c: Ctx, p: Uint32Array) {
+    if (p.length < 8) throw new Error('bad PIPE_RESOURCE_SET_TYPE');
+    const id = p[0];
+    let r = this.resources.get(id);
+    if (!r) {
+      if (!this.external?.has(id)) return this.error(`ctx ${c.id}: resource ${id} isn't a blob of another renderer`);
+      this.createResource({ id, target: PIPE_TEXTURE_2D, format: p[1], bind: p[2], width: p[3], height: p[4], depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+      r = this.resources.get(id)!;
+      if (!r.tex || !r.fmt || r.fmt.block !== 1 || (r.fmt.kind !== 'unorm' && r.fmt.kind !== 'float')) this.error(`resource ${id}: an imported blob of format ${r.fmt?.name ?? p[1]} isn't shared (colour formats only)`);
+      else {
+        r.external = true;
+        this.externals.add(r);
+      }
+    }
+    this.attach(c.id, id);
+  }
+
+  /**
+   * An external resource's texels, from `src`: an image the size of the resource or smaller, whose colours are the
+   * texels' stored channels (for a format kept as its bytes, B8G8R8A8's, the bytes in memory order; premultiplied
+   * alpha left as it is), converted to the texture's format; or the texels' bytes, rows `stride` bytes apart.
+   */
+  writeExternal(id: number, src: TexImageSource | { bytes: Uint8Array; stride: number; width: number; height: number }) {
+    const r = this.resources.get(id);
+    if (!r?.external || r.dead || !r.tex || !r.fmt) return;
+    if ('bytes' in src) return this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(r.width, src.width), h: Math.min(r.height, src.height), d: 1 }, src.bytes, src.stride, 0);
+    const gl = this.gl;
+    gl.bindTexture(E.TEXTURE_2D, r.tex);
+    gl.bindBuffer(E.PIXEL_UNPACK_BUFFER, null);
+    gl.pixelStorei(E.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.pixelStorei(E.UNPACK_COLORSPACE_CONVERSION_WEBGL, E.NONE);
+    gl.texSubImage2D(E.TEXTURE_2D, 0, 0, 0, r.fmt.format, r.fmt.type, src);
+    gl.pixelStorei(E.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(E.UNPACK_COLORSPACE_CONVERSION_WEBGL, E.BROWSER_DEFAULT_WEBGL);
+    this.stats.uploads++;
+  }
+
+  /** Whether an external resource's bytes are on their way: a submit that may sample it waits until they arrive. */
+  externalWait(id: number, waiting: boolean) {
+    if (waiting) this.externalWaits.add(id);
+    else if (this.externalWaits.delete(id)) this.onVideoSettled?.();
+  }
+
+  /** The external resources attached to a context (web/venus-share.ts readies them before its submit comes to run). */
+  externalsOf(ctx: number): ExternalResource[] {
+    const out: ExternalResource[] = [];
+    for (const r of this.externals) if (r.refs.has(ctx)) out.push(r);
+    return out;
   }
 
   private freeResource(r: Res) {
@@ -724,6 +804,7 @@ export class VirglRenderer {
     const c = this.contexts.get(ctxId);
     if (!c) return false;
     this.stats.submits++;
+    if (this.external) for (const r of this.externals) if (r.refs.has(ctxId)) this.external.refresh(r);
     for (let at = 0; at < words.length;) {
       const h = words[at];
       const len = h >>> 16;
@@ -871,6 +952,7 @@ export class VirglRenderer {
       case 44: return; // END_TRANSFERS
       case 45: return this.copyTransfer(c, p);
       case 47: return this.clearTexture(c, p);
+      case 49: return this.setType(c, p);
       case 52: return; // LINK_SHADER: programs are made at the draw that needs them
       case 53: case 54: case 55: case 56: case 57: case 58: case 59: case 60: case 61:
         return (c.video ??= this.videoContext(c)).command(cmd, p);
@@ -986,7 +1068,7 @@ export class VirglRenderer {
   };
 
   private pendingPlanes() {
-    const out: number[] = [];
+    const out: number[] = [...this.externalWaits];
     for (const c of this.contexts.values()) if (c.video?.waiting) out.push(...c.video.pendingPlanes());
     return out;
   }

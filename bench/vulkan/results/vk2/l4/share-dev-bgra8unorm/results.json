@@ -1,0 +1,88 @@
+{
+ "chromium": "153.0.8010.52",
+ "host": "linux arm64",
+ "request": {
+  "width": 1920,
+  "height": 1080,
+  "frames": 120,
+  "rounds": 5,
+  "arms": [
+   "none",
+   "readback"
+  ],
+  "format": "bgra8unorm"
+ },
+ "adapter": "google swiftshader",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "checks": {
+  "readback": "ok (alpha 0's pixel: 2,0,14,0)"
+ },
+ "rounds": {
+  "none": [
+   {
+    "msPerFrame": 2.120625000198682,
+    "refreshMs": 0.0006249994039535522
+   },
+   {
+    "msPerFrame": 2.1129999995231628,
+    "refreshMs": 0.0002499997615814209
+   },
+   {
+    "msPerFrame": 2.114541666706403,
+    "refreshMs": 0.0006249994039535522
+   },
+   {
+    "msPerFrame": 2.088624999920527,
+    "refreshMs": 0.000666666030883789
+   },
+   {
+    "msPerFrame": 2.111166665951411,
+    "refreshMs": 0.0003750006357828776
+   }
+  ],
+  "readback": [
+   {
+    "msPerFrame": 6.904666666189829,
+    "refreshMs": 4.679500006635984
+   },
+   {
+    "msPerFrame": 6.985749999682109,
+    "refreshMs": 4.747791664799054
+   },
+   {
+    "msPerFrame": 6.989874999721845,
+    "refreshMs": 4.745833335320155
+   },
+   {
+    "msPerFrame": 6.968541666865349,
+    "refreshMs": 4.712458332379659
+   },
+   {
+    "msPerFrame": 6.922958333293597,
+    "refreshMs": 4.676625008384387
+   }
+  ]
+ },
+ "summary": {
+  "none": {
+   "msPerFrame": {
+    "median": 2.1129999995231628,
+    "iqr": 0.0033750007549921968
+   },
+   "refreshMs": {
+    "median": 0.0006249994039535522,
+    "iqr": 0.00024999876817067467
+   }
+  },
+  "readback": {
+   "msPerFrame": {
+    "median": 6.968541666865349,
+    "iqr": 0.06279166638851219
+   },
+   "refreshMs": {
+    "median": 4.712458332379659,
+    "iqr": 0.06633332868417074
+   }
+  }
+ }
+}

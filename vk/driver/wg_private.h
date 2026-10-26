@@ -120,6 +120,8 @@ struct wg_device {
    struct wg_queue queue;
    /* Host-visible memories (their writes are uploaded at each submit). */
    struct list_head host_memories;
+   /* Memories with a shared image bound (wg_device_memory.image). */
+   struct list_head shared_memories;
    /* Submits whose work isn't done yet, oldest first (struct wg_submit). */
    struct list_head pending;
    uint32_t serial;
@@ -138,7 +140,14 @@ struct wg_device_memory {
    bool dirty;      /* all of it written (made, moved): uploaded whole at the next submit */
    bool owned;      /* `data` is ours to free */
    struct list_head link;
+   /* A shared image bound to it (a WSI image's dedicated memory, which the guest's compositor imports into virgl by
+    * its resource: web/venus-share.ts), on the device's shared_memories while set. */
+   struct wg_image *image;
+   struct list_head shared_link;
 };
+
+/* The texture of the shared image bound to a memory, or 0 (glue.c's venus_resource_texture). */
+uint32_t wg_memory_texture(VkDeviceMemory memory);
 
 struct wg_buffer {
    struct vk_buffer vk;
@@ -154,6 +163,7 @@ struct wg_image {
    VkDeviceSize size;
    const struct wg_texture_format *fmt;
    uint32_t tex;
+   bool shared;     /* dma-buf memory or a DRM modifier: a WSI image the virgl renderer may sample */
 };
 
 /* A view as Vulkan made it (`view`: sampled or storage), and as an attachment (`att`: one level, one layer, 2D). */

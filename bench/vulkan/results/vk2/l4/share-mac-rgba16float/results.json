@@ -1,0 +1,152 @@
+{
+ "chromium": "153.0.8010.12",
+ "host": "darwin arm64",
+ "request": {
+  "width": 1920,
+  "height": 1080,
+  "frames": 120,
+  "rounds": 5,
+  "arms": [
+   "none",
+   "canvas",
+   "bitmap",
+   "readback"
+  ],
+  "format": "rgba16float"
+ },
+ "adapter": "apple metal-3",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "checks": {},
+ "rounds": {
+  "none": [
+   {
+    "msPerFrame": 0.052916669845581056,
+    "refreshMs": 0.0002500057220458984
+   },
+   {
+    "msPerFrame": 0.05520833333333333,
+    "refreshMs": 0.0002916733423868815
+   },
+   {
+    "msPerFrame": 0.055666669209798174,
+    "refreshMs": 0.0001250028610229492
+   },
+   {
+    "msPerFrame": 0.048208340009053545,
+    "refreshMs": 0.0004166682561238607
+   },
+   {
+    "msPerFrame": 0.05112499396006266,
+    "refreshMs": 0.0001250028610229492
+   }
+  ],
+  "canvas": [
+   {
+    "msPerFrame": 1.068416666984558,
+    "refreshMs": 0.006583348910013834
+   },
+   {
+    "msPerFrame": 1.0855416695276896,
+    "refreshMs": 0.006291659673055013
+   },
+   {
+    "msPerFrame": 1.0401249965031942,
+    "refreshMs": 0.00624995231628418
+   },
+   {
+    "msPerFrame": 1.1447500069936116,
+    "refreshMs": 0.0066250085830688475
+   },
+   {
+    "msPerFrame": 1.1227499961853027,
+    "refreshMs": 0.006833314895629883
+   }
+  ],
+  "bitmap": [
+   {
+    "msPerFrame": 0.924916664759318,
+    "refreshMs": 0.005749972661336263
+   },
+   {
+    "msPerFrame": 0.9645833333333333,
+    "refreshMs": 0.005083346366882324
+   },
+   {
+    "msPerFrame": 0.9196666638056438,
+    "refreshMs": 0.005458323160807291
+   },
+   {
+    "msPerFrame": 0.971916667620341,
+    "refreshMs": 0.005666669209798177
+   },
+   {
+    "msPerFrame": 0.9579166650772095,
+    "refreshMs": 0.00529167652130127
+   }
+  ],
+  "readback": [
+   {
+    "msPerFrame": 4.260999997456868,
+    "refreshMs": 4.170416617393494
+   },
+   {
+    "msPerFrame": 3.592833336194356,
+    "refreshMs": 3.5083749453226725
+   },
+   {
+    "msPerFrame": 3.4915416717529295,
+    "refreshMs": 3.3993333101272585
+   },
+   {
+    "msPerFrame": 3.571083331108093,
+    "refreshMs": 3.4853751103083295
+   },
+   {
+    "msPerFrame": 3.528083332379659,
+    "refreshMs": 3.4347500085830687
+   }
+  ]
+ },
+ "summary": {
+  "none": {
+   "msPerFrame": {
+    "median": 0.052916669845581056,
+    "iqr": 0.00408333937327067
+   },
+   "refreshMs": {
+    "median": 0.0002500057220458984,
+    "iqr": 0.00016667048136393228
+   }
+  },
+  "canvas": {
+   "msPerFrame": {
+    "median": 1.0855416695276896,
+    "iqr": 0.05433332920074463
+   },
+   "refreshMs": {
+    "median": 0.006583348910013834,
+    "iqr": 0.00033334891001383406
+   }
+  },
+  "bitmap": {
+   "msPerFrame": {
+    "median": 0.9579166650772095,
+    "iqr": 0.03966666857401535
+   },
+   "refreshMs": {
+    "median": 0.005458323160807291,
+    "iqr": 0.00037499268849690726
+   }
+  },
+  "readback": {
+   "msPerFrame": {
+    "median": 3.571083331108093,
+    "iqr": 0.06475000381469709
+   },
+   "refreshMs": {
+    "median": 3.4853751103083295,
+    "iqr": 0.0736249367396038
+   }
+  }
+ }
+}

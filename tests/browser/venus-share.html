@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // Vulkan's frames into virgl's textures (tests/venus-share.test.ts) call into this page's module.
+  import * as t from './venus-share-page.ts';
+  window.share = t;
+  window.ready = true;
+</script>

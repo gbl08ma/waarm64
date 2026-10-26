@@ -490,7 +490,15 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   sway (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) runs ~50 frames/s on 2 vCPUs on SwiftShader's WebGPU
   (`tests/page-venus.test.ts`); in VK1, with the null driver, on the desktop guest's sway (GLES, virgl) vkcube and
   GTK4's Vulkan renderer presented through dma-bufs at the display's 60 (bench/vulkan/apps-load.ts,
-  bench/gpu/gtk4-load.ts with `VIRGL_GPU=virgl,vulkan`); those dma-bufs aren't shared with virgl yet (VK2's L4).
+  bench/gpu/gtk4-load.ts with `VIRGL_GPU=virgl,vulkan`).
+- **Presentation** (VK2 L4, [vk/README.md](../vk/README.md) "Presentation"): the compositor imports a Vulkan program's
+  WSI image, a Venus blob, into its virgl context (the kernel's `CTX_ATTACH_RESOURCE`, which the device doesn't pass to
+  virgl: the blob isn't a 3D resource) and types it with `PIPE_RESOURCE_SET_TYPE` in a submit; the virgl renderer then
+  makes a texture of it and web/venus-share.ts fills it from the image's WebGPU texture (the driver's
+  `venus_resource_texture`: the image bound to the memory the blob was exported from) whenever the driver has
+  written it since. The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
+  `ERR_UNSPEC`): sway composited vkcube's tiled window; a fullscreen window, which wlroots may scan out directly, isn't
+  tried yet (docs/backlog.md).
 - On the page: `?gpu=vulkan` (with 3D on) gives a machine Venus (web/app/worker.ts); the Machines page has no setting
   for it yet.
 - Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,

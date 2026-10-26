@@ -12,7 +12,7 @@ const COPY_SRC = 4, COPY_DST = 8, UNIFORM = 64, MAP_READ = 1, MAP_MODE_READ = 1;
 export type VenusGpuStats = { submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number };
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number };
+type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number; tex: GPUTexture };
 type Obj = GPUBuffer | GPUTexture | View | GPUSampler | GPUBindGroupLayout | GPUPipelineLayout | GPURenderPipeline | GPUComputePipeline | GPUBindGroup | GPUShaderModule | GPUQuerySet;
 
 /** The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`). */
@@ -59,6 +59,9 @@ export class VenusGpu {
   private readonly views = new Map<string, GPUTextureView>();
   private readonly seen = new Set<string>();
   private readonly mem: () => ArrayBuffer;
+  /** The submit (its count in `stats.submits`) that last wrote each texture, and those the open encoder writes. */
+  private readonly written = new WeakMap<GPUTexture, number>();
+  private touched = new Set<GPUTexture>();
 
   /**
    * `memory`: memory 0. `complete(serial)`: the module's export. `dirty()`: the window's written pages since the last
@@ -87,6 +90,12 @@ export class VenusGpu {
   }
 
   private get<T extends Obj>(id: number) { return this.objs[id] as T; }
+
+  /** A texture by its id, with the submit that last wrote it (0: none yet): web/venus-share.ts reads WSI images. */
+  texture(id: number): { texture: GPUTexture; written: number } | undefined {
+    const t = this.objs[id];
+    return t instanceof GPUTexture ? { texture: t, written: this.written.get(t) ?? 0 } : undefined;
+  }
 
   /** The module's `wg` imports. */
   imports(): Record<string, (...a: number[]) => number | void> {
@@ -134,12 +143,14 @@ export class VenusGpu {
       },
       gpu_copy_bt(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
         self.enc!.copyBufferToTexture(self.layout(b, offset, bpr, rows, h, depth), self.texCopy(tex, mip, x, y, z, aspect), { width: w, height: h, depthOrArrayLayers: depth });
+        self.touched.add(self.get<GPUTexture>(tex));
       },
       gpu_copy_tb(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
         self.enc!.copyTextureToBuffer(self.texCopy(tex, mip, x, y, z, aspect), self.layout(b, offset, bpr, rows, h, depth), { width: w, height: h, depthOrArrayLayers: depth });
       },
       gpu_copy_tt(src: number, sm: number, sx: number, sy: number, sz: number, dst: number, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number) {
         self.enc!.copyTextureToTexture(self.texCopy(src, sm, sx, sy, sz, aspect), self.texCopy(dst, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
+        self.touched.add(self.get<GPUTexture>(dst));
       },
       gpu_fill(b: number, offset: number, size: number, value: number) {
         if (!size) return;
@@ -165,6 +176,8 @@ export class VenusGpu {
             const v = self.get<View>(a.view);
             colors.push(v.format);
             samples = v.samples;
+            self.touched.add(v.tex);
+            if (a.resolveTarget) self.touched.add(self.get<View>(a.resolveTarget).tex);
             return { ...a, view: v.view, resolveTarget: a.resolveTarget ? self.get<View>(a.resolveTarget).view : undefined } as GPURenderPassColorAttachment;
           }),
         };
@@ -223,6 +236,8 @@ export class VenusGpu {
         d.queue.submit([self.enc!.finish()]);
         self.enc = undefined;
         self.stats.submits++;
+        for (const t of self.touched) self.written.set(t, self.stats.submits);
+        self.touched.clear();
         for (const t of self.temps) t.destroy();
         self.temps = [];
         const slots = self.submitSlots;
@@ -284,7 +299,7 @@ export class VenusGpu {
       case 2: {
         const tex = this.get<GPUTexture>(j.texture);
         const { texture: _, ...desc } = j;
-        this.objs[id] = { view: tex.createView(desc as GPUTextureViewDescriptor), format: j.format, samples: tex.sampleCount };
+        this.objs[id] = { view: tex.createView(desc as GPUTextureViewDescriptor), format: j.format, samples: tex.sampleCount, tex };
         return;
       }
       case 3: this.objs[id] = d.createSampler(j as GPUSamplerDescriptor); return;
@@ -351,6 +366,7 @@ export class VenusGpu {
   private meta(j: Json) {
     const enc = this.enc!;
     const tex = this.get<GPUTexture>(j.dst);
+    this.touched.add(tex);
     const fmt = j.format as GPUTextureFormat;
     const depthy = /depth|stencil/.test(fmt);
     if (j.op === 'clear') {

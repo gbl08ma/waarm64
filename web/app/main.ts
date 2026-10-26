@@ -726,7 +726,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     const gpu = new Worker(new URL('../gpu-worker.ts', import.meta.url), { type: 'module' });
     r.gpu = gpu;
     const channel = new MessageChannel();
-    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'), softwareVideo: gpuKnobs.includes('swvideo') } satisfies ToGpuWorker, [screen, channel.port1]);
+    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'), softwareVideo: gpuKnobs.includes('swvideo'), vkShare: gpuKnobs.includes('vkreadback') ? 'readback' : gpuKnobs.includes('vkbitmap') ? 'bitmap' : undefined } satisfies ToGpuWorker, [screen, channel.port1]);
     gpu.onmessage = (e: MessageEvent<FromGpuWorker>) => {
       if (run !== r) return;
       const m = e.data;

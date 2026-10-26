@@ -524,6 +524,38 @@ for every program but the scene's GLES arm (`?gpu=virgl`). JSON in `results/vk1/
 - **Verdict:** Venus doesn't clearly cost the guest more than virgl: it costs 2–9× less where a frame has real work and
   ~0.3 ms more where it has almost none. VK2 can proceed; the submit path's cost goes to plan §7 and the backlog.
 
+## VK2 L4: presentation — the bitmap way
+
+**2026-10-26.** How a Vulkan program's WSI image (a WebGPU texture of Venus's renderer) reaches the virgl renderer's
+WebGL2 texture that the guest's compositor samples (vk/README.md "Presentation"). Candidates at 1920×1080
+(`share.ts`: an app's frame into the image, the copy, a compositor's draw sampling the copy; ms a frame from the
+first frame to a `readPixels` after the 120th, five alternated rounds, medians, IQR ≤ 0.07 ms; JSON in
+`results/vk2/l4/share-*`):
+
+| | none (the frame alone) | bitmap | canvas | readback |
+| --- | --- | --- | --- | --- |
+| Apple M4, Metal, Chrome for Testing 153.0.8010.12, `bgra8unorm` | 0.05 | **0.80** (0.79–0.86) | 0.93 (0.89–1.01) | 1.89 |
+| the same, `rgba16float` (vkcube's) | 0.05 | **0.96** (0.92–0.97) | 1.09 (1.04–1.15) | 3.57 |
+| SwiftShader, dev VM, Chromium 153.0.8010.52, `bgra8unorm` / `rgba16float` | 2.1 / 2.4 | fails | fails | 6.97 / 10.47 |
+
+bitmap: a draw into a WebGPU canvas's texture, `transferToImageBitmap`, `texSubImage2D` from the bitmap; canvas: the
+same draw, `texSubImage2D` from the canvas; readback: `copyTextureToBuffer`, `mapAsync` awaited, `texSubImage2D` from
+the bytes. The bitmap's and canvas's rounds don't overlap. On SwiftShader a WebGPU canvas can't be made at all (its
+swap chain's shared image), and trying loses the page's GPU channel.
+
+**In place** (`apps-load.ts`, the desktop guest at 1920×1080 on the M4: vkcube fills sway's output, 4 vCPUs; two
+alternated rounds a way, `?gpu=vkreadback` forcing the readback; JSON and screenshots in `results/vk2/l4/insitu-*`):
+
+| | frames/s | vkcube's CPU a frame (guest) | guest busy | the GPU worker: copies' ms a frame | longest hold of a submit |
+| --- | --- | --- | --- | --- | --- |
+| bitmap | 59.9, 59.8 | 2.05, 2.56 ms | 11, 12% | 0.07, 0.09 (inside the compositor's submit) | 0 |
+| readback | 59.9, 59.9 | 3.17, 3.09 ms | 15, 15% | 0.71, 0.66 (the upload), plus the wait | 7.3, 8.2 ms |
+
+- **The bitmap way is kept** where the page renders on a GPU: 0.8–1 ms a frame end to end at 1080p, ~0.1 ms of the
+  worker's thread. The readback way holds the display's rate too on the M4 but costs the worker ~0.7 ms a frame and
+  the guest more (its fences come later: vkcube's CPU a frame +0.5 to +1.1 ms, rounds not overlapping); it stays as
+  the way of software rendering, where nothing else works.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

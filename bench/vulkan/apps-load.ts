@@ -5,7 +5,8 @@
 // is its process's ms a second over the frames sway showed a second (a single window at the display's rate).
 //   node bench/vulkan/apps-load.ts <image.qcow2> [outdir]
 // APPS: `tag=command` a line (default vkcube on Venus, es2gears on virgl); WARM_S (15), PHASE_S (10), NCPUS (4),
-// RAM_MIB (4096), STDERR_LINES (5: what each program printed last), PRE (root commands first, a line each), PROFILE=1 (the guest's PCs sampled over each phase);
+// RAM_MIB (4096), STDERR_LINES (5: what each program printed last), PRE (root commands first, a line each), PROFILE=1 (the guest's PCs sampled over each phase),
+// GPU_KNOBS (more of `?gpu=`, comma-separated: e.g. `vkreadback`, web/venus-share.ts), SCREEN (the screen's size, e.g. 1920x1080);
 // bench/gpu/sway-mac.sh runs it on the Mac (SCRIPT=../vulkan/apps-load.ts, mode `-`).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
@@ -17,7 +18,7 @@ mkdirSync(out, { recursive: true });
 const PHASE_S = Number(process.env.PHASE_S ?? 10), WARM_S = Number(process.env.WARM_S ?? 15);
 const APPS = (process.env.APPS ?? 'vkcube-venus=vkcube --wsi wayland\nes2gears-virgl=es2gears_wayland').split('\n').filter(Boolean)
   .map((l) => { const i = l.indexOf('='); return { tag: l.slice(0, i), cmd: l.slice(i + 1) }; });
-const s = await openSession({ gpu: 'virgl,vulkan', image, out, ncpus: Number(process.env.NCPUS ?? 4), ramMiB: Number(process.env.RAM_MIB ?? 4096) });
+const s = await openSession({ gpu: ['virgl,vulkan', process.env.GPU_KNOBS].filter(Boolean).join(','), screen: process.env.SCREEN || undefined, image, out, ncpus: Number(process.env.NCPUS ?? 4), ramMiB: Number(process.env.RAM_MIB ?? 4096) });
 const { page, log, rootShell, load, run, runLines, asUser } = s;
 const results: Record<string, unknown> = { gl: s.gl, chromium: s.browser.version(), warmS: WARM_S, phaseS: PHASE_S };
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));

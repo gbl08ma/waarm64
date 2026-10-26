@@ -503,7 +503,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's renderer for users** (VK1, vk/README.md): `target/vk/venus.wasm` isn't in `npm run dist`'s copy or
   `npm start`'s build (vk/build.sh clones and builds Mesa and virglrenderer natively first, minutes, and needs wasi-sdk;
   its licences, THIRD_PARTY.md's row, ship beside it as EDK2's do), and the Machines page has no Vulkan setting
-  (`?gpu=vulkan` only). Waits for presentation (VK2's L4): until then a user's Vulkan would show nothing.
+  (`?gpu=vulkan` only). Presentation works since VK2's L4; this is L7's.
+- **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
+  scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
+  screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't
+  copied again; WSI formats other than 8-bit RGBA, `rgb10a2unorm` and `rgba16float` aren't shared (a warning, a black
+  window); a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
+  way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
+  readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
 - **The Vulkan driver's gaps** (VK2 L2, vk/README.md "The driver"), each for when a program or dEQP-VK needs it:
   occlusion queries (reported as passing: WebGPU's occlusion query sets, resolved at completion), timestamps (the
   CPU's at replay; `timestamp-query`), depth and stencil blits, border colours and mirror-once (the nearest WebGPU

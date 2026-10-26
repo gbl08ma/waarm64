@@ -13,6 +13,7 @@
 
 /* The driver's (vk/driver/wg_private.h; not included: its headers are Mesa's, vkr's util is its own copy). */
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
+uint32_t wg_memory_texture(VkDeviceMemory memory);
 extern void (*wg_submitted)(void);
 extern uint32_t wg_features, wg_max_immediates;
 extern uintptr_t wg_window_at, wg_window_bytes;
@@ -39,6 +40,7 @@ void venus_resource_destroy(uint32_t ctx_id, uint32_t res_id);
 int venus_resource_map(uint32_t ctx_id, uint32_t res_id, void *where);
 int venus_resource_unmap(uint32_t ctx_id, uint32_t res_id);
 void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
+uint32_t venus_resource_texture(uint32_t ctx_id, uint32_t res_id);
 int venus_poll(void);
 void *venus_alloc(uint32_t size);
 void venus_free(void *p);
@@ -146,6 +148,15 @@ EXPORT void *
 venus_resource_data(uint32_t ctx_id, uint32_t res_id)
 {
    return vkr_renderer_resource_data(ctx_id, res_id);
+}
+
+/* The WebGPU texture (its id in web/venus-gpu.ts) of the image whose memory a resource was exported from, or 0: a WSI
+ * image, which the guest's compositor imports into virgl (web/venus-share.ts). */
+EXPORT uint32_t
+venus_resource_texture(uint32_t ctx_id, uint32_t res_id)
+{
+   VkDeviceMemory memory = vkr_renderer_resource_memory(ctx_id, res_id);
+   return memory != VK_NULL_HANDLE ? wg_memory_texture(memory) : 0;
 }
 
 /* A submit's GPU work is done (and its readbacks mapped): its syncs signal. */

@@ -469,6 +469,7 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
    dev->vk.command_buffer_ops = &wg_cmd_buffer_ops;
    dev->vk.shader_ops = &wg_device_shader_ops;
    list_inithead(&dev->host_memories);
+   list_inithead(&dev->shared_memories);
    list_inithead(&dev->pending);
    const VkPipelineCacheCreateInfo cache_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
    const struct vk_pipeline_cache_create_info cache = { .pCreateInfo = &cache_info, .weak_ref = true };
@@ -566,12 +567,22 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
    if (!mem)
       return;
    wg_submits_forget(dev, mem);
+   if (mem->image)
+      list_del(&mem->shared_link);
    if (mem->host)
       list_del(&mem->link);
    if (mem->owned)
       free(mem->data);
    wg_id_release(mem->gpu);
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
+}
+
+/* The texture of the image bound to a memory (a resource's: web/venus-share.ts shares it with the virgl renderer), or 0. */
+uint32_t
+wg_memory_texture(VkDeviceMemory _mem)
+{
+   VK_FROM_HANDLE(wg_device_memory, mem, _mem);
+   return mem && mem->image ? mem->image->tex : 0;
 }
 
 void
@@ -764,13 +775,18 @@ wg_texture_create(struct wg_image *image)
       usage = (usage & ~8u) | 16;
    if (!usage)
       usage = 4;
+   /* An image that may be shared (dma-buf memory: a WSI image, which the guest's compositor imports into virgl) is
+    * copied and sampled from for the virgl renderer (web/venus-share.ts), through its linear view. */
+   const bool shared = image->shared;
+   if (shared && vi->samples == 1 && !(flags & WG_FMT_NOCOPY))
+      usage |= 1 | ((flags & WG_FMT_SAMPLE) ? 4 : 0);
    const VkExtent3D e = vi->extent;
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"size\":[%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
                   "\"format\":\"%s\",\"usage\":%u,\"viewFormats\":[",
                   e.width, e.height, vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
                   vi->samples, wg_dimension(vi), image->fmt->name, usage);
-   if (vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) {
+   if ((vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || shared) {
       const VkFormat twin = vk_format_is_srgb(vi->format)
                                ? vk_format_srgb_to_linear(vi->format)
                                : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(vi->format)));
@@ -797,6 +813,7 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
       vk_image_destroy(&dev->vk, pAllocator, &image->vk);
       return vk_error(dev, VK_ERROR_FORMAT_NOT_SUPPORTED);
    }
+   image->shared = image->vk.external_handle_types || image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
    image->tex = wg_texture_create(image);
    *pImage = wg_image_to_handle(image);
    return VK_SUCCESS;
@@ -809,6 +826,14 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
    VK_FROM_HANDLE(wg_image, image, _image);
    if (!image)
       return;
+   if (image->shared) {
+      list_for_each_entry_safe (struct wg_device_memory, mem, &dev->shared_memories, shared_link) {
+         if (mem->image == image) {
+            mem->image = NULL;
+            list_del(&mem->shared_link);
+         }
+      }
+   }
    wg_id_release(image->tex);
    vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
@@ -849,11 +874,17 @@ wg_GetDeviceImageSparseMemoryRequirements(VkDevice _device, const VkDeviceImageM
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInfo *infos)
 {
+   VK_FROM_HANDLE(wg_device, dev, _device);
    for (uint32_t i = 0; i < count; i++) {
       VK_FROM_HANDLE(wg_image, image, infos[i].image);
       VK_FROM_HANDLE(wg_device_memory, mem, infos[i].memory);
       image->mem = mem;
       image->offset = infos[i].memoryOffset;
+      if (image->shared) {
+         if (!mem->image)
+            list_addtail(&mem->shared_link, &dev->shared_memories);
+         mem->image = image;
+      }
       const VkBindMemoryStatus *status = vk_find_struct_const(infos[i].pNext, BIND_MEMORY_STATUS);
       if (status)
          *status->pResult = VK_SUCCESS;

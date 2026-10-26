@@ -229,7 +229,8 @@ screen than on the simple framebuffer (backlog).
   for 1 s, only if idle and between the size asked and twice it): the guest's behavior, and not a cost (the whole 3D
   driver stack in the guest's kernel is 1–1.5% of the vCPUs' samples).
 - **GTK4** tries Vulkan first (Mesa's virtio ICD, without Venus) and takes GSK's GL renderer on GLES 3.0 (on a machine
-  with Vulkan, `?gpu=vulkan`, it takes GSK's Vulkan renderer on Venus, whose frames don't reach the screen yet: VK2's L4). **Its graphics
+  with Vulkan, `?gpu=vulkan`, it takes GSK's Vulkan renderer on Venus, whose frames reach the screen through virgl since VK2's L4: vk/README.md
+  "Presentation"). **Its graphics
   offload kills a GtkGLArea**: GTK hands the compositor the GL area's texture as a dmabuf, and Mesa's virgl backs a
   texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both ways
   (`COPY_TRANSFER_BOTH_DIRECTIONS`), so the dmabuf is smaller than stride × height and sway disconnects the client
@@ -314,7 +315,9 @@ context sharing an attached resource with it, a transfer of one of its resources
 `nudgeMs` (30 ms) with nothing out, frames held for the next one are sent (AV1's); past 200 ms the decoders are
 drained; past 1 s the pending pictures are given up (the guest sees the old planes rather than hanging). A picture
 pending for 3 s is given up whatever else comes out (`giveUpOld`): one a decoder never outputs while later ones do
-would otherwise hold every fence behind it for as long as decoding went on (the idle give-up never comes).
+would otherwise hold every fence behind it for as long as decoding went on (the idle give-up never comes). A Vulkan
+program's image on its way into virgl's texture (the readback way, web/venus-share.ts) is held back as a pending plane
+is: the compositor's submit that may sample it waits for its bytes.
 
 **Why the cross-context rule:** the guest has no sync between virtio-gpu contexts. A compositor samples a client's
 buffer right after the client's draws into it were sent, trusting the host to run every context's commands in the
@@ -375,6 +378,11 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
 - **Coordinates:** textures store rows as the guest does (row 0 first): Gallium's upper-left origin and GL's own
   window coordinates, so nothing is flipped except the front face (`front_ccw` inverts, as vrend does), a viewport
   with a negative y scale (the shader flips `gl_Position.y`, the viewport is made positive) and the screen.
+- **Another renderer's blobs** (`ExternalResource`): a Vulkan program's WSI image is a blob of Venus's renderer, which
+  the guest's compositor imports as a dma-buf and types with `PIPE_RESOURCE_SET_TYPE` (format, size, strides). That
+  makes a 2D texture of the format, attached to the context, whose texels web/venus-share.ts copies from the image's
+  WebGPU texture before a submit that may sample it ([vk/README.md](../vk/README.md) "Presentation"); colour formats
+  only. The texture goes with the blob's unref.
 - **Blits** go through GL's framebuffer blit for the same stored layout (and between integer formats of one
   signedness, which can't be sampled as floats), a draw through both formats' swizzles otherwise; a drawn blit has
   only its destination attached (a texture still attached from the last draw and sampled is a feedback loop WebGL

@@ -12,6 +12,7 @@ vk/build.sh native   # also target/vk/wgsl: the translator natively with ASan (`
 node --test tests/venus-renderer.test.ts   # the module in Node: its capset, a blob's map and unmap
 node --test tests/wgsl.test.ts             # the translator: SPIR-V stages to WGSL in Node, compiled by Chromium's WebGPU
 node --test tests/venus-driver.test.ts     # the driver: a Vulkan program of ours (driver/wg_test.c) drawn on Chromium's WebGPU
+node --test tests/venus-share.test.ts      # presentation: a WebGPU texture into the virgl renderer's (Chromium)
 node --test tests/page-venus.test.ts       # vkcube on the page (needs images/debian-vulkan/build.sh's image)
 ```
 
@@ -116,6 +117,7 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
   feedback slots) applied there too, and the submit's syncs signal; vkr's fences retire at the next poll. Only the
   window and the arena are written then (anything else is logged and dropped).
+- **Shared images** (Venus's WSI): see "Presentation".
 - **Not yet** (docs/backlog.md "Vulkan"): occlusion queries (reported as passing), timestamps on the GPU, depth
   blits, border colours and mirror-once, triangle fans, the texture sample type a view needs that the shader didn't
   say (depth and unfilterable float views), component swizzles, rendering into 3D images, multi-view, the pipeline
@@ -144,8 +146,50 @@ asserts vkcube's: at most 0.2% of a frame's bytes off by more than 24.
 own frames in the guest also pass through Mesa's WSI, whose CPU path (`MESA_VK_WSI_DEBUG=sw`) copies each image to a
 host-visible buffer on the same driver.
 
+## Presentation
+
+A Vulkan program's frames reach the page's screen through the guest's compositor: Mesa's Wayland WSI renders into
+images with dma-buf memory (the LINEAR modifier), Venus's guest driver exports each image's memory as a blob, and sway
+(on GLES, virgl) imports it into its virgl context and types it (`PIPE_RESOURCE_SET_TYPE`). Both renderers run in the
+GPU worker, the driver on WebGPU and virgl on WebGL2, which share nothing directly; web/venus-share.ts copies the
+image into the virgl texture made at the import (web/virgl-renderer.ts `ExternalResource`):
+
+- **Which texture:** the driver keeps the shared image bound to each memory (`wg_device_memory.image`, for images with
+  dma-buf memory or a modifier), vkr the memory a resource was exported from, so `venus_resource_texture(ctx, res)`
+  names the WebGPU texture. Shared images are made with `COPY_SRC` and `TEXTURE_BINDING` and their sRGB twin as a view
+  format. web/venus-gpu.ts records the submit that last wrote each texture (attachments, copies and blits into it):
+  an image is copied only when it was written since its last copy.
+- **The bitmap way** (where the page doesn't render in software): at the start of the compositor's submit, the image
+  is drawn into a WebGPU canvas context's texture (an OffscreenCanvas of its size, `bgra8unorm`), its colours the
+  virgl texture's stored channels (virgl keeps B8G8R8A8 as its bytes in an RGBA8 texture, so a `bgra8unorm` image is
+  drawn `.bgra`; an X format's alpha written as 1), then `transferToImageBitmap` and `texSubImage2D` from the bitmap
+  (premultiplied alpha passed as it is). A float image (`rgba16float`: vkcube's choice, Mesa's WSI offers every
+  renderable format) goes through the canvas's 8 bits, as the compositor's output does anyway.
+- **The readback way** (SwiftShader, llvmpipe; `?gpu=vkreadback` forces it, `vkbitmap` the other): when the
+  compositor's submit reaches the worker, `copyTextureToBuffer` and `mapAsync`, and the submit is held in the call
+  queue until the bytes are uploaded (as a pending video picture holds what may see it), so a frame is never stale.
+- **Why not try the bitmap way and fall back:** a WebGPU canvas whose swap chain can't be made (SwiftShader's, in
+  headless Chromium: "Could not find SharedImageBackingFactory … WebgpuSwapChainTexture") loses the GPU channel, and
+  with it every WebGPU device and WebGL context of the page; a probe in a worker of its own took the page's down too.
+  So the choice is by the adapter and WebGL's renderer (`shareMode`).
+
+Per frame at 1920×1080 (`bench/vulkan/share.ts`: an app's frame, the copy, a compositor's draw sampling it; medians
+of 5 rounds, IQR ≤ 0.07 ms; `bench/vulkan/results/vk2/l4/`):
+
+| | bitmap | canvas (`texSubImage2D` from the canvas) | readback |
+| --- | --- | --- | --- |
+| Apple M4 (Metal, Chrome for Testing 153), `bgra8unorm` | **0.80 ms** | 0.93 ms | 1.89 ms |
+| the same, `rgba16float` | **0.96 ms** | 1.09 ms | 3.57 ms |
+| SwiftShader (dev VM, Chromium 153), `bgra8unorm` / `rgba16float` | n/a | n/a | 6.97 / 10.47 ms |
+
+(The frame without a copy: 0.05 ms on the M4, 2.1 ms on SwiftShader.) In place, vkcube filling the desktop guest's
+1080p screen on the M4 holds 60 frames/s both ways; the bitmap way takes ~0.08 ms of the GPU worker's thread a frame,
+the readback way ~0.7 ms and holds the compositor's submit up to 8 ms (bench/vulkan/REPORT.md "VK2 L4").
+
+`tests/venus-share.test.ts` checks the bytes both ways (the bitmap way only where the page doesn't render in software:
+on the Mac, not in the dev VM); `tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim.
+
 ## Not yet
 
-Presentation (L4): Venus's WSI images reach the screen only through a CPU copy in the guest. The module isn't in
-`npm run dist`'s copy or `npm start`'s build yet, and the page has no per-machine setting for Vulkan (`?gpu=vulkan`
-only); docs/backlog.md.
+The module isn't in `npm run dist`'s copy or `npm start`'s build yet, and the page has no per-machine setting for
+Vulkan (`?gpu=vulkan` only); docs/backlog.md.

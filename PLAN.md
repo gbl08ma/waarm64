@@ -101,7 +101,7 @@ What each built is in its doc; numbers in the reports it names. Open loose ends:
 | The block interpreter's speed | Done 2026-10-22 | [cpu.md](docs/cpu.md) "The block interpreter", `bench/interp/REPORT.md` |
 | Remote disks | Done 2026-10-23 | [remote-disks.md](docs/remote-disks.md), `bench/remote-disk/REPORT.md` |
 | Self-hosted debug | Done 2026-10-23 | [cpu.md](docs/cpu.md) "Self-hosted debug" |
-| **Vulkan** (VK0, VK1 done 2026-10-25) | **VK2 current**: `VK2-KICKOFF.md`, `VK2-HANDOVER.md` | [plans/graphics.md](docs/plans/graphics.md), [vk/README.md](vk/README.md), `bench/vulkan/REPORT.md` |
+| **Vulkan** (VK0, VK1 done 2026-10-25) | **VK2 current** (L1–L4 done: the shader path, the driver on WebGPU, vkcube's frames right, presentation through virgl; next L5, dEQP-VK): `VK2-KICKOFF.md`, `VK2-HANDOVER.md` | [plans/graphics.md](docs/plans/graphics.md), [vk/README.md](vk/README.md), `bench/vulkan/REPORT.md` |
 
 Proposed, not started: peer-to-peer rooms over WebRTC ([plans/networking-p2p.md](docs/plans/networking-p2p.md)); a
 local network helper ([plans/networking-local.md](docs/plans/networking-local.md)); a guest agent and live resize

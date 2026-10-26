@@ -1,0 +1,624 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "warmS": 30,
+ "phaseS": 10,
+ "info": "7.2.11-arch1-14mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 vulkan-tools 1.4.363.0-1 sway 1:1.12-4 gtk4 1:4.24.1-1",
+ "sway": "",
+ "vulkan": "-bash: apiVersion: command not found-bash: driverName | head -4: command not found",
+ "vkcube-venus": {
+  "cmd": "vkcube --wsi wayland",
+  "alive": true,
+  "framesPerS": 59.916666666666664,
+  "processMsPerS": 185,
+  "cpuMsPerFrame": 3.0876216968011128,
+  "guestBusyPct": 15,
+  "stderr": [
+   "Selected GPU 0: Virtio-GPU Venus (webpc WebGPU), type: IntegratedGpu, apiVersion: 4206888 (1.3.296), driverVersion: 109060101 (26.2.5)"
+  ],
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 15,
+    "user": 1,
+    "sys": 14,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 23,
+    "user": 2,
+    "sys": 21,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 12,
+    "user": 1,
+    "sys": 11,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 15,
+    "user": 1,
+    "sys": 14,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 11,
+    "user": 0,
+    "sys": 11,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sway",
+    "cpu": 243,
+    "user": 46,
+    "sys": 197,
+    "threads": 4,
+    "runs": 129,
+    "wait": 4
+   },
+   {
+    "process": "vkcube",
+    "cpu": 185,
+    "user": 1,
+    "sys": 184,
+    "threads": 2,
+    "runs": 313,
+    "wait": 4
+   },
+   {
+    "process": "kworker/0:0-events",
+    "cpu": 26,
+    "user": 0,
+    "sys": 26,
+    "threads": 1,
+    "runs": 254,
+    "wait": 11
+   },
+   {
+    "process": "kworker/u16:1+events_unbound",
+    "cpu": 20,
+    "user": 0,
+    "sys": 20,
+    "threads": 1,
+    "runs": 94,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0-flush-254:0",
+    "cpu": 16,
+    "user": 0,
+    "sys": 16,
+    "threads": 1,
+    "runs": 73,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:2-flush-254:0",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 25,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "threads": 2,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 31,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "khvcd",
+    "cpu": 1,
+    "user": 1,
+    "sys": 0,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 241,
+    "user": 46,
+    "sys": 196,
+    "runs": 129,
+    "wait": 4
+   },
+   {
+    "thread": "vkcube/vn_wsi[0,0]",
+    "cpu": 104,
+    "user": 0,
+    "sys": 105,
+    "runs": 188,
+    "wait": 1
+   },
+   {
+    "thread": "vkcube/vkcube",
+    "cpu": 79,
+    "user": 1,
+    "sys": 79,
+    "runs": 125,
+    "wait": 2
+   },
+   {
+    "thread": "kworker/0:0-events/kworker/0:0-events",
+    "cpu": 25,
+    "user": 0,
+    "sys": 26,
+    "runs": 254,
+    "wait": 11
+   },
+   {
+    "thread": "kworker/u16:1+events_unbound/kworker/u16:1+events_unbound",
+    "cpu": 19,
+    "user": 0,
+    "sys": 20,
+    "runs": 94,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:0-flush-254:0/kworker/u16:0-flush-254:0",
+    "cpu": 15,
+    "user": 0,
+    "sys": 16,
+    "runs": 73,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:2-flush-254:0/kworker/u16:2-flush-254:0",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 25,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 4,
+    "runs": 31,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 12,
+   "requests": 571.9166666666666,
+   "commands": {
+    "SET_SCANOUT": 59.91666666666667,
+    "RESOURCE_FLUSH": 59.91666666666667,
+    "SUBMIT_3D": 452.08333333333337
+   },
+   "fences": {
+    "n": 180.66666666666666,
+    "meanMs": 3.2618034924088373,
+    "maxMs": 10.5600004196167,
+    "heldMs": 1942.5845793088276,
+    "behindMs": 818.7079161802927,
+    "fullMs": 0,
+    "heldMax": 10,
+    "toGpuMs": 3.1717814967208735,
+    "toGpuMaxMs": 8.344970703125,
+    "backMs": 0.030311144788785153,
+    "backMaxMs": 3.72509765625
+   },
+   "flushes": 59.916666666666664,
+   "submits": 452.0833333333333,
+   "submitKB": 503.2809244791667,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 11.944164832433065,
+   "draws": 59.916666666666664,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 5.292724609375,
+    "submitMs": 4.999997659163042,
+    "drawMs": 1.464546030217951,
+    "presents": 58.27272727272727,
+    "glDraws": 61.81818181818182,
+    "commands": 864.2727272727273,
+    "uploadKB": 925755.1704545454,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 59.90909090909091,
+    "shareMs": 39.60227264057506,
+    "programs": 5,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 8.160000801086426
+    }
+   },
+   "vm": {
+    "seconds": 10.999694999694825,
+    "Msteps": 79.766248,
+    "irqs": 2648,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 7794,
+     "0x20": 99,
+     "0x24": 462,
+     "0x25": 26
+    },
+    "tlbMisses": 39051,
+    "tlbFlushes": 860,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 1.109093
+   }
+  }
+ },
+ "es2gears-virgl": {
+  "cmd": "es2gears_wayland",
+  "alive": true,
+  "framesPerS": 59.36363636363637,
+  "processMsPerS": 67,
+  "cpuMsPerFrame": 1.1286370597243491,
+  "guestBusyPct": 8,
+  "stderr": [],
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 8,
+    "user": 1,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 5,
+    "user": 0,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 13,
+    "user": 2,
+    "sys": 11,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 7,
+    "user": 1,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 7,
+    "user": 1,
+    "sys": 6,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sway",
+    "cpu": 172,
+    "user": 31,
+    "sys": 141,
+    "threads": 4,
+    "runs": 155,
+    "wait": 1
+   },
+   {
+    "process": "es2gears_waylan",
+    "cpu": 67,
+    "user": 22,
+    "sys": 45,
+    "threads": 7,
+    "runs": 147,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:5-events_unbound",
+    "cpu": 16,
+    "user": 0,
+    "sys": 16,
+    "threads": 1,
+    "runs": 79,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 14,
+    "user": 0,
+    "sys": 14,
+    "threads": 1,
+    "runs": 200,
+    "wait": 5
+   },
+   {
+    "process": "swaybar",
+    "cpu": 5,
+    "user": 4,
+    "sys": 1,
+    "threads": 2,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:2-flush-254:0",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 28,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:1-events_unbound",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 28,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 22,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kcompactd0",
+    "cpu": 1,
+    "user": 1,
+    "sys": 0,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "jbd2/vda2-8",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 171,
+    "user": 31,
+    "sys": 141,
+    "runs": 155,
+    "wait": 1
+   },
+   {
+    "thread": "es2gears_waylan/es2gears_waylan",
+    "cpu": 67,
+    "user": 23,
+    "sys": 45,
+    "runs": 147,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:5-events_unbound/kworker/u16:5+events_unbound",
+    "cpu": 15,
+    "user": 0,
+    "sys": 16,
+    "runs": 79,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 14,
+    "user": 0,
+    "sys": 14,
+    "runs": 200,
+    "wait": 5
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:2-flush-254:0/kworker/u16:2-flush-254:0",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 28,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:1-events_unbound/kworker/u16:1-events_unbound",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 28,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 297.90909090909093,
+   "commands": {
+    "SET_SCANOUT": 59.36363636363635,
+    "RESOURCE_FLUSH": 59.36363636363635,
+    "SUBMIT_3D": 179.18181818181813
+   },
+   "fences": {
+    "n": 119.72727272727273,
+    "meanMs": 0.11786257179741072,
+    "maxMs": 2.7400007247924805,
+    "heldMs": 799.7168175090443,
+    "behindMs": 252.87136311964557,
+    "fullMs": 0,
+    "heldMax": 5,
+    "toGpuMs": 0.10558730083459787,
+    "toGpuMaxMs": 1.789794921875,
+    "backMs": 0.012875498291571754,
+    "backMaxMs": 1.39501953125
+   },
+   "flushes": 59.36363636363637,
+   "submits": 179.1818181818182,
+   "submitKB": 778.3650568181819,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 6.830909208817915,
+   "draws": 59.36363636363637,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 8.16318347237327,
+    "submitMs": 7.749547698281028,
+    "drawMs": 0.8227282437411222,
+    "presents": 52.63636363636363,
+    "glDraws": 239.72727272727272,
+    "commands": 1749.909090909091,
+    "uploadKB": 175.37642045454547,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "programs": 8,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 11.000060000419616,
+    "Msteps": 62.243881,
+    "irqs": 1822,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 4757,
+     "0x20": 82,
+     "0x24": 389,
+     "0x25": 21
+    },
+    "tlbMisses": 37243,
+    "tlbFlushes": 686,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.261747
+   }
+  }
+ },
+ "warnings": {
+  "venus: Vulkan's frames reach virgl by readback": 1,
+  "venus: vkr: destroying context 7 (vkcube) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1
+ }
+}

@@ -63,6 +63,7 @@ python3 "$W/mesa/src/vulkan/util/vk_entrypoints_gen.py" --xml "$W/mesa/src/vulka
 # What the driver advertises: VK0 A's direct set on the Mac's adapter (vk/profile.ts).
 node "$ROOT/vk/profile.ts" "$ROOT/bench/vulkan/profiles/webgpu-mac.json" mac_direct "$G/wg_profile.c" >/dev/null
 node "$ROOT/vk/gen.ts" "$W" "$W/$WASI_SDK"
-ninja -C "$W" -f wasm.ninja >/dev/null
-if [ "${1:-}" = native ]; then ninja -C "$W" -f native.ninja >/dev/null; fi
+# Quiet, but a failure shows its end (a compile error).
+ninja -C "$W" -f wasm.ninja > "$W/wasm-build.log" || { tail -30 "$W/wasm-build.log"; exit 1; }
+if [ "${1:-}" = native ]; then ninja -C "$W" -f native.ninja > "$W/native-build.log" || { tail -30 "$W/native-build.log"; exit 1; }; fi
 ls -l "$W/venus.wasm"
