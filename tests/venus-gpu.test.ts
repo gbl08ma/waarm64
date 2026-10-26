@@ -139,3 +139,68 @@ test('?gpu=vkpipelines=sync makes them at once, as before', async () => {
   assert.equal(pending.length, 0);
   assert.deepEqual(log, ['made at once']);
 });
+
+test('a submit\'s parts are counted (VK3 L2b): its encoding, queue.submit, passes, draws, and the done of those with a pass', async () => {
+  const { gpu, wg, put, settle } = setup();
+  wg.gpu_encoder();
+  wg.gpu_render_pass(...put(1024, '{"colorAttachments":[],"width":4,"height":4}'));
+  wg.gpu_draw(3, 1, 0, 0);
+  wg.gpu_draw(6, 1, 0, 0);
+  wg.gpu_submit(1);
+  // One without a pass (a fence's or an upload's alone).
+  wg.gpu_encoder();
+  wg.gpu_submit(2);
+  await settle();
+  const s = gpu.stats;
+  assert.equal(s.passes, 1);
+  assert.equal(s.draws, 2);
+  assert.equal(s.done, 2);
+  assert.equal(s.workDone, 1, 'only the submit with a pass');
+  assert.ok(s.encodeMs >= 0 && s.submitCallMs >= 0 && s.workDoneMs >= 0);
+  assert.equal(s.gpuTimed, 0, 'not timed without ?gpu=vkgputime');
+});
+
+test('?gpu=vkgputime times a submit\'s passes on the GPU with timestamp queries, read once it is done', async () => {
+  const log: string[] = [];
+  const descs: GPURenderPassDescriptor[] = [];
+  // Begin 1,000 ns, end 251,000: 0.25 ms.
+  const times = new BigUint64Array([1000n, 251000n]);
+  const device = {
+    features: new Set(['timestamp-query']),
+    addEventListener() {},
+    createBuffer: () => Object.assign(new FakeBuffer(), { getMappedRange: () => times.buffer }),
+    createQuerySet: () => { log.push('query set'); return {}; },
+    createCommandEncoder: () => ({
+      beginRenderPass: (d: GPURenderPassDescriptor) => { descs.push(d); return { end() {}, draw() {} }; },
+      resolveQuerySet: (_q: unknown, first: number, n: number) => log.push(`resolve ${first} ${n}`),
+      copyBufferToBuffer: () => log.push('copy'),
+      finish: () => ({}),
+    }),
+    queue: { submit: () => log.push('submit'), writeBuffer() {}, onSubmittedWorkDone: () => Promise.resolve() },
+  } as unknown as GPUDevice;
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const gpu = new VenusGpu(device, memory, () => {}, () => [], { gpuTime: true });
+  const wg = gpu.imports() as Record<string, (...a: number[]) => number | void>;
+  const b = new TextEncoder().encode('{"colorAttachments":[],"width":4,"height":4}');
+  new Uint8Array(memory.buffer).set(b, 1024);
+  for (const serial of [1, 2]) {
+    wg.gpu_encoder();
+    wg.gpu_render_pass(1024, b.length);
+    wg.gpu_draw(3, 1, 0, 0);
+    wg.gpu_submit(serial);
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  }
+  assert.deepEqual(descs.map((d) => d.timestampWrites && [d.timestampWrites.beginningOfPassWriteIndex, d.timestampWrites.endOfPassWriteIndex]), [[0, 1], [0, 1]]);
+  assert.deepEqual(log, ['query set', 'resolve 0 2', 'copy', 'submit', 'resolve 0 2', 'copy', 'submit'], 'one query set, reused');
+  assert.equal(gpu.stats.gpuTimed, 2);
+  assert.ok(Math.abs(gpu.stats.gpuMs - 0.5) < 1e-9, String(gpu.stats.gpuMs));
+
+  // Without the adapter's feature: nothing timed, passes as before.
+  descs.length = 0;
+  const plain = new VenusGpu({ ...device, features: new Set() } as unknown as GPUDevice, memory, () => {}, () => [], { gpuTime: true });
+  const wp = plain.imports() as Record<string, (...a: number[]) => number | void>;
+  wp.gpu_encoder();
+  wp.gpu_render_pass(1024, b.length);
+  wp.gpu_submit(1);
+  assert.equal(descs[0].timestampWrites, undefined);
+});

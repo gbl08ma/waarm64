@@ -251,11 +251,22 @@ export async function openSession(o: SessionOptions) {
     const vt = r.map((x) => (x as unknown as { venus?: Record<string, number> }).venus).filter((x): x is Record<string, number> => !!x);
     const vsum = (k: string) => vt.reduce((n, x) => n + (x[k] ?? 0), 0);
     const vmax = (k: string) => Math.max(0, ...vt.map((x) => x[k] ?? 0));
+    // The seconds after the first two (pipelines made, the scene's uploads), for a submit's parts.
+    const steady = vt.length > 3 ? vt.slice(2) : vt;
+    const ssum = (k: string) => steady.reduce((n, x) => n + (x[k] ?? 0), 0);
     const venus = vt.length ? { polls: vsum('polls') / vt.length, gapMs: vsum('gapMs') / Math.max(1, vsum('gaps')), gapMaxMs: vmax('gapMaxMs'), submits: vsum('submits') / vt.length,
       doneMs: vsum('doneMs') / Math.max(1, vsum('done')), doneMaxMs: vmax('doneMaxMs'), orderMs: vsum('orderMs') / Math.max(1, vsum('done')), nudges: vsum('nudges') / vt.length,
       fences: vsum('fences') / vt.length, fenceMs: vsum('fenceMs') / Math.max(1, vsum('fences')), fenceMaxMs: vmax('fenceMaxMs'),
       // Each second's mean ms to done (a pipeline's first compile lifts its second's alone).
-      doneMsBySecond: vt.map((x) => +(x.doneMs / Math.max(1, x.done)).toFixed(3)) } : undefined;
+      doneMsBySecond: vt.map((x) => +(x.doneMs / Math.max(1, x.done)).toFixed(3)),
+      // A submit's parts (VK3 L2b), a submit on average: the replay into WebGPU (ms), queue.submit's call (ms), its
+      // writeBuffers and their KB, its readbacks, passes and draws; the GPU's ms in its passes (`?gpu=vkgputime`); over
+      // the steady seconds.
+      perSubmit: ((n) => ({ encodeMs: ssum('encodeMs') / n, submitCallMs: ssum('submitCallMs') / n, uploads: ssum('uploads') / n, uploadKB: ssum('uploadBytes') / 1024 / n, readbacks: ssum('readbacks') / n, passes: ssum('passes') / n, draws: ssum('draws') / n,
+        gpuMs: ssum('gpuTimed') ? ssum('gpuMs') / ssum('gpuTimed') : undefined,
+        // The submits with a pass: their share and their ms to done (the others are fences' and uploads' alone).
+        withPass: ssum('workDone') / Math.max(1, ssum('done')), withPassDoneMs: ssum('workDone') ? ssum('workDoneMs') / ssum('workDone') : undefined,
+        withPassDoneMsBySecond: steady.map((x) => +((x.workDoneMs ?? 0) / Math.max(1, x.workDone ?? 0)).toFixed(3)) }))(Math.max(1, ssum('submits'))) } : undefined;
     const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), shareRefreshes: rper('shareRefreshes'), shareMs: rper('shareMs'), importBinds: rper('importBinds'), importPictures: rper('importPictures'), importKB: rper('importBytes') / 1024, importMs: rper('importMs'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors, ...(video ? { video } : {}), ...(venus ? { venus } : {}) } : undefined;
     const commands: Record<string, number> = {};
     for (const x of s) for (const [k, n] of Object.entries(x.busy.commands ?? {})) commands[COMMANDS[k] ?? k] = (commands[COMMANDS[k] ?? k] ?? 0) + n / Math.max(1, s.length);

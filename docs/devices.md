@@ -485,7 +485,8 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   at Chromium's slow look otherwise). A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
   which happens once the GPU's work before it is done (`VenusRenderer.settled`: the GPU worker holds the device's fence
   until then). The render stats (`?displaystats`) carry the way back a second (`venus`: submits done in, polls apart,
-  nudges, fences retired in). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
+  nudges, fences retired in, and a submit's parts: encoding, `queue.submit`, writes, passes, draws, the GPU's ms with
+  `?gpu=vkgputime`; `?gpu=vknudge=<ms>` sets the nudges' period, VK3 L2b). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
   Calls that come before the module is ready wait in a backlog, and so does the device's fence. The driver's
   pipelines are made asynchronously and a submit drawing with one not yet ready is held, in order (VK3 L3); the
   translated shaders persist across runs in IndexedDB `webpc-shaders`, the origin's (`venusPipelines` in the render

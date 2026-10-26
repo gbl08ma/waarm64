@@ -552,7 +552,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   submit every ~1 ms while one is in flight brings it back in ~1 ms (a submit's fence 3.1–3.2 → 1.0 ms). The prime
   blit explains none of it (the scene draws offscreen; `vkvendor=nvidia` changes nothing). `nvidia.sh page`'s `fence`
   and `scene` steps (the pump against `vkpoll=timeout`, each run's breakdown in `renderer.venus`) confirm it. Close
-  this once they do.
+  this once they do. The run of 5b9654ac did (the pump ~1.1 ms off every size), but left 1 fish at 2.5 ms against
+  virgl's 1.5 with a frame submit's done at 3.4–3.9 ms; VK3 L2b scripted what the next run must say of it (REPORT.md
+  "VK3 L2b": the GPU's real ms with `?gpu=vkgputime`, frame-shaped submits, `vknudge`, a trace).
 - **The guest fences each frame through the virtqueue** (VK3 L2): in VK2 L5 the scene's guest sent ~1 fenced
   `SUBMIT_3D` a second, now one every two frames (269 a second at 1 fish on the M4; 109–208 in VK2's NVIDIA run), likely
   since L6/L7 advertised sync-file semaphores and external fences to Venus's guest driver. Each costs the guest an
@@ -613,7 +615,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
     immediates (the push buffer is a 13th).
   - **Queries**: occlusion queries are reported as passing (WebGPU's occlusion query sets need the pass's set at its
-    start: the pass's op patched when a query begins in it), timestamps are the CPU's at replay (`timestamp-query`).
+    start: the pass's op patched when a query begins in it), timestamps are the CPU's at replay (`timestamp-query`): a program's "GPU time" under Venus, VK0's scene's
+    included, is the replay's span, not the GPU's (VK3 L2b; the worker's `?gpu=vkgputime` measures the GPU's).
   - **Rendering**: stencil state per face (WebGPU has one reference and one pair of masks: about a third of
     `pipeline.monolithic.stencil` fails), indexed triangle fans (non-indexed ones draw through the device's fan
     indices), depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and

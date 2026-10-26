@@ -15,7 +15,7 @@ without "with uncommitted changes"; on the desktop, in a checkout at the same co
 
     bench/vulkan/nvidia.sh page <the bundle> ~/webpc-vk2
 
-(~40 min whole; `VK2_STEPS="…"` runs some steps only; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user
+(~45 min whole; `VK2_STEPS="…"` runs some steps only, `VK2_STEPS=l2b` L2b's ~16 min; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user
 puts in the repo's root.)
 
 **Answered by the run of 5b9654ac (2026-10-26; REPORT.md "VK3: the NVIDIA run after L2", `results/vk3/nvidia/`):**
@@ -26,7 +26,24 @@ done in 0.10–0.15 ms, nudged or not; the pump took ~1.1 ms off every size; **V
 1.5: the bar not met**, with WebGPU's done in the scene 3.4–3.9 ms a submit. Ahead at 1,000 fish and the toolkit.
 
 **Open for the next run:**
-- **L2b** (to be scripted by L2b): where a scene submit's 3.4 ms to done goes on NVIDIA (see the plan's L2b).
+- **L2b, Venus at 1 fish** (`VK2_STEPS=l2b` = the `fence`, `scene` and `trace` steps, ~16 min on NVIDIA; REPORT.md
+  "VK3 L2b"; the M4's and SwiftShader's answers there):
+  (1) `results/fence.json` `shapes`: which frame-shaped submit is slow to done there? A lone `pass` against L2's
+  `copyDone` (0.15 ms): if `pass` is ~3 ms with a small `gpuMs`, Dawn/Chromium on NVIDIA is slow to see a real pass
+  done (hypothesis 5); if `gpuMs` alone is far above `back to back`'s, the GPU's clocks (1). Do `+writes`, `+map`,
+  `+newStaging` or `WebGL drawing` add to it (4, 3)? Does `two queued`'s done stay above 2× its `frameMs`?
+  (2) `scene-venus-gputime-*`: the scene's real GPU ms a frame submit on NVIDIA (`venus a submit: … GPU x ms`; native
+  0.09, M4 0.41). Near the 3.4 ms done → the GPU at a light load is the cost (1); near 0.1–0.3 → the time is
+  between the GPU and Chromium's look.
+  (3) `scene-venus-nudge025-*` and `scene-venus-nonudge-*` against `scene-venus-*` at 1 fish: does looking more often
+  shorten done and the frame (2), or do nudges do nothing on NVIDIA (then `vknudge`'s default could go per host)?
+  (4) `trace/trace-fish-1-msaa1.json` (JSON) and its summary: the GPU process's main thread's busy ms a second and its
+  heaviest events (GL/`WebGL`, the compositor, `SharedImage…`, `Queue::Submit`), the gaps between
+  `WebGPUDecoderImpl::PerformPollingWork` calls, and `Queue::Submit` → the `DawnReturnCommands` that carries the done.
+  (5) Each Venus scene log's `venus a submit:` line: encoding and `queue.submit` ms (the M4: 0.05 and 0.003), and the
+  frame submits' done by second.
+  The default arms changed: `venus-timeout` (answered) is out; `venus-gputime`, `venus-nudge025`, `venus-nonudge` (1 fish
+  only) are in.
 - **L3, pipelines** (`pipelines` step, ~8 min; `VK2_STEPS="pipelines"` runs it alone): (1) `results/pipelines-micro.json`:
   N new pipelines made one by one against all at once on NVIDIA (Dawn on Vulkan): is async sooner (M4: 4.6×), and does
   WebGL stall while they're made one by one (`webgl.max`: M4 4.2 s, SwiftShader 0.8 s)? (2) `pipelines-sync`,
@@ -47,7 +64,9 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   guest's WSI on Mesa's prime blit (vendor 0x10de: an extra copy into a linear buffer a frame), so part of the ~4.5 ms
   floor may be that path, not the fence. Split the two first: the scene's frame with `?gpu=vkvendor=nvidia` against
   without, on the M4 and SwiftShader, before blaming the pollers; the next NVIDIA run then shows the floor without it.
-- [ ] L2b (added by the supervisor after the NVIDIA run of 5b9654ac, runs after L3): **Venus at 1 fish on NVIDIA:
+- [~] L2b (added by the supervisor after the NVIDIA run of 5b9654ac, runs after L3; **scripted 2026-10-26, waits on the
+  user's run**: "What the next NVIDIA run must answer"; then a fix behind the switch the run picks, or the bar
+  re-judged): **Venus at 1 fish on NVIDIA:
   2.5 ms a frame against virgl's 1.5.** The poller is no longer it (fence − done ~0.1 ms), nor Dawn's slow look (a
   trivial submit's done there: 0.15 ms); a scene submit's done is 3.4–3.9 ms though the GPU works ~0.3 ms a frame.
   Find what's in the scene's submits that a trivial one hasn't: extend `bench/vulkan/fence.ts` with submits shaped
@@ -70,6 +89,51 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
 - [ ] L8: the track's end (REPORT.md's VK3 section, docs, plan §6/§7, the final NVIDIA run scripted).
+
+## State (2026-10-26, after L2b)
+
+- **Done: the tools for NVIDIA's run, scripted and run end to end on SwiftShader; no fix yet** (REPORT.md "VK3 L2b",
+  JSON in `bench/vulkan/results/vk3/l2b/`). Nothing on the M4 or SwiftShader reproduces a 3.4 ms done for a frame
+  submit: the bar holds on both (the M4's scene 0.85–0.89 ms at 1 fish, frame submits done in 0.95–1.04).
+- **A wrong premise found**: "the GPU works ~0.3 ms a frame" (VK2's run, the plan's L2b) was the driver's CPU clock at
+  replay: `vkCmdWriteTimestamp` writes `os_time_get_nano()` (vk/driver/wg_cmd.c `OP_QUERY`), so the scene's "GPU" line
+  under Venus is the replay's span. The real GPU time in a Venus frame on NVIDIA is unknown; on the M4 it is 0.41 ms a
+  pass (`?gpu=vkgputime`). The GPU's clocks at a light load are back among the suspects.
+- **Built** (runtime: instrumentation and two A/B switches, defaults unchanged):
+  1. web/venus-gpu.ts: a submit's parts in the stats (encoding = `gpu_encoder` → `gpu_submit`, `queue.submit`'s call,
+     passes, draws; `workDone`/`workDoneMs` = the done of submits with a pass) and `?gpu=vkgputime` (each submit's first
+     8 passes with `timestampWrites` into a reused query set, resolved and read after done; `deviceRequest` asks
+     `timestamp-query` only then). web/venus-host.ts: `VenusTimes` carries them; `?gpu=vknudge=<ms>` sets the pump's
+     nudge period (0: none). bench/gpu/guest-session.ts: `renderer.venus.perSubmit` (steady seconds); guest.ts logs a
+     `venus a submit:` line.
+  2. bench/vulkan/fence.ts `shapes`: frame-shaped submits (1080p pass, 120 draws with dynamic offsets, the scene's
+     writes, a map, a staging buffer made per submit, nudged, the page's WebGL drawing, two queued, back to back),
+     encoding / `queue.submit` / done / the pass's GPU ms each (`--enable-webgpu-developer-features` added for
+     unquantized timestamps).
+  3. guest.ts `TRACE=1`: a CDP trace (JSON; Playwright's `browser.startTracing`, not the protobuf startup format) of
+     the first setting, `TRACE_MS` from `TRACE_AT`, plus `trace-<setting>-summary.json` (the GPU process's main
+     thread).
+  4. nvidia.sh: the shapes in `fence`; scene arms `venus-gputime`, `venus-nudge025`, `venus-nonudge` (1 fish) and
+     `venus-timeout` dropped from the defaults; a `trace` step; `VK2_STEPS=l2b` = "fence scene trace". Ran whole on the
+     dev VM (SwiftShader, `SIZE=320x180`, one round): ~10 min, tarball 3.4 MB (the 52 MB trace compresses well).
+     **Expected on NVIDIA: `l2b` ~16 min; the whole default run ~45 min** (was ~40: venus-timeout's ~3 min out, L2b's
+     arms ~6 min and the trace ~1.5 min in).
+- **Numbers**: a scene frame on the M4 is ~2 submits, 48% with a pass (~120 draws at 1 fish), ~1.5 writes and ~32 KB a
+  submit, no readbacks; the worker's encoding 0.054 ms and `queue.submit` 0.003 ms a submit (SwiftShader's VM 0.17,
+  0.08). Shapes on the M4: a lone pass done in ~2.3 ms (GPU 0.14) but 1.0 with two queued (GPU 0.09): an idle GPU is
+  slower to finish and to report; writes, a map, staging, nudges, WebGL change nothing. SwiftShader is CPU-bound
+  (1080p pass ~4 ms); only the page's WebGL doubles a lone done there (shared CPU). M4 A/B, 3 rounds at 1 fish: the
+  pump 0.85–0.89, `vknudge=0` 0.83–0.87 (the same), `vkgputime` 0.88–0.95 (its resolve/copy/map add ~0.15 ms to done).
+- **Hypotheses** (REPORT.md "VK3 L2b", each with the run's answer above): (1) the GPU at a light load; (2) Chromium's
+  looks at the device (each command batch polls, else a 1–2 ms timer every flush pushes back:
+  gpu/ipc/service/command_buffer_stub.cc, webgpu_decoder_impl.cc); (3) the GPU process's main thread busy with GL or
+  the compositor; (4) the submit's content; (5) Dawn on NVIDIA slow to signal a real pass.
+- **Left**: the user's run; then a fix behind a switch (the default flipped only with NVIDIA's numbers and L1's
+  presentation check intact). If (1) holds, the fix space is narrow (keeping the GPU busy is no fix): the bar may need
+  the user's judgement. Not done: GPU timestamps in the driver itself (`vkCmdWriteTimestamp` still the CPU's clock;
+  backlog "The Vulkan driver's gaps").
+- **CI at the commit:** ci.sh OK (506 s), ci-debian.sh OK (381 s), ci-deqp-vk.sh OK (242 s). nvidia.sh `VK2_STEPS=l2b` whole on SwiftShader (above).
+- **Worth not re-discovering:** see "Things worth not re-discovering" (L2b's).
 
 ## State (2026-10-26, after L3)
 
@@ -241,5 +305,13 @@ findings. Add VK3's here.
 - (L3) A page's IndexedDB is per origin, port included: a kept profile across sessions needs a fixed port
   (`WEBPC_PROFILE` makes guest-session.ts use `WEBPC_PORT`, 8197). venus-run.ts needs `CHROMIUM_ARGS="--enable-unsafe-webgpu
   --enable-features=Vulkan"` on the dev VM, or Venus draws nothing (and vkQuake's replay crashes).
+- (L2b) A Venus scene's "GPU x ms" line is the driver's CPU clock at replay, not the GPU's (`OP_QUERY` writes
+  `os_time_get_nano()`): use `?gpu=vkgputime`. The render stats' averages include the scene's start; `perSubmit` is
+  over the steady seconds. sway-mac.sh's name can't hold a `/` (flat names: `l2b-…`).
+- (L2b) On the M4 a lone frame-sized submit is done in ~2.3 ms and its pass takes 0.14 ms; kept queued, 1.0 and 0.09:
+  measure a light load queued as the scene runs, not alone. Chromium polls a WebGPU device at each command batch
+  (`HandleDawnCommands` → `PerformPollingWork`) and otherwise on a 1–2 ms timer that each flush restarts.
+- (L2b) Playwright's `browser.startTracing` gives JSON (CDP's default stream format) of every process: 2 s of the
+  scene ~50 MB, ~3 MB gzipped.
 - (L2) Completing a submit with nothing to read back before its work is done would hide its latency, but the guest's
   fences would then stop holding it back (unbounded queued frames): not done.

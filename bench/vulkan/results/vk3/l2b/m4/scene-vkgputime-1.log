@@ -1,0 +1,8 @@
+[0.5] WebGL2: ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version) | 153.0.8010.12
+[page log] venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies
+[26.7] running
+[30.6] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[33.0] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[37.0] fish-1-msaa1 0.877 ms a frame (IQR 0.078), guest CPU 0.369 ms; GPU worker busy 1 ms/s, 0 draws/s
+[37.0] fish-1-msaa1 venus: 794 submits/s done in 1.13 ms (max 6.5), then 0.00 ms in order (by second: 1.566 0 1.21 1.08); 2271 polls/s 0.20 ms apart (max 3.9); 308 nudges/s; 397 fences/s retired in 1.16 ms
+[37.0] fish-1-msaa1 venus a submit: encode 0.055 ms, queue.submit 0.003 ms, 1.5 writes (33.4 KB), 0.00 readbacks, 0.48 passes, 58 draws, GPU 0.408 ms; 48% have a pass, done in 1.12 ms (by second: 1.209 1.09)

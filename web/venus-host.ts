@@ -37,13 +37,18 @@ export type VenusPoll = 'timeout' | 'pump';
  * ms between them while the pump ran (`gap*`); the GPU's submits, the ms until WebGPU said done (`done*`) and then until
  * they completed in order (`orderMs`), the nudges; the fences the guest sent and their ms until retired.
  */
-export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs: number; submits: number; done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number; fences: number; fenceMs: number; fenceMaxMs: number };
+export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs: number; submits: number; done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number; fences: number; fenceMs: number; fenceMaxMs: number;
+  /** A submit's parts (VK3 L2b, web/venus-gpu.ts `VenusGpuStats`): summed over the second's submits. */
+  encodeMs: number; submitCallMs: number; uploads: number; uploadBytes: number; readbacks: number; passes: number; draws: number; gpuTimed: number; gpuMs: number; workDone: number; workDoneMs: number };
 
 /**
  * How the renderer's pipelines are made (`?gpu=vkpipelines=sync`: at once, as before VK3 L3, for A/B) and where its
  * shaders persist across runs (`cache`: the store for a renderer build, web/venus-cache.ts; none with `?gpu=vkcache=off`).
  */
-export type VenusOptions = { syncPipelines?: boolean; cache?: (buildId: string) => Promise<ShaderCache | undefined> };
+export type VenusOptions = { syncPipelines?: boolean; cache?: (buildId: string) => Promise<ShaderCache | undefined>;
+  /** `?gpu=vknudge=<ms>`: the pump's nudges at most this often (0: none; default `NUDGE_MS`); `?gpu=vkgputime`: each
+   * submit's passes timed on the GPU (VK3 L2b, A/B and diagnosis). */
+  nudgeMs?: number; gpuTime?: boolean };
 
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
@@ -163,7 +168,7 @@ export class VenusRenderer {
    */
   static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump', options: VenusOptions = {}) {
     let self: VenusRenderer | undefined;
-    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines });
+    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines, gpuTime: options.gpuTime });
     const imports = {
       env: {
         memory,
@@ -176,6 +181,7 @@ export class VenusRenderer {
     };
     const instance = await WebAssembly.instantiate(module, imports);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll);
+    self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.
     if (options.cache) gpu.cache = await options.cache(self.buildId);
@@ -332,10 +338,13 @@ export class VenusRenderer {
   }
 
   private lastTimes: VenusTimes | undefined;
+  /** The pump's nudges at most this often (ms; 0: none). */
+  nudgeMs = NUDGE_MS;
   /** The fence's way back since the last call (`VenusTimes`); the longest times start again. */
   times(): VenusTimes {
     const r = this.stats, g = this.gpu.stats;
-    const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs };
+    const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs,
+      encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs };
     const last = this.lastTimes;
     this.lastTimes = now;
     r.gapMaxMs = g.doneMaxMs = r.fenceMaxMs = 0;
@@ -389,7 +398,7 @@ export class VenusRenderer {
     this.lastPoll = now;
     this.stats.polls++;
     const active = this.ex.venus_poll();
-    if (this.gpu.inFlight && now - this.lastNudge >= NUDGE_MS && this.gpu.nudge()) this.lastNudge = now;
+    if (this.nudgeMs > 0 && this.gpu.inFlight && now - this.lastNudge >= this.nudgeMs && this.gpu.nudge()) this.lastNudge = now;
     this.running = !!active || this.gpu.inFlight > 0;
     if (this.running && !this.queued) {
       this.queued = true;

@@ -1,5 +1,6 @@
 // VK3 L2: what a worker's turn and WebGPU's "done" cost on this host's Chromium (bench/vulkan/fence/worker.ts), the
-// pieces of a Venus fence's round trip (bench/vulkan/REPORT.md "VK3 L2").
+// pieces of a Venus fence's round trip (bench/vulkan/REPORT.md "VK3 L2"); then submits shaped like the scene's, each
+// part timed (`shapes`: "VK3 L2b").
 //   node bench/vulkan/fence.ts [out.json]   (N, default 60; CHROMIUM, CHROMIUM_ARGS as the tests take them)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -12,7 +13,8 @@ const N = Number(process.env.N ?? 60);
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED,
-  args: (process.env.CHROMIUM_ARGS ?? (process.platform === 'darwin' ? '--enable-unsafe-webgpu' : '--enable-unsafe-webgpu --enable-features=Vulkan')).split(' ').filter(Boolean) });
+  // Timestamps unquantized (L2b's shapes time their pass on the GPU).
+  args: [...(process.env.CHROMIUM_ARGS ?? (process.platform === 'darwin' ? '--enable-unsafe-webgpu' : '--enable-unsafe-webgpu --enable-features=Vulkan')).split(' ').filter(Boolean), '--enable-webgpu-developer-features'] });
 try {
   const page = await browser.newPage();
   page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.error(`page: ${m.text().slice(0, 500)}`); });

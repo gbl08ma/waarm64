@@ -25,17 +25,23 @@
 # the headless Chrome for Testing if it gets the NVIDIA adapter, else in your own Chromium (VK2_CHROMIUM=<path>, by
 # default the first of chromium, google-chrome-stable, google-chrome on the PATH), headed with a temporary profile: a
 # window opens for each run and must stay visible (minimised, Chromium throttles it). Each run is a machine on the page,
-# as on the dev VM and the Mac (VK2_STEPS="present replay fence scene pipelines mpv" picks some):
+# as on the dev VM and the Mac (VK2_STEPS="present replay fence scene trace pipelines mpv" picks some; VK2_STEPS=l2b is
+# "fence scene trace", VK3 L2b's, ~12 min):
 #   1. present (VK3 L1): what Venus presents on the page's screen, against the guest's own frames, for each way Vulkan's
 #      frames reach virgl (the page's own choice and its run-time check, then the bitmap, canvas and readback ways
 #      forced): vkcube in sway's window, mpv paused fullscreen (bench/vulkan/present.ts, the desktop guest; ~10 min);
 #   2. replay: the programs' frames (vkcube, vkmark's 13 scenes, vkQuake) replayed on the Venus device and compared with
 #      lavapipe's (bench/vulkan/venus-run.ts REPLAY=all, the tests' Debian; ~5 min);
-#   3. fence (VK3 L2): what a worker's turn and WebGPU's "done" cost in this Chromium (bench/vulkan/fence.ts: a nested
-#      setTimeout(0), Atomics.waitAsync's sleeps; onSubmittedWorkDone alone and nudged by empty submits; ~1 min);
-#   4. scene: VK0's scene in the desktop guest on Venus (rings polled by the pump, and the old way: `vkpoll=timeout`)
-#      and on virgl, two alternated rounds (bench/vulkan/guest.ts; each Venus run's fence breakdown in
-#      renderer.venus: submits done in, polls apart, nudges, fences retired in);
+#   3. fence (VK3 L2, L2b): what a worker's turn and WebGPU's "done" cost in this Chromium (bench/vulkan/fence.ts: a
+#      nested setTimeout(0), Atomics.waitAsync's sleeps; onSubmittedWorkDone alone and nudged by empty submits), then
+#      submits shaped like the scene's (a 1080p pass of 120 draws, its writeBuffers, a map, two queued, the page's
+#      WebGL drawing meanwhile), each part timed and the pass's GPU ms; ~1 min);
+#   4. scene: VK0's scene in the desktop guest on Venus and on virgl at 1 and 1,000 fish and the toolkit, and Venus's
+#      L2b arms at 1 fish: `vkgputime` (each submit's pass timed on the GPU), `vknudge=0.25` (empty submits every pump
+#      turn), `vknudge=0` (none); two alternated rounds (bench/vulkan/guest.ts; each Venus run's fence breakdown and a
+#      submit's parts in renderer.venus; ~11 min);
+#   4b. trace (VK3 L2b): a Chromium trace (JSON) of 2 s of Venus's scene at 1 fish, with a summary of the GPU process's
+#      main thread (bench/vulkan/guest.ts TRACE=1; ~2 min);
 #   5. pipelines (VK3 L3): pipelines made one by one against all at once (bench/vulkan/pipelines.ts), and vkQuake's and
 #      a vkmark scene's replays with pipelines made at once and no shader store, then cold and warm across a restart on
 #      one kept profile (bench/vulkan/venus-run.ts; ~8 min);
@@ -106,6 +112,7 @@ if [ "${1:-}" = page ]; then
     say "$name"
     if (cd "$P" && timeout "$limit" "$@") > "$R/$name.log" 2>&1; then echo "  done"; else echo "  (failed or timed out: $R/$name.log; going on)"; fi
   }
+  [[ " ${VK2_STEPS:-} " == *" l2b "* ]] && VK2_STEPS="${VK2_STEPS/l2b/fence scene trace}"
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" present "* ]]; then
     step present 2400 env SHIM=1 node bench/vulkan/present.ts target/arch/desktop.qcow2 "$R/present"
     # The page's choice and each way's verdict, on the terminal too.
@@ -123,14 +130,26 @@ if [ "${1:-}" = page ]; then
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" scene "* ]]; then
     # Long enough that the render stats' seconds hold the steady state (VK3 L2).
     # VK2_SCENE_ROUNDS and VK2_SCENE_ARMS pick some (test hooks: the dev VM runs the arms one command at a time).
+    # The old poller (`venus-timeout`, answered by the run of 5b9654ac) is no longer a default arm; L2b's run at 1 fish.
     for round in ${VK2_SCENE_ROUNDS:-1 2}; do
-      for arm in ${VK2_SCENE_ARMS:-venus venus-timeout virgl}; do
-        knobs=; [ "$arm" = venus-timeout ] && knobs=vkpoll=timeout
-        step "scene-$arm-$round" 1200 env FISH="1 1000" TOOLKIT=2000 WARMUP=200 FRAMES=300 GPU_KNOBS="$knobs" node bench/vulkan/guest.ts "${arm%-timeout}" target/arch/desktop.qcow2 "$R/scene-$arm-$round"
+      for arm in ${VK2_SCENE_ARMS:-venus virgl venus-gputime venus-nudge025 venus-nonudge}; do
+        knobs= fish="1 1000" toolkit=2000
+        case $arm in
+          venus-timeout) knobs=vkpoll=timeout ;;
+          venus-gputime) knobs=vkgputime fish=1 toolkit= ;;
+          venus-nudge025) knobs=vknudge=0.25 fish=1 toolkit= ;;
+          venus-nonudge) knobs=vknudge=0 fish=1 toolkit= ;;
+        esac
+        step "scene-$arm-$round" 1200 env FISH="$fish" TOOLKIT="$toolkit" WARMUP=200 FRAMES=300 GPU_KNOBS="$knobs" node bench/vulkan/guest.ts "${arm%%-*}" target/arch/desktop.qcow2 "$R/scene-$arm-$round"
       done
     done
     # The frames and Venus's fence breakdown, on the terminal too.
-    for f in "$R"/scene-*-1.log "$R"/scene-*-2.log; do [ -f "$f" ] && grep -hE "msaa1 " "$f" | sed "s|^|  $(basename "$f" .log) |" | cut -c1-240; done || true
+    for f in "$R"/scene-*-1.log "$R"/scene-*-2.log; do [ -f "$f" ] && grep -hE "msaa1 " "$f" | sed "s|^|  $(basename "$f" .log) |" | cut -c1-300; done || true
+  fi
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" trace "* ]]; then
+    # VK3 L2b: 2 s of Venus's scene at 1 fish traced (JSON: gpu, dawn, viz, the GPU process's tasks), 5 s in.
+    step trace 900 env TRACE=1 FISH=1 TOOLKIT= WARMUP=200 FRAMES=1000 node bench/vulkan/guest.ts venus target/arch/desktop.qcow2 "$R/trace"
+    grep -h "trace:" "$R/trace.log" | cut -c1-400 || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" pipelines "* ]]; then
     # VK3 L3: N new pipelines made one by one against all at once (and WebGL's round trips meanwhile), then the

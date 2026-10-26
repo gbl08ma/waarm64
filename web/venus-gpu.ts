@@ -23,6 +23,12 @@ export type VenusGpuStats = {
   pipelinesReady: number; pipelineReadyMs: number; deferred: number; deferredMs: number; syncPipelines: number; translations: number; translateMs: number;
   /** The shader cache across runs (web/venus-cache.ts): lookups found and not, entries stored. */
   cacheHits: number; cacheMisses: number; cacheStores: number;
+  /** A submit's parts in the worker (VK3 L2b): the ms from its encoder to its submit (the module's replay into WebGPU's
+   * calls), the ms `queue.submit` itself took, its render and compute passes and draws; with `?gpu=vkgputime` the GPU's
+   * own ms in its passes (timestamp queries: `gpuTimed` submits measured, `gpuMs` summed over their passes). */
+  encodeMs: number; submitCallMs: number; passes: number; draws: number; gpuTimed: number; gpuMs: number;
+  /** Of the submits with a pass (a frame's, not a fence's or an upload's alone): those done and their ms to done. */
+  workDone: number; workDoneMs: number;
 };
 
 /**
@@ -104,17 +110,53 @@ export function gpuLimits(caps: GpuCaps | undefined) {
 }
 
 /** The features and limits to ask an adapter's device for: every one the driver uses, as far as the adapter goes. */
-export function deviceRequest(adapter: GPUAdapter): GPUDeviceDescriptor {
+export function deviceRequest(adapter: GPUAdapter, options: { gpuTime?: boolean } = {}): GPUDeviceDescriptor {
   const limits = adapter.limits as unknown as Record<string, number>;
   const requiredLimits: Record<string, number> = {};
   for (const [k] of LIMITS) if (typeof limits[k] === 'number') requiredLimits[k] = limits[k];
   // Vulkan has no limit on a pass's attachments' bytes a sample: ask for the most.
   if (typeof limits.maxColorAttachmentBytesPerSample === 'number') requiredLimits.maxColorAttachmentBytesPerSample = limits.maxColorAttachmentBytesPerSample;
-  return { requiredFeatures: FEATURES.filter((f) => adapter.features.has(f)) as GPUFeatureName[], requiredLimits };
+  const features = FEATURES.filter((f) => adapter.features.has(f)) as GPUFeatureName[];
+  // `?gpu=vkgputime`: timestamp queries for the worker's own measurement (VK3 L2b), not the driver's.
+  if (options.gpuTime && adapter.features.has('timestamp-query')) features.push('timestamp-query');
+  return { requiredFeatures: features, requiredLimits };
+}
+
+/**
+ * A submit's passes timed on the GPU (`?gpu=vkgputime`, VK3 L2b): the first `PASSES` passes write their begin and end
+ * into a query set, resolved and copied into a buffer read once the submit is done. Reused across submits.
+ */
+class Timing {
+  static readonly PASSES = 8;
+  readonly set: GPUQuerySet;
+  private readonly resolved: GPUBuffer;
+  private readonly staging: GPUBuffer;
+  /** Passes timed in the open submit. */
+  n = 0;
+  constructor(d: GPUDevice) {
+    this.set = d.createQuerySet({ type: 'timestamp', count: 2 * Timing.PASSES });
+    this.resolved = d.createBuffer({ size: 16 * Timing.PASSES, usage: 0x200 | COPY_SRC }); // QUERY_RESOLVE
+    this.staging = d.createBuffer({ size: 16 * Timing.PASSES, usage: MAP_READ | COPY_DST });
+  }
+  resolve(enc: GPUCommandEncoder) {
+    enc.resolveQuerySet(this.set, 0, 2 * this.n, this.resolved, 0);
+    enc.copyBufferToBuffer(this.resolved, 0, this.staging, 0, 16 * this.n);
+  }
+  /** The ms summed over the timed passes; the timing is empty again. */
+  async read() {
+    const n = this.n;
+    this.n = 0;
+    await this.staging.mapAsync(MAP_MODE_READ, 0, 16 * n);
+    const t = new BigUint64Array(this.staging.getMappedRange(0, 16 * n).slice(0));
+    this.staging.unmap();
+    let ns = 0;
+    for (let i = 0; i < n; i++) if (t[2 * i + 1] > t[2 * i]) ns += Number(t[2 * i + 1] - t[2 * i]);
+    return ns / 1e6;
+  }
 }
 
 export class VenusGpu {
-  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0 };
+  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
   /** Submits not yet completed. */
   inFlight = 0;
   /** Called after each submit (the host's poller then runs until it completes: web/venus-host.ts). */
@@ -153,6 +195,13 @@ export class VenusGpu {
   /** The shaders across runs (web/venus-cache.ts), once loaded: until then every lookup misses. */
   cache: ShaderCache | undefined;
   private cacheFound: { key: string; bytes: Uint8Array } | undefined;
+  /** `?gpu=vkgputime` (VK3 L2b): each submit's first passes timed on the GPU (`Timing`, reused), the open encoder's. */
+  private readonly gpuTime: boolean;
+  private readonly timings: Timing[] = [];
+  private timing: Timing | undefined;
+  /** When the open encoder was asked for (`stats.encodeMs`), and its passes begun. */
+  private encodeAt = 0;
+  private encPasses = 0;
 
   /**
    * `memory`: memory 0. `complete(serial)`: the module's export. `dirty()`: the window's written pages since the last
@@ -162,9 +211,10 @@ export class VenusGpu {
   private readonly complete: (serial: number) => void;
   private readonly dirty: () => number[] | undefined;
 
-  constructor(device: GPUDevice | undefined, memory: WebAssembly.Memory, complete: (serial: number) => void, dirty: () => number[] | undefined, options: { syncPipelines?: boolean } = {}) {
+  constructor(device: GPUDevice | undefined, memory: WebAssembly.Memory, complete: (serial: number) => void, dirty: () => number[] | undefined, options: { syncPipelines?: boolean; gpuTime?: boolean } = {}) {
     [this.device, this.complete, this.dirty] = [device, complete, dirty];
     this.syncPipelines = !!options.syncPipelines;
+    this.gpuTime = !!options.gpuTime && !!device?.features.has('timestamp-query');
     this.mem = () => memory.buffer as ArrayBuffer;
     device?.addEventListener('uncapturederror', (e) => this.warn(`WebGPU: ${(e as GPUUncapturedErrorEvent).error.message}`));
   }
@@ -261,12 +311,16 @@ export class VenusGpu {
         if (t instanceof GPUTexture) later(() => self.onImport?.(t, res));
       },
       gpu_encoder() {
+        self.encodeAt = performance.now();
         if (self.making || self.held.length) {
           self.rec = [];
           self.recWaits = [];
           self.recTemps = [];
         }
-        later(() => { self.enc = d.createCommandEncoder(); });
+        later(() => {
+          self.enc = d.createCommandEncoder();
+          if (self.gpuTime) self.timing = self.timings.pop() ?? new Timing(d);
+        });
       },
       gpu_copy_bb(src: number, so: number, dst: number, dO: number, size: number) {
         if (!size) return;
@@ -340,13 +394,18 @@ export class VenusGpu {
           desc.depthStencilAttachment = { ...j.depthStencilAttachment, view: v.view };
         }
         const atts = { colors, depth, samples, width: j.width as number, height: j.height as number };
+        self.stats.passes++;
         later(() => {
           for (const t of textures) self.touched.add(t);
           self.passAtts = atts;
-          self.pass = self.enc!.beginRenderPass(desc);
+          self.pass = self.enc!.beginRenderPass(self.timed(desc));
+          self.encPasses++;
         });
       },
-      gpu_compute_pass() { later(() => { self.pass = self.enc!.beginComputePass(); }); },
+      gpu_compute_pass() {
+        self.stats.passes++;
+        later(() => { self.pass = self.enc!.beginComputePass(self.timed({})); self.encPasses++; });
+      },
       gpu_pass_end() { later(() => { self.pass?.end(); self.pass = undefined; self.passAtts = undefined; }); },
       gpu_set_pipeline(id: number) {
         const o = self.objs[id];
@@ -378,9 +437,10 @@ export class VenusGpu {
         const bytes = new Uint8Array(self.mem(), ptr >>> 0, size).slice();
         later(() => (self.pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(offset, bytes));
       },
-      gpu_draw(n: number, inst: number, first: number, firstInst: number) { later(() => rp().draw(n, inst, first, firstInst)); },
-      gpu_draw_indexed(n: number, inst: number, first: number, base: number, firstInst: number) { later(() => rp().drawIndexed(n, inst, first, base, firstInst)); },
+      gpu_draw(n: number, inst: number, first: number, firstInst: number) { self.stats.draws++; later(() => rp().draw(n, inst, first, firstInst)); },
+      gpu_draw_indexed(n: number, inst: number, first: number, base: number, firstInst: number) { self.stats.draws++; later(() => rp().drawIndexed(n, inst, first, base, firstInst)); },
       gpu_draw_indirect(b: number, offset: number, indexed: number) {
+        self.stats.draws++;
         const B = buf(b);
         later(() => {
           if (indexed) rp().drawIndexedIndirect(B, offset);
@@ -411,6 +471,8 @@ export class VenusGpu {
         const slots = self.submitSlots;
         self.submitSlots = [];
         self.inFlight++;
+        if (self.encodeAt) self.stats.encodeMs += performance.now() - self.encodeAt;
+        self.encodeAt = 0;
         let done: Promise<number>;
         if (!self.rec) {
           done = self.submitNow(slots, []);
@@ -500,7 +562,13 @@ export class VenusGpu {
   private submitNow(slots: number[], temps: GPUBuffer[]): Promise<number> {
     const d = this.device!;
     if (this.pass) { this.pass.end(); this.pass = undefined; }
+    const timing = this.timing, passes = this.encPasses;
+    this.timing = undefined;
+    this.encPasses = 0;
+    if (timing?.n) timing.resolve(this.enc!);
+    const s0 = performance.now();
     d.queue.submit([this.enc!.finish()]);
+    this.stats.submitCallMs += performance.now() - s0;
     this.enc = undefined;
     this.stats.submits++;
     for (const t of this.touched) this.written.set(t, this.stats.submits);
@@ -514,9 +582,24 @@ export class VenusGpu {
       this.stats.done++;
       this.stats.doneMs += ms;
       this.stats.doneMaxMs = Math.max(this.stats.doneMaxMs, ms);
+      if (passes) { this.stats.workDone++; this.stats.workDoneMs += ms; }
       return doneAt;
     };
-    return Promise.all([d.queue.onSubmittedWorkDone(), ...slots.map((s) => this.slots.get(s)!.buffer.mapAsync(MAP_MODE_READ))]).then(record, (err) => { record(); throw err; });
+    const done = Promise.all([d.queue.onSubmittedWorkDone(), ...slots.map((s) => this.slots.get(s)!.buffer.mapAsync(MAP_MODE_READ))]).then(record, (err) => { record(); throw err; });
+    // The GPU's times read after the submit is done (not part of its way back), then the timing reused.
+    if (timing) {
+      if (!timing.n) this.timings.push(timing);
+      else void done.then(() => timing.read()).then((ms) => { this.stats.gpuTimed++; this.stats.gpuMs += ms; }, () => {}).finally(() => this.timings.push(timing));
+    }
+    return done;
+  }
+
+  /** A pass descriptor with timestamp writes into the open encoder's timing, while it has room (`?gpu=vkgputime`). */
+  private timed<T extends GPURenderPassDescriptor | GPUComputePassDescriptor>(desc: T): T {
+    const t = this.timing;
+    if (!t || t.n >= Timing.PASSES) return desc;
+    const i = t.n++;
+    return { ...desc, timestampWrites: { querySet: t.set, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 } };
   }
 
   /** Whether queue work is being held (a submit recorded, or submits waiting for their pipelines). */

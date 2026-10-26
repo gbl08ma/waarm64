@@ -175,6 +175,10 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   arrive, so a submit's done came ~3 ms after its work on SwiftShader (1 ms nudged; the same on Metal either way,
   whose completions come by callback: bench/vulkan/REPORT.md "VK3 L2"). A submit with nothing to read back still
   completes only when its work is done: completing it early would let the guest queue frames without limit.
+  `?gpu=vknudge=<ms>` changes the nudges' period (0: none) and `?gpu=vkgputime` times each submit's first 8 passes on
+  the GPU with timestamp queries (the device then asks for `timestamp-query`); both for A/B and diagnosis (VK3 L2b).
+  The render stats' `venus` carries a submit's parts too: the worker's encoding, `queue.submit`'s call, its writes,
+  passes and draws, and the done of the submits with a pass.
 - **Shared images** (Venus's WSI): see "Presentation".
 - **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): occlusion queries (reported as
   passing), timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component

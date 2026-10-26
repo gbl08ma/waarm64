@@ -1017,6 +1017,92 @@ from a pipeline's creation to ready; `held` the ms submits waited for them:
 - Submits held for their pipelines: SwiftShader's first vkQuake frames wait 1.4 s in all (its compiles come at the
   first draw), the M4's ~2 ms; no pipeline was made at once by a submit in any run (`syncPipelines` 0).
 
+## VK3 L2b: where a scene submit's done goes — the tools for NVIDIA's run, and a wrong premise
+
+**2026-10-26.** The user's run of 5b9654ac ("VK3: the NVIDIA run after L2") left Venus at 2.5 ms a frame at 1 fish
+against virgl's 1.5, with a scene submit's done at 3.4–3.9 ms though a trivial submit's is 0.15 ms there. Only NVIDIA
+shows it; this loop built what the next run needs to say where it goes, and looked at what the M4 (Metal, Chrome for
+Testing 153.0.8010.12) and the dev VM's SwiftShader (the same Chrome for Testing, through `nvidia.sh`) show. JSON in
+`results/vk3/l2b/` (`m4/`, `swiftshader/`).
+
+**A premise was wrong: "the GPU works ~0.3 ms a frame" was never the GPU's time.** The driver writes a timestamp query
+with the CPU's clock at replay (vk/driver/wg_cmd.c `OP_QUERY`; vk/README.md "Not yet": timestamps on the GPU), so the
+scene's "GPU 0.27 ms" under Venus was the replay's span on the worker. The GPU's real time in a Venus frame on NVIDIA
+is unknown; the native scene's is 0.09 ms ("The NVIDIA desktop") and the M4's, measured now (`?gpu=vkgputime`), is
+**0.41 ms a pass** at 1080p. So a GPU slowed at a light load (its clocks) is back among the suspects.
+
+**What a scene submit carries** (the render stats' new `venus.perSubmit`, steady seconds, `m4/scene-*`,
+`swiftshader/scene-*`): about two submits a frame, of which **48% have a pass** — the frame's (1 render pass, ~120
+draws at 1 fish, ~1,100 at 1,000 fish, ~400 at the toolkit) — and the rest neither pass nor draw (the guest's fence or
+upload alone); ~1.5 `writeBuffer`s a submit, ~31–33 KB (the window's dirty pages and the push data: ~66 KB a frame), no
+readbacks, no maps. In the worker on the M4 a submit's encoding takes 0.054 ms and `queue.submit`'s call 0.003 ms
+(SwiftShader's VM: 0.17 and 0.08): **the worker's own share of a frame is small everywhere**; what's left is between
+`queue.submit` and WebGPU's done.
+
+**Submits shaped like the scene's** (`bench/vulkan/fence.ts`'s new `shapes`: a 1080p pass, colour and depth cleared,
+120 draws through a uniform group with dynamic offsets; its writes 48 + 16 KB + 512 B; the parts timed in a worker;
+the pass's GPU ms from timestamp queries, unquantized; 60 each, medians):
+
+| ms | M4: done | M4: GPU | SwiftShader: done | SwiftShader: GPU |
+| --- | --- | --- | --- | --- |
+| a trivial copy (L2's `copyDone`) | 1.21 | | 3.44 | |
+| pass, alone (2 ms idle between) | 2.34 | 0.14 | 4.65 | 4.06 |
+| pass + writes | 2.28 | 0.13 | 6.11 | 4.95 |
+| pass + 3 small writes | 2.20 | 0.12 | 5.00 | 4.29 |
+| pass + writes + a map | 2.42 | 0.14 | 4.78 | 4.16 |
+| pass + writes + a staging buffer made and destroyed | 2.35 | 0.14 | 4.74 | 4.19 |
+| pass + writes, nudged every 1 ms | 2.21 | 0.14 | 4.83 | 4.06 |
+| two queued (as the scene), frame period | **1.06**, 0.61 | **0.09** | 9.11, 4.69 | 4.62 |
+| two queued, nudged | 1.02, 0.61 | 0.09 | 9.00, 4.67 | 4.66 |
+| pass + writes, the page's WebGL drawing | 1.96 | 0.14 | **8.58** | 4.17 |
+| two queued, nudged, WebGL drawing | 0.93, 0.54 | 0.09 | 10.66, 5.49 | 4.84 |
+| back to back, nudged | 0.94, 0.52 | 0.09 | 9.04, 4.67 | 4.66 |
+
+- **On the M4 a lone frame-shaped submit is done in ~2.3 ms, but in ~1.0 when frames are kept queued**, and its pass
+  takes 0.14 ms on the GPU idle against 0.09 busy: a lightly loaded GPU is slower to finish *and* to say so. Neither
+  writes, maps, staging buffers, nudges nor the page's WebGL change it. The scene keeps two frames queued, which is
+  why it meets the bar there (`doneMs` of its frame submits 1.13).
+- **SwiftShader is bound by its rendering** (a 1080p pass ~4 ms of CPU; the scene's 320×180 frame ~11 ms with the real
+  shaders): it shows nothing of NVIDIA's gap. Its only effect is the page's WebGL doubling a lone submit's done (8.6
+  against 4.7 ms): both renderers share its CPU.
+- No shape reproduces a 3.4 ms done on either host; NVIDIA has to say which of them does there (its `fence` step).
+
+**The switches the next run tests** (scene arms at 1 fish, two alternated rounds with `venus` and `virgl`):
+`?gpu=vkgputime` (each submit's first 8 passes timed on the GPU: the scene's real GPU ms a frame on NVIDIA; the device
+asks for `timestamp-query` only then), `?gpu=vknudge=0.25` (an empty submit every pump turn, ~0.3 ms: Chromium looks
+at the device at each command batch, `WebGPUDecoderImpl::HandleDawnCommands` → `PerformPollingWork`, else on a 1–2 ms
+timer that every flush pushes back: gpu/ipc/service/command_buffer_stub.cc), `?gpu=vknudge=0` (none: whether L2's
+nudges do anything on NVIDIA, whose trivial done needs none). On SwiftShader at 320×180 (one round,
+`swiftshader/scene-*`) all four arms give the same frame (10.7–10.9 ms; virgl 10.5), as expected of a CPU-bound
+renderer. On the M4 (three alternated rounds, 1 fish, 1080p; `m4/scene-*`; ms a frame, IQR in brackets, then the frame
+submits' done):
+
+| M4, 1 fish | round 1 | round 2 | round 3 |
+| --- | --- | --- | --- |
+| the pump (default) | 0.892 (0.058), 1.04 | 0.850 (0.043), 0.96 | 0.887 (0.066), 0.95 |
+| `vkgputime` (GPU 0.41 ms a pass) | 0.877 (0.078), 1.12 | 0.908 (0.053), 1.13 | 0.949 (0.013), 1.13 |
+| `vknudge=0` | 0.866 (0.039), 0.96 | 0.846 (0.069), 0.95 | 0.833 (0.050), 0.95 |
+
+No nudges cost or gain nothing on Metal (rounds overlap), as L2 found; timing the passes adds ~0.15 ms to a frame
+submit's done (its resolve, copy and map), so `vkgputime`'s arm is read for its GPU ms, not its frame time.
+
+**And a trace**: `nvidia.sh`'s `trace` step records 2 s of Venus's scene at 1 fish (Chromium's tracing through CDP,
+JSON; gpu, gpu.dawn, dawn, viz, gpu.service, toplevel, scheduler, ipc, mojom and the GPU decoder's disabled-by-default
+categories), with a summary of the GPU process's main thread (busy ms a second, Dawn command batches and polls a
+second, its heaviest events). On SwiftShader (`swiftshader/trace/…-summary.json`; the 52 MB trace not committed): the
+main thread busy 118 ms a second, ~980 Dawn command batches and ~1,040 polls a second, `Queue::Submit` 0.03 ms each.
+On NVIDIA it says whether the main thread is busy elsewhere (ANGLE's GL, the compositor) while a submit waits, and
+how far apart its looks at the device are.
+
+**The hypotheses, and what in the run settles each:**
+1. *The GPU at a light load* (its clocks, its wake-up): `scene-venus-gputime`'s GPU ms a frame against the native
+   0.09; the `fence` shapes' GPU ms alone against back to back.
+2. *Chromium's looks at the device* (done seen late): `vknudge=0.25` shortening done; the trace's poll gaps.
+3. *The GPU process's main thread busy with GL or the compositor*: the trace; the shapes with WebGL drawing.
+4. *Something in the submit's content* (writes, a map, staging): the shapes' rows against `pass` alone.
+5. *Dawn on NVIDIA's Vulkan slow to signal a real pass* (an implicit barrier or wait for a texture): a lone `pass`
+   shape slow while a trivial copy is fast, at a small GPU ms.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

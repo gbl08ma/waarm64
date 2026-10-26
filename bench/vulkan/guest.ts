@@ -11,6 +11,10 @@
 // comma-separated: e.g. `vkvendor=nvidia`), SIZE (the frame's, default 1920x1080: SwiftShader's
 // software GPU draws a 1080p frame for ~60 ms, so its floor shows only smaller); the Mac's GPU through
 // bench/gpu/sway-mac.sh (SCRIPT=../vulkan/guest.ts, which copies the second disk when VK0=1).
+// TRACE=1 (VK3 L2b): a Chromium trace of the first setting, in JSON (CDP's Tracing, all processes), TRACE_MS long from
+// TRACE_AT ms after the setting starts (defaults 2000 and 5000: past the warm-up), into <out>/trace-<setting>.json, and a
+// summary of the GPU process's main thread beside it (trace-<setting>-summary.json: its busy ms a second and the
+// events that take it, WebGPU's commands and polls a second). TRACE_CATEGORIES replaces the categories.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
@@ -29,6 +33,29 @@ const RUN_S = Number(env('RUN_S', '900'));
 const ncpus = Number(env('NCPUS', '4'));
 const [width, height] = env('SIZE', '1920x1080').split('x').map(Number);
 const sizeArgs = width === 1920 && height === 1080 ? '' : ` --width ${width} --height ${height}`;
+const TRACE_CATEGORIES = env('TRACE_CATEGORIES', ['toplevel', 'toplevel.flow', 'gpu', 'gpu.service', 'gpu.dawn', 'dawn', 'viz', 'ipc', 'mojom', 'scheduler', 'v8.execute',
+  'disabled-by-default-gpu.dawn', 'disabled-by-default-gpu.service', 'disabled-by-default-gpu.decoder', 'disabled-by-default-gpu.device', 'disabled-by-default-toplevel.flow'].join(','));
+
+type TraceEvent = { ph: string; name: string; pid: number; tid: number; ts: number; dur?: number; cat?: string; args?: { name?: string } };
+/** The GPU process's main thread in a JSON trace: its busy ms a second (top-level tasks), the events taking the most of it, and WebGPU's decoder calls a second. */
+function traceSummary(trace: { traceEvents: TraceEvent[] }) {
+  const ev = trace.traceEvents;
+  const procs = new Map(ev.filter((e) => e.ph === 'M' && e.name === 'process_name').map((e) => [e.pid, e.args?.name ?? '']));
+  const threads = new Map(ev.filter((e) => e.ph === 'M' && e.name === 'thread_name').map((e) => [`${e.pid}:${e.tid}`, e.args?.name ?? '']));
+  const gpuPid = [...procs].find(([, n]) => /gpu/i.test(n))?.[0];
+  const main = [...threads].find(([k, n]) => k.startsWith(`${gpuPid}:`) && /CrGpuMain/i.test(n))?.[0];
+  const xs = ev.filter((e) => e.ph === 'X' && typeof e.dur === 'number');
+  const ts = xs.map((e) => e.ts);
+  const span = ts.length ? (Math.max(...ts) - Math.min(...ts)) / 1e6 : 0;
+  const on = main ? xs.filter((e) => `${e.pid}:${e.tid}` === main) : [];
+  const byName: Record<string, { n: number; ms: number }> = {};
+  for (const e of on) { const b = (byName[e.name] ??= { n: 0, ms: 0 }); b.n++; b.ms += e.dur! / 1000; }
+  const per = (k: string) => (byName[k]?.n ?? 0) / Math.max(span, 1e-9);
+  const top = Object.entries(byName).sort((a, b) => b[1].ms - a[1].ms).slice(0, 40).map(([name, b]) => ({ name, n: b.n, msPerSecond: +(b.ms / Math.max(span, 1e-9)).toFixed(2), meanMs: +(b.ms / b.n).toFixed(3) }));
+  return { seconds: span, gpuProcess: procs.get(gpuPid!) , gpuMain: main && threads.get(main), events: ev.length, busyMsPerSecond: +((byName['ThreadControllerImpl::RunTask']?.ms ?? 0) / Math.max(span, 1e-9)).toFixed(2),
+    handleDawnCommands: per('WebGPUDecoderImpl::HandleDawnCommands'), pollingWork: per('WebGPUDecoderImpl::PerformPollingWork'), stubPerformWork: per('CommandBufferStub::PerformWork'), top,
+    threads: [...threads].filter(([k]) => k.startsWith(`${gpuPid}:`)).map(([, n]) => n) };
+}
 
 const knobs = venus && process.env.GPU_KNOBS ? `,${process.env.GPU_KNOBS}` : '';
 const s = await openSession({ gpu: venus ? `virgl,vulkan${arm === 'venus-nowatch' ? ',nowatch' : ''}${knobs}` : 'virgl', image, out, disk2: '/target/vulkan/disk.ext4', ncpus, ramMiB: 4096 });
@@ -91,8 +118,25 @@ for (const st of settings) {
   await display();
   const v0 = await vmStats();
   const t0 = performance.now();
+  // The trace, beside the run (the first setting only).
+  const b = s.browser as unknown as { startTracing?(page?: unknown, o?: { categories: string[] }): Promise<void>; stopTracing?(): Promise<Buffer> };
+  const tracing = process.env.TRACE && st === settings[0] && b.startTracing ? (async () => {
+    await new Promise((r) => setTimeout(r, Number(env('TRACE_AT', '5000'))));
+    await b.startTracing!(undefined, { categories: TRACE_CATEGORIES.split(',') });
+    await new Promise((r) => setTimeout(r, Number(env('TRACE_MS', '2000'))));
+    const buf = await b.stopTracing!();
+    writeFileSync(`${out}/trace-${st.name}.json`, buf);
+    try {
+      const sum = traceSummary(JSON.parse(buf.toString()));
+      writeFileSync(`${out}/trace-${st.name}-summary.json`, JSON.stringify(sum, null, 1) + '\n');
+      log(st.name, `trace: ${(buf.length / 1e6).toFixed(1)} MB, ${sum.events} events over ${sum.seconds.toFixed(2)} s; the GPU process's main thread busy ${sum.busyMsPerSecond} ms/s, ${sum.handleDawnCommands.toFixed(0)} Dawn command batches/s, ${sum.pollingWork.toFixed(0)} polls/s; most: ${sum.top.slice(0, 5).map((x) => `${x.name} ${x.msPerSecond} ms/s`).join(', ')}`);
+    } catch (err) {
+      log(st.name, `trace: ${(buf.length / 1e6).toFixed(1)} MB, not summarized: ${String(err).slice(0, 200)}`);
+    }
+  })().catch((err) => log(st.name, `trace failed: ${String(err).slice(0, 300)}`)) : undefined;
   const line = await run(`timeout ${RUN_S} ${bin} --pack /mnt/vdb/vk0/aquarium.pack ${st.args}${sizeArgs} --warmup ${WARMUP} --samples ${SAMPLES} --frames ${FRAMES} --label ${arm} --json /tmp/${st.name}.json 2>&1 | tail -1`, (RUN_S + 60) * 1000);
   const seconds = (performance.now() - t0) / 1000;
+  await tracing;
   const v1 = await vmStats();
   const d = await display();
   const m = /: ([\d.]+) ms a frame \(IQR ([\d.]+)\), CPU ([\d.]+) ms/.exec(line);
@@ -109,5 +153,7 @@ for (const st of settings) {
     d.renderer ? `GPU worker busy ${d.renderer.busyMs.toFixed(0)} ms/s, ${d.renderer.glDraws.toFixed(0)} draws/s` : '');
   const v = d.renderer?.venus;
   if (v) log(st.name, `venus: ${v.submits.toFixed(0)} submits/s done in ${v.doneMs.toFixed(2)} ms (max ${v.doneMaxMs.toFixed(1)}), then ${v.orderMs.toFixed(2)} ms in order (by second: ${v.doneMsBySecond.join(" ")}); ${v.polls.toFixed(0)} polls/s ${v.gapMs.toFixed(2)} ms apart (max ${v.gapMaxMs.toFixed(1)}); ${v.nudges.toFixed(0)} nudges/s; ${v.fences.toFixed(0)} fences/s retired in ${v.fenceMs.toFixed(2)} ms`);
+  const p = v?.perSubmit;
+  if (p) log(st.name, `venus a submit: encode ${p.encodeMs.toFixed(3)} ms, queue.submit ${p.submitCallMs.toFixed(3)} ms, ${p.uploads.toFixed(1)} writes (${p.uploadKB.toFixed(1)} KB), ${p.readbacks.toFixed(2)} readbacks, ${p.passes.toFixed(2)} passes, ${p.draws.toFixed(0)} draws${p.gpuMs !== undefined ? `, GPU ${p.gpuMs.toFixed(3)} ms` : ''}; ${(100 * p.withPass).toFixed(0)}% have a pass, done in ${p.withPassDoneMs?.toFixed(2)} ms (by second: ${p.withPassDoneMsBySecond.join(' ')})`);
 }
 await s.close();
