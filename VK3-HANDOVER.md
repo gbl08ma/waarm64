@@ -16,6 +16,16 @@ The command (on the dev VM: `git pull`, the images built, then `bench/vulkan/nvi
 (the same directory as VK2's run reuses its Node and browsers; `VK2_STEPS="present"` runs only L1's step, ~10 min;
 results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, `results/present/results.json` and its PNGs.)
 
+**Run whole on the dev VM after L2** (2026-10-26, SwiftShader, `VK0_ANY_ARCH=1 VK0_NODE=system
+VK0_ADAPTER_MATCH=swiftshader`, the bundle from 5e805545, each step on its own under the tool's cap; the scene's arms
+one at a time through the new hooks `VK2_SCENE_ROUNDS`/`VK2_SCENE_ARMS`): every step ran and the tarball holds what the
+questions below name (`present/results.json`, `replay/results.json`, `fence.json`, `scene-{venus,venus-timeout,virgl}-N/*.json`
+with `renderer.venus`, `mpv/results.json`, `host.txt`). Nothing broke; venus-run.ts printed its `share` as `[object
+Object]` (fixed). Times there: setup 0.5 min, present 5.5 (only `auto` and `readback` run on SwiftShader), replay 1.5,
+fence 0.5, each scene arm ~5.7 (SwiftShader renders ~60 ms a frame), mpv 4.5. **On the NVIDIA desktop expect ~40 min
+in all** (35–50): the first run's setup ~5 (the 3.4 GB bundle unpacked, npm, Chrome for Testing), present ~10 (four
+ways there), replay ~3, fence ~1, the scene's six arms ~2–3 each (boot-bound at ~1 ms a frame), mpv ~5.
+
 - **L1, presentation** (`present` step, bench/vulkan/present.ts): (1) with NVIDIA reported as an unknown maker, are
   vkcube's window and mpv's picture right on the page (`auto`: `vkcube.ok`, `mpv.ok`, not `mpv.black`)? (2) Which way
   did the page's check settle on (`shareAfterMpv.way`/`state`; `dropped` and `why` if a GPU way copied wrong)? (3) Each

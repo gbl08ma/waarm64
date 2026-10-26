@@ -119,8 +119,9 @@ if [ "${1:-}" = page ]; then
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" scene "* ]]; then
     # Long enough that the render stats' seconds hold the steady state (VK3 L2).
-    for round in 1 2; do
-      for arm in venus venus-timeout virgl; do
+    # VK2_SCENE_ROUNDS and VK2_SCENE_ARMS pick some (test hooks: the dev VM runs the arms one command at a time).
+    for round in ${VK2_SCENE_ROUNDS:-1 2}; do
+      for arm in ${VK2_SCENE_ARMS:-venus venus-timeout virgl}; do
         knobs=; [ "$arm" = venus-timeout ] && knobs=vkpoll=timeout
         step "scene-$arm-$round" 1200 env FISH="1 1000" TOOLKIT=2000 WARMUP=200 FRAMES=300 GPU_KNOBS="$knobs" node bench/vulkan/guest.ts "${arm%-timeout}" target/arch/desktop.qcow2 "$R/scene-$arm-$round"
       done

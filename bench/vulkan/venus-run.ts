@@ -48,6 +48,6 @@ try {
   results.share = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { share?: unknown }[] }).__renderStats ?? []).at(-1)?.share ?? null);
 } finally {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
-  for (const [k, v] of Object.entries(results)) console.log(`== ${k}\n${v}`);
+  for (const [k, v] of Object.entries(results)) console.log(`== ${k}\n${typeof v === 'object' ? JSON.stringify(v) : v}`);
   await s.close();
 }
