@@ -5,6 +5,7 @@
 // the guest's notify). The driver's WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `settled` says when the fences sent so far have.
+import type { ShaderCache } from './venus-cache.ts';
 import { gpuFeatures, gpuLimits, VenusGpu, type GpuCaps } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { WindowWatch } from './window.ts';
@@ -38,6 +39,12 @@ export type VenusPoll = 'timeout' | 'pump';
  */
 export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs: number; submits: number; done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number; fences: number; fenceMs: number; fenceMaxMs: number };
 
+/**
+ * How the renderer's pipelines are made (`?gpu=vkpipelines=sync`: at once, as before VK3 L3, for A/B) and where its
+ * shaders persist across runs (`cache`: the store for a renderer build, web/venus-cache.ts; none with `?gpu=vkcache=off`).
+ */
+export type VenusOptions = { syncPipelines?: boolean; cache?: (buildId: string) => Promise<ShaderCache | undefined> };
+
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
 
@@ -58,6 +65,7 @@ type Exports = {
   venus_poll(): number;
   venus_resource_data(ctx: number, res: number): number;
   venus_resource_texture(ctx: number, res: number): number;
+  venus_build_id(): number;
   venus_alloc(size: number): number;
   venus_free(p: number): void;
 };
@@ -153,9 +161,9 @@ export class VenusRenderer {
    * unused; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
    * what `caps` has (the device's features and limits; a test's stand-in, or WebGPU's defaults).
    */
-  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump') {
+  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump', options: VenusOptions = {}) {
     let self: VenusRenderer | undefined;
-    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty());
+    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines });
     const imports = {
       env: {
         memory,
@@ -169,7 +177,16 @@ export class VenusRenderer {
     const instance = await WebAssembly.instantiate(module, imports);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll);
     gpu.onSubmit = () => self?.worked();
+    // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.
+    if (options.cache) gpu.cache = await options.cache(self.buildId);
     return self;
+  }
+
+  /** The renderer's build ID (vk/gen.ts: a hash of vk/'s sources), which the shader cache keeps entries of. */
+  get buildId() {
+    const p = this.ex.venus_build_id() >>> 0;
+    const bytes = new Uint8Array(this.memory.buffer, p, 64);
+    return new TextDecoder().decode(bytes.slice(0, bytes.indexOf(0) < 0 ? 64 : bytes.indexOf(0)));
   }
 
   /** The window's pages written since the last look (undefined without a watch: all of them count). */

@@ -949,6 +949,74 @@ frame; `done`: a submit to WebGPU's done, `fence`: the guest's fence sent to ret
   them, the queue shared with ANGLE's GL work in Chromium's GPU process, the GPU's clocks at a light load) that only
   NVIDIA shows. Next: VK3-HANDOVER.md "L2b".
 
+## VK3 L3: pipelines made asynchronously, shaders kept across runs — a second run translates nothing
+
+**2026-10-26.** JSON in `results/vk3/l3/` (`swiftshader/`, `m4/`). Hosts as in L2: the dev VM's SwiftShader
+(Chromium 153.0.8010.52) and the M4 (Metal, Chrome for Testing 153.0.8010.12). What was built (vk/README.md "Pipelines
+made asynchronously", "The shader cache"): the worker makes the driver's pipelines with `create*PipelineAsync` and holds
+a submit that draws with one not yet ready (with the queue work after it), the driver makes a render pipeline when its
+draw is recorded, and Mesa's pipeline caches keep what they make (a stage's NIR, a pipeline's WGSL) in an IndexedDB store
+of the origin's, by BLAKE3 keys that carry the driver's build ID and the device's caps.
+
+**A pipeline made at once blocks the GPU process** (`bench/vulkan/pipelines.ts`: N new render pipelines of unique,
+compiler-heavy WGSL, then one submit drawing with each, until done; meanwhile the page's main thread times 1-pixel WebGL
+readbacks; three alternated rounds, `micro.json`):
+
+| | made one by one (`createRenderPipeline`) | all at once (`createRenderPipelineAsync`) |
+| --- | --- | --- |
+| M4, 40 pipelines: until done | 4,207–4,254 ms | **915–963 ms** |
+| M4: WebGL's longest round trip meanwhile | 4,197–4,210 ms (blocked throughout) | 44–50 ms |
+| SwiftShader, 16 pipelines: until done | 3,402–3,506 ms | 3,745–3,789 ms |
+| SwiftShader: WebGL's longest round trip | 14–819 ms | 36–37 ms |
+
+On Metal, Chromium compiles a pipeline made at once on its GPU process's main thread: ~105 ms each in turn, and
+virgl's WebGL (the page's screen) waits for all of it. Made asynchronously, Dawn's workers compile them side by side,
+4.6× sooner, and WebGL keeps going. SwiftShader compiles at the first draw anyway (its done is the same either way, ~8%
+later asynchronously), but no longer stalls WebGL for up to 0.8 s.
+
+**The programs' replays** (bench/vulkan/venus-run.ts: vkQuake's capture (its state at frame 200: 285 pipelines made by
+GFXReconstruct, 17 WebGPU render pipelines drawn) and vkmark's desktop scene, each twice in one session; arms
+alternated over two rounds; vkQuake's frames within their tolerance in every run). GFXReconstruct's "Load time" is
+vkQuake's state made (its pipelines among it); `translated` the module's ms in vkCreate*Pipelines; `ready` the summed ms
+from a pipeline's creation to ready; `held` the ms submits waited for them:
+
+| vkQuake | arm | load (s) | translated (ms) | ready (ms) | held (ms) | the first 31 frames (frames/s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| SwiftShader, cold | at once, no store (before L3) | 1.75, 1.72 | 271, 272 | | | 15.0, 15.1 |
+| | async, no store | 1.24, 1.22 | 269, 279 | 1,514, 1,604 | 1,373, 1,418 | 13.3, 13.1 |
+| | async, the store | 1.18, 1.24 | 214, 210 | 1,550, 1,739 | 1,485, 1,500 | 13.1, 13.2 |
+| SwiftShader, again in the session | at once, no store | 0.68, 0.69 | 202, 205 | | | 21.1, 21.0 |
+| | async, no store | 0.69, 0.70 | 197, 203 | 57, 58 | 0.8, 0.7 | 21.2, 21.0 |
+| | async, the store | **0.50, 0.50** | **12.0, 11.9** | 5, 6 | 0.6, 0.8 | 20.7, 21.2 |
+| SwiftShader, a restart on a kept profile | async, the store | 0.81 | 15.7 | 1,399 | 1,574 | 13.1 |
+| M4, cold | at once, no store | 1.27, 1.24 | 230, 226 | | | 287, 280 |
+| | async, no store | 1.31, 1.24 | 225, 228 | 285, 300 | 2.1, 2.1 | 280, 283 |
+| | async, the store | 1.26, 1.23 | 177, 181 | 163, 310 | 1.8, 2.7 | 266, 263 |
+| M4, again in the session | at once, no store | 1.04, 1.07 | 182, 183 | | | 347, 340 |
+| | async, no store | 1.04, 1.10 | 181, 183 | 43, 26 | 1.3, 1.1 | 329, 340 |
+| | async, the store | **0.91, 0.92** | **8.8, 8.7** | 12, 13 | 1.1, 1.2 | 323, 326 |
+| M4, a restart on a kept profile | async, the store | **1.00** | **11.3** | **18** | 1.6 | 283 |
+
+- **The gate holds: a second run translates nothing it translated on its first** — in the session (a new Vulkan
+  context: vkr's device and its caches are new, the store isn't) and across a browser restart (IndexedDB): every
+  lookup found (753 of 753 for vkQuake, 0 stored), the module's part 95% less (SwiftShader 271 → 12 ms, M4 228 → 9 ms;
+  what is left is hashing the SPIR-V and loading the entries). vkQuake's state loads 0.17–0.19 s sooner than without the
+  store (SwiftShader 0.69 → 0.50 s, M4 1.05 → 0.91 s). vkmark's scene: 0.6 → 0.14 ms. Even the first run finds 471
+  of 753 lookups: the runtime looks up a stage's NIR for each pipeline that shares it.
+- **The store's size:** vkQuake's entries take 3.5 MiB (282 entries), vkmark's scene 20 KiB; the budget is 32 MiB (nine
+  vkQuakes; the least recently used go first). The user's NVIDIA run had libplacebo translating for 1.3 s on mpv's
+  first run (REPORT "VK3: the NVIDIA run after L2"), the case the store is for.
+- **Made asynchronously, a cold load is ~0.5 s shorter on SwiftShader** (1.73 → 1.23 s) and the same on the M4 (its
+  Metal compiles were in Metal's on-disk cache, which outlives Chrome's profiles: 17 pipelines ready in 0.16–0.31 s
+  summed, held ~2 ms in all). What a pipeline costs the first time Metal sees it is the micro-benchmark's: there
+  async is 4.6× sooner and doesn't freeze the screen.
+- **What remains is the browser's compile, and whether Chromium keeps it depends on the GPU:** on the M4 a restart on a
+  kept profile had vkQuake's pipelines ready in 18 ms summed (Dawn's cache in the profile, `DawnWebGPUCache`, with
+  Metal's), against 160–310 ms cold. On SwiftShader, 1,399 ms against 1,550–1,740: SwiftShader's compile isn't kept
+  across a restart (in the session it is: 5 ms). NVIDIA's (Dawn on Vulkan) is the next run's question.
+- Submits held for their pipelines: SwiftShader's first vkQuake frames wait 1.4 s in all (its compiles come at the
+  first draw), the M4's ~2 ms; no pipeline was made at once by a submit in any run (`syncPipelines` 0).
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

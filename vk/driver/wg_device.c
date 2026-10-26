@@ -2,12 +2,16 @@
  * The driver's instance, physical device, device, memory and objects (wg_private.h). Written on Mesa's Vulkan runtime
  * the way its drivers are (lavapipe's lvp_device.c for the shape); our own code.
  */
+/* The disk cache's real entry points (vk/wasi/disk_cache.c), not util/disk_cache.h's stubs. */
+#define ENABLE_SHADER_CACHE 1
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "util/disk_cache.h"
 #include "util/format/u_format.h"
+#include "util/mesa-blake3.h"
 #include "util/u_math.h"
 #include "vk_common_entrypoints.h"
 #include "vk_format.h"
@@ -90,10 +94,50 @@ static const struct vk_instance_extension_table wg_instance_extensions = {
    .EXT_debug_utils = true,
 };
 
+/* What makes the driver's shaders (vk/gen.ts: a hash of vk/'s sources): the pipeline caches' and shader binaries'
+ * identity, so that a guest program's saved cache, or the worker's store across runs, from another translator misses. */
+#ifndef WG_BUILD_ID
+#define WG_BUILD_ID "unknown"
+#endif
+const char *
+wg_build_id(void)
+{
+   return WG_BUILD_ID;
+}
+
+static void
+build_uuid(uint8_t *out, const char *salt)
+{
+   blake3_hash h;
+   blake3_hasher b;
+   _mesa_blake3_init(&b);
+   _mesa_blake3_update(&b, WG_BUILD_ID, strlen(WG_BUILD_ID));
+   _mesa_blake3_update(&b, salt, strlen(salt));
+   _mesa_blake3_final(&b, h);
+   memcpy(out, h, VK_UUID_SIZE);
+}
+
+/* The device's caps (features and limits: what the translation depends on besides the shaders), for the cache's key. */
+static uint64_t
+caps_hash(void)
+{
+   blake3_hash h;
+   blake3_hasher b;
+   _mesa_blake3_init(&b);
+   _mesa_blake3_update(&b, &wg_features, sizeof(wg_features));
+   _mesa_blake3_update(&b, &wg_limits, sizeof(wg_limits));
+   _mesa_blake3_final(&b, h);
+   uint64_t v;
+   memcpy(&v, h, sizeof(v));
+   return v;
+}
+
 static void
 wg_physical_device_destroy(struct vk_physical_device *vk)
 {
    struct wg_physical_device *pdev = container_of(vk, struct wg_physical_device, vk);
+   if (pdev->vk.disk_cache)
+      disk_cache_destroy(pdev->vk.disk_cache);
    vk_physical_device_finish(&pdev->vk);
    vk_free(&pdev->vk.instance->alloc, pdev);
 }
@@ -124,7 +168,9 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    snprintf(props.deviceName, sizeof(props.deviceName), "webpc WebGPU");
    snprintf(props.driverName, sizeof(props.driverName), "webpc");
    snprintf(props.driverInfo, sizeof(props.driverInfo), "Vulkan on WebGPU");
-   memcpy(props.pipelineCacheUUID, "webpc-wg-vk2-000", VK_UUID_SIZE);
+   build_uuid(props.pipelineCacheUUID, "pipeline cache");
+   build_uuid(props.shaderBinaryUUID, "shader binary");
+   props.shaderBinaryVersion = 1;
    memcpy(props.deviceUUID, "webpc-wg-device0", VK_UUID_SIZE);
    memcpy(props.driverUUID, "webpc-wg-driver0", VK_UUID_SIZE);
    struct vk_device_extension_table exts;
@@ -136,6 +182,8 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
       vk_free(&instance->vk.alloc, pdev);
       return result;
    }
+   /* Shaders across runs: the runtime's caches look up what they miss in the worker's store (vk/wasi/disk_cache.c). */
+   pdev->vk.disk_cache = disk_cache_create("webpc WebGPU", WG_BUILD_ID, caps_hash());
    pdev->sync_types[0] = &wg_sync_type;
    pdev->sync_types[1] = NULL;
    pdev->vk.supported_sync_types = pdev->sync_types;

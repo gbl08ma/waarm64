@@ -27,6 +27,14 @@ done in 0.10–0.15 ms, nudged or not; the pump took ~1.1 ms off every size; **V
 
 **Open for the next run:**
 - **L2b** (to be scripted by L2b): where a scene submit's 3.4 ms to done goes on NVIDIA (see the plan's L2b).
+- **L3, pipelines** (`pipelines` step, ~8 min; `VK2_STEPS="pipelines"` runs it alone): (1) `results/pipelines-micro.json`:
+  N new pipelines made one by one against all at once on NVIDIA (Dawn on Vulkan): is async sooner (M4: 4.6×), and does
+  WebGL stall while they're made one by one (`webgl.max`: M4 4.2 s, SwiftShader 0.8 s)? (2) `pipelines-sync`,
+  `-cold`, `-warm` (vkQuake's replay, the terminal prints them): vkQuake's "Load time" and the module's `translateMs`
+  at once against async, and cold against warm across a restart on one kept profile: the warm session should miss
+  nothing (`cacheMisses` 0, `translateMs` ~10 against ~200). (3) In `pipelines-warm`, is `readyMs` small (Chromium's
+  compiled pipelines kept in the profile, as on Metal: 18 ms) or as cold (as SwiftShader: not kept)? (4) mpv's
+  translation (the run of 5b9654ac: libplacebo 1.3 s on its first run) isn't scripted cold/warm (backlog).
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -50,7 +58,7 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   `--trace-startup-format=json`, categories gpu, dawn, viz) as an nvidia.sh step, and the variants as scene arms.
   The bar: Venus at 1 fish no slower than virgl on NVIDIA; if it needs another user run to settle, script it and
   move on.
-- [ ] L3: pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
+- [x] L3 (done 2026-10-26): pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
 - [ ] L4: libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats).
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
@@ -58,6 +66,53 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
 - [ ] L8: the track's end (REPORT.md's VK3 section, docs, plan §6/§7, the final NVIDIA run scripted).
+
+## State (2026-10-26, after L3)
+
+- **Step 0**: `nvidia.sh page` ran whole on the dev VM (SwiftShader) after L2: nothing broke (venus-run.ts's `share`
+  printed as `[object Object]`, fixed); new hooks `VK2_SCENE_ROUNDS`/`VK2_SCENE_ARMS`; ~40 min expected on NVIDIA
+  (5b9654ac). The supervisor then had the bundle of 5b9654ac built (`target/vk3-nvidia-bundle-5b9654ac.tar`) and the
+  user ran it (above).
+- **Done: pipelines made asynchronously, shaders kept across runs** (REPORT.md "VK3 L3", JSON in
+  `bench/vulkan/results/vk3/l3/`; vk/README.md "Pipelines made asynchronously", "The shader cache"):
+  1. **Async** (web/venus-gpu.ts): `create*PipelineAsync`; the id holds a `Later`. A submit setting a pipeline not ready
+     is *recorded* (every command resolves its ids and copies what it reads of memory at its call: ids are reused) and
+     held with all queue work after it (`later`: submits, writeBuffers, destroys, web/venus-import.ts's writes) until
+     ready (`drain`); completions stay in order. web/venus-share.ts's `prepare` holds a compositor submit sampling a
+     Venus image while anything is held (`idle`). The driver makes a render pipeline when its draw is *recorded*
+     (vk/driver/wg_cmd.c `record_draw`), so it's usually ready by the submit. `?gpu=vkpipelines=sync` = the old way.
+  2. **The store**: Mesa's vk_pipeline_cache with `ENABLE_SHADER_CACHE` (only that file), our `vk/wasi/disk_cache.c`
+     as util/disk_cache (imports `gpu_cache_get/read/put`), `wg_serialize`/`wg_deserialize` (WGSL, info, the program's
+     data and its *link*: stages find a shared program by it, `program_find`, also at compile, so a partial cache hit
+     can't split a vertex/fragment pair), `WG_BUILD_ID` (vk/gen.ts: hash of vk/ sources) in the disk cache identity and
+     in `pipelineCacheUUID`/`shaderBinaryUUID`; web/venus-cache.ts: IndexedDB `webpc-shaders`, the origin's, 32 MiB LRU,
+     entries of another build dropped at load. `?gpu=vkcache=off` keeps none. The runtime's own
+     `GetPipelineCacheData` is back (our override that returned a header only is gone): guest programs' caches carry
+     shaders now.
+- **Numbers**: async compile of 40 new pipelines on the M4 4.2 s → 0.92 s, and WebGL (the screen) no longer blocked for
+  all of it (4.2 s → 50 ms); SwiftShader's done the same, WebGL's stall 0.8 s → 37 ms. vkQuake's replay: a second run
+  translates nothing (753/753 found; module 228 → 9 ms on the M4, 271 → 12 on SwiftShader), state load 1.05 → 0.91 s
+  (M4), 0.69 → 0.50 s (SwiftShader); across a browser restart on a kept profile the same (M4 1.00 s, 11 ms). Cold load
+  on SwiftShader 1.73 → 1.23 s with async; the M4 the same (Metal's on-disk cache already had the shaders).
+  vkQuake's entries: 3.5 MiB.
+- **The gate holds** on the M4 and SwiftShader: a second run pays no translation its first did. What remains is the
+  browser's compile: kept across a restart on Metal (Dawn's cache in the profile + Metal's: 18 ms for 17 pipelines),
+  not on SwiftShader (1.4 s again). NVIDIA: the next run (`pipelines` step, above).
+- **Tests**: tests/venus-gpu.test.ts (stand-in device: held submit, the work after it, order, completions; ready →
+  not held; a refused async pipeline made at once; `vkpipelines=sync`), tests/venus-cache.test.ts (hit, miss, another
+  build dropped, budget LRU across loads, a failing backend), tests/venus-driver.test.ts (no pipeline made at once; a
+  second run on a new renderer over the same store: no miss, nothing new stored, the same pixels; wg_test.c
+  round-trips a VkPipelineCache's data). Planted: the submit not held (caught), the build not checked (caught), the
+  deserialized program not shared (caught: the second run's pixels).
+- **CI at the commit:** ci.sh OK (442 s), ci-debian.sh OK (385 s), ci-deqp-vk.sh OK (243 s); ci-machines.sh 4 of 5:
+  "kept snapshots…" failed at its first Restore with the storage-full error, the backlog's known failure of that test
+  (since VK2 L7; its machines have no Vulkan, so the shader store never opens). nvidia.sh's `pipelines` step ran on
+  SwiftShader from a bundle of the commit (~6 min).
+- **Choice to confirm with the user**: the store's budget, 32 MiB (nine vkQuakes), and its scope (the origin's, every
+  machine's; not on the Machines page's storage line, not clearable there: backlog "Pipelines' loose ends").
+- **Left** (backlog "Pipelines' loose ends"): pipelines made at vkCreateGraphicsPipelines from static state (guessing
+  the dynamic parts), compression in the store, the store on the Machines page, mpv cold/warm on the dev hosts.
+- **Worth not re-discovering:** see "Things worth not re-discovering" (L3's).
 
 ## State (2026-10-26, after L2)
 
@@ -169,5 +224,17 @@ findings. Add VK3's here.
 - (L2) The scene's stats need long runs: at ~1 ms a frame VK0's default (30 warm-up, 5 × 30 frames) is under a stats
   second; use WARMUP=200 FRAMES=300. SwiftShader can't show a fence floor with the scene: its rendering takes ~10 ms a
   frame even at 320×180 (two frames queued, 15 ms to done); use `costs.ts` there.
+- (L3) Chromium compiles a pipeline made with `createRenderPipeline` on the GPU process's main thread when the command
+  arrives: every later command of the device *and the page's WebGL* waits (4.2 s for 40 new pipelines on the M4).
+  `createRenderPipelineAsync` compiles on Dawn's workers, in parallel. SwiftShader compiles at the first draw either way.
+- (L3) Metal's on-disk shader cache outlives Chrome's profiles (it's per app in the system's caches): on the M4 a
+  "cold" run with a fresh profile still has old shaders compiled; use unique shaders (`bench/vulkan/pipelines.ts`'s seed)
+  for a true first compile.
+- (L3) Mesa looks up a stage's NIR (precomp) before the pipeline's shaders, so both kinds of entry must persist to skip
+  spirv_to_nir; and on a partial hit it recompiles the partition but keeps the found stage: why programs are found by
+  their link. `vk_pipeline_cache_create` with initial data puts every object to the disk cache again (same keys).
+- (L3) A page's IndexedDB is per origin, port included: a kept profile across sessions needs a fixed port
+  (`WEBPC_PROFILE` makes guest-session.ts use `WEBPC_PORT`, 8197). venus-run.ts needs `CHROMIUM_ARGS="--enable-unsafe-webgpu
+  --enable-features=Vulkan"` on the dev VM, or Venus draws nothing (and vkQuake's replay crashes).
 - (L2) Completing a submit with nothing to read back before its work is done would hide its latency, but the guest's
   fences would then stop holding it back (unbounded queued frames): not done.

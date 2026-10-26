@@ -1,6 +1,7 @@
 // The Vulkan driver's test program (vk/driver/wg_test.c) on this page's WebGPU device, in the renderer module
 // (tests/venus-driver.test.ts): its scene's pixels, its compute pass's output and a filled buffer, read back once the
 // submit's fence signalled.
+import { memoryBackend, ShaderCache, type CacheBackend } from '../../web/venus-cache.ts';
 import { deviceRequest } from '../../web/venus-gpu.ts';
 import { VenusRenderer, type VenusPoll } from '../../web/venus-host.ts';
 import { VenusImport } from '../../web/venus-import.ts';
@@ -13,7 +14,17 @@ type Test = {
   wgt_draw(fs: number, fn: number, variant: number): number; wgt_draw_done(): number;
 };
 
-export async function run(spirv: { vert: string; frag: string; comp: string }) {
+/** Two runs of the program, each on a renderer of its own (a machine started again), sharing a shader store: the
+ * second translates nothing the first did (web/venus-cache.ts). */
+export async function runTwice(spirv: { vert: string; frag: string; comp: string }) {
+  const backend = memoryBackend();
+  const first = await run(spirv, backend);
+  const storedFirst = backend.entries.size;
+  const second = await run(spirv, backend);
+  return { first, second, storedFirst, stored: backend.entries.size };
+}
+
+export async function run(spirv: { vert: string; frag: string; comp: string }, backend?: CacheBackend) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -21,7 +32,9 @@ export async function run(spirv: { vert: string; frag: string; comp: string }) {
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  let store: ShaderCache | undefined;
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, device, 'pump',
+    backend ? { cache: async (id) => (store = await ShaderCache.open(id, { backend })) } : {});
   const ex = v.raw as unknown as Test;
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
   const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
@@ -41,6 +54,7 @@ export async function run(spirv: { vert: string; frag: string; comp: string }) {
     errors,
     stats: v.gpu.stats,
     ms: { recorded, total: performance.now() - t0 },
+    flushed: await store?.flush(),
   };
 }
 

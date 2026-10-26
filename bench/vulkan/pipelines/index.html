@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<canvas id="gl" width="16" height="16"></canvas>
+<script type="module">
+  // bench/vulkan/pipelines.ts calls into this page's module.
+  import * as p from './page.ts';
+  window.pipes = p;
+  window.ready = true;
+</script>

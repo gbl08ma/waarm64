@@ -5,7 +5,7 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { chromiumEnv } from '../../tools/nosme.ts';
-import { chromium, type Page } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import type { VideoStats } from '../../web/virgl-video.ts';
 import { SYSCALLS } from './arm64-syscalls.ts';
@@ -97,14 +97,27 @@ echo $2-done
 `;
 
 export async function openSession(o: SessionOptions) {
-  const server = await startServer();
+  // A kept profile (WEBPC_PROFILE, below) keeps its storage only for the same origin: a fixed port then (WEBPC_PORT).
+  const server = await startServer(process.env.WEBPC_PROFILE ? Number(process.env.WEBPC_PORT ?? 8197) : 0);
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   // HEADED=1: a visible window (only on the Mac host, where the user allows it: never on the dev VM).
   // CHROMIUM_ARGS: extra flags (e.g. `--mute-audio` on the Mac host: its sound still renders and keeps time, unheard).
   // CHROMIUM_JS_FLAGS: V8's flags, spaces and all (`--js-flags`; e.g. `--perf-basic-prof --perf-basic-prof-path=<dir>`).
   // A 3D machine decodes its guest's video with WebCodecs: SME hidden where the CPU needs it (tools/nosme.ts).
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, downloadsPath: process.env.WEBPC_DOWNLOADS, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() });
-  const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 }, ignoreHTTPSErrors: !!o.tailcat })).newPage(); // the tailcat rig's relay has a self-signed certificate
+  const launch = { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, downloadsPath: process.env.WEBPC_DOWNLOADS, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() };
+  const contextOptions = { viewport: { width: 1400, height: 1300 }, ignoreHTTPSErrors: !!o.tailcat }; // the tailcat rig's relay has a self-signed certificate
+  let browser: Browser, page: Page;
+  if (process.env.WEBPC_PROFILE) {
+    // WEBPC_PROFILE=<dir>: a profile kept across sessions (its storage, Chromium's GPU caches), as a user's browser
+    // keeps them (VK3 L3's warm runs); the browser is the persistent context's.
+    const ctx = await chromium.launchPersistentContext(process.env.WEBPC_PROFILE, { ...launch, ...contextOptions });
+    page = ctx.pages()[0] ?? await ctx.newPage();
+    const ua = await page.evaluate(() => navigator.userAgent);
+    browser = { version: () => ua.match(/Chrome\/([\d.]+)/)?.[1] ?? ua, close: () => ctx.close(), newPage: () => ctx.newPage() } as unknown as Browser;
+  } else {
+    browser = await chromium.launch(launch);
+    page = await (await browser.newContext(contextOptions)).newPage();
+  }
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
   await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, o.screen ?? '1376x762']);
   await answerAsks(page);

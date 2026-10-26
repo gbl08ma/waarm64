@@ -96,6 +96,8 @@ WG_IMPORT(gpu_submit) void gpu_submit(uint32_t serial);
 WG_IMPORT(gpu_dirty) int32_t gpu_dirty(uint32_t *pages, uint32_t max);
 /* At wg_complete: a readback's bytes into memory 0. */
 WG_IMPORT(gpu_readback_copy) void gpu_readback_copy(uint32_t slot, void *dst, uint32_t size);
+/* A vkCreate*Pipelines call took `ms` in the module (translation included, or a cache's hit): the render stats'. */
+WG_IMPORT(gpu_translated) void gpu_translated(double ms);
 
 /* The worker's: a submit's work is done (its readbacks mapped). */
 void wg_complete(uint32_t serial);

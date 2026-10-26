@@ -113,6 +113,9 @@ export type ShareOptions = {
   /** Tests: ways whose copies come out black (`?gpu=vkbreak=<way>`), as the bitmap way's were feared to on NVIDIA; a
    * broken GPU way makes no WebGPU canvas. */
   broken?: ReadonlySet<ShareMode>;
+  /** Undefined when Venus's queue holds no submit; else when the held ones (waiting for their pipelines: web/venus-gpu.ts
+   * `idle`) have gone to the queue. A frame isn't copied before the submits that draw it. */
+  idle?: () => Promise<void> | undefined;
 };
 
 export class VenusShare {
@@ -200,6 +203,19 @@ export class VenusShare {
    * checked copies now and holds the submit for the check.
    */
   prepare(ctx: number) {
+    // Submits held for their pipelines may draw what this one samples: it waits for them first.
+    const idle = this.options.idle?.();
+    if (idle) {
+      const ids = this.renderer.externalsOf(ctx).filter((r) => this.sourceOf(r)).map((r) => r.id);
+      if (ids.length) {
+        for (const id of ids) this.hold(id);
+        void idle.then(() => {
+          this.prepare(ctx);
+          for (const id of ids) this.unhold(id);
+        });
+        return;
+      }
+    }
     if (this.mode !== 'readback' && this.check.state !== 'checking') return;
     for (const r of this.renderer.externalsOf(ctx)) {
       if (this.inFlight.has(r.id)) continue;

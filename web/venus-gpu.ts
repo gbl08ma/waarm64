@@ -6,6 +6,8 @@
 // the staging buffers of its readbacks are mapped: then `complete(serial)` calls back into the module, in submit order.
 // Without a device (Node's tests) objects are only counted and every submit completes at once.
 
+import type { ShaderCache } from './venus-cache.ts';
+
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
 const COPY_SRC = 4, COPY_DST = 8, UNIFORM = 64, MAP_READ = 1, MAP_MODE_READ = 1;
 
@@ -15,11 +17,35 @@ export type VenusGpuStats = {
    * readbacks' maps), the longest, and the ms from then until it completed in submit order; empty submits sent to
    * make the browser look at the GPU sooner (`nudge`). */
   done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number;
+  /** Of pipelines made asynchronously (VK3 L3): those made, the ms until each was ready (summed), submits that waited
+   * for one (`deferred`) and the ms they waited, pipelines a submit had to make at once instead (`syncPipelines`: never
+   * expected), and the ms the translator took (`translations`: vkCreate*Pipelines in the module, `translateMs`). */
+  pipelinesReady: number; pipelineReadyMs: number; deferred: number; deferredMs: number; syncPipelines: number; translations: number; translateMs: number;
+  /** The shader cache across runs (web/venus-cache.ts): lookups found and not, entries stored. */
+  cacheHits: number; cacheMisses: number; cacheStores: number;
 };
+
+/**
+ * A pipeline being made asynchronously (createRenderPipelineAsync): `value` once ready (the pipeline, or an invalid
+ * one if WebGPU refused it), `ready` resolving then; `sync()` makes it at once when a command needs it before then.
+ */
+class Later {
+  value: GPURenderPipeline | GPUComputePipeline | undefined;
+  ready: Promise<void>;
+  private readonly fallback: () => GPURenderPipeline | GPUComputePipeline;
+  constructor(ready: Promise<GPURenderPipeline | GPUComputePipeline>, fallback: () => GPURenderPipeline | GPUComputePipeline) {
+    this.fallback = fallback;
+    this.ready = ready.then((p) => { this.value ??= p; }, () => { this.value ??= this.fallback(); });
+  }
+  sync() { return (this.value ??= this.fallback()); }
+}
+
+/** A run of queue work held until the pipelines its draws use are ready (`VenusGpu.later`). */
+type Batch = { waits: Promise<void>[]; ops: (() => void)[]; at: number };
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number; tex: GPUTexture };
-type Obj = GPUBuffer | GPUTexture | View | GPUSampler | GPUBindGroupLayout | GPUPipelineLayout | GPURenderPipeline | GPUComputePipeline | GPUBindGroup | GPUShaderModule | GPUQuerySet;
+type Obj = GPUBuffer | GPUTexture | View | GPUSampler | GPUBindGroupLayout | GPUPipelineLayout | GPURenderPipeline | GPUComputePipeline | GPUBindGroup | GPUShaderModule | GPUQuerySet | Later;
 
 /** What the driver advertises follows (vk/driver/wg_caps.c): a device's features and limits, or a stand-in's in tests. */
 export type GpuCaps = { readonly features: ReadonlySet<string>; readonly limits: object; readonly adapterInfo?: { readonly vendor: string } };
@@ -88,7 +114,7 @@ export function deviceRequest(adapter: GPUAdapter): GPUDeviceDescriptor {
 }
 
 export class VenusGpu {
-  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0 };
+  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0 };
   /** Submits not yet completed. */
   inFlight = 0;
   /** Called after each submit (the host's poller then runs until it completes: web/venus-host.ts). */
@@ -105,7 +131,18 @@ export class VenusGpu {
   private nextSlot = 1;
   private chain: Promise<void> = Promise.resolve();
   private readonly metaPipelines = new Map<string, GPURenderPipeline>();
-  private readonly views = new Map<string, GPUTextureView>();
+  private readonly views = new WeakMap<GPUTexture, Map<string, GPUTextureView>>();
+  /** Pipelines being made asynchronously (`Later`), unless `syncPipelines` (`?gpu=vkpipelines=sync`). */
+  private making = 0;
+  private readonly syncPipelines: boolean;
+  /** The open submit's commands while it is recorded to be held, the pipelines it waits for, its temporary buffers. */
+  private rec: (() => void)[] | undefined;
+  private recWaits: Later[] = [];
+  private recTemps: GPUBuffer[] = [];
+  /** Submits (and the queue work after them) held until their pipelines are ready, in order (`drain`). */
+  private readonly held: Batch[] = [];
+  private draining = false;
+  private readonly idleWaiters: (() => void)[] = [];
   private readonly seen = new Set<string>();
   private readonly mem: () => ArrayBuffer;
   /** The submit (its count in `stats.submits`) that last wrote each texture, and those the open encoder writes. */
@@ -113,6 +150,9 @@ export class VenusGpu {
   private touched = new Set<GPUTexture>();
   /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts. */
   onImport: ((texture: GPUTexture, res: number) => void) | undefined;
+  /** The shaders across runs (web/venus-cache.ts), once loaded: until then every lookup misses. */
+  cache: ShaderCache | undefined;
+  private cacheFound: { key: string; bytes: Uint8Array } | undefined;
 
   /**
    * `memory`: memory 0. `complete(serial)`: the module's export. `dirty()`: the window's written pages since the last
@@ -122,8 +162,9 @@ export class VenusGpu {
   private readonly complete: (serial: number) => void;
   private readonly dirty: () => number[] | undefined;
 
-  constructor(device: GPUDevice | undefined, memory: WebAssembly.Memory, complete: (serial: number) => void, dirty: () => number[] | undefined) {
+  constructor(device: GPUDevice | undefined, memory: WebAssembly.Memory, complete: (serial: number) => void, dirty: () => number[] | undefined, options: { syncPipelines?: boolean } = {}) {
     [this.device, this.complete, this.dirty] = [device, complete, dirty];
+    this.syncPipelines = !!options.syncPipelines;
     this.mem = () => memory.buffer as ArrayBuffer;
     device?.addEventListener('uncapturederror', (e) => this.warn(`WebGPU: ${(e as GPUUncapturedErrorEvent).error.message}`));
   }
@@ -163,12 +204,13 @@ export class VenusGpu {
       noop.gpu_readback = () => 0;
       noop.gpu_dirty = (ptr: number, max: number) => this.dirtyInto(ptr, max);
       noop.gpu_submit = (serial: number) => { this.stats.submits++; this.chain = this.chain.then(() => this.complete(serial)); };
+      Object.assign(noop, this.cacheImports());
       return noop;
     }
     // An exception out of an import would unwind the module's call midway (its state half updated: the renderer then
     // misbehaves for good); what WebGPU's API throws (an argument it rejects) is warned and the command dropped.
     const guarded: Record<string, (...a: number[]) => number | void> = {};
-    for (const [name, f] of Object.entries(this.calls(d, self, rp, cp, buf))) {
+    for (const [name, f] of Object.entries({ ...this.calls(d, self, rp, cp, buf), ...this.cacheImports() })) {
       guarded[name] = (...a: number[]) => {
         try {
           return f(...a);
@@ -182,6 +224,9 @@ export class VenusGpu {
   }
 
   private calls(d: GPUDevice, self: this, rp: () => GPURenderPassEncoder, cp: () => GPUComputePassEncoder, buf: (id: number) => GPUBuffer): Record<string, (...a: number[]) => number | void> {
+    // Every command resolves its ids and copies what it reads of memory 0 now (ids are reused, memory rewritten), and
+    // goes to the queue through `later`: at once, or after the pipelines a held submit waits for (VK3 L3).
+    const later = (f: () => void) => self.later(f);
     return {
       gpu_create(kind: number, id: number, ptr: number, len: number) { self.create(kind, id, parseJson(self.text(ptr, len))); },
       gpu_shader(id: number, ptr: number, len: number) {
@@ -195,54 +240,86 @@ export class VenusGpu {
       },
       gpu_destroy(id: number) {
         const o = self.objs[id];
-        if (o instanceof GPUBuffer || o instanceof GPUTexture || o instanceof GPUQuerySet) o.destroy();
         self.objs[id] = undefined;
+        if (o instanceof GPUBuffer || o instanceof GPUTexture || o instanceof GPUQuerySet) later(() => o.destroy());
       },
       gpu_write(id: number, offset: number, ptr: number, size: number) {
         if (!size) return;
-        d.queue.writeBuffer(buf(id), offset, self.mem(), ptr >>> 0, size);
+        const b = buf(id);
+        if (self.holding) {
+          const bytes = new Uint8Array(self.mem(), ptr >>> 0, size).slice();
+          later(() => d.queue.writeBuffer(b, offset, bytes));
+        } else {
+          d.queue.writeBuffer(b, offset, self.mem(), ptr >>> 0, size);
+        }
         self.stats.uploads++;
         self.stats.uploadBytes += size;
       },
       gpu_dirty: (ptr: number, max: number) => this.dirtyInto(ptr, max),
       gpu_texture_import(tex: number, res: number) {
         const t = self.get<GPUTexture>(tex);
-        if (t instanceof GPUTexture) self.onImport?.(t, res);
+        if (t instanceof GPUTexture) later(() => self.onImport?.(t, res));
       },
-      gpu_encoder() { self.enc = d.createCommandEncoder(); },
+      gpu_encoder() {
+        if (self.making || self.held.length) {
+          self.rec = [];
+          self.recWaits = [];
+          self.recTemps = [];
+        }
+        later(() => { self.enc = d.createCommandEncoder(); });
+      },
       gpu_copy_bb(src: number, so: number, dst: number, dO: number, size: number) {
-        if (size) self.enc!.copyBufferToBuffer(buf(src), so, buf(dst), dO, size);
+        if (!size) return;
+        const a = buf(src), b = buf(dst);
+        later(() => self.enc!.copyBufferToBuffer(a, so, b, dO, size));
       },
       gpu_copy_bt(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
-        self.touched.add(self.get<GPUTexture>(tex));
-        if (aspect) return self.depthStencilCopy(true, b, offset, bpr, rows, tex, mip, x, y, z, w, h, depth, aspect);
-        self.enc!.copyBufferToTexture(self.layout(b, offset, bpr, rows, h, depth), self.texCopy(tex, mip, x, y, z, aspect), { width: w, height: h, depthOrArrayLayers: depth });
+        const B = buf(b), T = self.get<GPUTexture>(tex);
+        later(() => {
+          self.touched.add(T);
+          if (aspect) return self.depthStencilCopy(true, B, offset, bpr, rows, T, mip, x, y, z, w, h, depth, aspect);
+          self.enc!.copyBufferToTexture(self.layout(B, offset, bpr, rows, h, depth), self.texCopy(T, mip, x, y, z, aspect), { width: w, height: h, depthOrArrayLayers: depth });
+        });
       },
       gpu_copy_tb(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
-        if (aspect) return self.depthStencilCopy(false, b, offset, bpr, rows, tex, mip, x, y, z, w, h, depth, aspect);
-        self.enc!.copyTextureToBuffer(self.texCopy(tex, mip, x, y, z, aspect), self.layout(b, offset, bpr, rows, h, depth), { width: w, height: h, depthOrArrayLayers: depth });
+        const B = buf(b), T = self.get<GPUTexture>(tex);
+        later(() => {
+          if (aspect) return self.depthStencilCopy(false, B, offset, bpr, rows, T, mip, x, y, z, w, h, depth, aspect);
+          self.enc!.copyTextureToBuffer(self.texCopy(T, mip, x, y, z, aspect), self.layout(B, offset, bpr, rows, h, depth), { width: w, height: h, depthOrArrayLayers: depth });
+        });
       },
       gpu_copy_tt(src: number, sm: number, sx: number, sy: number, sz: number, dst: number, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number) {
-        self.enc!.copyTextureToTexture(self.texCopy(src, sm, sx, sy, sz, aspect), self.texCopy(dst, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
-        self.touched.add(self.get<GPUTexture>(dst));
+        const S = self.get<GPUTexture>(src), D = self.get<GPUTexture>(dst);
+        later(() => {
+          self.enc!.copyTextureToTexture(self.texCopy(S, sm, sx, sy, sz, aspect), self.texCopy(D, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
+          self.touched.add(D);
+        });
       },
       gpu_fill(b: number, offset: number, size: number, value: number) {
         if (!size) return;
-        if (value === 0) return self.enc!.clearBuffer(buf(b), offset, size);
+        const B = buf(b);
+        if (value === 0) return later(() => self.enc!.clearBuffer(B, offset, size));
         const t = self.staging(size, (m) => new Uint32Array(m).fill(value >>> 0));
-        self.enc!.copyBufferToBuffer(t, 0, buf(b), offset, size);
+        later(() => self.enc!.copyBufferToBuffer(t, 0, B, offset, size));
       },
       gpu_update(b: number, offset: number, ptr: number, size: number) {
         if (!size || !b) return;
         const padded = (size + 3) & ~3;
         const bytes = new Uint8Array(self.mem(), ptr >>> 0, size);
         const t = self.staging(padded, (m) => new Uint8Array(m).set(bytes));
-        self.enc!.copyBufferToBuffer(t, 0, buf(b), offset, padded);
+        const B = buf(b);
+        later(() => self.enc!.copyBufferToBuffer(t, 0, B, offset, padded));
       },
-      gpu_blit(ptr: number, len: number) { self.meta(parseJson(self.text(ptr, len))); },
+      gpu_blit(ptr: number, len: number) {
+        const j = parseJson(self.text(ptr, len));
+        j.dst = self.get<GPUTexture>(j.dst);
+        if (j.src !== undefined) j.src = self.get<GPUTexture>(j.src);
+        later(() => self.meta(j));
+      },
       gpu_render_pass(ptr: number, len: number) {
         const j = parseJson(self.text(ptr, len));
         const colors: (GPUTextureFormat | null)[] = [];
+        const textures: GPUTexture[] = [];
         let samples = 1;
         const desc: GPURenderPassDescriptor = {
           colorAttachments: (j.colorAttachments as (Json | null)[]).map((a) => {
@@ -250,8 +327,8 @@ export class VenusGpu {
             const v = self.get<View>(a.view);
             colors.push(v.format);
             samples = v.samples;
-            self.touched.add(v.tex);
-            if (a.resolveTarget) self.touched.add(self.get<View>(a.resolveTarget).tex);
+            textures.push(v.tex);
+            if (a.resolveTarget) textures.push(self.get<View>(a.resolveTarget).tex);
             return { ...a, view: v.view, resolveTarget: a.resolveTarget ? self.get<View>(a.resolveTarget).view : undefined } as GPURenderPassColorAttachment;
           }),
         };
@@ -262,42 +339,67 @@ export class VenusGpu {
           samples = v.samples;
           desc.depthStencilAttachment = { ...j.depthStencilAttachment, view: v.view };
         }
-        self.passAtts = { colors, depth, samples, width: j.width, height: j.height };
-        self.pass = self.enc!.beginRenderPass(desc);
+        const atts = { colors, depth, samples, width: j.width as number, height: j.height as number };
+        later(() => {
+          for (const t of textures) self.touched.add(t);
+          self.passAtts = atts;
+          self.pass = self.enc!.beginRenderPass(desc);
+        });
       },
-      gpu_compute_pass() { self.pass = self.enc!.beginComputePass(); },
-      gpu_pass_end() { self.pass?.end(); self.pass = undefined; self.passAtts = undefined; },
-      gpu_set_pipeline(id: number) { (self.pass as GPURenderPassEncoder).setPipeline(self.get<GPURenderPipeline>(id)); },
+      gpu_compute_pass() { later(() => { self.pass = self.enc!.beginComputePass(); }); },
+      gpu_pass_end() { later(() => { self.pass?.end(); self.pass = undefined; self.passAtts = undefined; }); },
+      gpu_set_pipeline(id: number) {
+        const o = self.objs[id];
+        if (o instanceof Later && !o.value) {
+          if (self.rec) {
+            // Held: the submit goes once the pipeline is ready (`gpu_submit`).
+            self.recWaits.push(o);
+            return void self.rec.push(() => (self.pass as GPURenderPassEncoder).setPipeline(o.value as GPURenderPipeline));
+          }
+          // Not held (it was made after this submit's encoder: the driver makes them before): made at once.
+          self.stats.syncPipelines++;
+          o.sync();
+        }
+        const p = (o instanceof Later ? o.value : o) as GPURenderPipeline;
+        later(() => (self.pass as GPURenderPassEncoder).setPipeline(p));
+      },
       gpu_set_bind_group(index: number, id: number, ptr: number, n: number) {
         const offsets = n ? Array.from(new Uint32Array(self.mem(), ptr >>> 0, n)) : [];
-        self.pass!.setBindGroup(index, self.get<GPUBindGroup>(id), offsets);
+        const g = self.get<GPUBindGroup>(id);
+        later(() => self.pass!.setBindGroup(index, g, offsets));
       },
-      gpu_set_vertex_buffer(slot: number, b: number, offset: number, size: number) { rp().setVertexBuffer(slot, buf(b), offset, size); },
-      gpu_set_index_buffer(b: number, wide: number, offset: number, size: number) { rp().setIndexBuffer(buf(b), wide ? 'uint32' : 'uint16', offset, size); },
-      gpu_set_viewport(x: number, y: number, w: number, h: number, min: number, max: number) { rp().setViewport(x, y, w, h, min, max); },
-      gpu_set_scissor(x: number, y: number, w: number, h: number) { rp().setScissorRect(x, y, w, h); },
-      gpu_set_blend_constant(r: number, g: number, b: number, a: number) { rp().setBlendConstant([r, g, b, a]); },
-      gpu_set_stencil_reference(ref: number) { rp().setStencilReference(ref); },
+      gpu_set_vertex_buffer(slot: number, b: number, offset: number, size: number) { const B = buf(b); later(() => rp().setVertexBuffer(slot, B, offset, size)); },
+      gpu_set_index_buffer(b: number, wide: number, offset: number, size: number) { const B = buf(b); later(() => rp().setIndexBuffer(B, wide ? 'uint32' : 'uint16', offset, size)); },
+      gpu_set_viewport(x: number, y: number, w: number, h: number, min: number, max: number) { later(() => rp().setViewport(x, y, w, h, min, max)); },
+      gpu_set_scissor(x: number, y: number, w: number, h: number) { later(() => rp().setScissorRect(x, y, w, h)); },
+      gpu_set_blend_constant(r: number, g: number, b: number, a: number) { later(() => rp().setBlendConstant([r, g, b, a])); },
+      gpu_set_stencil_reference(ref: number) { later(() => rp().setStencilReference(ref)); },
       gpu_set_immediates(offset: number, ptr: number, size: number) {
-        (self.pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(offset, new Uint8Array(self.mem(), ptr >>> 0, size).slice());
+        const bytes = new Uint8Array(self.mem(), ptr >>> 0, size).slice();
+        later(() => (self.pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(offset, bytes));
       },
-      gpu_draw(n: number, inst: number, first: number, firstInst: number) { rp().draw(n, inst, first, firstInst); },
-      gpu_draw_indexed(n: number, inst: number, first: number, base: number, firstInst: number) { rp().drawIndexed(n, inst, first, base, firstInst); },
+      gpu_draw(n: number, inst: number, first: number, firstInst: number) { later(() => rp().draw(n, inst, first, firstInst)); },
+      gpu_draw_indexed(n: number, inst: number, first: number, base: number, firstInst: number) { later(() => rp().drawIndexed(n, inst, first, base, firstInst)); },
       gpu_draw_indirect(b: number, offset: number, indexed: number) {
-        if (indexed) rp().drawIndexedIndirect(buf(b), offset);
-        else rp().drawIndirect(buf(b), offset);
+        const B = buf(b);
+        later(() => {
+          if (indexed) rp().drawIndexedIndirect(B, offset);
+          else rp().drawIndirect(B, offset);
+        });
       },
-      gpu_dispatch(x: number, y: number, z: number) { cp().dispatchWorkgroups(x, y, z); },
-      gpu_dispatch_indirect(b: number, offset: number) { cp().dispatchWorkgroupsIndirect(buf(b), offset); },
-      gpu_clear_rects(ptr: number, len: number) { self.clearRects(parseJson(self.text(ptr, len))); },
-      gpu_begin_occlusion(i: number) { rp().beginOcclusionQuery(i); },
-      gpu_end_occlusion() { rp().endOcclusionQuery(); },
+      gpu_dispatch(x: number, y: number, z: number) { later(() => cp().dispatchWorkgroups(x, y, z)); },
+      gpu_dispatch_indirect(b: number, offset: number) { const B = buf(b); later(() => cp().dispatchWorkgroupsIndirect(B, offset)); },
+      gpu_clear_rects(ptr: number, len: number) { const j = parseJson(self.text(ptr, len)); later(() => self.clearRects(j)); },
+      gpu_begin_occlusion(i: number) { later(() => rp().beginOcclusionQuery(i)); },
+      gpu_end_occlusion() { later(() => rp().endOcclusionQuery()); },
       gpu_resolve_queries(set: number, first: number, count: number, b: number, offset: number) {
-        self.enc!.resolveQuerySet(self.get<GPUQuerySet>(set), first, count, buf(b), offset);
+        const Q = self.get<GPUQuerySet>(set), B = buf(b);
+        later(() => self.enc!.resolveQuerySet(Q, first, count, B, offset));
       },
       gpu_readback(b: number, offset: number, size: number) {
         const staging = d.createBuffer({ size, usage: MAP_READ | COPY_DST });
-        self.enc!.copyBufferToBuffer(buf(b), offset, staging, 0, size);
+        const B = buf(b);
+        later(() => self.enc!.copyBufferToBuffer(B, offset, staging, 0, size));
         const slot = self.nextSlot++;
         self.slots.set(slot, { buffer: staging, size });
         self.submitSlots.push(slot);
@@ -306,35 +408,45 @@ export class VenusGpu {
         return slot;
       },
       gpu_submit(serial: number) {
-        if (self.pass) { self.pass.end(); self.pass = undefined; }
-        d.queue.submit([self.enc!.finish()]);
-        self.enc = undefined;
-        self.stats.submits++;
-        for (const t of self.touched) self.written.set(t, self.stats.submits);
-        self.touched.clear();
-        for (const t of self.temps) t.destroy();
-        self.temps = [];
         const slots = self.submitSlots;
         self.submitSlots = [];
-        const t0 = performance.now();
-        let doneAt = t0;
-        const done = Promise.all([d.queue.onSubmittedWorkDone(), ...slots.map((s) => self.slots.get(s)!.buffer.mapAsync(MAP_MODE_READ))]).finally(() => {
-          doneAt = performance.now();
-          const ms = doneAt - t0;
-          self.stats.done++;
-          self.stats.doneMs += ms;
-          self.stats.doneMaxMs = Math.max(self.stats.doneMaxMs, ms);
-        });
         self.inFlight++;
+        let done: Promise<number>;
+        if (!self.rec) {
+          done = self.submitNow(slots, []);
+        } else {
+          const ops = self.rec, temps = self.recTemps;
+          const waits = self.recWaits.filter((l) => !l.value).map((l) => l.ready);
+          self.rec = undefined;
+          let start!: () => void;
+          done = new Promise<number>((resolve) => {
+            start = () => {
+              try {
+                resolve(self.submitNow(slots, temps));
+              } catch (err) {
+                self.warn(`a held submit failed: ${String(err).slice(0, 300)}`);
+                resolve(performance.now());
+              }
+            };
+          });
+          ops.push(() => start());
+          if (!waits.length && !self.held.length) {
+            for (const op of ops) self.runOp(op);
+          } else {
+            self.held.push({ waits, ops, at: performance.now() });
+            self.stats.deferred++;
+            self.drain();
+          }
+        }
         // In submit order: a later submit's work can't be done before an earlier one's, but its maps may resolve first.
-        const finish = () => {
+        const finish = (doneAt: number) => {
           self.inFlight--;
           self.stats.orderMs += performance.now() - doneAt;
           self.complete(serial);
         };
         self.chain = self.chain.then(() => done).then(finish, (err) => {
           self.warn(`a submit's readbacks failed: ${err}`);
-          finish();
+          finish(performance.now());
         }).finally(() => {
           for (const s of slots) { self.slots.get(s)!.buffer.destroy(); self.slots.delete(s); }
         });
@@ -347,6 +459,109 @@ export class VenusGpu {
         new Uint8Array(self.mem(), dst >>> 0, n).set(new Uint8Array(s.buffer.getMappedRange(0, n)));
       },
     };
+  }
+
+  /** vk/wasi/disk_cache.c's imports: the shader cache's lookups and stores (`key` is `size` bytes of memory 0). */
+  private cacheImports(): Record<string, (...a: number[]) => number | void> {
+    const hex = (ptr: number, size: number) => {
+      let k = '';
+      for (const b of new Uint8Array(this.mem(), ptr >>> 0, size)) k += b.toString(16).padStart(2, '0');
+      return k;
+    };
+    return {
+      gpu_cache_get: (key: number, size: number) => {
+        const k = hex(key, size);
+        const bytes = this.cache?.get(k);
+        if (bytes) this.stats.cacheHits++;
+        else this.stats.cacheMisses++;
+        this.cacheFound = bytes && { key: k, bytes };
+        return bytes?.length ?? 0;
+      },
+      gpu_cache_read: (key: number, size: number, data: number, n: number) => {
+        const f = this.cacheFound;
+        this.cacheFound = undefined;
+        if (!f || f.key !== hex(key, size)) return;
+        new Uint8Array(this.mem(), data >>> 0, Math.min(n, f.bytes.length)).set(f.bytes.subarray(0, n));
+      },
+      gpu_cache_put: (key: number, size: number, data: number, n: number) => {
+        if (!this.cache) return;
+        this.cache.put(hex(key, size), new Uint8Array(this.mem(), data >>> 0, n));
+        this.stats.cacheStores++;
+      },
+      gpu_translated: (ms: number) => {
+        this.stats.translations++;
+        this.stats.translateMs += ms;
+      },
+    };
+  }
+
+  /** The open encoder submitted (its temporary buffers destroyed); resolves when its work is done and its readbacks
+   * mapped, with the time then. */
+  private submitNow(slots: number[], temps: GPUBuffer[]): Promise<number> {
+    const d = this.device!;
+    if (this.pass) { this.pass.end(); this.pass = undefined; }
+    d.queue.submit([this.enc!.finish()]);
+    this.enc = undefined;
+    this.stats.submits++;
+    for (const t of this.touched) this.written.set(t, this.stats.submits);
+    this.touched.clear();
+    for (const t of this.temps) t.destroy();
+    for (const t of temps) t.destroy();
+    this.temps = [];
+    const t0 = performance.now();
+    const record = () => {
+      const doneAt = performance.now(), ms = doneAt - t0;
+      this.stats.done++;
+      this.stats.doneMs += ms;
+      this.stats.doneMaxMs = Math.max(this.stats.doneMaxMs, ms);
+      return doneAt;
+    };
+    return Promise.all([d.queue.onSubmittedWorkDone(), ...slots.map((s) => this.slots.get(s)!.buffer.mapAsync(MAP_MODE_READ))]).then(record, (err) => { record(); throw err; });
+  }
+
+  /** Whether queue work is being held (a submit recorded, or submits waiting for their pipelines). */
+  private get holding() { return !!this.rec || this.held.length > 0; }
+
+  /**
+   * Queue work in the queue's order (`f` makes its WebGPU calls): at once, unless submits wait for pipelines being made
+   * (then after them) or a submit is being recorded to wait (then in it). web/venus-import.ts's writes go through here
+   * too, so that a held submit doesn't see bytes written after it.
+   */
+  later(f: () => void) {
+    if (this.rec) this.rec.push(f);
+    else if (this.held.length) this.held.at(-1)!.ops.push(f);
+    else f();
+  }
+
+  /** Undefined when no submit is held; else a promise of the moment the last held one has gone to the queue. */
+  idle(): Promise<void> | undefined {
+    if (!this.held.length) return undefined;
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  private runOp(op: () => void) {
+    try {
+      op();
+    } catch (err) {
+      this.warn(`a held command threw: ${String(err).slice(0, 300)}`);
+    }
+  }
+
+  /** The held submits, in order, each once its pipelines are ready. */
+  private drain() {
+    if (this.draining) return;
+    this.draining = true;
+    void (async () => {
+      while (this.held.length) {
+        const b = this.held[0];
+        if (b.waits.length) await Promise.all(b.waits);
+        this.held.shift();
+        this.stats.deferredMs += performance.now() - b.at;
+        for (const op of b.ops) this.runOp(op);
+      }
+      this.draining = false;
+      for (const w of this.idleWaiters.splice(0)) w();
+    })();
   }
 
   /**
@@ -372,18 +587,18 @@ export class VenusGpu {
     return pages.length;
   }
 
-  private layout(b: number, offset: number, bpr: number, rows: number, h: number, depth: number): GPUTexelCopyBufferInfo {
+  private layout(b: GPUBuffer, offset: number, bpr: number, rows: number, h: number, depth: number): GPUTexelCopyBufferInfo {
     // One row of blocks needs no row pitch (WebGPU's must be 256-aligned where given).
     const one = rows <= 1 && depth === 1 && bpr % 256 !== 0;
-    return one ? { buffer: this.get<GPUBuffer>(b), offset } : { buffer: this.get<GPUBuffer>(b), offset, bytesPerRow: bpr, rowsPerImage: Math.max(rows, 1) };
+    return one ? { buffer: b, offset } : { buffer: b, offset, bytesPerRow: bpr, rowsPerImage: Math.max(rows, 1) };
   }
 
   /** A copy between a buffer and a depth or stencil aspect (aspect 1 or 2: the driver doesn't split their rows), which
    * WebGPU allows only of whole subresources, with rows 256 bytes apart, not of depth24plus's aspects at all, not into
    * depth32float's depth (nor of multisampled textures): rows realigned through a temporary buffer, and what WebGPU can't do
    * skipped with a warning (one bad copy would invalidate the submit's whole command buffer). */
-  private depthStencilCopy(toTexture: boolean, b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
-    const t = this.get<GPUTexture>(tex), f = t.format;
+  private depthStencilCopy(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
+    const f = t.format;
     const stencil = aspect === 2 || f === 'stencil8';
     const bytes = stencil ? 1 : f === 'depth16unorm' ? 2 : 4;
     const whole = x === 0 && y === 0 && w === Math.max(1, t.width >> mip) && h === Math.max(1, t.height >> mip);
@@ -397,28 +612,28 @@ export class VenusGpu {
     const size = { width: w, height: h, depthOrArrayLayers: depth };
     if (!realign) {
       const layout = this.layout(b, offset, bpr, rows, h, depth);
-      if (toTexture) this.enc!.copyBufferToTexture(layout, this.texCopy(tex, mip, x, y, z, aspect), size);
-      else this.enc!.copyTextureToBuffer(this.texCopy(tex, mip, x, y, z, aspect), layout, size);
+      if (toTexture) this.enc!.copyBufferToTexture(layout, this.texCopy(t, mip, x, y, z, aspect), size);
+      else this.enc!.copyTextureToBuffer(this.texCopy(t, mip, x, y, z, aspect), layout, size);
       return;
     }
     const pitch = Math.ceil(row / 256) * 256;
     const temp = this.device!.createBuffer({ size: pitch * h * depth, usage: COPY_SRC | COPY_DST });
     this.temps.push(temp);
-    const src = this.get<GPUBuffer>(b), enc = this.enc!;
+    const src = b, enc = this.enc!;
     const each = (fn: (from: number, to: number) => void) => {
       for (let d = 0; d < depth; d++) for (let r = 0; r < h; r++) fn(offset + (d * rows + r) * bpr, (d * h + r) * pitch);
     };
     const layout = { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: h };
     if (toTexture) {
       each((from, to) => enc.copyBufferToBuffer(src, from, temp, to, row));
-      enc.copyBufferToTexture(layout, this.texCopy(tex, mip, x, y, z, aspect), size);
+      enc.copyBufferToTexture(layout, this.texCopy(t, mip, x, y, z, aspect), size);
     } else {
-      enc.copyTextureToBuffer(this.texCopy(tex, mip, x, y, z, aspect), layout, size);
+      enc.copyTextureToBuffer(this.texCopy(t, mip, x, y, z, aspect), layout, size);
       each((to, from) => enc.copyBufferToBuffer(temp, from, src, to, row));
     }
   }
-  private texCopy(tex: number, mip: number, x: number, y: number, z: number, aspect: number): GPUTexelCopyTextureInfo {
-    return { texture: this.get<GPUTexture>(tex), mipLevel: mip, origin: { x, y, z }, aspect: aspect === 1 ? 'depth-only' : aspect === 2 ? 'stencil-only' : 'all' };
+  private texCopy(tex: GPUTexture, mip: number, x: number, y: number, z: number, aspect: number): GPUTexelCopyTextureInfo {
+    return { texture: tex, mipLevel: mip, origin: { x, y, z }, aspect: aspect === 1 ? 'depth-only' : aspect === 2 ? 'stencil-only' : 'all' };
   }
 
   /** A buffer of `size` bytes written by `fill` on the CPU, for a copy in the encoder (destroyed after its submit). */
@@ -426,7 +641,7 @@ export class VenusGpu {
     const t = this.device!.createBuffer({ size, usage: COPY_SRC, mappedAtCreation: true });
     fill(t.getMappedRange());
     t.unmap();
-    this.temps.push(t);
+    (this.rec ? this.recTemps : this.temps).push(t);
     return t;
   }
 
@@ -450,26 +665,41 @@ export class VenusGpu {
         this.objs[id] = d.createPipelineLayout(desc as GPUPipelineLayoutDescriptor);
         return;
       }
-      case 6: {
-        const text = JSON.stringify(j);
+      case 6: case 7: {
+        const text = JSON.stringify(j).slice(0, 2000);
         j.layout = this.objs[j.layout];
-        j.vertex.module = this.objs[j.vertex.module];
-        if (j.fragment) j.fragment.module = this.objs[j.fragment.module];
+        if (kind === 6) {
+          j.vertex.module = this.objs[j.vertex.module];
+          if (j.fragment) j.fragment.module = this.objs[j.fragment.module];
+        } else {
+          j.compute.module = this.objs[j.compute.module];
+        }
+        const what = kind === 6 ? 'a render pipeline' : 'a compute pipeline';
+        // At once: an invalid pipeline if WebGPU refuses it (a draw with it then invalidates its submit, as before).
+        const now = () => {
+          d.pushErrorScope('validation');
+          const p = kind === 6 ? d.createRenderPipeline(j as GPURenderPipelineDescriptor) : d.createComputePipeline(j as GPUComputePipelineDescriptor);
+          void d.popErrorScope().then((e) => { if (e) this.warn(`${what}: ${e.message} (${text})`); });
+          return p;
+        };
         const t0 = performance.now();
-        d.pushErrorScope('validation');
-        this.objs[id] = d.createRenderPipeline(j as GPURenderPipelineDescriptor);
-        void d.popErrorScope().then((e) => { if (e) this.warn(`a render pipeline: ${e.message} (${text})`); });
         this.stats.pipelines++;
+        if (this.syncPipelines) {
+          this.objs[id] = now();
+        } else {
+          // Made off the GPU process's main thread (Dawn's workers), and Venus's ring goes on meanwhile; a submit
+          // drawing with it is held until it's ready (`gpu_set_pipeline`). Refused, it is made at once for its error.
+          const made = kind === 6 ? d.createRenderPipelineAsync(j as GPURenderPipelineDescriptor) : d.createComputePipelineAsync(j as GPUComputePipelineDescriptor);
+          const later = new Later(made, now);
+          this.making++;
+          void later.ready.then(() => {
+            this.making--;
+            this.stats.pipelinesReady++;
+            this.stats.pipelineReadyMs += performance.now() - t0;
+          });
+          this.objs[id] = later;
+        }
         this.stats.pipelineMs += performance.now() - t0;
-        return;
-      }
-      case 7: {
-        j.layout = this.objs[j.layout];
-        j.compute.module = this.objs[j.compute.module];
-        d.pushErrorScope('validation');
-        this.objs[id] = d.createComputePipeline(j as GPUComputePipelineDescriptor);
-        void d.popErrorScope().then((e) => { if (e) this.warn(`a compute pipeline: ${e.message}`); });
-        this.stats.pipelines++;
         return;
       }
       case 8: {
@@ -490,31 +720,31 @@ export class VenusGpu {
 
   // What the driver can't say as WebGPU commands: drawn here.
 
-  private viewOf(tex: number, mip: number, layer: number, format?: string) {
-    const key = `${tex}:${mip}:${layer}:${format ?? ''}`;
-    let v = this.views.get(key);
-    const t = this.get<GPUTexture>(tex);
-    if (!v || (v as unknown as { tex?: GPUTexture }).tex !== t) {
+  private viewOf(t: GPUTexture, mip: number, layer: number, format?: string) {
+    const key = `${mip}:${layer}:${format ?? ''}`;
+    let views = this.views.get(t);
+    if (!views) this.views.set(t, views = new Map());
+    let v = views.get(key);
+    if (!v) {
       // A 3D texture's slice is drawn into through its 3D view and the attachment's depthSlice (attachment()).
       v = t.dimension === '3d'
         ? t.createView({ dimension: '3d', baseMipLevel: mip, mipLevelCount: 1, ...(format ? { format: format as GPUTextureFormat } : {}) })
         : t.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1, ...(format ? { format: format as GPUTextureFormat } : {}) });
-      (v as unknown as { tex?: GPUTexture }).tex = t;
-      if (this.views.size > 1024) this.views.clear();
-      this.views.set(key, v);
+      views.set(key, v);
     }
     return v;
   }
 
   /** A level and layer (a 3D texture's slice) as a colour attachment. */
-  private attachment(tex: number, mip: number, layer: number) {
-    const view = this.viewOf(tex, mip, this.get<GPUTexture>(tex).dimension === '3d' ? 0 : layer);
-    return this.get<GPUTexture>(tex).dimension === '3d' ? { view, depthSlice: layer } : { view };
+  private attachment(t: GPUTexture, mip: number, layer: number) {
+    const view = this.viewOf(t, mip, t.dimension === '3d' ? 0 : layer);
+    return t.dimension === '3d' ? { view, depthSlice: layer } : { view };
   }
 
+  /** `j`'s `src` and `dst` are the textures (`gpu_blit`). */
   private meta(j: Json) {
     const enc = this.enc!;
-    const tex = this.get<GPUTexture>(j.dst);
+    const tex = j.dst as GPUTexture;
     this.touched.add(tex);
     const fmt = j.format as GPUTextureFormat;
     const depthy = /depth|stencil/.test(fmt);
@@ -676,4 +906,4 @@ const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_write', 'gpu_di
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
   'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
-  'gpu_resolve_queries', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import'];
+  'gpu_resolve_queries', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

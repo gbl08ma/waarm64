@@ -39,10 +39,23 @@ try {
   // The kernel's mount lines would land in the output.
   if (replay.length) await s.run('dmesg -n 1; mkdir -p /vkf; mount -o ro /dev/vdb /vkf');
   const names = replay[0] === 'all' ? (await s.run("awk '{printf \"%s \", $1}' /vkf/programs")).split(/\s+/).filter(Boolean) : replay;
+  // Venus's pipeline totals (the render stats' `venusPipelines`, a second's), after the stats' next second.
+  const pipelines = async () => {
+    await new Promise((r) => setTimeout(r, 1200));
+    return s.page.evaluate(() => ((window as unknown as { __renderStats?: { venusPipelines?: Record<string, number> }[] }).__renderStats ?? []).at(-1)?.venusPipelines ?? null);
+  };
   for (const name of names) {
+    // A program replayed again is `<name>#2` and so on (its pipelines' second run: VK3 L3).
+    let key = name;
+    for (let n = 2; `replay ${key}` in results; n++) key = `${name}#${n}`;
+    const before = await pipelines();
     const t0 = performance.now();
-    results[`replay ${name}`] = await s.run(`/vkf/run.sh ${name}`, 300_000);
-    results[`replay ${name} s`] = ((performance.now() - t0) / 1000).toFixed(1);
+    results[`replay ${key}`] = await s.run(`/vkf/run.sh ${name}`, 300_000);
+    results[`replay ${key} s`] = ((performance.now() - t0) / 1000).toFixed(1);
+    const after = await pipelines();
+    // What the replay's pipelines cost the renderer: made, held, translated, found in the store.
+    if (before && after) results[`replay ${key} pipelines`] = Object.fromEntries(Object.keys(after).map((k) => [k, +(after[k] - (before[k] ?? 0)).toFixed(2)]));
+    results[`replay ${key} log`] = await s.run(`grep -E 'Measured|oad' /tmp/vkf/${name}.log | head -4`);
   }
   // How Vulkan's frames reached virgl in the end (web/venus-share.ts: the way and its check), if any were shared.
   results.share = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { share?: unknown }[] }).__renderStats ?? []).at(-1)?.share ?? null);

@@ -142,9 +142,12 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   same buffer further on (`wg_vertex_slots`). A texture the shader declared filterable float but bound to a view
   WebGPU can't filter (a depth view, `r32float` without `float32-filterable`) draws with a variant of the program
   (`wg_program_variant`, by a mask of such bindings): those bindings unfilterable, the samplers they're sampled with
-  non-filtering and given the sampler's nearest twin. Shaders aren't serialized yet, so a pipeline cache's data is its
-  header alone (`wg_GetPipelineCacheData`: the runtime's own answered `VK_INCOMPLETE` to the size it had given, and
-  libplacebo failed every pass it made).
+  non-filtering and given the sampler's nearest twin. A render pipeline is made when a draw needing it is recorded
+  (the replay finds it by its key), so that it is likely ready by the submit (below, "Pipelines made asynchronously").
+  Shaders are serialized (`wg_serialize`: a stage's WGSL and info, its program's data and link), so pipeline caches
+  carry them (a guest program's own, and the store across runs: "The shader cache"). A program is shared by the stages
+  of one link (`program_link`: a hash of its data and its stages' WGSL), however each stage came (compiled, or found in a
+  cache while its partner was compiled): a draw needs its vertex and fragment shaders on one program.
 - **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views and samplers; bind groups are made at a
   replay, for the program's layout and the set's version (group 3's for its sets' uids and versions hashed), and kept
   on the group's first set, keyed by the layout's uid (ids are reused: a stale bind group of a freed layout's id once
@@ -176,7 +179,46 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 - **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): occlusion queries (reported as
   passing), timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component
   swizzles, sampling 3D images through 2D views, texel buffers, integer textures sampled with a sampler, copies
-  between formats, multi-view, the pipeline cache across runs.
+  between formats, multi-view.
+
+## Pipelines made asynchronously
+
+WebGPU's `createRenderPipeline` returns at once, but Chromium's GPU process then compiles the pipeline on its main
+thread (Tint, then the GPU's compiler: Metal's ~75 ms the first time, SwiftShader's ~27 ms), and everything behind it
+on that thread waits: Venus's later submits and the page's WebGL (virgl's screen) alike. So the worker
+(web/venus-gpu.ts) makes the driver's pipelines with `createRenderPipelineAsync` and `createComputePipelineAsync`
+(Dawn compiles them on its workers), keeping a stand-in (`Later`) under the pipeline's id. Venus's ring never waits for
+one. A submit that sets a pipeline not yet ready is recorded instead of encoded (each command with its ids resolved and
+the memory it reads copied at its call: ids are reused and memory rewritten meanwhile) and held, with everything after
+it in the queue's order (later submits, `queue.writeBuffer`s, buffers destroyed, web/venus-import.ts's writes:
+`VenusGpu.later`), until its pipelines are; then it goes, in order (`drain`), and completions stay in submit order. A
+compositor's submit that samples a Vulkan image waits until no submit is held (web/venus-share.ts `prepare`, through
+`VenusGpu.idle`), so a frame isn't copied before the submits that draw it. A pipeline WebGPU refuses is made again
+at once for its error (an invalid pipeline, as before); one a command needs before it's ready without a held submit
+(made after its submit's encoder began: the driver never does) is made at once (`syncPipelines` counts them; 0 in the
+tests). `?gpu=vkpipelines=sync` makes them at once, as before, for A/B. tests/venus-gpu.test.ts checks the order on a
+stand-in device; tests/venus-driver.test.ts that the driver's program draws right with them held.
+
+## The shader cache
+
+What makes a pipeline in the module (SPIR-V to NIR, NIR's passes, the WGSL: 0.6 ms a pipeline, 25 ms GTK4's largest
+stage) is kept across runs. Mesa's pipeline caches look up what they miss in a disk cache (`pdev->vk.disk_cache`), and
+ours (`vk/wasi/disk_cache.c`, in place of util/disk_cache.c, which needs files and threads; `vk_pipeline_cache.c` built
+with `ENABLE_SHADER_CACHE`) hands lookups and stores to the worker as `wg` imports (`gpu_cache_get`, `gpu_cache_read`,
+`gpu_cache_put`). The runtime stores two kinds of entry: a stage's NIR after `spirv_to_nir` (keyed by its SPIR-V,
+specialization and robustness) and a pipeline's shaders (keyed by its stages and layouts). The keys are BLAKE3 of the
+cache's identity, which is the driver's build ID (`WG_BUILD_ID`, vk/gen.ts: a hash of vk/'s sources and build script)
+and a hash of the device's caps, then the runtime's key. The build ID also makes `pipelineCacheUUID` and
+`shaderBinaryUUID`, so a guest program's saved cache from another build is refused (its header), not misread.
+
+The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `webpc-shaders` when Vulkan starts.
+It is the origin's, shared by every machine (an entry depends on the shader and the device, not the machine), and kept
+under a byte budget (32 MiB, least recently used out first), written back a second after a change. Entries carry the
+renderer's build ID (`venus_build_id`), and those of another build are dropped at the load. So a program's second run
+on a machine (or on another machine of the page) translates nothing its first did. What remains is the browser's own
+pipeline compile, which Chromium caches itself (bench/vulkan/REPORT.md "VK3 L3"). `?gpu=vkcache=off` keeps nothing, for
+cold runs and A/B. tests/venus-cache.test.ts checks the store; tests/venus-driver.test.ts a second run of the driver's
+program on a new renderer (no lookup missed, nothing new stored, the same pixels).
 
 ## Checking frames
 

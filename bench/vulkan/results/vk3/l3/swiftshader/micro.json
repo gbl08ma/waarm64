@@ -1,0 +1,87 @@
+{
+ "date": "2026-10-26T15:17:22.826Z",
+ "chromium": "153.0.8010.52",
+ "platform": "linux",
+ "n": 16,
+ "size": 300,
+ "runs": [
+  {
+   "mode": "sync",
+   "n": 16,
+   "made": 0.1,
+   "done": 3402.4,
+   "adapter": "swiftshader",
+   "webgl": {
+    "median": 0.19,
+    "p90": 0.22,
+    "max": 13.68,
+    "n": 526
+   }
+  },
+  {
+   "mode": "async",
+   "n": 16,
+   "made": 1125.6,
+   "done": 3744.8,
+   "adapter": "swiftshader",
+   "webgl": {
+    "median": 0.19,
+    "p90": 0.37,
+    "max": 36.4,
+    "n": 772
+   }
+  },
+  {
+   "mode": "async",
+   "n": 16,
+   "made": 1086,
+   "done": 3765.6,
+   "adapter": "swiftshader",
+   "webgl": {
+    "median": 0.19,
+    "p90": 0.35,
+    "max": 36.13,
+    "n": 777
+   }
+  },
+  {
+   "mode": "sync",
+   "n": 16,
+   "made": 0.1,
+   "done": 3464.2,
+   "adapter": "swiftshader",
+   "webgl": {
+    "median": 0.19,
+    "p90": 0.21,
+    "max": 818.6,
+    "n": 545
+   }
+  },
+  {
+   "mode": "sync",
+   "n": 16,
+   "made": 0.1,
+   "done": 3506.1,
+   "adapter": "swiftshader",
+   "webgl": {
+    "median": 0.19,
+    "p90": 0.22,
+    "max": 814.29,
+    "n": 549
+   }
+  },
+  {
+   "mode": "async",
+   "n": 16,
+   "made": 1121.5,
+   "done": 3788.7,
+   "adapter": "swiftshader",
+   "webgl": {
+    "median": 0.19,
+    "p90": 0.36,
+    "max": 37.33,
+    "n": 788
+   }
+  }
+ ]
+}

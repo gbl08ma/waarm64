@@ -9,6 +9,7 @@
  */
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <vulkan/vulkan_core.h>
@@ -353,20 +354,25 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
       .layout = clayout,
    };
    CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &cpi, NULL, &cpipeline));
-   /* A pipeline cache holding a pipeline gives its data in a buffer of the size it says (libplacebo's passes). */
-   VkPipelineCache pcache;
-   VkPipeline cached;
+   /* A pipeline cache holding a pipeline gives its data in a buffer of the size it says (libplacebo's passes), and a
+    * cache made from that data makes the pipeline again from its shaders (wg_serialize, wg_deserialize). */
+   VkPipelineCache pcache, pcache2;
+   VkPipeline cached, cached2;
    const VkPipelineCacheCreateInfo pci = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
    CHECK(CreatePipelineCache(dev, &pci, NULL, &pcache));
    CHECK(CreateComputePipelines(dev, pcache, 1, &cpi, NULL, &cached));
    size_t cache_size = 0;
    CHECK(GetPipelineCacheData(dev, pcache, &cache_size, NULL));
-   uint8_t cache_data[4096];
-   if (cache_size > sizeof(cache_data)) {
-      snprintf(error, sizeof(error), "a pipeline cache of %zu bytes", cache_size);
+   uint8_t *cache_data = malloc(cache_size);
+   if (!cache_data || cache_size < 32 || GetPipelineCacheData(dev, pcache, &cache_size, cache_data) != VK_SUCCESS) {
+      snprintf(error, sizeof(error), "a pipeline cache of %zu bytes didn't give its data", cache_size);
       return 1;
    }
-   CHECK(GetPipelineCacheData(dev, pcache, &cache_size, cache_data));
+   const VkPipelineCacheCreateInfo pci2 = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+                                            .initialDataSize = cache_size, .pInitialData = cache_data };
+   CHECK(CreatePipelineCache(dev, &pci2, NULL, &pcache2));
+   free(cache_data);
+   CHECK(CreateComputePipelines(dev, pcache2, 1, &cpi, NULL, &cached2));
 
    VkCommandPool cpool;
    const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };

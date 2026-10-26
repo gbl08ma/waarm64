@@ -53,6 +53,37 @@ test('the driver draws a scene, runs a compute pass and fills host-visible memor
   assert.deepEqual([storage[0], storage[1], storage[100], storage[255]], [7, 10, 307, 772]);
   const filled = r.filled as number[];
   assert.deepEqual(filled.slice(3, 13).map((x) => x.toString(16)), ['0', ...Array(8).fill('deadbeef'), '0']);
+  // Its pipelines were made asynchronously (VK3 L3): none had to be made at once by a submit.
+  const stats = r.stats as Record<string, number>;
+  assert.equal(stats.syncPipelines, 0, 'pipelines made at once');
+  assert.ok(stats.pipelinesReady >= 2, `pipelines ready: ${stats.pipelinesReady}`);
+});
+
+test('a second run translates nothing the first did: its shaders come from the store, and it draws the same', { skip, timeout: 120_000 }, async (t) => {
+  // After the first test, which compiled the SPIR-V.
+  const page = await browser.newPage();
+  page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+  await page.goto(`${base}/tests/browser/venus-driver.html`);
+  await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+  const r = await page.evaluate(() => (window as unknown as { venus: { runTwice(s: object): Promise<Record<string, unknown>> } }).venus.runTwice({
+    vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv' }));
+  await page.close();
+  const first = r.first as Record<string, unknown>, second = r.second as Record<string, unknown>;
+  if (first.skipped) return t.skip(`SKIPPED: ${first.skipped}`);
+  assert.equal(first.error, undefined, String(first.error));
+  assert.equal(second.error, undefined, String(second.error));
+  const a = first.stats as Record<string, number>, b = second.stats as Record<string, number>;
+  console.log(JSON.stringify({ first: a, second: b, stored: r.stored }));
+  // The first stores what it translated (stages' NIR and shaders); the second finds all of it (no lookup misses) and
+  // adds no entry (it puts again only the pipeline cache's data the program loads, under the same keys).
+  assert.ok((r.storedFirst as number) > 0, 'the first run stored nothing');
+  assert.ok(a.cacheMisses > 0);
+  assert.equal(b.cacheMisses, 0, 'the second run missed');
+  assert.equal(r.stored, r.storedFirst, 'the second run stored something new');
+  assert.ok(b.cacheHits > 0, 'the second run found nothing');
+  assert.deepEqual(second.pixels, first.pixels);
+  assert.deepEqual(second.storage, first.storage);
+  assert.deepEqual(second.errors, []);
 });
 
 test('an image bound to imported dma-buf memory has its resource\'s bytes, and a picture written into it after', { skip, timeout: 60_000 }, async (t) => {

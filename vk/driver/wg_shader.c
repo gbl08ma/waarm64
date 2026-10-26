@@ -12,12 +12,15 @@
 
 #include "nir.h"
 #include "spirv/nir_spirv.h"
+#include "util/blob.h"
 #include "util/hash_table.h"
+#include "util/os_time.h"
 #include "util/ralloc.h"
 #include "vk_format.h"
 #include "vk_pipeline.h"
 
 #include "wg_private.h"
+#include "vk_common_entrypoints.h"
 #include "vk_pipeline_cache.h"
 
 static const struct nir_shader_compiler_options *
@@ -52,6 +55,37 @@ wg_hash_state(struct vk_physical_device *pdev, const struct vk_graphics_pipeline
 
 /* Programs. */
 
+/* The programs by their link (`program_link`), while they live. */
+static struct hash_table *programs;
+
+static uint32_t
+link_hash(const void *key)
+{
+   return _mesa_hash_data(key, sizeof(blake3_hash));
+}
+
+static bool
+link_equal(const void *a, const void *b)
+{
+   return !memcmp(a, b, sizeof(blake3_hash));
+}
+
+static struct wg_program *
+program_find(const blake3_hash link)
+{
+   struct hash_entry *e = programs ? _mesa_hash_table_search(programs, link) : NULL;
+   return e ? e->data : NULL;
+}
+
+static void
+program_list(struct wg_program *p)
+{
+   if (!programs)
+      programs = _mesa_hash_table_create(NULL, link_hash, link_equal);
+   _mesa_hash_table_insert(programs, p->link, p);
+   p->listed = true;
+}
+
 static void
 program_free_pipelines(struct wg_program *p)
 {
@@ -67,6 +101,11 @@ program_free_pipelines(struct wg_program *p)
 static void
 program_free(struct wg_program *p)
 {
+   if (p->listed) {
+      struct hash_entry *e = _mesa_hash_table_search(programs, p->link);
+      if (e && e->data == p)
+         _mesa_hash_table_remove(programs, e);
+   }
    program_free_pipelines(p);
    for (uint32_t i = 0; i < WGSL_MAX_GROUPS; i++)
       wg_id_release(p->bgl[i]);
@@ -181,6 +220,7 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    struct wg_program *v = malloc(sizeof(*v));
    memcpy(v, p, sizeof(*v));
    v->refs = 1;
+   v->listed = false;
    v->pipelines = NULL;
    v->push_group = 0;
    v->compute = 0;
@@ -290,8 +330,62 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
 
    for (uint32_t i = 0; i < p->resource_count; i++)
       p->vis[i] = vis[i];
-   program_layouts(p);
    return p;
+}
+
+/* A program's data across runs (wg_serialize): everything program_create derives from its stages and set layouts. */
+#define PROGRAM_FIELDS(X)                                                                                              \
+   X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(resources) X(dynamic) X(res_set)          \
+   X(immediate_size) X(push_ubo_size) X(vis) X(pair_count) X(pairs)
+
+static void
+program_write(struct blob *b, const struct wg_program *p)
+{
+#define W(f) blob_write_bytes(b, &p->f, sizeof(p->f));
+   PROGRAM_FIELDS(W)
+#undef W
+}
+
+static void
+program_read(struct blob_reader *b, struct wg_program *p)
+{
+#define R(f) blob_copy_bytes(b, &p->f, sizeof(p->f));
+   PROGRAM_FIELDS(R)
+#undef R
+}
+
+/* A program's link: its data and each stage's WGSL, in stage order. */
+static void
+program_link(struct wg_program *p, struct wg_shader *const *shaders, uint32_t count)
+{
+   struct blob b;
+   blob_init(&b);
+   program_write(&b, p);
+   blake3_hasher h;
+   _mesa_blake3_init(&h);
+   _mesa_blake3_update(&h, b.data, b.size);
+   blob_finish(&b);
+   for (uint32_t i = 0; i < count; i++) {
+      const uint32_t stage = shaders[i]->vk.stage;
+      _mesa_blake3_update(&h, &stage, sizeof(stage));
+      if (shaders[i]->wgsl)
+         _mesa_blake3_update(&h, shaders[i]->wgsl, strlen(shaders[i]->wgsl));
+   }
+   _mesa_blake3_final(&h, p->link);
+}
+
+/* The program's WebGPU objects: its layouts, and a compute stage's pipeline (of `compute_module`). */
+static void
+program_objects(struct wg_program *p, uint32_t compute_module)
+{
+   program_layouts(p);
+   if (compute_module) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", p->layout,
+                     compute_module);
+      p->compute = wg_create_json(WG_KIND_COMPUTE, &j);
+      p->compute_module = compute_module;
+   }
 }
 
 /* Compiling. */
@@ -409,58 +503,118 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       return VK_SUCCESS;
    }
 
+   /* A program of the same link already made (its other stages loaded from a cache, or the same pipeline made
+    * again) is shared: a draw needs its vertex and fragment shaders on one program. */
    struct wg_program *p = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
+   program_link(p, shaders, count);
+   struct wg_program *same = program_find(p->link);
+   if (same) {
+      free(p);
+      p = same;
+      p->refs += count;
+   } else {
+      p->refs = count;
+      program_objects(p, infos[0].stage == MESA_SHADER_COMPUTE ? shaders[0]->module : 0);
+      program_list(p);
+   }
    for (uint32_t i = 0; i < count; i++) {
       shaders[i]->program = p;
-      if (i)
-         p->refs++;
       out[i] = &shaders[i]->vk;
    }
-   if (infos[0].stage == MESA_SHADER_COMPUTE) {
-      struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", p->layout,
-                     shaders[0]->module);
-      p->compute = wg_create_json(WG_KIND_COMPUTE, &j);
-      p->compute_module = shaders[0]->module;
-   }
    return VK_SUCCESS;
 }
 
-/* A pipeline cache's data: its header and no objects, our shaders not being serializable yet (wg_serialize). The
- * runtime's own would reserve room for every object before learning it can't be written, and answer VK_INCOMPLETE to
- * a buffer of the size it gave (libplacebo then fails every pass it makes: mpv on Vulkan drew nothing). */
-VKAPI_ATTR VkResult VKAPI_CALL
-wg_GetPipelineCacheData(VkDevice _device, VkPipelineCache pipelineCache, size_t *pDataSize, void *pData)
-{
-   VK_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
-   const size_t size = sizeof(cache->header) + sizeof(uint32_t);
-   if (!pData) {
-      *pDataSize = size;
-      return VK_SUCCESS;
-   }
-   if (*pDataSize < size) {
-      *pDataSize = 0;
-      return VK_INCOMPLETE;
-   }
-   const uint32_t count = 0;
-   memcpy(pData, &cache->header, sizeof(cache->header));
-   memcpy((uint8_t *)pData + sizeof(cache->header), &count, sizeof(count));
-   *pDataSize = size;
-   return VK_SUCCESS;
-}
+/* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
+ * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
+ * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
+#define WG_SHADER_FORMAT 1
 
-/* Not cached across runs yet: the runtime's in-memory cache keeps the shaders themselves. */
 static bool
-wg_serialize(struct vk_device *device, const struct vk_shader *shader, struct blob *blob)
+wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)
 {
-   return false;
+   const struct wg_shader *s = container_of(vk, struct wg_shader, vk);
+   blob_write_uint32(blob, WG_SHADER_FORMAT);
+   blob_write_uint32(blob, s->vk.stage);
+   blob_write_uint32(blob, s->wgsl && s->program ? 1 : 0);
+   if (!s->wgsl || !s->program)
+      return !blob->out_of_memory;
+   blob_write_string(blob, s->wgsl);
+   blob_write_bytes(blob, &s->info, sizeof(s->info));
+   program_write(blob, s->program);
+   blob_write_bytes(blob, s->program->link, sizeof(blake3_hash));
+   return !blob->out_of_memory;
 }
 
 static VkResult
 wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t version,
                const VkAllocationCallbacks *pAllocator, struct vk_shader **out)
 {
-   return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+   const uint32_t format = blob_read_uint32(blob);
+   const uint32_t stage = blob_read_uint32(blob);
+   const uint32_t translated = blob_read_uint32(blob);
+   if (blob->overrun || format != WG_SHADER_FORMAT || stage >= MESA_SHADER_STAGES)
+      return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+   struct wg_shader *s = vk_shader_zalloc(device, &wg_shader_ops, stage, pAllocator, sizeof(*s));
+   if (!s)
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   if (!translated) {
+      *out = &s->vk;
+      return VK_SUCCESS;
+   }
+   const char *wgsl = blob_read_string(blob);
+   blob_copy_bytes(blob, &s->info, sizeof(s->info));
+   struct wg_program *p = calloc(1, sizeof(*p));
+   if (!p) {
+      vk_shader_free(device, pAllocator, &s->vk);
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+   program_read(blob, p);
+   blob_copy_bytes(blob, p->link, sizeof(blake3_hash));
+   if (blob->overrun || !wgsl || p->resource_count > WGSL_MAX_RESOURCES || p->group_count > WGSL_MAX_GROUPS ||
+       p->pair_count > WGSL_MAX_PAIRS || p->set_count > WGSL_MAX_SETS) {
+      free(p);
+      vk_shader_free(device, pAllocator, &s->vk);
+      return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+   }
+   s->wgsl = strdup(wgsl);
+   s->module = wg_id();
+   gpu_shader(s->module, s->wgsl, strlen(s->wgsl));
+   struct wg_program *same = program_find(p->link);
+   if (same) {
+      free(p);
+      same->refs++;
+      s->program = same;
+   } else {
+      p->refs = 1;
+      program_objects(p, stage == MESA_SHADER_COMPUTE ? s->module : 0);
+      program_list(p);
+      s->program = p;
+   }
+   *out = &s->vk;
+   return VK_SUCCESS;
+}
+
+/* Pipelines made, timed for the render stats (`translateMs`: the translation, or a cache's lookups). */
+VKAPI_ATTR VkResult VKAPI_CALL
+wg_CreateGraphicsPipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+                           const VkGraphicsPipelineCreateInfo *infos, const VkAllocationCallbacks *alloc,
+                           VkPipeline *pipelines)
+{
+   const int64_t t0 = os_time_get_nano();
+   VkResult r = vk_common_CreateGraphicsPipelines(device, cache, count, infos, alloc, pipelines);
+   gpu_translated((double)(os_time_get_nano() - t0) / 1e6);
+   return r;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wg_CreateComputePipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+                          const VkComputePipelineCreateInfo *infos, const VkAllocationCallbacks *alloc,
+                          VkPipeline *pipelines)
+{
+   const int64_t t0 = os_time_get_nano();
+   VkResult r = vk_common_CreateComputePipelines(device, cache, count, infos, alloc, pipelines);
+   gpu_translated((double)(os_time_get_nano() - t0) / 1e6);
+   return r;
 }
 
 static VkResult

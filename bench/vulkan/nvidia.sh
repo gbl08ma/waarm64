@@ -25,7 +25,7 @@
 # the headless Chrome for Testing if it gets the NVIDIA adapter, else in your own Chromium (VK2_CHROMIUM=<path>, by
 # default the first of chromium, google-chrome-stable, google-chrome on the PATH), headed with a temporary profile: a
 # window opens for each run and must stay visible (minimised, Chromium throttles it). Each run is a machine on the page,
-# as on the dev VM and the Mac (VK2_STEPS="present replay fence scene mpv" picks some):
+# as on the dev VM and the Mac (VK2_STEPS="present replay fence scene pipelines mpv" picks some):
 #   1. present (VK3 L1): what Venus presents on the page's screen, against the guest's own frames, for each way Vulkan's
 #      frames reach virgl (the page's own choice and its run-time check, then the bitmap, canvas and readback ways
 #      forced): vkcube in sway's window, mpv paused fullscreen (bench/vulkan/present.ts, the desktop guest; ~10 min);
@@ -36,7 +36,10 @@
 #   4. scene: VK0's scene in the desktop guest on Venus (rings polled by the pump, and the old way: `vkpoll=timeout`)
 #      and on virgl, two alternated rounds (bench/vulkan/guest.ts; each Venus run's fence breakdown in
 #      renderer.venus: submits done in, polls apart, nudges, fences retired in);
-#   5. mpv: the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds (bench/audio/avsync.ts).
+#   5. pipelines (VK3 L3): pipelines made one by one against all at once (bench/vulkan/pipelines.ts), and vkQuake's and
+#      a vkmark scene's replays with pipelines made at once and no shader store, then cold and warm across a restart on
+#      one kept profile (bench/vulkan/venus-run.ts; ~8 min);
+#   6. mpv: the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds (bench/audio/avsync.ts).
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz: send that file back.
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
@@ -128,6 +131,29 @@ if [ "${1:-}" = page ]; then
     done
     # The frames and Venus's fence breakdown, on the terminal too.
     for f in "$R"/scene-*-1.log "$R"/scene-*-2.log; do [ -f "$f" ] && grep -hE "msaa1 " "$f" | sed "s|^|  $(basename "$f" .log) |" | cut -c1-240; done || true
+  fi
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" pipelines "* ]]; then
+    # VK3 L3: N new pipelines made one by one against all at once (and WebGL's round trips meanwhile), then the
+    # programs' replays (vkQuake, a vkmark scene; each twice in a session): pipelines made at once with no store (as
+    # before L3), then two sessions on one kept profile (cold, then warm: the shader store in IndexedDB and Chromium's
+    # own caches across a restart).
+    step pipelines-micro 300 node bench/vulkan/pipelines.ts "$R/pipelines-micro.json"
+    rp="vkquake,vkmark-desktop,vkquake,vkmark-desktop"
+    step pipelines-sync 900 env REPLAY=$rp GPU_KNOBS=vkpipelines=sync,vkcache=off node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/pipelines-sync"
+    rm -rf "$DIR/t/profile"
+    for s in cold warm; do
+      step "pipelines-$s" 900 env REPLAY=$rp WEBPC_PROFILE="$DIR/t/profile" node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/pipelines-$s"
+    done
+    rm -rf "$DIR/t/profile"
+    # vkQuake's state load (GFXReconstruct's "Load time", its pipelines made) and the renderer's part, on the terminal too.
+    (cd "$P" && node -e '
+      for (const a of ["sync", "cold", "warm"]) {
+        let r; try { r = JSON.parse(require("fs").readFileSync(`${process.argv[1]}/pipelines-${a}/results.json`, "utf8")); } catch { console.log(`  ${a}: no results`); continue; }
+        for (const k of ["vkquake", "vkquake#2"]) {
+          const p = r[`replay ${k} pipelines`] ?? {}, load = /Load time:\s+([\d.]+)/.exec(r[`replay ${k} log`] ?? "")?.[1];
+          console.log(`  ${a} ${k}: load ${load} s, translated ${p.translateMs} ms, pipelines ready in ${p.readyMs} ms (summed), submits held ${p.deferredMs} ms, store ${p.cacheHits} found ${p.cacheMisses} missed`);
+        }
+      }' "$R") || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" mpv "* ]]; then
     step mpv 1800 env VIRGL_GPU=virgl,vulkan MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=2 \

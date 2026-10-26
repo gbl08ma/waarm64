@@ -3,6 +3,7 @@
 // generated sources are the same for any target), and links them into target/vk/venus.wasm.
 //   node vk/gen.ts <target/vk> <wasi-sdk>
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 
@@ -99,7 +100,8 @@ for (const e of mesa) {
   if (SKIP.test(src)) continue;
   const f = flags(e);
   if (lib.endsWith('libvulkan_runtime.a') && !runtimeFlags.length) { runtimeFlags = f; nativeFlags = split(e.command).slice(1); }
-  compile(src, f);
+  // The pipeline caches look up what they miss in our disk cache (vk/wasi/disk_cache.c: the worker's store).
+  compile(src, src.endsWith('/vk_pipeline_cache.c') ? [...f, '-DENABLE_SHADER_CACHE'] : f);
 }
 
 // virglrenderer: vkr, the parts of the library it uses and its own copy of Mesa's util (an older subset, whose API
@@ -123,11 +125,18 @@ for (const e of virgl) {
   compile(src, f);
 }
 
-// Ours: the driver (on the runtime's headers) and the glue (vkr's too).
+// Ours: the driver (on the runtime's headers) and the glue (vkr's too). The driver's build ID is a hash of what makes
+// its shaders (this directory's sources and patches, and the build script with Mesa's and virglrenderer's versions):
+// the shader caches' identity (vk/README.md "The shader cache"), so that a translator change misses every entry.
+const hashed = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((d) => d.isDirectory() ? hashed(`${dir}/${d.name}`) : /\.(c|h|patch|ts|sh)$/.test(d.name) ? [`${dir}/${d.name}`] : []);
+const id = createHash('sha256');
+for (const f of hashed(HERE).sort()) id.update(f.slice(HERE.length)).update(readFileSync(f));
+const BUILD_ID = id.digest('hex').slice(0, 32);
 compile(`${W}/gen/wg_entrypoints.c`, [...runtimeFlags, `-I${W}/gen`]);
 for (const f of readdirSync(`${HERE}/driver`).filter((f) => f.endsWith('.c')).sort()) {
-  compile(`${HERE}/driver/${f}`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`, `-I${HERE}/compiler`]);
+  compile(`${HERE}/driver/${f}`, [...runtimeFlags, `-I${W}/gen`, `-I${HERE}/driver`, `-I${HERE}/compiler`, `-DWG_BUILD_ID="${BUILD_ID}"`]);
 }
+compile(`${HERE}/wasi/disk_cache.c`, [...runtimeFlags, '-DENABLE_SHADER_CACHE']);
 for (const f of readdirSync(`${HERE}/compiler`).filter((f) => f.endsWith('.c')).sort()) {
   compile(`${HERE}/compiler/${f}`, [...runtimeFlags, `-I${HERE}/compiler`]);
 }

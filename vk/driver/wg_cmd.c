@@ -751,6 +751,9 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
       op->program = p;
       op->key = k;
+      /* Made now, while the command buffer is recorded (WebGPU makes it asynchronously: web/venus-gpu.ts), so that it
+       * is likely ready by the submit, which otherwise waits for it; the replay finds it by its key. */
+      wg_render_pipeline(p, &k);
       cmd->last_key = k;
       cmd->last_program[0] = p;
       cmd->have_key = true;

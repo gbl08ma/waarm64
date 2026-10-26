@@ -12,6 +12,7 @@
 
 #include "util/hash_table.h"
 #include "util/list.h"
+#include "util/mesa-blake3.h"
 #include "util/u_dynarray.h"
 #include "vk_alloc.h"
 #include "vk_buffer.h"
@@ -314,6 +315,11 @@ struct wg_program {
    struct wg_program *variants;
    uint32_t compute;        /* a compute pipeline */
    struct hash_table *pipelines;
+   /* What identifies the program across shaders (wg_shader.c `program_link`): its data and its stages' WGSL. Stages
+    * compiled or loaded from a cache separately find their program by it (`programs`), so that a vertex and fragment
+    * shader of one link share one program however they came. */
+   blake3_hash link;
+   bool listed;
 };
 
 struct wg_shader {
@@ -328,6 +334,8 @@ extern const struct vk_device_shader_ops wg_device_shader_ops;
 void wg_cmd_bind_shaders(struct vk_command_buffer *cmd, uint32_t count, const mesa_shader_stage *stages,
                          struct vk_shader **const shaders);
 void wg_program_unref(struct wg_program *p);
+/* The driver's build ID (vk/gen.ts), the shader caches' identity. */
+const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
  * samplers they're sampled with as non-filtering; made at its first use, kept with the program. */
 struct wg_program *wg_program_variant(struct wg_program *p, uint64_t mask);

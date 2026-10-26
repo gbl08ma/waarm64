@@ -738,7 +738,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     const gpu = new Worker(new URL('../gpu-worker.ts', import.meta.url), { type: 'module' });
     r.gpu = gpu;
     const channel = new MessageChannel();
-    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'), softwareVideo: gpuKnobs.includes('swvideo'), vkShare: (['readback', 'canvas', 'bitmap'] as const).find((w) => gpuKnobs.includes(`vk${w}`)), vkBreak: gpuKnobs.filter((k) => k.startsWith('vkbreak=')).map((k) => k.slice(8) as ShareMode), vkVendor: gpuKnobs.find((k) => k.startsWith('vkvendor='))?.slice(9), vkPoll: gpuKnobs.includes('vkpoll=timeout') ? 'timeout' : undefined } satisfies ToGpuWorker, [screen, channel.port1]);
+    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'), softwareVideo: gpuKnobs.includes('swvideo'), vkShare: (['readback', 'canvas', 'bitmap'] as const).find((w) => gpuKnobs.includes(`vk${w}`)), vkBreak: gpuKnobs.filter((k) => k.startsWith('vkbreak=')).map((k) => k.slice(8) as ShareMode), vkVendor: gpuKnobs.find((k) => k.startsWith('vkvendor='))?.slice(9), vkPoll: gpuKnobs.includes('vkpoll=timeout') ? 'timeout' : undefined, vkSyncPipelines: gpuKnobs.includes('vkpipelines=sync'), vkNoCache: gpuKnobs.includes('vkcache=off') } satisfies ToGpuWorker, [screen, channel.port1]);
     gpu.onmessage = (e: MessageEvent<FromGpuWorker>) => {
       if (run !== r) return;
       const m = e.data;

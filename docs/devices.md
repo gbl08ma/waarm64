@@ -486,7 +486,10 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   which happens once the GPU's work before it is done (`VenusRenderer.settled`: the GPU worker holds the device's fence
   until then). The render stats (`?displaystats`) carry the way back a second (`venus`: submits done in, polls apart,
   nudges, fences retired in). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
-  Calls that come before the module is ready wait in a backlog, and so does the device's fence.
+  Calls that come before the module is ready wait in a backlog, and so does the device's fence. The driver's
+  pipelines are made asynchronously and a submit drawing with one not yet ready is held, in order (VK3 L3); the
+  translated shaders persist across runs in IndexedDB `webpc-shaders`, the origin's (`venusPipelines` in the render
+  stats; vk/README.md "Pipelines made asynchronously", "The shader cache").
 - **The driver** (vk/README.md "The driver"): Vulkan on the GPU worker's WebGPU device (web/venus-gpu.ts; with no
   adapter it keeps the objects and draws nothing). What it advertises follows the browser's WebGPU device, its limits
   and features read at the renderer's start (vk/README.md "The driver"; VK2 L7), less what the translator can't do yet,

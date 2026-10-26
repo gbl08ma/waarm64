@@ -289,7 +289,7 @@ for the programs that switch. The user decides whether VK1 starts.
   frames on NVIDIA (black, and ~4.5 ms a fence: backlog), libplacebo's advanced path (the M4's green chroma), the
   adapter's features the translator still lacks (`subgroups`, `shader-f16`, read-write storage with `tier2`), the
   driver's gaps dEQP-VK found (backlog "The Vulkan driver's gaps": per-face stencil, occlusion queries, texel
-  buffers, copies WebGPU refuses), and pipelines made asynchronously with a cache across runs (§7).
+  buffers, copies WebGPU refuses), and pipelines made asynchronously with a cache across runs (§7; done in VK3 L3).
 - **VK4, breadth and the default:** the programs of A, snapshots while Vulkan is in use (state as data, as for virgl:
   objects, device memory and the window read back), on by default where every switching program meets the bar.
 
@@ -303,8 +303,12 @@ for the programs that switch. The user decides whether VK1 starts.
 - **Pipeline creation stalls.** VK0 estimated ~10 ms a pipeline end to end on the M4; VK2 measured ~80 ms the first
   time a shader reaches Metal's compiler (a hand-written WGSL pipeline of the same kind 74 ms; the translation 0.6 ms)
   and ~1.5 ms once Metal's on-disk cache has it; SwiftShader 27 ms (REPORT.md "VK2 L7"). So a program making hundreds
-  at load stalls for seconds on its first run on a machine: pipelines made asynchronously with the ring stalled, and a
-  cache of WGSL across runs, are VK3's.
+  at load stalls for seconds on its first run on a machine. VK3 L3 found the stall wider than the ring: Chromium
+  compiles a pipeline made at once on its GPU process's main thread, so virgl's screen froze too (40 new pipelines:
+  4.2 s on the M4). Now they are made asynchronously (4.6× sooner, Dawn's workers; the screen goes on), a submit
+  drawing with one not ready is held, and the translated shaders persist in the page's storage, so a program's second
+  run translates nothing (vkQuake's 228 → 9 ms on the M4; REPORT.md "VK3 L3"). What remains is the browser's compile:
+  kept across a restart on Metal, not on SwiftShader; NVIDIA's to be measured.
 - **The browser's timers and its look at the GPU** (VK3 L2): a worker's nested `setTimeout(0)` is clamped to ~4.5 ms
   (6 ms on the Mac), and Chromium's GPU process notices a Dawn device's finished work on Vulkan only at a slow timer
   (~3 ms late on SwiftShader) unless commands arrive. Venus's poller sleeps on `Atomics.waitAsync` and nudges with

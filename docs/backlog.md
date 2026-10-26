@@ -503,18 +503,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   encoded by hand (or a recorded stream replayed through `venus_submit`).
 - **`tests/page-snapshots.test.ts` "kept snapshots…" fails** (found 2026-10-26 in VK2 L7, at L6's commit too, run
   alone): after Suspend, the reloaded page's resume isn't seen as `running` within 420 s (line 148), though the page
-  says `running` when the wait gives up. scripts/ci-machines.sh fails on it; not looked into.
+  says `running` when the wait gives up. scripts/ci-machines.sh fails on it; not looked into. VK3 L3's run (a machine
+  without Vulkan) failed it earlier, at the first Restore (line 126): "the disk's changes can't be written to the
+  browser's storage (is it full?)", the storage-full case below; the other four tests passed.
 - **VK2's gate on NVIDIA** (bench/vulkan/REPORT.md "VK2 L7"): the user's run of `bench/vulkan/nvidia.sh page` (the
   programs' frames, the scene against virgl, mpv's gate) is outstanding; its results go into REPORT.md beside the M4's.
 - **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
   would bring it to every `npm start`.
-- **A pipeline's first compile on Metal is ~80 ms** (VK2 L7, REPORT.md "VK2 L7", `bench/vulkan/costs.ts`): Metal's
-  compiler, not the translation (0.6 ms) nor our WGSL's style (a hand-written WGSL pipeline of the same kind: 74 ms);
-  ~1.5 ms once Metal's on-disk cache has it. A program making hundreds of pipelines at load stalls for seconds the
-  first time. Levers: `createRenderPipelineAsync` with the ring stalled instead of the synchronous call (the kickoff's
-  open choice), and the pipeline cache across runs (`vk_shader` serialize) so WGSL at least isn't remade.
+- **Pipelines' loose ends after VK3 L3** (REPORT.md "VK3 L3", vk/README.md "Pipelines made asynchronously", "The shader
+  cache"): (1) render pipelines are made when a draw is recorded; made at vkCreateGraphicsPipelines from the pipeline's
+  static state (the viewport's flip and dynamic state guessed), most would be ready before the first frame records,
+  at the cost of some never used: unmeasured. (2) SwiftShader's compile isn't kept across a browser restart (Metal's
+  is, through Dawn's cache and Metal's own); NVIDIA's is the next run's question (nvidia.sh `pipelines`). (3) The
+  store's entries are kept uncompressed (vkQuake's 3.5 MiB) and loaded whole at Vulkan's start; CompressionStream on
+  the way to IndexedDB would hold ~3× more under the same budget. (4) The store isn't shown on the Machines page's
+  storage line nor cleared from it. (5) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
 - **What the device advertises, left for the translator** (VK2 L7, vk/README.md "The driver"): subgroups are of one
   invocation with the basic operations (both adapters have WebGPU's `subgroups`: subgroup sizes and operations in
   WGSL), `shaderFloat16` (the Mac's `shader-f16`), YCbCr conversions (GTK4's Vulkan renderer: VK3's row; GTK4 forced
@@ -622,7 +627,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Memory**: some `memory.binding` cases (aliasing and odd sizes) and two `memory` crashes (vkr's
     `vkFreeMemory resulted in CS error`), not looked into.
   - **Elsewhere**: the push buffer is 1 MiB a submit (4,096 changes of push constants past the immediates; more wrap
-    and are wrong, with a warning), the pipeline cache across runs (`vk_shader` serialize).
+    and are wrong, with a warning).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

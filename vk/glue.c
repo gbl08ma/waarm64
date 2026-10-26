@@ -17,6 +17,7 @@ uint32_t wg_memory_texture(VkDeviceMemory memory);
 extern void (*wg_submitted)(void);
 extern uintptr_t wg_window_at, wg_window_bytes;
 int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
+const char *wg_build_id(void);
 void wg_complete(uint32_t serial);
 
 #define EXPORT __attribute__((visibility("default")))
@@ -28,6 +29,7 @@ IMPORT("venus_retire") void venus_retire(uint32_t ctx_id, uint32_t ring_idx, uin
 IMPORT("venus_submitted") void venus_submitted(void);
 
 int venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *window, uint32_t window_bytes);
+const char *venus_build_id(void);
 void venus_complete(uint32_t serial);
 uint32_t venus_capset(void *out);
 int venus_context_create(uint32_t ctx_id, const char *name, uint32_t nlen);
@@ -80,6 +82,14 @@ venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *wi
    wg_window_bytes = window_bytes;
    wg_submitted = venus_submitted;
    return vkr_renderer_init(VKR_RENDERER_THREAD_SYNC | VKR_RENDERER_ASYNC_FENCE_CB, &callbacks);
+}
+
+/* The driver's build ID (vk/gen.ts: a hash of vk/'s sources), a NUL-terminated string: the worker's shader store
+ * keeps entries of this build only (web/venus-cache.ts). */
+EXPORT const char *
+venus_build_id(void)
+{
+   return wg_build_id();
 }
 
 /* The VENUS capset into `out` (its size returned). */
