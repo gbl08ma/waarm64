@@ -3,7 +3,8 @@
 // sway (headless, pixman; the WSI's CPU path) reaching steady frames: a short run and a long one both finish, and the
 // frames between them come at a rate, drawn by the renderer's driver on the page's WebGPU device; vkcube's frames
 // presented on a sway that renders with GLES on virgl (the WSI's images shared into virgl's textures); and, with
-// images/vkframes/build.sh's disk, vkcube's capture replayed on the device and its frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
+// images/vkframes/build.sh's disk, its captures (vkcube, vkmark's scenes, vkQuake) replayed on the device and their
+// frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
 // the dev VM), as without the image or the renderer. In scripts/ci-debian.sh, ~1.5 min.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -15,7 +16,7 @@ import { withDebianLock } from './debian-lock.ts';
 
 const root = new URL('..', import.meta.url).pathname;
 const IMAGE = 'target/images/debian-vulkan/disk.qcow2';
-// images/vkframes/build.sh's disk: vkcube's capture, replayed on the Venus device and compared with lavapipe's frames.
+// images/vkframes/build.sh's disk: its programs' captures, replayed on the Venus device and compared with lavapipe's frames.
 const FRAMES_DISK = 'target/vkframes/vkframes.ext4';
 const frames = existsSync(join(root, FRAMES_DISK));
 const missing = [IMAGE, 'target/vk/venus.wasm'].filter((f) => !existsSync(join(root, f)));
@@ -47,16 +48,16 @@ const PRESENT = `(${GL_ENV} timeout 60 vkcube --wsi wayland --c 1500 > /tmp/vkcu
 // The renderer once wrote memory 0's bottom 4 MiB through its stack (vk/README.md "The build"): the guest's kernel
 // oopsed as vkcube started.
 const OOPS = 'echo oopses $(dmesg | grep -c "Internal error")';
-// Of a frame's bytes, how many may differ from lavapipe's by more than 24 (of 255): rasterization and filtering
-// differ at edges (SwiftShader: ~0.03% of vkcube's; its front face inverted, ~12%).
-const FRAME_TOLERANCE = 0.002;
+// Of a frame's bytes, how many may differ from lavapipe's by more than 24 (of 255): each program's own, from the disk
+// (rasterization and filtering differ at edges; SwiftShader: ~0.03% of vkcube's, up to 0.1% of vkmark's, 1.7% of
+// vkQuake's; vkcube's front face inverted, ~12%).
 
 test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 25 * 60_000 }, (t) => withDebianLock(async () => {
   const out = mkdtempSync(join(tmpdir(), 'webpc-venus-'));
   let passed = false;
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/vulkan/venus-run.ts', out], {
-      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, IMAGE, REPLAY: frames ? 'vkcube' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
+      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, IMAGE, REPLAY: frames ? 'all' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
     });
     assert.equal(r.status, 0, `venus-run.ts failed (its output and the serial log: ${out}): ${(r.stdout + r.stderr).slice(-2000)}`);
     const res = JSON.parse(readFileSync(join(out, 'results.json'), 'utf8')) as Record<string, string>;
@@ -84,12 +85,17 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
     for (const s of shots) assert.ok(s.grey >= 40 && s.colours >= 100, `vkcube's frame isn't on sway's output: ${JSON.stringify(s)} (${res[PRESENT]})`);
     assert.match(res[PRESENT], /frames differ/, `vkcube's frames stopped reaching virgl: ${res[PRESENT]}`);
     if (frames) {
-      const replay = res['replay vkcube'] ?? '';
-      console.log(`vkcube's capture replayed: ${replay}`);
-      assert.match(replay, /replay 0/, `the replay failed: ${replay}`);
-      const checked = [...replay.matchAll(/frame (\d+) bytes (\d+) differ (\d+) over (\d+) max (\d+)/g)];
-      assert.ok(checked.length && !/missing/.test(replay), `frames missing: ${replay}`);
-      for (const [, f, bytes, , over] of checked) assert.ok(Number(over) <= Number(bytes) * FRAME_TOLERANCE, `frame ${f}: ${over} of ${bytes} bytes off by more than 24 from lavapipe's`);
+      const names = Object.keys(res).filter((k) => /^replay [^ ]+$/.test(k)).map((k) => k.slice(7));
+      for (const p of ['vkcube', 'vkmark-texture', 'vkquake']) assert.ok(names.includes(p), `${p} wasn't replayed (rebuild images/vkframes/build.sh's disk): ${names.join(' ')}`);
+      for (const name of names) {
+        const replay = res[`replay ${name}`] ?? '';
+        console.log(`${name}'s capture replayed: ${replay}`);
+        const m = /replay (\d+) fps \S+ tolerance ([\d.]+)/.exec(replay);
+        assert.ok(m && m[1] === '0', `${name}: the replay failed: ${replay}`);
+        const checked = [...replay.matchAll(/frame (\d+) bytes (\d+) differ (\d+) over (\d+) max (\d+)/g)];
+        assert.ok(checked.length && !/missing/.test(replay), `${name}: frames missing: ${replay}`);
+        for (const [, f, bytes, , over] of checked) assert.ok(Number(over) <= Number(bytes) * Number(m[2]), `${name}'s frame ${f}: ${over} of ${bytes} bytes off by more than 24 from lavapipe's`);
+      }
     }
     assert.match(res[OOPS] ?? '', /oopses 0/, `the guest kernel oopsed: ${res[OOPS]}`);
     passed = true;

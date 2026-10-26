@@ -55,6 +55,7 @@ enum wg_feature {
    WG_FEATURE_DEPTH_CLIP = 1 << 5,
    WG_FEATURE_DUAL_SOURCE = 1 << 6,
    WG_FEATURE_CLIP_DISTANCES = 1 << 7,
+   WG_FEATURE_INDIRECT_FIRST_INSTANCE = 1 << 8,
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 extern uint32_t wg_features, wg_max_immediates;
@@ -122,10 +123,21 @@ struct wg_device {
    struct list_head host_memories;
    /* Memories with a shared image bound (wg_device_memory.image). */
    struct list_head shared_memories;
+   /* Linear images bound to host-visible memory (wg_image.linear_link): the guest reads and writes their bytes there. */
+   struct list_head linear_images;
    /* Submits whose work isn't done yet, oldest first (struct wg_submit). */
    struct list_head pending;
    uint32_t serial;
+   /* Push constants past the immediates (wg_cmd.c): a uniform buffer the draws read at dynamic offsets, written from
+    * `push_data` before each submit. */
+   uint32_t push_buffer;
+   uint8_t *push_data;
+   uint32_t push_used;
+   uint32_t fan_indices;   /* wg_fan_indices */
 };
+#define WG_PUSH_BUFFER_SIZE (1u << 20)
+#define WG_FAN_VERTICES 65536
+uint32_t wg_fan_indices(struct wg_device *dev);
 
 /* Memory: a GPU buffer (made at the first buffer bound to it, with every buffer usage: buffers alias by offset), and
  * for host-visible memory its bytes in memory 0 (vkr's storage, or the window while its blob is mapped:
@@ -164,7 +176,13 @@ struct wg_image {
    const struct wg_texture_format *fmt;
    uint32_t tex;
    bool shared;     /* dma-buf memory or a DRM modifier: a WSI image the virgl renderer may sample */
+   /* A linear image in host-visible memory, on the device's linear_images: its texture is loaded from the memory at
+    * each submit's start and stored back at its end (wg_cmd.c), so the guest's maps see it. */
+   bool linear_host;
+   struct list_head linear_link;
 };
+/* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
+void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);
 
 /* A view as Vulkan made it (`view`: sampled or storage), and as an attachment (`att`: one level, one layer, 2D). */
 struct wg_image_view {
@@ -172,6 +190,7 @@ struct wg_image_view {
    const struct wg_texture_format *fmt;
    uint32_t view;
    uint32_t att;
+   int32_t slice;   /* a 3D image's: the attachment is its level's 3D view, drawn into at this depth slice (else -1) */
 };
 
 struct wg_buffer_view {
@@ -181,6 +200,7 @@ struct wg_buffer_view {
 struct wg_sampler {
    struct vk_sampler vk;
    uint32_t id;
+   uint32_t nearest;   /* its twin with nearest filters, for unfilterable views (0: it is one) */
    bool compare;
 };
 
@@ -211,7 +231,9 @@ struct wg_descriptor_set {
    struct wg_descriptor_set_layout *layout;
    struct list_head link;   /* its pool's */
    uint32_t version;        /* bumped by each update */
-   /* Bind groups made of it, by bind group layout, for the version they were made of. */
+   uint32_t uid;            /* the set's own number, never reused */
+   /* Bind groups made of it (and of the sets after it in group 3: their versions hashed), by bind group layout (its
+    * uid), for the version they were made of. */
    struct { uint32_t bgl, version, group; } groups[WG_SET_GROUPS];
    uint32_t next_group;
    struct wg_descriptor slots[];
@@ -229,17 +251,35 @@ void wg_descriptor_write(struct wg_descriptor_set *set, const VkWriteDescriptorS
 void wg_descriptor_write_template(struct wg_descriptor_set *set, const struct vk_descriptor_update_template *t,
                                   const void *data);
 
+/* The sets a bind group holds at most: sets 3 and up share group 3. */
+#define WG_GROUP_SETS (WGSL_MAX_SETS - WGSL_MAX_GROUPS + 1)
+#define WG_DYNAMIC_PUSH (-2)
 /* What a pipeline's shaders share: its bind group layouts and pipeline layout (from the resources both stages declare)
  * and, for graphics, its render pipelines by the state WebGPU bakes into them. */
 struct wg_program {
    uint32_t refs;
-   uint32_t bgl[WGSL_MAX_SETS];
+   uint32_t bgl[WGSL_MAX_GROUPS];
+   uint32_t bgl_uid[WGSL_MAX_GROUPS]; /* never reused (ids are): what sets key their bind groups by */
    uint32_t layout;
-   uint32_t group_count;    /* sets used: groups 0 .. group_count - 1 are set */
+   uint32_t group_count;    /* groups 0 .. group_count - 1 are set */
+   uint32_t set_count;      /* the pipeline layout's */
+   uint8_t set_group[WGSL_MAX_SETS];
+   uint32_t set_base[WGSL_MAX_SETS];                   /* its first slot in its group */
    uint32_t resource_count;
    struct wgsl_resource resources[WGSL_MAX_RESOURCES]; /* by group, then binding */
-   int16_t dynamic[WGSL_MAX_RESOURCES];                /* the slot's dynamic index in its set, or -1 */
+   int16_t dynamic[WGSL_MAX_RESOURCES];                /* the slot's dynamic index in its set, -1, or WG_DYNAMIC_PUSH */
+   int8_t res_set[WGSL_MAX_RESOURCES];                 /* the set a resource is of (-1: the push constants') */
    uint32_t immediate_size;
+   uint32_t push_ubo_size;  /* push constants read from the device's push buffer */
+   uint32_t push_group;     /* a group 3 of the push buffer alone (no set there) */
+   uint8_t vis[WGSL_MAX_RESOURCES];                    /* the stages that see each resource */
+   uint32_t pair_count;
+   uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
+   uint32_t compute_module;
+   /* Variants of the program for views the shader didn't type (wg_program_variant): textures declared filterable
+    * float bound to depth or unfilterable views, by a mask of those resources; a base's list, through `variants`. */
+   uint64_t mask;
+   struct wg_program *variants;
    uint32_t compute;        /* a compute pipeline */
    struct hash_table *pipelines;
 };
@@ -256,6 +296,9 @@ extern const struct vk_device_shader_ops wg_device_shader_ops;
 void wg_cmd_bind_shaders(struct vk_command_buffer *cmd, uint32_t count, const mesa_shader_stage *stages,
                          struct vk_shader **const shaders);
 void wg_program_unref(struct wg_program *p);
+/* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
+ * samplers they're sampled with as non-filtering; made at its first use, kept with the program. */
+struct wg_program *wg_program_variant(struct wg_program *p, uint64_t mask);
 
 /* The state a render pipeline is made with (wg_cmd.c fills it at each draw; zeroed whole so it hashes as bytes). */
 struct wg_pipeline_key {
@@ -285,6 +328,17 @@ struct wg_pipeline_key {
 };
 
 uint32_t wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *key);
+/* WebGPU's vertex buffers for a draw: Vulkan's binding b is slot b, except that an attribute reaching past its
+ * binding's stride (Vulkan allows offsets up to maxVertexInputAttributeOffset, WebGPU wants offset + size within the
+ * stride) reads a slot of its own, a free one, bound to the same buffer `base` bytes further. */
+struct wg_vertex_slots {
+   uint32_t used;           /* slots */
+   uint8_t binding[8];      /* by slot: the Vulkan binding */
+   uint32_t base[8];        /* by slot: bytes past the binding's offset */
+   uint8_t slot[32];        /* by attribute location */
+   uint32_t offset[32];     /* by attribute location: its offset in its slot */
+};
+void wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vertex_slots *out);
 
 struct wg_query_pool {
    struct vk_query_pool vk;
@@ -341,14 +395,15 @@ struct wg_cmd_buffer {
    bool have_key;
    uint32_t emitted; /* WG_EMIT_* bits valid */
    uint8_t last_dyn[64];
-   struct wg_descriptor_set *last_sets[2][WGSL_MAX_SETS];
-   uint32_t last_bgl[2][WGSL_MAX_SETS];
-   uint32_t last_dynamic[2][WGSL_MAX_SETS][32];
+   struct wg_descriptor_set *last_sets[2][WGSL_MAX_GROUPS][WG_GROUP_SETS];
+   uint32_t last_bgl[2][WGSL_MAX_GROUPS];
+   uint32_t last_dynamic[2][WGSL_MAX_GROUPS][32];
    uint8_t last_push[256];
    uint32_t last_push_size;
    struct wg_op_vb last_vb[8];
    struct wg_op_ib last_ib;
    struct wg_shader *last_compute;
+   struct wg_program *last_program[2];
 };
 
 VK_DEFINE_HANDLE_CASTS(wg_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTANCE)

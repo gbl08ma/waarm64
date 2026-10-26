@@ -73,11 +73,12 @@ struct op_dyn {
    uint32_t stencil_ref;
 };
 
+/* A bind group: the sets of its group (group 3 holds sets 3 and up), by their index from the group's first. */
 struct op_bind {
    uint8_t compute, group;
    uint16_t offset_count;
    struct wg_program *program;
-   struct wg_descriptor_set *set;
+   struct wg_descriptor_set *sets[WG_GROUP_SETS];
    uint32_t offsets[32];
 };
 
@@ -173,6 +174,7 @@ forget(struct wg_cmd_buffer *cmd)
    memset(cmd->last_bgl, 0, sizeof(cmd->last_bgl));
    cmd->last_push_size = ~0u;
    cmd->last_compute = NULL;
+   memset(cmd->last_program, 0, sizeof(cmd->last_program));
    cmd->emitted = 0;
 }
 
@@ -474,6 +476,8 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
                   c->float32[3]);
       wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":%s", i ? "," : "", v->att,
                      partial && clear ? "load" : load_op(a->loadOp), store_op(a->storeOp), value);
+      if (v->slice >= 0)
+         wg_json_printf(&j, ",\"depthSlice\":%d", v->slice);
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
       if (r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE)
          wg_json_printf(&j, ",\"resolveTarget\":%u", r->att);
@@ -601,15 +605,20 @@ record_sets(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
    uint32_t k = 0;
    for (uint32_t g = 0; g < p->group_count; g++) {
-      struct op_bind b = { .compute = point, .group = g, .program = p, .set = cmd->sets[point][g].set };
+      struct op_bind b = { .compute = point, .group = g, .program = p };
+      for (uint32_t s = g; s < p->set_count && s - g < WG_GROUP_SETS; s++)
+         if (p->set_group[s] == g)
+            b.sets[s - g] = cmd->sets[point][s].set;
+      /* The push constants' offset is the replay's (WG_DYNAMIC_PUSH: a placeholder here). */
       for (; k < p->resource_count && p->resources[k].group == g; k++)
-         if (p->dynamic[k] >= 0 && b.offset_count < 32)
-            b.offsets[b.offset_count++] = cmd->sets[point][g].dynamic[p->dynamic[k]];
-      if (cmd->last_sets[point][g] == b.set && cmd->last_bgl[point][g] == p->bgl[g] &&
+         if (p->dynamic[k] != -1 && b.offset_count < 32)
+            b.offsets[b.offset_count++] =
+               p->dynamic[k] >= 0 ? cmd->sets[point][p->res_set[k]].dynamic[p->dynamic[k]] : 0;
+      if (!memcmp(cmd->last_sets[point][g], b.sets, sizeof(b.sets)) && cmd->last_bgl[point][g] == p->bgl_uid[g] &&
           !memcmp(cmd->last_dynamic[point][g], b.offsets, b.offset_count * 4))
          continue;
-      cmd->last_sets[point][g] = b.set;
-      cmd->last_bgl[point][g] = p->bgl[g];
+      memcpy(cmd->last_sets[point][g], b.sets, sizeof(b.sets));
+      cmd->last_bgl[point][g] = p->bgl_uid[g];
       memcpy(cmd->last_dynamic[point][g], b.offsets, b.offset_count * 4);
       emit(cmd, OP_BIND, &b, offsetof(struct op_bind, offsets) + b.offset_count * 4);
    }
@@ -618,7 +627,7 @@ record_sets(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 static void
 record_push(struct wg_cmd_buffer *cmd, struct wg_program *p)
 {
-   const uint32_t size = MIN2(p->immediate_size, sizeof(cmd->push));
+   const uint32_t size = MIN2(MAX2(p->immediate_size, p->push_ubo_size), sizeof(cmd->push));
    if (!size || (size == cmd->last_push_size && !memcmp(cmd->last_push, cmd->push, size)))
       return;
    cmd->last_push_size = size;
@@ -634,6 +643,26 @@ buffer_gpu(struct wg_buffer *b)
    return b && b->mem ? wg_memory_buffer(b->mem) : 0;
 }
 
+/* The program to draw or dispatch with: a variant where a texture the shader declared filterable float is bound to a
+ * view WebGPU can't filter (a depth view, r32float without float32-filterable). */
+static struct wg_program *
+program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
+{
+   uint64_t mask = 0;
+   for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
+      const struct wgsl_resource *r = &p->resources[k];
+      const int s = p->res_set[k];
+      if (r->kind != WGSL_TEXTURE || r->sample != WGSL_SAMPLE_FLOAT || r->multisampled || s < 0)
+         continue;
+      const struct wg_descriptor_set *set = cmd->sets[point][s].set;
+      const uint32_t slot = r->binding / 2 - p->set_base[s];
+      const struct wg_image_view *view = set && slot < set->layout->slot_count ? set->slots[slot].view : NULL;
+      if (view && !wg_format_filterable(view->fmt))
+         mask |= 1ull << k;
+   }
+   return mask ? wg_program_variant(p, mask) : p;
+}
+
 /* Whether a draw may go ahead (false: it draws nothing), its state recorded. */
 static bool
 record_draw(struct wg_cmd_buffer *cmd, bool indexed)
@@ -644,19 +673,23 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
       return false;
    if (dyn->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK && dyn->ia.primitive_topology >= 3)
       return false;
-   struct wg_program *p = vs->program;
+   struct wg_program *base = vs->program, *p = program_for(cmd, 0, base);
 
    struct wg_pipeline_key k;
    memset(&k, 0, sizeof(k));
    k.vs = vs;
-   k.fs = fs && fs->program == p ? fs : NULL;
+   k.fs = fs && fs->program == base ? fs : NULL;
    k.topology = dyn->ia.primitive_topology;
    if (indexed && (k.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP ||
                    k.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) && dyn->ia.primitive_restart_enable)
       k.strip_index = cmd->ib_type == VK_INDEX_TYPE_UINT32 ? 2 : 1;
    k.front_face = dyn->rs.front_face == VK_FRONT_FACE_CLOCKWISE;
    k.cull = dyn->rs.cull_mode & 3;
-   k.unclipped = dyn->rs.depth_clamp_enable && (wg_features & WG_FEATURE_DEPTH_CLIP);
+   /* Depth clamped, or not clipped (VK_EXT_depth_clip_enable): WebGPU's unclippedDepth (which clamps to the viewport's
+    * range, as the attachment would anyway). */
+   const bool clip = dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_TRUE ||
+                     (dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP && !dyn->rs.depth_clamp_enable);
+   k.unclipped = (dyn->rs.depth_clamp_enable || !clip) && (wg_features & WG_FEATURE_DEPTH_CLIP);
    k.flip = dyn->vp.viewport_count && dyn->vp.viewports[0].height < 0;
    k.samples = cmd->pass.samples;
    k.sample_mask = dyn->ms.sample_mask == 0xffff ? 0xffffffffu : dyn->ms.sample_mask;
@@ -714,11 +747,12 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
          k.attr[a].offset = vi->attributes[a].offset;
       }
    }
-   if (!cmd->have_key || memcmp(&k, &cmd->last_key, sizeof(k))) {
+   if (!cmd->have_key || memcmp(&k, &cmd->last_key, sizeof(k)) || cmd->last_program[0] != p) {
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
       op->program = p;
       op->key = k;
       cmd->last_key = k;
+      cmd->last_program[0] = p;
       cmd->have_key = true;
    }
 
@@ -746,15 +780,14 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
    }
 
    record_sets(cmd, 0, p);
-   uint32_t used = 0;
-   u_foreach_bit(loc, vs->info.inputs)
-      if (k.attr[loc].format)
-         used |= 1u << k.attr[loc].binding;
-   u_foreach_bit(b, used) {
-      struct op_vb v = { .slot = b, .buffer = buffer_gpu(cmd->vbs[b].buffer) };
+   struct wg_vertex_slots slots;
+   wg_vertex_slots(&k, vs->info.inputs, &slots);
+   u_foreach_bit(b, slots.used) {
+      const uint32_t binding = slots.binding[b], base = slots.base[b];
+      struct op_vb v = { .slot = b, .buffer = buffer_gpu(cmd->vbs[binding].buffer) };
       if (v.buffer) {
-         v.offset = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
-         v.size = cmd->vbs[b].size;
+         v.offset = cmd->vbs[binding].buffer->offset + cmd->vbs[binding].offset + base;
+         v.size = cmd->vbs[binding].size > base ? cmd->vbs[binding].size - base : 0;
       }
       if (!(cmd->emitted & (1u << b)) || memcmp(&cmd->last_vb[b], &v, sizeof(v))) {
          emit(cmd, OP_VB, &v, sizeof(v));
@@ -785,6 +818,19 @@ wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances,
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    if (!vertices || !instances || !record_draw(cmd, false))
       return;
+   if (cmd->vk.dynamic_graphics_state.ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN) {
+      /* A fan (WebGPU has none) as a triangle list through the device's fan indices (0, 1, 2, 0, 2, 3, ...), from the
+       * first vertex as the base. */
+      struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
+      if (vertices < 3 || vertices > WG_FAN_VERTICES)
+         return;
+      struct op_ib ib = { .buffer = wg_fan_indices(dev), .wide = 1, .offset = 0, .size = (vertices - 2) * 12.0 };
+      emit(cmd, OP_IB, &ib, sizeof(ib));
+      cmd->emitted &= ~(1u << 8);
+      emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ (vertices - 2) * 3, instances, 0, (int32_t)first, first_instance },
+           sizeof(struct op_draw_indexed));
+      return;
+   }
    emit(cmd, OP_DRAW, (uint32_t[]){ vertices, instances, first, first_instance }, 16);
 }
 
@@ -835,10 +881,11 @@ record_dispatch(struct wg_cmd_buffer *cmd)
    struct wg_shader *cs = cmd->shaders[MESA_SHADER_COMPUTE];
    if (!cs || !cs->program || !cs->program->compute)
       return false;
-   struct wg_program *p = cs->program;
-   if (cmd->last_compute != cs) {
+   struct wg_program *p = program_for(cmd, 1, cs->program);
+   if (cmd->last_compute != cs || cmd->last_program[1] != p) {
       emit(cmd, OP_COMPUTE, &p, sizeof(p));
       cmd->last_compute = cs;
+      cmd->last_program[1] = p;
    }
    record_sets(cmd, 1, p);
    record_push(cmd, p);
@@ -928,7 +975,7 @@ copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct 
       struct op_copy_bt c = {
          .buffer = buffer_gpu(buffer), .bpr = bpr, .rows = rows, .tex = image->tex, .mip = r->imageSubresource.mipLevel,
          .x = r->imageOffset.x, .y = r->imageOffset.y, .z = is3d ? r->imageOffset.z : r->imageSubresource.baseArrayLayer + l,
-         .w = e.width, .h = e.height, .d = depth, .aspect = a, .block_h = f->bh, .offset = offset,
+         .w = DIV_ROUND_UP(e.width, f->bw) * f->bw, .h = DIV_ROUND_UP(e.height, f->bh) * f->bh, .d = depth, .aspect = a, .block_h = f->bh, .offset = offset,
       };
       if (op == OP_COPY_TB && host_mem(buffer)) {
          c.mem = buffer->mem;
@@ -976,7 +1023,9 @@ wg_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *info)
                                  .sy = r->srcOffset.y, .sz = s3 ? r->srcOffset.z : r->srcSubresource.baseArrayLayer,
                                  .dst = dst->tex, .dst_mip = r->dstSubresource.mipLevel, .dx = r->dstOffset.x,
                                  .dy = r->dstOffset.y, .dz = d3 ? r->dstOffset.z : r->dstSubresource.baseArrayLayer,
-                                 .w = r->extent.width, .h = r->extent.height, .d = layers,
+                                 .w = DIV_ROUND_UP(r->extent.width, src->fmt->bw) * src->fmt->bw,
+                                 .h = DIV_ROUND_UP(r->extent.height, src->fmt->bh) * src->fmt->bh,
+                                 .d = layers,
                                  .aspect = (src->fmt->flags & WG_FMT_DEPTH) && (src->fmt->flags & WG_FMT_STENCIL)
                                               ? (aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : aspect == VK_IMAGE_ASPECT_DEPTH_BIT ? 1 : 0)
                                               : 0 },
@@ -1234,11 +1283,12 @@ struct replay {
    enum { NONE, RENDER, COMPUTE } pass;
    uint32_t width, height;
    uint32_t pipeline, compute;
+   struct wg_program *program[2];
    struct op_dyn dyn;
    struct {
       uint32_t group, n;
       uint32_t offsets[32];
-   } groups[2][WGSL_MAX_SETS];
+   } groups[2][WGSL_MAX_GROUPS];
    uint32_t group_count[2];
    struct op_vb vb[8];
    uint32_t vb_mask;
@@ -1246,6 +1296,7 @@ struct replay {
    bool have_ib;
    uint8_t push[256];
    uint32_t push_size;
+   uint32_t push_offset; /* where in the device's push buffer the current push constants are (UINT32_MAX: none yet) */
    uint32_t dirty; /* RD_* */
 };
 
@@ -1276,28 +1327,103 @@ end_pass(struct replay *r)
    r->pass = NONE;
 }
 
+/* Bind groups released once the submit is encoded: empty groups (a set index no resource uses) are made per use, and
+ * a group a set no longer keeps may still be the replay's current one (its id mustn't be reused before then). */
+static struct util_dynarray released_groups;
+
+/* The device's fan indices: (0, i, i + 1) for each triangle of a fan of up to WG_FAN_VERTICES vertices. */
+uint32_t
+wg_fan_indices(struct wg_device *dev)
+{
+   if (!dev->fan_indices) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", (WG_FAN_VERTICES - 2) * 12, 0x10 | 0x8); /* INDEX | COPY_DST */
+      dev->fan_indices = wg_create_json(WG_KIND_BUFFER, &j);
+      uint32_t *idx = malloc((WG_FAN_VERTICES - 2) * 12);
+      for (uint32_t i = 0; i < WG_FAN_VERTICES - 2; i++)
+         idx[3 * i] = 0, idx[3 * i + 1] = i + 1, idx[3 * i + 2] = i + 2;
+      gpu_write(dev->fan_indices, 0, idx, (WG_FAN_VERTICES - 2) * 12);
+      free(idx);
+   }
+   return dev->fan_indices;
+}
+
+/* The device's push buffer (uniform, written before each submit), made at its first use. */
 static uint32_t
-bind_group(struct replay *r, const struct op_bind *b)
+push_buffer(struct wg_device *dev)
+{
+   if (!dev->push_buffer) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", WG_PUSH_BUFFER_SIZE, 0x40 | 0x8); /* UNIFORM | COPY_DST */
+      dev->push_buffer = wg_create_json(WG_KIND_BUFFER, &j);
+      dev->push_data = malloc(WG_PUSH_BUFFER_SIZE);
+   }
+   return dev->push_buffer;
+}
+
+/* A resource's descriptor in an op_bind's sets, or NULL. */
+static const struct wg_descriptor *
+bound_descriptor(const struct op_bind *b, const struct wg_program *p, uint32_t k)
+{
+   const int s = p->res_set[k];
+   if (s < 0 || s < b->group || s - b->group >= WG_GROUP_SETS)
+      return NULL;
+   const struct wg_descriptor_set *set = b->sets[s - b->group];
+   const uint32_t slot = p->resources[k].binding / 2 - p->set_base[s];
+   return set && slot < set->layout->slot_count ? &set->slots[slot] : NULL;
+}
+
+static uint32_t
+bind_group(struct replay *r, const struct op_bind *b, bool *transient)
 {
    struct wg_program *p = b->program;
-   struct wg_descriptor_set *set = b->set;
-   const uint32_t bgl = p->bgl[b->group];
-   if (set)
+   const uint32_t bgl = p->bgl[b->group], bgl_uid = p->bgl_uid[b->group];
+   *transient = false;
+   /* Kept on the group's first set, for its version (or, with more sets, for all of theirs hashed). */
+   struct wg_descriptor_set *holder = NULL;
+   uint32_t version = 0, sets = 0;
+   for (uint32_t i = 0; i < WG_GROUP_SETS; i++) {
+      if (!b->sets[i])
+         continue;
+      holder = holder ? holder : b->sets[i];
+      sets++;
+   }
+   if (sets == 1) {
+      version = holder->version;
+   } else if (sets > 1) {
+      uint32_t words[2 * WG_GROUP_SETS] = { 0 };
+      for (uint32_t i = 0; i < WG_GROUP_SETS; i++)
+         if (b->sets[i])
+            words[2 * i] = b->sets[i]->uid, words[2 * i + 1] = b->sets[i]->version;
+      version = _mesa_hash_data(words, sizeof(words)) | 1u << 31;
+   } else if (p->push_ubo_size && b->group == WGSL_MAX_GROUPS - 1 && p->push_group) {
+      return p->push_group;
+   }
+   uint32_t group = 0;
+   if (holder)
       for (uint32_t i = 0; i < WG_SET_GROUPS; i++)
-         if (set->groups[i].group && set->groups[i].bgl == bgl && set->groups[i].version == set->version)
+         if (holder->groups[i].group && holder->groups[i].bgl == bgl_uid && holder->groups[i].version == version) {
+            group = holder->groups[i].group;
             goto found;
+         }
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"layout\":%u,\"entries\":[", bgl);
-   bool first = true;
+   bool first = true, push_only = b->group == WGSL_MAX_GROUPS - 1 && p->push_ubo_size;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *res = &p->resources[k];
-      if (res->group != b->group || !set)
+      if (res->group != b->group)
          continue;
-      const uint32_t slot = res->binding / 2;
-      if (slot >= set->layout->slot_count)
-         continue;
-      const struct wg_descriptor *d = &set->slots[slot];
       const char *sep = first ? "" : ",";
+      if (p->dynamic[k] == WG_DYNAMIC_PUSH) {
+         wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":%u}", sep, res->binding,
+                        push_buffer(r->dev), align(p->push_ubo_size, 16));
+         first = false;
+         continue;
+      }
+      push_only = false;
+      const struct wg_descriptor *d = bound_descriptor(b, p, k);
+      if (!d)
+         continue;
       switch (res->kind) {
       case WGSL_UNIFORM:
       case WGSL_STORAGE:
@@ -1317,7 +1443,8 @@ bind_group(struct replay *r, const struct op_bind *b)
       case WGSL_SAMPLER_COMPARE:
          if (!d->sampler)
             continue;
-         wg_json_printf(&j, "%s{\"binding\":%u,\"sampler\":%u}", sep, res->binding, d->sampler->id);
+         wg_json_printf(&j, "%s{\"binding\":%u,\"sampler\":%u}", sep, res->binding,
+                        res->nonfiltering && d->sampler->nearest ? d->sampler->nearest : d->sampler->id);
          break;
       default:
          if (!d->view)
@@ -1328,15 +1455,22 @@ bind_group(struct replay *r, const struct op_bind *b)
       first = false;
    }
    wg_json_printf(&j, "]}");
-   const uint32_t group = wg_create_json(WG_KIND_BIND_GROUP, &j);
-   if (!set)
-      return group; /* an empty group: the worker keeps it by its id until released below at the next one */
+   group = wg_create_json(WG_KIND_BIND_GROUP, &j);
+   if (!holder) {
+      if (push_only) {
+         p->push_group = group;
+         return group;
+      }
+      *transient = true; /* an empty group: released once the submit is encoded */
+      return group;
+   }
    {
-      const uint32_t i = set->next_group++ % WG_SET_GROUPS;
-      wg_id_release(set->groups[i].group);
-      set->groups[i].group = group;
-      set->groups[i].bgl = bgl;
-      set->groups[i].version = set->version;
+      const uint32_t i = holder->next_group++ % WG_SET_GROUPS;
+      if (holder->groups[i].group)
+         util_dynarray_append_typed(&released_groups, uint32_t, holder->groups[i].group);
+      holder->groups[i].group = group;
+      holder->groups[i].bgl = bgl_uid;
+      holder->groups[i].version = version;
    }
 found:
    /* What shaders may write in host-visible memory is read back after the submit. */
@@ -1344,18 +1478,13 @@ found:
       const struct wgsl_resource *res = &p->resources[k];
       if (res->group != b->group || res->kind != WGSL_STORAGE)
          continue;
-      const struct wg_descriptor *d = &set->slots[res->binding / 2];
-      if (d->buffer && d->buffer->mem && d->buffer->mem->host)
+      const struct wg_descriptor *d = bound_descriptor(b, p, k);
+      if (d && d->buffer && d->buffer->mem && d->buffer->mem->host)
          readback(r, d->buffer->mem, d->buffer->offset + d->offset, vk_buffer_range(&d->buffer->vk, d->offset, d->range));
    }
-   for (uint32_t i = 0; i < WG_SET_GROUPS; i++)
-      if (set->groups[i].group && set->groups[i].bgl == bgl && set->groups[i].version == set->version)
-         return set->groups[i].group;
-   return 0;
+   return group;
 }
 
-/* Empty groups (a set index no resource uses) are made per use and released once the submit is encoded. */
-static struct util_dynarray empty_groups;
 
 static void
 apply(struct replay *r, uint32_t point)
@@ -1384,11 +1513,36 @@ apply(struct replay *r, uint32_t point)
    } else if (r->dirty & RD_PIPELINE) {
       gpu_set_pipeline(r->compute);
    }
+   /* Push constants past the immediates: this draw's in a new place of the push buffer, its group's last dynamic
+    * offset (the push buffer's binding is group 3's last). */
+   const struct wg_program *p = r->program[point];
+   if (p && p->push_ubo_size && p->group_count == WGSL_MAX_GROUPS) {
+      if ((r->dirty & (RD_PUSH | RD_PIPELINE)) || r->push_offset == UINT32_MAX) {
+         struct wg_device *dev = r->dev;
+         push_buffer(dev);
+         const uint32_t size = align(p->push_ubo_size, 16);
+         if (dev->push_used + size > WG_PUSH_BUFFER_SIZE) {
+            static bool told;
+            if (!told)
+               fprintf(stderr, "wg: a submit's push constants overflow the push buffer\n");
+            told = true;
+            dev->push_used = 0;
+         }
+         r->push_offset = dev->push_used;
+         memcpy(dev->push_data + r->push_offset, r->push, MIN2(size, sizeof(r->push)));
+         dev->push_used = align(dev->push_used + size, 256);
+         r->dirty |= RD_GROUPS;
+      }
+      const uint32_t n = r->groups[point][WGSL_MAX_GROUPS - 1].n;
+      if (n)
+         r->groups[point][WGSL_MAX_GROUPS - 1].offsets[n - 1] = r->push_offset;
+   }
    if (r->dirty & RD_GROUPS)
       for (uint32_t g = 0; g < r->group_count[point]; g++)
          gpu_set_bind_group(g, r->groups[point][g].group, r->groups[point][g].offsets, r->groups[point][g].n);
-   if ((r->dirty & RD_PUSH) && r->push_size)
-      gpu_set_immediates(0, r->push, r->push_size);
+   const uint32_t immediates = p ? MIN2(r->push_size, p->immediate_size) : r->push_size;
+   if ((r->dirty & (RD_PUSH | RD_PIPELINE)) && immediates)
+      gpu_set_immediates(0, r->push, immediates);
    r->dirty = 0;
 }
 
@@ -1427,7 +1581,8 @@ copy_bt_replay(const struct op_copy_bt *c, bool to_texture)
    void (*copy)(uint32_t, double, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
                 uint32_t, uint32_t, uint32_t) = to_texture ? gpu_copy_bt : gpu_copy_tb;
    const uint32_t block_rows = DIV_ROUND_UP(c->h, c->block_h);
-   if (c->bpr % 256 == 0 || (block_rows <= 1 && c->d == 1)) {
+   /* Depth and stencil copies go whole: WebGPU copies only whole subresources of them (the worker realigns rows). */
+   if (c->bpr % 256 == 0 || (block_rows <= 1 && c->d == 1) || c->aspect) {
       copy(c->buffer, c->offset, c->bpr, c->rows, c->tex, c->mip, c->x, c->y, c->z, c->w, c->h, c->d, c->aspect);
       return;
    }
@@ -1472,6 +1627,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_PIPELINE: {
          const struct op_pipeline *op = d;
          r->pipeline = wg_render_pipeline(op->program, &op->key);
+         r->program[0] = op->program;
          r->dirty |= RD_PIPELINE;
          r->group_count[0] = op->program->group_count;
          break;
@@ -1479,6 +1635,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_COMPUTE: {
          struct wg_program *prog = *(struct wg_program *const *)d;
          r->compute = prog->compute;
+         r->program[1] = prog;
          r->group_count[1] = prog->group_count;
          r->dirty |= RD_PIPELINE;
          break;
@@ -1489,9 +1646,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       case OP_BIND: {
          const struct op_bind *b = d;
-         uint32_t group = bind_group(r, b);
-         if (!b->set)
-            util_dynarray_append_typed(&empty_groups, uint32_t, group);
+         bool transient;
+         uint32_t group = bind_group(r, b, &transient);
+         if (transient)
+            util_dynarray_append_typed(&released_groups, uint32_t, group);
          r->groups[b->compute][b->group].group = group;
          r->groups[b->compute][b->group].n = b->offset_count;
          memcpy(r->groups[b->compute][b->group].offsets, b->offsets, b->offset_count * 4);
@@ -1693,6 +1851,33 @@ upload(struct wg_device *dev)
       gpu_dirty(pages, 0); /* nothing mapped: the watch is still taken, so the next look starts here */
 }
 
+/* Linear images in host-visible memory, whose bytes the guest maps: each level and layer loaded from the memory into
+ * the texture before a submit's commands (`load`) and stored back after them, read back with the submit. Every such
+ * image each submit: a guest rarely keeps many (dEQP's readbacks through a linear image, a texture written on the CPU). */
+static void
+linear_images(struct wg_device *dev, bool load, struct replay *r)
+{
+   list_for_each_entry (struct wg_image, image, &dev->linear_images, linear_link) {
+      const struct vk_image *vi = &image->vk;
+      const bool is3d = vi->image_type == VK_IMAGE_TYPE_3D;
+      for (uint32_t level = 0; level < vi->mip_levels; level++) {
+         const VkExtent3D e = vk_image_mip_level_extent(vi, level);
+         for (uint32_t layer = 0; layer < (is3d ? 1 : vi->array_layers); layer++) {
+            VkSubresourceLayout l;
+            wg_image_subresource(vi, level, layer, &l);
+            const VkDeviceSize at = image->offset + l.offset;
+            if (at + l.size > image->mem->size)
+               continue;
+            const uint32_t rows = DIV_ROUND_UP(e.height, image->fmt->bh);
+            (load ? gpu_copy_bt : gpu_copy_tb)(image->mem->gpu, (double)at, (uint32_t)l.rowPitch, rows, image->tex,
+                                               level, 0, 0, is3d ? 0 : layer, e.width, e.height, is3d ? e.depth : 1, 0);
+            if (!load)
+               readback(r, image->mem, at, l.size);
+         }
+      }
+   }
+}
+
 VkResult
 wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
 {
@@ -1708,21 +1893,30 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    for (uint32_t i = 0; i < submit->signal_count; i++)
       util_dynarray_append_typed(&s->signals, struct vk_sync_signal, submit->signals[i]);
 
+   /* Linear images in host-visible memory: their memory's buffer made first, so that upload() fills it. */
+   list_for_each_entry (struct wg_image, image, &dev->linear_images, linear_link)
+      wg_memory_buffer(image->mem);
    upload(dev);
    gpu_encoder();
-   struct replay r = { .dev = dev, .submit = s };
+   linear_images(dev, true, NULL);
+   struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX };
+   dev->push_used = 0;
    for (uint32_t i = 0; i < submit->command_buffer_count; i++) {
       struct wg_cmd_buffer *cmd = container_of(submit->command_buffers[i], struct wg_cmd_buffer, vk);
       replay(&r, cmd);
       end_pass(&r);
       r.dirty = RD_ALL;
    }
+   linear_images(dev, false, &r);
    util_dynarray_foreach (&s->readbacks, struct readback, b)
       b->slot = gpu_readback(b->mem->gpu, b->offset, b->size);
+   /* Ordered after the earlier submits' work and before this one's (queue.writeBuffer). */
+   if (dev->push_used)
+      gpu_write(dev->push_buffer, 0, dev->push_data, dev->push_used);
    gpu_submit(s->serial);
-   util_dynarray_foreach (&empty_groups, uint32_t, g)
+   util_dynarray_foreach (&released_groups, uint32_t, g)
       wg_id_release(*g);
-   util_dynarray_clear(&empty_groups);
+   util_dynarray_clear(&released_groups);
    list_addtail(&s->link, &dev->pending);
    return VK_SUCCESS;
 }

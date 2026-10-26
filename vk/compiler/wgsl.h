@@ -7,8 +7,10 @@
  * operation bitcasts its sources to the types it works on and its result back, so no type inference is needed and
  * no WGSL const-expression can overflow or produce a NaN (constants are vars too). Descriptors become bindings of
  * their own: a Vulkan (set, binding, element) is a slot of its set's layout (`wgsl_layout`), and slot s is WGSL
- * @group(set) @binding(2s) for the resource, 2s + 1 for a combined image-sampler's sampler. Push constants are
- * immediates. Varyings are vec4s by location, typed and interpolated as the fragment shader reads them (a vertex
+ * @group(g) @binding(2(base + s)) for the resource, 2(base + s) + 1 for a combined image-sampler's sampler, where the
+ * set's layout says its group g and its first slot base there (WebGPU has 4 bind groups; the driver puts sets 3 and
+ * up together in group 3). Push constants are immediates, or a uniform buffer at @group(3)
+ * @binding(WGSL_PUSH_BINDING) when they're larger than the device's immediates. Varyings are vec4s by location, typed and interpolated as the fragment shader reads them (a vertex
  * shader is printed knowing its fragment shader's inputs: `wgsl_varyings`).
  */
 #pragma once
@@ -18,11 +20,17 @@
 
 #include "nir.h"
 
-#define WGSL_MAX_SETS 4
+#define WGSL_MAX_SETS 8
+#define WGSL_MAX_GROUPS 4
 #define WGSL_MAX_RESOURCES 128
+#define WGSL_MAX_PAIRS 64
+/* The push constants' uniform buffer's binding in group 3 (WebGPU's bindings stay under 1000). */
+#define WGSL_PUSH_BINDING 998
 
-/* A set layout as the compiler needs it: each binding's first slot (-1 for none) and element count. */
+/* A set layout as the compiler needs it: its bind group and first slot there, each binding's first slot in the set
+ * (-1 for none) and element count. */
 struct wgsl_set_layout {
+   uint32_t group, base;
    uint32_t binding_count;
    const int32_t *first; /* by binding number */
    const uint32_t *count;
@@ -31,7 +39,7 @@ struct wgsl_set_layout {
 struct wgsl_layout {
    uint32_t set_count;
    struct wgsl_set_layout sets[WGSL_MAX_SETS];
-   /* The push constants' size in bytes (0: none), read through immediates. */
+   /* The push constants' size in bytes (0: none). */
    uint32_t push_size;
 };
 
@@ -62,6 +70,7 @@ struct wgsl_resource {
    uint8_t sample;        /* textures: enum wgsl_sample */
    bool multisampled;
    bool atomic;           /* storage buffers: declared of atomics */
+   bool nonfiltering;     /* samplers: bound as non-filtering (the driver's, for unfilterable views) */
    uint8_t access;        /* storage textures */
    uint16_t format;       /* storage textures: enum pipe_format */
    uint32_t size;         /* uniform buffers: the bytes declared */
@@ -83,7 +92,8 @@ struct wgsl_varyings {
 struct wgsl_info {
    uint32_t resource_count;
    struct wgsl_resource resources[WGSL_MAX_RESOURCES];
-   uint32_t immediate_size;     /* bytes of push constants read */
+   uint32_t immediate_size;     /* bytes of push constants read as immediates */
+   uint32_t push_ubo_size;      /* or through the uniform buffer (resource @group(3) @binding(WGSL_PUSH_BINDING)) */
    /* Vertex: the attributes read (by location) and their WGSL types; fragment: the colour outputs written. */
    uint32_t inputs;
    uint8_t input_base[32];
@@ -94,6 +104,9 @@ struct wgsl_info {
    uint8_t clip_distance_count;
    uint16_t workgroup[3];
    struct wgsl_varyings varyings; /* fragment: what it reads; vertex: what it writes */
+   /* The textures sampled with each sampler, as (texture, sampler) pairs of group << 16 | binding. */
+   uint32_t pair_count;
+   uint32_t pairs[WGSL_MAX_PAIRS][2];
 };
 
 /* The NIR options every stage is compiled with, and spirv_to_nir's. */
@@ -112,9 +125,10 @@ bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, 
 void wgsl_link(nir_shader *vs, nir_shader *fs);
 
 /* Prints a lowered shader; a vertex shader's outputs follow `fs` (its fragment shader's inputs; NULL: as written).
- * Returns ralloc'd text owned by `mem_ctx`, or NULL with `error`. */
-char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, struct wgsl_info *info, char *error,
-                 size_t error_size);
+ * Push constants past `max_immediates` bytes are read from the uniform buffer. Returns ralloc'd text owned by
+ * `mem_ctx`, or NULL with `error`. */
+char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates,
+                 struct wgsl_info *info, char *error, size_t error_size);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);

@@ -556,6 +556,52 @@ alternated rounds a way, `?gpu=vkreadback` forcing the readback; JSON and screen
   the guest more (its fences come later: vkcube's CPU a frame +0.5 to +1.1 ms, rounds not overlapping); it stays as
   the way of software rendering, where nothing else works.
 
+## VK2 L5: vkmark and vkQuake right, dEQP-VK, frame times on the Mac
+
+**2026-10-26.** JSON in `results/vk2/l5/`.
+
+**Frames** (vk/README.md "Checking frames"): vkmark's 13 scenes and vkQuake (LibreQuake's `start`, frames 200 to 230)
+captured on lavapipe through the Venus device's own profile, replayed in the tests' Debian on the page and compared
+with lavapipe's: every vkmark scene within 0.1% of a frame's bytes off by more than 24 on SwiftShader (dev VM, Chromium
+153.0.8010.52) and on the M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2); vkQuake 1.7% on both, the same
+counts (systematic, not identified: backlog). vkQuake needed five things of the driver: a fifth descriptor set, push
+constants of 128 bytes, a dynamically indexed array of textures, a compute shader whose barriers sit in loops (WGSL's
+uniformity analysis), and depth views of a D32S8 image; before them its frames were black.
+
+| The replay's frames a second (GFXReconstruct's, ~30 frames; offscreen) | SwiftShader | M4 |
+| --- | --- | --- |
+| vkcube | 59 | 69 |
+| vkmark's scenes | 66–144 (desktop the least, clear the most) | 60–121 |
+| vkQuake | 14 | 43 |
+
+vkmark's rates are the same on both: the guest and Venus's round trips bound them, not the GPU; vkQuake's, three
+times higher on the M4, are the GPU's.
+
+**VK0's scene on the M4, VK2's renderer (it draws now) against virgl** (`guest.ts`, the desktop guest, 4 vCPUs, two
+alternated rounds a way; ms a frame, medians of 5 samples, and the process's CPU a frame):
+
+| | Venus, VK2 (rounds) | virgl (rounds) | Venus, VK1 (null renderer, 2026-10-25) |
+| --- | --- | --- | --- |
+| 1 fish: frame / CPU | 0.93, 1.06 / 0.50, 0.56 | 1.45, 1.43 / 1.40, 1.32 | 0.46 / 0.44 |
+| 1,000 fish | 2.71, 2.53 / 1.70, 1.69 | 5.46, 4.83 / 3.42, 3.52 | 1.58 / 1.55 |
+| the toolkit, 2,000 quads | 0.90, 0.86 / 0.49, 0.46 | 3.60, 3.40 / 3.54, 3.34 | 0.43 / 0.41 |
+
+- **Venus with drawing stays ahead of virgl**: 1.4–1.9× less a frame and 2–7× less of the guest's CPU, the rounds
+  apart. Against VK1's null renderer the frame costs ~0.5 ms (1 fish, the toolkit) to ~1 ms (1,000 fish) more, the
+  host's work (WGSL pipelines made at the first draws, the submit's replay into WebGPU and its fence's way back); the
+  guest's CPU a frame moves by ≤ 0.15 ms (+10%), its fences later. A cross-session comparison (VK1's rounds are a day
+  older; the host moves runs by up to ~8%).
+
+**dEQP-VK** (VK-GL-CTS vulkan-cts-1.4.7.0, deqp-vk in Arch Linux with Venus's guest driver, Mesa 26.2.5, on SwiftShader):
+samples of the direct set's groups, ~20,000 cases: 4,278 pass, 665 fail, 5 crash, the rest are unsupported (the
+features, formats and extensions the device doesn't offer). `tests/deqp/vk.txt` holds 1,471 of the passing ones (the
+larger groups thinned evenly, the 20-second format-property queries dropped); all 2,468 of a first draft passed in one
+run of 474 s. The failures by cause: docs/backlog.md "The Vulkan driver's gaps". Fixed on the way: a texture-sampler
+pair's sample type for depth views (program variants), linear images in host-visible memory (dEQP reads every colour
+result through one), triangle fans, depth clip off, 1D images, compressed sizes in whole blocks, 3D slices as
+attachments, attributes past their stride, depth and stencil copies (realigned or skipped instead of invalidating the
+submit), `indirect-first-instance`, NaN clear values, and bind groups cached by layout ids that WebGPU's ids reuse.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

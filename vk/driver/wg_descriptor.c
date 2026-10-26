@@ -162,7 +162,9 @@ wg_descriptor_set_create(struct wg_device *dev, struct wg_descriptor_set_layout 
                        VK_OBJECT_TYPE_DESCRIPTOR_SET);
    if (!set)
       return NULL;
+   static uint32_t uids;
    set->layout = layout;
+   set->uid = ++uids;
    vk_descriptor_set_layout_ref(&layout->vk);
    list_inithead(&set->link);
    for (uint32_t b = 0; b < layout->binding_count; b++)

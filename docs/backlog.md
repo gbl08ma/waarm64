@@ -511,15 +511,52 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   window); a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
-- **The Vulkan driver's gaps** (VK2 L2, vk/README.md "The driver"), each for when a program or dEQP-VK needs it:
-  occlusion queries (reported as passing: WebGPU's occlusion query sets, resolved at completion), timestamps (the
-  CPU's at replay; `timestamp-query`), depth and stencil blits, border colours and mirror-once (the nearest WebGPU
-  address mode), triangle fans (an index conversion), a view's sample type the shader didn't declare (a depth view
-  sampled without compare, an unfilterable float format with a filtering sampler: re-print the WGSL with that binding
-  typed, or `float32-filterable`), component swizzles (`texture-component-swizzle` where the browser has it), rendering
-  into 3D images and layered rendering, buffer copies whose offsets aren't multiples of 4 from device-local memory,
-  push constants past the device's immediates (a uniform), the pipeline cache across runs (`vk_shader` serialize), and
-  the caps from the adapter rather than the Mac profile (L7).
+- **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
+  dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
+  crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of
+  `tests/deqp/vk.txt`; the counts below are of the samples):
+  - **Copies WebGPU refuses**, skipped with a warning (the worker's `depthStencilCopy`): uploads into depth24plus's or
+    depth32float's depth (a draw writing `frag_depth` from the buffer would do it), any copy of depth24plus's depth
+    (D24 formats as depth32float, with a conversion of their buffer layout, or not advertised), copies of part of a
+    depth or stencil image, of multisampled images; copies between formats (Vulkan's size-compatible copies:
+    compressed ↔ uncompressed, a 32-bit format into another: a compute copy), integer resolves (a draw of sample 0).
+    GFXReconstruct's trimmed captures restore their depth images this way (vkQuake's first replayed frame).
+  - **Formats**: ASTC and ETC2 on SwiftShader fail sampling and copy tests in numbers (`texture.compressed`,
+    `texture.filtering.3d`, `.2d_array`: not looked into; the Mac's results are the ones to read first); 3D images
+    sampled through 2D views (`2D_ARRAY_COMPATIBLE`); D24 depth tests fail by one unit (depth24plus's precision);
+    3-component formats in images (`glsl.440.linkage` makes RGB32 attachments: `VK_ERROR_FORMAT_NOT_SUPPORTED`);
+    vertex strides that aren't multiples of 4 (WebGPU's); copy regions past a level's end (a few `copy_and_blit`).
+  - **Samplers**: border colours and mirror-once (the nearest WebGPU address mode), component swizzles
+    (`texture-component-swizzle` where the browser has it), unnormalized coordinates, integer textures sampled with
+    a sampler (fetched at clamp-to-edge whatever the sampler's address mode: the address modes as a program variant
+    would do the rest), LOD bias and min/max LOD clamps against WebGPU's.
+  - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
+    WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals), texel buffers
+    (43 stages; vkQuake's palettization: storage buffers and the format's decode, a variant per bound format),
+    fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
+    subgroup invocation ids (12, `subgroups`), `textureQueryLod` (9), dynamically indexed buffers and storage images,
+    16-bit values (`shader-f16`), image atomics, interpolation at an offset; derivatives in non-uniform control flow
+    (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
+    immediates (the push buffer is a 13th).
+  - **Queries**: occlusion queries are reported as passing (WebGPU's occlusion query sets need the pass's set at its
+    start: the pass's op patched when a query begins in it), timestamps are the CPU's at replay (`timestamp-query`).
+  - **Rendering**: stencil state per face (WebGPU has one reference and one pair of masks: about a third of
+    `pipeline.monolithic.stencil` fails), indexed triangle fans (non-indexed ones draw through the device's fan
+    indices), depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and
+    multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), render passes
+    resumed across command buffers (`renderpasses.dynamic_rendering.*resuming*`), vertex buffer offsets that aren't
+    multiples of 4, early fragment tests (`fragment_operations.early_fragment`), indexed indirect strips
+    (`draw.renderpass.indirect_draw.indexed*triangle_strip`, not looked into).
+  - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%
+    by more than 24, the same counts on SwiftShader and on the M4's Metal (so not the GPU's rasterization), its text
+    and grid edges the largest; to the eye the same, no bias. The tolerance is 3% meanwhile. Next: diff its passes
+    one at a time (GFXReconstruct's `--screenshots` of an earlier draw), suspects its screen effects' dithering and a
+    conversion's rounding.
+  - **Memory**: some `memory.binding` cases (aliasing and odd sizes) and two `memory` crashes (vkr's
+    `vkFreeMemory resulted in CS error`), not looked into.
+  - **Elsewhere**: the push buffer is 1 MiB a submit (4,096 changes of push constants past the immediates; more wrap
+    and are wrong, with a warning), the pipeline cache across runs (`vk_shader` serialize), the caps from the adapter
+    rather than the Mac profile (L7).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

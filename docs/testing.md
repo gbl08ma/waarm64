@@ -47,6 +47,14 @@ only edits docs: `.md` files or code comments):
   all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2` or `gles3`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
+- **`scripts/ci-deqp-vk.sh`** (~4 min) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
+  every case expected to pass, one guest boot); it must pass too when a change touches Vulkan (the renderer's driver
+  and translator in `vk/`, `web/venus-gpu.ts`, Venus's device), and at the end of a Vulkan track. It needs
+  `images/deqp/build.sh vk`'s disk and guest (VK-GL-CTS vulkan-cts-1.4.7.0's deqp-vk and Arch Linux with Venus's
+  guest driver; on demand, ~25 min once) and the renderer (`vk/build.sh`); it skips where the page has no WebGPU
+  adapter. The list is the cases that passed of samples of the direct set's groups (`PREFIX`/`STRIDE` runs of
+  `bench/gpu/deqp-run.ts vk`, `PASSED=1`); what fails is in docs/backlog.md "The Vulkan driver's gaps", by cause. A case
+  that crashes deqp-vk is recorded as `Crash` and the run goes on from the next one.
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
   them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).

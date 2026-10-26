@@ -63,17 +63,28 @@ program_free_pipelines(struct wg_program *p)
    _mesa_hash_table_destroy(p->pipelines, NULL);
 }
 
+static void
+program_free(struct wg_program *p)
+{
+   program_free_pipelines(p);
+   for (uint32_t i = 0; i < WGSL_MAX_GROUPS; i++)
+      wg_id_release(p->bgl[i]);
+   wg_id_release(p->push_group);
+   wg_id_release(p->layout);
+   wg_id_release(p->compute);
+   free(p);
+}
+
 void
 wg_program_unref(struct wg_program *p)
 {
    if (!p || --p->refs)
       return;
-   program_free_pipelines(p);
-   for (uint32_t i = 0; i < WGSL_MAX_SETS; i++)
-      wg_id_release(p->bgl[i]);
-   wg_id_release(p->layout);
-   wg_id_release(p->compute);
-   free(p);
+   for (struct wg_program *v = p->variants, *next; v; v = next) {
+      next = v->variants;
+      program_free(v);
+   }
+   program_free(p);
 }
 
 static const char *const dims[] = { "1d", "2d", "2d-array", "cube", "cube-array", "3d" };
@@ -86,6 +97,120 @@ resource_cmp(const void *a, const void *b)
    return x->group != y->group ? x->group - y->group : x->binding - y->binding;
 }
 
+/* Where a pipeline layout's sets go: set s in group s, sets 3 and up together in group 3 (WebGPU has 4), each after
+ * the one before it there. */
+static void
+set_groups(struct vk_descriptor_set_layout *const *layouts, uint32_t count, uint8_t *group, uint32_t *base)
+{
+   uint32_t next = 0;
+   for (uint32_t s = 0; s < MIN2(count, WGSL_MAX_SETS); s++) {
+      group[s] = MIN2(s, WGSL_MAX_GROUPS - 1);
+      base[s] = 0;
+      if (group[s] != WGSL_MAX_GROUPS - 1)
+         continue;
+      base[s] = next;
+      if (layouts[s])
+         next += container_of(layouts[s], struct wg_descriptor_set_layout, vk)->slot_count;
+   }
+}
+
+/* A program's bind group layouts and pipeline layout, from its resources. */
+static void
+program_layouts(struct wg_program *p)
+{
+   struct wg_json j = { 0 };
+   uint32_t k = 0;
+   for (uint32_t g = 0; g < p->group_count; g++) {
+      wg_json_printf(&j, "{\"entries\":[");
+      for (bool first = true; k < p->resource_count && p->resources[k].group == g; k++, first = false) {
+         const struct wgsl_resource *r = &p->resources[k];
+         wg_json_printf(&j, "%s{\"binding\":%u,\"visibility\":%u,", first ? "" : ",", r->binding, p->vis[k]);
+         switch (r->kind) {
+         case WGSL_UNIFORM:
+         case WGSL_STORAGE:
+         case WGSL_STORAGE_READ:
+            wg_json_printf(&j, "\"buffer\":{\"type\":\"%s\",\"hasDynamicOffset\":%s}}",
+                           r->kind == WGSL_UNIFORM ? "uniform" : r->kind == WGSL_STORAGE ? "storage" : "read-only-storage",
+                           p->dynamic[k] != -1 ? "true" : "false");
+            break;
+         case WGSL_SAMPLER:
+         case WGSL_SAMPLER_COMPARE:
+            wg_json_printf(&j, "\"sampler\":{\"type\":\"%s\"}}",
+                           r->kind == WGSL_SAMPLER ? (r->nonfiltering ? "non-filtering" : "filtering") : "comparison");
+            break;
+         case WGSL_TEXTURE: {
+            const char *sample = samples[MIN2(r->sample, 4)];
+            if (r->multisampled && r->sample == WGSL_SAMPLE_FLOAT)
+               sample = "unfilterable-float";
+            wg_json_printf(&j, "\"texture\":{\"sampleType\":\"%s\",\"viewDimension\":\"%s\",\"multisampled\":%s}}", sample,
+                           dims[MIN2(r->dim, 5)], r->multisampled ? "true" : "false");
+            break;
+         }
+         case WGSL_STORAGE_TEXTURE: {
+            const struct wg_texture_format *f =
+               wg_texture_format(vk_format_from_pipe_format((enum pipe_format)r->format));
+            const char *access = r->access == WGSL_ACCESS_READ    ? "read-only"
+                                 : r->access == WGSL_ACCESS_WRITE ? "write-only"
+                                                                  : "read-write";
+            wg_json_printf(&j, "\"storageTexture\":{\"access\":\"%s\",\"format\":\"%s\",\"viewDimension\":\"%s\"}}",
+                           r->access ? access : "read-only", f ? f->name : "rgba8unorm",
+                           r->dim == WGSL_DIM_CUBE || r->dim == WGSL_DIM_CUBE_ARRAY ? "2d-array" : dims[MIN2(r->dim, 5)]);
+            break;
+         }
+         }
+      }
+      wg_json_printf(&j, "]}");
+      static uint32_t uids;
+      p->bgl[g] = wg_create_json(WG_KIND_BGL, &j);
+      p->bgl_uid[g] = ++uids;
+   }
+   wg_json_printf(&j, "{\"bindGroupLayouts\":[");
+   for (uint32_t g = 0; g < p->group_count; g++)
+      wg_json_printf(&j, "%s%u", g ? "," : "", p->bgl[g]);
+   wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);
+   p->layout = wg_create_json(WG_KIND_LAYOUT, &j);
+}
+
+struct wg_program *
+wg_program_variant(struct wg_program *p, uint64_t mask)
+{
+   for (struct wg_program *v = p->variants; v; v = v->variants)
+      if (v->mask == mask)
+         return v;
+   struct wg_program *v = malloc(sizeof(*v));
+   memcpy(v, p, sizeof(*v));
+   v->refs = 1;
+   v->pipelines = NULL;
+   v->push_group = 0;
+   v->compute = 0;
+   v->mask = mask;
+   for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
+      if (!(mask & (1ull << k)))
+         continue;
+      v->resources[k].sample = WGSL_SAMPLE_UNFILTERABLE;
+      /* Its samplers: non-filtering (the bind group gives them the sampler's nearest twin). */
+      const uint32_t index = (uint32_t)v->resources[k].group << 16 | v->resources[k].binding;
+      for (uint32_t i = 0; i < p->pair_count; i++) {
+         if (p->pairs[i][0] != index)
+            continue;
+         for (uint32_t r = 0; r < v->resource_count; r++)
+            if (((uint32_t)v->resources[r].group << 16 | v->resources[r].binding) == p->pairs[i][1] &&
+                v->resources[r].kind == WGSL_SAMPLER)
+               v->resources[r].nonfiltering = true;
+      }
+   }
+   program_layouts(v);
+   if (p->compute_module) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", v->layout,
+                     p->compute_module);
+      v->compute = wg_create_json(WG_KIND_COMPUTE, &j);
+   }
+   v->variants = p->variants;
+   p->variants = v;
+   return v;
+}
+
 /* The program of `count` translated stages (visibility by stage) on a pipeline's set layouts. */
 static struct wg_program *
 program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_set_layout *const *layouts,
@@ -93,6 +218,8 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
 {
    struct wg_program *p = calloc(1, sizeof(*p));
    p->refs = 1;
+   p->set_count = MIN2(layout_count, WGSL_MAX_SETS);
+   set_groups(layouts, layout_count, p->set_group, p->set_base);
    uint8_t vis[WGSL_MAX_RESOURCES] = { 0 };
    for (uint32_t s = 0; s < count; s++) {
       const struct wgsl_info *info = &shaders[s]->info;
@@ -100,6 +227,16 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
                             : shaders[s]->vk.stage == MESA_SHADER_FRAGMENT ? 2
                                                                             : 4;
       p->immediate_size = MAX2(p->immediate_size, info->immediate_size);
+      p->push_ubo_size = MAX2(p->push_ubo_size, info->push_ubo_size);
+      for (uint32_t i = 0; i < info->pair_count; i++) {
+         bool known = false;
+         for (uint32_t k = 0; k < p->pair_count; k++)
+            known |= p->pairs[k][0] == info->pairs[i][0] && p->pairs[k][1] == info->pairs[i][1];
+         if (!known && p->pair_count < WGSL_MAX_PAIRS) {
+            p->pairs[p->pair_count][0] = info->pairs[i][0];
+            p->pairs[p->pair_count++][1] = info->pairs[i][1];
+         }
+      }
       for (uint32_t i = 0; i < info->resource_count; i++) {
          const struct wgsl_resource *r = &info->resources[i];
          uint32_t k = 0;
@@ -127,66 +264,32 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    for (uint32_t i = 0; i < p->resource_count; i++) {
       p->resources[i] = sorted[i].r;
       vis[i] = sorted[i].vis;
-      const struct wgsl_resource *r = &p->resources[i];
+      struct wgsl_resource *r = &p->resources[i];
+      p->res_set[i] = -1;
+      p->dynamic[i] = -1;
+      if (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_PUSH_BINDING) {
+         p->dynamic[i] = WG_DYNAMIC_PUSH;
+         r->size = p->push_ubo_size;
+         continue;
+      }
+      /* The set whose slots hold the binding: the last of its group starting at or before it. */
+      const uint32_t at = r->binding / 2;
+      for (uint32_t s = 0; s < p->set_count; s++)
+         if (p->set_group[s] == r->group && p->set_base[s] <= at && layouts[s])
+            p->res_set[i] = s;
+      const int set = p->res_set[i];
       const struct wg_descriptor_set_layout *l =
-         r->group < layout_count && layouts[r->group]
-            ? container_of(layouts[r->group], struct wg_descriptor_set_layout, vk)
-            : NULL;
-      const uint32_t slot = r->binding / 2;
+         set >= 0 ? container_of(layouts[set], struct wg_descriptor_set_layout, vk) : NULL;
+      const uint32_t slot = set >= 0 ? at - p->set_base[set] : 0;
       p->dynamic[i] = l && slot < l->slot_count && (r->kind == WGSL_UNIFORM || r->kind == WGSL_STORAGE ||
                                                      r->kind == WGSL_STORAGE_READ)
                          ? l->dynamic[slot]
                          : -1;
    }
 
-   struct wg_json j = { 0 };
-   uint32_t k = 0;
-   for (uint32_t g = 0; g < p->group_count; g++) {
-      wg_json_printf(&j, "{\"entries\":[");
-      for (bool first = true; k < p->resource_count && p->resources[k].group == g; k++, first = false) {
-         const struct wgsl_resource *r = &p->resources[k];
-         wg_json_printf(&j, "%s{\"binding\":%u,\"visibility\":%u,", first ? "" : ",", r->binding, vis[k]);
-         switch (r->kind) {
-         case WGSL_UNIFORM:
-         case WGSL_STORAGE:
-         case WGSL_STORAGE_READ:
-            wg_json_printf(&j, "\"buffer\":{\"type\":\"%s\",\"hasDynamicOffset\":%s}}",
-                           r->kind == WGSL_UNIFORM ? "uniform" : r->kind == WGSL_STORAGE ? "storage" : "read-only-storage",
-                           p->dynamic[k] >= 0 ? "true" : "false");
-            break;
-         case WGSL_SAMPLER:
-         case WGSL_SAMPLER_COMPARE:
-            wg_json_printf(&j, "\"sampler\":{\"type\":\"%s\"}}", r->kind == WGSL_SAMPLER ? "filtering" : "comparison");
-            break;
-         case WGSL_TEXTURE: {
-            const char *sample = samples[MIN2(r->sample, 4)];
-            if (r->multisampled && r->sample == WGSL_SAMPLE_FLOAT)
-               sample = "unfilterable-float";
-            wg_json_printf(&j, "\"texture\":{\"sampleType\":\"%s\",\"viewDimension\":\"%s\",\"multisampled\":%s}}", sample,
-                           dims[MIN2(r->dim, 5)], r->multisampled ? "true" : "false");
-            break;
-         }
-         case WGSL_STORAGE_TEXTURE: {
-            const struct wg_texture_format *f =
-               wg_texture_format(vk_format_from_pipe_format((enum pipe_format)r->format));
-            const char *access = r->access == WGSL_ACCESS_READ    ? "read-only"
-                                 : r->access == WGSL_ACCESS_WRITE ? "write-only"
-                                                                  : "read-write";
-            wg_json_printf(&j, "\"storageTexture\":{\"access\":\"%s\",\"format\":\"%s\",\"viewDimension\":\"%s\"}}",
-                           r->access ? access : "read-only", f ? f->name : "rgba8unorm",
-                           r->dim == WGSL_DIM_CUBE || r->dim == WGSL_DIM_CUBE_ARRAY ? "2d-array" : dims[MIN2(r->dim, 5)]);
-            break;
-         }
-         }
-      }
-      wg_json_printf(&j, "]}");
-      p->bgl[g] = wg_create_json(WG_KIND_BGL, &j);
-   }
-   wg_json_printf(&j, "{\"bindGroupLayouts\":[");
-   for (uint32_t g = 0; g < p->group_count; g++)
-      wg_json_printf(&j, "%s%u", g ? "," : "", p->bgl[g]);
-   wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);
-   p->layout = wg_create_json(WG_KIND_LAYOUT, &j);
+   for (uint32_t i = 0; i < p->resource_count; i++)
+      p->vis[i] = vis[i];
+   program_layouts(p);
    return p;
 }
 
@@ -210,11 +313,15 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
           uint32_t push_size)
 {
    *out = (struct wgsl_layout){ .set_count = MIN2(count, WGSL_MAX_SETS), .push_size = push_size };
+   uint8_t group[WGSL_MAX_SETS];
+   uint32_t base[WGSL_MAX_SETS];
+   set_groups(layouts, count, group, base);
    for (uint32_t s = 0; s < out->set_count; s++) {
       if (!layouts[s])
          continue;
       const struct wg_descriptor_set_layout *l = container_of(layouts[s], struct wg_descriptor_set_layout, vk);
-      out->sets[s] = (struct wgsl_set_layout){ .binding_count = l->binding_count, .first = l->first, .count = l->count };
+      out->sets[s] = (struct wgsl_set_layout){ .group = group[s], .base = base[s], .binding_count = l->binding_count,
+                                               .first = l->first, .count = l->count };
    }
 }
 
@@ -262,8 +369,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             break;
          }
          shaders[i] = s;
-         char *text = wgsl_print(NULL, infos[i].nir, infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL, &s->info,
-                                 error, sizeof(error));
+         char *text = wgsl_print(NULL, infos[i].nir, infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
+                                 wg_max_immediates, &s->info, error, sizeof(error));
          if (!text) {
             ok = false;
             break;
@@ -279,12 +386,26 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
    for (uint32_t i = 0; i < count; i++)
       ralloc_free(infos[i].nir);
    if (!ok) {
+      /* Shaders that draw and dispatch nothing (a draw needs its vertex shader's program, a dispatch its compute
+       * pipeline): failing the pipeline would fail the guest's context, since Venus's guest driver doesn't wait for a
+       * pipeline's result before it binds it. */
       fprintf(stderr, "wg: a shader didn't translate: %s\n", error);
-      for (uint32_t i = 0; i < count; i++)
-         if (shaders[i])
-            shader_destroy(device, &shaders[i]->vk, pAllocator);
-      memset(out, 0, count * sizeof(*out));
-      return vk_error(device, VK_ERROR_UNKNOWN);
+      for (uint32_t i = 0; i < count; i++) {
+         if (!shaders[i])
+            shaders[i] = vk_shader_zalloc(device, &wg_shader_ops, infos[i].stage, pAllocator, sizeof(*shaders[i]));
+         if (!shaders[i]) {
+            for (uint32_t k = 0; k < i; k++)
+               shader_destroy(device, &shaders[k]->vk, pAllocator);
+            memset(out, 0, count * sizeof(*out));
+            return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+         }
+         wg_id_release(shaders[i]->module);
+         shaders[i]->module = 0;
+         free(shaders[i]->wgsl);
+         shaders[i]->wgsl = NULL;
+         out[i] = &shaders[i]->vk;
+      }
+      return VK_SUCCESS;
    }
 
    struct wg_program *p = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
@@ -299,6 +420,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", p->layout,
                      shaders[0]->module);
       p->compute = wg_create_json(WG_KIND_COMPUTE, &j);
+      p->compute_module = shaders[0]->module;
    }
    return VK_SUCCESS;
 }
@@ -395,6 +517,56 @@ stencil_face(struct wg_json *j, const char *name, const uint8_t *f, bool on)
                   on ? stencil_ops[f[2] & 7] : "keep", on ? compares[f[3] & 7] : "always");
 }
 
+void
+wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vertex_slots *out)
+{
+   memset(out, 0, sizeof(*out));
+   u_foreach_bit(loc, inputs)
+      if (k->attr[loc].format)
+         out->used |= 1u << k->attr[loc].binding;
+   for (uint32_t b = 0; b < 8; b++)
+      out->binding[b] = b;
+   u_foreach_bit(loc, inputs) {
+      if (!k->attr[loc].format)
+         continue;
+      const uint32_t b = k->attr[loc].binding, stride = k->vb[b].stride;
+      const uint32_t size = vk_format_get_blocksize(k->attr[loc].format), offset = k->attr[loc].offset;
+      out->slot[loc] = b;
+      out->offset[loc] = offset;
+      if (!stride || offset + size <= stride)
+         continue;
+      /* Its own slot: the same binding further on, the offset's remainder within 4 bytes (WebGPU's buffer offsets are
+       * 4-aligned). With no slot free, it stays (and the pipeline fails). */
+      const uint32_t base = offset & ~3u;
+      int free = -1;
+      for (int s = 7; s >= 0 && free < 0; s--) {
+         if (out->used & (1u << s)) {
+            if (out->binding[s] == b && out->base[s] == base && s != (int)b)
+               free = s;
+            continue;
+         }
+         free = s;
+      }
+      if (free < 0 || offset - base + size > stride)
+         continue;
+      out->used |= 1u << free;
+      out->binding[free] = b;
+      out->base[free] = base;
+      out->slot[loc] = free;
+      out->offset[loc] = offset - base;
+   }
+   /* A binding whose every attribute moved keeps no slot of its own. */
+   for (uint32_t b = 0; b < 8; b++) {
+      if (!(out->used & (1u << b)) || out->binding[b] != b || out->base[b])
+         continue;
+      bool any = false;
+      u_foreach_bit(loc, inputs)
+         any |= k->attr[loc].format && out->slot[loc] == b;
+      if (!any)
+         out->used &= ~(1u << b);
+   }
+}
+
 uint32_t
 wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
 {
@@ -409,25 +581,24 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
                   "\"buffers\":[", p->layout, k->vs->module, k->flip ? 1 : -1);
    /* A binding none of the shader's inputs reads is left out (else a draw would need its buffer). */
    const uint32_t inputs = k->vs->info.inputs;
-   uint32_t used = 0;
-   u_foreach_bit(loc, inputs)
-      if (k->attr[loc].format)
-         used |= 1u << k->attr[loc].binding;
-   const uint32_t vb_count = used ? util_last_bit(used) : 0;
+   struct wg_vertex_slots vs;
+   wg_vertex_slots(k, inputs, &vs);
+   const uint32_t vb_count = vs.used ? util_last_bit(vs.used) : 0;
    for (uint32_t b = 0; b < vb_count; b++) {
-      if (!(used & (1u << b))) {
+      if (!(vs.used & (1u << b))) {
          wg_json_printf(&j, "%snull", b ? "," : "");
          continue;
       }
-      wg_json_printf(&j, "%s{\"arrayStride\":%u,\"stepMode\":\"%s\",\"attributes\":[", b ? "," : "", k->vb[b].stride,
-                     k->vb[b].instance ? "instance" : "vertex");
+      const uint32_t binding = vs.binding[b];
+      wg_json_printf(&j, "%s{\"arrayStride\":%u,\"stepMode\":\"%s\",\"attributes\":[", b ? "," : "",
+                     k->vb[binding].stride, k->vb[binding].instance ? "instance" : "vertex");
       bool first = true;
       u_foreach_bit(loc, inputs) {
-         if (!k->attr[loc].format || k->attr[loc].binding != b)
+         if (!k->attr[loc].format || vs.slot[loc] != b)
             continue;
          const char *f = wg_vertex_format(k->attr[loc].format);
          wg_json_printf(&j, "%s{\"format\":\"%s\",\"offset\":%u,\"shaderLocation\":%u}", first ? "" : ",",
-                        f ? f : "float32x4", k->attr[loc].offset, loc);
+                        f ? f : "float32x4", vs.offset[loc], loc);
          first = false;
       }
       wg_json_printf(&j, "]}");

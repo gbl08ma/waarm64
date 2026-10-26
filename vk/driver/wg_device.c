@@ -124,7 +124,7 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    features.uniformAndStorageBuffer16BitAccess = false;
    features.storagePushConstant16 = false;
    features.storageInputOutput16 = false;
-   features.shaderSampledImageArrayDynamicIndexing = false;
+   features.shaderSampledImageArrayDynamicIndexing = true; /* a tree of ifs over the elements (wgsl_nir.c) */
    features.shaderStorageImageArrayDynamicIndexing = false;
    features.shaderUniformBufferArrayDynamicIndexing = false;
    features.shaderStorageBufferArrayDynamicIndexing = false;
@@ -138,6 +138,8 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    features.depthClamp = !!(wg_features & WG_FEATURE_DEPTH_CLIP);
    features.dualSrcBlend = !!(wg_features & WG_FEATURE_DUAL_SOURCE);
    features.shaderClipDistance = !!(wg_features & WG_FEATURE_CLIP_DISTANCES);
+   /* Without WebGPU's, an indirect draw with a first instance draws nothing. */
+   features.drawIndirectFirstInstance = !!(wg_features & WG_FEATURE_INDIRECT_FIRST_INSTANCE);
    features.textureCompressionBC = !!(wg_features & WG_FEATURE_BC);
    features.textureCompressionETC2 = !!(wg_features & WG_FEATURE_ETC2);
    features.textureCompressionASTC_LDR = !!(wg_features & WG_FEATURE_ASTC);
@@ -151,8 +153,10 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
       .maxBufferSize = 1ull << 30,
    };
    wg_profile_properties(&props);
-   /* WebGPU's: immediates (push constants past them aren't offered yet), vertex attributes. */
-   props.maxPushConstantsSize = MIN2(props.maxPushConstantsSize, MAX2(wg_max_immediates, 0));
+   /* Vulkan's minimum of push constants (past WebGPU's immediates they're read from a uniform buffer: wg_cmd.c), sets
+    * (3 and up share bind group 3: wg_shader.c); WebGPU's vertex attributes. */
+   props.maxPushConstantsSize = 128;
+   props.maxBoundDescriptorSets = WGSL_MAX_SETS;
    props.maxVertexInputAttributes = MIN2(props.maxVertexInputAttributes, 16);
    props.maxVertexInputBindings = MIN2(props.maxVertexInputBindings, 8);
    snprintf(props.deviceName, sizeof(props.deviceName), "webpc WebGPU");
@@ -371,8 +375,10 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       needed |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
    /* WebGPU: no 3D depth or compressed 3D textures, no cube arrays of 1D. */
    const bool depth = features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+   const struct wg_texture_format *tf = wg_texture_format(info->format);
+   const bool compressed = tf && (tf->bw > 1 || tf->bh > 1);
    if (!features || (features & needed) != needed || info->type > VK_IMAGE_TYPE_3D ||
-       (info->type != VK_IMAGE_TYPE_2D && depth)) {
+       (info->type != VK_IMAGE_TYPE_2D && (depth || compressed))) {
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
@@ -469,6 +475,7 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
    dev->vk.command_buffer_ops = &wg_cmd_buffer_ops;
    dev->vk.shader_ops = &wg_device_shader_ops;
    list_inithead(&dev->host_memories);
+   list_inithead(&dev->linear_images);
    list_inithead(&dev->shared_memories);
    list_inithead(&dev->pending);
    const VkPipelineCacheCreateInfo cache_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
@@ -504,6 +511,9 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    wg_device_register(dev, false);
    wg_device_drain(dev);
    vk_queue_finish(&dev->queue.vk);
+   wg_id_release(dev->push_buffer);
+   wg_id_release(dev->fan_indices);
+   free(dev->push_data);
    if (dev->vk.mem_cache)
       vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
    vk_device_finish(&dev->vk);
@@ -740,11 +750,6 @@ static const char *
 wg_dimension(const struct vk_image *image)
 {
    switch (image->image_type) {
-   case VK_IMAGE_TYPE_1D:
-      return image->mip_levels == 1 && image->array_layers == 1 && !(image->usage & ~(VK_IMAGE_USAGE_SAMPLED_BIT |
-                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT))
-                ? "1d"
-                : "2d";
    case VK_IMAGE_TYPE_3D:
       return "3d";
    default:
@@ -769,7 +774,11 @@ wg_texture_create(struct wg_image *image)
       usage |= 8;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
-   if (flags & WG_FMT_NOCOPY)
+   /* A linear image may be bound to host-visible memory: copied to and from it at each submit. */
+   if (vi->tiling == VK_IMAGE_TILING_LINEAR)
+      usage |= 1 | 2;
+   /* depth24plus can't be copied; depth24plus-stencil8's stencil can. */
+   if ((flags & WG_FMT_NOCOPY) && !(flags & WG_FMT_STENCIL))
       usage &= ~3u;
    if (vi->samples > 1)
       usage = (usage & ~8u) | 16;
@@ -780,11 +789,13 @@ wg_texture_create(struct wg_image *image)
    const bool shared = image->shared;
    if (shared && vi->samples == 1 && !(flags & WG_FMT_NOCOPY))
       usage |= 1 | ((flags & WG_FMT_SAMPLE) ? 4 : 0);
+   /* WebGPU wants a compressed texture's size in whole blocks (Vulkan doesn't): rounded up, and copies with it. */
    const VkExtent3D e = vi->extent;
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"size\":[%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
                   "\"format\":\"%s\",\"usage\":%u,\"viewFormats\":[",
-                  e.width, e.height, vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
+                  DIV_ROUND_UP(e.width, image->fmt->bw) * image->fmt->bw, DIV_ROUND_UP(e.height, image->fmt->bh) * image->fmt->bh,
+                  vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
                   vi->samples, wg_dimension(vi), image->fmt->name, usage);
    if ((vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || shared) {
       const VkFormat twin = vk_format_is_srgb(vi->format)
@@ -834,6 +845,8 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
          }
       }
    }
+   if (image->linear_host)
+      list_del(&image->linear_link);
    wg_id_release(image->tex);
    vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
@@ -880,6 +893,11 @@ wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInf
       VK_FROM_HANDLE(wg_device_memory, mem, infos[i].memory);
       image->mem = mem;
       image->offset = infos[i].memoryOffset;
+      if (image->vk.tiling == VK_IMAGE_TILING_LINEAR && mem->host && image->vk.samples == 1 && !image->shared &&
+          !(image->fmt->flags & WG_FMT_NOCOPY) && !image->linear_host) {
+         image->linear_host = true;
+         list_addtail(&image->linear_link, &dev->linear_images);
+      }
       if (image->shared) {
          if (!mem->image)
             list_addtail(&mem->shared_link, &dev->shared_memories);
@@ -890,6 +908,12 @@ wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInf
          *status->pResult = VK_SUCCESS;
    }
    return VK_SUCCESS;
+}
+
+void
+wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out)
+{
+   wg_image_layout(image, level, layer, out);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -927,7 +951,9 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
    view->fmt = wg_texture_format(view->vk.view_format);
-   if (!view->fmt)
+   /* A depth or stencil aspect of a combined format is the image's format with an aspect in WebGPU (the runtime's
+    * view format is the aspect's own). */
+   if (!view->fmt || (image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
       view->fmt = image->fmt;
    const VkImageAspectFlags aspects = view->vk.aspects;
    const char *aspect = (image->fmt->flags & WG_FMT_DEPTH) && (image->fmt->flags & WG_FMT_STENCIL)
@@ -945,13 +971,24 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
    struct wg_json j = { 0 };
-   wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"%s\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
+   /* An aspect's view takes the aspect's format: left to WebGPU. */
+   wg_json_printf(&j, "{\"texture\":%u,", image->tex);
+   if (!strcmp(aspect, "all"))
+      wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
+   wg_json_printf(&j, "\"dimension\":\"%s\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
                   "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
-                  image->tex, view->fmt->name, dim, aspect, view->vk.base_mip_level, view->vk.level_count,
+                  dim, aspect, view->vk.base_mip_level, view->vk.level_count,
                   layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
    view->view = wg_create_json(WG_KIND_VIEW, &j);
-   /* As an attachment: one level and one layer, 2D (3D images aren't rendered into yet). */
-   if (image->vk.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+   /* As an attachment: one level and one layer, 2D; a 3D image's level as a 3D view and the slice the view starts at
+    * (a 2D view of a 3D image), the render pass's depthSlice. */
+   view->slice = -1;
+   if (!layered && image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT && (image->fmt->flags & WG_FMT_RENDER)) {
+      wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"3d\",\"baseMipLevel\":%u,\"mipLevelCount\":1}",
+                     image->tex, view->fmt->name, view->vk.base_mip_level);
+      view->att = wg_create_json(WG_KIND_VIEW, &j);
+      view->slice = view->vk.base_array_layer;
+   } else if (image->vk.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                           VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
        layered && strcmp(wg_dimension(&image->vk), "1d") &&
        (image->fmt->flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL))) {
@@ -1031,6 +1068,14 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
       wg_json_printf(&j, ",\"compare\":\"%s\"", compare[c->compareOp & 7]);
    wg_json_printf(&j, "}");
    sampler->id = wg_create_json(WG_KIND_SAMPLER, &j);
+   /* A filtering sampler's nearest twin, for views WebGPU can't filter (depth, unfilterable float). */
+   if (!c->compareEnable && (c->magFilter == VK_FILTER_LINEAR || c->minFilter == VK_FILTER_LINEAR ||
+                             c->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR)) {
+      wg_json_printf(&j, "{\"addressModeU\":\"%s\",\"addressModeV\":\"%s\",\"addressModeW\":\"%s\",\"lodMinClamp\":%g,"
+                     "\"lodMaxClamp\":%g}", address[MIN2(c->addressModeU, 4)], address[MIN2(c->addressModeV, 4)],
+                     address[MIN2(c->addressModeW, 4)], lod_min, lod_max);
+      sampler->nearest = wg_create_json(WG_KIND_SAMPLER, &j);
+   }
    *pSampler = wg_sampler_to_handle(sampler);
    return VK_SUCCESS;
 }
@@ -1043,6 +1088,7 @@ wg_DestroySampler(VkDevice _device, VkSampler _sampler, const VkAllocationCallba
    if (!sampler)
       return;
    wg_id_release(sampler->id);
+   wg_id_release(sampler->nearest);
    vk_sampler_destroy(&dev->vk, pAllocator, &sampler->vk);
 }
 

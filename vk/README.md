@@ -13,7 +13,8 @@ node --test tests/venus-renderer.test.ts   # the module in Node: its capset, a b
 node --test tests/wgsl.test.ts             # the translator: SPIR-V stages to WGSL in Node, compiled by Chromium's WebGPU
 node --test tests/venus-driver.test.ts     # the driver: a Vulkan program of ours (driver/wg_test.c) drawn on Chromium's WebGPU
 node --test tests/venus-share.test.ts      # presentation: a WebGPU texture into the virgl renderer's (Chromium)
-node --test tests/page-venus.test.ts       # vkcube on the page (needs images/debian-vulkan/build.sh's image)
+node --test tests/page-venus.test.ts       # vkcube on the page, and the captures' frames (images/debian-vulkan/build.sh, images/vkframes/build.sh)
+scripts/ci-deqp-vk.sh                      # dEQP-VK's pass list on the page (images/deqp/build.sh vk)
 ```
 
 ## The build
@@ -47,21 +48,30 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
 
 `vk/compiler/` (wgsl.h has the model): SPIR-V → NIR (`spirv_to_nir`, buffers as index and offset, no physical
 pointers) → `wgsl_preprocess` (KosmicKrisp's pass list: inlining, splitting, outputs through temporaries, input
-attachments as 2D textures, scalarized ALU) → `wgsl_lower` against a layout (descriptors to slots: slot s of a set is
-WGSL `@binding(2s)`, a combined image-sampler's sampler `2s + 1`; I/O to locations; explicit memory; NIR's
-optimization loop) → `wgsl_link` for a vertex and fragment pair (`nir_opt_varyings`) → `wgsl_print`, out of SSA. The
+attachments as 2D textures, scalarized ALU) → `wgsl_lower` against a layout (1D textures and images as 2D ones of one
+row; arrays of textures indexed dynamically as a binary tree of ifs over their elements; descriptors to slots: slot s
+of a set is WGSL `@binding(2(base + s))` of its group, a combined image-sampler's sampler `2(base + s) + 1`, where set
+n is group n but sets 3 and up share group 3 one after another, WebGPU having 4 bind groups; I/O to locations;
+explicit memory; NIR's optimization loop) → `wgsl_link` for a vertex and fragment pair (`nir_opt_varyings`) → `wgsl_print`, out of SSA. The
 printed WGSL keeps every value in a function-scope `var` of u32 or bool and bitcasts at each operation, so it needs no
 type inference and no const-expression can overflow or make a NaN (shader-creation errors in WGSL); textures and
 samplers come from the tex instruction's indices; push constants are immediates (a struct of vec4s, since immediates
-can't be arrays, copied into an array the shader indexes); a vertex shader's outputs are typed and interpolated as its
+can't be arrays, copied into an array the shader indexes), or, past the device's immediates (64 bytes in Chromium;
+Vulkan's minimum is 128), a uniform buffer of the driver's at `@group(3) @binding(998)`, bound at a dynamic offset a
+draw; a compute shader's `if` around a barrier, or breaking out of a loop that holds one, takes its condition through
+`workgroupUniformLoad` (WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow, every
+value being a `var`; a barrier after it keeps the next write from racing the read); a vertex shader's outputs are typed and interpolated as its
 fragment shader reads them, and its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport). What
-WGSL can't express fails the stage with a reason: 16-bit values, a fifth descriptor set, texel buffers, dynamically
-indexed descriptors, image atomics, interpolation at an offset, `textureQueryLod`.
+WGSL can't express fails the stage with a reason: 16-bit values, texel buffers, dynamically indexed buffers and
+images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`. A
+pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
+pipeline without waiting for its result, and a pipeline that failed would fail the guest's whole context.
 
 `tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
-`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 118 of 127
-translate (0.4 ms a stage at the median in Node, 25 ms GTK4's largest) and all 118 compile in Chromium; the nine
-others are vkQuake's and use what the direct set doesn't offer (fp16, set 4, texel buffers, dynamic indexing). It
+`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 122 of 127
+translate (0.4 ms a stage at the median in Node, 25 ms GTK4's largest) and all 122 compile in Chromium; the five
+others are vkQuake's variants for a device with 16-bit floats (four; dumped through the Mac profile, which has them)
+and its screen effects' palettization (a texel buffer). It
 checks that Tint accepts the WGSL, not what it computes: that is the driver's tests' and dEQP-VK's.
 
 ## The parts
@@ -87,7 +97,8 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 
 - **What it advertises**: VK0's Mac profile (`vk/profile.ts` makes C tables of
   `bench/vulkan/profiles/webgpu-mac.json`'s `mac_direct`) less what the translator can't do (16-bit and 64-bit types,
-  dynamically indexed descriptors, inline uniform blocks), push constants as large as the device's immediates,
+  dynamically indexed buffers and images, inline uniform blocks), Vulkan's minimums of push constants (128 bytes) and
+  bound sets (8, as `WGSL_MAX_SETS`), dynamically indexed arrays of sampled images (`if` trees),
   formats from WebGPU's tables (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them; linear
   tiling only copies; buffers only vertex input, no texel buffers; compressed families by the device's features),
   samples 1 and 4; plus the extensions Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the
@@ -96,55 +107,84 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   device-local) on a 2 GiB heap, one queue family.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
-  be), with views made as Vulkan made them and, for attachments, as one 2D level and layer. Host-visible memory's bytes
+  be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it; a 1D one 2D),
+  with views made as Vulkan made them (a depth or stencil aspect's with the image's format and the aspect) and, for
+  attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`). Host-visible memory's bytes
   are in memory 0 (vkr's storage, or the window while its blob is mapped); at each submit the driver uploads the
   window's written pages of the memories mapped there, and the whole of those that moved or are new.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render
   pipelines are made at the first draw needing one, keyed by the state WebGPU bakes in (`wg_pipeline_key`: vertex
-  layout, topology, rasterization, depth and stencil, blend, attachment formats, samples, the viewport's flip).
+  layout, topology, rasterization, depth and stencil, blend, attachment formats, samples, the viewport's flip); an
+  attribute past its binding's stride (Vulkan allows it, WebGPU doesn't) reads a vertex buffer slot of its own, the
+  same buffer further on (`wg_vertex_slots`). A texture the shader declared filterable float but bound to a view
+  WebGPU can't filter (a depth view, `r32float` without `float32-filterable`) draws with a variant of the program
+  (`wg_program_variant`, by a mask of such bindings): those bindings unfilterable, the samplers they're sampled with
+  non-filtering and given the sampler's nearest twin.
 - **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views and samplers; bind groups are made at a
-  replay, for the program's layout and the set's version, and kept on the set. Push descriptors are sets of the
-  command buffer's own.
+  replay, for the program's layout and the set's version (group 3's for its sets' uids and versions hashed), and kept
+  on the group's first set, keyed by the layout's uid (ids are reused: a stale bind group of a freed layout's id once
+  bound group 2's layout at index 3). Groups a set lets go are released after the submit is encoded. Push
+  descriptors are sets of the command buffer's own. Push constants past the immediates go to the device's push buffer
+  (a 1 MiB uniform buffer written with `queue.writeBuffer` before each submit, ordered after the work before it), a
+  256-byte-aligned place each time they change, its offset the last dynamic offset of group 3.
 - **Commands** (`wg_cmd.c`): recorded into a list of our own; each draw or dispatch records the state it needs where
   it changed. A submit replays the list into one encoder (passes opened and closed as the commands need; render passes
   from the runtime's dynamic rendering, with legacy passes through its emulation; clears as load ops, or draws for a
   partial render area and `vkCmdClearAttachments`; blits, resolves and image clears as the worker's draws), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer ↔ image copies whose rows
-  aren't 256 bytes apart go a row of blocks at a time. Barriers and events wait for nothing (WebGPU orders a queue).
+  aren't 256 bytes apart go a row of blocks at a time, but for depth and stencil, which WebGPU copies only whole
+  (the worker realigns their rows through a temporary buffer); what WebGPU can't copy at all (into depth32float's or
+  depth24plus's depth, of multisampled textures, part of a depth image) or resolve (integer formats) is skipped with a
+  warning, since one invalid command invalidates the whole submit. Barriers and events wait for nothing (WebGPU orders
+  a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
+  the module would leave its state half updated.
 - **Completion**: the worker calls `venus_complete(serial)` in submit order once the work is done and its staging
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
   feedback slots) applied there too, and the submit's syncs signal; vkr's fences retire at the next poll. Only the
   window and the arena are written then (anything else is logged and dropped).
 - **Shared images** (Venus's WSI): see "Presentation".
-- **Not yet** (docs/backlog.md "Vulkan"): occlusion queries (reported as passing), timestamps on the GPU, depth
-  blits, border colours and mirror-once, triangle fans, the texture sample type a view needs that the shader didn't
-  say (depth and unfilterable float views), component swizzles, rendering into 3D images, multi-view, the pipeline
-  cache across runs.
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): occlusion queries (reported as
+  passing), timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component
+  swizzles, sampling 3D images through 2D views, texel buffers, integer textures sampled with a sampler, copies
+  between formats, multi-view, the pipeline cache across runs.
 
 ## Checking frames
 
 A program draws right when its frames match lavapipe's. `images/vkframes/build.sh` captures each program of its list
-natively with GFXReconstruct on the dev VM's lavapipe (vkcube with `--use_staging`: the driver can't sample linear
-images, so the guest's vkcube stages its texture too) and replays the chosen frames there offscreen as the references;
-its disk carries the captures, the references and GFXReconstruct's replay built for Debian. In the guest, `run.sh`
-replays a capture on the Venus device offscreen (`--swapchain offscreen`: no WSI, the frames read back through the
-driver's image-to-buffer copies; `-m remap`, since lavapipe's first memory type is host-visible and ours isn't) and
-compares each frame byte by byte (`cmp -l`): how many bytes differ, how many by more than 24, the largest difference.
-`bench/vulkan/venus-run.ts` runs it with `REPLAY=<names>` (on the Mac's GPU too: `SCRIPT=../vulkan/venus-run.ts
-REPLAY=vkcube bench/gpu/sway-mac.sh - target/images/debian-vulkan/disk.qcow2 <name>`), and `tests/page-venus.test.ts`
-asserts vkcube's: at most 0.2% of a frame's bytes off by more than 24.
+natively with GFXReconstruct on the dev VM's lavapipe, through the Profiles layer with the Venus device's own profile
+(`images/vkframes/venus-profile.json`: `vulkaninfo --json` in the tests' guest on SwiftShader), so a program takes the
+paths it takes on our device (vkQuake its shaders without 16-bit floats, its five descriptor sets and 128 bytes of push
+constants), and replays the chosen frames there offscreen as the references. The programs: vkcube (with
+`--use_staging`), vkmark's 13 scenes (a capture each, half a second at `fifo`: ~30 frames) and vkQuake (LibreQuake's
+data: frames 200 to 230 of `+map start`, a trimmed capture whose replay first rebuilds the state). Its disk carries the
+captures, the references, each program's tolerance and GFXReconstruct's replay built for Debian. In the guest,
+`run.sh` replays a capture on the Venus device offscreen (`--swapchain offscreen`: no WSI, the frames read back through
+the driver's image-to-buffer copies; `-m remap`, since lavapipe's first memory type is host-visible and ours isn't) and
+compares each frame byte by byte (`cmp -l`): how many bytes differ, how many by more than 24, the largest difference,
+with the replay's frames a second. `bench/vulkan/venus-run.ts` runs it with `REPLAY=<names>` or `all` (on the Mac's
+GPU too: `SCRIPT=../vulkan/venus-run.ts REPLAY=all bench/gpu/sway-mac.sh - target/images/debian-vulkan/disk.qcow2
+<name>`), and `tests/page-venus.test.ts` asserts every program's frames within its tolerance: the share of a frame's
+bytes that may be off by more than 24 (vkcube 0.2%, vkmark 0.3%, vkQuake 3%).
 
-| vkcube, frames 5, 15, 30 (864 KB each) | bytes that differ | off by more than 24 | largest |
-| --- | --- | --- | --- |
-| SwiftShader (dev VM, Chromium 153) | 14.6–36.3 K | 198–252 (0.03%) | 198–210 |
-| Apple M4 (Metal, Chromium 153) | 15.6–40.4 K | 3–6 | 56–136 |
-| SwiftShader, front face inverted (a planted bug) | 161–172 K | 95–111 K (12%) | 242–244 |
+| Frames' bytes off by more than 24, of a frame (SwiftShader, dev VM, Chromium 153) | | largest difference |
+| --- | --- | --- |
+| vkcube, frames 5, 15, 30 | 198–252 of 864 K (0.03%) | 198–210 |
+| vkmark's scenes, frames 10 and 25 | 0–910 of 922 K (≤ 0.1%; texture and desktop the most, clear none) | ≤ 217 |
+| vkQuake, frames 5, 15, 30 | 15.4–15.5 K of 922 K (1.7%) | 217 |
+| Apple M4 (Metal, Chrome for Testing 153): vkcube | 3–6 | 56–136 |
+| the M4: vkmark's scenes | 0–804 (≤ 0.09%) | ≤ 94 |
+| the M4: vkQuake | 15.3–15.5 K (1.7%) | 176 |
+| vkcube, its front face inverted (a planted bug, SwiftShader) | 95–111 K (12%) | 242–244 |
 
-(`bench/vulkan/results/vk2/l3/`.) What differs is edges and texture filtering. The replay checks the driver; vkcube's
-own frames in the guest also pass through Mesa's WSI, whose CPU path (`MESA_VK_WSI_DEBUG=sw`) copies each image to a
-host-visible buffer on the same driver.
+(`bench/vulkan/results/vk2/l3/`, `l5/`.) What differs is edges and texture filtering, but for vkQuake: its frames
+match lavapipe's to the eye with no bias (the mean signed difference per channel under 0.2), yet 78% of their bytes
+differ by a little and 1.7% by more than 24, the same on SwiftShader and Metal, so it is systematic, not the GPU's
+rasterization: not identified (its text and grid edges hold the large ones; candidates are its screen effects'
+dithering and a conversion's rounding). The replay
+checks the driver; vkcube's own frames in the guest also pass through Mesa's WSI, whose CPU path
+(`MESA_VK_WSI_DEBUG=sw`) copies each image to a host-visible buffer on the same driver.
 
 ## Presentation
 

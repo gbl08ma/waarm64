@@ -1,7 +1,8 @@
 /*
  * The translator on one SPIR-V stage, for its unit tests (tests/wgsl.test.ts): spirv_to_nir, the backend's passes
  * against a layout made from the shader's own descriptors (each set's bindings in order, an array's elements
- * consecutive: what a pipeline layout of the same bindings gives), and the WGSL. Exported from the renderer module.
+ * consecutive, sets 3 and up after one another in group 3: what a pipeline layout of the same bindings gives), and the
+ * WGSL (push constants past 64 bytes from the uniform buffer, as on a device with 64 bytes of immediates). Exported from the renderer module.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +44,8 @@ layout_of(nir_shader *nir, struct wgsl_layout *layout)
       const unsigned n = glsl_type_is_array(var->type) ? glsl_get_aoa_size(var->type) : 1;
       counts[set][binding] = MAX2(counts[set][binding], MAX2(n, 1));
    }
+   /* Sets 3 and up share group 3, one after another (as the driver lays them out). */
+   uint32_t base = 0;
    for (unsigned s = 0; s < WGSL_MAX_SETS; s++) {
       int32_t slot = 0;
       for (unsigned b = 0; b < MAX_BINDINGS; b++) {
@@ -51,7 +54,11 @@ layout_of(nir_shader *nir, struct wgsl_layout *layout)
          firsts[s][b] = slot;
          slot += counts[s][b];
       }
-      layout->sets[s] = (struct wgsl_set_layout){ .binding_count = MAX_BINDINGS, .first = firsts[s], .count = counts[s] };
+      const uint32_t group = MIN2(s, WGSL_MAX_GROUPS - 1);
+      layout->sets[s] = (struct wgsl_set_layout){ .group = group, .base = group == WGSL_MAX_GROUPS - 1 ? base : 0,
+                                                  .binding_count = MAX_BINDINGS, .first = firsts[s], .count = counts[s] };
+      if (group == WGSL_MAX_GROUPS - 1)
+         base += slot;
    }
 }
 
@@ -85,7 +92,7 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
       ralloc_free(nir);
       return 2;
    }
-   char *text = wgsl_print(NULL, nir, NULL, &info, error, sizeof(error));
+   char *text = wgsl_print(NULL, nir, NULL, 64, &info, error, sizeof(error));
    ralloc_free(nir);
    if (!text) {
       result = ralloc_strdup(NULL, error);

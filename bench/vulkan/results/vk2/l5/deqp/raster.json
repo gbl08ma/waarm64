@@ -1,0 +1,23 @@
+{
+ "group": "raster",
+ "prefix": "dEQP-VK.rasterization.",
+ "stride": 12,
+ "chromium": "153.0.8010.52",
+ "adapter": "google swiftshader",
+ "guest": "7.2.11-arch1-1mesa 1:26.2.5-1",
+ "cases": 1252,
+ "counts": {
+  "NotSupported": 1247,
+  "Pass": 5
+ },
+ "seconds": 4,
+ "failed": [],
+ "detail": [],
+ "passed": [
+  "dEQP-VK.rasterization.depth_bias.d32_sfloat_constant_one",
+  "dEQP-VK.rasterization.fill_rules_multisample_4_bit.basic_quad_reverse",
+  "dEQP-VK.rasterization.frag_side_effects.color_at_beginning.sample_mask_before",
+  "dEQP-VK.rasterization.frag_side_effects.color_at_end.terminate_invocation",
+  "dEQP-VK.rasterization.provoking_vertex.draw.default.line_strip"
+ ]
+}

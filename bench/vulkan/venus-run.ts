@@ -1,6 +1,6 @@
 // VK1: Vulkan through Venus in a guest on the page (docs/devices.md "Venus"): images/debian-vulkan/build.sh's Debian on
 // a 3D machine with `?gpu=vulkan`, vulkaninfo's summary and the kernel's virtio-gpu lines, then commands of the
-// caller's (CMDS, one a line), then the frames of REPLAY's programs (comma-separated) checked against lavapipe's
+// caller's (CMDS, one a line), then the frames of REPLAY's programs (comma-separated, or `all`: the disk's) checked against lavapipe's
 // (images/vkframes/build.sh's disk as the second disk, its run.sh: results.json's `replay <name>`); also the page's
 // WebGPU adapter. Writes <out>/results.json and the serial log.
 //   node bench/vulkan/venus-run.ts [image] [outdir]   (the image also IMAGE=, default target/images/debian-vulkan/disk.qcow2;
@@ -27,7 +27,12 @@ try {
   for (const cmd of (process.env.CMDS ?? '').split('\n').filter(Boolean)) results[cmd] = await s.run(cmd, 300_000);
   // The kernel's mount lines would land in the output.
   if (replay.length) await s.run('dmesg -n 1; mkdir -p /vkf; mount -o ro /dev/vdb /vkf');
-  for (const name of replay) results[`replay ${name}`] = await s.run(`/vkf/run.sh ${name}`, 300_000);
+  const names = replay[0] === 'all' ? (await s.run("awk '{printf \"%s \", $1}' /vkf/programs")).split(/\s+/).filter(Boolean) : replay;
+  for (const name of names) {
+    const t0 = performance.now();
+    results[`replay ${name}`] = await s.run(`/vkf/run.sh ${name}`, 300_000);
+    results[`replay ${name} s`] = ((performance.now() - t0) / 1000).toFixed(1);
+  }
 } finally {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
   for (const [k, v] of Object.entries(results)) console.log(`== ${k}\n${v}`);

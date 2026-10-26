@@ -21,7 +21,7 @@ export function gpuFeatures(device: GPUDevice | undefined) {
   const f = device.features;
   return (f.has('texture-compression-bc') ? 1 : 0) | (f.has('texture-compression-etc2') ? 2 : 0) | (f.has('texture-compression-astc') ? 4 : 0) |
     (f.has('depth32float-stencil8') ? 8 : 0) | (f.has('float32-filterable') ? 16 : 0) | (f.has('depth-clip-control') ? 32 : 0) |
-    (f.has('dual-source-blending') ? 64 : 0) | (f.has('clip-distances' as GPUFeatureName) ? 128 : 0) | (1 << 31);
+    (f.has('dual-source-blending') ? 64 : 0) | (f.has('clip-distances' as GPUFeatureName) ? 128 : 0) | (f.has('indirect-first-instance') ? 256 : 0) | (1 << 31);
 }
 
 /** The bytes of immediates a pipeline layout may declare on `device` (0 where the browser has none). */
@@ -33,7 +33,7 @@ export function maxImmediates(device: GPUDevice | undefined) {
 /** The features and limits to ask an adapter's device for. */
 export function deviceRequest(adapter: GPUAdapter): GPUDeviceDescriptor {
   const want = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
-    'depth-clip-control', 'dual-source-blending', 'clip-distances', 'rg11b10ufloat-renderable'] as GPUFeatureName[];
+    'depth-clip-control', 'dual-source-blending', 'clip-distances', 'rg11b10ufloat-renderable', 'indirect-first-instance'] as GPUFeatureName[];
   const limits = adapter.limits as unknown as Record<string, number>;
   const requiredLimits: Record<string, number> = {};
   for (const k of ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxBindGroups', 'maxColorAttachmentBytesPerSample', 'maxStorageBuffersPerShaderStage', 'maxSampledTexturesPerShaderStage', 'maxSamplersPerShaderStage', 'maxUniformBuffersPerShaderStage', 'maxStorageTexturesPerShaderStage', 'maxDynamicUniformBuffersPerPipelineLayout', 'maxDynamicStorageBuffersPerPipelineLayout', 'maxTextureDimension2D', 'maxTextureArrayLayers', 'maxImmediateSize', 'maxInterStageShaderVariables', 'maxVertexAttributes', 'maxComputeWorkgroupStorageSize', 'maxComputeInvocationsPerWorkgroup']) {
@@ -114,8 +114,25 @@ export class VenusGpu {
       noop.gpu_submit = (serial: number) => { this.stats.submits++; this.chain = this.chain.then(() => this.complete(serial)); };
       return noop;
     }
+    // An exception out of an import would unwind the module's call midway (its state half updated: the renderer then
+    // misbehaves for good); what WebGPU's API throws (an argument it rejects) is warned and the command dropped.
+    const guarded: Record<string, (...a: number[]) => number | void> = {};
+    for (const [name, f] of Object.entries(this.calls(d, self, rp, cp, buf))) {
+      guarded[name] = (...a: number[]) => {
+        try {
+          return f(...a);
+        } catch (e) {
+          self.warn(`${name} threw: ${String(e).slice(0, 300)}`);
+          return 0;
+        }
+      };
+    }
+    return guarded;
+  }
+
+  private calls(d: GPUDevice, self: this, rp: () => GPURenderPassEncoder, cp: () => GPUComputePassEncoder, buf: (id: number) => GPUBuffer): Record<string, (...a: number[]) => number | void> {
     return {
-      gpu_create(kind: number, id: number, ptr: number, len: number) { self.create(kind, id, JSON.parse(self.text(ptr, len))); },
+      gpu_create(kind: number, id: number, ptr: number, len: number) { self.create(kind, id, parseJson(self.text(ptr, len))); },
       gpu_shader(id: number, ptr: number, len: number) {
         const code = self.text(ptr, len);
         const m = d.createShaderModule({ code });
@@ -142,10 +159,12 @@ export class VenusGpu {
         if (size) self.enc!.copyBufferToBuffer(buf(src), so, buf(dst), dO, size);
       },
       gpu_copy_bt(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
-        self.enc!.copyBufferToTexture(self.layout(b, offset, bpr, rows, h, depth), self.texCopy(tex, mip, x, y, z, aspect), { width: w, height: h, depthOrArrayLayers: depth });
         self.touched.add(self.get<GPUTexture>(tex));
+        if (aspect) return self.depthStencilCopy(true, b, offset, bpr, rows, tex, mip, x, y, z, w, h, depth, aspect);
+        self.enc!.copyBufferToTexture(self.layout(b, offset, bpr, rows, h, depth), self.texCopy(tex, mip, x, y, z, aspect), { width: w, height: h, depthOrArrayLayers: depth });
       },
       gpu_copy_tb(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
+        if (aspect) return self.depthStencilCopy(false, b, offset, bpr, rows, tex, mip, x, y, z, w, h, depth, aspect);
         self.enc!.copyTextureToBuffer(self.texCopy(tex, mip, x, y, z, aspect), self.layout(b, offset, bpr, rows, h, depth), { width: w, height: h, depthOrArrayLayers: depth });
       },
       gpu_copy_tt(src: number, sm: number, sx: number, sy: number, sz: number, dst: number, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number) {
@@ -165,9 +184,9 @@ export class VenusGpu {
         const t = self.staging(padded, (m) => new Uint8Array(m).set(bytes));
         self.enc!.copyBufferToBuffer(t, 0, buf(b), offset, padded);
       },
-      gpu_blit(ptr: number, len: number) { self.meta(JSON.parse(self.text(ptr, len))); },
+      gpu_blit(ptr: number, len: number) { self.meta(parseJson(self.text(ptr, len))); },
       gpu_render_pass(ptr: number, len: number) {
-        const j = JSON.parse(self.text(ptr, len));
+        const j = parseJson(self.text(ptr, len));
         const colors: (GPUTextureFormat | null)[] = [];
         let samples = 1;
         const desc: GPURenderPassDescriptor = {
@@ -215,7 +234,7 @@ export class VenusGpu {
       },
       gpu_dispatch(x: number, y: number, z: number) { cp().dispatchWorkgroups(x, y, z); },
       gpu_dispatch_indirect(b: number, offset: number) { cp().dispatchWorkgroupsIndirect(buf(b), offset); },
-      gpu_clear_rects(ptr: number, len: number) { self.clearRects(JSON.parse(self.text(ptr, len))); },
+      gpu_clear_rects(ptr: number, len: number) { self.clearRects(parseJson(self.text(ptr, len))); },
       gpu_begin_occlusion(i: number) { rp().beginOcclusionQuery(i); },
       gpu_end_occlusion() { rp().endOcclusionQuery(); },
       gpu_resolve_queries(set: number, first: number, count: number, b: number, offset: number) {
@@ -277,6 +296,45 @@ export class VenusGpu {
     return one ? { buffer: this.get<GPUBuffer>(b), offset } : { buffer: this.get<GPUBuffer>(b), offset, bytesPerRow: bpr, rowsPerImage: Math.max(rows, 1) };
   }
 
+  /** A copy between a buffer and a depth or stencil aspect (aspect 1 or 2: the driver doesn't split their rows), which
+   * WebGPU allows only of whole subresources, with rows 256 bytes apart, not of depth24plus's aspects at all, not into
+   * depth32float's depth (nor of multisampled textures): rows realigned through a temporary buffer, and what WebGPU can't do
+   * skipped with a warning (one bad copy would invalidate the submit's whole command buffer). */
+  private depthStencilCopy(toTexture: boolean, b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
+    const t = this.get<GPUTexture>(tex), f = t.format;
+    const stencil = aspect === 2 || f === 'stencil8';
+    const bytes = stencil ? 1 : f === 'depth16unorm' ? 2 : 4;
+    const whole = x === 0 && y === 0 && w === Math.max(1, t.width >> mip) && h === Math.max(1, t.height >> mip);
+    const allowed = (stencil && !f.startsWith('depth24plus')) || f === 'depth16unorm' || (!toTexture && f.startsWith('depth32float'));
+    const row = w * bytes;
+    const realign = bpr % 256 !== 0 && (rows > 1 || depth > 1);
+    if (!whole || !allowed || t.sampleCount > 1 || (realign && (row % 4 || bpr % 4 || offset % 4))) {
+      this.warn(`a ${stencil ? 'stencil' : 'depth'} copy WebGPU can't make (${toTexture ? 'into' : 'from'} ${f}, ${w}x${h} at ${x},${y} of mip ${mip}): skipped`);
+      return;
+    }
+    const size = { width: w, height: h, depthOrArrayLayers: depth };
+    if (!realign) {
+      const layout = this.layout(b, offset, bpr, rows, h, depth);
+      if (toTexture) this.enc!.copyBufferToTexture(layout, this.texCopy(tex, mip, x, y, z, aspect), size);
+      else this.enc!.copyTextureToBuffer(this.texCopy(tex, mip, x, y, z, aspect), layout, size);
+      return;
+    }
+    const pitch = Math.ceil(row / 256) * 256;
+    const temp = this.device!.createBuffer({ size: pitch * h * depth, usage: COPY_SRC | COPY_DST });
+    this.temps.push(temp);
+    const src = this.get<GPUBuffer>(b), enc = this.enc!;
+    const each = (fn: (from: number, to: number) => void) => {
+      for (let d = 0; d < depth; d++) for (let r = 0; r < h; r++) fn(offset + (d * rows + r) * bpr, (d * h + r) * pitch);
+    };
+    const layout = { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: h };
+    if (toTexture) {
+      each((from, to) => enc.copyBufferToBuffer(src, from, temp, to, row));
+      enc.copyBufferToTexture(layout, this.texCopy(tex, mip, x, y, z, aspect), size);
+    } else {
+      enc.copyTextureToBuffer(this.texCopy(tex, mip, x, y, z, aspect), layout, size);
+      each((to, from) => enc.copyBufferToBuffer(temp, from, src, to, row));
+    }
+  }
   private texCopy(tex: number, mip: number, x: number, y: number, z: number, aspect: number): GPUTexelCopyTextureInfo {
     return { texture: this.get<GPUTexture>(tex), mipLevel: mip, origin: { x, y, z }, aspect: aspect === 1 ? 'depth-only' : aspect === 2 ? 'stencil-only' : 'all' };
   }
@@ -299,7 +357,7 @@ export class VenusGpu {
       case 2: {
         const tex = this.get<GPUTexture>(j.texture);
         const { texture: _, ...desc } = j;
-        this.objs[id] = { view: tex.createView(desc as GPUTextureViewDescriptor), format: j.format, samples: tex.sampleCount, tex };
+        this.objs[id] = { view: tex.createView(desc as GPUTextureViewDescriptor), format: j.format ?? tex.format, samples: tex.sampleCount, tex };
         return;
       }
       case 3: this.objs[id] = d.createSampler(j as GPUSamplerDescriptor); return;
@@ -355,12 +413,21 @@ export class VenusGpu {
     let v = this.views.get(key);
     const t = this.get<GPUTexture>(tex);
     if (!v || (v as unknown as { tex?: GPUTexture }).tex !== t) {
-      v = t.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: t.dimension === '3d' ? 0 : layer, arrayLayerCount: 1, ...(format ? { format: format as GPUTextureFormat } : {}) });
+      // A 3D texture's slice is drawn into through its 3D view and the attachment's depthSlice (attachment()).
+      v = t.dimension === '3d'
+        ? t.createView({ dimension: '3d', baseMipLevel: mip, mipLevelCount: 1, ...(format ? { format: format as GPUTextureFormat } : {}) })
+        : t.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1, ...(format ? { format: format as GPUTextureFormat } : {}) });
       (v as unknown as { tex?: GPUTexture }).tex = t;
       if (this.views.size > 1024) this.views.clear();
       this.views.set(key, v);
     }
     return v;
+  }
+
+  /** A level and layer (a 3D texture's slice) as a colour attachment. */
+  private attachment(tex: number, mip: number, layer: number) {
+    const view = this.viewOf(tex, mip, this.get<GPUTexture>(tex).dimension === '3d' ? 0 : layer);
+    return this.get<GPUTexture>(tex).dimension === '3d' ? { view, depthSlice: layer } : { view };
   }
 
   private meta(j: Json) {
@@ -377,8 +444,12 @@ export class VenusGpu {
         if (/stencil/.test(fmt)) Object.assign(ds, j.stencil !== undefined ? { stencilLoadOp: 'clear', stencilStoreOp: 'store', stencilClearValue: j.stencil } : { stencilLoadOp: 'load', stencilStoreOp: 'store' });
         enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds }).end();
       } else {
-        enc.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: j.color ?? [0, 0, 0, 0] }] }).end();
+        enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, j.dstLayer), loadOp: 'clear', storeOp: 'store', clearValue: j.color ?? [0, 0, 0, 0] }] }).end();
       }
+      return;
+    }
+    if (j.op === 'resolve' && /int$/.test(fmt)) {
+      this.warn(`a resolve of ${fmt}, which WebGPU can't resolve: skipped`);
       return;
     }
     if (j.op === 'resolve') {
@@ -425,7 +496,7 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: this.viewOf(j.src, j.srcMip, j.srcLayer) }];
     if (linear) entries.push({ binding: 2, resource: this.sampler() });
     const group = this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
-    const pass = enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.dst, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] });
+    const pass = enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] });
     const x = Math.min(dx0, dx1), y = Math.min(dy0, dy1);
     pass.setViewport(x, y, Math.abs(dx1 - dx0), Math.abs(dy1 - dy0), 0, 1);
     pass.setPipeline(pipeline);
@@ -503,6 +574,14 @@ ${outs.length ? `struct O { ${outs.join(', ')} }
       pass.draw(3);
     }
   }
+}
+
+/** The driver's JSON, whose numbers are C's %g: NaN and infinities come as `nan` and `inf` (a clear value may be
+ * either), which JSON lacks and WebGPU's colours don't take. */
+function parseJson(text: string): Json {
+  if (!/nan|inf/i.test(text)) return JSON.parse(text);
+  // WebGPU's colours are finite doubles: NaN as 0, infinities as f32's largest.
+  return JSON.parse(text.replace(/-?\bnan\b/gi, '0').replace(/(-?)\binf\b/gi, '$13.4028234663852886e38'));
 }
 
 /** A texture format's WGSL sample type. */

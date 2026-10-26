@@ -95,9 +95,10 @@ part of a pipeline (~9 ms on the M4) dwarfs a frontend's, so C in wasm costs lit
 it is encoded: §4 "Render pass breaks"); render passes and dynamic rendering → render passes, subpasses split into
 passes with input attachments bound as textures; pipelines → render and compute pipelines, compiled from SPIR-V and
 cached by hash; descriptor sets → bind groups, which are immutable in WebGPU, so made at bind time and cached by
-content, dynamic offsets as dynamic offsets; at most 4 sets advertised (`maxBindGroups`; GTK4 uses exactly 4), so the
-translator's own data rides in immediates, not a fifth group; push constants → immediates (64 bytes on both adapters
-measured, bench/gpu/REPORT.md) or a uniform buffer past that; secondary command buffers → render bundles where they
+content, dynamic offsets as dynamic offsets; 8 sets advertised (Vulkan's minimum is 4, but vkQuake binds 5: VK2 L5),
+sets 3 and up sharing WebGPU's fourth bind group (`maxBindGroups` is 4); push constants → immediates (64 bytes on
+both adapters measured, bench/gpu/REPORT.md) or, past that up to Vulkan's 128, a uniform buffer of the driver's in
+that fourth group at a dynamic offset (L5); secondary command buffers → render bundles where they
 fit; barriers and layouts accepted and ignored (WebGPU tracks hazards); one queue family with graphics, compute and
 transfer; fences and semaphores on `onSubmittedWorkDone`.
 

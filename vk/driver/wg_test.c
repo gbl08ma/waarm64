@@ -3,8 +3,9 @@
  * module, in a browser with WebGPU. One submit draws a scene through a render pass (a cleared colour and depth
  * attachment; a textured, indexed quad placed by push constants, its texture uploaded from a buffer whose rows aren't
  * 256 bytes apart; a second draw behind it through a dynamic uniform offset), copies the image to host-visible
- * memory, runs a compute shader writing host-visible storage, and fills a host-visible buffer; its fence signals once
- * all of that is back in memory 0. Exported from the module (wgt_*); the shaders' SPIR-V comes from the test.
+ * memory, runs a compute shader writing host-visible storage (its buffer in set 4, past WebGPU's 4 bind groups, and its
+ * push constants 128 bytes, past WebGPU's immediates), and fills a host-visible buffer; its fence signals once all of
+ * that is back in memory 0. Exported from the module (wgt_*); the shaders' SPIR-V comes from the test.
  */
 #include <stdbool.h>
 #include <stdio.h>
@@ -214,14 +215,20 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
                                                  .bindingCount = 1, .pBindings = &cbinding };
    CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &set_layout));
    CHECK(CreateDescriptorSetLayout(dev, &cli, NULL, &cset_layout));
-   const VkPushConstantRange push = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0, 16 };
+   /* The compute pipeline's sets 0 to 3 are empty: its storage is set 4's. */
+   VkDescriptorSetLayout empty;
+   const VkDescriptorSetLayoutCreateInfo eli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+   CHECK(CreateDescriptorSetLayout(dev, &eli, NULL, &empty));
+   const VkDescriptorSetLayout clayouts[5] = { empty, empty, empty, empty, cset_layout };
+   const VkPushConstantRange push = { VK_SHADER_STAGE_VERTEX_BIT, 0, 16 };
+   const VkPushConstantRange cpush = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
    VkPipelineLayout layout, clayout;
    const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
                                             .pSetLayouts = &set_layout, .pushConstantRangeCount = 1,
                                             .pPushConstantRanges = &push };
    const VkPipelineLayoutCreateInfo cpli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                             .setLayoutCount = 1, .pSetLayouts = &cset_layout,
-                                             .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+                                             .setLayoutCount = 5, .pSetLayouts = clayouts,
+                                             .pushConstantRangeCount = 1, .pPushConstantRanges = &cpush };
    CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
    CHECK(CreatePipelineLayout(dev, &cpli, NULL, &clayout));
    const VkDescriptorPoolSize sizes[3] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 },
@@ -353,13 +360,13 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    uint32_t offset = 0;
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[0], 1, &offset);
    const float right[4] = { 0.5f, 0, 0, 0 };
-   CmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, right);
+   CmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
    CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
    /* Behind it (z 0.75): the top three quarters in yellow. */
    const float wide[4] = { 0, 0, 0, 0 };
    offset = 256;
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[0], 1, &offset);
-   CmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, wide);
+   CmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, wide);
    CmdDraw(cmd, 6, 1, 4, 0);
    CmdEndRenderPass(cmd);
    const VkBufferImageCopy down = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
@@ -367,9 +374,10 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    CmdCopyImageToBuffer(cmd, color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback, 1, &down);
 
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cpipeline);
-   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, clayout, 0, 1, &sets[1], 0, NULL);
-   const uint32_t k[4] = { 7, 0, 0, 0 };
-   CmdPushConstants(cmd, clayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, k);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, clayout, 4, 1, &sets[1], 0, NULL);
+   uint32_t k[32] = { 0 };
+   k[28] = 7;
+   CmdPushConstants(cmd, clayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), k);
    CmdDispatch(cmd, 4, 1, 1);
    CmdFillBuffer(cmd, fill, 16, 32, 0xdeadbeef);
    CHECK(EndCommandBuffer(cmd));

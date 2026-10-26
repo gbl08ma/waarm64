@@ -4,6 +4,52 @@ Notes between VK2's sessions (the brief: `VK2-KICKOFF.md`). Newest state first.
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
+## State (2026-10-26, after L5)
+
+- **L5 is done: vkmark's and vkQuake's frames right, dEQP-VK's pass list in CI** (REPORT.md "VK2 L5", JSON in
+  `results/vk2/l5/`). `images/vkframes/build.sh` now captures through the Profiles layer with **the Venus device's own
+  profile** (`images/vkframes/venus-profile.json`, `vulkaninfo --json` in the guest: regenerate it when the caps change,
+  i.e. L7) so programs take our device's paths; programs: vkcube, vkmark's 13 scenes (a capture each, `-p fifo`, 0.5 s),
+  vkQuake (trimmed, frames 200–230: `GFXRECON_CAPTURE_FRAMES`; its replay numbers frames from 2). Each program has a
+  tolerance in the disk's `programs`; `venus-run.ts REPLAY=all`; `page-venus` checks them all (~50 s more on
+  SwiftShader). **Rebuild the vkframes disk** (it needs `target/vk0a/lq-dl` for vkQuake). SwiftShader and the M4 both
+  within tolerance; vkQuake 1.7% >24 on both, identical counts: systematic, unidentified (backlog).
+- **dEQP-VK:** `images/deqp/build.sh vk` (Containerfile.vk: vulkan-cts-1.4.7.0 deqp-vk; `target/deqp/deqp-vk.ext4`,
+  `guest-vk.qcow2`: Arch + vulkan-virtio; the guest is made once, `vk --guest-only` remakes it), `scripts/ci-deqp-vk.sh`
+  → `tests/page-deqp-vk.test.ts` over `tests/deqp/vk.txt` (1,471 cases). `bench/gpu/deqp-run.ts vk` gained `PREFIX`
+  (groups) and `PASSED=1` (the passing names), `QPA=1` (dEQP's log with images: how the linear-image bug was found),
+  crash resume (a crashing case is recorded `Crash`, the run goes on) and the statuses fetched gzipped. Samples: 4,278
+  pass / 665 fail / 5 crash of ~20,000; failures by cause in backlog "The Vulkan driver's gaps".
+- **Driver/translator changes:** 8 sets (3+ packed into bind group 3, `set_groups`), push constants to 128 bytes (past
+  immediates: the device's push buffer, a dynamic offset in group 3), dynamically indexed sampled-image arrays (if
+  trees), barriers in loops (`workgroupUniformLoad` conditions), program variants for unfilterable/depth views (+ the
+  sampler's nearest twin), aspect views without a format, 1D images as 2D, integer textures sampled → fetched
+  (clamp-to-edge), compressed sizes rounded to blocks, 3D slices as attachments (`depthSlice`), attributes past their
+  stride (own vertex slot), triangle fans (device fan index buffer), depth clip off, linear images in host-visible
+  memory (copied from/to their memory every submit), `indirect-first-instance`, D24S8 stencil copies; a translation
+  failure now makes draw-nothing shaders (a failed pipeline killed the guest's whole context: vkr "failed to look up
+  object"); the worker skips copies WebGPU refuses and catches what its API throws (both used to wreck the submit or
+  the module's state).
+- **Frame times on the M4** (VK0's scene, desktop guest): Venus VK2 0.93–1.06 / 2.53–2.71 / 0.86–0.90 ms a frame
+  (1 fish / 1,000 / toolkit) against virgl 1.43–1.45 / 4.83–5.46 / 3.40–3.60, and VK1's null renderer 0.46 / 1.58 /
+  0.43; the guest's CPU a frame +≤10% over VK1's. Replay rates: vkmark 60–121 fps on the M4 (same as SwiftShader:
+  guest-bound), vkQuake 43 (14 on SwiftShader).
+- **Worth not re-discovering:** WebGPU object ids are reused: anything cached by an id (a set's bind groups by layout)
+  must use a never-reused uid (`bgl_uid`), and ids must not be released while the replay may still set them
+  (`released_groups`). Venus's guest driver doesn't wait for pipeline creation: never fail `vk_shader` compile. A
+  `pkill -f` on a pattern in your own command line killed the shell again (exit 144): use `pgrep -f "name[.]sh"`.
+  `nir_build_tex` takes the dimension from the deref's type (a lowered 1D texture's is still 1D). `align()` asserts a
+  power of two (ASTC blocks aren't). dEQP reads colour results through a linear image it maps: without linear-image
+  memory every colour test read zeros. Mac benchmarks share the M4 with the dev VM: run them while the VM is idle.
+- **CI at the commit:** ci.sh OK (505 s), ci-deqp.sh OK (281 s), ci-deqp-vk.sh OK (246 s), ci-debian.sh OK (349 s).
+  The planted fan-index bug was caught by dEQP-VK (`draw.renderpass.basic_draw.draw.triangle_fan.45`), a planted
+  push-buffer offset by `venus-driver` (whose compute pass now uses set 4 and 128 bytes of push constants).
+- **Not done, for L6/L7:** the user's NVIDIA run is still unscripted (`bench/vulkan/nvidia.sh` runs VK0's arms):
+  script the page with REPLAY=all and the scene there (L7). VK1's replay rates weren't measured (no VK1 build in the
+  tree; would need its commit's vk/ built in turn). vkQuake's systematic difference; texel buffers (its
+  palettization), texture offsets as constants, per-face stencil, occlusion queries; and dEQP-VK on the Mac's GPU
+  (`sway-mac.sh` doesn't pass `vk` through yet: it copies only deqp.ext4).
+
 ## State (2026-10-26, after L4)
 
 - **L4 is done: Vulkan's frames reach the screen through virgl** (vk/README.md "Presentation", web/venus-share.ts).
@@ -133,7 +179,8 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
   (candidates: a WebGPU canvas context on an OffscreenCanvas + `texImage2D` from it, or `transferToImageBitmap`;
   measure per-frame cost at 1080p; a CPU readback is the slow fallback). `SET_SCANOUT_BLOB` only if a guest scans
   a Venus image out.
-- **L5, vkmark and vkQuake right, dEQP-VK:** the direct rows' dEQP-VK groups as pass lists in a CI script of their own
+- **L5, vkmark and vkQuake right, dEQP-VK** (done 2026-10-26; frames through the L3 replay, the list from samples:
+  above): the direct rows' dEQP-VK groups as pass lists in a CI script of their own
   (`scripts/ci-deqp-vk.sh`, as ci-deqp.sh for GLES; images/deqp/build.sh needs deqp-vk). Frame times on the Mac
   (bench/gpu/sway-mac.sh, `SCRIPT=`) against VK1 and against virgl where there's a GL path.
 - **L6, mpv (the gate):** VA-API surfaces (virgl resources decoded by WebCodecs) imported into Venus as dma-bufs;

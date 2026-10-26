@@ -1,0 +1,11 @@
+# dEQP-VK for Arch Linux (images/deqp/build.sh vk): localhost/arch-base is images/arch/base.sh's (the mirror and keyring
+# set). deqp-vk alone, on the surfaceless target (no WSI: its WSI groups are out of the lists).
+FROM localhost/arch-base
+RUN pacman -Syu --noconfirm --noprogressbar --needed base-devel cmake ninja python git libpng zlib mesa libdrm wayland e2fsprogs && \
+    pacman -Scc --noconfirm
+ARG CTS=vulkan-cts-1.4.7.0
+RUN git clone -q --depth 1 --branch $CTS https://github.com/KhronosGroup/VK-GL-CTS.git /cts && \
+    cd /cts && python3 external/fetch_sources.py --protocol https > /tmp/fetch.log 2>&1 || (tail -20 /tmp/fetch.log; exit 1)
+RUN cmake -S /cts -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDEQP_TARGET=surfaceless > /tmp/cmake.log 2>&1 || (tail -40 /tmp/cmake.log; exit 1)
+# Its larger sources take ~1.5 GB each to compile: -j5 keeps it under the dev VM's memory.
+RUN ninja -C /build -j5 deqp-vk > /tmp/ninja.log 2>&1 || (tail -40 /tmp/ninja.log; exit 1)

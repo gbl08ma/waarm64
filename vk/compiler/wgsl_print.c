@@ -43,6 +43,10 @@ struct ctx {
    uint32_t vs_writes;           /* vertex: VAR locations written */
    uint8_t vs_write_base[32];
    uint8_t input_comps[32];
+   /* Compute: ifs whose condition goes through workgroupUniformLoad (below), and whether the loop being printed
+    * holds a barrier. */
+   unsigned uniform_conds;
+   bool in_barrier_loop;
 };
 
 static void
@@ -479,6 +483,13 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
          s->r.kind = WGSL_SAMPLER_COMPARE;
       if (t->r.sample == WGSL_SAMPLE_SINT || t->r.sample == WGSL_SAMPLE_UINT)
          failf(c, "an integer texture sampled with a sampler");
+      bool known = false;
+      for (unsigned i = 0; i < c->info->pair_count; i++)
+         known |= c->info->pairs[i][0] == tex->texture_index && c->info->pairs[i][1] == tex->sampler_index;
+      if (!known && c->info->pair_count < WGSL_MAX_PAIRS) {
+         c->info->pairs[c->info->pair_count][0] = tex->texture_index;
+         c->info->pairs[c->info->pair_count++][1] = tex->sampler_index;
+      }
    }
    if (tex->op == nir_texop_lod)
       failf(c, "textureQueryLod");
@@ -1473,6 +1484,60 @@ emit_block(struct ctx *c, nir_block *block)
    }
 }
 
+/* Whether a control-flow list holds a workgroup barrier. */
+static bool
+cf_has_barrier(struct exec_list *list)
+{
+   foreach_list_typed (nir_cf_node, node, node, list) {
+      switch (node->type) {
+      case nir_cf_node_block:
+         nir_foreach_instr (instr, nir_cf_node_as_block(node))
+            if (instr->type == nir_instr_type_intrinsic &&
+                nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_barrier &&
+                nir_intrinsic_execution_scope(nir_instr_as_intrinsic(instr)) >= SCOPE_WORKGROUP)
+               return true;
+         break;
+      case nir_cf_node_if:
+         if (cf_has_barrier(&nir_cf_node_as_if(node)->then_list) || cf_has_barrier(&nir_cf_node_as_if(node)->else_list))
+            return true;
+         break;
+      case nir_cf_node_loop:
+         if (cf_has_barrier(&nir_cf_node_as_loop(node)->body))
+            return true;
+         break;
+      default:
+         break;
+      }
+   }
+   return false;
+}
+
+/* Whether a control-flow list jumps out of (or to the top of) the loop it is in. */
+static bool
+cf_has_jump(struct exec_list *list)
+{
+   foreach_list_typed (nir_cf_node, node, node, list) {
+      if (node->type == nir_cf_node_block) {
+         nir_foreach_instr (instr, nir_cf_node_as_block(node))
+            if (instr->type == nir_instr_type_jump)
+               return true;
+      } else if (node->type == nir_cf_node_if) {
+         if (cf_has_jump(&nir_cf_node_as_if(node)->then_list) || cf_has_jump(&nir_cf_node_as_if(node)->else_list))
+            return true;
+      }
+   }
+   return false;
+}
+
+static bool
+needs_uniform_condition(struct ctx *c, nir_if *nif)
+{
+   if (c->nir->info.stage != MESA_SHADER_COMPUTE)
+      return false;
+   return cf_has_barrier(&nif->then_list) || cf_has_barrier(&nif->else_list) ||
+          (c->in_barrier_loop && (cf_has_jump(&nif->then_list) || cf_has_jump(&nif->else_list)));
+}
+
 static void
 emit_cf_list(struct ctx *c, struct exec_list *list)
 {
@@ -1483,7 +1548,19 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
          break;
       case nir_cf_node_if: {
          nir_if *nif = nir_cf_node_as_if(node);
-         line(c, "if (%s) {", src_comp(c, &nif->condition, 0));
+         if (needs_uniform_condition(c, nif)) {
+            /* WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow (every value
+             * here is a var, assigned wherever): the condition of an if around a barrier, or breaking out of a loop
+             * that holds one, is passed through workgroupUniformLoad. The barrier after it keeps the next write of
+             * the same var from racing this read. */
+            const unsigned n = c->uniform_conds++;
+            line(c, "wg_uc%u = select(0u, 1u, %s);", n, src_comp(c, &nif->condition, 0));
+            line(c, "let uc%u = workgroupUniformLoad(&wg_uc%u);", n, n);
+            line(c, "workgroupBarrier();");
+            line(c, "if (uc%u != 0u) {", n);
+         } else {
+            line(c, "if (%s) {", src_comp(c, &nif->condition, 0));
+         }
          c->indent++;
          emit_cf_list(c, &nif->then_list);
          c->indent--;
@@ -1502,7 +1579,10 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
             failf(c, "a loop with a continue construct");
          line(c, "loop {");
          c->indent++;
+         const bool outer = c->in_barrier_loop;
+         c->in_barrier_loop = c->nir->info.stage == MESA_SHADER_COMPUTE && cf_has_barrier(&loop->body);
          emit_cf_list(c, &loop->body);
+         c->in_barrier_loop = outer;
          c->indent--;
          line(c, "}");
          break;
@@ -1514,8 +1594,8 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
 }
 
 char *
-wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, struct wgsl_info *info, char *error,
-           size_t error_size)
+wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates,
+           struct wgsl_info *info, char *error, size_t error_size)
 {
    wgsl_finish(nir);
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
@@ -1532,6 +1612,13 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, struc
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
    gather(&c, impl);
+   /* Push constants past the immediates: a uniform buffer of the driver's, bound at a dynamic offset per draw. */
+   if (info->immediate_size > max_immediates) {
+      struct res_use *r = resource(&c, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_PUSH_BINDING, WGSL_UNIFORM);
+      r->r.size = info->immediate_size;
+      info->push_ubo_size = info->immediate_size;
+      info->immediate_size = 0;
+   }
 
    const mesa_shader_stage stage = nir->info.stage;
    line(&c, "diagnostic(off, derivative_uniformity);");
@@ -1587,6 +1674,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, struc
          list = fmt(&c, "%s, immediates.v%u", list, i);
       line(&c, "let pc = array<vec4<u32>, %u>(%s);", info->immediate_size / 16, list);
    }
+   if (info->push_ubo_size)
+      line(&c, "let pc = r%u_%u;", WGSL_MAX_GROUPS - 1, WGSL_PUSH_BINDING);
    predeclare(&c, impl);
    emit_cf_list(&c, &impl->body);
    if (stage == MESA_SHADER_VERTEX)
@@ -1595,6 +1684,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, struc
       line(&c, "return o;");
    c.indent--;
    line(&c, "}");
+   for (unsigned i = 0; i < c.uniform_conds; i++)
+      line(&c, "var<workgroup> wg_uc%u: u32;", i);
 
    char *text = NULL;
    if (!c.failed)

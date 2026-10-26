@@ -1,18 +1,22 @@
 #!/bin/sh
 # In the guest (images/vkframes/build.sh's disk, mounted at /vkf): replays a program's capture on the Venus device
 # offscreen (its memory types mapped onto the device's: lavapipe's first is host-visible, ours isn't), screenshots the frames build.sh chose, and compares each with lavapipe's reference byte by byte:
-#   /vkf/run.sh <name>  ->  "frame <n> bytes <total> differ <bytes that differ> over <bytes off by more than 24> max <largest difference>"
+#   /vkf/run.sh <name>  ->  "replay <status> fps <the replay's frames a second> tolerance <the share of a frame's bytes allowed off by more than 24>",
+#                           then "frame <n> bytes <total> differ <bytes that differ> over <bytes off by more than 24> max <largest difference>"
 # (a frame missing or of another size: "frame <n> missing"). The replay's own output is in /tmp/vkf/<name>.log.
 set -u
 name=$1
 frames=$(awk -v n="$name" '$1 == n { print $2 }' /vkf/programs)
+tolerance=$(awk -v n="$name" '$1 == n { print $3 }' /vkf/programs)
 out=/tmp/vkf/$name
 rm -rf "$out"; mkdir -p "$out"
 LD_LIBRARY_PATH=/vkf/lib VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.json \
   /vkf/bin/gfxrecon-replay -m remap --swapchain offscreen --screenshots "$frames" --screenshot-dir "$out" \
   --screenshot-prefix "$name" "/vkf/$name.gfxr" > "/tmp/vkf/$name.log" 2>&1
 status=$?
-echo "replay $status"
+# GFXReconstruct's own measure: the frames replayed a second (the state's setup at a trimmed capture's start excluded).
+fps=$(sed -n 's/^Measured FPS: \([0-9.]*\) fps.*/\1/p' "/tmp/vkf/$name.log")
+echo "replay $status fps ${fps:-none} tolerance $tolerance"
 # What went wrong, briefly (the screen holds a few lines).
 [ "$status" = 0 ] || grep -m 4 -E 'FATAL|ERROR|error' "/tmp/vkf/$name.log" | cut -c 1-300
 for ref in /vkf/ref/"$name"_frame_*.bmp; do

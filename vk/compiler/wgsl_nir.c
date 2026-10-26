@@ -9,6 +9,7 @@
 
 #include "nir.h"
 #include "nir_builder.h"
+#include "nir_builtin_builder.h"
 #include "spirv/nir_spirv.h"
 
 #include "wgsl.h"
@@ -154,7 +155,7 @@ wgsl_preprocess(nir_shader *nir)
             nir_var_function_temp | nir_var_shader_in | nir_var_shader_out, UINT32_MAX);
 }
 
-/* Descriptors to slots. A buffer's descriptor is vec2(index, 0) with index = set << 16 | WGSL binding; a texture's or
+/* Descriptors to slots. A buffer's descriptor is vec2(index, 0) with index = group << 16 | WGSL binding; a texture's or
  * sampler's index goes in the tex instruction's texture_index / sampler_index, an image's in its intrinsic's first
  * source, the same way. Array elements must be constants by then (no dynamic indexing is advertised). */
 struct lower_state {
@@ -172,7 +173,7 @@ fail(struct lower_state *s, const char *what, unsigned set, unsigned binding)
    s->failed = true;
 }
 
-/* The WGSL binding of (set, binding)'s first element; -1 if the layout has none. */
+/* The index (group << 16 | WGSL binding) of (set, binding)'s first element; -1 if the layout has none. */
 static int
 slot_binding(struct lower_state *s, unsigned set, unsigned binding)
 {
@@ -181,7 +182,8 @@ slot_binding(struct lower_state *s, unsigned set, unsigned binding)
       fail(s, "a descriptor outside the layout", set, binding);
       return -1;
    }
-   return s->layout->sets[set].first[binding] * 2;
+   const struct wgsl_set_layout *l = &s->layout->sets[set];
+   return l->group << 16 | (l->base + l->first[binding]) * 2;
 }
 
 /* A deref chain to its variable and its constant element. */
@@ -227,7 +229,7 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
          const int base = slot_binding(s, var->data.descriptor_set, var->data.binding);
          if (base < 0)
             return false;
-         const unsigned index = var->data.descriptor_set << 16 | (base + 2 * el + sampler);
+         const unsigned index = base + 2 * el + sampler;
          if (sampler)
             tex->sampler_index = index;
          else
@@ -247,7 +249,7 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
       const int base = slot_binding(s, set, binding);
       if (base < 0)
          return false;
-      nir_def *index = nir_iadd_imm(b, nir_imul_imm(b, intr->src[0].ssa, 2), set << 16 | base);
+      nir_def *index = nir_iadd_imm(b, nir_imul_imm(b, intr->src[0].ssa, 2), base);
       nir_def_replace(&intr->def, nir_vec2(b, index, nir_imm_int(b, 0)));
       return true;
    }
@@ -275,13 +277,205 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
          return false;
       if (nir_intrinsic_format(intr) == PIPE_FORMAT_NONE)
          nir_intrinsic_set_format(intr, var->data.image.format);
-      nir_rewrite_image_intrinsic(intr, nir_imm_int(b, var->data.descriptor_set << 16 | (base + 2 * el)),
+      nir_rewrite_image_intrinsic(intr, nir_imm_int(b, base + 2 * el),
                                   nir_image_intrinsic_type_default);
       return true;
    }
    default:
       return false;
    }
+}
+
+/* 1D textures and images as 2D ones of one row (WebGPU's 1D textures have one level, no layers and can't be rendered
+ * into, so the driver makes every 1D image 2D): a coordinate gains its second component (the row's centre for a
+ * sampled one, 0 for a fetched one or an image's), an array's layer moves up one, and a size query drops the height. */
+static nir_def *
+widen_1d(nir_builder *b, nir_def *coord, bool array, nir_def *y)
+{
+   nir_def *c[4] = { nir_channel(b, coord, 0), y };
+   unsigned n = 2;
+   if (array)
+      c[n++] = nir_channel(b, coord, 1);
+   return nir_vec(b, c, n);
+}
+
+static bool
+lower_1d_tex(nir_builder *b, nir_tex_instr *tex, void *data)
+{
+   if (tex->sampler_dim != GLSL_SAMPLER_DIM_1D)
+      return false;
+   b->cursor = nir_before_instr(&tex->instr);
+   tex->sampler_dim = GLSL_SAMPLER_DIM_2D;
+   for (unsigned i = 0; i < tex->num_srcs; i++) {
+      nir_def *v = tex->src[i].src.ssa;
+      switch (tex->src[i].src_type) {
+      case nir_tex_src_coord:
+         nir_src_rewrite(&tex->src[i].src,
+                         widen_1d(b, v, tex->is_array, nir_tex_instr_src_type(tex, i) == nir_type_float
+                                                          ? nir_imm_float(b, 0.5f)
+                                                          : nir_imm_int(b, 0)));
+         break;
+      case nir_tex_src_offset:
+      case nir_tex_src_ddx:
+      case nir_tex_src_ddy: {
+         nir_def *zero = tex->src[i].src_type == nir_tex_src_offset ? nir_imm_int(b, 0) : nir_imm_float(b, 0);
+         nir_src_rewrite(&tex->src[i].src, nir_vec2(b, nir_channel(b, v, 0), zero));
+         break;
+      }
+      default:
+         break;
+      }
+   }
+   tex->coord_components++;
+   if (tex->op == nir_texop_txs) {
+      /* 2D sizes are (w, h[, layers]): the height goes. */
+      tex->def.num_components++;
+      b->cursor = nir_after_instr(&tex->instr);
+      nir_def *size = tex->is_array ? nir_channels(b, &tex->def, 0x5) : nir_channel(b, &tex->def, 0);
+      nir_def_rewrite_uses_after(&tex->def, size);
+   }
+   return true;
+}
+
+static bool
+lower_1d_image(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   switch (intr->intrinsic) {
+   case nir_intrinsic_image_deref_load:
+   case nir_intrinsic_image_deref_store:
+   case nir_intrinsic_image_deref_atomic:
+   case nir_intrinsic_image_deref_atomic_swap:
+   case nir_intrinsic_image_deref_size:
+      break;
+   default:
+      return false;
+   }
+   if (nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_1D)
+      return false;
+   const bool array = nir_intrinsic_image_array(intr);
+   nir_intrinsic_set_image_dim(intr, GLSL_SAMPLER_DIM_2D);
+   nir_deref_instr *d = nir_src_as_deref(intr->src[0]);
+   nir_variable *var = nir_deref_instr_get_variable(d);
+   if (var)
+      var->type = glsl_type_wrap_in_arrays(glsl_image_type(GLSL_SAMPLER_DIM_2D, array,
+                                                           glsl_get_sampler_result_type(glsl_without_array(var->type))),
+                                           var->type);
+   if (intr->intrinsic == nir_intrinsic_image_deref_size) {
+      intr->def.num_components++;
+      b->cursor = nir_after_instr(&intr->instr);
+      nir_def *size = array ? nir_channels(b, &intr->def, 0x5) : nir_channel(b, &intr->def, 0);
+      nir_def_rewrite_uses_after(&intr->def, size);
+      return true;
+   }
+   b->cursor = nir_before_instr(&intr->instr);
+   nir_def *coord = intr->src[1].ssa;
+   nir_def *c[4] = { nir_channel(b, coord, 0), nir_imm_int(b, 0),
+                     array ? nir_channel(b, coord, 1) : nir_imm_int(b, 0), nir_imm_int(b, 0) };
+   nir_src_rewrite(&intr->src[1], nir_vec(b, c, coord->num_components));
+   return true;
+}
+
+/* An integer texture sampled with a sampler (Vulkan allows it, nearest only; WGSL's textureSample takes float textures):
+ * fetched instead, at the texel the coordinate falls in, clamped to the edge (the sampler's address mode isn't known
+ * when the shader is compiled: other modes come out as clamp-to-edge), from the level an explicit LOD names or 0. */
+static bool
+lower_int_sample(nir_builder *b, nir_tex_instr *tex, void *data)
+{
+   if ((tex->op != nir_texop_tex && tex->op != nir_texop_txb && tex->op != nir_texop_txl && tex->op != nir_texop_txd) ||
+       tex->is_shadow || tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE)
+      return false;
+   const nir_alu_type base = nir_alu_type_get_base_type(tex->dest_type);
+   if (base != nir_type_int && base != nir_type_uint)
+      return false;
+   const int ci = nir_tex_instr_src_index(tex, nir_tex_src_coord), ti = nir_tex_instr_src_index(tex, nir_tex_src_texture_deref);
+   if (ci < 0 || ti < 0)
+      return false;
+   nir_def *size = nir_get_texture_size(b, tex);
+   b->cursor = nir_before_instr(&tex->instr);
+   const int li = nir_tex_instr_src_index(tex, nir_tex_src_lod), oi = nir_tex_instr_src_index(tex, nir_tex_src_offset);
+   nir_def *lod = tex->op == nir_texop_txl && li >= 0 ? nir_f2i32(b, nir_fround_even(b, tex->src[li].src.ssa)) : nir_imm_int(b, 0);
+   nir_def *coord = tex->src[ci].src.ssa;
+   const unsigned n = tex->coord_components, spatial = n - (tex->is_array ? 1 : 0);
+   nir_def *c[4];
+   for (unsigned i = 0; i < n; i++) {
+      nir_def *extent = nir_channel(b, size, i);
+      if (i < spatial) {
+         extent = nir_imax(b, nir_ishr(b, extent, lod), nir_imm_int(b, 1));
+         nir_def *t = nir_f2i32(b, nir_ffloor(b, nir_fmul(b, nir_channel(b, coord, i), nir_i2f32(b, extent))));
+         if (oi >= 0)
+            t = nir_iadd(b, t, nir_channel(b, tex->src[oi].src.ssa, i));
+         c[i] = nir_imin(b, nir_imax(b, t, nir_imm_int(b, 0)), nir_iadd_imm(b, extent, -1));
+      } else {
+         c[i] = nir_imin(b, nir_imax(b, nir_f2i32(b, nir_fround_even(b, nir_channel(b, coord, i))), nir_imm_int(b, 0)),
+                         nir_iadd_imm(b, extent, -1));
+      }
+   }
+   nir_def *res = nir_build_tex(b, nir_texop_txf, .coord = nir_vec(b, c, n), .lod = lod,
+                                .texture_deref = nir_src_as_deref(tex->src[ti].src), .dim = tex->sampler_dim,
+                                .is_array = tex->is_array, .dest_type = tex->dest_type);
+   /* The builder takes the dimension from the deref's type, which a 1D texture's still has (lower_1d_tex). */
+   nir_tex_instr *fetch = nir_instr_as_tex(nir_def_instr(res));
+   fetch->sampler_dim = tex->sampler_dim;
+   fetch->is_array = tex->is_array;
+   fetch->coord_components = n;
+   nir_def_replace(&tex->def, res);
+   return true;
+}
+
+/* Arrays of textures and samplers indexed dynamically (shaderSampledImageArrayDynamicIndexing: the index is
+ * dynamically uniform): WGSL has no binding arrays, so each element is a binding of its own and the instruction is
+ * chosen by the index, a binary tree of ifs with a copy per element. */
+static nir_deref_instr *
+dynamic_array_deref(nir_tex_instr *tex, unsigned i)
+{
+   if (tex->src[i].src_type != nir_tex_src_texture_deref && tex->src[i].src_type != nir_tex_src_sampler_deref)
+      return NULL;
+   nir_deref_instr *d = nir_src_as_deref(tex->src[i].src);
+   return d->deref_type == nir_deref_type_array && !nir_src_is_const(d->arr.index) &&
+                nir_deref_instr_parent(d)->deref_type == nir_deref_type_var
+             ? d
+             : NULL;
+}
+
+static nir_def *
+emit_element(nir_builder *b, nir_tex_instr *tex, nir_def *index, unsigned lo, unsigned hi)
+{
+   if (hi - lo == 1) {
+      /* The clone's sources aren't in use lists until it's inserted: set, not rewritten. */
+      nir_tex_instr *copy = nir_instr_as_tex(nir_instr_clone(b->shader, &tex->instr));
+      for (unsigned i = 0; i < copy->num_srcs; i++) {
+         nir_deref_instr *d = dynamic_array_deref(tex, i);
+         if (d)
+            copy->src[i].src = nir_src_for_ssa(&nir_build_deref_array_imm(b, nir_deref_instr_parent(d), lo)->def);
+      }
+      nir_builder_instr_insert(b, &copy->instr);
+      return &copy->def;
+   }
+   const unsigned mid = (lo + hi) / 2;
+   nir_push_if(b, nir_ult_imm(b, index, mid));
+   nir_def *x = emit_element(b, tex, index, lo, mid);
+   nir_push_else(b, NULL);
+   nir_def *y = emit_element(b, tex, index, mid, hi);
+   nir_pop_if(b, NULL);
+   return nir_if_phi(b, x, y);
+}
+
+static bool
+lower_dynamic_tex_index(nir_builder *b, nir_tex_instr *tex, void *data)
+{
+   nir_deref_instr *d = NULL;
+   for (unsigned i = 0; i < tex->num_srcs && !d; i++)
+      d = dynamic_array_deref(tex, i);
+   if (!d)
+      return false;
+   const unsigned n = glsl_get_length(nir_deref_instr_parent(d)->type);
+   if (!n)
+      return false;
+   b->cursor = nir_before_instr(&tex->instr);
+   nir_def *index = nir_umin(b, d->arr.index.ssa, nir_imm_int(b, n - 1));
+   nir_def *res = emit_element(b, tex, index, 0, n);
+   nir_def_replace(&tex->def, res);
+   return true;
 }
 
 /* Point size has no WGSL counterpart (points are a pixel), nor do primitive and viewport indices out of a vertex
@@ -352,6 +546,9 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_
 {
    struct lower_state s = { .layout = layout, .error = error, .error_size = error_size };
    error[0] = 0;
+   NIR_PASS(_, nir, nir_shader_tex_pass, lower_1d_tex, nir_metadata_control_flow, NULL);
+   NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_1d_image, nir_metadata_control_flow, NULL);
+   NIR_PASS(_, nir, nir_shader_tex_pass, lower_int_sample, nir_metadata_control_flow, NULL);
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
    const nir_lower_compute_system_values_options csv = { 0 };
    NIR_PASS(_, nir, nir_lower_compute_system_values, &csv);
@@ -393,7 +590,8 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_
    NIR_PASS(_, nir, nir_lower_int64);
    optimize(nir);
 
-   /* Descriptors once their indices are constants. */
+   /* Descriptors once their indices are constants (an array of textures indexed dynamically chosen from). */
+   NIR_PASS(_, nir, nir_shader_tex_pass, lower_dynamic_tex_index, nir_metadata_none, NULL);
    NIR_PASS(_, nir, nir_shader_instructions_pass, lower_descriptors_instr, nir_metadata_control_flow, &s);
    if (s.failed)
       return false;
