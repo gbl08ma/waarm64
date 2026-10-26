@@ -44,9 +44,7 @@
 				"VK_KHR_maintenance4": 2,
 				"VK_KHR_push_descriptor": 2,
 				"VK_KHR_relaxed_block_layout": 1,
-				"VK_KHR_sampler_ycbcr_conversion": 14,
 				"VK_KHR_separate_depth_stencil_layouts": 1,
-				"VK_KHR_shader_float16_int8": 1,
 				"VK_KHR_shader_float_controls": 4,
 				"VK_KHR_shader_integer_dot_product": 1,
 				"VK_KHR_shader_non_semantic_info": 1,
@@ -93,12 +91,12 @@
 					"fragmentStoresAndAtomics": true,
 					"shaderTessellationAndGeometryPointSize": false,
 					"shaderImageGatherExtended": false,
-					"shaderStorageImageExtendedFormats": true,
+					"shaderStorageImageExtendedFormats": false,
 					"shaderStorageImageMultisample": false,
 					"shaderStorageImageReadWithoutFormat": false,
 					"shaderStorageImageWriteWithoutFormat": false,
 					"shaderUniformBufferArrayDynamicIndexing": false,
-					"shaderSampledImageArrayDynamicIndexing": false,
+					"shaderSampledImageArrayDynamicIndexing": true,
 					"shaderStorageBufferArrayDynamicIndexing": false,
 					"shaderStorageImageArrayDynamicIndexing": false,
 					"shaderClipDistance": true,
@@ -145,7 +143,7 @@
 					"variablePointersStorageBuffer": false,
 					"variablePointers": false,
 					"protectedMemory": false,
-					"samplerYcbcrConversion": true,
+					"samplerYcbcrConversion": false,
 					"shaderDrawParameters": false
 				},
 				"VkPhysicalDeviceVulkan12Features": {
@@ -195,7 +193,7 @@
 					"vulkanMemoryModelAvailabilityVisibilityChains": false,
 					"shaderOutputViewportIndex": false,
 					"shaderOutputLayer": false,
-					"subgroupBroadcastDynamicId": true
+					"subgroupBroadcastDynamicId": false
 				},
 				"VkPhysicalDeviceVulkan13Features": {
 					"robustImageAccess": true,
@@ -218,39 +216,39 @@
 			"properties": {
 				"VkPhysicalDeviceProperties": {
 					"apiVersion": 4206861,
-					"deviceID": 416,
+					"deviceID": 0,
 					"deviceName": "Virtio-GPU Venus (webpc WebGPU)",
 					"deviceType": "VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
 					"driverVersion": 104857607,
 					"limits": {
-						"maxImageDimension1D": 16384,
-						"maxImageDimension2D": 16384,
+						"maxImageDimension1D": 8192,
+						"maxImageDimension2D": 8192,
 						"maxImageDimension3D": 2048,
-						"maxImageDimensionCube": 16384,
-						"maxImageArrayLayers": 2048,
-						"maxTexelBufferElements": 134217728,
+						"maxImageDimensionCube": 8192,
+						"maxImageArrayLayers": 256,
+						"maxTexelBufferElements": 67108864,
 						"maxUniformBufferRange": 65536,
-						"maxStorageBufferRange": 4294967292,
-						"maxPushConstantsSize": 64,
+						"maxStorageBufferRange": 1073741824,
+						"maxPushConstantsSize": 128,
 						"maxMemoryAllocationCount": 4096,
 						"maxSamplerAllocationCount": 4000,
 						"bufferImageGranularity": 64,
 						"sparseAddressSpaceSize": 0,
-						"maxBoundDescriptorSets": 4,
+						"maxBoundDescriptorSets": 8,
 						"maxPerStageDescriptorSamplers": 16,
 						"maxPerStageDescriptorUniformBuffers": 12,
 						"maxPerStageDescriptorStorageBuffers": 10,
-						"maxPerStageDescriptorSampledImages": 48,
-						"maxPerStageDescriptorStorageImages": 8,
+						"maxPerStageDescriptorSampledImages": 16,
+						"maxPerStageDescriptorStorageImages": 4,
 						"maxPerStageDescriptorInputAttachments": 4,
-						"maxPerStageResources": 86,
+						"maxPerStageResources": 50,
 						"maxDescriptorSetSamplers": 16,
 						"maxDescriptorSetUniformBuffers": 12,
-						"maxDescriptorSetUniformBuffersDynamic": 10,
+						"maxDescriptorSetUniformBuffersDynamic": 8,
 						"maxDescriptorSetStorageBuffers": 10,
-						"maxDescriptorSetStorageBuffersDynamic": 8,
-						"maxDescriptorSetSampledImages": 48,
-						"maxDescriptorSetStorageImages": 8,
+						"maxDescriptorSetStorageBuffersDynamic": 4,
+						"maxDescriptorSetSampledImages": 16,
+						"maxDescriptorSetStorageImages": 4,
 						"maxDescriptorSetInputAttachments": 4,
 						"maxVertexInputAttributes": 16,
 						"maxVertexInputBindings": 8,
@@ -272,18 +270,18 @@
 						"maxGeometryTotalOutputComponents": 0,
 						"maxFragmentInputComponents": 112,
 						"maxFragmentOutputAttachments": 8,
-						"maxFragmentDualSrcAttachments": 1,
-						"maxFragmentCombinedOutputResources": 26,
+						"maxFragmentDualSrcAttachments": 0,
+						"maxFragmentCombinedOutputResources": 22,
 						"maxComputeSharedMemorySize": 32768,
 						"maxComputeWorkGroupCount": [
 							65535,
 							65535,
 							65535
 						],
-						"maxComputeWorkGroupInvocations": 1024,
+						"maxComputeWorkGroupInvocations": 256,
 						"maxComputeWorkGroupSize": [
-							1024,
-							1024,
+							256,
+							256,
 							64
 						],
 						"subPixelPrecisionBits": 4,
@@ -295,12 +293,12 @@
 						"maxSamplerAnisotropy": 16,
 						"maxViewports": 1,
 						"maxViewportDimensions": [
-							16384,
-							16384
+							8192,
+							8192
 						],
 						"viewportBoundsRange": [
-							-32768,
-							32767
+							-16384,
+							16383
 						],
 						"viewportSubPixelBits": 0,
 						"minMemoryMapAlignment": 64,
@@ -314,8 +312,8 @@
 						"minInterpolationOffset": 0,
 						"maxInterpolationOffset": 0,
 						"subPixelInterpolationOffsetBits": 0,
-						"maxFramebufferWidth": 16384,
-						"maxFramebufferHeight": 16384,
+						"maxFramebufferWidth": 8192,
+						"maxFramebufferHeight": 8192,
 						"maxFramebufferLayers": 256,
 						"framebufferColorSampleCounts": [
 							"VK_SAMPLE_COUNT_1_BIT",
@@ -401,7 +399,7 @@
 						"residencyAlignedMipSize": false,
 						"residencyNonResidentStrict": false
 					},
-					"vendorID": 4203
+					"vendorID": 6880
 				},
 				"VkPhysicalDeviceDrmPropertiesEXT": {
 					"hasPrimary": true,
@@ -416,22 +414,22 @@
 				},
 				"VkPhysicalDeviceVulkan11Properties": {
 					"deviceUUID": [
-						39,
-						143,
-						248,
-						98,
-						234,
-						11,
-						162,
-						182,
-						26,
-						222,
-						183,
-						199,
-						112,
-						178,
-						30,
-						133
+						158,
+						228,
+						123,
+						106,
+						100,
+						90,
+						141,
+						170,
+						197,
+						233,
+						85,
+						192,
+						187,
+						151,
+						179,
+						57
 					],
 					"driverUUID": [
 						90,
@@ -453,19 +451,12 @@
 					],
 					"deviceNodeMask": 0,
 					"deviceLUIDValid": false,
-					"subgroupSize": 32,
+					"subgroupSize": 1,
 					"subgroupSupportedStages": [
-						"VK_SHADER_STAGE_FRAGMENT_BIT",
 						"VK_SHADER_STAGE_COMPUTE_BIT"
 					],
 					"subgroupSupportedOperations": [
-						"VK_SUBGROUP_FEATURE_BASIC_BIT",
-						"VK_SUBGROUP_FEATURE_VOTE_BIT",
-						"VK_SUBGROUP_FEATURE_ARITHMETIC_BIT",
-						"VK_SUBGROUP_FEATURE_BALLOT_BIT",
-						"VK_SUBGROUP_FEATURE_SHUFFLE_BIT",
-						"VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT",
-						"VK_SUBGROUP_FEATURE_QUAD_BIT"
+						"VK_SUBGROUP_FEATURE_BASIC_BIT"
 					],
 					"subgroupQuadOperationsInAllStages": false,
 					"pointClippingBehavior": "VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES",
@@ -473,7 +464,7 @@
 					"maxMultiviewInstanceIndex": 0,
 					"protectedNoFault": false,
 					"maxPerSetDescriptors": 1024,
-					"maxMemoryAllocationSize": 4294967292
+					"maxMemoryAllocationSize": 1073741824
 				},
 				"VkPhysicalDeviceVulkan12Properties": {
 					"driverID": "VK_DRIVER_ID_MESA_VENUS",
@@ -541,18 +532,18 @@
 					]
 				},
 				"VkPhysicalDeviceVulkan13Properties": {
-					"minSubgroupSize": 32,
-					"maxSubgroupSize": 32,
-					"maxComputeWorkgroupSubgroups": 32,
+					"minSubgroupSize": 1,
+					"maxSubgroupSize": 1,
+					"maxComputeWorkgroupSubgroups": 256,
 					"requiredSubgroupSizeStages": [
 						"VK_SHADER_STAGE_COMPUTE_BIT"
 					],
-					"maxInlineUniformBlockSize": 256,
-					"maxPerStageDescriptorInlineUniformBlocks": 4,
+					"maxInlineUniformBlockSize": 0,
+					"maxPerStageDescriptorInlineUniformBlocks": 0,
 					"maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks": 0,
-					"maxDescriptorSetInlineUniformBlocks": 4,
+					"maxDescriptorSetInlineUniformBlocks": 0,
 					"maxDescriptorSetUpdateAfterBindInlineUniformBlocks": 0,
-					"maxInlineUniformTotalSize": 1024,
+					"maxInlineUniformTotalSize": 0,
 					"integerDotProduct8BitUnsignedAccelerated": false,
 					"integerDotProduct8BitSignedAccelerated": false,
 					"integerDotProduct8BitMixedSignednessAccelerated": false,
@@ -587,7 +578,7 @@
 					"storageTexelBufferOffsetSingleTexelAlignment": false,
 					"uniformTexelBufferOffsetAlignmentBytes": 256,
 					"uniformTexelBufferOffsetSingleTexelAlignment": false,
-					"maxBufferSize": 4294967292
+					"maxBufferSize": 1073741824
 				}
 			},
 			"formats": {
@@ -855,6 +846,7 @@
 						],
 						"optimalTilingFeatures": [
 							"VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT",
+							"VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT",
 							"VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT",
 							"VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT",
 							"VK_FORMAT_FEATURE_BLIT_SRC_BIT",
@@ -1417,7 +1409,10 @@
 						],
 						"optimalTilingFeatures": [
 							"VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT",
+							"VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT",
+							"VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT",
 							"VK_FORMAT_FEATURE_BLIT_SRC_BIT",
+							"VK_FORMAT_FEATURE_BLIT_DST_BIT",
 							"VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT",
 							"VK_FORMAT_FEATURE_TRANSFER_SRC_BIT",
 							"VK_FORMAT_FEATURE_TRANSFER_DST_BIT"

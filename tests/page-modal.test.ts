@@ -219,6 +219,50 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await context.close();
 });
 
+test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept over a reload", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.waitFor();
+  const id = await m.getAttribute('data-selected');
+  await m.locator('[data-field=name]').fill('Vk box');
+  // A new machine is 3D, Vulkan off; checking it says what it does to the snapshots.
+  assert.equal(await m.locator('[data-field=vulkan]').isChecked(), false);
+  assert.equal(await m.locator('[data-vulkan-orphans]').count(), 0);
+  await m.locator('[data-field=vulkan]').check();
+  await m.locator('[data-vulkan-orphans]').waitFor();
+  // 2D has no Vulkan: the box goes; back to 3D, it is as it was.
+  await m.locator('[data-field=display]').selectOption('2d');
+  assert.equal(await m.locator('[data-field=vulkan]').count(), 0);
+  await m.locator('[data-field=display]').selectOption('3d');
+  assert.equal(await m.locator('[data-field=vulkan]').isChecked(), true);
+  await m.locator('[data-action=save]').click();
+  await page.waitForFunction(() => (document.querySelector('.machines [data-action=save]') as HTMLButtonElement | null)?.disabled !== false, null, { polling: 100 });
+  const stored = () => page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { currentShape } = await import('/web/app/snapshots.ts' as string);
+    const store = await Store.open();
+    const rec = await store.get('machines', id);
+    store.close();
+    return { vulkan: rec.vulkan, shape: (await currentShape(rec, () => undefined)).shape.vulkan };
+  }, id);
+  assert.deepEqual(await stored(), { vulkan: true, shape: true });
+  await page.reload();
+  await modal(page).waitFor();
+  await modal(page).locator('.pick', { hasText: 'Vk box' }).click();
+  await modal(page).locator(`[data-selected="${id}"]`).waitFor();
+  assert.equal(await modal(page).locator('section.machine [data-field=vulkan]').isChecked(), true);
+  assert.equal(await modal(page).locator('section.machine [data-vulkan-orphans]').count(), 0);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('the machine list says which machines are suspended (a suspended copy in OPFS), not "off"', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();

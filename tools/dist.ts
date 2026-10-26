@@ -4,16 +4,21 @@
 //   index.html                        the page, the commit it was built from in a meta tag (tools/stamp.ts)
 //   assets/                           its code bundled (the page, each worker, the sound worklet; minified, with source
 //                                     maps), its CSS, and the binaries it fetches: the core (webpc_core.wasm), the
-//                                     tailnet client (ts.wasm), EDK2 (QEMU_EFI.fd); every name hashed
+//                                     tailnet client (ts.wasm), EDK2 (QEMU_EFI.fd), Vulkan's renderer (venus.wasm,
+//                                     fetched only by a machine with Vulkan on); every name hashed
 //   web/app/index.html                a redirect to the root (the page was there until 2026-10-23)
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below; web/app/public/)
-//   THIRD-PARTY-LICENSES.md, EDK2-LICENSES.txt, LICENSE   the bundled packages' licenses, the firmware's, ours
+//   THIRD-PARTY-LICENSES.md, EDK2-LICENSES.txt, VENUS-LICENSES.txt, LICENSE   the bundled packages' licenses, the
+//                                     firmware's, the Vulkan renderer's (vk/build.sh), ours
 // No guest images: the page's machine waits for the user's disk (`?disk=<url>` takes one from any server
 // that allows the page's origin and answers range requests, or a chunked image's manifest from any static host; the
 // deployed copy's images are on their own host, deploy/disks/).
 // The server must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
 // require-corp` with every file (SharedArrayBuffer). The page fetches its own files whole; disks need range requests.
-//   npm run dist [-- --out <dir>] [-- --no-prepare] [-- --serve [--port <n>]]
+//   npm run dist [-- --out <dir>] [-- --no-prepare] [-- --no-vulkan] [-- --serve [--port <n>]]
+// The Vulkan renderer isn't built by the preparation (vk/build.sh: Mesa and virglrenderer built natively first, a few
+// minutes and their build tools; docs/devices.md "Venus"): `npm run dist` needs it built, `--no-vulkan` (and `npm
+// start`) make the copy without it, where a machine with Vulkan on fails to start its renderer.
 // --serve previews the copy with Vite's preview server (tools/serve.ts: the same headers and ranges a host must give).
 import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -29,26 +34,34 @@ const MARK = '.webpc-dist';
 
 /** The binaries the page fetches, as paths in the repository. */
 export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, 'target/images/edk2/LICENSES.txt'];
+/** Vulkan's renderer and its licences (vk/build.sh). */
+export const VULKAN = ['target/vk/venus.wasm', 'target/vk/LICENSES.txt'];
 
-/** Writes the static copy of the page to `out` (its binaries must be built); returns the files written, relative to `out`. */
-export async function writeDist(out = OUT) {
+/**
+ * Writes the static copy of the page to `out` (its binaries must be built; Vulkan's renderer too unless `vulkan` is
+ * false, when it goes in only if built); returns the files written, relative to `out`.
+ */
+export async function writeDist(out = OUT, { vulkan = true }: { vulkan?: boolean } = {}) {
   if (existsSync(out) && readdirSync(out).length && !existsSync(join(out, MARK))) {
     throw new Stop(`${out} exists and isn't a copy this script wrote: pick another --out, or empty it.`);
   }
   const missing = BINARIES.filter((f) => !existsSync(join(ROOT, f)));
   if (missing.length) throw new Stop(`Not built: ${missing.join(', ')} (\`npm run dist\` without --no-prepare builds them).`);
+  const vk = VULKAN.every((f) => existsSync(join(ROOT, f)));
+  if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (vk/build.sh builds Vulkan's renderer; --no-vulkan leaves it out).`);
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });
   cpSync(join(ROOT, 'target/images/edk2/LICENSES.txt'), join(out, 'EDK2-LICENSES.txt'));
+  if (vk) cpSync(join(ROOT, 'target/vk/LICENSES.txt'), join(out, 'VENUS-LICENSES.txt'));
   cpSync(join(ROOT, 'LICENSE'), join(out, 'LICENSE'));
   return readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile());
 }
 
 if (import.meta.main) {
-  const { values } = parseArgs({ options: { out: { type: 'string' }, 'no-prepare': { type: 'boolean', default: false }, serve: { type: 'boolean', default: false }, port: { type: 'string', default: process.env.PORT ?? '8080' } } });
+  const { values } = parseArgs({ options: { out: { type: 'string' }, 'no-prepare': { type: 'boolean', default: false }, 'no-vulkan': { type: 'boolean', default: false }, serve: { type: 'boolean', default: false }, port: { type: 'string', default: process.env.PORT ?? '8080' } } });
   const out = values.out ? resolve(values.out) : OUT;
   try {
     if (!values['no-prepare']) await prepare(['--prepare-only']);
-    const files = await writeDist(out);
+    const files = await writeDist(out, { vulkan: !values['no-vulkan'] });
     const bytes = files.reduce((n, f) => n + statSync(join(out, f)).size, 0);
     console.log(`\nWrote ${files.length} files (${(bytes / 2 ** 20).toFixed(1)} MiB) to ${out}.\n` +
       'Copy its contents to a web server. It must send these headers with every file (SharedArrayBuffer needs them):\n' +

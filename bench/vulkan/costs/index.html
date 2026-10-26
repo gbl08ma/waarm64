@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // bench/vulkan/costs.ts calls into this page's module.
+  import * as c from './page.ts';
+  window.costs = c;
+  window.ready = true;
+</script>

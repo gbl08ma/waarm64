@@ -232,7 +232,7 @@ async function aboutMachine(three = want3d && !no3d) {
   const s = stored;
   if (!s) return undefined;
   const display = params.get('display') === 'simple' ? 'none' : three ? '3d' : '2d';
-  const { shape, hash } = await currentShape(s.record, (id) => s.disks.get(id), { display, cpu: cpuFeatures() });
+  const { shape, hash } = await currentShape(s.record, (id) => s.disks.get(id), { display, cpu: cpuFeatures(), vulkan: three && wantsVulkan() });
   const urls: Record<number, string> = {};
   for (const d of shape.disks) {
     const a = s.record.attachments.find((x) => serialOf(x.id) === d.serial)!;
@@ -459,6 +459,8 @@ const flashed = (t: number) => ((window as unknown as { __flashes?: number[] }).
 const gpuKnobs = (params.get('gpu') ?? '').split(',');
 const gpuAsked = gpuKnobs.includes('2d') || gpuKnobs.includes('virgl-null') ? '2d' : gpuKnobs.includes('virgl') ? '3d' : undefined;
 const wants3d = () => hasGpu && (gpuAsked ?? stored?.record.display ?? settings().gpu ?? '3d') === '3d';
+/** Vulkan through Venus beside 3D (docs/devices.md "Venus"): a stored machine's setting (the Machines page), or `?gpu=vulkan`. */
+const wantsVulkan = () => gpuKnobs.includes('vulkan') || !!stored?.record.vulkan;
 let want3d = wants3d();
 let no3d: string | undefined;
 const hasWebgl2 = () => { try { return !!new OffscreenCanvas(1, 1).getContext('webgl2'); } catch { return false; } };
@@ -719,7 +721,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -1995,7 +1997,7 @@ Object.assign(page, {
   shapeNow: async (m: MachineRecord) => {
     const disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
     const display = params.get('display') === 'simple' ? 'none' : m.display === '3d' && (!webgl2 || no3d || gpuAsked === '2d') ? '2d' : m.display;
-    return currentShape(m, (id) => disks.get(id), { display, cpu: cpuFeatures() });
+    return currentShape(m, (id) => disks.get(id), { display, cpu: cpuFeatures(), vulkan: display === '3d' && (gpuKnobs.includes('vulkan') || !!m.vulkan) });
   },
   setView: (v: View) => setView(v),
   showLog: () => { setView(ui.view === 'screen' ? 'both' : ui.view, false); term.focus(); },

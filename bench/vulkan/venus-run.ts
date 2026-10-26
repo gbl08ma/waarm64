@@ -2,10 +2,13 @@
 // a 3D machine with `?gpu=vulkan`, vulkaninfo's summary and the kernel's virtio-gpu lines, then commands of the
 // caller's (CMDS, one a line), then the frames of REPLAY's programs (comma-separated, or `all`: the disk's) checked against lavapipe's
 // (images/vkframes/build.sh's disk as the second disk, its run.sh: results.json's `replay <name>`); also the page's
-// WebGPU adapter. Writes <out>/results.json and the serial log.
+// WebGPU adapter. Writes <out>/results.json and the serial log. PROFILE=<file> also writes the guest's Vulkan device as
+// a Khronos profile there (`vulkaninfo --json`): images/vkframes/venus-profile.json, which the frames' captures take,
+// is made so (`PROFILE=images/vkframes/venus-profile.json`, on SwiftShader, whenever what the device advertises changes).
 //   node bench/vulkan/venus-run.ts [image] [outdir]   (the image also IMAGE=, default target/images/debian-vulkan/disk.qcow2;
 //   the form bench/gpu/sway-mac.sh calls with SCRIPT=../vulkan/venus-run.ts, mode `-`)
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { openSession } from '../gpu/guest-session.ts';
 
 const args = process.argv.slice(2);
@@ -25,6 +28,13 @@ try {
   results.kernel = await s.run('uname -r; dmesg | grep -E "virtio_gpu|\\[drm\\]" | head -20');
   results.vulkaninfo = await s.run('VN_DEBUG=init vulkaninfo --summary 2>&1 | head -60', 120_000);
   for (const cmd of (process.env.CMDS ?? '').split('\n').filter(Boolean)) results[cmd] = await s.run(cmd, 300_000);
+  if (process.env.PROFILE) {
+    // Compressed and in lines short enough for the serial screen (runLines reads 6 at a time; 300-character lines lost some).
+    const b64 = await s.runLines('cd /tmp && rm -f VP_*.json && vulkaninfo --json >/dev/null 2>&1; gzip -9 < /tmp/VP_*.json | base64 -w 100', 300_000);
+    const json = gunzipSync(Buffer.from(b64.join(''), 'base64')).toString('utf8');
+    writeFileSync(process.env.PROFILE, json.endsWith('\n') ? json : `${json}\n`);
+    results.profile = `${process.env.PROFILE}: ${json.length} bytes`;
+  }
   // The kernel's mount lines would land in the output.
   if (replay.length) await s.run('dmesg -n 1; mkdir -p /vkf; mount -o ro /dev/vdb /vkf');
   const names = replay[0] === 'all' ? (await s.run("awk '{printf \"%s \", $1}' /vkf/programs")).split(/\s+/).filter(Boolean) : replay;

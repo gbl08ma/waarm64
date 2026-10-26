@@ -19,8 +19,8 @@ export function effectiveDisplay(m: MachineRecord, page: { webgl2: boolean; simp
 }
 
 /** The machine's shape and its hash as it would run now (its disks by id). */
-export async function currentShape(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { display?: Display | 'none'; cpu?: CpuFeature[] } = {}): Promise<{ shape: Shape; hash: string }> {
-  const shape = shapeOf(m, disks, { display: opts.display, cpu: opts.cpu ?? CPU_FEATURES });
+export async function currentShape(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { display?: Display | 'none'; cpu?: CpuFeature[]; vulkan?: boolean } = {}): Promise<{ shape: Shape; hash: string }> {
+  const shape = shapeOf(m, disks, { display: opts.display, cpu: opts.cpu ?? CPU_FEATURES, vulkan: opts.vulkan });
   return { shape, hash: await shapeHash(shape) };
 }
 

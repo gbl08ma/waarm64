@@ -13,29 +13,40 @@
 #define ST (WG_FMT_STORAGE)
 #define U (WG_FMT_UINT)
 #define S (WG_FMT_SINT)
+#define T1R (WG_FMT_T1_RENDER)
+#define T1S (WG_FMT_T1_STORAGE)
 
-static const struct wg_texture_format formats[] = {
-   F(R8_UNORM, "r8unorm", 1, 1, 1, CS | FL | RB),
-   F(R8_SNORM, "r8snorm", 1, 1, 1, CS | FL),
-   F(R8_UINT, "r8uint", 1, 1, 1, CS | WG_FMT_RENDER | U),
-   F(R8_SINT, "r8sint", 1, 1, 1, CS | WG_FMT_RENDER | S),
-   F(R8G8_UNORM, "rg8unorm", 2, 1, 1, CS | FL | RB),
-   F(R8G8_SNORM, "rg8snorm", 2, 1, 1, CS | FL),
-   F(R8G8_UINT, "rg8uint", 2, 1, 1, CS | WG_FMT_RENDER | U),
-   F(R8G8_SINT, "rg8sint", 2, 1, 1, CS | WG_FMT_RENDER | S),
+/* The spec's table; wg_format_init resolves what the adapter's features add into `formats`. */
+static const struct wg_texture_format table[] = {
+   F(R8_UNORM, "r8unorm", 1, 1, 1, CS | FL | RB | T1S),
+   F(R8_SNORM, "r8snorm", 1, 1, 1, CS | FL | T1R | T1S),
+   F(R8_UINT, "r8uint", 1, 1, 1, CS | WG_FMT_RENDER | U | T1S),
+   F(R8_SINT, "r8sint", 1, 1, 1, CS | WG_FMT_RENDER | S | T1S),
+   F(R8G8_UNORM, "rg8unorm", 2, 1, 1, CS | FL | RB | T1S),
+   F(R8G8_SNORM, "rg8snorm", 2, 1, 1, CS | FL | T1R | T1S),
+   F(R8G8_UINT, "rg8uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
+   F(R8G8_SINT, "rg8sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),
    F(R8G8B8A8_UNORM, "rgba8unorm", 4, 1, 1, CS | FL | RB | ST),
    F(R8G8B8A8_SRGB, "rgba8unorm-srgb", 4, 1, 1, CS | FL | RB),
-   F(R8G8B8A8_SNORM, "rgba8snorm", 4, 1, 1, CS | FL | ST),
+   F(R8G8B8A8_SNORM, "rgba8snorm", 4, 1, 1, CS | FL | ST | T1R),
    F(R8G8B8A8_UINT, "rgba8uint", 4, 1, 1, CS | WG_FMT_RENDER | U | ST),
    F(R8G8B8A8_SINT, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | ST),
-   F(B8G8R8A8_UNORM, "bgra8unorm", 4, 1, 1, CS | FL | RB),
+   F(B8G8R8A8_UNORM, "bgra8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_BGRA8),
    F(B8G8R8A8_SRGB, "bgra8unorm-srgb", 4, 1, 1, CS | FL | RB),
-   F(R16_UINT, "r16uint", 2, 1, 1, CS | WG_FMT_RENDER | U),
-   F(R16_SINT, "r16sint", 2, 1, 1, CS | WG_FMT_RENDER | S),
-   F(R16_SFLOAT, "r16float", 2, 1, 1, CS | FL | RB),
-   F(R16G16_UINT, "rg16uint", 4, 1, 1, CS | WG_FMT_RENDER | U),
-   F(R16G16_SINT, "rg16sint", 4, 1, 1, CS | WG_FMT_RENDER | S),
-   F(R16G16_SFLOAT, "rg16float", 4, 1, 1, CS | FL | RB),
+   F(R16_UINT, "r16uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
+   F(R16_SINT, "r16sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),
+   F(R16_SFLOAT, "r16float", 2, 1, 1, CS | FL | RB | T1S),
+   F(R16G16_UINT, "rg16uint", 4, 1, 1, CS | WG_FMT_RENDER | U | T1S),
+   F(R16G16_SINT, "rg16sint", 4, 1, 1, CS | WG_FMT_RENDER | S | T1S),
+   F(R16G16_SFLOAT, "rg16float", 4, 1, 1, CS | FL | RB | T1S),
+   /* 16-bit normalized: only with texture-formats-tier1, and unfilterable (Chromium: their sample type is
+    * unfilterable-float; libplacebo's LUT was a bind group error when they said linear filtering). */
+   F(R16_UNORM, "r16unorm", 2, 1, 1, CS | T1R | T1S | WG_FMT_TIER1),
+   F(R16_SNORM, "r16snorm", 2, 1, 1, CS | T1R | T1S | WG_FMT_TIER1),
+   F(R16G16_UNORM, "rg16unorm", 4, 1, 1, CS | T1R | T1S | WG_FMT_TIER1),
+   F(R16G16_SNORM, "rg16snorm", 4, 1, 1, CS | T1R | T1S | WG_FMT_TIER1),
+   F(R16G16B16A16_UNORM, "rgba16unorm", 8, 1, 1, CS | T1R | T1S | WG_FMT_TIER1),
+   F(R16G16B16A16_SNORM, "rgba16snorm", 8, 1, 1, CS | T1R | T1S | WG_FMT_TIER1),
    F(R16G16B16A16_UINT, "rgba16uint", 8, 1, 1, CS | WG_FMT_RENDER | U | ST),
    F(R16G16B16A16_SINT, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | ST),
    F(R16G16B16A16_SFLOAT, "rgba16float", 8, 1, 1, CS | FL | RB | ST),
@@ -48,9 +59,9 @@ static const struct wg_texture_format formats[] = {
    F(R32G32B32A32_UINT, "rgba32uint", 16, 1, 1, CS | WG_FMT_RENDER | U | ST),
    F(R32G32B32A32_SINT, "rgba32sint", 16, 1, 1, CS | WG_FMT_RENDER | S | ST),
    F(R32G32B32A32_SFLOAT, "rgba32float", 16, 1, 1, CS | WG_FMT_RENDER | ST | WG_FMT_FLOAT32),
-   F(A2B10G10R10_UNORM_PACK32, "rgb10a2unorm", 4, 1, 1, CS | FL | RB),
-   F(A2B10G10R10_UINT_PACK32, "rgb10a2uint", 4, 1, 1, CS | WG_FMT_RENDER | U),
-   F(B10G11R11_UFLOAT_PACK32, "rg11b10ufloat", 4, 1, 1, CS | FL),
+   F(A2B10G10R10_UNORM_PACK32, "rgb10a2unorm", 4, 1, 1, CS | FL | RB | T1S),
+   F(A2B10G10R10_UINT_PACK32, "rgb10a2uint", 4, 1, 1, CS | WG_FMT_RENDER | U | T1S),
+   F(B10G11R11_UFLOAT_PACK32, "rg11b10ufloat", 4, 1, 1, CS | FL | T1R | T1S | WG_FMT_RG11B10),
    F(E5B9G9R9_UFLOAT_PACK32, "rgb9e5ufloat", 4, 1, 1, CS | FL),
    F(S8_UINT, "stencil8", 1, 1, 1, WG_FMT_SAMPLE | WG_FMT_STENCIL),
    F(D16_UNORM, "depth16unorm", 2, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH),
@@ -90,26 +101,47 @@ static const struct wg_texture_format formats[] = {
    ASTC(10, 6), ASTC(10, 8), ASTC(10, 10), ASTC(12, 10), ASTC(12, 12),
 };
 
-/* The device's features that formats depend on (wg_init's flags). */
+#define FORMAT_COUNT (sizeof(table) / sizeof(table[0]))
+static struct wg_texture_format formats[FORMAT_COUNT];
+
+/* The device's features that formats depend on (venus_init's flags). */
 static uint32_t device_features;
 
 void
 wg_format_init(uint32_t features)
 {
    device_features = features;
+   const bool tier1 = features & WG_FEATURE_TIER1;
+   for (uint32_t i = 0; i < FORMAT_COUNT; i++) {
+      struct wg_texture_format *f = &formats[i];
+      *f = table[i];
+      if ((tier1 && (f->flags & WG_FMT_T1_RENDER)) ||
+          ((features & WG_FEATURE_RG11B10_RENDER) && (f->flags & WG_FMT_RG11B10)))
+         f->flags |= WG_FMT_RENDER | WG_FMT_BLEND;
+      /* Held back (VK2 L7, docs/backlog.md): blending 32-bit floats (float32-blendable) gave mpv's libplacebo a family
+       * of FBO formats, and on its advanced rendering VA-API's imported chroma read as zeros on the M4's Metal (a
+       * green picture; right on SwiftShader, and decoded in software). Storage for the 8- and 16-bit formats tier1
+       * allows (WG_FMT_T1_STORAGE) would give it another family: held back too, not tried on that path. Without both
+       * mpv renders as in L6, byte for byte right; WG_FEATURE_FLOAT32_BLEND and WG_FMT_T1_STORAGE say what the
+       * adapter could. */
+      if ((features & WG_FEATURE_BGRA8_STORAGE) && (f->flags & WG_FMT_BGRA8))
+         f->flags |= WG_FMT_STORAGE;
+   }
 }
 
 const struct wg_texture_format *
 wg_texture_format(VkFormat format)
 {
-   for (uint32_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+   for (uint32_t i = 0; i < FORMAT_COUNT; i++) {
       const struct wg_texture_format *f = &formats[i];
       if (f->vk != format)
          continue;
-      if (((f->flags & WG_FMT_BC) && !(device_features & WG_FEATURE_BC)) ||
+      if (!f->name ||
+          ((f->flags & WG_FMT_BC) && !(device_features & WG_FEATURE_BC)) ||
           ((f->flags & WG_FMT_ETC2) && !(device_features & WG_FEATURE_ETC2)) ||
           ((f->flags & WG_FMT_ASTC) && !(device_features & WG_FEATURE_ASTC)) ||
-          ((f->flags & WG_FMT_D32S8) && !(device_features & WG_FEATURE_D32S8)))
+          ((f->flags & WG_FMT_D32S8) && !(device_features & WG_FEATURE_D32S8)) ||
+          ((f->flags & WG_FMT_TIER1) && !(device_features & WG_FEATURE_TIER1)))
          return NULL;
       return f;
    }

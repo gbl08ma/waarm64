@@ -35,7 +35,7 @@ cat > /root/shot.sh <<'EOF'
 #!/bin/sh
 tag=$1; shift
 rm -f /tmp/$tag.png
-su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png; timeout 40 mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
+su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png; timeout -k 5 40 mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
 pkill -9 -x mpv; ffmpeg -loglevel error -y -i /tmp/$tag.png -f rawvideo -pix_fmt rgb24 /tmp/$tag.rgb
 echo "$(ffprobe -v error -show_entries stream=width,height -of csv=p=0 /tmp/$tag.png) $(grep -c 'Using hardware' /tmp/$tag.log)"
 EOF

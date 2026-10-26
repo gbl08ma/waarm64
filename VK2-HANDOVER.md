@@ -4,6 +4,53 @@ Notes between VK2's sessions (the brief: `VK2-KICKOFF.md`). Newest state first.
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
+## State (2026-10-26, after L7: the track's work is done; the user's NVIDIA run and the VK3 decision are outstanding)
+
+- **Done** (REPORT.md "VK2 L7"; outcome in PLAN.md §3, plan §6/§7, vk/README.md, docs/devices.md "Venus",
+  docs/graphics.md, backlog): **caps from the adapter** (`vk/driver/wg_caps.c`: the device's limits, features and maker
+  passed to `venus_init` by web/venus-gpu.ts `gpuFeatures`/`gpuLimits`; vk/profile.ts and the compiled-in Mac profile
+  gone; `images/vkframes/venus-profile.json` regenerated (`venus-run.ts PROFILE=`) and the frames' disk rebuilt);
+  **YCbCr dropped** by measurement (GTK4 on Vulkan drew black/one icon for more CPU; it takes GL by default anyway;
+  forced onto Vulkan without YCbCr it aborts on GTK's own assertion); the **Machines page's Vulkan setting**
+  (`MachineRecord.vulkan`, in the shape and definitions); the **module in `npm run dist`** with `VENUS-LICENSES.txt`
+  (`--no-vulkan` without it; `npm start` includes it only if built); THIRD_PARTY.md's row; the gate re-measured on the
+  M4 with the new caps (0 dropped, the guest 13% busy; VA-API frames byte-identical to software); the module 0.69 MiB
+  brotli; a submit 0.1 ms of the worker (fence 0.7 ms on the M4), a pipeline 0.6 ms of translation plus ~75–80 ms of
+  Metal's first compile (`bench/vulkan/costs.ts`).
+- **Decisions taken without the user** (each by measurement; revisit if you disagree): (1) YCbCr off until VK3, so
+  `GSK_RENDERER=vulkan` aborts in GTK instead of drawing wrong. (2) `float32-blendable` and tier1's storage formats held
+  back: with float32 blending libplacebo's advanced rendering came on and VA-API's chroma read as zeros on Metal (green
+  picture) though right on SwiftShader; without them mpv is L6's byte-identical path (backlog "Imports' gaps"). (3) The
+  device's vendor ID is the adapter's maker's (Apple, NVIDIA, Google…), not Mesa's or the old fixed Apple one; 0 for
+  makers not listed. (4) Subgroups advertised as size 1 with basic operations (the translator has none; the Mac profile
+  advertised 32 and all operations, which failed any shader using them). (5) Vulkan 1.3's per-stage limits are WebGPU's
+  whole (the push buffer's binding isn't subtracted: backlog).
+- **For the user: the NVIDIA run** (the gate's last part). On the dev VM, after pulling this commit:
+  `bench/vulkan/nvidia-bundle.sh` → `target/vk2-nvidia-bundle.tar` (3.4 GB: the repository, the core, the renderer, the
+  firmware, the guests' images). Copy it to the desktop (e.g. on the Mac: `limactl copy
+  dev:/home/gabriel.guest/Development/webpc/target/vk2-nvidia-bundle.tar ~/`, then `scp` it over). On the desktop, in
+  a checkout at this commit: `bench/vulkan/nvidia.sh page ~/vk2-nvidia-bundle.tar` (~30 min; everything in
+  `~/webpc-vk2`; if headless Chrome for Testing doesn't get the NVIDIA adapter it opens your Chromium headed, one
+  window a run: leave it visible). Send back `~/webpc-vk2/vk2-nvidia-results.tar.gz`. Compare with REPORT.md "VK2 L7"
+  and "VK2 L5": `replay/results.json` every program within its tolerance (the share of a frame's bytes off by more
+  than 24: under 0.2% vkcube, 0.3% vkmark, 3% vkQuake); `scene-*` Venus's ms a frame against virgl's (the M4: 1.4–1.9×
+  less); `mpv` no frames dropped and the guest under the bar's 19–27% busy. Then decide whether VK3 starts.
+- **Candidate follow-ups for a VK3** (ranked; backlog has each): the M4's green VA-API chroma under libplacebo's advanced
+  rendering (then float32-blendable and tier1 storage back: mpv's scalers); pipelines made asynchronously and cached
+  across runs (Metal's ~80 ms first compile); the adapter's `subgroups` and `shader-f16` in the translator; YCbCr and
+  GTK4's Vulkan renderer (it drew black: find why first); the driver's gaps from dEQP-VK (per-face stencil, occlusion
+  queries, texel buffers, refused copies); dEQP-VK on the Mac's GPU; then plan §4's emulated rows.
+- **Worth not re-discovering:** Dawn gives `r16unorm`-family textures the unfilterable sample type (libplacebo's LUT was a
+  bind group error while we said linear). mpv-frames' `timeout` needs `-k` (mpv on Vulkan ignores SIGTERM). Metal keeps
+  compiled shaders on disk across runs: a cost bench must use new shader values (`costs.ts` seeds them). A run where
+  VA-API silently fell back to software decoding looks "byte-identical": check `hardwareDecoding` in mpv-frames' results.
+  `runLines` loses 300-character lines on the serial screen (use ≤ 100).
+- **CI at the commit:** ci.sh OK (440 s), ci-debian.sh OK (346 s), ci-deqp.sh OK (287 s), ci-deqp-vk.sh OK (246 s; 8
+  cases left the list: workgroups past SwiftShader's 256 invocations are NotSupported now). **ci-machines.sh fails one
+  test, before this loop too**: `tests/page-snapshots.test.ts` "kept snapshots…" times out at line 148 (the page's
+  resume of a suspended machine after `page.goto`, 420 s) — the same failure at 00743e22 (L6's commit, stashed and run
+  alone), so not VK2 L7's; the other ci-machines tests pass. Not looked into further (backlog).
+
 ## State (2026-10-26, after L6)
 
 - **L6 is done: the gate passes. mpv on Vulkan** (`--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi`, the desktop guest,

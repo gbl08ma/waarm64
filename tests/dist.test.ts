@@ -8,13 +8,15 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
-import { BINARIES, writeDist } from '../tools/dist.ts';
+import { BINARIES, VULKAN, writeDist } from '../tools/dist.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 
 const skipCopy = BINARIES.some((f) => !existsSync(join(ROOT, f))) && 'SKIPPED: npm start --prepare-only builds the binaries';
 const buildroot = existsSync(join(ROOT, 'target/images/buildroot/rootfs.ext4')) && existsSync(join(ROOT, 'target/images/linux/Image'));
 const skip = skipCopy || (!buildroot && 'SKIPPED: run images/build.sh');
+/** Vulkan's renderer is built (vk/build.sh): the copy has it and its licences. */
+const vulkan = VULKAN.every((f) => existsSync(join(ROOT, f)));
 
 let out: string;
 let browser: Browser;
@@ -23,7 +25,7 @@ let close: () => void;
 before(async () => {
   if (skipCopy) return;
   out = mkdtempSync(join(tmpdir(), 'webpc-dist-'));
-  await writeDist(out);
+  await writeDist(out, { vulkan: false });
   // The page's direct-boot machines find their images at target/images/ under the root (web/app/machine.ts).
   mkdirSync(join(out, 'target/images'), { recursive: true });
   if (buildroot) for (const d of ['linux', 'buildroot']) symlinkSync(join(ROOT, 'target/images', d), join(out, 'target/images', d));
@@ -44,6 +46,15 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
   const scripts = files.filter((f) => f.endsWith('.js'));
   assert.ok(scripts.length < 40, `${scripts.length} scripts: the page isn't bundled`);
   assert.match(readFileSync(join(out, 'THIRD-PARTY-LICENSES.md'), 'utf8'), /@xterm\/xterm[\s\S]*svelte/);
+  // Vulkan's renderer where vk/build.sh built it (`npm run dist` requires it, `--no-vulkan` and `npm start` don't), its
+  // licences beside it; the GPU worker fetches it by its hashed name.
+  assert.equal(files.some((f) => /^assets\/venus-[\w-]{8}\.wasm$/.test(f)), vulkan, 'assets/venus-<hash>.wasm');
+  assert.equal(files.includes('VENUS-LICENSES.txt'), vulkan, 'VENUS-LICENSES.txt');
+  if (vulkan) {
+    assert.match(readFileSync(join(out, 'VENUS-LICENSES.txt'), 'utf8'), /virglrenderer: COPYING[\s\S]*Mesa: docs\/license\.rst[\s\S]*SoftFloat[\s\S]*Apache License[\s\S]*LLVM Exceptions/);
+    const worker = files.find((f) => /^assets\/gpu-worker-[\w-]{8}\.js$/.test(f))!;
+    assert.match(readFileSync(join(out, worker), 'utf8'), /venus-[\w-]{8}\.wasm/);
+  }
 });
 
 test("the static copy's page logs its commit and opens the Machines modal", { skip: skipCopy }, async () => {

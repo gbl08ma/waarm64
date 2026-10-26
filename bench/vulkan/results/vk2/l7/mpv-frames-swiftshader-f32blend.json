@@ -1,0 +1,60 @@
+{
+ "chromium": "153.0.8010.52",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "info": "mpv 1:0.41.0-6 libplacebo 7.360.1-7 mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 webpc-va 3-1",
+ "sway": "",
+ "vkva": {
+  "args": "--hwdec=vaapi --vo=gpu-next --gpu-api=vulkan",
+  "size": "bash:",
+  "hardwareDecoding": false
+ },
+ "vkno": {
+  "args": "--hwdec=no --vo=gpu-next --gpu-api=vulkan",
+  "size": "1376,762",
+  "hardwareDecoding": false
+ },
+ "glva": {
+  "args": "--hwdec=vaapi --vo=gpu --gpu-api=opengl",
+  "size": "1376,762",
+  "hardwareDecoding": true
+ },
+ "glno": {
+  "args": "--hwdec=no --vo=gpu --gpu-api=opengl",
+  "size": "1376,762",
+  "hardwareDecoding": false
+ },
+ "vkva ~ vkno": {
+  "bytes": 3145536,
+  "off24": 360,
+  "differ": 25551,
+  "max": 115,
+  "mean": 0.032
+ },
+ "glva ~ glno": {
+  "bytes": 3145536,
+  "off24": 400483,
+  "differ": 2184404,
+  "max": 224,
+  "mean": 10.611
+ },
+ "vkno ~ glno": {
+  "bytes": 3145536,
+  "off24": 426,
+  "differ": 1579516,
+  "max": 46,
+  "mean": 1.042
+ },
+ "vkva ~ glva": {
+  "bytes": 3145536,
+  "off24": 419072,
+  "differ": 2234982,
+  "max": 238,
+  "mean": 11.046
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "virgl: ctx 8: video: 3 picture(s) never came out of the decoder: given up": 2,
+  "venus: vkr: destroying context 7 (vo) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1
+ }
+}

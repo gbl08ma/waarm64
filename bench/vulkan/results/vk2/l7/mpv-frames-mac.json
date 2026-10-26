@@ -1,0 +1,57 @@
+{
+ "chromium": "153.0.8010.12",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "info": "mpv 1:0.41.0-6 libplacebo 7.360.1-7 mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 webpc-va 3-1",
+ "sway": "",
+ "vkva": {
+  "args": "--hwdec=vaapi --vo=gpu-next --gpu-api=vulkan",
+  "size": "1376,762",
+  "hardwareDecoding": true
+ },
+ "vkno": {
+  "args": "--hwdec=no --vo=gpu-next --gpu-api=vulkan",
+  "size": "1376,762",
+  "hardwareDecoding": false
+ },
+ "glva": {
+  "args": "--hwdec=vaapi --vo=gpu --gpu-api=opengl",
+  "size": "1376,762",
+  "hardwareDecoding": true
+ },
+ "glno": {
+  "args": "--hwdec=no --vo=gpu --gpu-api=opengl",
+  "size": "1376,762",
+  "hardwareDecoding": false
+ },
+ "vkva ~ vkno": {
+  "bytes": 3145536,
+  "off24": 0,
+  "differ": 0,
+  "max": 0,
+  "mean": 0
+ },
+ "glva ~ glno": {
+  "bytes": 3145536,
+  "off24": 400139,
+  "differ": 2183632,
+  "max": 224,
+  "mean": 10.603
+ },
+ "vkno ~ glno": {
+  "bytes": 3145536,
+  "off24": 0,
+  "differ": 704967,
+  "max": 4,
+  "mean": 0.23
+ },
+ "vkva ~ glva": {
+  "bytes": 3145536,
+  "off24": 400442,
+  "differ": 2194964,
+  "max": 225,
+  "mean": 10.625
+ },
+ "warnings": {
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap": 1
+ }
+}

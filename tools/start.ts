@@ -138,7 +138,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   // The page, built (Vite, ~1 s; tools/dist.ts) and served as the static copy is: what a user should get.
   const { OUT, writeDist } = await import('./dist.ts');
-  await writeDist(OUT);
+  await writeDist(OUT, { vulkan: false }); // Vulkan's renderer only if vk/build.sh built it
   const { APP, startServer } = await import('./serve.ts');
   const port = Number(values.port);
   const server = await startServer(port, values.host, OUT).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'

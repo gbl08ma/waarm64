@@ -5,7 +5,7 @@
 // WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the driver takes the window's written
 // pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `settled` says when the fences sent so far have.
-import { gpuFeatures, maxImmediates, VenusGpu } from './venus-gpu.ts';
+import { gpuFeatures, gpuLimits, VenusGpu, type GpuCaps } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { WindowWatch } from './window.ts';
 
@@ -16,7 +16,7 @@ export type VenusStats = { submits: number; completed: number; fences: number; p
 
 type Exports = {
   _initialize(): void;
-  venus_init(features: number, maxImmediates: number, window: number, windowBytes: number): number;
+  venus_init(features: number, limits: number, nlimits: number, window: number, windowBytes: number): number;
   venus_complete(serial: number): void;
   venus_capset(out: number): number;
   venus_context_create(ctx: number, name: number, nlen: number): number;
@@ -91,7 +91,7 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined) {
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
     // Its heap is in the arena at memory 0's top: past 2 GiB, which a wasm i32 gives JS as negative.
@@ -100,7 +100,13 @@ export class VenusRenderer {
     this.watch = window.watch ? new WindowWatch(memory, window.watch) : undefined;
     this.gpu = gpu;
     this.ex._initialize();
-    if (!this.ex.venus_init(gpuFeatures(device), maxImmediates(device), window.at, window.bytes)) throw new Error('venus: vkr_renderer_init failed');
+    // What the device advertises follows the WebGPU device's features and limits (vk/driver/wg_caps.c).
+    const limits = gpuLimits(caps);
+    const at = this.ex.venus_alloc(limits.byteLength);
+    new Uint32Array(memory.buffer, at, limits.length).set(limits);
+    const ok = this.ex.venus_init(gpuFeatures(caps, !!device), at, limits.length, window.at, window.bytes);
+    this.ex.venus_free(at);
+    if (!ok) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
     const n = this.ex.venus_capset(p);
     this.capset = new Uint8Array(memory.buffer, p, n).slice();
@@ -109,9 +115,10 @@ export class VenusRenderer {
 
   /**
    * The module (vk/build.sh's target/vk/venus.wasm) on `memory`, the VM's memory 0, which must be 4 GiB with its arena
-   * unused; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests).
+   * unused; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
+   * what `caps` has (the device's features and limits; a test's stand-in, or WebGPU's defaults).
    */
-  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice) {
+  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device) {
     let self: VenusRenderer | undefined;
     const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty());
     const imports = {
@@ -125,7 +132,7 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps);
     return self;
   }
 

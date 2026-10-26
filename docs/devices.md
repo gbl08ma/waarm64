@@ -453,7 +453,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 
-#### Venus (Vulkan, VK1)
+#### Venus (Vulkan, VK1, VK2)
 - `{type: 'gpu', …, virgl: true, venus: true}` (`GpuOptions.venus`, off by default: a per-machine choice; without it
   the device is exactly the virgl one, bytes and steps unmoved). Adds features `RESOURCE_UUID` (2), `RESOURCE_BLOB` (3)
   and `CONTEXT_INIT` (4), a third capset, VENUS (ID 4, version 0, 160 bytes: `GpuOptions.venusCaps`, the renderer's
@@ -484,9 +484,10 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   until then). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
   Calls that come before the module is ready wait in a backlog, and so does the device's fence.
 - **The driver** (vk/README.md "The driver"): Vulkan on the GPU worker's WebGPU device (web/venus-gpu.ts; with no
-  adapter it keeps the objects and draws nothing). What it advertises is VK0's Mac profile (`mac_direct`, vk/profile.ts)
-  less what the translator can't do yet, formats as WebGPU has them, plus what Venus's WSI shares through (dma-buf
-  memory with the LINEAR modifier, foreign queue transfers, sync-file semaphores) and YCbCr conversions (GTK). vkcube on
+  adapter it keeps the objects and draws nothing). What it advertises follows the browser's WebGPU device, its limits
+  and features read at the renderer's start (vk/README.md "The driver"; VK2 L7), less what the translator can't do yet,
+  formats as WebGPU has them, plus what Venus's WSI shares through (dma-buf memory with the LINEAR modifier, foreign
+  queue transfers, sync-file semaphores); no YCbCr conversions, so GTK4 stays on GL. vkcube on
   sway (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) runs ~50 frames/s on 2 vCPUs on SwiftShader's WebGPU
   (`tests/page-venus.test.ts`); in VK1, with the null driver, on the desktop guest's sway (GLES, virgl) vkcube and
   GTK4's Vulkan renderer presented through dma-bufs at the display's 60 (bench/vulkan/apps-load.ts,
@@ -504,8 +505,9 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   it to Venus's renderer as `blob-ctx` with its size (its backing's pages, or its texels at 4 bytes, whichever is more),
   which makes it a dma-buf resource of the context; the driver's images on memory imported from it are written with
   the resource's bytes (web/venus-import.ts). A detach drops it there.
-- On the page: `?gpu=vulkan` (with 3D on) gives a machine Venus (web/app/worker.ts); the Machines page has no setting
-  for it yet.
+- On the page: a machine's Vulkan setting (the Machines page, beside 3D: `MachineRecord.vulkan`, in its shape) or
+  `?gpu=vulkan` (with 3D on) gives it Venus (web/app/worker.ts); the module is fetched only then, and is in `npm run
+  dist`'s copy (vk/README.md "On the page").
 - Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,
   `features: +virgl +edid +resource_blob +host_visible`, `+context_init`, `cap set 2: id 4, max-version 0, max-size 160`.
 

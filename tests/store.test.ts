@@ -346,3 +346,29 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
   assert.equal(hostMemoryGiB(1024, 4), hostMemoryGiB(1024, 4, 160) + 0.625);
   assert.equal(jitHostGiB(16), -0.25);
 });
+
+test("a machine's Vulkan setting: in its shape (with 3D only) and its definition; off leaves the shape as it was", async () => {
+  const { createMachine, updateMachine } = await import('../web/app/machines.ts');
+  const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
+  const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
+  const m = await createMachine(store, { name: 'Vk' });
+  const s = shapeOf(m, () => undefined);
+  assert.equal('vulkan' in s, false, 'off: no field');
+  assert.equal(await shapeHash(shapeOf({ ...m, vulkan: false }, () => undefined)), await shapeHash(s));
+  const on = shapeOf({ ...m, vulkan: true }, () => undefined);
+  assert.equal(on.vulkan, true);
+  assert.notEqual(await shapeHash(on), await shapeHash(s), 'the guest sees it');
+  assert.deepEqual(shapeDiff(s, on), ['it had no Vulkan']);
+  assert.deepEqual(shapeDiff(on, s), ['it had Vulkan']);
+  // Only beside 3D: a 2D machine, or a 3D one run in 2D, has none; the page's `?gpu=vulkan` gives a 3D one Vulkan.
+  assert.equal('vulkan' in shapeOf({ ...m, display: '2d', vulkan: true }, () => undefined), false);
+  assert.equal('vulkan' in shapeOf({ ...m, vulkan: true }, () => undefined, { display: '2d' }), false);
+  assert.equal(shapeOf(m, () => undefined, { vulkan: true }).vulkan, true);
+  // Saving it needs the machine off (a shape change), and its definition carries it.
+  const saved = await updateMachine(store, { ...m, vulkan: true });
+  const def = await exportDefinition(store, saved.id);
+  assert.equal(def.machine.vulkan, true);
+  assert.equal((await importDefinition(store, parseDefinition(JSON.stringify(def)))).machine.vulkan, true);
+  assert.equal('vulkan' in (await exportDefinition(store, (await updateMachine(store, { ...saved, vulkan: false })).id)).machine, false);
+  assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, vulkan: 'yes' } })), /damaged/);
+});

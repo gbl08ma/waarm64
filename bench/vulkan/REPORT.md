@@ -638,6 +638,91 @@ gpu-next needs GL 3, and virgl's EGL gives mpv GLES 2 here; the video track's ru
   storage formats in WebGPU without `texture-formats-tier1`): mpv on Vulkan scales bilinearly, as mpv on virgl's GLES 2
   does (it disables its scalers: "GLSL version too old"). Backlog.
 
+## VK2 L7: caps from the adapter, YCbCr dropped, the module's size, a pipeline's and a submit's costs
+
+**2026-10-26.** JSON in `results/vk2/l7/`. Hosts as in L5 and L6: the dev VM's SwiftShader (Chromium 153.0.8010.52)
+and the M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2).
+
+**What the device advertises follows the browser's WebGPU device** (vk/README.md "The driver"; `tests/venus-renderer.test.ts`
+checks the mapping against both adapters' recorded features and limits). The same module reports, for example:
+
+| | SwiftShader | Apple M4 (Metal) |
+| --- | --- | --- |
+| `maxImageDimension2D`, `maxImageArrayLayers` | 8,192, 256 | 16,384, 2,048 |
+| `maxComputeWorkGroupInvocations`, `maxComputeWorkGroupSize[0]` | 256, 256 | 1,024, 1,024 |
+| sampled images, storage images a stage | 16, 4 | 48, 8 |
+| `maxStorageBufferRange` | 1 GiB | 4 GiB − 4 |
+| dual-source blending; 16-bit normalized formats (`texture-formats-tier1`) | no; no | yes; yes |
+| vendor ID | Google's (0x1ae0) | Apple's (0x106b) |
+
+Before, every adapter got the Mac's profile: on SwiftShader a 1,024-invocation workgroup or a 16,384-texel image was
+advertised and failed. dEQP-VK's pass list lost 8 cases to it (workgroups past SwiftShader's 256 invocations, now
+NotSupported): 1,463 pass. The programs' frames, captured again through the regenerated profile
+(`images/vkframes/venus-profile.json`, now SwiftShader's own device), all within their tolerances on both hosts
+(worst share of a frame's bytes off by more than 24: vkcube 0.03% / 0.001%, vkmark ≤ 0.11% / ≤ 0.11%, vkQuake 1.68% /
+1.67%; `replay-*.json`).
+
+Two of the adapter's features are held back, by measurement. **`float32-blendable`** gave mpv's libplacebo a family
+of FBO formats (32-bit floats), so mpv on Vulkan rendered with its advanced path (scalers, debanding): decoding in
+software its picture is within 47 of GL's bilinear one, and with VA-API it is right on SwiftShader (360 bytes off by
+more than 24), but on the M4 the imported chroma plane reads as zeros: a green picture (`mpv-frames-mac-f32blend.json`,
+`mpv-mac-f32blend-green.png`). Without it mpv renders as in L6: VA-API's frames byte for byte the software ones on the
+M4 (`mpv-frames-mac.json`). Tier1's storage formats would give libplacebo another FBO family and are held back too,
+untried on that path. Backlog "Imports' gaps".
+
+**YCbCr conversions are dropped** (the kickoff's choice by measurement; plan §6). GTK 4.24 in the desktop guest takes
+GSK's GL renderer by default even with Venus there (`gtk4-default-mac.json`). Forced onto Vulkan (`GSK_RENDERER=vulkan`)
+with YCbCr advertised and not honoured, it fails GTK4's bar on the M4 (`gtk4-ycbcr-mac.json`, two alternated rounds):
+
+| gtk4-demo, desktop guest, 4 vCPUs | frames/s | gtk4-demo's CPU a frame | what it drew |
+| --- | --- | --- | --- |
+| frames, GSK on Vulkan | 59.8, 59.7 | 3.34, 3.16 ms | a black window |
+| frames, GSK on GL | 59.8, 59.8 | 2.62, 2.57 ms | right |
+| fishbowl, GSK on Vulkan | 57.3, 22.6 | 5.34, 8.61 ms | one icon (5.7 frames/s by its own count) |
+| fishbowl, GSK on GL | 53.0, 54.7 | 8.87, 8.31 ms | right |
+
+So the device offers no YCbCr conversions (nor the extension): GTK4 stays on GL; forced onto Vulkan it aborts on its own
+assertion (`gdk_display_create_vulkan_device`: `features & GDK_VULKAN_FEATURE_YCBCR`, `gtk4-noycbcr-swiftshader.json`).
+The DRM modifier (LINEAR) stays: Venus's WSI needs it.
+
+**The gate, again** (as L6: `avsync.ts`, Sintel's H.264 trailer from the media disk, three alternated rounds,
+`mpv-mac.json`): mpv on Vulkan with VA-API's surfaces 528–529 frames shown, **0 dropped, the guest 13, 13, 13% busy**
+(GL 12, 12, 12%); mpv's CPU 346, 326, 322 ms a second (GL 297, 297, 286), sway's 82, 92, 89 (GL 101, 101, 93); the
+GPU worker's imports 5.1–5.3 ms a second. The same as L6: the bar (19–27% busy, no drops) holds.
+
+**The module** (`module-size.json`): `target/vk/venus.wasm` 12,448,522 bytes (11.9 MiB), 1.18 MiB with gzip -9,
+**0.69 MiB with brotli** (what Cloudflare serves), against VK1 step 1's bar of ~5 MiB compressed. It is in `npm run
+dist`'s copy (`assets/venus-<hash>.wasm`, `VENUS-LICENSES.txt` beside it), fetched only by a machine with Vulkan on.
+
+**A submit's and a pipeline's costs** (`bench/vulkan/costs.ts`, the driver's test program in the module on the page's
+WebGPU: 40 alternated submits of one draw with a pipeline made before, and of one draw with a pipeline made anew from a
+fragment shader specialized to a new value; medians, IQR in brackets; `costs-*.json`):
+
+| ms | in the call (record, translate, replay into WebGPU) | until the fence signalled |
+| --- | --- | --- |
+| M4: a submit | 0.12 (0.05) | 0.68 (0.09) |
+| M4: a new pipeline, new to Metal | 0.60 (0.12) | **81.6 (1.6)** |
+| M4: the same pipelines again (Metal's on-disk cache) | 0.35 (0.13) | 1.23 (0.55) |
+| M4: a hand-written WGSL pipeline of the same kind, new to Metal (`createRenderPipelineAsync` and its draw) | | 74.3 (1.7) |
+| SwiftShader: a submit | 0.14 (0.04) | 3.19 (0.51) |
+| SwiftShader: a new pipeline | 0.68 (0.16) | 27.1 (1.1) |
+| SwiftShader: hand-written WGSL | | 18.0 (0.5) |
+
+- **A pipeline costs the GPU's compiler, not the translation**: SPIR-V to WGSL and the driver's work are 0.6 ms; Metal's
+  first compile of a new shader is ~75–80 ms (hand-written WGSL of the same kind: 74 ms), ~1.2 ms once its on-disk
+  cache has it. Plan §7 priced ~10 ms from VK0's measurements (likely of shaders Metal had cached). With our WGSL's
+  style (every value a `var`, bitcasts), the translation and the submit included, a pipeline costs ~10% more than the
+  hand-written one on Metal (82 against 74 ms) and 27 against 18 ms on SwiftShader. Within a frame it costs nothing once made; a program's load
+  pays it once a machine (backlog: made asynchronously, cached across runs).
+- **A submit costs ~0.1 ms of the GPU worker's thread** on both, and its fence comes back 0.7 ms later on the M4
+  (3.2 ms on SwiftShader, its CPU rendering).
+
+**The NVIDIA run** (the gate's last part) is scripted, not run: `bench/vulkan/nvidia.sh page <bundle>` with the bundle
+`bench/vulkan/nvidia-bundle.sh` makes on the dev VM (the repository, the built core and renderer, the firmware and the
+guests' images, 3.4 GB) runs the programs' replays (REPLAY=all), the scene on Venus and virgl (two alternated rounds)
+and mpv's gate (two), in Chrome for Testing headless if it gets the NVIDIA adapter, else headed in the user's own
+Chromium, and packs the results. The dev VM ran it whole on SwiftShader (its test hooks).
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
@@ -650,6 +735,8 @@ gpu-next needs GL 3, and virgl's EGL gives mpv GLES 2 here; the video track's ru
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK2 L7: `costs.ts` and `costs/` (a submit's and a pipeline's costs; `mac-costs.sh` on the Mac), `adapter.ts` (the
+  adapter a Chromium gets), `nvidia-bundle.sh` and `nvidia.sh page` (the page on the user's NVIDIA desktop).
 - VK2 L6: `mpv-frames.ts` (mpv's frames on Vulkan against software decoding and GL), and `../audio/avsync.ts`'s
   `MPV_ARGS`, `MPV_VARIANTS` (mpv's options in alternated rounds) and `SHIM` (the media disk's VA driver), all through
   `../gpu/sway-mac.sh`.

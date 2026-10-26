@@ -62,6 +62,8 @@ export type ToWorker =
      */
     renderer?: MessagePort;
     caps?: Uint8Array;
+    /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"). */
+    vulkan?: boolean;
     /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it. */
     display: MessagePort;
     /** The display's size at the start (the page's screen box, `wantedSize` in main.ts): the console and the firmware get it with no event. Default: the machine's. */

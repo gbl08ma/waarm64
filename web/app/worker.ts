@@ -169,7 +169,7 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
       const tuning = gpuTuning();
       const { vulkan, ...rest } = tuning;
       // Vulkan through Venus on a 3D machine (its renderer is the GPU worker's: docs/devices.md "Venus").
-      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...rest, virgl: tuning.virgl || !!m.renderer, venus: vulkan && !!m.renderer, renderer: m.renderer, caps: m.caps };
+      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...rest, virgl: tuning.virgl || !!m.renderer, venus: (vulkan || !!m.vulkan) && !!m.renderer, renderer: m.renderer, caps: m.caps };
     }
     case 'net': {
       const n = m.nets![slot.adapter!];
@@ -382,7 +382,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
   // user's split, else the automatic one; a snapshot's own.
   // A machine with Vulkan keeps its window and its renderer in memory 0 too (docs/devices.md "Venus").
-  const venus = kinds.includes('gpu') && gpuTuning().vulkan && !!m.renderer;
+  const venus = kinds.includes('gpu') && (gpuTuning().vulkan || !!m.vulkan) && !!m.renderer;
   let split = m.ramSplit ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20, venus ? VENUS_WINDOW + VENUS_ARENA : 0);
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;

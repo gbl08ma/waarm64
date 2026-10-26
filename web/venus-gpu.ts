@@ -15,31 +15,64 @@ type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-ex
 type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number; tex: GPUTexture };
 type Obj = GPUBuffer | GPUTexture | View | GPUSampler | GPUBindGroupLayout | GPUPipelineLayout | GPURenderPipeline | GPUComputePipeline | GPUBindGroup | GPUShaderModule | GPUQuerySet;
 
-/** The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`). */
-export function gpuFeatures(device: GPUDevice | undefined) {
-  if (!device) return 0;
-  const f = device.features;
-  return (f.has('texture-compression-bc') ? 1 : 0) | (f.has('texture-compression-etc2') ? 2 : 0) | (f.has('texture-compression-astc') ? 4 : 0) |
-    (f.has('depth32float-stencil8') ? 8 : 0) | (f.has('float32-filterable') ? 16 : 0) | (f.has('depth-clip-control') ? 32 : 0) |
-    (f.has('dual-source-blending') ? 64 : 0) | (f.has('clip-distances' as GPUFeatureName) ? 128 : 0) | (f.has('indirect-first-instance') ? 256 : 0) | (1 << 31);
+/** What the driver advertises follows (vk/driver/wg_caps.c): a device's features and limits, or a stand-in's in tests. */
+export type GpuCaps = { readonly features: ReadonlySet<string>; readonly limits: object; readonly adapterInfo?: { readonly vendor: string } };
+
+/** The adapter's maker (`GPUAdapterInfo.vendor`) as a PCI vendor ID, which the device reports as its own. */
+export const VENDORS: Record<string, number> = { apple: 0x106b, nvidia: 0x10de, amd: 0x1002, ati: 0x1002, intel: 0x8086, google: 0x1ae0, arm: 0x13b5, qualcomm: 0x5143, 'img-tec': 0x1010, imagination: 0x1010, microsoft: 0x1414, samsung: 0x144d };
+
+/** The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`), and whether there is a device. */
+const FEATURES = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
+  'depth-clip-control', 'dual-source-blending', 'clip-distances', 'indirect-first-instance', 'texture-formats-tier1', 'texture-formats-tier2',
+  'rg11b10ufloat-renderable', 'float32-blendable', 'bgra8unorm-storage'];
+export function gpuFeatures(caps: GpuCaps | undefined, device: boolean) {
+  let flags = device ? 1 << 31 : 0;
+  FEATURES.forEach((f, i) => { if (caps?.features.has(f)) flags |= 1 << i; });
+  return flags;
 }
 
-/** The bytes of immediates a pipeline layout may declare on `device` (0 where the browser has none). */
-export function maxImmediates(device: GPUDevice | undefined) {
-  const has = typeof GPURenderPassEncoder !== 'undefined' && typeof (GPURenderPassEncoder.prototype as unknown as { setImmediates?: unknown }).setImmediates === 'function';
-  return device && has ? Math.min(128, (device.limits as unknown as Record<string, number>).maxImmediateSize ?? 0) : 0;
+/**
+ * The limits the driver reports from (vk/driver/wg_private.h `struct wg_limits`, in its order), each with WebGPU's
+ * default (what a device has unless asked for more; what the driver sees without one).
+ */
+export const LIMITS: [string, number][] = [
+  ['maxTextureDimension1D', 8192], ['maxTextureDimension2D', 8192], ['maxTextureDimension3D', 2048], ['maxTextureArrayLayers', 256],
+  ['maxBindGroups', 4], ['maxDynamicUniformBuffersPerPipelineLayout', 8], ['maxDynamicStorageBuffersPerPipelineLayout', 4],
+  ['maxSampledTexturesPerShaderStage', 16], ['maxSamplersPerShaderStage', 16], ['maxStorageBuffersPerShaderStage', 8],
+  ['maxStorageTexturesPerShaderStage', 4], ['maxUniformBuffersPerShaderStage', 12], ['maxUniformBufferBindingSize', 65536],
+  ['maxStorageBufferBindingSize', 134217728], ['minUniformBufferOffsetAlignment', 256], ['minStorageBufferOffsetAlignment', 256],
+  ['maxVertexBuffers', 8], ['maxBufferSize', 268435456], ['maxVertexAttributes', 16], ['maxVertexBufferArrayStride', 2048],
+  ['maxInterStageShaderVariables', 16], ['maxColorAttachments', 8], ['maxComputeWorkgroupStorageSize', 16384],
+  ['maxComputeInvocationsPerWorkgroup', 256], ['maxComputeWorkgroupSizeX', 256], ['maxComputeWorkgroupSizeY', 256],
+  ['maxComputeWorkgroupSizeZ', 64], ['maxComputeWorkgroupsPerDimension', 65535], ['maxImmediateSize', 0],
+  ['maxStorageBuffersInFragmentStage', 8], ['maxStorageTexturesInFragmentStage', 4],
+  // Not a limit: the maker's PCI vendor ID (`VENDORS`), 0 for one this list doesn't know.
+  ['vendorID', 0],
+];
+
+/** `LIMITS`' values of `caps` as venus_init takes them (32 bits each; the defaults where it has none). */
+export function gpuLimits(caps: GpuCaps | undefined) {
+  const l = (caps?.limits ?? {}) as Record<string, number | undefined>;
+  // Immediates only where the browser has `setImmediates`, and at most the 128 bytes of Vulkan's push constants.
+  const immediates = typeof GPURenderPassEncoder !== 'undefined' && typeof (GPURenderPassEncoder.prototype as unknown as { setImmediates?: unknown }).setImmediates === 'function';
+  // A stage's storage in the fragment stage: the per-stage limit where the browser predates the split.
+  const fallback: Record<string, string> = { maxStorageBuffersInFragmentStage: 'maxStorageBuffersPerShaderStage', maxStorageTexturesInFragmentStage: 'maxStorageTexturesPerShaderStage' };
+  return new Uint32Array(LIMITS.map(([k, d]) => {
+    const v = k === 'maxImmediateSize' ? (immediates ? Math.min(128, l[k] ?? 0) : 0)
+      : k === 'vendorID' ? VENDORS[caps?.adapterInfo?.vendor.toLowerCase() ?? ''] ?? 0
+        : l[k] ?? (fallback[k] ? l[fallback[k]] : undefined) ?? d;
+    return Math.min(v, 0xffff_ffff);
+  }));
 }
 
-/** The features and limits to ask an adapter's device for. */
+/** The features and limits to ask an adapter's device for: every one the driver uses, as far as the adapter goes. */
 export function deviceRequest(adapter: GPUAdapter): GPUDeviceDescriptor {
-  const want = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
-    'depth-clip-control', 'dual-source-blending', 'clip-distances', 'rg11b10ufloat-renderable', 'indirect-first-instance'] as GPUFeatureName[];
   const limits = adapter.limits as unknown as Record<string, number>;
   const requiredLimits: Record<string, number> = {};
-  for (const k of ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxBindGroups', 'maxColorAttachmentBytesPerSample', 'maxStorageBuffersPerShaderStage', 'maxSampledTexturesPerShaderStage', 'maxSamplersPerShaderStage', 'maxUniformBuffersPerShaderStage', 'maxStorageTexturesPerShaderStage', 'maxDynamicUniformBuffersPerPipelineLayout', 'maxDynamicStorageBuffersPerPipelineLayout', 'maxTextureDimension2D', 'maxTextureArrayLayers', 'maxImmediateSize', 'maxInterStageShaderVariables', 'maxVertexAttributes', 'maxComputeWorkgroupStorageSize', 'maxComputeInvocationsPerWorkgroup']) {
-    if (typeof limits[k] === 'number') requiredLimits[k] = limits[k];
-  }
-  return { requiredFeatures: want.filter((f) => adapter.features.has(f)), requiredLimits };
+  for (const [k] of LIMITS) if (typeof limits[k] === 'number') requiredLimits[k] = limits[k];
+  // Vulkan has no limit on a pass's attachments' bytes a sample: ask for the most.
+  if (typeof limits.maxColorAttachmentBytesPerSample === 'number') requiredLimits.maxColorAttachmentBytesPerSample = limits.maxColorAttachmentBytesPerSample;
+  return { requiredFeatures: FEATURES.filter((f) => adapter.features.has(f)) as GPUFeatureName[], requiredLimits };
 }
 
 export class VenusGpu {

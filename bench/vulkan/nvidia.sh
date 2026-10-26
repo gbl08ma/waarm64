@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# VK0 on the user's NVIDIA desktop (bench/vulkan/REPORT.md; the kickoff's "The NVIDIA desktop's script"), run by hand
-# from a checkout of this repository on x86_64 Linux (CachyOS: clang installed, Chromium with WebGPU):
+# The Vulkan track's runs on the user's NVIDIA desktop (bench/vulkan/REPORT.md "The NVIDIA desktop", "VK2: the gate
+# and the NVIDIA run"), by hand on x86_64 Linux (CachyOS: Chromium with WebGPU). Two modes:
 #
-#   bench/vulkan/nvidia.sh [dir]        (default ~/webpc-vk0)
+#   bench/vulkan/nvidia.sh [dir]                    VK0's arms (default dir ~/webpc-vk0)
+#   bench/vulkan/nvidia.sh page <bundle.tar> [dir]  VK2: the page itself (default dir ~/webpc-vk2)
 #
-# Everything it downloads, builds or writes goes into that one directory, which can be deleted afterwards: LunarG's
-# Vulkan SDK for Linux (headers, loader, glslc, GFXReconstruct), a portable Node, Playwright's Chrome for Testing, a
-# copy of the benchmark's sources, the WebGL Aquarium's assets, the scene's build and the results. No sudo, no
-# packages installed; caches and temporary files are pointed into the directory too. It needs only curl, tar, xz,
-# git and clang, which the desktop has.
+# Everything it downloads, builds or writes goes into that one directory, which can be deleted afterwards. No sudo, no
+# packages installed; caches and temporary files are pointed into the directory too.
 #
-# What it runs:
+# VK0 (it needs curl, tar, xz, git and clang): LunarG's Vulkan SDK for Linux (headers, loader, glslc, GFXReconstruct), a
+# portable Node, Playwright's Chrome for Testing, a copy of the benchmark's sources, the WebGL Aquarium's assets, the
+# scene's build and the results. What it runs:
 #   1. the native scene (arm 1) on the system's Vulkan driver: every fish count and the toolkit setting, MSAA 1 and 4;
 #   2. the scene captured with GFXReconstruct and converted for arm 3 (its shaders come translated, from
 #      bench/vulkan/translate/scene-shaders.json);
@@ -18,6 +18,19 @@
 #      WebGPU questions (C, E, F), in the headless Chrome for Testing if it gets the NVIDIA adapter; otherwise it
 #      serves the pages and prints the URLs to open in your own Chromium, where each page downloads its results.
 # At the end it writes <dir>/vk0-nvidia-results.tar.gz: send that file back.
+#
+# VK2 (`page`; it needs curl, tar and xz): the bundle bench/vulkan/nvidia-bundle.sh makes on the dev VM (the
+# repository's files, the built wasm core, Vulkan's renderer, the firmware and the guests' images, ~3.5 GB: copy it
+# over), unpacked, with a portable Node, the page's npm packages and Playwright's Chrome for Testing. The page runs in
+# the headless Chrome for Testing if it gets the NVIDIA adapter, else in your own Chromium (VK2_CHROMIUM=<path>, by
+# default the first of chromium, google-chrome-stable, google-chrome on the PATH), headed with a temporary profile: a
+# window opens for each run and must stay visible (minimised, Chromium throttles it). Each run is a machine on the page,
+# as on the dev VM and the Mac (VK2_STEPS="replay scene mpv" picks some):
+#   1. replay: the programs' frames (vkcube, vkmark's 13 scenes, vkQuake) replayed on the Venus device and compared with
+#      lavapipe's (bench/vulkan/venus-run.ts REPLAY=all, the tests' Debian; ~5 min);
+#   2. scene: VK0's scene in the desktop guest on Venus and on virgl, two alternated rounds (bench/vulkan/guest.ts);
+#   3. mpv: the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds (bench/audio/avsync.ts).
+# At the end it writes <dir>/vk2-nvidia-results.tar.gz: send that file back.
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
 trap 'echo "nvidia.sh: stopped at line $LINENO (exit $?): $BASH_COMMAND" >&2' ERR
@@ -27,6 +40,87 @@ SDK_VERSION=1.4.363.0
 NODE_VERSION=v26.7.0
 PLAYWRIGHT=$(grep -m1 -A3 '"node_modules/playwright-core"' "$REPO/package-lock.json" | sed -n 's/.*"version": "\(.*\)".*/\1/p')
 say() { printf '\n== %s\n' "$*"; }
+
+if [ "${1:-}" = page ]; then
+  BUNDLE=$(realpath "${2:?usage: bench/vulkan/nvidia.sh page <bundle.tar> [dir]}")
+  DIR=$(realpath -m "${3:-$HOME/webpc-vk2}")
+  for t in curl tar xz; do command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }; done
+  [ "$(uname -m)" = x86_64 ] || [ -n "${VK0_ANY_ARCH:-}" ] || { echo "this script is for x86_64 Linux" >&2; exit 1; }
+  mkdir -p "$DIR"/{dl,t,cache,results}
+  export TMPDIR=$DIR/t XDG_CACHE_HOME=$DIR/cache npm_config_cache=$DIR/cache/npm PLAYWRIGHT_BROWSERS_PATH=$DIR/browsers
+  export __GL_SHADER_DISK_CACHE_PATH=$DIR/cache/nvidia && mkdir -p "$__GL_SHADER_DISK_CACHE_PATH"
+
+  say "Node $NODE_VERSION"
+  if [ "${VK0_NODE:-}" = system ]; then
+    mkdir -p "$DIR/node/bin" && ln -sf "$(command -v node)" "$DIR/node/bin/node" && ln -sf "$(command -v npm)" "$DIR/node/bin/npm"
+  elif [ ! -x "$DIR/node/bin/node" ]; then
+    curl -fL --progress-bar -o "$DIR/dl/node.tar.xz" "https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-linux-x64.tar.xz"
+    mkdir -p "$DIR/node" && tar -xJf "$DIR/dl/node.tar.xz" -C "$DIR/node" --strip-components=1 && rm "$DIR/dl/node.tar.xz"
+  fi
+  export PATH=$DIR/node/bin:$PATH
+
+  say "the bundle (the page, its binaries and the guests' images; a few minutes the first time)"
+  P=$DIR/page
+  if [ ! -f "$P/.bundle" ] || [ "$(cat "$P/.bundle")" != "$(stat -c %s-%Y "$BUNDLE")" ]; then
+    rm -rf "$P" && mkdir -p "$P" && tar -xf "$BUNDLE" -C "$P" && stat -c %s-%Y "$BUNDLE" > "$P/.bundle"
+  fi
+  cat "$P/BUNDLE.txt"
+  (cd "$P" && npm ci --no-audit --no-fund --loglevel=error >/dev/null)
+  node "$P/node_modules/playwright-core/cli.js" install chromium >/dev/null
+  CFT=$(ls -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-*/chrome-linux*/chrome 2>/dev/null | sort | tail -1)
+
+  say "which browser gets the NVIDIA adapter?"
+  probe() { (cd "$P" && CHROMIUM=$1 HEADED=$2 CHROMIUM_ARGS="--enable-unsafe-webgpu $3" timeout 120 node bench/vulkan/adapter.ts 2>/dev/null | tail -1) || true; }
+  USE= USE_HEADED= USE_ARGS=
+  for a in "" "--enable-features=Vulkan --use-angle=vulkan --ignore-gpu-blocklist"; do
+    r=$(probe "$CFT" "" "$a")
+    echo "  Chrome for Testing, headless, ${a:-no flags} -> ${r:0:160}"
+    if echo "$r" | grep -qiE "${VK0_ADAPTER_MATCH:-nvidia}"; then USE=$CFT USE_ARGS="--enable-unsafe-webgpu $a"; echo "$r" > "$DIR/results/adapter.json"; break; fi
+  done
+  if [ -z "$USE" ]; then
+    own=${VK2_CHROMIUM:-$(command -v chromium || command -v google-chrome-stable || command -v google-chrome || true)}
+    [ -n "$own" ] || { echo "no Chromium of your own on the PATH: set VK2_CHROMIUM=<path to chromium>" >&2; exit 1; }
+    r=$(probe "$own" 1 "")
+    echo "  $own, headed -> ${r:0:160}"
+    echo "$r" | grep -qiE "${VK0_ADAPTER_MATCH:-nvidia}" || { echo "neither browser got the NVIDIA adapter (above)" >&2; exit 1; }
+    USE=$own USE_HEADED=1 USE_ARGS=--enable-unsafe-webgpu
+    echo "$r" > "$DIR/results/adapter.json"
+    echo "  (a window opens for each run: leave it visible until the run ends)"
+  fi
+  export CHROMIUM=$USE HEADED=$USE_HEADED CHROMIUM_ARGS="$USE_ARGS --mute-audio" WEBPC_TAILSCALE=0
+  [ -n "$HEADED" ] || unset HEADED
+  R=$DIR/results
+  step() {  # name, seconds allowed, then the command: its output in results/<name>.log; a failure is noted and passed over
+    local name=$1 limit=$2
+    shift 2
+    say "$name"
+    if (cd "$P" && timeout "$limit" "$@") > "$R/$name.log" 2>&1; then echo "  done"; else echo "  (failed or timed out: $R/$name.log; going on)"; fi
+  }
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" replay "* ]]; then
+    step replay 1800 env REPLAY=all node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/replay"
+  fi
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" scene "* ]]; then
+    for round in 1 2; do
+      for arm in venus virgl; do
+        step "scene-$arm-$round" 1200 env FISH="1 1000" TOOLKIT=2000 node bench/vulkan/guest.ts "$arm" target/arch/desktop.qcow2 "$R/scene-$arm-$round"
+      done
+    done
+  fi
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" mpv "* ]]; then
+    step mpv 1800 env VIRGL_GPU=virgl,vulkan MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=2 \
+      MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan|gl:--vo=gpu --gpu-api=opengl" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv"
+  fi
+  { uname -a; nvidia-smi --query-gpu=name,driver_version --format=csv 2>/dev/null || true; "$CHROMIUM" --version 2>/dev/null || true; cat "$P/BUNDLE.txt"; } > "$R/host.txt"
+
+  say "results"
+  ( cd "$DIR" && tar -czf vk2-nvidia-results.tar.gz results )
+  echo "Send back: $DIR/vk2-nvidia-results.tar.gz"
+  echo
+  echo "Everything this script fetched, unpacked and wrote is in $DIR (Node, Chrome for Testing, the page and its"
+  echo "images, the results). To remove it all:"
+  echo "  rm -rf $DIR"
+  exit 0
+fi
 
 for t in curl tar xz git clang; do command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }; done
 # Test hooks (the dev VM runs the whole script with them): VK0_SDK, an SDK directory to use as it is (bin, lib, include,

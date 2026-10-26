@@ -1,7 +1,9 @@
 # dEQP-VK's pass list (scripts/ci-deqp-vk.sh, tests/page-deqp-vk.test.ts; docs/testing.md "dEQP-VK"): cases that
 # pass on the page today, every one expected to pass. VK2 L5 (2026-10-26): the passing cases of samples of the direct
 # set's groups (bench/gpu/deqp-run.ts vk with PREFIX, STRIDE and PASSED=1), the larger groups' thinned evenly; the
-# failures, by cause, are docs/backlog.md's "The Vulkan driver's gaps".
+# failures, by cause, are docs/backlog.md's "The Vulkan driver's gaps". VK2 L7: the 8
+# zero_initialize_workgroup_memory.specialize_workgroup cases past 256 invocations left, NotSupported on SwiftShader since
+# what the device advertises follows its adapter (256 invocations a workgroup).
 dEQP-VK.clipping.clip_volume.depth_clamp.line_list
 dEQP-VK.clipping.clip_volume.depth_clamp.point_list
 dEQP-VK.clipping.clip_volume.depth_clamp.triangle_list
@@ -288,7 +290,6 @@ dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.5_7_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.5_8_1
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.5_8_3
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.5_8_7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_1_3
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_1_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_2_1
@@ -305,9 +306,7 @@ dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_6_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_7_1
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_7_5
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_7_7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_8_3
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.6_8_7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_1_1
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_1_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_2_1
@@ -324,9 +323,7 @@ dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_6_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_7_1
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_7_3
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_7_7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_8_3
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.7_8_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_1_1
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_1_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_1_7
@@ -341,11 +338,8 @@ dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_5_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_6_1
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_6_5
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_6_7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_7_3
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_7_7
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_8_1
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.specialize_workgroup.8_8_5
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.types.bool
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.types.bvec3
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.types.f32mat2x4

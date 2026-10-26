@@ -271,8 +271,20 @@ for the programs that switch. The user decides whether VK1 starts.
   renderer would start; VK2 either drops them until VK3 emulates them, so GTK4 stays on GL, or keeps them and brings
   GTK4 to its bar: its choice, by measurement). *Gate:* mpv meets its
   bar (the video track's: no drops, the guest 19–27% busy), which needs VA-API's surfaces imported as dma-bufs.
+  **Done 2026-10-26 but for the user's NVIDIA run** (REPORT.md "VK2 L3"–"VK2 L7"; vk/README.md): mpv on Vulkan with
+  VA-API's surfaces drops no frame and keeps the guest 13% busy on the M4; vkcube's, vkmark's and vkQuake's frames match
+  lavapipe's on SwiftShader and the M4; 1,463 dEQP-VK cases as a pass list; the scene 1.4–1.9× cheaper a frame than on
+  virgl. What VK2 learned: the caps follow the adapter at start (the device's own limits and features, so SwiftShader's
+  device reports a quarter of the Mac's workgroup); YCbCr and its GTK4 are dropped until VK3 (advertised and not
+  honoured, GTK4's Vulkan renderer drew wrong for more CPU; GTK4 takes GL by default here anyway; the modifiers stay,
+  Venus's WSI needs them); a pipeline's first compile is Metal's ~75 ms, not the translation (0.6 ms); Venus's WSI
+  images reach the screen as a copy into virgl's texture (~0.8 ms a 1080p frame on the M4); the module is 0.69 MiB
+  with brotli, far under step 1's 5 MiB.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
-  render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it.
+  render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: the
+  adapter's features the translator still lacks (`subgroups`, `shader-f16`, read-write storage with `tier2`), the
+  driver's gaps dEQP-VK found (backlog "The Vulkan driver's gaps": per-face stencil, occlusion queries, texel
+  buffers, copies WebGPU refuses), and pipelines made asynchronously with a cache across runs (§7).
 - **VK4, breadth and the default:** the programs of A, snapshots while Vulkan is in use (state as data, as for virgl:
   objects, device memory and the window read back), on by default where every switching program meets the bar.
 
@@ -283,15 +295,18 @@ for the programs that switch. The user decides whether VK1 starts.
   reaching the host (hence the write-watch), GPU writes to feedback slots visible without a guest wait,
   `vkQueueWaitIdle` refused, the ring and the virtqueue waiting on each other. We are the host driver: the window
   makes the first three free; the rest our worker must do.
-- **Pipeline creation stalls.** ~10 ms a pipeline end to end on the M4 (Chromium's Tint and Metal's compiler ~9 of
-  it), so a program making hundreds at load stalls for seconds: a cache of WGSL by SPIR-V hash and specialization,
-  and Chromium's own cache of compiled pipelines.
+- **Pipeline creation stalls.** VK0 estimated ~10 ms a pipeline end to end on the M4; VK2 measured ~80 ms the first
+  time a shader reaches Metal's compiler (a hand-written WGSL pipeline of the same kind 74 ms; the translation 0.6 ms)
+  and ~1.5 ms once Metal's on-disk cache has it; SwiftShader 27 ms (REPORT.md "VK2 L7"). So a program making hundreds
+  at load stalls for seconds on its first run on a machine: pipelines made asynchronously with the ring stalled, and a
+  cache of WGSL across runs, are VK3's.
 - **WebGPU's per-call cost** in Chromium caps a frame at ~5,000 Vulkan-style draws a millisecond on the M4 (E): games
   at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
   fast (NVIDIA).
 - **Route (b)'s size in wasm**: `spirv_to_nir`, NIR's passes and a NIR → shading-language backend measured in VK1 step 1
   (0.42 MiB brotli, 0.27 ms a stage in Chromium; wasi-sdk the toolchain); vkr with Mesa's lite runtime and the null
-  driver is 3.2 MB, 510 KiB gzipped (VK1). VK2 adds the compiler and the WebGPU backend.
+  driver is 3.2 MB, 510 KiB gzipped (VK1). VK2's whole module (vkr, the full runtime, the compiler, the driver) is
+  11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli, fetched only by a machine with Vulkan: settled.
 - **The guest's cost is its submit path, not Venus's encoding** (VK1's gate): encoding costs ≤0.55 µs a command, half
   virgl's, but Venus's driver makes ~2× virgl's execbuffers (9 a frame for GTK4's frames against 4), each ~0.17 ms of
   the emulated kernel's time. A light program pays more on Venus (+0.3 ms a frame); a heavy one gains. Levers: the
@@ -300,8 +315,9 @@ for the programs that switch. The user decides whether VK1 starts.
 - **vkr assumes threads**: on one thread, its waits become polls; a wait the guest satisfies only later (the ring's
   wait for a virtqueue seqno, Mesa 26) must stall and resume, not block (VK1 found it as a hang). Its resources outlive
   their memories (VK1 found a use-after-free). Each new vkr wait or lifetime is checked against that.
-- **Adapters differ** (limits, features, formats, precision), as WebGL2 stacks did for dEQP-GLES: the caps per
-  adapter, and dEQP-VK on more than SwiftShader and Metal.
+- **Adapters differ** (limits, features, formats, precision), as WebGL2 stacks did for dEQP-GLES: the caps follow
+  the adapter since VK2 (SwiftShader's device reports 8,192-texel images and 256-invocation workgroups, the Mac's
+  16,384 and 1,024), but dEQP-VK's pass list runs on SwiftShader only: on the Mac's GPU and NVIDIA it is still to run.
 - **The 4 GiB budget**: a Vulkan machine's memory 0 holds RAM, the window (256 MiB) and the renderer's arena (256 MiB)
   beside the core's heap, so RAM past 2.5 GiB spills (`splitRam`'s reserve); the arena caps the renderer's heap (blob
   storage included) until VK2 sizes it from what programs map.

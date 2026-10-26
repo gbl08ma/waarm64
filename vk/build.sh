@@ -60,10 +60,21 @@ mkdir -p "$G"
 python3 "$W/mesa/src/vulkan/util/vk_entrypoints_gen.py" --xml "$W/mesa/src/vulkan/registry/vk.xml" --proto --weak \
   --out-h "$G/wg_entrypoints.h" --out-c "$G/wg_entrypoints.c" --prefix wg --beta false
 
-# What the driver advertises: VK0 A's direct set on the Mac's adapter (vk/profile.ts).
-node "$ROOT/vk/profile.ts" "$ROOT/bench/vulkan/profiles/webgpu-mac.json" mac_direct "$G/wg_profile.c" >/dev/null
 node "$ROOT/vk/gen.ts" "$W" "$W/$WASI_SDK"
 # Quiet, but a failure shows its end (a compile error).
 ninja -C "$W" -f wasm.ninja > "$W/wasm-build.log" || { tail -30 "$W/wasm-build.log"; exit 1; }
 if [ "${1:-}" = native ]; then ninja -C "$W" -f native.ninja > "$W/native-build.log" || { tail -30 "$W/native-build.log"; exit 1; }; fi
+
+# The licences shipped beside the module (`npm run dist` copies both; THIRD_PARTY.md's row).
+{
+  cat "$ROOT/vk/LICENSES.head"
+  section() { printf '\n\n==== %s ====\n\n' "$1"; }
+  section 'virglrenderer: COPYING'; cat "$W/virglrenderer/COPYING"
+  section 'Mesa: docs/license.rst'; cat "$W/mesa/docs/license.rst"
+  section 'MIT (Mesa: licenses/MIT)'; cat "$W/mesa/licenses/MIT"
+  section 'Berkeley SoftFloat 3e (Mesa: src/util/softfloat.c)'; sed -n '2,/^ \*\/$/p' "$W/mesa/src/util/softfloat.c" | sed -n '1,/DAMAGE\./p'
+  section 'BSL-1.0 (Mesa: licenses/BSL-1.0)'; cat "$W/mesa/licenses/BSL-1.0"
+  section 'Apache-2.0 (Mesa: licenses/Apache-2.0)'; cat "$W/mesa/licenses/Apache-2.0"
+  section 'LLVM Exceptions to the Apache 2.0 License'; cat "$ROOT/vk/LLVM-exception.txt"
+} > "$W/LICENSES.txt"
 ls -l "$W/venus.wasm"

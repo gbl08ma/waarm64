@@ -1,21 +1,22 @@
 // Venus's renderer module (vk/build.sh: virglrenderer's vkr over our null driver, target/vk/venus.wasm) in Node, on a
 // 4 GiB shared memory as the VM's memory 0 is (web/venus-host.ts): vkr's capset is the one the device advertises
-// (web/venus.ts), and a blob's bytes move into the host-visible window at its map and back out at its unmap. A guest
-// drives it whole in tests/page-venus.test.ts.
+// (web/venus.ts), a blob's bytes move into the host-visible window at its map and back out at its unmap, and what the
+// driver advertises follows the WebGPU device's features and limits. A guest drives it whole in tests/page-venus.test.ts.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import type { GpuCaps } from '../web/venus-gpu.ts';
 import { VenusRenderer } from '../web/venus-host.ts';
 import { VENUS_CAPSET_WORDS } from '../web/venus.ts';
 
 const MODULE = new URL('../target/vk/venus.wasm', import.meta.url);
 const skip = !existsSync(MODULE) && 'SKIPPED: run vk/build.sh';
 
-async function renderer() {
+async function renderer(caps?: GpuCaps) {
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   // A window of 1 MiB at 256 MiB, and an empty write-watch (no vCPUs, no pages) below it.
   const window = { at: 0x1000_0000, bytes: 1 << 20, watch: 0x0100_0000 };
-  const v = await VenusRenderer.create(await WebAssembly.compile(readFileSync(MODULE)), memory, window);
+  const v = await VenusRenderer.create(await WebAssembly.compile(readFileSync(MODULE)), memory, window, undefined, caps);
   return { v, memory, window };
 }
 
@@ -43,4 +44,48 @@ test("a blob's bytes move into the window at its map and back at its unmap", { s
   v.call({ t: 'blob-unref', res: 3 });
   assert.equal(v.address(3), 0);
   assert.equal(v.stats.contexts, 1);
+});
+
+/** An adapter's features and limits as the G0 suite recorded them (bench/gpu/results/). */
+function adapter(file: string, vendor: string): GpuCaps {
+  const p = (JSON.parse(readFileSync(new URL(`../bench/gpu/results/${file}`, import.meta.url), 'utf8')) as { results: { params: { features: string[]; limits: Record<string, number> } }[] }).results[0].params;
+  return { features: new Set(p.features), limits: p.limits, adapterInfo: { vendor } };
+}
+
+test("what the driver advertises follows the WebGPU device's features and limits", { skip }, async () => {
+  const caps = async (c?: GpuCaps) => {
+    const { v, memory } = await renderer(c);
+    const at = (v.raw.wgt_caps as () => number)() >>> 0;
+    assert.ok(at, 'wgt_caps failed');
+    const w = new Uint32Array(memory.buffer, at, 16);
+    return {
+      dim2D: w[0], invocations: w[1], sizeX: w[2], storageImages: w[3], sampledImages: w[4], storageRange: w[5], subgroupSize: w[6],
+      subgroupOps: w[7], bc: w[8], extendedFormats: w[9], depthClamp: w[10], r16float: w[11], r16unorm: w[12], rg11b10: w[13], r32float: w[14], vendor: w[15],
+    };
+  };
+  const SAMPLED = 0x1, STORAGE = 0x2, COLOR = 0x80, BLEND = 0x100, FILTER = 0x1000;
+  const mac = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'));
+  const swiftshader = await caps(adapter('2026-10-01-vm-swiftshader.json', 'google'));
+  const none = await caps();
+  // The adapters' own limits (the Mac's Metal: 16384, 1024, 8, 48; SwiftShader's 8192, 256, 4, 16), WebGPU's defaults
+  // without a device.
+  assert.deepEqual([mac.dim2D, mac.invocations, mac.sizeX, mac.storageImages, mac.sampledImages, mac.storageRange], [16384, 1024, 1024, 8, 48, 4294967292]);
+  assert.deepEqual([swiftshader.dim2D, swiftshader.invocations, swiftshader.sizeX, swiftshader.storageImages, swiftshader.sampledImages, swiftshader.storageRange], [8192, 256, 256, 4, 16, 1073741824]);
+  assert.deepEqual([none.dim2D, none.invocations, none.storageImages, none.storageRange], [8192, 256, 4, 134217728]);
+  // The adapter's maker as the device's vendor (Apple's, Google's; none known: 0).
+  assert.deepEqual([mac.vendor, swiftshader.vendor, none.vendor], [0x106b, 0x1ae0, 0]);
+  // Subgroups of one invocation, basic operations only (the translator has none of WebGPU's yet).
+  assert.deepEqual([mac.subgroupSize, mac.subgroupOps], [1, 1]);
+  // Features: BC and depth clamp where the adapter has them; texture-formats-tier1 (the Mac's) adds the 16-bit normalized
+  // formats and makes rg11b10ufloat renderable; its storage formats are held back (vk/driver/wg_format.c: mpv's VA-API
+  // frames on Metal), as is float32-blendable.
+  assert.deepEqual([mac.bc, mac.depthClamp, swiftshader.bc, none.bc, none.depthClamp], [1, 1, 1, 0, 0]);
+  assert.deepEqual([mac.extendedFormats, swiftshader.extendedFormats], [1, 0]);
+  assert.equal(mac.r16float & (STORAGE | COLOR | BLEND | FILTER), COLOR | BLEND | FILTER);
+  assert.equal(mac.r16unorm & (SAMPLED | STORAGE | COLOR | FILTER), SAMPLED | COLOR, 'r16unorm: unfilterable (WebGPU says so)');
+  assert.equal(swiftshader.r16unorm, 0);
+  assert.equal(mac.rg11b10 & (COLOR | BLEND), COLOR | BLEND);
+  // float32-filterable (both adapters'): r32float filtered; not blended (float32-blendable held back).
+  assert.equal(swiftshader.r32float & (FILTER | BLEND), FILTER);
+  assert.equal(none.r32float & (FILTER | BLEND), 0);
 });

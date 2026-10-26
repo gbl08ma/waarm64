@@ -3,8 +3,11 @@
 How a guest gets a display and hardware-accelerated 3D in the page **with its own unmodified drivers**: virtio-gpu for
 the display (2D), and OpenGL ES through Mesa's **virgl** driver, rendered on the host by **our own virgl renderer on
 WebGL2**. Done (milestone M8's graphics track, G0 to G5, 2026-10-01 to 2026-10-19, and fixes since); the decisions that
-bind it are below ("Decisions"), the loose ends in [backlog.md](backlog.md) ("Platform and devices"), and Vulkan,
-the work still ahead, in [plans/graphics.md](plans/graphics.md). Where the parts are described in detail: the device in
+bind it are below ("Decisions"), the loose ends in [backlog.md](backlog.md) ("Platform and devices"). Vulkan is a
+second path beside it, per machine: Venus's commands translated onto the browser's WebGPU by a renderer of ours in wasm
+(VK0 to VK2, 2026-10-25 to 10-26: the direct set of [plans/graphics.md](plans/graphics.md) §4; how it works in
+[vk/README.md](../vk/README.md) and [devices.md](devices.md) "Venus"; the plan and what's ahead in plans/graphics.md),
+whose frames reach the screen through the virgl renderer. Where the parts are described in detail: the device in
 [devices.md](devices.md) "virtio-gpu" and "virgl", the page's screen, the Graphics choice and the guest's cursor in
 [frontend.md](frontend.md) "The screen", video decoding over virgl in [plans/video.md](plans/video.md), the tests in
 [testing.md](testing.md), the benchmarks in [benchmarking.md](benchmarking.md) and `bench/gpu/REPORT.md`.
@@ -228,9 +231,9 @@ screen than on the simple framebuffer (backlog).
   resource whenever `glBufferData` changes a buffer's size or rewrites a busy one; its winsys reuses a released buffer
   for 1 s, only if idle and between the size asked and twice it): the guest's behavior, and not a cost (the whole 3D
   driver stack in the guest's kernel is 1–1.5% of the vCPUs' samples).
-- **GTK4** tries Vulkan first (Mesa's virtio ICD, without Venus) and takes GSK's GL renderer on GLES 3.0 (on a machine
-  with Vulkan, `?gpu=vulkan`, it takes GSK's Vulkan renderer on Venus, whose frames reach the screen through virgl since VK2's L4: vk/README.md
-  "Presentation"). **Its graphics
+- **GTK4** tries Vulkan first (Mesa's virtio ICD, without Venus) and takes GSK's GL renderer on GLES 3.0. On a machine
+  with Vulkan it stays on GL too: the Venus device offers no YCbCr conversions, which GSK's Vulkan renderer requires
+  (VK2 L7: with them advertised and not honoured it drew black or near-empty frames; vk/README.md "The driver"). **Its graphics
   offload kills a GtkGLArea**: GTK hands the compositor the GL area's texture as a dmabuf, and Mesa's virgl backs a
   texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both ways
   (`COPY_TRANSFER_BOTH_DIRECTIONS`), so the dmabuf is smaller than stride × height and sway disconnects the client

@@ -15,9 +15,8 @@
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
 uint32_t wg_memory_texture(VkDeviceMemory memory);
 extern void (*wg_submitted)(void);
-extern uint32_t wg_features, wg_max_immediates;
 extern uintptr_t wg_window_at, wg_window_bytes;
-void wg_format_init(uint32_t features);
+int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
 void wg_complete(uint32_t serial);
 
 #define EXPORT __attribute__((visibility("default")))
@@ -28,7 +27,7 @@ void wg_complete(uint32_t serial);
 IMPORT("venus_retire") void venus_retire(uint32_t ctx_id, uint32_t ring_idx, uint64_t fence_id);
 IMPORT("venus_submitted") void venus_submitted(void);
 
-int venus_init(uint32_t features, uint32_t max_immediates, void *window, uint32_t window_bytes);
+int venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *window, uint32_t window_bytes);
 void venus_complete(uint32_t serial);
 uint32_t venus_capset(void *out);
 int venus_context_create(uint32_t ctx_id, const char *name, uint32_t nlen);
@@ -70,16 +69,15 @@ vkr_wasi_memory_moved(VkDeviceMemory memory, void *data)
    wg_memory_rebind(memory, data);
 }
 
-/* Starts vkr on a WebGPU device with `features` (wg_private.h's wg_feature) and that many bytes of immediates, the
- * host-visible window at `window`: 1, or 0 if it couldn't. */
+/* Starts vkr on a WebGPU device with `features` (wg_private.h's wg_feature) and `limits` (`nlimits` words: its
+ * struct wg_limits), the host-visible window at `window`: 1, or 0 if it couldn't. */
 EXPORT int
-venus_init(uint32_t features, uint32_t max_immediates, void *window, uint32_t window_bytes)
+venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *window, uint32_t window_bytes)
 {
-   wg_features = features;
-   wg_max_immediates = max_immediates;
+   if (!wg_caps_init(features, limits, nlimits))
+      return 0;
    wg_window_at = (uintptr_t)window;
    wg_window_bytes = window_bytes;
-   wg_format_init(features);
    wg_submitted = venus_submitted;
    return vkr_renderer_init(VKR_RENDERER_THREAD_SYNC | VKR_RENDERER_ASYNC_FENCE_CB, &callbacks);
 }

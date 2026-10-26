@@ -3,7 +3,7 @@
 The host side of Vulkan through Venus ([docs/plans/graphics.md](../docs/plans/graphics.md) route (b);
 [docs/devices.md](../docs/devices.md) "Venus"): virglrenderer's Venus decoder (`vkr`) over a Vulkan driver of ours
 on Mesa's common Vulkan runtime, with Mesa's `spirv_to_nir`, NIR and our NIR → WGSL backend, built as one wasm module,
-`target/vk/venus.wasm` (12.4 MB, 1.18 MB gzipped: most of the raw size is NIR's tables), which the GPU worker
+`target/vk/venus.wasm` (11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli: most of the raw size is NIR's tables), which the GPU worker
 instantiates on the VM's memory 0 (web/venus-host.ts).
 
 ```sh
@@ -12,6 +12,7 @@ vk/build.sh native   # also target/vk/wgsl: the translator natively with ASan (`
 node --test tests/venus-renderer.test.ts   # the module in Node: its capset, a blob's map and unmap
 node --test tests/wgsl.test.ts             # the translator: SPIR-V stages to WGSL in Node, compiled by Chromium's WebGPU
 node --test tests/venus-driver.test.ts     # the driver: a Vulkan program of ours (driver/wg_test.c) drawn on Chromium's WebGPU
+node bench/vulkan/costs.ts                 # a submit's and a pipeline's costs (the same program; bench/vulkan/mac-costs.sh on the Mac)
 node --test tests/venus-share.test.ts      # presentation: a WebGPU texture into the virgl renderer's (Chromium)
                                            # (imports, the reverse: tests/venus-driver.test.ts's second test)
 node --test tests/page-venus.test.ts       # vkcube on the page, and the captures' frames (images/debian-vulkan/build.sh, images/vkframes/build.sh)
@@ -96,16 +97,35 @@ device, reached through the module's `wg` imports (`wg_gpu.h`, implemented by we
 named by ids the driver assigns; the rarely made ones are described as JSON, a submit's commands are calls with
 plain numbers. Without a device (Node) the imports keep nothing and every submit completes at once.
 
-- **What it advertises**: VK0's Mac profile (`vk/profile.ts` makes C tables of
-  `bench/vulkan/profiles/webgpu-mac.json`'s `mac_direct`) less what the translator can't do (16-bit and 64-bit types,
-  dynamically indexed buffers and images, inline uniform blocks), Vulkan's minimums of push constants (128 bytes) and
-  bound sets (8, as `WGSL_MAX_SETS`), dynamically indexed arrays of sampled images (`if` trees),
-  formats from WebGPU's tables (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them; linear
-  tiling only copies; buffers only vertex input, no texel buffers; compressed families by the device's features),
-  samples 1 and 4; plus the extensions Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the
-  optimal tiling's features; foreign queue transfers; sync-file semaphores) and YCbCr conversions (GTK's Vulkan
-  renderer won't start without them; not honoured). Two memory types (device-local; host-visible, coherent, cached and
-  device-local) on a 2 GiB heap, one queue family.
+- **What it advertises follows the browser's WebGPU device** (`wg_caps.c`, VK2 L7): the GPU worker asks the adapter
+  for every limit and optional feature the driver uses (web/venus-gpu.ts `deviceRequest`), and `venus_init` gets the
+  device's (`gpuFeatures`: a bit a feature; `gpuLimits`: 31 limits as `struct wg_limits`, WebGPU's defaults where the
+  browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows of plan §4:
+  image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
+  depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
+  `shaderStorageImageExtendedFormats` from the features. Less what the translator can't do (16-bit and 64-bit types,
+  dynamically indexed buffers and images, inline uniform blocks, texel buffers, YCbCr conversions; subgroups of one
+  invocation with the basic operations only), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
+  as `WGSL_MAX_SETS`), dynamically indexed arrays of sampled images (`if` trees), formats from WebGPU's tables
+  (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
+  from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
+  `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers
+  only vertex input), samples 1 and 4; plus the extensions
+  Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
+  queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
+  whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
+  listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types (device-local; host-visible, coherent, cached and
+  device-local) on a 2 GiB heap, one queue family. `tests/venus-renderer.test.ts` checks it against the Mac's and
+  SwiftShader's recorded adapters.
+- **Held back from the adapter's** (VK2 L7): `float32-blendable` and tier1's storage formats. Blending 32-bit floats
+  gave mpv's libplacebo FBOs for its advanced rendering, on which VA-API's imported chroma read as zeros on the M4's
+  Metal (a green picture; right on SwiftShader and when decoded in software); tier1's storage would give it another
+  family of FBO formats, untried. Without them mpv renders as in L6, its VA-API frames byte for byte its software
+  ones (backlog "Imports' gaps").
+- **YCbCr conversions aren't advertised** (VK2 L7's choice, by measurement): advertised and not honoured, GTK4's
+  Vulkan renderer (`GSK_RENDERER=vulkan`) drew black or near-empty frames for more CPU than its GL one (REPORT.md "VK2
+  L7"); without them GTK4 stays on GL, its default here anyway (forced onto Vulkan it aborts on its own assertion).
+  The modifiers stay: Venus's WSI needs them.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
   be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it; a 1D one 2D),
@@ -157,7 +177,9 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 
 A program draws right when its frames match lavapipe's. `images/vkframes/build.sh` captures each program of its list
 natively with GFXReconstruct on the dev VM's lavapipe, through the Profiles layer with the Venus device's own profile
-(`images/vkframes/venus-profile.json`: `vulkaninfo --json` in the tests' guest on SwiftShader), so a program takes the
+(`images/vkframes/venus-profile.json`: `vulkaninfo --json` in the tests' guest on SwiftShader, made by
+`PROFILE=images/vkframes/venus-profile.json bench/vulkan/venus-run.ts` whenever what the device advertises changes,
+then the disk rebuilt), so a program takes the
 paths it takes on our device (vkQuake its shaders without 16-bit floats, its five descriptor sets and 128 bytes of push
 constants), and replays the chosen frames there offscreen as the references. The programs: vkcube (with
 `--use_staging`), vkmark's 13 scenes (a capture each, half a second at `fifo`: ~30 frames) and vkQuake (LibreQuake's
@@ -267,7 +289,12 @@ LINEAR modifier on imported memory, copied to a buffer) through `VenusImport` wi
 picture; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
 `bench/audio/avsync.ts` (`MPV_VARIANTS`): bench/vulkan/REPORT.md "VK2 L6".
 
-## Not yet
+## On the page
 
-The module isn't in `npm run dist`'s copy or `npm start`'s build yet, and the page has no per-machine setting for
-Vulkan (`?gpu=vulkan` only); docs/backlog.md.
+A machine has Vulkan when its Machines page setting is on (`MachineRecord.vulkan`, beside 3D: docs/plans/machines.md)
+or the page's `?gpu=vulkan` asks; only then does the GPU worker fetch the module. `npm run dist` puts it in the
+static copy as a hashed asset with its licences beside it (`VENUS-LICENSES.txt`, made by vk/build.sh from
+`vk/LICENSES.head`, the sources' licence files and `vk/LLVM-exception.txt`); `npm start` and `npm run dist --
+--no-vulkan` include it only when built (vk/build.sh isn't part of their preparation: it builds Mesa and
+virglrenderer natively first). The module is 11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli (bench/vulkan/REPORT.md "VK2: the module, a
+pipeline, a submit").

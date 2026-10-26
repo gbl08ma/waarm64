@@ -111,73 +111,24 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
    vk_physical_device_dispatch_table_from_entrypoints(&dispatch, &wg_physical_device_entrypoints, true);
    vk_physical_device_dispatch_table_from_entrypoints(&dispatch, &vk_common_physical_device_entrypoints, false);
 
-   struct vk_features features = { 0 };
-   wg_profile_features(&features);
-   /* Past the profile: GTK's Vulkan renderer needs YCbCr conversions to start (VK1's gate programs). */
-   features.samplerYcbcrConversion = true;
-   /* What the translator can't express yet (VK2-HANDOVER.md "What the direct set must not advertise yet"). */
-   features.shaderFloat16 = false;
-   features.shaderInt16 = false;
-   features.shaderInt64 = false;
-   features.shaderFloat64 = false;
-   features.storageBuffer16BitAccess = false;
-   features.uniformAndStorageBuffer16BitAccess = false;
-   features.storagePushConstant16 = false;
-   features.storageInputOutput16 = false;
-   features.shaderSampledImageArrayDynamicIndexing = true; /* a tree of ifs over the elements (wgsl_nir.c) */
-   features.shaderStorageImageArrayDynamicIndexing = false;
-   features.shaderUniformBufferArrayDynamicIndexing = false;
-   features.shaderStorageBufferArrayDynamicIndexing = false;
-   features.descriptorIndexing = false;
-   features.inlineUniformBlock = false;
-   features.descriptorBindingInlineUniformBlockUpdateAfterBind = false;
-   features.shaderSampledImageArrayNonUniformIndexing = false;
-   features.runtimeDescriptorArray = false;
-   features.descriptorBindingPartiallyBound = false;
-   features.descriptorBindingVariableDescriptorCount = false;
-   features.depthClamp = !!(wg_features & WG_FEATURE_DEPTH_CLIP);
-   features.dualSrcBlend = !!(wg_features & WG_FEATURE_DUAL_SOURCE);
-   features.shaderClipDistance = !!(wg_features & WG_FEATURE_CLIP_DISTANCES);
-   /* Without WebGPU's, an indirect draw with a first instance draws nothing. */
-   features.drawIndirectFirstInstance = !!(wg_features & WG_FEATURE_INDIRECT_FIRST_INSTANCE);
-   features.textureCompressionBC = !!(wg_features & WG_FEATURE_BC);
-   features.textureCompressionETC2 = !!(wg_features & WG_FEATURE_ETC2);
-   features.textureCompressionASTC_LDR = !!(wg_features & WG_FEATURE_ASTC);
+   /* What the device advertises follows the browser's WebGPU device (wg_caps.c). */
+   struct vk_features features;
+   wg_caps_features(&features);
    struct vk_properties props = {
       .apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 296),
       .driverVersion = 1,
       .driverID = VK_DRIVER_ID_MESA_VENUS,
       .conformanceVersion = { 0, 0, 0, 0 },
-      .maxMemoryAllocationSize = 1ull << 30,
-      .maxPerSetDescriptors = 1024,
-      .maxBufferSize = 1ull << 30,
    };
-   wg_profile_properties(&props);
-   /* Vulkan's minimum of push constants (past WebGPU's immediates they're read from a uniform buffer: wg_cmd.c), sets
-    * (3 and up share bind group 3: wg_shader.c); WebGPU's vertex attributes. */
-   props.maxPushConstantsSize = 128;
-   props.maxBoundDescriptorSets = WGSL_MAX_SETS;
-   props.maxVertexInputAttributes = MIN2(props.maxVertexInputAttributes, 16);
-   props.maxVertexInputBindings = MIN2(props.maxVertexInputBindings, 8);
+   wg_caps_properties(&props);
    snprintf(props.deviceName, sizeof(props.deviceName), "webpc WebGPU");
    snprintf(props.driverName, sizeof(props.driverName), "webpc");
    snprintf(props.driverInfo, sizeof(props.driverInfo), "Vulkan on WebGPU");
    memcpy(props.pipelineCacheUUID, "webpc-wg-vk2-000", VK_UUID_SIZE);
    memcpy(props.deviceUUID, "webpc-wg-device0", VK_UUID_SIZE);
    memcpy(props.driverUUID, "webpc-wg-driver0", VK_UUID_SIZE);
-
-   /* Past the profile's: what Venus's guest shares through (its WSI wants dma-buf memory with modifiers, foreign queue
-    * transfers and sync-file semaphores; the renderer exports blobs its own way, docs/devices.md "Venus"). */
-   struct vk_device_extension_table exts = wg_profile_extensions;
-   exts.KHR_external_memory_fd = true;
-   exts.EXT_external_memory_dma_buf = true;
-   exts.EXT_image_drm_format_modifier = true;
-   exts.EXT_queue_family_foreign = true;
-   exts.KHR_external_semaphore_fd = true;
-   exts.KHR_sampler_ycbcr_conversion = true;
-   /* Not translated: inline uniform blocks (a bind group holds buffers, not bytes), texel buffers' alignment rules. */
-   exts.EXT_inline_uniform_block = false;
-   exts.EXT_texel_buffer_alignment = false;
+   struct vk_device_extension_table exts;
+   wg_caps_extensions(&exts);
 
    VkResult result = vk_physical_device_init(&pdev->vk, &instance->vk, &exts, &features, &props,
                                              &dispatch);
@@ -258,7 +209,7 @@ vkGetInstanceProcAddr(VkInstance instance, const char *pName)
    return wg_GetInstanceProcAddr(instance, pName);
 }
 
-/* Physical device queries the runtime doesn't answer from the profile. */
+/* Physical device queries the runtime doesn't answer from its tables. */
 
 VKAPI_ATTR void VKAPI_CALL
 wg_GetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, uint32_t *pCount,

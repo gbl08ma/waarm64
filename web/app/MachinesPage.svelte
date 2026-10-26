@@ -52,6 +52,8 @@
   let warnOnLeave = $state(leaveWarning());
 
   const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
+  /** This browser offers WebGPU (a Vulkan machine's renderer draws on it; without it, Vulkan programs draw nothing). */
+  const hasWebgpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
   async function reread() {
     machines = (await store.all('machines')).sort((a, b) => a.name.localeCompare(b.name));
@@ -105,7 +107,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || !!a.vulkan !== !!b.vulkan || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch;
   /** What takes a restart: the shape, and the JIT's budget (the guest doesn't see it: no snapshot is orphaned). */
   const restartChanged = (a: MachineRecord, b: MachineRecord) => shapeChanged(a, b) || (a.jitMiB ?? 0) !== (b.jitMiB ?? 0);
   async function saveSettings() {
@@ -200,6 +202,13 @@
   {#if draft}
     <Check bind:checked={draft.usb} field="usb" title="An xHCI with four connectors (USB 2 and USB 3 each) for the machine's USB devices: the guest sees it, so turning it on or off changes the machine's shape">USB controller</Check>
     {#if !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>Turning the USB controller {draft.usb ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+  {/if}
+{/snippet}
+
+{#snippet vulkanSwitch()}
+  {#if draft && draft.display === '3d'}
+    <Check bind:checked={draft.vulkan} field="vulkan" title="Vulkan through Venus beside 3D: the guest's Vulkan programs draw on this browser's WebGPU (what the guest is offered follows its GPU). Experimental: snapshots can't be taken while a program uses it. The guest sees it, so turning it on or off changes the machine's shape">Vulkan (WebGPU, experimental)</Check>
+    {#if !!draft.vulkan !== !!machines.find((x) => x.id === draft?.id)?.vulkan}<p class="note warn" data-vulkan-orphans>Turning Vulkan {draft.vulkan ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.{draft.vulkan && !hasWebgpu ? ' This browser has no WebGPU: its Vulkan programs would draw nothing here.' : ''}</p>{/if}
   {/if}
 {/snippet}
 
@@ -380,6 +389,7 @@
               </details>
               <label>JIT cache <select bind:value={draft.jitMiB} data-field="jit" title="The most compiled guest code the emulator keeps before it starts over. The browser spends several times this on it: a smaller cache saves memory, a larger one keeps a big guest's code (a web browser's) compiled">{#each [undefined, ...new Set([...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])])].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option value={n}>{n ? `${n} MiB` : `Default (${JIT_DEFAULT_MIB} MiB)`}</option>{/each}</select></label>
               <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
+              {@render vulkanSwitch()}
               <label>Keyboard layout <select bind:value={draft.keyboard} onchange={() => (keyboardNote = '')} data-field="keyboard" title="The layout of your keyboard, for the page to set in the guest">{#each [undefined, FOLLOW_BROWSER, ...KEYBOARD_LAYOUTS.map((l) => l.id)] as id}<option value={id}>{id === FOLLOW_BROWSER ? "This browser's, at every boot" : id ? KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label : "Don't set it (the guest's own)"}</option>{/each}</select></label>
               <button class="beside" onclick={matchKeyboard} data-action="match-keyboard" title="The layout this browser reports for your keyboard"><Icon name="keyboard" size={16} />Match this browser</button>
               {#if keyboardNote}<p class="note" data-keyboard-match>{keyboardNote}</p>{/if}
@@ -387,7 +397,7 @@
               {@render usbSwitch()}
               {@render pointerSwitches()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display, the network adapters, the USB controller, the mouse and the touchscreen make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
+              <p class="note">vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse and the touchscreen make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">

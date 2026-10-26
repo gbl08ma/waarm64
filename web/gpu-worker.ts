@@ -128,19 +128,20 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       const init = c;
       (async () => {
         // Not bundled (`@vite-ignore`): the static copy doesn't carry the renderer yet (vk/README.md "Not yet").
-        const module = await WebAssembly.compileStreaming(fetch(new URL(/* @vite-ignore */ '../target/vk/venus.wasm', import.meta.url).href));
+        const module = await WebAssembly.compileStreaming(fetch(new URL('../target/vk/venus.wasm', import.meta.url).href));
         // The driver's WebGPU device (none: it keeps Venus's objects and draws nothing).
         const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
         const device = adapter ? await adapter.requestDevice(deviceRequest(adapter)).catch((err) => { console.warn('venus: no WebGPU device', err); return undefined; }) : undefined;
         if (!device) console.warn('venus: this browser has no WebGPU adapter here: Vulkan draws nothing');
         device?.lost.then((info) => console.warn(`venus: the WebGPU device was lost: ${info.message}`));
-        venus = await VenusRenderer.create(module, init.memory, init.window, device);
+        // What the device advertises follows the device's features and limits and the adapter's maker.
+        venus = await VenusRenderer.create(module, init.memory, init.window, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: adapter.info } : undefined);
         venus.onRetire = () => fenced.release();
         const v = venus;
         if (device && adapter) {
           const mode = vkShare ?? shareMode(adapter, glInfo(gl).renderer);
           share = new VenusShare(device, mode, renderer, (id) => v.shared(id));
-          console.log(`venus: Vulkan's frames reach virgl by ${mode}`);
+          console.log(`venus: Vulkan on ${adapter.info.vendor || 'an unnamed'} ${adapter.info.architecture} adapter; its frames reach virgl by ${mode}`);
           const im = imports = new VenusImport(device, renderer);
           v.gpu.onImport = (t, res) => im.bind(t, res);
           renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);

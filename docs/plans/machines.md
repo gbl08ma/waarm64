@@ -64,7 +64,7 @@ The page around them (the user, 2026-10-17, after L5):
 
 | Thing | What it holds | Where |
 |---|---|---|
-| **Machine** | id, name, vCPUs, RAM MiB, display (2D/3D), the network card, the USB controller (`usb`), the attachments in slot order, the selected overlay per read-write attachment, the remembered USB devices (`usbDevices`: [usb.md](../usb.md) "The page") | IndexedDB `machines` |
+| **Machine** | id, name, vCPUs, RAM MiB, display (2D/3D) and Vulkan beside 3D (`vulkan`: in the shape when on), the network card, the USB controller (`usb`), the attachments in slot order, the selected overlay per read-write attachment, the remembered USB devices (`usbDevices`: [usb.md](../usb.md) "The page") | IndexedDB `machines` |
 | **Disk** (a base) | id, kind (`url`, `file`, `stored`, `blank`, `ramdisk`), size, the identity (§3.1), the kind's data: a URL; a `FileSystemFileHandle` (IndexedDB can hold one, JSON can't); a stored file's OPFS path | IndexedDB `disks` |
 | **Attachment** | the disk, read-only or read-write, the virtio serial (`GET_ID`, from the attachment's id) | in the machine |
 | **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes; today's `data` and `map` | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |

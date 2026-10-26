@@ -36,16 +36,8 @@
 #include "wg_gpu.h"
 #include "wgsl.h"
 
-/* The profile's tables (vk/profile.ts): features and limits; its formats aren't used (WebGPU's are: wg_format.c). */
-struct wg_format {
-   VkFormat format;
-   VkFormatFeatureFlags linear, optimal, buffer;
-};
-extern const struct vk_device_extension_table wg_profile_extensions;
-void wg_profile_features(struct vk_features *f);
-void wg_profile_properties(struct vk_properties *p);
-
-/* The WebGPU device's optional features the driver uses (venus_init's flags, from the GPU worker). */
+/* The WebGPU device's optional features the driver uses (venus_init's flags, from the GPU worker: web/venus-gpu.ts
+ * `gpuFeatures`). */
 enum wg_feature {
    WG_FEATURE_BC = 1 << 0,
    WG_FEATURE_ETC2 = 1 << 1,
@@ -56,8 +48,37 @@ enum wg_feature {
    WG_FEATURE_DUAL_SOURCE = 1 << 6,
    WG_FEATURE_CLIP_DISTANCES = 1 << 7,
    WG_FEATURE_INDIRECT_FIRST_INSTANCE = 1 << 8,
+   WG_FEATURE_TIER1 = 1 << 9,          /* texture-formats-tier1 */
+   WG_FEATURE_TIER2 = 1 << 10,         /* texture-formats-tier2 (read-write storage; the translator's access) */
+   WG_FEATURE_RG11B10_RENDER = 1 << 11, /* rg11b10ufloat-renderable */
+   WG_FEATURE_FLOAT32_BLEND = 1 << 12, /* float32-blendable */
+   WG_FEATURE_BGRA8_STORAGE = 1 << 13, /* bgra8unorm-storage */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
+
+/* The WebGPU device's limits and its maker (venus_init's, from the GPU worker: web/venus-gpu.ts `LIMITS`, in this order, each
+ * clamped to 32 bits). */
+struct wg_limits {
+   uint32_t max_texture_1d, max_texture_2d, max_texture_3d, max_texture_array_layers, max_bind_groups,
+      max_dynamic_uniform_buffers, max_dynamic_storage_buffers, max_sampled_textures, max_samplers,
+      max_storage_buffers, max_storage_textures, max_uniform_buffers, max_uniform_buffer_binding_size,
+      max_storage_buffer_binding_size, min_uniform_buffer_offset_alignment, min_storage_buffer_offset_alignment,
+      max_vertex_buffers, max_buffer_size, max_vertex_attributes, max_vertex_buffer_array_stride,
+      max_inter_stage_shader_variables, max_color_attachments, max_compute_workgroup_storage_size,
+      max_compute_invocations_per_workgroup, max_compute_workgroup_size_x, max_compute_workgroup_size_y,
+      max_compute_workgroup_size_z, max_compute_workgroups_per_dimension, max_immediate_size,
+      max_storage_buffers_in_fragment_stage, max_storage_textures_in_fragment_stage,
+      /* Not a limit: the adapter's maker as a PCI vendor ID (web/venus-gpu.ts `VENDORS`; 0 for one it doesn't know). */
+      vendor_id;
+};
+extern struct wg_limits wg_limits;
+
+/* What the device advertises, from the features and limits (wg_caps.c); wg_caps_init sets them (venus_init's). */
+int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
+void wg_caps_extensions(struct vk_device_extension_table *e);
+void wg_caps_features(struct vk_features *f);
+void wg_caps_properties(struct vk_properties *p);
+
 extern uint32_t wg_features, wg_max_immediates;
 
 /* Formats (wg_format.c). */
@@ -78,6 +99,12 @@ enum wg_format_flags {
    WG_FMT_ETC2 = 1 << 13,
    WG_FMT_ASTC = 1 << 14,
    WG_FMT_D32S8 = 1 << 15,
+   /* What the adapter's features add (wg_format_init resolves them into the flags above). */
+   WG_FMT_T1_RENDER = 1 << 16,  /* render, blend (and multisample) with texture-formats-tier1 */
+   WG_FMT_T1_STORAGE = 1 << 17, /* storage with texture-formats-tier1 */
+   WG_FMT_TIER1 = 1 << 18,      /* the format itself only with texture-formats-tier1 (16-bit normalized) */
+   WG_FMT_RG11B10 = 1 << 19,    /* render and blend with rg11b10ufloat-renderable */
+   WG_FMT_BGRA8 = 1 << 20,      /* storage with bgra8unorm-storage */
 };
 
 struct wg_texture_format {

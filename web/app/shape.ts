@@ -87,6 +87,11 @@ export type MachineRecord = {
   netConfig?: false;
   display: Display;
   /**
+   * Vulkan through Venus beside 3D (docs/devices.md "Venus"; the module's renderer on the browser's WebGPU): the GPU
+   * gets Venus's capset and a host-visible window after the RAM. Only with `display` 3D; absent: off, the shape as it was.
+   */
+  vulkan?: boolean;
+  /**
    * The network adapters (virtio-net), in slot order (docs/network-adapters.md). Absent on machines made before
    * adapters: their `network` says whether they have one, at `DEFAULT_MAC` (`adaptersOf`).
    */
@@ -213,6 +218,8 @@ export type Shape = {
   disks: ShapeDisk[];
   /** The USB controller: only when there is one (left out otherwise, so shapes made before it hash as they did). */
   usb?: true;
+  /** Vulkan (Venus) beside 3D: only when on (left out otherwise, so shapes made before it hash as they did). */
+  vulkan?: true;
   /** The adapters' MACs, in order: left out for none, or one at `DEFAULT_MAC` (so shapes made before adapters hash as they did). */
   macs?: string[];
   /**
@@ -231,8 +238,10 @@ const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined, cpu: hashedCpu(s
  * differs from its record's (a 3D machine on a browser without WebGL2 runs 2D; `none`: the page's
  * `?display=simple`).
  */
-export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { cpu?: CpuFeature[]; display?: Display | 'none' } = {}): Shape {
+export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { cpu?: CpuFeature[]; display?: Display | 'none'; vulkan?: boolean } = {}): Shape {
   const display = opts.display ?? m.display;
+  // Vulkan needs 3D (`vulkan`: what the machine runs with when the page asks for it beside its record's).
+  const vulkan = display === '3d' && (opts.vulkan ?? !!m.vulkan);
   const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
   const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, attachments: m.attachments });
   return {
@@ -251,6 +260,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
       return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity }];
     }),
     ...(m.usb ? { usb: true as const } : {}),
+    ...(vulkan ? { vulkan: true as const } : {}),
     ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}),
     ...(m.jitMiB ? { jitMiB: m.jitMiB } : {}),
   };
@@ -286,6 +296,7 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
     out.push(`memory's split: ${split(was.split)} then, ${split(now.split)} now`);
   }
   if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
+  if (!!was.vulkan !== !!now.vulkan) out.push(was.vulkan ? 'it had Vulkan' : 'it had no Vulkan');
   if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu))) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
   const [macsWas, macsNow] = [macsOf(was), macsOf(now)];
   if (macsWas.length !== macsNow.length) out.push(`network adapters: ${macsWas.length} then, ${macsNow.length} now`);

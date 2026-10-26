@@ -594,7 +594,7 @@ On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's 
 wherever the browser has WebGL2 (since G3). The Machine menu's **Graphics** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
-`?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; it draws on WebGPU, but its frames don't reach the screen yet).
+A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine.
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
 them ([graphics.md](graphics.md) "Video", [plans/video.md](plans/video.md)): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);
@@ -1367,7 +1367,8 @@ disk reader below (`web/bootfs.ts`, `web/ext4.ts`) has no consumer but its tests
 
 `npm run dist` (`tools/dist.ts`) writes the page as plain files to `target/dist/` (`--out <dir>`), to copy to any
 web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
-stops if a binary is missing), then builds the page with Vite (below, "The build") and adds the licenses:
+stops if a binary is missing; Vulkan's renderer isn't among them: `vk/build.sh` builds it, `npm run dist` stops
+without it, `--no-vulkan` leaves it out, and `npm start`'s copy has it only when built), then builds the page with Vite (below, "The build") and adds the licenses:
 
 - `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`), with a `<meta name="webpc-build">`
   holding the commit it was built from, its date and "with local changes" when tracked files differed
@@ -1376,7 +1377,8 @@ stops if a binary is missing), then builds the page with Vite (below, "The build
 - `assets/`: the page's code bundled, minified, with source maps: the page (`index-<hash>.js`, its CSS), each worker
   (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
   deflate) and the sound worklet; and the binaries the page fetches, the core (`webpc_core.wasm`), the tailnet client
-  (`ts.wasm`) and EDK2 (`QEMU_EFI.fd`). Every name is hashed, so a host's caches never serve a stale file with a new
+  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`) and Vulkan's renderer (`venus.wasm`, 11.9 MiB, fetched only by a machine with
+  Vulkan on: vk/README.md "On the page"). Every name is hashed, so a host's caches never serve a stale file with a new
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
   page is.
@@ -1384,7 +1386,8 @@ stops if a binary is missing), then builds the page with Vite (below, "The build
   `.htaccess` (Apache) with the two headers, `.nojekyll`, and `web/app/index.html`, which redirects to the root with
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
-  firmware's), `LICENSE`, and a marker file (`.webpc-dist`, from `web/app/public/`, so a plain `vite build` has it
+  firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh
+  writes it), `LICENSE`, and a marker file (`.webpc-dist`, from `web/app/public/`, so a plain `vite build` has it
   too): the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**

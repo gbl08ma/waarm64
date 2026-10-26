@@ -25,6 +25,9 @@ const uint8_t *wgt_filled(void);
 const char *wgt_error(void);
 int wgt_import(uint32_t res);
 const uint8_t *wgt_imported(void);
+const uint32_t *wgt_caps(void);
+int wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant);
+int wgt_draw_done(void);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -45,6 +48,19 @@ static VkQueue queue;
 static VkFence fence;
 static uint8_t *pixels, *storage, *filled, *imported;
 static char error[256];
+/* What wgt_draw reuses of wgt_run's scene. */
+static struct {
+   VkGraphicsPipelineCreateInfo gpi;
+   VkPipelineShaderStageCreateInfo stages[2];
+   VkPipeline pipeline;
+   VkPipelineLayout layout;
+   VkRenderPass rp;
+   VkFramebuffer fb;
+   VkBuffer vertices, indices;
+   VkDescriptorSet set;
+   VkCommandPool pool;
+   uint32_t w, h;
+} scene;
 
 #define CHECK(x)                                                                                                       \
    do {                                                                                                                \
@@ -296,31 +312,31 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
       { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
         .module = fsm, .pName = "main" },
    };
-   const VkVertexInputBindingDescription vb = { 0, 20, VK_VERTEX_INPUT_RATE_VERTEX };
-   const VkVertexInputAttributeDescription va[2] = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+   static const VkVertexInputBindingDescription vb = { 0, 20, VK_VERTEX_INPUT_RATE_VERTEX };
+   static const VkVertexInputAttributeDescription va[2] = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
                                                      { 1, 0, VK_FORMAT_R32G32_SFLOAT, 12 } };
-   const VkPipelineVertexInputStateCreateInfo vis = {
+   static const VkPipelineVertexInputStateCreateInfo vis = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .vertexBindingDescriptionCount = 1,
       .pVertexBindingDescriptions = &vb, .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = va };
-   const VkPipelineInputAssemblyStateCreateInfo ias = {
+   static const VkPipelineInputAssemblyStateCreateInfo ias = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
-   const VkPipelineViewportStateCreateInfo vps = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+   static const VkPipelineViewportStateCreateInfo vps = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
                                                    .viewportCount = 1, .scissorCount = 1 };
    /* Culling back faces, the front clockwise: what the scene draws is clockwise on the screen. */
-   const VkPipelineRasterizationStateCreateInfo rs = {
+   static const VkPipelineRasterizationStateCreateInfo rs = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, .polygonMode = VK_POLYGON_MODE_FILL,
       .cullMode = VK_CULL_MODE_BACK_BIT, .frontFace = VK_FRONT_FACE_CLOCKWISE, .lineWidth = 1 };
-   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+   static const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
                                                      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
-   const VkPipelineDepthStencilStateCreateInfo ds = {
+   static const VkPipelineDepthStencilStateCreateInfo ds = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, .depthTestEnable = VK_TRUE,
       .depthWriteEnable = VK_TRUE, .depthCompareOp = VK_COMPARE_OP_LESS };
-   const VkPipelineColorBlendAttachmentState cba = { .colorWriteMask = 0xf };
-   const VkPipelineColorBlendStateCreateInfo cbs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+   static const VkPipelineColorBlendAttachmentState cba = { .colorWriteMask = 0xf };
+   static const VkPipelineColorBlendStateCreateInfo cbs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
                                                      .attachmentCount = 1, .pAttachments = &cba };
-   const VkDynamicState dyn[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-   const VkPipelineDynamicStateCreateInfo dys = { .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+   static const VkDynamicState dyn[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+   static const VkPipelineDynamicStateCreateInfo dys = { .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                   .dynamicStateCount = 2, .pDynamicStates = dyn };
    const VkGraphicsPipelineCreateInfo gpi = {
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = stages,
@@ -409,6 +425,17 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
                                  .pCommandBuffers = &cmd };
    CHECK(QueueSubmit(queue, 1, &submit, fence));
+   scene.gpi = gpi;
+   memcpy(scene.stages, stages, sizeof(stages));
+   scene.pipeline = pipeline;
+   scene.layout = layout;
+   scene.rp = rp;
+   scene.fb = fb;
+   scene.vertices = vertices;
+   scene.indices = indices;
+   scene.set = sets[0];
+   scene.w = W;
+   scene.h = H;
    return 0;
 }
 
@@ -524,4 +551,150 @@ EXPORT const uint8_t *
 wgt_imported(void)
 {
    return imported;
+}
+
+/* What the device advertises (tests/venus-renderer.test.ts: it follows the WebGPU device's features and limits), as
+ * words: maxImageDimension2D, maxComputeWorkGroupInvocations, maxComputeWorkGroupSize[0],
+ * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
+ * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
+ * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, and vendorID; NULL with wgt_error(). Its own
+ * instance: the device's caps are read when the instance enumerates it. */
+EXPORT const uint32_t *
+wgt_caps(void)
+{
+   static uint32_t out[16];
+   PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
+   const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
+   const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
+   VkInstance inst;
+   if (create(&ii, NULL, &inst) != VK_SUCCESS) {
+      snprintf(error, sizeof(error), "vkCreateInstance failed");
+      return NULL;
+   }
+   PFN_vkEnumeratePhysicalDevices enumerate = (PFN_vkEnumeratePhysicalDevices)vkGetInstanceProcAddr(inst, "vkEnumeratePhysicalDevices");
+   PFN_vkGetPhysicalDeviceProperties2 props2 = (PFN_vkGetPhysicalDeviceProperties2)vkGetInstanceProcAddr(inst, "vkGetPhysicalDeviceProperties2");
+   PFN_vkGetPhysicalDeviceFeatures2 features2 = (PFN_vkGetPhysicalDeviceFeatures2)vkGetInstanceProcAddr(inst, "vkGetPhysicalDeviceFeatures2");
+   PFN_vkGetPhysicalDeviceFormatProperties formats = (PFN_vkGetPhysicalDeviceFormatProperties)vkGetInstanceProcAddr(inst, "vkGetPhysicalDeviceFormatProperties");
+   PFN_vkDestroyInstance destroy = (PFN_vkDestroyInstance)vkGetInstanceProcAddr(inst, "vkDestroyInstance");
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   if (enumerate(inst, &n, &pdev) < 0 || n != 1) {
+      snprintf(error, sizeof(error), "no physical device");
+      return NULL;
+   }
+   VkPhysicalDeviceVulkan11Properties p11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES };
+   VkPhysicalDeviceProperties2 p = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &p11 };
+   props2(pdev, &p);
+   VkPhysicalDeviceFeatures2 f = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+   features2(pdev, &f);
+   const VkPhysicalDeviceLimits *l = &p.properties.limits;
+   uint32_t i = 0;
+   out[i++] = l->maxImageDimension2D;
+   out[i++] = l->maxComputeWorkGroupInvocations;
+   out[i++] = l->maxComputeWorkGroupSize[0];
+   out[i++] = l->maxPerStageDescriptorStorageImages;
+   out[i++] = l->maxPerStageDescriptorSampledImages;
+   out[i++] = l->maxStorageBufferRange;
+   out[i++] = p11.subgroupSize;
+   out[i++] = p11.subgroupSupportedOperations;
+   out[i++] = f.features.textureCompressionBC;
+   out[i++] = f.features.shaderStorageImageExtendedFormats;
+   out[i++] = f.features.depthClamp;
+   const VkFormat fmts[] = { VK_FORMAT_R16_SFLOAT, VK_FORMAT_R16_UNORM, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R32_SFLOAT };
+   for (uint32_t k = 0; k < 4; k++) {
+      VkFormatProperties fp;
+      formats(pdev, fmts[k], &fp);
+      out[i++] = fp.optimalTilingFeatures;
+   }
+   out[i++] = p.properties.vendorID;
+   destroy(inst, NULL);
+   return out;
+}
+
+/* bench/vulkan/costs.ts (VK2's costs: a pipeline's, a submit's): after wgt_run, one submit drawing its quad into its
+ * render pass. `variant` 0 binds wgt_run's pipeline; any other makes a pipeline anew with `fs` (a fragment shader whose
+ * specialization constant 0 is `variant`, so its WGSL is new: translated, compiled and made from nothing) in its place.
+ * wgt_draw_done then says when the submit's fence signalled. */
+static VkFence draw_fence;
+static VkShaderModule draw_fs;
+static VkPipeline last;
+
+EXPORT int
+wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant)
+{
+   static PFN_vkResetCommandPool ResetCommandPool;
+   static PFN_vkDestroyPipeline DestroyPipeline;
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   if (!draw_fence) {
+      const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fi, NULL, &draw_fence));
+      if (shader(fs, fs_words, &draw_fs))
+         return 1;
+      const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+      CHECK(CreateCommandPool(dev, &cpo, NULL, &scene.pool));
+      ResetCommandPool = (PFN_vkResetCommandPool)GetDeviceProcAddr(dev, "vkResetCommandPool");
+      DestroyPipeline = (PFN_vkDestroyPipeline)GetDeviceProcAddr(dev, "vkDestroyPipeline");
+   } else if (GetFenceStatus(dev, draw_fence) != VK_SUCCESS) {
+      snprintf(error, sizeof(error), "the last draw isn't done");
+      return 1;
+   }
+   if (last)
+      DestroyPipeline(dev, last, NULL);
+   last = VK_NULL_HANDLE;
+   CHECK(ResetFences(dev, 1, &draw_fence));
+   CHECK(ResetCommandPool(dev, scene.pool, 0));
+   VkPipeline pipeline = scene.pipeline;
+   if (variant) {
+      const float k = (float)variant;
+      const VkSpecializationMapEntry entry = { 0, 0, 4 };
+      const VkSpecializationInfo spec = { 1, &entry, 4, &k };
+      VkPipelineShaderStageCreateInfo stages[2] = { scene.stages[0], scene.stages[1] };
+      stages[1].module = draw_fs;
+      stages[1].pSpecializationInfo = &spec;
+      VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+      gpi.pStages = stages;
+      CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &pipeline));
+   }
+   VkCommandBuffer cmd;
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                             .commandPool = scene.pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                             .commandBufferCount = 1 };
+   CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(cmd, &begin));
+   const VkClearValue clears[2] = { { .color = { .float32 = { 0, 0, 1, 1 } } }, { .depthStencil = { 1, 0 } } };
+   const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = scene.rp,
+                                       .framebuffer = scene.fb, .renderArea = { { 0, 0 }, { scene.w, scene.h } },
+                                       .clearValueCount = 2, .pClearValues = clears };
+   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+   const VkViewport viewport = { 0, 0, scene.w, scene.h, 0, 1 };
+   const VkRect2D scissor = { { 0, 0 }, { scene.w, scene.h } };
+   CmdSetViewport(cmd, 0, 1, &viewport);
+   CmdSetScissor(cmd, 0, 1, &scissor);
+   const VkDeviceSize zero = 0;
+   CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+   CmdBindIndexBuffer(cmd, scene.indices, 0, VK_INDEX_TYPE_UINT16);
+   const uint32_t offset = 0;
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.layout, 0, 1, &scene.set, 1, &offset);
+   const float right[4] = { 0.5f, 0, 0, 0 };
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
+   CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+   CmdEndRenderPass(cmd);
+   CHECK(EndCommandBuffer(cmd));
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, draw_fence));
+   /* Freed at the next draw, once this one is done. */
+   last = variant ? pipeline : VK_NULL_HANDLE;
+   return 0;
+}
+
+EXPORT int
+wgt_draw_done(void)
+{
+   return draw_fence && GetFenceStatus(dev, draw_fence) == VK_SUCCESS;
 }

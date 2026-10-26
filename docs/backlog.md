@@ -505,10 +505,30 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
   is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
   encoded by hand (or a recorded stream replayed through `venus_submit`).
-- **Venus's renderer for users** (VK1, vk/README.md): `target/vk/venus.wasm` isn't in `npm run dist`'s copy or
-  `npm start`'s build (vk/build.sh clones and builds Mesa and virglrenderer natively first, minutes, and needs wasi-sdk;
-  its licences, THIRD_PARTY.md's row, ship beside it as EDK2's do), and the Machines page has no Vulkan setting
-  (`?gpu=vulkan` only). Presentation works since VK2's L4; this is L7's.
+- **`tests/page-snapshots.test.ts` "kept snapshots…" fails** (found 2026-10-26 in VK2 L7, at L6's commit too, run
+  alone): after Suspend, the reloaded page's resume isn't seen as `running` within 420 s (line 148), though the page
+  says `running` when the wait gives up. scripts/ci-machines.sh fails on it; not looked into.
+- **VK2's gate on NVIDIA** (bench/vulkan/REPORT.md "VK2 L7"): the user's run of `bench/vulkan/nvidia.sh page` (the
+  programs' frames, the scene against virgl, mpv's gate) is outstanding; its results go into REPORT.md beside the M4's.
+- **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
+  Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
+  out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
+  would bring it to every `npm start`.
+- **A pipeline's first compile on Metal is ~80 ms** (VK2 L7, REPORT.md "VK2 L7", `bench/vulkan/costs.ts`): Metal's
+  compiler, not the translation (0.6 ms) nor our WGSL's style (a hand-written WGSL pipeline of the same kind: 74 ms);
+  ~1.5 ms once Metal's on-disk cache has it. A program making hundreds of pipelines at load stalls for seconds the
+  first time. Levers: `createRenderPipelineAsync` with the ring stalled instead of the synchronous call (the kickoff's
+  open choice), and the pipeline cache across runs (`vk_shader` serialize) so WGSL at least isn't remade.
+- **What the device advertises, left for the translator** (VK2 L7, vk/README.md "The driver"): subgroups are of one
+  invocation with the basic operations (both adapters have WebGPU's `subgroups`: subgroup sizes and operations in
+  WGSL), `shaderFloat16` (the Mac's `shader-f16`), YCbCr conversions (GTK4's Vulkan renderer: VK3's row; GTK4 forced
+  onto Vulkan aborts on its own assertion without them), read-write storage for 8- and 16-bit formats where the adapter
+  has `texture-formats-tier2` (the translator prints `read_write` already; the format features don't say which formats
+  allow it). The per-stage descriptor limits are WebGPU's whole, though the push buffer takes a dynamic uniform
+  buffer of group 3 when push constants pass the immediates: a pipeline at the limit would fail.
+- **GTK4 on Venus drew black or near-empty frames** (VK2 L7, with YCbCr advertised: `bench/gpu/gtk4-load.ts`
+  `RENDERERS=vulkan`, frames' window black, fishbowl one icon at 6 frames/s): not looked into; VK3's YCbCr row starts
+  there.
 - **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
   screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't
@@ -518,10 +538,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
 - **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
   - **libplacebo renders without FBOs on Venus** ("Failed creating FBO texture! Disabling advanced rendering"): its
-    1- and 2-component FBO formats must have every capability of its 4-component one (`rgba16float`: storage,
-    read-write), and `r16float`/`rg16float` are storage formats only with WebGPU's `texture-formats-tier1` (read-write:
-    `tier2`). Advertising them where the adapter has the features (and printing their WGSL texel formats) would give
-    mpv its scalers, debanding and HDR peak detection; GL's GLES 2 path has none of them either.
+    1- and 2-component FBO formats must have every capability of its 4-component one. VK2 L7 found that advertising
+    `float32-blendable` (the adapter's) gives it the 32-bit float family, and with it mpv's advanced rendering: right
+    when decoding in software (within 47 of GL's bilinear picture), and right with VA-API on SwiftShader, but on the
+    M4's Metal VA-API's imported chroma plane reads as zeros (a green picture, `bench/vulkan/mpv-frames.ts`;
+    `results/vk2/l7/`). So `float32-blendable` and tier1's storage formats are held back (vk/driver/wg_format.c) until
+    that is found: suspects are how the advanced path samples or copies the imported RG8 plane on Metal (a blit, a
+    gather) and the import's texture usage. Then mpv gets its scalers, debanding and HDR peak detection; GL's GLES 2
+    path has none of them either.
   - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
     syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
     host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the
@@ -576,8 +600,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Memory**: some `memory.binding` cases (aliasing and odd sizes) and two `memory` crashes (vkr's
     `vkFreeMemory resulted in CS error`), not looked into.
   - **Elsewhere**: the push buffer is 1 MiB a submit (4,096 changes of push constants past the immediates; more wrap
-    and are wrong, with a warning), the pipeline cache across runs (`vk_shader` serialize), the caps from the adapter
-    rather than the Mac profile (L7).
+    and are wrong, with a warning), the pipeline cache across runs (`vk_shader` serialize).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
