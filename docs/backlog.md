@@ -519,7 +519,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   is, through Dawn's cache and Metal's own); NVIDIA's is the next run's question (nvidia.sh `pipelines`). (3) The
   store's entries are kept uncompressed (vkQuake's 3.5 MiB) and loaded whole at Vulkan's start; CompressionStream on
   the way to IndexedDB would hold ~3× more under the same budget. (4) The store isn't shown on the Machines page's
-  storage line nor cleared from it. (5) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
+  storage line nor cleared from it, and its 32 MiB budget is fixed: the user wants it configurable (2026-10-26; the
+  budget and the origin-wide scope are approved: entries are keyed by content, so one program on two machines shares
+  them). (5) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
 - **What the device advertises, left for the translator** (VK2 L7, vk/README.md "The driver"): subgroups are of one
   invocation with the basic operations (both adapters have WebGPU's `subgroups`: subgroup sizes and operations in
   WGSL), `shaderFloat16` (the Mac's `shader-f16`), YCbCr conversions (GTK4's Vulkan renderer: VK3's row; GTK4 forced

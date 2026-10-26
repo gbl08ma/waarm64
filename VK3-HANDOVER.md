@@ -112,8 +112,9 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   "kept snapshots…" failed at its first Restore with the storage-full error, the backlog's known failure of that test
   (since VK2 L7; its machines have no Vulkan, so the shader store never opens). nvidia.sh's `pipelines` step ran on
   SwiftShader from a bundle of the commit (~6 min).
-- **Choice to confirm with the user**: the store's budget, 32 MiB (nine vkQuakes), and its scope (the origin's, every
-  machine's; not on the Machines page's storage line, not clearable there: backlog "Pipelines' loose ends").
+- **The user approved (2026-10-26)** the store's budget, 32 MiB (nine vkQuakes), and its scope (the origin's, every
+  machine's: entries are keyed by content, so the same program on two machines shares its shaders). Later: the budget
+  configurable by the user, with the store on the Machines page (backlog "Pipelines' loose ends" (4)).
 - **Left** (backlog "Pipelines' loose ends"): pipelines made at vkCreateGraphicsPipelines from static state (guessing
   the dynamic parts), compression in the store, the store on the Machines page, mpv cold/warm on the dev hosts.
 - **Worth not re-discovering:** see "Things worth not re-discovering" (L3's).
