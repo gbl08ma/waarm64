@@ -25,33 +25,16 @@ L2's: the timers as expected (4.07 ms nested, 0.31 ms the pump), but Dawn on NVI
 done in 0.10–0.15 ms, nudged or not; the pump took ~1.1 ms off every size; **Venus at 1 fish 2.5 ms against virgl's
 1.5: the bar not met**, with WebGPU's done in the scene 3.4–3.9 ms a submit. Ahead at 1,000 fish and the toolkit.
 
-**Open for the next run:**
-- **L2b, Venus at 1 fish** (`VK2_STEPS=l2b` = the `fence`, `scene` and `trace` steps, ~16 min on NVIDIA; REPORT.md
-  "VK3 L2b"; the M4's and SwiftShader's answers there):
-  (1) `results/fence.json` `shapes`: which frame-shaped submit is slow to done there? A lone `pass` against L2's
-  `copyDone` (0.15 ms): if `pass` is ~3 ms with a small `gpuMs`, Dawn/Chromium on NVIDIA is slow to see a real pass
-  done (hypothesis 5); if `gpuMs` alone is far above `back to back`'s, the GPU's clocks (1). Do `+writes`, `+map`,
-  `+newStaging` or `WebGL drawing` add to it (4, 3)? Does `two queued`'s done stay above 2× its `frameMs`?
-  (2) `scene-venus-gputime-*`: the scene's real GPU ms a frame submit on NVIDIA (`venus a submit: … GPU x ms`; native
-  0.09, M4 0.41). Near the 3.4 ms done → the GPU at a light load is the cost (1); near 0.1–0.3 → the time is
-  between the GPU and Chromium's look.
-  (3) `scene-venus-nudge025-*` and `scene-venus-nonudge-*` against `scene-venus-*` at 1 fish: does looking more often
-  shorten done and the frame (2), or do nudges do nothing on NVIDIA (then `vknudge`'s default could go per host)?
-  (4) `trace/trace-fish-1-msaa1.json` (JSON) and its summary: the GPU process's main thread's busy ms a second and its
-  heaviest events (GL/`WebGL`, the compositor, `SharedImage…`, `Queue::Submit`), the gaps between
-  `WebGPUDecoderImpl::PerformPollingWork` calls, and `Queue::Submit` → the `DawnReturnCommands` that carries the done.
-  (5) Each Venus scene log's `venus a submit:` line: encoding and `queue.submit` ms (the M4: 0.05 and 0.003), and the
-  frame submits' done by second.
-  The default arms changed: `venus-timeout` (answered) is out; `venus-gputime`, `venus-nudge025`, `venus-nonudge` (1 fish
-  only) are in.
-- **L3, pipelines** (`pipelines` step, ~8 min; `VK2_STEPS="pipelines"` runs it alone): (1) `results/pipelines-micro.json`:
-  N new pipelines made one by one against all at once on NVIDIA (Dawn on Vulkan): is async sooner (M4: 4.6×), and does
-  WebGL stall while they're made one by one (`webgl.max`: M4 4.2 s, SwiftShader 0.8 s)? (2) `pipelines-sync`,
-  `-cold`, `-warm` (vkQuake's replay, the terminal prints them): vkQuake's "Load time" and the module's `translateMs`
-  at once against async, and cold against warm across a restart on one kept profile: the warm session should miss
-  nothing (`cacheMisses` 0, `translateMs` ~10 against ~200). (3) In `pipelines-warm`, is `readyMs` small (Chromium's
-  compiled pipelines kept in the profile, as on Metal: 18 ms) or as cold (as SwiftShader: not kept)? (4) mpv's
-  translation (the run of 5b9654ac: libplacebo 1.3 s on its first run) isn't scripted cold/warm (backlog).
+**Answered by the run of f55eacd7 (2026-10-26; REPORT.md "VK3: the NVIDIA run after L2b", `results/vk3/nvidia-l2b/`):**
+L2b's: a lone real pass is noticed done ~2.2 ms after it ends (0.03 ms of GPU; 1.2 ms nudged; at once while submits
+keep coming); **the scene's pass costs ~1.8 ms of GPU** (`vkgputime`: 0.88 ms a submit, half of them passes; the M4's
+0.41); `vknudge=0.25` 2.4 ms a frame at 1 fish, no nudges 3.1, the default 2.5, virgl 1.5: the bar still not met. The
+trace (134 MB, `bench/results/local/vk3-nvidia-l2b/`, not committed) wasn't summarized: its summarizer overflowed the
+stack. L3's: async pipelines 3.7× sooner, WebGL's longest wait 2 s → 74 ms; vkQuake warm across a restart 0 misses,
+25 ms of translation, Chromium's pipelines kept in the profile (74 ms for 17). Also: nvidia.sh doesn't clear
+`~/webpc-vk2/results` before a run (the earlier run's `venus-timeout` arms came along).
+
+**Open for the next run:** (L2c scripts them.)
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -78,7 +61,18 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   The bar: Venus at 1 fish no slower than virgl on NVIDIA; if it needs another user run to settle, script it and
   move on.
 - [x] L3 (done 2026-10-26): pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
-- [ ] L3b (added by the supervisor after L3, runs after L2b): **`scripts/ci-machines.sh` passing again.**
+- [ ] L2c (added by the supervisor after the NVIDIA run of f55eacd7): **why a scene pass takes ~1.8 ms of GPU on
+  NVIDIA** (the M4 0.41, the synthetic 120-draw pass 0.03), then Chromium's late look (~1.2 ms nudged). Check the
+  measurement first (timestamps around one pass, Dawn's own `timestamp-query` quantization on NVIDIA); then which part
+  of the pass costs: per-draw or per-pipeline timestamps, the full-screen background, the translated shaders (compare
+  the WGSL with what virgl's GLSL does for the same draw; Tint's output for NVIDIA through Dawn's dumps if reachable),
+  load/store ops, attachments' formats, MSAA resolve. The GPU's clocks at a light load: an arm that keeps the GPU busy
+  (a background WebGL load) to see whether the scene's pass shrinks. The trace in `bench/results/local/vk3-nvidia-l2b/`:
+  fix the summarizer (no spread of big arrays) and summarize it here (the GPU process's main thread, the gaps between
+  `PerformPollingWork`). nvidia.sh: clear `results/` at the start; the next run's questions. A default `vknudge` per host
+  if the numbers say so. The bar stays Venus at 1 fish ≤ virgl; if what's left is the GPU's clocks or Chromium's
+  scheduling and nothing of ours, say so: the supervisor takes it to the user.
+- [ ] L3b (added by the supervisor after L3, runs after L2c): **`scripts/ci-machines.sh` passing again.**
   `tests/page-snapshots.test.ts` "kept snapshots…" has failed since VK2 L7 at its first Restore ("the disk's changes
   can't be written to the browser's storage (is it full?)"; backlog). Not VK3's doing, but the track's end needs
   ci-machines.sh green: find whether it's the test's profile quota or a real storage bug and fix it.

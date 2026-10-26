@@ -1103,6 +1103,41 @@ how far apart its looks at the device are.
 5. *Dawn on NVIDIA's Vulkan slow to signal a real pass* (an implicit barrier or wait for a texture): a lone `pass`
    shape slow while a trivial copy is fast, at a small GPU ms.
 
+## VK3: the NVIDIA run after L2b — a scene pass's GPU time and Chromium's look, pipelines right
+
+**2026-10-26.** The user ran the whole default `bench/vulkan/nvidia.sh page` with the bundle of f55eacd7
+(`results/vk3/nvidia-l2b/`; same desktop, driver and Chromium as before). The results directory wasn't cleared
+between runs, so the tarball also carried the earlier run's `scene-venus-timeout-*`: left out. The 134 MB trace isn't
+committed (`bench/results/local/vk3-nvidia-l2b/`); its summary failed ("Maximum call stack size exceeded").
+Presentation, the replays and mpv as in the run of 5b9654ac (right, at the bar).
+
+**Submit shapes** (`fence.json` `shapes`, 1080p, 120 draws, GPU by timestamp queries):
+
+| shape | done (ms) | GPU (ms) |
+| --- | --- | --- |
+| a lone pass (± writes, a map, WebGL drawing) | 2.23–2.27 | 0.031 |
+| + a staging buffer made per submit | 2.73 | 0.037 |
+| a lone pass, nudged | 1.17 | 0.031 |
+| two queued (± nudges, WebGL) | 0.25–0.28 (a frame 0.20) | 0.031 |
+| back to back | 0.29 | 0.031 |
+
+**Chromium on NVIDIA notices a lone real pass done ~2.2 ms after it ends** (a trivial copy: 0.14 ms), 1.2 ms when
+nudged, at once while submits keep coming: hypothesis (2)/(5), not the clocks for this tiny pass (0.03 ms of GPU).
+
+**The scene's own GPU time is large** (`scene-venus-gputime-*`, `?gpu=vkgputime`): **0.87–0.89 ms a submit, ~1.8 ms a
+pass submit** (49% of submits have the pass) at 1 fish, against the M4's 0.41 ms a pass and the synthetic pass's
+0.03. So a frame at 1 fish is ~1.8 ms of GPU plus Chromium's late look: done 3.4 ms.
+
+**1 fish, ms a frame (two rounds):** Venus 1.81, 2.59 (the first round's low value unexplained); `vkgputime` 2.54,
+2.56; `vknudge=0.25` **2.46, 2.39** (done 3.1); no nudges 3.16, 3.08 (done 4.5); virgl **1.52, 1.55**. 1,000 fish:
+Venus 5.46, 5.64 against virgl 8.87, 8.71; toolkit 3.32, 3.15 against 6.58, 6.20. Nudging more often helps a little,
+not enough: **the bar at 1 fish is still not met.**
+
+**Pipelines on NVIDIA** (`pipelines-*`): 16 new pipelines one by one 1.94–1.99 s with WebGL stalled up to 1.99 s,
+async 0.51–0.54 s (**3.7× sooner**) with WebGL's longest wait 74 ms. vkQuake: cold translation 298–371 ms, 753
+misses; warm across a restart **25 ms, 0 misses**, Chromium's pipelines ready in 74 ms for 17 (kept in the profile,
+as on Metal); load time 1.05 → 0.97 s. L3's gate holds on NVIDIA.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

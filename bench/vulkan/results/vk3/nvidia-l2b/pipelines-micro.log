@@ -1,0 +1,6 @@
+{"mode":"sync","n":16,"made":0.1,"done":1989,"adapter":"ampere","webgl":{"median":57.02,"p90":1986.87,"max":1986.87,"n":6}}
+{"mode":"async","n":16,"made":535.2,"done":538.8,"adapter":"ampere","webgl":{"median":0.25,"p90":0.41,"max":73.89,"n":111}}
+{"mode":"async","n":16,"made":518.7,"done":521.8,"adapter":"ampere","webgl":{"median":0.25,"p90":1.08,"max":73.18,"n":105}}
+{"mode":"sync","n":16,"made":0.1,"done":1941.6,"adapter":"ampere","webgl":{"median":17.52,"p90":1937.79,"max":1937.79,"n":5}}
+{"mode":"sync","n":16,"made":0.1,"done":1946.2,"adapter":"ampere","webgl":{"median":19.16,"p90":1942.51,"max":1942.51,"n":5}}
+{"mode":"async","n":16,"made":508.9,"done":511.9,"adapter":"ampere","webgl":{"median":0.27,"p90":0.82,"max":74.09,"n":103}}

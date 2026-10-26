@@ -1,0 +1,89 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 1.547,
+  "iqr": 0.113
+ },
+ "guestCpuMs": 1.475,
+ "line": "virgl aquarium: 1.547 ms a frame (IQR 0.113), CPU 1.475 ms, 120 draws a frame",
+ "seconds": 5.867103558000003,
+ "renderer": {
+  "seconds": 6,
+  "busyMs": 257.9558334350586,
+  "submitMs": 256.08666654427844,
+  "drawMs": 0.09250001112620036,
+  "presents": 5,
+  "glDraws": 25960,
+  "commands": 158975.16666666666,
+  "uploadKB": 27336.000651041668,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 14.539166649182638,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 24,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 283.6666666666667,
+  "submitKB": 6637.199869791667,
+  "fences": {
+   "n": 303.8333333333333,
+   "meanMs": 1.2880389441910252,
+   "maxMs": 91.23000001907349,
+   "heldMs": 398.39249948660535,
+   "behindMs": 6.007499774297078,
+   "fullMs": 0,
+   "heldMax": 11,
+   "toGpuMs": 1.2242405465704191,
+   "toGpuMaxMs": 91.18994140625,
+   "backMs": 0.035953250145468234,
+   "backMaxMs": 0.31005859375
+  }
+ },
+ "vm": {
+  "seconds": 5.9999950001239775,
+  "Msteps": 330.909742,
+  "irqs": 1812,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 3412,
+   "0x20": 102,
+   "0x24": 6176,
+   "0x25": 77
+  },
+  "tlbMisses": 316421,
+  "tlbFlushes": 6751,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 3.426904
+ }
+}

@@ -1,0 +1,138 @@
+[4.1] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap, checked at the first copies
+[39.3] running
+[page warning] venus-gpu: a depth copy WebGPU can't make (into depth32float-stencil8, 640x480 at 0,0 of mip 0): skipped
+[page warning] venus-gpu: a stencil copy WebGPU can't make (into depth32float-stencil8, 640x480 at 0,0 of mip 0): skipped
+[page warning] venus: wg: a shader didn't translate: a texture of sampler dim 5 (texel buffers aren't offered)
+== chromium
+153.0.8010.52
+== gl
+ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)
+== adapter
+nvidia ampere
+== kernel
+6.12.107+deb13-arm64[   15.349552] [drm] Host memory window: 0x80000000 +0x10000000[   15.349762] [drm] features: +virgl +edid +resource_blob +host_visible[   15.349787] [drm] features: +context_init[   15.360955] [drm] number of scanouts: 1[   15.361082] [drm] number of cap sets: 3[   15.380157] [drm] cap set 0: id 1, max-version 1, max-size 308[   15.385642] [drm] cap set 1: id 2, max-version 2, max-size 1408[   15.386102] [drm] cap set 2: id 4, max-version 0, max-size 160[   15.412872] [drm] Initialized virtio_gpu 0.1.0 for a000800.virtio_mmio on minor 0[   15.621522] virtio-mmio a000800.virtio_mmio: [drm] fb0: virtio_gpudrmfb frame buffer device
+== vulkaninfo
+surface_capabilities2       : extension revision 1VK_KHR_portability_enumeration         : extension revision 1VK_KHR_surface                         : extension revision 25VK_KHR_surface_protected_capabilities  : extension revision 1VK_KHR_wayland_surface                 : extension revision 6VK_KHR_xcb_surface                     : extension revision 6VK_KHR_xlib_surface                    : extension revision 6VK_LUNARG_direct_driver_loading        : extension revision 1Instance Layers: count = 2--------------------------VK_LAYER_MESA_device_select Linux device selection layer 1.4.303  version 1VK_LAYER_MESA_overlay       Mesa Overlay layer           1.4.303  version 1Devices:========GPU0:        apiVersion         = 1.3.269        driverVersion      = 25.0.7        vendorID           = 0x0000        deviceID           = 0x0000        deviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU        deviceName         = Virtio-GPU Venus (webpc WebGPU)
+== replay vkcube
+replay 0 fps 89.517531 tolerance 0.002frame 15 bytes 864378 differ 18292 over 6 max 136frame 30 bytes 864378 differ 40594 over 3 max 56frame 5 bytes 864378 differ 15462 over 3 max 108
+== replay vkcube s
+2.2
+== replay vkcube pipelines
+{"pipelines":1,"ready":1,"readyMs":9.77,"deferred":6,"deferredMs":50.58,"syncPipelines":0,"translations":1,"translateMs":23.59,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":28446,"cacheEntries":4}
+== replay vkcube log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 89.517531 fps, 0.335130 seconds, 30 frames, 1 loop, framerange [1-31)
+== replay vkmark-vertex
+replay 0 fps 150.070322 tolerance 0.003frame 10 bytes 921654 differ 8634 over 0 max 1frame 25 bytes 921654 differ 8529 over 3 max 112
+== replay vkmark-vertex s
+1.2
+== replay vkmark-vertex pipelines
+{"pipelines":1,"ready":1,"readyMs":7.24,"deferred":14,"deferredMs":81.18,"syncPipelines":0,"translations":1,"translateMs":2.27,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":26449,"cacheEntries":4}
+== replay vkmark-vertex log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 150.070322 fps, 0.206570 seconds, 31 frames, 1 loop, framerange [1-32)
+== replay vkmark-vertex-host
+replay 0 fps 179.565383 tolerance 0.003frame 10 bytes 921654 differ 8319 over 0 max 2frame 25 bytes 921654 differ 8370 over 0 max 7
+== replay vkmark-vertex-host s
+1.3
+== replay vkmark-vertex-host pipelines
+{"pipelines":1,"ready":1,"readyMs":4.72,"deferred":14,"deferredMs":44.76,"syncPipelines":0,"translations":1,"translateMs":0.52,"cacheHits":4,"cacheMisses":0,"cacheStores":0,"cacheBytes":0,"cacheEntries":0}
+== replay vkmark-vertex-host log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 179.565383 fps, 0.167070 seconds, 30 frames, 1 loop, framerange [1-31)
+== replay vkmark-texture
+replay 0 fps 137.698551 tolerance 0.003frame 10 bytes 921654 differ 92836 over 0 max 24frame 25 bytes 921654 differ 103634 over 1031 max 87
+== replay vkmark-texture s
+3.5
+== replay vkmark-texture pipelines
+{"pipelines":1,"ready":1,"readyMs":10.92,"deferred":14,"deferredMs":127.63,"syncPipelines":0,"translations":1,"translateMs":2.09,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":27778,"cacheEntries":4}
+== replay vkmark-texture log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 137.698551 fps, 0.210605 seconds, 29 frames, 1 loop, framerange [1-30)
+== replay vkmark-texture-nearest
+replay 0 fps 167.144206 tolerance 0.003frame 10 bytes 921654 differ 58003 over 19 max 78frame 25 bytes 921654 differ 54823 over 51 max 48
+== replay vkmark-texture-nearest s
+2.5
+== replay vkmark-texture-nearest pipelines
+{"pipelines":1,"ready":1,"readyMs":0.17,"deferred":0,"deferredMs":0,"syncPipelines":0,"translations":1,"translateMs":0.3,"cacheHits":4,"cacheMisses":0,"cacheStores":0,"cacheBytes":0,"cacheEntries":0}
+== replay vkmark-texture-nearest log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 167.144206 fps, 0.167520 seconds, 28 frames, 1 loop, framerange [1-29)
+== replay vkmark-gouraud
+replay 0 fps 163.203173 tolerance 0.003frame 10 bytes 921654 differ 3968 over 0 max 1frame 25 bytes 921654 differ 4232 over 0 max 1
+== replay vkmark-gouraud s
+1.1
+== replay vkmark-gouraud pipelines
+{"pipelines":1,"ready":1,"readyMs":0.19,"deferred":0,"deferredMs":0,"syncPipelines":0,"translations":1,"translateMs":0.3,"cacheHits":4,"cacheMisses":0,"cacheStores":0,"cacheBytes":0,"cacheEntries":0}
+== replay vkmark-gouraud log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 163.203173 fps, 0.177693 seconds, 29 frames, 1 loop, framerange [1-30)
+== replay vkmark-blinn-phong-inf
+replay 0 fps 159.402024 tolerance 0.003frame 10 bytes 921654 differ 4179 over 0 max 1frame 25 bytes 921654 differ 4500 over 0 max 2
+== replay vkmark-blinn-phong-inf s
+1.1
+== replay vkmark-blinn-phong-inf pipelines
+{"pipelines":1,"ready":1,"readyMs":7.66,"deferred":14,"deferredMs":86.57,"syncPipelines":0,"translations":1,"translateMs":1.98,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":30061,"cacheEntries":4}
+== replay vkmark-blinn-phong-inf log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 159.402024 fps, 0.181930 seconds, 29 frames, 1 loop, framerange [1-30)
+== replay vkmark-phong
+replay 0 fps 162.456305 tolerance 0.003frame 10 bytes 921654 differ 4040 over 0 max 2frame 25 bytes 921654 differ 4348 over 0 max 1
+== replay vkmark-phong s
+1.0
+== replay vkmark-phong pipelines
+{"pipelines":1,"ready":1,"readyMs":14.14,"deferred":14,"deferredMs":178.75,"syncPipelines":0,"translations":1,"translateMs":3.54,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":38753,"cacheEntries":4}
+== replay vkmark-phong log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 162.456305 fps, 0.184665 seconds, 30 frames, 1 loop, framerange [1-31)
+== replay vkmark-cel
+replay 0 fps 162.242409 tolerance 0.003frame 10 bytes 921654 differ 2 over 2 max 160frame 25 bytes 921654 differ 2 over 2 max 160
+== replay vkmark-cel s
+0.8
+== replay vkmark-cel pipelines
+{"pipelines":1,"ready":1,"readyMs":10.41,"deferred":14,"deferredMs":126.59,"syncPipelines":0,"translations":1,"translateMs":3.02,"cacheHits":1,"cacheMisses":3,"cacheStores":3,"cacheBytes":35480,"cacheEntries":3}
+== replay vkmark-cel log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 162.242409 fps, 0.178745 seconds, 29 frames, 1 loop, framerange [1-30)
+== replay vkmark-edge
+replay 0 fps 166.527870 tolerance 0.003frame 10 bytes 921654 differ 7143 over 0 max 9frame 25 bytes 921654 differ 7143 over 0 max 9
+== replay vkmark-edge s
+1.0
+== replay vkmark-edge pipelines
+{"pipelines":1,"ready":1,"readyMs":5.33,"deferred":14,"deferredMs":63.01,"syncPipelines":0,"translations":1,"translateMs":1.77,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":24173,"cacheEntries":4}
+== replay vkmark-edge log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 166.527870 fps, 0.174145 seconds, 29 frames, 1 loop, framerange [1-30)
+== replay vkmark-blur
+replay 0 fps 173.195314 tolerance 0.003frame 10 bytes 921654 differ 10507 over 0 max 1frame 25 bytes 921654 differ 10507 over 0 max 1
+== replay vkmark-blur s
+1.2
+== replay vkmark-blur pipelines
+{"pipelines":1,"ready":1,"readyMs":6.96,"deferred":14,"deferredMs":81.3,"syncPipelines":0,"translations":1,"translateMs":2.13,"cacheHits":1,"cacheMisses":3,"cacheStores":3,"cacheBytes":29375,"cacheEntries":3}
+== replay vkmark-blur log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 173.195314 fps, 0.173215 seconds, 30 frames, 1 loop, framerange [1-31)
+== replay vkmark-desktop
+replay 0 fps 127.388507 tolerance 0.003frame 10 bytes 921654 differ 33278 over 0 max 5frame 25 bytes 921654 differ 47928 over 0 max 6
+== replay vkmark-desktop s
+2.2
+== replay vkmark-desktop pipelines
+{"pipelines":2,"ready":2,"readyMs":14.13,"deferred":14,"deferredMs":72.04,"syncPipelines":0,"translations":2,"translateMs":1.02,"cacheHits":2,"cacheMisses":4,"cacheStores":4,"cacheBytes":19926,"cacheEntries":4}
+== replay vkmark-desktop log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 127.388507 fps, 0.219800 seconds, 28 frames, 1 loop, framerange [1-29)
+== replay vkmark-cube
+replay 0 fps 177.013601 tolerance 0.003frame 10 bytes 921654 differ 10359 over 0 max 1frame 25 bytes 921654 differ 8861 over 0 max 1
+== replay vkmark-cube s
+1.2
+== replay vkmark-cube pipelines
+{"pipelines":1,"ready":1,"readyMs":13.92,"deferred":14,"deferredMs":169.62,"syncPipelines":0,"translations":1,"translateMs":2.34,"cacheHits":0,"cacheMisses":4,"cacheStores":4,"cacheBytes":31222,"cacheEntries":4}
+== replay vkmark-cube log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 177.013601 fps, 0.158180 seconds, 28 frames, 1 loop, framerange [1-29)
+== replay vkmark-clear
+replay 0 fps 226.180481 tolerance 0.003frame 10 bytes 921654 differ 0 over 0 max 0frame 25 bytes 921654 differ 0 over 0 max 0
+== replay vkmark-clear s
+0.8
+== replay vkmark-clear pipelines
+{"pipelines":0,"ready":0,"readyMs":0,"deferred":0,"deferredMs":0,"syncPipelines":0,"translations":0,"translateMs":0,"cacheHits":0,"cacheMisses":0,"cacheStores":0,"cacheBytes":0,"cacheEntries":0}
+== replay vkmark-clear log
+Load time:  0.000000 seconds (frame 1)Measured FPS: 226.180481 fps, 0.132637 seconds, 30 frames, 1 loop, framerange [1-31)
+== replay vkquake
+replay 0 fps 117.858354 tolerance 0.03frame 15 bytes 921654 differ 724856 over 15316 max 176frame 30 bytes 921654 differ 725458 over 15398 max 176frame 5 bytes 921654 differ 725510 over 15383 max 176
+== replay vkquake s
+31.6
+== replay vkquake pipelines
+{"pipelines":17,"ready":17,"readyMs":1949.35,"deferred":9,"deferredMs":103.27,"syncPipelines":0,"translations":285,"translateMs":248.84,"cacheHits":471,"cacheMisses":282,"cacheStores":282,"cacheBytes":3678141,"cacheEntries":282}
+== replay vkquake log
+[gfxrecon] INFO - Loading state for captured frame 200[gfxrecon] INFO - Finished loading state for captured frame 200Load time:  1.211330 seconds (frame 200)Measured FPS: 117.858354 fps, 0.263028 seconds, 31 frames, 1 loop, framerange [1-32)
+== share
+{"way":"bitmap","state":"checking","dropped":[],"checks":0,"checksWrong":0,"unshared":0}

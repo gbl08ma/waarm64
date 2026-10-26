@@ -1,0 +1,12 @@
+[0.8] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap, checked at the first copies
+[37.8] running
+[43.0] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[45.5] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[53.5] fish-1-msaa1 3.162 ms a frame (IQR 0.147), guest CPU 0.802 ms; GPU worker busy 1 ms/s, 0 draws/s
+[53.5] fish-1-msaa1 venus: 434 submits/s done in 4.55 ms (max 13.1), then 0.00 ms in order (by second: 3.529 0 5.533 4.878 4.606 4.501 4.955 3.637); 2981 polls/s 0.25 ms apart (max 6.1); 0 nudges/s; 217 fences/s retired in 4.74 ms
+[53.5] fish-1-msaa1 venus a submit: encode 0.142 ms, queue.submit 0.008 ms, 1.5 writes (31.5 KB), 0.00 readbacks, 0.48 passes, 58 draws; 48% have a pass, done in 4.53 ms (by second: 6.772 4.773 4.567 4.44 4.958 3.448)
