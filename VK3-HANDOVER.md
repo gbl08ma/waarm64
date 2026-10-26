@@ -8,39 +8,25 @@ adds a "State (<date>, after Ln)" section on top of the states, and marks its bu
 Kept by the supervisor. Each loop that needs an NVIDIA number extends `bench/vulkan/nvidia.sh` (one command, one
 results tarball) and adds its question here.
 
-The command (on the dev VM: `git pull`, the images built, then `bench/vulkan/nvidia-bundle.sh` makes
-`target/vk2-nvidia-bundle.tar`, ~3.4 GB, for the user to copy over; on the desktop, in a checkout at the same commit):
+The command (on the dev VM, from a **clean** checkout at the commit: `git pull`, the images built, the wasm and
+`vk/build.sh` rebuilt, then `bench/vulkan/nvidia-bundle.sh` makes `target/vk2-nvidia-bundle.tar`, ~3.4 GB; copy it
+aside, e.g. `target/vk3-nvidia-bundle-<commit>.tar`, before a loop rebuilds; check its BUNDLE.txt names the commit
+without "with uncommitted changes"; on the desktop, in a checkout at the same commit):
 
     bench/vulkan/nvidia.sh page <the bundle> ~/webpc-vk2
 
-(the same directory as VK2's run reuses its Node and browsers; `VK2_STEPS="present"` runs only L1's step, ~10 min;
-results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, `results/present/results.json` and its PNGs.)
+(~40 min whole; `VK2_STEPS="…"` runs some steps only; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user
+puts in the repo's root.)
 
-**Run whole on the dev VM after L2** (2026-10-26, SwiftShader, `VK0_ANY_ARCH=1 VK0_NODE=system
-VK0_ADAPTER_MATCH=swiftshader`, the bundle from 5e805545, each step on its own under the tool's cap; the scene's arms
-one at a time through the new hooks `VK2_SCENE_ROUNDS`/`VK2_SCENE_ARMS`): every step ran and the tarball holds what the
-questions below name (`present/results.json`, `replay/results.json`, `fence.json`, `scene-{venus,venus-timeout,virgl}-N/*.json`
-with `renderer.venus`, `mpv/results.json`, `host.txt`). Nothing broke; venus-run.ts printed its `share` as `[object
-Object]` (fixed). Times there: setup 0.5 min, present 5.5 (only `auto` and `readback` run on SwiftShader), replay 1.5,
-fence 0.5, each scene arm ~5.7 (SwiftShader renders ~60 ms a frame), mpv 4.5. **On the NVIDIA desktop expect ~40 min
-in all** (35–50): the first run's setup ~5 (the 3.4 GB bundle unpacked, npm, Chrome for Testing), present ~10 (four
-ways there), replay ~3, fence ~1, the scene's six arms ~2–3 each (boot-bound at ~1 ms a frame), mpv ~5.
+**Answered by the run of 5b9654ac (2026-10-26; REPORT.md "VK3: the NVIDIA run after L2", `results/vk3/nvidia/`):**
+L1's questions all yes: vkcube and mpv right on the page in every way, `auto` settled on bitmap, bitmap and canvas
+checked right, no window on the prime blit; the user saw no black screens. mpv at its bar (0 drops, the guest 11–12%).
+L2's: the timers as expected (4.07 ms nested, 0.31 ms the pump), but Dawn on NVIDIA's Vulkan says a trivial submit
+done in 0.10–0.15 ms, nudged or not; the pump took ~1.1 ms off every size; **Venus at 1 fish 2.5 ms against virgl's
+1.5: the bar not met**, with WebGPU's done in the scene 3.4–3.9 ms a submit. Ahead at 1,000 fish and the toolkit.
 
-- **L1, presentation** (`present` step, bench/vulkan/present.ts): (1) with NVIDIA reported as an unknown maker, are
-  vkcube's window and mpv's picture right on the page (`auto`: `vkcube.ok`, `mpv.ok`, not `mpv.black`)? (2) Which way
-  did the page's check settle on (`shareAfterMpv.way`/`state`; `dropped` and `why` if a GPU way copied wrong)? (3) Each
-  forced way (`bitmap`, `canvas`, `readback`) right or not, and its check's `checksWrong` (a forced way is checked but
-  kept): this says whether Chromium's GPU-to-GPU path (a Dawn-on-Vulkan shared image read by ANGLE on NVIDIA's GL) works
-  there. (4) Any `venus-share: … isn't (or no longer) a Vulkan image's memory` warnings beyond a killed program's last
-  images (a window still taking Mesa's prime blit). Also from the user: is the screen still going black for seconds?
-- **L2, the fence's floor** (`fence` and `scene` steps; `VK2_STEPS="fence scene"` runs only these, ~15 min): (1) in
-  `results/fence.json`, is `gpu.copyDone` ~3–4 ms and `gpu["copyDone+submit-1ms-timer"]` under ~1 ms (Dawn on NVIDIA's
-  Vulkan noticing done late unless nudged, as SwiftShader), and `timers.setTimeout` ~4.4 ms? (2) In
-  `scene-venus-*/fish-1-msaa1.json`, is the frame at 1 fish now at or under virgl's (`scene-virgl-*`: VK2's 2.5 ms),
-  against `scene-venus-timeout-*` (the old poller, expected ~4.5 ms)? (3) Its `renderer.venus`: `doneMs` (submit to
-  done; the GPU works ~0.3 ms), `fenceMs` (the guest's fence, sent to retired), `gapMs`, `nudges`: whatever is still
-  between ~0.3 ms of GPU work and the frame is the next thing to chase. (4) Do 1,000 fish and the toolkit stay ahead of
-  virgl (VK2: 6.6 against 9.0, 3.8 against 7.1)?
+**Open for the next run:**
+- **L2b** (to be scripted by L2b): where a scene submit's 3.4 ms to done goes on NVIDIA (see the plan's L2b).
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -53,6 +39,17 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   guest's WSI on Mesa's prime blit (vendor 0x10de: an extra copy into a linear buffer a frame), so part of the ~4.5 ms
   floor may be that path, not the fence. Split the two first: the scene's frame with `?gpu=vkvendor=nvidia` against
   without, on the M4 and SwiftShader, before blaming the pollers; the next NVIDIA run then shows the floor without it.
+- [ ] L2b (added by the supervisor after the NVIDIA run of 5b9654ac, runs after L3): **Venus at 1 fish on NVIDIA:
+  2.5 ms a frame against virgl's 1.5.** The poller is no longer it (fence − done ~0.1 ms), nor Dawn's slow look (a
+  trivial submit's done there: 0.15 ms); a scene submit's done is 3.4–3.9 ms though the GPU works ~0.3 ms a frame.
+  Find what's in the scene's submits that a trivial one hasn't: extend `bench/vulkan/fence.ts` with submits shaped
+  like the scene's (a render pass with a draw, the bitmap/share copy, a `mapAsync`, `writeBuffer` uploads of the
+  scene's sizes, two queued) to see which one makes done slow, and time each part of a submit in the worker
+  (encoding, `queue.submit`, done). Try what the M4 and SwiftShader can't show only through nvidia.sh, behind a
+  switch with the current way as the default. Script a Chromium trace of the scene (JSON format, see memory/backlog:
+  `--trace-startup-format=json`, categories gpu, dawn, viz) as an nvidia.sh step, and the variants as scene arms.
+  The bar: Venus at 1 fish no slower than virgl on NVIDIA; if it needs another user run to settle, script it and
+  move on.
 - [ ] L3: pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
 - [ ] L4: libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats).
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).

@@ -1,0 +1,19 @@
+[0.8] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap, checked at the first copies
+[36.2] running
+[41.3] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[43.9] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[52.7] fish-1-msaa1 3.573 ms a frame (IQR 0.142), guest CPU 0.831 ms; GPU worker busy 1 ms/s, 0 draws/s
+[52.7] fish-1-msaa1 venus: 375 submits/s done in 5.22 ms (max 110.9), then 0.01 ms in order (by second: 8.384 0 3.971 6.242 5.02 4.965 5.026 4.843 5.03); 1203 polls/s 0.00 ms apart (max 0.0); 0 nudges/s; 188 fences/s retired in 5.40 ms
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[66.3] fish-1000-msaa1 6.415 ms a frame (IQR 0.017), guest CPU 2.843 ms; GPU worker busy 1 ms/s, 0 draws/s
+[66.3] fish-1000-msaa1 venus: 270 submits/s done in 5.25 ms (max 32.4), then 0.00 ms in order (by second: 4.999 0 4.363 7.245 5.219 4.342 5.991 4.731 5.49 5.252 4.256 6.495 5.291 4.279); 1050 polls/s 0.00 ms apart (max 0.0); 0 nudges/s; 135 fences/s retired in 7.28 ms
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[76.1] toolkit-2000-msaa1 4.606 ms a frame (IQR 0.037), guest CPU 0.803 ms; GPU worker busy 1 ms/s, 0 draws/s
+[76.1] toolkit-2000-msaa1 venus: 340 submits/s done in 4.67 ms (max 18.7), then 0.00 ms in order (by second: 0 5.061 5.146 4.573 4.504 4.586 4.575 4.625 4.634); 1338 polls/s 0.00 ms apart (max 0.0); 0 nudges/s; 170 fences/s retired in 7.38 ms

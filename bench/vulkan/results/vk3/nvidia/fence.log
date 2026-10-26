@@ -1,0 +1,163 @@
+{
+ "date": "2026-10-26T15:24:53.679Z",
+ "chromium": "153.0.8010.52",
+ "platform": "linux",
+ "n": 60,
+ "timers": {
+  "setTimeout": {
+   "median": 4.07,
+   "p10": 4.025,
+   "p90": 4.075,
+   "iqr": 0.01,
+   "n": 60
+  },
+  "message": {
+   "median": 0.005,
+   "p10": 0,
+   "p90": 0.01,
+   "iqr": 0.005,
+   "n": 60
+  },
+  "postTask": {
+   "median": 0.005,
+   "p10": 0,
+   "p90": 0.01,
+   "iqr": 0.005,
+   "n": 60
+  },
+  "setTimeout-from-message": {
+   "median": 0.01,
+   "p10": 0.005,
+   "p90": 0.015,
+   "iqr": 0.005,
+   "n": 60
+  },
+  "setTimeout1-from-message": {
+   "median": 1.07,
+   "p10": 1.065,
+   "p90": 1.08,
+   "iqr": 0.005,
+   "n": 60
+  },
+  "waitAsync-0.25": {
+   "median": 0.305,
+   "p10": 0.295,
+   "p90": 0.31,
+   "iqr": 0.005,
+   "n": 60
+  },
+  "waitAsync-0.5": {
+   "median": 0.56,
+   "p10": 0.55,
+   "p90": 0.57,
+   "iqr": 0.01,
+   "n": 60
+  },
+  "waitAsync-1": {
+   "median": 1.06,
+   "p10": 1.055,
+   "p90": 1.07,
+   "iqr": 0.005,
+   "n": 60
+  }
+ },
+ "gpu": {
+  "adapter": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "device": "",
+   "description": ""
+  },
+  "errorScope": {
+   "median": 0.08,
+   "p10": 0.065,
+   "p90": 0.11,
+   "iqr": 0.025,
+   "n": 60
+  },
+  "emptySubmitDone": {
+   "median": 0.095,
+   "p10": 0.075,
+   "p90": 0.12,
+   "iqr": 0.03,
+   "n": 60
+  },
+  "copyDone": {
+   "median": 0.145,
+   "p10": 0.105,
+   "p90": 0.175,
+   "iqr": 0.025,
+   "n": 60
+  },
+  "copyMap": {
+   "median": 0.11,
+   "p10": 0.095,
+   "p90": 0.165,
+   "iqr": 0.04,
+   "n": 60
+  },
+  "copyDoneAndMap": {
+   "median": 0.125,
+   "p10": 0.105,
+   "p90": 0.15,
+   "iqr": 0.03,
+   "n": 60
+  },
+  "copyDone+messages": {
+   "median": 0.13,
+   "p10": 0.105,
+   "p90": 0.155,
+   "iqr": 0.025,
+   "n": 60
+  },
+  "copyDone+emptySubmits": {
+   "median": 0.17,
+   "p10": 0.13,
+   "p90": 0.26,
+   "iqr": 0.055,
+   "n": 60
+  },
+  "copyDone+writeBuffer": {
+   "median": 0.14,
+   "p10": 0.13,
+   "p90": 0.17,
+   "iqr": 0.02,
+   "n": 60
+  },
+  "copyDone+submit-0.25ms": {
+   "median": 0.135,
+   "p10": 0.12,
+   "p90": 0.145,
+   "iqr": 0.015,
+   "n": 60
+  },
+  "copyDone+submit-1ms-timer": {
+   "median": 0.13,
+   "p10": 0.11,
+   "p90": 0.165,
+   "iqr": 0.03,
+   "n": 60
+  },
+  "copyDone+scope": {
+   "median": 0.125,
+   "p10": 0.095,
+   "p90": 0.155,
+   "iqr": 0.04,
+   "n": 60
+  },
+  "copyDone+submit+scope": {
+   "median": 0.14,
+   "p10": 0.095,
+   "p90": 0.2,
+   "iqr": 0.08,
+   "n": 60
+  },
+  "copyDoneAndMap+submit-1ms-timer": {
+   "median": 0.125,
+   "p10": 0.1,
+   "p90": 0.145,
+   "iqr": 0.035,
+   "n": 60
+  }
+ }
+}

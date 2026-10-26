@@ -902,6 +902,53 @@ seconds hold the steady state; three alternated rounds; ms a frame, medians, and
   fence would no longer hold it back, and it could queue frames without limit; not done. The presentation copy's place
   in the frame isn't in this scene (offscreen); vkcube and mpv are vsync-paced.
 
+## VK3: the NVIDIA run after L2 — Venus on the screen, mpv at its bar, but 1 fish still slower than virgl
+
+**2026-10-26.** The user ran `bench/vulkan/nvidia.sh page` on their desktop with the bundle of 5b9654ac
+(`results/vk3/nvidia/`): the RTX 3070 with NVIDIA's 615.71.09, CachyOS (kernel 7.2.9), Arch's Chromium 153.0.8010.52;
+WebGL2 ANGLE on NVIDIA's OpenGL ES 3.2, WebGPU Dawn on Vulkan ("nvidia ampere"). One session, on their working desktop.
+The user, watching: no black screens beyond the boots'; mpv's paused frame stays on the screen in `present` (by
+design: `--pause` at 20 s).
+
+**Presentation is right on NVIDIA, every way** (`present/results.json`): vkcube right in all four arms (mean 56.6–57.2,
+`ok`), mpv's picture right in all four (page 42.2 against the guest's 56.1 over the cropped box, mean difference 3.3:
+`ok`, not black; VK2's run: 0.4). `auto` settled on **bitmap**, checked right in 3 frames, nothing dropped; forced
+bitmap and canvas checked right (`checksWrong` 0), readback the reference. So L1's cause (the vendor ID sending Mesa's
+WSI down the prime blit) was the whole of VK2's black, and Chromium's GPU-to-GPU path (Dawn-on-Vulkan shared image
+read by ANGLE on NVIDIA's GL) works there. The `isn't (or no longer) a Vulkan image's memory` warnings (32) come only
+at a window's resize (vkcube's 500×500 first swapchain) and after a program is killed: no window took the prime blit.
+
+**mpv meets its bar on NVIDIA** (`mpv/results.json`, two rounds): Vulkan 538, 531 frames, **0 dropped**, the guest
+12, 11% busy, 24 shared frames a second (VK2: 0); GL 529, 528, 0 dropped, 9, 8%. libplacebo still disables advanced
+rendering (L4's work) and translated SPIR-V for 1.3 s on its first run (L3's).
+
+**The replays stay right** (`replay/results.json`): vkcube, vkmark's 13 scenes and vkQuake (1.67%, tolerance 3%) all
+pass, as in VK2; the same two leads for vkQuake (texel buffers, depth/stencil copies into `depth32float-stencil8`).
+
+**The fence** (`fence.json`): the timers as on the dev VM (nested `setTimeout(0)` 4.07 ms, `waitAsync` 0.25 ms →
+0.31 ms). But **Dawn on NVIDIA's Vulkan says a trivial submit done fast**: `emptySubmitDone` 0.10 ms, `copyDone`
+0.15 ms, nudged or not (SwiftShader: 3.4 ms unless nudged). The late-done half of L2's finding doesn't apply there.
+
+**VK0's scene, desktop guest, 1080p, MSAA 1** (`scene-*`, two alternated rounds; ms a frame, then the guest's CPU a
+frame; `done`: a submit to WebGPU's done, `fence`: the guest's fence sent to retired, from `renderer.venus`):
+
+| ms a frame | 1 fish | 1,000 fish | toolkit 2,000 |
+| --- | --- | --- | --- |
+| Venus, the pump | **2.58, 2.50** (0.87, 0.86; done 3.9, 3.4; fence 4.1, 3.5) | 5.65, 5.57 (2.95, 2.93; done 5.4, 5.3) | 3.17, 3.15 (0.83, 0.81; done 4.6, 4.6) |
+| Venus, the old poller | 3.63, 3.57 (0.86, 0.83; done 5.2, 5.2; fence 5.5, 5.4) | 6.50, 6.42 (2.90, 2.84) | 4.54, 4.61 (0.80, 0.80) |
+| virgl | **1.48, 1.53** (1.41, 1.45) | 8.65, 8.71 (5.87, 5.66) | 7.66, 6.50 (7.41, 6.30) |
+| VK2's run, Venus / virgl | 4.77, 4.90 / 2.48, 2.65 | 6.59, 6.78 / 9.14, 8.83 | 3.86, 3.75 / 7.14, 7.02 |
+
+- **The pump took ~1.1 ms off every size** against the old poller in the same session (rounds don't overlap), and
+  the poller's own share of a fence is now ~0.1 ms (fence − done). Venus is ahead of virgl at 1,000 fish (0.65×)
+  and the toolkit (0.45×), and its guest CPU a frame is 0.6× virgl's at 1 fish, half at 1,000, a ninth at the toolkit.
+- **But the bar isn't met at 1 fish: 2.5 ms against virgl's 1.5** (virgl faster than in VK2's run, 2.5: the
+  desktop's state, the same bundle's virgl path is unchanged). What remains is **WebGPU's done in the scene: 3.4–3.9
+  ms a submit**, though a trivial submit's is 0.15 ms there and the renderer's GPU time a frame ~0.3 ms (VK2). Not the
+  poller, not the timers, not Dawn's slow look: something in the scene's submits (their contents, a map or copy in
+  them, the queue shared with ANGLE's GL work in Chromium's GPU process, the GPU's clocks at a light load) that only
+  NVIDIA shows. Next: VK3-HANDOVER.md "L2b".
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
