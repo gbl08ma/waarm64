@@ -59,6 +59,10 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   The bar: Venus at 1 fish no slower than virgl on NVIDIA; if it needs another user run to settle, script it and
   move on.
 - [x] L3 (done 2026-10-26): pipelines made asynchronously, WGSL cached by SPIR-V hash across runs.
+- [ ] L3b (added by the supervisor after L3, runs after L2b): **`scripts/ci-machines.sh` passing again.**
+  `tests/page-snapshots.test.ts` "kept snapshots…" has failed since VK2 L7 at its first Restore ("the disk's changes
+  can't be written to the browser's storage (is it full?)"; backlog). Not VK3's doing, but the track's end needs
+  ci-machines.sh green: find whether it's the test's profile quota or a real storage bug and fix it.
 - [ ] L4: libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats).
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
