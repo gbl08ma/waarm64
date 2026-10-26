@@ -501,11 +501,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
   is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
   encoded by hand (or a recorded stream replayed through `venus_submit`).
-- **`tests/page-snapshots.test.ts` "kept snapshots…" fails** (found 2026-10-26 in VK2 L7, at L6's commit too, run
-  alone): after Suspend, the reloaded page's resume isn't seen as `running` within 420 s (line 148), though the page
-  says `running` when the wait gives up. scripts/ci-machines.sh fails on it; not looked into. VK3 L3's run (a machine
-  without Vulkan) failed it earlier, at the first Restore (line 126): "the disk's changes can't be written to the
-  browser's storage (is it full?)", the storage-full case below; the other four tests passed.
 - **VK2's gate on NVIDIA** (bench/vulkan/REPORT.md "VK2 L7"): the user's run of `bench/vulkan/nvidia.sh page` (the
   programs' frames, the scene against virgl, mpv's gate) is outstanding; its results go into REPORT.md beside the M4's.
 - **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
@@ -720,9 +715,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (machines.md §4.3: kept if within noise). The cloud's boots written in place (221 s) and on a merged disk (290 s)
     were slower than its overlay boots (115–156 s), one run each on shared hardware; the user's boots of stored and
     merged disks by hand showed nothing like it. If anyone relies on in-place disks for speed, time those boots too.
-  - **Suspend once failed with "the browser's storage is full"** (a short write in `fileWriter`, web/overlay.ts),
-    in the dev VM's first run of tests/page-snapshots.test.ts (~550 MB in OPFS of a ~3.7 GB quota), not reproduced in
-    the runs since: if it comes back, log `navigator.storage.estimate()` at the failure.
+  - **Off the record, the remote disks' block cache crowds out snapshots** (VK3 L3b): an off-the-record profile keeps
+    OPFS in memory, where Chromium's sync handles come back short at ~0.8 GB in all while `estimate()` reports ~3.2 GB;
+    the cache (web/diskcache.ts) sizes its budget from that estimate (a quarter of the free quota), so with a URL disk
+    it takes the room a kept snapshot, a Restore's fork or a Suspend then finds full ("is it full?", "the browser's
+    storage is full"). That was tests/page-snapshots.test.ts's failure from the cache's arrival (2026-10-23) to L3b; the
+    test now runs on an on-disk profile, as a user's, where the estimate holds. A user in an Incognito window can still
+    meet it: the snapshot and suspend writers could give the cache's stores up on a short write and try once more, as
+    a guest's disk write does (`releaseStores`), or the cache could stay small off the record.
   - A full quota still reaches the guest as `IOERR` (and an import or a kept snapshot fails with "is it full?"): the
     page should say so where it happens, with the storage view's numbers.
   - A stored disk's SHA-256 isn't computed in the background (§3.1), and a definition carries a file's hash only

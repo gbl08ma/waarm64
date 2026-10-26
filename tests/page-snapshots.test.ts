@@ -2,10 +2,17 @@
 // three kept; an older one restored forks the newer state into an overlay of its own (nothing lost), the ramdisk comes
 // back with the snapshot; Suspend resumes while its pins match and boots instead once the disk moved on; a change of
 // RAM orphans the snapshots, and one action deletes them. Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh).
+//
+// A fresh profile on disk, as a user's: an off-the-record context keeps OPFS in memory, where Chromium's sync handles
+// come back short at ~0.8 GB while `estimate()` reports 3.2 GB. The URL disk's block cache (web/diskcache.ts), sized
+// from that estimate, then takes the room the snapshots, the forks and the suspended copy need (~1 GB in all), and a
+// Restore or Suspend found the storage full (VK3 L3b).
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
@@ -17,17 +24,20 @@ const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : !existsSync(IMAGE) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 
-let browser: Browser;
 let base: string;
+let profile: { dir: string; context: BrowserContext } | undefined;
 let close: () => void;
 before(async () => {
   if (skip) return;
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
 });
-after(async () => { await browser?.close(); close?.(); });
+after(async () => {
+  await profile?.context.close();
+  if (profile) rmSync(profile.dir, { recursive: true, force: true });
+  close?.();
+});
 
 const terminal = (page: Page) => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
 const shows = (page: Page, re: RegExp, ms = 60_000) =>
@@ -61,8 +71,10 @@ const record = <T>(page: Page, f: string, a: unknown) => page.evaluate(async ({ 
 }, { f, a }) as Promise<T>;
 
 test('kept snapshots: an older one restored forks the newer state, the ramdisk comes back, Suspend on its pins, a RAM change orphans them all', { skip, timeout: 40 * 60_000 }, () => withDebianLock(async () => {
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  const dir = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  profile = { dir, context };
+  const page = context.pages()[0] ?? await context.newPage();
   const errors: string[] = [];
   const dialogs: string[] = [];
   let keepAs = '';

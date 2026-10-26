@@ -67,10 +67,8 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   frame than virgl at every size") is held at 1,000 fish and the toolkit only, unless the user reopens it. Kept from
   L2c: nvidia.sh clears `results/` before a run (22e10916). Its other findings are in REPORT.md "VK3: the NVIDIA run
   after L2b" and the backlog (bind groups remade each frame).
-- [ ] L3b (added by the supervisor after L3, next): **`scripts/ci-machines.sh` passing again.**
-  `tests/page-snapshots.test.ts` "kept snapshots…" has failed since VK2 L7 at its first Restore ("the disk's changes
-  can't be written to the browser's storage (is it full?)"; backlog). Not VK3's doing, but the track's end needs
-  ci-machines.sh green: find whether it's the test's profile quota or a real storage bug and fix it.
+- [x] L3b (done 2026-10-26): **`scripts/ci-machines.sh` passing again.** The kept-snapshots test's off-the-record
+  profile ran out of room; it runs on an on-disk profile now (State after L3b).
 - [ ] L4: libplacebo's advanced path (`float32-blendable`; the M4's green VA-API chroma; tier1's storage formats).
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
@@ -78,6 +76,24 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
 - [ ] L8: the track's end (REPORT.md's VK3 section, docs, plan §6/§7, the final NVIDIA run scripted).
+
+## State (2026-10-26, after L3b)
+
+- **Done: ci-machines.sh green again.** `tests/page-snapshots.test.ts` "kept snapshots…" failed at a Restore ("is it
+  full?") or at Suspend ("the browser's storage is full", the 420 s wait for `suspended`): both short writes to OPFS.
+- **The cause: the remote disks' block cache (web/diskcache.ts, 2026-10-23) in an off-the-record profile.** Such a
+  profile keeps OPFS in memory, where Chromium's sync handles come back short at ~0.8 GB while `estimate()` reports
+  ~3.2 GB (docs/devices.md had it). The test's URL disk (served with a validator) is cached, the cache sizes its budget
+  from that estimate, and with three snapshots, the forks and the suspended copy the profile passed its real room
+  (`estimate()` read 0.76 GB used at the failing Suspend). Measured: the same test with `diskcache=0` passed (60 s);
+  ci-machines last passed 2026-10-22, before the cache. Not a storage bug in snapshots or overlays.
+- **The fix: the test runs on a fresh on-disk profile** (`launchPersistentContext` under tmpdir, removed after), as
+  page-stored does and as a user's profile is; it checks all it did, and the cache stays on. Alone: 54 s.
+- **Left for the backlog** (machines' loose ends, "Off the record, the remote disks' block cache crowds out
+  snapshots"): a user in an Incognito window can meet the same; the snapshot and suspend writers could give the
+  cache's stores up on a short write (`releaseStores`, as a guest's disk write does), or the cache stay small there.
+- **CI at the commit:** ci-machines.sh OK (173 s, 5 of 5), ci.sh OK (443 s). ci-debian.sh not run: no page or storage code
+  changed (the test and docs only).
 
 ## State (2026-10-26, after L2b)
 

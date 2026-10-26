@@ -358,8 +358,10 @@ Where the build differs from the sections above, or settled what they left open:
 - **Reads of a stored disk under overlays** use read-only sync access handles under a shared Web Lock (several
   machines at once); writing it in place or merging takes it exclusively. Stored Debian is 1,043 MB (estimated 1,212
   from the qcow2's allocated clusters), imported in ~140 s here.
-- **The test profile:** an off-the-record Playwright context keeps OPFS in memory with a ~1 GB quota; stored Debian
-  doesn't fit, so that test uses a fresh on-disk profile (`launchPersistentContext`).
+- **The test profile:** an off-the-record Playwright context keeps OPFS in memory, where writes come back short at
+  ~0.8 GB though `estimate()` reports ~3.2; stored Debian doesn't fit, and the kept snapshots' test (~1 GB with the
+  URL disk's block cache, which sizes itself from that estimate) didn't either, so both use a fresh on-disk profile
+  (`launchPersistentContext`), as a user's.
 - **A dropped or opened disk** on the page's own machine makes a machine for it (named after the file) or opens the
   one that attaches it; `?disk=<url>` stays transient (the tests').
 - **Definitions** re-pick files at the machine's first start (the same flow as a handle without permission), not at
