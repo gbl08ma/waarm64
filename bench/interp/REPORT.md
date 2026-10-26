@@ -1648,3 +1648,66 @@ losing a gate; the per-block hook's code goes with it (the user's call: sub-nois
 floor gives, and the old mechanism is simpler). Also found: the boot benchmarks had fetched `bench/boot/undefined`
 since the page moved to Vite (fixed in `9470549`), and the warm snapshots needed making again (machine state format
 2).
+
+## What the guest accesses' atomics cost on x86_64
+
+2026-10-26, a Claude Code cloud session (x86_64, Intel Xeon @ 2.10 GHz, 4 vCPUs, 15 GiB, shared hardware), Chrome
+for Testing 153.0.8010.12, Node 26.12.1, at `faf3ef8`; raw data `results/m8-atomics-x86/`. The backlog's question
+(docs/backlog.md "Interpreter"): the core's guest accesses are relaxed Rust atomics (docs/cpu.md "Memory model"),
+and wasm has only sequentially consistent ones; on the M4 their `ldar`/`stlr` were 0.24% of `run`'s cycle samples,
+and x86_64 was never measured. Only the core's accesses are concerned: JIT code uses plain wasm loads and stores.
+
+**V8's code on x86_64** (`node --print-wasm-code --no-liftoff`, a shared memory): `i64.atomic.store` is an alignment
+check (`lea`, `test`, `jnz` to a trap) and `xchgq` (a locked read-modify-write, a full barrier); `i64.atomic.load` the
+same check and a plain `movq`; a plain `i64.store` / `i64.load` one `movq`.
+
+**Arms**, measuring builds of `core/src/mem.rs` (UB under parallel SMP: racing plain accesses are data races in
+Rust): `plain` (`plain.patch`, loop 0's `m8-interp-l0/plain-accesses.patch` ported: `load_aligned`,
+`store_aligned`, `load_relaxed`, `store_relaxed` and `load_atomic` volatile, `store_atomic`'s byte too), `loads`
+(`loads.patch`: the plain loads only) and `stores` (`stores.patch`: the plain stores only), against `base` and `aa`
+(a copy of base). The guests are the block interpreter's small ones; the boots weren't run (a cloud session has no
+Buildroot or Alpine image: docs/cloud.md).
+
+**The yardstick in Chromium** (`bench/interp/ab.sh`, `ab1/` five rounds of all five arms, `ab2/` eight more of base,
+plain and stores; median of the rounds' medians):
+
+| | base (13 rounds) | plain (13) | stores (13) | loads (5) | aa (5) |
+|---|---|---|---|---|---|
+| `dec_mips` | 226.9 (202-233) | 234.8 (227-239), +3.5% | +1.7% | +0.8% | −0.3% |
+| `vm_dec_flat_mips` | 225.3 (192-230) | 232.3 (227-248), +3.1% | +4.5% | +1.4% | +1.7% |
+| `vm_dec_mmu_mips` | 240.9 (218-245) | 247.1 (201-293), +2.6% | −5.5% | +1.1% | −3.0% |
+
+**Inconclusive by the rules**: a run's IQR over its eight placements is ±10-70 MIPS here, and within one placement
+consecutive samples spread 160-260 (the host's other tenants, not the placement), so every arm's rounds overlap and
+the A/A pair differs by up to 3%.
+
+**Paired, in one process** (`bench/interp/paired.ts`, new: every arm's guests side by side, a 20M-step chunk each in a
+shuffled order every iteration, the instances made in a shuffled order too; a sample is one iteration's MIPS over
+base's). Chromium (`bench/run.ts --page bench/interp/paired.html`), six sessions of 60 iterations (`chromium/`):
+
+| pooled (360 pairs): median [bootstrap 95%], wins | aa | plain | loads | stores |
+|---|---|---|---|---|
+| `dec_mips`'s guest, placement 0 | −0.2% [−0.9, 0.2] 172 | **+3.6%** [3.2, 4.1] 252 | +1.1% [0.7, 1.6] 218 | +2.5% [2.1, 3.0] 235 |
+| `dec_mips`'s guest, placement 29696 | −0.0% [−0.8, 0.6] 179 | **+3.7%** [3.1, 4.3] 256 | +1.5% [0.9, 2.0] 219 | +2.9% [2.3, 3.5] 244 |
+| `vm_dec_flat_mips`' guest | −0.5% [−1.0, 0.1] 166 | **+3.6%** [3.1, 4.0] 256 | +0.6% [0.1, 1.1] 200 | +2.6% [2.0, 2.9] 247 |
+| `vm_dec_mmu_mips`' guest | −0.1% [−0.7, 0.4] 177 | **+2.6%** [2.0, 3.4] 244 | +0.7% [0.2, 1.4] 207 | −1.6% [−2.2, −1.0] 136 |
+
+Per session (the six medians) the A/A stays within ±1.2% and `plain` is +1.9 to +4.6% in all 24 cells. One earlier
+session with the instances made in a fixed order (`chromium-fixed-order.json`, 150 iterations) had an A/A of +3.6%
+at placement 29696: where an instance lands moves it by a few percent, so the order is shuffled since. Node
+(`node-paired.json`, 150 iterations, the same tool):
+
+| pooled (150 pairs): median [bootstrap 95%], wins | aa | plain | loads | stores |
+|---|---|---|---|---|
+| `dec_mips`'s guest, placement 0 | +1.2% [−0.1, 2.2] 84 | **+7.6%** [7.0, 8.9] 121 | +0.4% [−0.3, 1.0] 80 | +6.2% [5.3, 7.9] 116 |
+| `dec_mips`'s guest, placement 29696 | +0.4% [−0.2, 1.3] 84 | **+7.7%** [7.0, 8.6] 119 | +0.9% [0.0, 2.4] 86 | +6.2% [5.5, 6.6] 118 |
+| `vm_dec_flat_mips`' guest | −0.3% [−0.9, 0.7] 70 | **+5.7%** [4.5, 6.5] 112 | −0.1% [−0.9, 0.9] 71 | +4.9% [3.8, 5.7] 116 |
+| `vm_dec_mmu_mips`' guest | +0.4% [−0.4, 1.0] 83 | **+3.5%** [2.4, 3.9] 107 | +0.8% [−0.2, 2.1] 84 | +2.1% [1.5, 3.4] 105 |
+
+**What it says.** The accesses' atomics cost the block interpreter **~3-4% in Chromium (3.5-8% in Node) on x86_64**,
+nearly all of it in the stores (`xchg`); the loads' alignment checks are ~1%. `stores` alone on the MMU guest is
+slower than base in every Chromium session but faster in Node (+2.1%): layout, Chromium's V8 placing that mix's
+code worse; with the loads plain too it gains in both. So the backlog's first remedy, plain loads with atomic stores, would buy ~1%: only
+plain stores (one vCPU or round-robin, atomics in parallel SMP) recover the cost. What that is worth on a real
+workload wasn't measured: under the JIT the interpreter runs cold code and slow paths only (Alpine's boot under
+`jit` 4, all interpreted, would bound it), so 3-4% of the interpreter's share of a boot.

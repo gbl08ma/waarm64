@@ -19,7 +19,7 @@ with a per-environment egress policy (Network access in the environment's settin
 |---|---|---|
 | Node >= 26 (`engines`) | Node 22 preinstalled | `cloud-setup.sh` unpacks Node 26 to `/opt/node26` and prepends it to `PATH` |
 | Node `fetch` reaches the internet directly | it bypasses `HTTPS_PROXY` and gets a 403 | `NODE_USE_ENV_PROXY=1` (set by the script); needed by `tools/debian.ts` (`images/build.sh debian`, the tests' Debian) |
-| `/usr/bin/chromium` (153) | none; Playwright's Chromium is in `/opt/pw-browsers` (141 at the time of writing) | `CHROMIUM` points at it (the tests and `bench/run.ts` already honor it) |
+| `/usr/bin/chromium` (153) | none; Playwright's Chromium is in `/opt/pw-browsers` (`chromium-*/chrome-linux64/chrome`, 153.0.8010.12 on 2026-10-26; it was `chrome-linux/` at 141) | `CHROMIUM` points at it (the tests and `bench/run.ts` already honor it) |
 | `dtc` from zypper (1.7.2) | apt has 1.7.0, which prints strings as `"a\0b"` instead of `"a", "b"`, failing `dtb_round_trips_through_dtc` | the script builds dtc v1.7.2 into `/opt/dtc` |
 | qemu-user, qemu-img, fonts | absent | apt (`qemu-user`, `qemu-utils`, `fonts-dejavu-core`) |
 | `systemd-run --user --scope -p MemoryMax=10G` around heavy runs | "Failed to connect to bus" | run without it, under `timeout`; the container has 15 GiB and nothing else on it, but a leaking test can still take the session down |
@@ -29,7 +29,7 @@ with a per-environment egress policy (Network access in the environment's settin
 | Chromium 153 decodes H.264 (OpenH264) | Playwright's Chromium has no proprietary codecs | the H.264 cases of `tests/virgl-browser.test.ts` skip; VP9 and AV1 run |
 | The M4's SwiftShader | x86_64 SwiftShader (Vulkan) has 6 color attachments, not 8, and x86's default NaN is negative | nothing to handle: both found real bugs (the renderer's attachments loop, the JIT's FMA) the arm64 VM didn't show |
 | `perf`, `wasm-tools`, `../webpc-exp` worktrees | not installed | dev-only; install if needed |
-| Benchmarks | x86_64 runner of unknown, shared hardware | numbers are not comparable with the VM's; don't record any (CLAUDE.md's rules on benchmarks) |
+| Benchmarks | x86_64 runner of unknown, shared hardware: a run's samples spread ±20%, `bench/interp/ab.sh`'s A/A rounds up to 3% | absolute numbers are not comparable with the VM's; don't record any. An A/B of builds that the user asks for here (x86_64 is the point) goes through `bench/interp/paired.ts`: arms side by side in one process, paired samples, an A/A arm (docs/benchmarking.md); `bench/interp/yardstick.sh` drops its memory cap without a systemd bus |
 
 ## Networking work (net/, tests/net/)
 

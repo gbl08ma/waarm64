@@ -1,0 +1,34 @@
+diff --git a/core/src/mem.rs b/core/src/mem.rs
+index 2b74b85..208970b 100644
+--- a/core/src/mem.rs
++++ b/core/src/mem.rs
+@@ -635,10 +635,10 @@ pub(crate) unsafe fn load_aligned(p: *const u8, size: u32) -> Option<u64> {
+     // SAFETY: guaranteed by the caller; aligned.
+     Some(unsafe {
+         match size {
+-            1 => AtomicU8::from_ptr(p).load(O) as u64,
+-            2 => u16::from_le(AtomicU16::from_ptr(p as *mut u16).load(O)) as u64,
+-            4 => u32::from_le(AtomicU32::from_ptr(p as *mut u32).load(O)) as u64,
+-            _ => u64::from_le(AtomicU64::from_ptr(p as *mut u64).load(O)),
++            1 => (p as *const u8).read_volatile() as u64,
++            2 => u16::from_le((p as *const u16).read_volatile()) as u64,
++            4 => u32::from_le((p as *const u32).read_volatile()) as u64,
++            _ => u64::from_le((p as *const u64).read_volatile()),
+         }
+     })
+ }
+@@ -805,10 +805,10 @@ unsafe fn load_relaxed(p: *const u8, size: u32) -> u64 {
+     // SAFETY: guaranteed by the caller.
+     unsafe {
+         match size {
+-            1 => AtomicU8::from_ptr(p).load(O) as u64,
+-            2 => u16::from_le(AtomicU16::from_ptr(p as *mut u16).load(O)) as u64,
+-            4 => u32::from_le(AtomicU32::from_ptr(p as *mut u32).load(O)) as u64,
+-            8 => u64::from_le(AtomicU64::from_ptr(p as *mut u64).load(O)),
++            1 => (p as *const u8).read_volatile() as u64,
++            2 => u16::from_le((p as *const u16).read_volatile()) as u64,
++            4 => u32::from_le((p as *const u32).read_volatile()) as u64,
++            8 => u64::from_le((p as *const u64).read_volatile()),
+             _ => unreachable!("access size {size}"),
+         }
+     }

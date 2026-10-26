@@ -237,7 +237,10 @@ The table is `core/src/interp/sys.rs`.
   the interpreter with the MMU on (`vm_mmu_mips`) went from 88.7 to 79.0 MIPS, half from the
   alignment test and half from the ordering; volatile plain accesses (UB all the same) measured no
   better. The interpreter runs ~1.4% of Alpine's boot, which stayed within noise
-  (`bench/interp/REPORT.md` "M7 loop 6"). JIT code uses plain wasm loads and stores, which wasm
+  (`bench/interp/REPORT.md` "M7 loop 6"). On x86_64 an atomic store is an `xchg`: plain
+  accesses would make the block interpreter ~3-4% faster in Chromium, nearly all of it the stores
+  (`bench/interp/REPORT.md` "What the guest accesses' atomics cost on x86_64"; what to do about it
+  is in docs/backlog.md "Interpreter"). JIT code uses plain wasm loads and stores, which wasm
   defines under races ([jit.md](jit.md) "Atomics").
 - Exclusives, LSE atomics and LDAR/STLR use real wasm atomics even single-core (SMP-ready), all
   sequentially consistent (stronger than acquire/release).
