@@ -9,7 +9,10 @@
 //   node bench/vulkan/mpv-frames.ts [image] [outdir]   (default target/arch/desktop.qcow2; SHIM=1 installs the media
 //   disk's VA driver; GPU_KNOBS adds to the page's `?gpu=` (e.g. `vkformats=all`: the advanced path on); MPV_ARMS and
 //   PAIRS replace the arms and comparisons; SHOT2=1 takes a second screenshot after turning debanding on (the frame
-//   rendered anew); bench/gpu/sway-mac.sh runs it with SCRIPT=../vulkan/mpv-frames.ts, mode `-`)
+//   rendered anew); GRAB=1 also reads the page's screen (`window.__webpcGrab`) once mpv's screenshot exists, mpv still
+//   showing the frame, and compares the arms' grabs as PAIRS says (VK3 L4b: bench/vulkan/green.sh); HOLD=<s> keeps mpv
+//   that long after its screenshot (default 3, 6 with GRAB); bench/gpu/sway-mac.sh runs it with
+//   SCRIPT=../vulkan/mpv-frames.ts, mode `-`)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
@@ -28,6 +31,33 @@ const ARMS: Record<string, string> = process.env.MPV_ARMS
   };
 const PAIRS = process.env.PAIRS ? process.env.PAIRS.split(' ').map((p) => p.split('~'))
   : [['vkva', 'vkno'], ['glva', 'glno'], ['vkno', 'glno'], ['vkva', 'glva']].filter(([x, y]) => ARMS[x] && ARMS[y]);
+type Grab = { width: number; height: number; pixels: Uint8Array };
+type W = { __webpcGrab: () => Promise<Grab>; __mpvGrabs?: Record<string, Uint8Array> };
+/** GRAB=1: the page's screen now (read back in the GPU worker, after mpv's screenshot: the frame already drawn), kept in
+ * the page for comparePages, and its greenness (mean G less the mean of R and B). */
+const grabScreen = (tag: string) => s.page.evaluate(async (tag) => {
+  const w = window as unknown as W;
+  const g = await w.__webpcGrab();
+  if (!g.width) return { width: 0, height: 0 };
+  (w.__mpvGrabs ??= {})[tag] = g.pixels;
+  let r = 0, gg = 0, b = 0;
+  for (let i = 0; i < g.pixels.length; i += 4) { r += g.pixels[i]; gg += g.pixels[i + 1]; b += g.pixels[i + 2]; }
+  const n = g.pixels.length / 4;
+  return { width: g.width, height: g.height, greenness: +((gg - (r + b) / 2) / n).toFixed(2) };
+}, tag);
+/** Two arms' page grabs, RGB only: the bytes off by more than 24, the mean difference. */
+const comparePages = (x: string, y: string) => s.page.evaluate(([x, y]) => {
+  const a = (window as unknown as W).__mpvGrabs?.[x], b = (window as unknown as W).__mpvGrabs?.[y];
+  if (!a || !b || a.length !== b.length) return undefined;
+  let off24 = 0, sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    if ((i & 3) === 3) continue;
+    const d = Math.abs(a[i] - b[i]);
+    sum += d;
+    if (d > 24) off24++;
+  }
+  return { bytes: (a.length / 4) * 3, off24, mean: +(sum / ((a.length / 4) * 3)).toFixed(3) };
+}, [x, y]);
 try {
   await s.rootShell();
   await s.run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media');
@@ -37,13 +67,13 @@ try {
   // The screenshot 10 s after the start (the seek done, the frame shown), then quit; mpv on Vulkan may not exit (its
   // swapchain's last image waits for the compositor): killed.
   await s.pasteSerial(`cat > /home/arch/shot.lua <<'EOF'
-mp.add_timeout(10, function() mp.commandv("screenshot-to-file", os.getenv("SHOT"), "window"); if os.getenv("SHOT2") ~= "" then mp.add_timeout(0.5, function() mp.set_property("deband", "yes") end); mp.add_timeout(1.5, function() mp.commandv("screenshot-to-file", os.getenv("SHOT2"), "window") end) end; mp.add_timeout(3, function() mp.commandv("quit") end) end)
+mp.add_timeout(10, function() mp.commandv("screenshot-to-file", os.getenv("SHOT"), "window"); if os.getenv("SHOT2") ~= "" then mp.add_timeout(0.5, function() mp.set_property("deband", "yes") end); mp.add_timeout(1.5, function() mp.commandv("screenshot-to-file", os.getenv("SHOT2"), "window") end) end; mp.add_timeout(tonumber(os.getenv("HOLD")) or 3, function() mp.commandv("quit") end) end)
 EOF
 cat > /root/shot.sh <<'EOF'
 #!/bin/sh
 tag=$1; shift
 rm -f /tmp/$tag.png
-su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png SHOT2=${'$'}{SHOT2:+/tmp/$tag-b.png}; timeout -k 5 40 mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
+su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png SHOT2=${'$'}{SHOT2:+/tmp/$tag-b.png} HOLD=${'$'}{HOLD:-3}; timeout -k 5 40 mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
 pkill -9 -x mpv; ffmpeg -loglevel error -y -i /tmp/$tag.png -f rawvideo -pix_fmt rgb24 /tmp/$tag.rgb
 [ -f /tmp/$tag-b.png ] && ffmpeg -loglevel error -y -i /tmp/$tag-b.png -f rawvideo -pix_fmt rgb24 /tmp/$tag-b.rgb
 echo "$(ffprobe -v error -show_entries stream=width,height -of csv=p=0 /tmp/$tag.png) $(grep -c 'Using hardware' /tmp/$tag.log)"
@@ -52,16 +82,30 @@ cat > /root/cmp.py <<'EOF'
 import sys
 a = open(sys.argv[1], 'rb').read(); b = open(sys.argv[2], 'rb').read()
 n = min(len(a), len(b)); d = [abs(a[i] - b[i]) for i in range(n)]
-print(len(a), len(b), sum(1 for x in d if x > 24), sum(1 for x in d if x), max(d), round(sum(d) / n, 3))
+# and each picture's greenness: mean G less the mean of R and B (chroma = 0 makes it ~+150).
+gr = lambda p: round((sum(p[1::3]) - (sum(p[0::3]) + sum(p[2::3])) / 2) / max(1, len(p) // 3), 2)
+print(len(a), len(b), sum(1 for x in d if x > 24), sum(1 for x in d if x), max(d), round(sum(d) / n, 3), gr(a), gr(b))
 EOF
 chmod 755 /root/shot.sh /home/arch/shot.lua`);
+  const GRAB = !!process.env.GRAB, HOLD = Number(process.env.HOLD || (GRAB ? 6 : 3));
   for (const [tag, a] of Object.entries(ARMS)) {
     await s.display();
-    const [size, hw] = (await s.run(`${process.env.SHOT2 ? 'SHOT2=1 ' : ''}/root/shot.sh ${tag} ${a}`, 120_000)).trim().split(' ');
+    const t0 = performance.now();
+    let shotS: number | undefined, page: unknown;
+    let line: string;
+    if (GRAB) {
+      // mpv in the background, the shell waiting (a check a second, typed once before mpv starts) for its screenshot;
+      // then the page's screen while mpv still shows the frame (HOLD), then shot.sh's own line once it's done.
+      await s.run(`rm -f /tmp/${tag}.png /tmp/${tag}.out; (${process.env.SHOT2 ? 'SHOT2=1 ' : ''}HOLD=${HOLD} /root/shot.sh ${tag} ${a} >/tmp/${tag}.out 2>&1 &); for i in $(seq 90); do [ -s /tmp/${tag}.png ] && break; sleep 1; done; sleep 1`, 150_000);
+      shotS = (performance.now() - t0) / 1000;
+      page = await grabScreen(tag);
+      line = await s.run(`while pgrep -x shot.sh >/dev/null; do sleep 1; done; cat /tmp/${tag}.out`, 120_000);
+    } else line = await s.run(`${process.env.SHOT2 ? 'SHOT2=1 ' : ''}HOLD=${HOLD} /root/shot.sh ${tag} ${a}`, 120_000);
+    const [size, hw] = line.trim().split(' ');
     // libplacebo's own complaints (its advanced path: "Failed creating FBO texture", "Failed dispatching scaler").
     const placebo = (await s.run(`grep -iE 'disabling|failed|error' /tmp/${tag}.log | sort | uniq -c | head -20 | tr '\\n' ';'`)).trim();
     const venus = (await s.display()).renderer?.venus as { submits?: number; perSubmit?: Record<string, number> } | undefined;
-    results[tag] = { args: a, size, hardwareDecoding: hw === '1', placebo, venus };
+    results[tag] = { args: a, size, hardwareDecoding: hw === '1', placebo, venus, seconds: +((performance.now() - t0) / 1000).toFixed(1), ...(GRAB ? { shotSeconds: shotS && +shotS.toFixed(1), page } : {}) };
     if (venus) s.log(tag, 'venus', JSON.stringify({ submits: venus.submits, ...venus.perSubmit }).slice(0, 300));
     s.log(tag, size, hw === '1' ? 'VA-API' : 'software', placebo);
   }
@@ -69,8 +113,8 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
   // libplacebo's frame cache), compared with the first.
   if (process.env.SHOT2) for (const tag of Object.keys(ARMS)) PAIRS.push([`${tag}-b`, tag]);
   for (const [x, y] of PAIRS) {
-    const [bytes, , off24, differ, max, mean] = (await s.run(`python3 /root/cmp.py /tmp/${x}.rgb /tmp/${y}.rgb`, 300_000)).trim().split(' ').map(Number);
-    results[`${x} ~ ${y}`] = { bytes, off24, differ, max, mean };
+    const [bytes, , off24, differ, max, mean, greenX, greenY] = (await s.run(`python3 /root/cmp.py /tmp/${x}.rgb /tmp/${y}.rgb`, 300_000)).trim().split(' ').map(Number);
+    results[`${x} ~ ${y}`] = { bytes, off24, differ, max, mean, greenness: [greenX, greenY], ...(GRAB ? { page: await comparePages(x, y) } : {}) };
     s.log(`${x} ~ ${y}`, `off by >24: ${off24}, differ: ${differ}, max ${max}, mean ${mean}`);
   }
 } finally {
