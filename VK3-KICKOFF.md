@@ -1,5 +1,5 @@
 **Drafted 2026-10-26, at the user's request, by the session that supervised VK2's last loops and processed the user's
-NVIDIA run; the user is to approve the content before VK3 starts.** Covers **VK3** of the Vulkan plan
+NVIDIA run; the user approved the content (2026-10-26).** Covers **VK3** of the Vulkan plan
 ([docs/plans/graphics.md](docs/plans/graphics.md) §6), M8's graphics track. Later phases get their own kickoffs.
 
 Start **VK3: Venus right everywhere, then the emulated rows.** VK2 made Venus draw: the direct set translated onto
@@ -89,8 +89,10 @@ re-discovering" and each state's.
      with the frames inside the guest, for each way.
 2. **The fence's round trip.** Instrument submit → `onSubmittedWorkDone` → the guest's fence on every host. Shorten
    what can be shortened: fences with nothing to read back, Dawn's device ticks, the copy's place in the frame.
-   Measure on the M4 and SwiftShader, and add the breakdown to nvidia.sh. The bar: Venus's frame at 1 fish no slower
-   than virgl's on any host.
+   **The first suspect is backlog "The host's pollers and their timers"**: a nested `setTimeout(f, 0)` costs 4.6 ms
+   a turn in a Chromium worker, about the 4.5 ms wait, and Venus's ring poller is one. The user: tackle it in VK3, if
+   only to rule a source of doubt out. Measure on the M4 and SwiftShader, and add the breakdown to nvidia.sh. The bar:
+   Venus's frame at 1 fish no slower than virgl's on any host.
 3. **Pipelines made asynchronously, and cached across runs** (plan §7: Metal's ~80 ms first compile): the ring stalls
    while one is made, and WGSL is kept by SPIR-V hash in the browser's storage.
 4. **libplacebo's advanced path:** the M4's green VA-API chroma with `float32-blendable`. Then that format and tier1's

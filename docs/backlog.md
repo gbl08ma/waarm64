@@ -540,7 +540,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Venus against virgl's 2.5 (the M4: 0.9 against 1.4), the display's fences 4.1–5.3 ms on average to come back
   against 0.7 ms on the M4, though the GPU works 0.3 ms. Where the time goes (Dawn's `onSubmittedWorkDone` on Vulkan,
   the bitmap copy, the GPU's clocks at light load) isn't known: instrument the fence's path and add it to
-  `bench/vulkan/nvidia.sh`.
+  `bench/vulkan/nvidia.sh`. The first suspect is "The host's pollers and their timers" below (a nested
+  `setTimeout(f, 0)` turn costs 4.6 ms in a Chromium worker); why the M4 doesn't show it is part of the question.
 - **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
   screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't
