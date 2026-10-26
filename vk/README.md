@@ -121,6 +121,29 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   say (depth and unfilterable float views), component swizzles, rendering into 3D images, multi-view, the pipeline
   cache across runs.
 
+## Checking frames
+
+A program draws right when its frames match lavapipe's. `images/vkframes/build.sh` captures each program of its list
+natively with GFXReconstruct on the dev VM's lavapipe (vkcube with `--use_staging`: the driver can't sample linear
+images, so the guest's vkcube stages its texture too) and replays the chosen frames there offscreen as the references;
+its disk carries the captures, the references and GFXReconstruct's replay built for Debian. In the guest, `run.sh`
+replays a capture on the Venus device offscreen (`--swapchain offscreen`: no WSI, the frames read back through the
+driver's image-to-buffer copies; `-m remap`, since lavapipe's first memory type is host-visible and ours isn't) and
+compares each frame byte by byte (`cmp -l`): how many bytes differ, how many by more than 24, the largest difference.
+`bench/vulkan/venus-run.ts` runs it with `REPLAY=<names>` (on the Mac's GPU too: `SCRIPT=../vulkan/venus-run.ts
+REPLAY=vkcube bench/gpu/sway-mac.sh - target/images/debian-vulkan/disk.qcow2 <name>`), and `tests/page-venus.test.ts`
+asserts vkcube's: at most 0.2% of a frame's bytes off by more than 24.
+
+| vkcube, frames 5, 15, 30 (864 KB each) | bytes that differ | off by more than 24 | largest |
+| --- | --- | --- | --- |
+| SwiftShader (dev VM, Chromium 153) | 14.6–36.3 K | 198–252 (0.03%) | 198–210 |
+| Apple M4 (Metal, Chromium 153) | 15.6–40.4 K | 3–6 | 56–136 |
+| SwiftShader, front face inverted (a planted bug) | 161–172 K | 95–111 K (12%) | 242–244 |
+
+(`bench/vulkan/results/vk2/l3/`.) What differs is edges and texture filtering. The replay checks the driver; vkcube's
+own frames in the guest also pass through Mesa's WSI, whose CPU path (`MESA_VK_WSI_DEBUG=sw`) copies each image to a
+host-visible buffer on the same driver.
+
 ## Not yet
 
 Presentation (L4): Venus's WSI images reach the screen only through a CPU copy in the guest. The module isn't in

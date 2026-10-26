@@ -1,0 +1,10 @@
+# GFXReconstruct's replay for the tests' Debian (images/vkframes/build.sh): Debian 13 for arm64 (images/build.sh's EDK2 container), pinned by
+# digest, apt pinned to the same snapshot.debian.org date. The compiler, CMake and the libraries the replay links.
+FROM docker.io/library/debian@sha256:1808211ab6f37c6fc6a75368651697536f7bf47993f2797befa8908b1254979d
+ARG SNAPSHOT=20260924T000000Z
+RUN rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list \
+ && printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: trixie trixie-updates\nComponents: main\nCheck-Valid-Until: no\n\nTypes: deb\nURIs: http://snapshot.debian.org/archive/debian-security/%s\nSuites: trixie-security\nComponents: main\nCheck-Valid-Until: no\n' \
+      "$SNAPSHOT" "$SNAPSHOT" > /etc/apt/sources.list.d/snapshot.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends g++ binutils cmake ninja-build pkg-config liblz4-dev libzstd-dev zlib1g-dev e2fsprogs \
+ && rm -rf /var/lib/apt/lists/*

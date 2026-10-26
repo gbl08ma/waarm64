@@ -4,6 +4,24 @@ Notes between VK2's sessions (the brief: `M8-VK2-KICKOFF.md`). Newest state firs
 VK1's kickoff and handover are in git history (the commit that added this file); what VK1 built is described where it
 lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", bench/vulkan/REPORT.md's VK1 sections.
 
+## State (2026-10-26, after L3)
+
+- **L3 is done: vkcube draws right** (vk/README.md "Checking frames"). Its calls are captured with GFXReconstruct on
+  the dev VM's lavapipe and replayed in the guest on the Venus device offscreen, and the frames are compared with
+  lavapipe's byte by byte in the guest (`images/vkframes/build.sh`'s disk: the replay built for Debian in Podman, the
+  captures and references, `run.sh`). Frames 5, 15 and 30: 0.03% of the bytes off by more than 24 on SwiftShader,
+  3–6 bytes on the M4's Metal; the front face inverted gives 12%. `tests/page-venus.test.ts` asserts it (≤ 0.2%) when
+  the disk is built; `bench/vulkan/venus-run.ts REPLAY=<names>` runs it, on the Mac too (`sway-mac.sh`,
+  `SCRIPT=../vulkan/venus-run.ts`). Results: `bench/vulkan/results/vk2/l3/`.
+- **For L5:** add vkmark's and vkQuake's captures to build.sh's `PROGRAMS` (both are installed in the dev VM; a
+  program whose frames depend on time needs a capture of fixed frames: GFXReconstruct's replay of it is deterministic
+  anyway). The gate's NVIDIA run isn't scripted: `bench/vulkan/nvidia.sh` runs VK0's arms, not the page; the page on
+  the user's desktop (a whole machine: core, firmware, images, renderer) is L5/L7's to script, once with all the
+  programs.
+- The replay needs `-m remap` (lavapipe's memory type 0 is host-visible; ours is device-local): `vkMapMemory` failed
+  without it. Debian's Venus ICD is `virtio_icd.json` (no architecture in the name). images/Containerfile's digest is
+  amd64's (its image cross-compiles): an arm64 build needs the arm64 digest (images/build.sh's EDK2 container's).
+
 ## State (2026-10-25, after L2)
 
 - **L2 is done: the driver on WebGPU** (vk/README.md "The driver"; `vk/driver/`: wg_device.c, wg_format.c,
@@ -75,7 +93,7 @@ lives: vk/README.md, docs/devices.md "Venus" and "The host-visible window", benc
     flip it and set `wg_flip_y` 1). Check the front face empirically with vkcube's culling and dEQP.
   - Not yet decided by measurement: sync `createRenderPipeline` vs `createRenderPipelineAsync` + stalling the ring
     (kickoff: async parts awaited outside the module's calls). Start with the sync one; measure the first-draw stall.
-- **L3, vkcube draws right:** tests/page-venus.test.ts's sway is headless pixman with `MESA_VK_WSI_DEBUG=sw`, so the
+- **L3, vkcube draws right** (done, through GFXReconstruct's replay rather than the WSI's frames: above). Planned as: tests/page-venus.test.ts's sway is headless pixman with `MESA_VK_WSI_DEBUG=sw`, so the
   WSI copies the image to a host-visible buffer and reads it on the CPU: the whole path without presentation. Check
   pixels (e.g. `grim` in the guest, or vkcube's frame read from sway) against the Venus oracle's
   (tools/venus-oracle, lavapipe) within a small difference.

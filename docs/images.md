@@ -76,6 +76,16 @@ the vtest oracle (`tools/virgl-oracle/deqp.sh`). It then makes the guest that ru
 `bench/gpu/virgl-pairs.ts`, which diffs each read-back with the next (dEQP's result and its reference). The surfaceless target takes EGL's default display:
 `EGL_PLATFORM=surfaceless` picks it.
 
+## Vulkan programs' frames (`images/vkframes/build.sh`)
+
+**On demand only**: the frames that check the Venus renderer's driver (vk/README.md "Checking frames"). Each program
+in the script's list is captured with GFXReconstruct's layer on the dev VM's lavapipe (`tools/vulkan-tools/build-gfxr.sh`,
+under a headless sway), its chosen frames replayed natively on lavapipe offscreen as the references, and
+GFXReconstruct's replay is built for Debian 13 (arm64, at images/'s snapshot date) in rootless Podman
+(`images/vkframes/Containerfile`, ~4 min the first time). Result: `target/vkframes/vkframes.ext4` (55 MiB: the replay,
+`run.sh`, the captures and the references), the second disk of `tests/page-venus.test.ts` and
+`bench/vulkan/venus-run.ts` (`REPLAY=`).
+
 ## Arch Linux for UEFI (`images/arch/`)
 
 **On demand only**: not in `images/build.sh` or `SHA256SUMS` (its `--packages` form makes dEQP's guest,
