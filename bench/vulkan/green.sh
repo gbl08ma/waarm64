@@ -10,7 +10,9 @@
 #   ARMS='bare:vkformats=all|held:' N='15 8' bench/vulkan/green.sh <results.jsonl> [budget s]
 # An arm is `name:knobs[ mpv options]`: knobs go to the page's `?gpu=virgl,vulkan,<knobs>` (empty: as the page has
 # it), the options to both mpv runs (VA-API first, the session's first mpv on Vulkan, then software decoding), e.g.
-# `bicubic:vkformats=all --cscale=bicubic`. N: sessions per arm, one number or one per arm (default 12). Sessions'
+# `bicubic:vkformats=all --cscale=bicubic`. Two knobs are the harness's own (not the page's): `swfirst` runs software
+# decoding first (VA-API's mpv then isn't the session's first on Vulkan), `twice` runs VA-API again after software
+# decoding (vkva2: classified too). N: sessions per arm, one number or one per arm (default 12). Sessions'
 # logs and results: bench/results/local/green-<arm>-<time>/ (and .log, .driver.log).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -36,12 +38,20 @@ while :; do
   spec=${SPECS[$best]} name=${SPECS[$best]%%:*}
   rest=${spec#*:} knobs=${rest%% *} extra=
   [[ "$rest" == *" "* ]] && extra=${rest#* }
+  va="vkva=--hwdec=vaapi --vo=gpu-next --gpu-api=vulkan $extra" no="vkno=--hwdec=no --vo=gpu-next --gpu-api=vulkan $extra"
+  mpv_arms="$va|$no" pairs='vkva~vkno' page=
+  for k in ${knobs//,/ }; do
+    case $k in
+      swfirst) mpv_arms="$no|$va" ;;
+      twice) mpv_arms="$va|$no|vkva2=${va#vkva=}" pairs='vkva~vkno vkva2~vkno' ;;
+      *) page=${page:+$page,}$k ;;
+    esac
+  done
   sname=green-$name-$(date +%m%d-%H%M%S)
   echo "$(date +%T) $sname (${name}: knobs '$knobs', mpv '$extra'; session $((bestn + 1)))"
   t0=$(date +%s)
   rc=0
-  MAC_TIMEOUT=$((left - 30)) SCRIPT=../vulkan/mpv-frames.ts GPU_KNOBS="$knobs" GRAB=1 PAIRS='vkva~vkno' \
-    MPV_ARMS="vkva=--hwdec=vaapi --vo=gpu-next --gpu-api=vulkan $extra|vkno=--hwdec=no --vo=gpu-next --gpu-api=vulkan $extra" \
+  MAC_TIMEOUT=$((left - 30)) SCRIPT=../vulkan/mpv-frames.ts GPU_KNOBS="$page" GRAB=1 PAIRS="$pairs" MPV_ARMS="$mpv_arms" \
     timeout $((left - 5)) bench/gpu/sway-mac.sh - target/arch/desktop.qcow2 "$sname" > "bench/results/local/$sname.driver.log" 2>&1 || rc=$?
   systemd-run --user --scope -q -p MemoryMax=1G -p MemorySwapMax=0 -- timeout 30 node bench/vulkan/green.ts "bench/results/local/$sname" "$OUT" \
     "$name" "$knobs" "$extra" "$COMMIT" $(( $(date +%s) - t0 )) $rc

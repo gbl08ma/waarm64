@@ -30,9 +30,12 @@ else if (!va.hardwareDecoding) why = 'VA-API not used';
 else if (va.size !== no.size) why = `sizes ${va.size} / ${no.size}`;
 else verdict = classify(mpv, mpv.greenness?.[0], mpv.greenness?.[1]);
 const page = verdict === 'error' ? undefined : classify(mpv?.page, va?.page?.greenness, no?.page?.greenness);
+// `twice` (green.sh): VA-API's second run in the session, after software decoding's.
+const va2 = r.vkva2 as Arm | undefined, mpv2 = r['vkva2 ~ vkno'] as (Cmp & { page?: Cmp }) | undefined;
+const verdict2 = !va2 ? undefined : !va2.hardwareDecoding || !mpv2 ? 'error' : classify(mpv2, mpv2.greenness?.[0], mpv2.greenness?.[1]);
 const log = existsSync(`${dir}.log`) ? readFileSync(`${dir}.log`, 'utf8') : '';
 const line = {
-  date: new Date().toISOString(), session: basename(dir), arm, knobs, mpv: extra, commit, verdict, page, ...(why ? { why } : {}),
+  date: new Date().toISOString(), session: basename(dir), arm, knobs, mpv: extra, commit, verdict, page, ...(verdict2 ? { verdict2, page2: classify(mpv2?.page, va2?.page?.greenness, no?.page?.greenness) } : {}), ...(why ? { why } : {}),
   mpvShot: mpv && { off24: mpv.off24, bytes: mpv.bytes, mean: mpv.mean, greenness: mpv.greenness },
   pageShot: mpv?.page && { ...mpv.page, greenness: [va?.page?.greenness, no?.page?.greenness] },
   seconds: Number(seconds), vkvaSeconds: va?.seconds, vkvaShotSeconds: va?.shotSeconds, placebo: va?.placebo || undefined,
@@ -44,5 +47,5 @@ appendFileSync(out, JSON.stringify(line) + '\n');
 const all = readFileSync(out, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { arm: string; verdict: string });
 const tally = new Map<string, Record<string, number>>();
 for (const x of all) { const t = tally.get(x.arm) ?? {}; t[x.verdict] = (t[x.verdict] ?? 0) + 1; tally.set(x.arm, t); }
-console.log(`${line.session}: ${verdict}${page && page !== verdict ? ` (page: ${page})` : ''}${why ? ` (${why})` : ''}, ${seconds} s |`,
+console.log(`${line.session}: ${verdict}${verdict2 ? ` then ${verdict2}` : ''}${page && page !== verdict ? ` (page: ${page})` : ''}${why ? ` (${why})` : ''}, ${seconds} s |`,
   [...tally].map(([a, t]) => `${a} ${t.green ?? 0} green of ${Object.values(t).reduce((n, k) => n + k, 0) - (t.error ?? 0)}${t.error ? ` (+${t.error} error)` : ''}`).join(', '));
