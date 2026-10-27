@@ -146,7 +146,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.equal(bytes.subarray(0, 8).toString('latin1'), 'WEBPCSNP');
   assert.ok(bytes.length > 100_000 && bytes.length < 120e6, `a plausible size: ${bytes.length}`);
   const header = (await openSnapshot(new Blob([bytes]))).header;
-  assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', 'Buildroot (test guest)', 2, null, ['rng', 'keyboard', 'tablet', 'snd', 'blk']]);
+  assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', 'Buildroot (test guest)', 2, null, ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk']]);
   assert.match(String(header.serial), /saved-state/);
   assert.equal((header.disks as { sha256?: string }[])[0].sha256, undefined, 'no hash of the base image is written');
   // It was only paused: it answers, and its steps keep counting.
@@ -232,7 +232,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const needsDisk2 = await headerOnly('disk2.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', needsDisk2);
   await p2.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, /^disk2\.webpcsnap can't be loaded: its machine had other devices \(rng, keyboard, tablet, snd, blk, blk; here: rng, keyboard, tablet, snd, blk\)\.\nOpen this page as that machine was started \(the same disks/);
+  assert.match((await message(p2))!, /^disk2\.webpcsnap can't be loaded: its machine had other devices \(rng, keyboard, tablet, snd, blk, blk; here: rng, keyboard, tablet, snd, clock, blk\)\.\nOpen this page as that machine was started \(the same disks/);
   assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), ['Start', 'Load snapshot…']);
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
 
