@@ -115,16 +115,27 @@ program_free(struct wg_program *p)
    free(p);
 }
 
-void
-wg_program_unref(struct wg_program *p)
+/* A program and its variants. */
+static void
+program_free_all(struct wg_program *p)
 {
-   if (!p || --p->refs)
-      return;
    for (struct wg_program *v = p->variants, *next; v; v = next) {
       next = v->variants;
       program_free(v);
    }
    program_free(p);
+}
+
+void
+wg_program_unref(struct wg_program *p)
+{
+   if (!p || --p->refs)
+      return;
+   for (struct wg_program *m = p->merged, *next; m; m = next) {
+      next = m->merged;
+      program_free_all(m);
+   }
+   program_free_all(p);
 }
 
 static const char *const dims[] = { "1d", "2d", "2d-array", "cube", "cube-array", "3d" };
@@ -221,6 +232,7 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    memcpy(v, p, sizeof(*v));
    v->refs = 1;
    v->listed = false;
+   v->merged = NULL;
    v->pipelines = NULL;
    v->push_group = 0;
    v->compute = 0;
@@ -250,6 +262,17 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    v->variants = p->variants;
    p->variants = v;
    return v;
+}
+
+/* One stage's binding into another's at the same place: the wider of the two. */
+static void
+resource_merge(struct wgsl_resource *m, const struct wgsl_resource *r)
+{
+   if (r->kind == WGSL_STORAGE)
+      m->kind = WGSL_STORAGE;
+   if (r->kind == WGSL_STORAGE_TEXTURE)
+      m->access |= r->access;
+   m->size = MAX2(m->size, r->size);
 }
 
 /* The program of `count` translated stages (visibility by stage) on a pipeline's set layouts. */
@@ -283,16 +306,10 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
          uint32_t k = 0;
          while (k < p->resource_count && (p->resources[k].group != r->group || p->resources[k].binding != r->binding))
             k++;
-         if (k == p->resource_count) {
+         if (k == p->resource_count)
             p->resources[p->resource_count++] = *r;
-         } else {
-            struct wgsl_resource *m = &p->resources[k];
-            if (r->kind == WGSL_STORAGE)
-               m->kind = WGSL_STORAGE;
-            if (r->kind == WGSL_STORAGE_TEXTURE)
-               m->access |= r->access;
-            m->size = MAX2(m->size, r->size);
-         }
+         else
+            resource_merge(&p->resources[k], r);
          vis[k] |= stage;
          p->group_count = MAX2(p->group_count, r->group + 1u);
       }
@@ -333,10 +350,14 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    return p;
 }
 
-/* A program's data across runs (wg_serialize): everything program_create derives from its stages and set layouts. */
+/* A program's data across runs (wg_serialize): everything program_create derives from its stages and set layouts.
+ * The resources go field by field: a struct's padding is indeterminate, and a program's link hashes these bytes (two
+ * stages of one link would otherwise get different programs, and a draw would lose its fragment shader). */
 #define PROGRAM_FIELDS(X)                                                                                              \
-   X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(resources) X(dynamic) X(res_set)          \
-   X(immediate_size) X(push_ubo_size) X(vis) X(pair_count) X(pairs)
+   X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
+   X(push_ubo_size) X(vis) X(pair_count) X(pairs)
+#define RESOURCE_FIELDS(X)                                                                                             \
+   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(nonfiltering) X(access) X(format) X(size)
 
 static void
 program_write(struct blob *b, const struct wg_program *p)
@@ -344,6 +365,11 @@ program_write(struct blob *b, const struct wg_program *p)
 #define W(f) blob_write_bytes(b, &p->f, sizeof(p->f));
    PROGRAM_FIELDS(W)
 #undef W
+   for (uint32_t i = 0; i < MIN2(p->resource_count, WGSL_MAX_RESOURCES); i++) {
+#define W(f) blob_write_bytes(b, &p->resources[i].f, sizeof(p->resources[i].f));
+      RESOURCE_FIELDS(W)
+#undef W
+   }
 }
 
 static void
@@ -352,6 +378,11 @@ program_read(struct blob_reader *b, struct wg_program *p)
 #define R(f) blob_copy_bytes(b, &p->f, sizeof(p->f));
    PROGRAM_FIELDS(R)
 #undef R
+   for (uint32_t i = 0; i < MIN2(p->resource_count, WGSL_MAX_RESOURCES); i++) {
+#define R(f) blob_copy_bytes(b, &p->resources[i].f, sizeof(p->resources[i].f));
+      RESOURCE_FIELDS(R)
+#undef R
+   }
 }
 
 /* A program's link: its data and each stage's WGSL, in stage order. */
@@ -386,6 +417,80 @@ program_objects(struct wg_program *p, uint32_t compute_module)
       p->compute = wg_create_json(WG_KIND_COMPUTE, &j);
       p->compute_module = compute_module;
    }
+}
+
+/* A program of two programs' stages (`a`'s, a draw's vertex shader's, and `b`'s, its fragment shader's), for a draw
+ * whose stages came with different links: each stage is lowered against its pipeline's layout, so both programs' data
+ * describe one layout, and the union of their bindings serves both modules. Equal stages always share a link (a cached
+ * stage keeps the link of its first compile, its partner compiled again gets the same), so this takes a cache whose
+ * entries disagree; it is said once. Kept on `a`, by `b`'s link, and freed with it. */
+struct wg_program *
+wg_program_merge(struct wg_program *a, const struct wg_program *b)
+{
+   for (struct wg_program *m = a->merged; m; m = m->merged)
+      if (!memcmp(m->with, b->link, sizeof(blake3_hash)))
+         return m;
+   static bool said;
+   if (!said)
+      fprintf(stderr, "wg: a draw's vertex and fragment shaders came with different programs; drawn with both's\n");
+   said = true;
+   struct wg_program *m = calloc(1, sizeof(*m));
+   m->refs = 1;
+#define C(f) memcpy(&m->f, &a->f, sizeof(m->f));
+   PROGRAM_FIELDS(C)
+#undef C
+   memcpy(m->resources, a->resources, sizeof(m->resources));
+   m->set_count = MAX2(a->set_count, b->set_count);
+   m->group_count = MAX2(a->group_count, b->group_count);
+   m->immediate_size = MAX2(a->immediate_size, b->immediate_size);
+   m->push_ubo_size = MAX2(a->push_ubo_size, b->push_ubo_size);
+   for (uint32_t i = 0; i < b->resource_count; i++) {
+      const struct wgsl_resource *r = &b->resources[i];
+      uint32_t k = 0;
+      while (k < m->resource_count && (m->resources[k].group != r->group || m->resources[k].binding != r->binding))
+         k++;
+      if (k < m->resource_count) {
+         resource_merge(&m->resources[k], r);
+         m->vis[k] |= b->vis[i];
+      } else if (k < WGSL_MAX_RESOURCES) {
+         m->resources[k] = *r;
+         m->vis[k] = b->vis[i];
+         m->dynamic[k] = b->dynamic[i];
+         m->res_set[k] = b->res_set[i];
+         m->resource_count++;
+      }
+   }
+   for (uint32_t i = 0; i < b->pair_count; i++) {
+      bool known = false;
+      for (uint32_t k = 0; k < m->pair_count; k++)
+         known |= m->pairs[k][0] == b->pairs[i][0] && m->pairs[k][1] == b->pairs[i][1];
+      if (!known && m->pair_count < WGSL_MAX_PAIRS) {
+         m->pairs[m->pair_count][0] = b->pairs[i][0];
+         m->pairs[m->pair_count++][1] = b->pairs[i][1];
+      }
+   }
+   /* By group, then binding, each resource's visibility, dynamic index and set with it. */
+   struct {
+      struct wgsl_resource r;
+      int16_t dynamic;
+      int8_t set;
+      uint8_t vis;
+   } sorted[WGSL_MAX_RESOURCES];
+   for (uint32_t i = 0; i < m->resource_count; i++)
+      sorted[i].r = m->resources[i], sorted[i].dynamic = m->dynamic[i], sorted[i].set = m->res_set[i],
+      sorted[i].vis = m->vis[i];
+   qsort(sorted, m->resource_count, sizeof(sorted[0]), resource_cmp);
+   for (uint32_t i = 0; i < m->resource_count; i++) {
+      m->resources[i] = sorted[i].r, m->dynamic[i] = sorted[i].dynamic, m->res_set[i] = sorted[i].set;
+      m->vis[i] = sorted[i].vis;
+      if (m->dynamic[i] == WG_DYNAMIC_PUSH)
+         m->resources[i].size = m->push_ubo_size;
+   }
+   program_layouts(m);
+   memcpy(m->with, b->link, sizeof(blake3_hash));
+   m->merged = a->merged;
+   a->merged = m;
+   return m;
 }
 
 /* Compiling. */
@@ -527,7 +632,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 /* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
  * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
  * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
-#define WG_SHADER_FORMAT 1
+#define WG_SHADER_FORMAT 2
 
 static bool
 wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)

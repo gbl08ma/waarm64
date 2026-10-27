@@ -160,7 +160,10 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   Shaders are serialized (`wg_serialize`: a stage's WGSL and info, its program's data and link), so pipeline caches
   carry them (a guest program's own, and the store across runs: "The shader cache"). A program is shared by the stages
   of one link (`program_link`: a hash of its data and its stages' WGSL), however each stage came (compiled, or found in a
-  cache while its partner was compiled): a draw needs its vertex and fragment shaders on one program.
+  cache while its partner was compiled): a draw needs its vertex and fragment shaders on one program. The link hashes
+  the resources field by field (a struct's padding is indeterminate). Stages that still come with different programs
+  (a cache whose entries disagree) draw with a program of both's bindings (`wg_program_merge`, said once on stderr),
+  where a draw used to lose its fragment shader silently (VK3 L4c-D).
 - **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views and samplers; bind groups are made at a
   replay, for the program's layout and the set's version (group 3's for its sets' uids and versions hashed), and kept
   on the group's first set, keyed by the layout's uid (ids are reused: a stale bind group of a freed layout's id once
@@ -171,7 +174,9 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 - **Commands** (`wg_cmd.c`): recorded into a list of our own; each draw or dispatch records the state it needs where
   it changed. A submit replays the list into one encoder (passes opened and closed as the commands need; render passes
   from the runtime's dynamic rendering, with legacy passes through its emulation; clears as load ops, or draws for a
-  partial render area and `vkCmdClearAttachments`; blits, resolves and image clears as the worker's draws), copies
+  partial render area and `vkCmdClearAttachments`; LOAD and NONE load, DONT_CARE clears but loads for a partial render
+  area, whose outside Vulkan keeps; a pass that resumes a suspended one (`VK_RENDERING_RESUMING_BIT`) loads and clears
+  nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); blits, resolves and image clears as the worker's draws), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer ↔ image copies whose rows
   aren't 256 bytes apart go a row of blocks at a time, but for depth and stencil, which WebGPU copies only whole
   (the worker realigns their rows through a temporary buffer); what WebGPU can't copy at all (into depth32float's or

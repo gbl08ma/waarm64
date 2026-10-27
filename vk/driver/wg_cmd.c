@@ -408,16 +408,24 @@ wg_CmdBindIndexBuffer2(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceS
 
 /* Render passes. */
 
+/* A load op as WebGPU's. LOAD and NONE keep the contents; CLEAR and DONT_CARE clear them, but where the render area is
+ * short of the attachment they load (Vulkan keeps what's outside the area: a CLEAR clears its area with a draw, the
+ * pass's clear rects) and so does a pass that resumes a suspended one (the render pass instance goes on: no load op
+ * applies again). */
 static const char *
-load_op(VkAttachmentLoadOp op)
+load_op(VkAttachmentLoadOp op, bool partial, bool resumed)
 {
-   return op == VK_ATTACHMENT_LOAD_OP_LOAD ? "load" : "clear";
+   if (resumed || partial || op == VK_ATTACHMENT_LOAD_OP_LOAD || op == VK_ATTACHMENT_LOAD_OP_NONE)
+      return "load";
+   return "clear";
 }
 
+/* A store op as WebGPU's: DONT_CARE discards, but a suspended pass stores whatever it says, since its WebGPU pass ends
+ * here and the one that resumes it loads. */
 static const char *
-store_op(VkAttachmentStoreOp op)
+store_op(VkAttachmentStoreOp op, bool suspending)
 {
-   return op == VK_ATTACHMENT_STORE_OP_DONT_CARE ? "discard" : "store";
+   return op == VK_ATTACHMENT_STORE_OP_DONT_CARE && !suspending ? "discard" : "store";
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -455,6 +463,9 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
       }
    }
    partial = area.offset.x || area.offset.y || area.extent.width < width || area.extent.height < height;
+   /* A pass that suspends or resumes (VK_RENDERING_SUSPENDING_BIT, RESUMING_BIT) is part of one render pass instance
+    * with its neighbours: only its first part loads or clears, only its last part stores or discards. */
+   const bool resumed = info->flags & VK_RENDERING_RESUMING_BIT, suspending = info->flags & VK_RENDERING_SUSPENDING_BIT;
    bool first_clear = true;
    for (uint32_t i = 0; i < cmd->pass.color_count; i++) {
       const VkRenderingAttachmentInfo *a = &info->pColorAttachments[i];
@@ -464,18 +475,19 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          continue;
       }
       cmd->pass.colors[i] = v->vk.format;
-      const bool clear = a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
+      const bool clear = !resumed && a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
       const VkClearColorValue *c = &a->clearValue.color;
       char value[160];
+      /* The four numbers alone: a clear value's as an array, a clear rect's after the attachment's index. */
       if (v->fmt->flags & WG_FMT_UINT)
-         snprintf(value, sizeof(value), "[%u,%u,%u,%u]", c->uint32[0], c->uint32[1], c->uint32[2], c->uint32[3]);
+         snprintf(value, sizeof(value), "%u,%u,%u,%u", c->uint32[0], c->uint32[1], c->uint32[2], c->uint32[3]);
       else if (v->fmt->flags & WG_FMT_SINT)
-         snprintf(value, sizeof(value), "[%d,%d,%d,%d]", c->int32[0], c->int32[1], c->int32[2], c->int32[3]);
+         snprintf(value, sizeof(value), "%d,%d,%d,%d", c->int32[0], c->int32[1], c->int32[2], c->int32[3]);
       else
-         snprintf(value, sizeof(value), "[%.9g,%.9g,%.9g,%.9g]", c->float32[0], c->float32[1], c->float32[2],
+         snprintf(value, sizeof(value), "%.9g,%.9g,%.9g,%.9g", c->float32[0], c->float32[1], c->float32[2],
                   c->float32[3]);
-      wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":%s", i ? "," : "", v->att,
-                     partial && clear ? "load" : load_op(a->loadOp), store_op(a->storeOp), value);
+      wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":[%s]", i ? "," : "", v->att,
+                     load_op(a->loadOp, partial, resumed), store_op(a->storeOp, suspending), value);
       if (v->slice >= 0)
          wg_json_printf(&j, ",\"depthSlice\":%d", v->slice);
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
@@ -502,20 +514,20 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          cmd->pass.stencil = sv->vk.format;
       wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", ds->att);
       if (flags & WG_FMT_DEPTH) {
-         const bool clear = dv && d->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
+         const bool clear = dv && !resumed && d->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
          wg_json_printf(&j, ",\"depthLoadOp\":\"%s\",\"depthStoreOp\":\"%s\",\"depthClearValue\":%.9g",
-                        dv ? (partial && clear ? "load" : load_op(d->loadOp)) : "load",
-                        dv ? store_op(d->storeOp) : "store", dv ? CLAMP(d->clearValue.depthStencil.depth, 0, 1) : 1.0);
+                        dv ? load_op(d->loadOp, partial, resumed) : "load",
+                        dv ? store_op(d->storeOp, suspending) : "store", dv ? CLAMP(d->clearValue.depthStencil.depth, 0, 1) : 1.0);
          if (partial && clear) {
             wg_json_printf(&clears, ",\"depth\":%.9g", d->clearValue.depthStencil.depth);
             any_clear = true;
          }
       }
       if (flags & WG_FMT_STENCIL) {
-         const bool clear = sv && s->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
+         const bool clear = sv && !resumed && s->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
          wg_json_printf(&j, ",\"stencilLoadOp\":\"%s\",\"stencilStoreOp\":\"%s\",\"stencilClearValue\":%u",
-                        sv ? (partial && clear ? "load" : load_op(s->loadOp)) : "load",
-                        sv ? store_op(s->storeOp) : "store", sv ? s->clearValue.depthStencil.stencil : 0);
+                        sv ? load_op(s->loadOp, partial, resumed) : "load",
+                        sv ? store_op(s->storeOp, suspending) : "store", sv ? s->clearValue.depthStencil.stencil : 0);
          if (partial && clear) {
             wg_json_printf(&clears, ",\"stencil\":%u", s->clearValue.depthStencil.stencil);
             any_clear = true;
@@ -673,12 +685,16 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
       return false;
    if (dyn->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK && dyn->ia.primitive_topology >= 3)
       return false;
-   struct wg_program *base = vs->program, *p = program_for(cmd, 0, base);
+   /* Its stages on one program; if they came with different ones (wg_program_merge), a program of both's. */
+   struct wg_program *base = vs->program;
+   if (fs && fs->program && fs->program != base)
+      base = wg_program_merge(base, fs->program);
+   struct wg_program *p = program_for(cmd, 0, base);
 
    struct wg_pipeline_key k;
    memset(&k, 0, sizeof(k));
    k.vs = vs;
-   k.fs = fs && fs->program == base ? fs : NULL;
+   k.fs = fs && fs->program ? fs : NULL;
    k.topology = dyn->ia.primitive_topology;
    if (indexed && (k.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP ||
                    k.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) && dyn->ia.primitive_restart_enable)

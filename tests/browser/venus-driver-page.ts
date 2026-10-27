@@ -16,6 +16,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
+  wgt_link(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number;
 };
 
 /** Two runs of the program, each on a renderer of its own (a machine started again), sharing a shader store: the
@@ -313,4 +314,54 @@ export async function runInFlight(scenario: 'upload' | 'since') {
   }
   device.destroy();
   return { checks, errors, warnings: v.gpu.stats.errors };
+}
+
+/**
+ * VK3 L4c-D (the static review's findings 4 and 6, and its suspended passes), after the test program's scene
+ * (vk/driver/wg_test.c `wgt_link`, `wgt_pass`). `link`: a draw whose vertex and fragment shaders came with different
+ * programs (a pipeline cache's entries disagreeing on their link), its quad drawn into the scene's image. `none`,
+ * `partial`, `resume`, `resumePartial`: load ops NONE, DONT_CARE over part of the attachment, and a pass suspended
+ * and resumed (over the whole, then part), on an image cleared blue first. Named pixels of the image, and WebGPU's
+ * errors.
+ */
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial') {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const ex = v.raw as unknown as Test;
+  const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+  const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
+  const [vs, vn] = put(await words(spirv.vert)), [fs, fn] = put(await words(spirv.frag)), [cs, cn] = put(await words(spirv.comp));
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  const wait = async (done: () => number, what: string) => {
+    for (let k = 0; k < 500 && !done(); k++) await new Promise((r) => setTimeout(r, 10));
+    if (!done()) throw new Error(`${what}'s fence never signalled`);
+  };
+  try {
+    if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: text(ex.wgt_error() >>> 0), errors };
+    await wait(() => ex.wgt_done(), 'the scene');
+    const index = { none: 0, partial: 1, resume: 2, resumePartial: 3 } as const;
+    let at: number;
+    if (scenario === 'link') {
+      new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
+      if (ex.wgt_link()) return { error: text(ex.wgt_error() >>> 0), errors };
+      await wait(() => ex.wgt_draw_done(), 'the draw');
+      at = ex.wgt_pixels() >>> 0;
+    } else {
+      if (ex.wgt_pass(index[scenario])) return { error: text(ex.wgt_error() >>> 0), errors };
+      await wait(() => ex.wgt_pass_done(), 'the passes');
+      at = ex.wgt_pass_pixels() >>> 0;
+    }
+    const px = (x: number, y: number) => [...new Uint8Array(memory.buffer, at + (y * 64 + x) * 4, 4)];
+    const pixels = { topLeft: px(16, 8), bottomLeft: px(16, 56), topRight: px(48, 8), bottomRight: px(48, 56) };
+    device.destroy();
+    return { pixels, errors };
+  } catch (e) {
+    return { error: String(e), errors };
+  }
 }

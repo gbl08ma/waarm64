@@ -75,6 +75,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_separate_stencil_usage = true,
       .KHR_copy_commands2 = true,
       .KHR_dynamic_rendering = true,
+      /* NONE load and store ops: WebGPU's load and store (wg_cmd.c `load_op`). */
+      .KHR_load_store_op_none = true,
+      .EXT_load_store_op_none = true,
       .KHR_shader_integer_dot_product = true,
       .KHR_shader_non_semantic_info = true,
       .KHR_shader_terminate_invocation = true,

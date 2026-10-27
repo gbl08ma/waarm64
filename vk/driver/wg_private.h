@@ -327,6 +327,10 @@ struct wg_program {
     * shader of one link share one program however they came. */
    blake3_hash link;
    bool listed;
+   /* Programs of this one's stages with another program's (wg_program_merge), by that one's link (`with`): a list
+    * through `merged`, freed with this one. */
+   struct wg_program *merged;
+   blake3_hash with;
 };
 
 struct wg_shader {
@@ -346,6 +350,7 @@ const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
  * samplers they're sampled with as non-filtering; made at its first use, kept with the program. */
 struct wg_program *wg_program_variant(struct wg_program *p, uint64_t mask);
+struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
 
 /* The state a render pipeline is made with (wg_cmd.c fills it at each draw; zeroed whole so it hashes as bytes). */
 struct wg_pipeline_key {

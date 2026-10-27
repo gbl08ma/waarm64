@@ -97,8 +97,9 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   - [x] C (done 2026-10-27, "State after L4c-C"): finding 3 (the import's ordering: the readback before the picture
     lands, `forget` against the deferred `bind`/`plane`, the `blob-ctx` attach against the ring) and "the import maps
     outlive resets".
-  - [ ] D: findings 4 and 6 (the lost fragment stage: padding in the link hash, fail loudly; load ops NONE and partial
-    DONT_CARE) and "suspended and resumed passes". Then green.sh again if A didn't settle it.
+  - [x] D (done 2026-10-27, "State after L4c-D"): findings 4 and 6 (the lost fragment stage: padding in the link hash,
+    a program of both stages' when they differ; load ops NONE and partial DONT_CARE) and "suspended and resumed passes".
+    No green.sh: A settled it (0 of 32).
   - [ ] E, F (after the green is settled, before L5): finding 5 (the core's page-crossing store: the JIT's rules), and
     the review's other real defects.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
@@ -183,6 +184,17 @@ decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 
   texture, all-zero LUT weights or a chroma FBO never rendered would all give exactly these: "the import never wrote
   chroma" is one candidate among several.
 
+
+## State (2026-10-27, after L4c-D)
+
+- **Done: findings 4, 6 and "suspended and resumed passes", all confirmed** by tests that failed on the old code
+  (tests/venus-driver.test.ts "passes: …", wg_test.c `wgt_link`, `wgt_pass`): stages with different programs drew with
+  no fragment stage (WebGPU refused the pipeline); NONE and a partial DONT_CARE cleared; a resumed pass cleared again
+  and a suspending DONT_CARE discarded. Fixed: resources hashed field by field, `wg_program_merge`, `load_op`/`store_op`
+  (vk/README.md). Found on the way: a partial render area's CLEAR cleared to zeros (its clear rect's colour nested).
+- **dEQP-VK:** KHR/EXT_load_store_op_none advertised; 119 cases newly pass (60 resumed, 57 op-none, 2 low_res_z),
+  172 added to tests/deqp/vk.txt; 34 op-none failures in the backlog. CI: ci.sh, ci-debian.sh, ci-deqp-vk.sh OK.
+  No hot path changed (no benchmark).
 
 ## State (2026-10-27, after L4c-C)
 

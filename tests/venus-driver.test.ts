@@ -171,3 +171,30 @@ for (const [scenario, what] of [
     assert.equal(r.warnings, 0, 'the worker warned');
   });
 }
+
+// VK3 L4c-D (the static review's findings 4 and 6, and "suspended and resumed passes"): what a pass keeps.
+const blue = [0, 0, 255, 255], red = [255, 0, 0, 255], green = [0, 255, 0, 255], yellow = [255, 255, 0, 255];
+for (const [scenario, what, want] of [
+  // The scene's quad (texture: red over green) in front of the yellow band only if the draw kept its fragment shader.
+  ['link', 'a draw whose stages came with different programs keeps its fragment shader', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  ['none', 'LOAD_OP_NONE keeps the attachment\'s contents', { topLeft: blue, bottomLeft: blue, topRight: blue, bottomRight: blue }],
+  ['partial', 'DONT_CARE over part of the attachment keeps what\'s outside the render area', { topRight: blue, bottomRight: blue }],
+  ['resume', 'a resumed pass doesn\'t clear again, and a suspended one stores whatever its store op', { topLeft: red, bottomLeft: red, topRight: green, bottomRight: green }],
+  ['resumePartial', 'a resumed pass over part of the attachment doesn\'t clear its area again', { topLeft: red, bottomLeft: blue, topRight: green, bottomRight: blue }],
+] as const) {
+  test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    // After the first test, which compiled the shaders.
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runPass(spirv: object, s: string): Promise<Record<string, unknown>> } }).venus.runPass({
+      vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv' }, s), scenario);
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, String(r.error));
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    const pixels = r.pixels as Record<string, number[]>;
+    for (const [k, v] of Object.entries(want)) assert.deepEqual(pixels[k], v, `${k}: ${JSON.stringify(pixels)}`);
+  });
+}

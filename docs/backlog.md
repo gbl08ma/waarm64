@@ -637,8 +637,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Rendering**: stencil state per face (WebGPU has one reference and one pair of masks: about a third of
     `pipeline.monolithic.stencil` fails), indexed triangle fans (non-indexed ones draw through the device's fan
     indices), depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and
-    multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), render passes
-    resumed across command buffers (`renderpasses.dynamic_rendering.*resuming*`), vertex buffer offsets that aren't
+    multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), 34 of
+    `renderpasses.*.load_store_op_none`'s 91 supported cases (VK3 L4c-D: stencil8 attachments, depth or stencil
+    NONE/DONT_CARE, an integer resolve, `alphablend`; not looked into further), vertex buffer offsets that aren't
     multiples of 4, early fragment tests (`fragment_operations.early_fragment`), indexed indirect strips
     (`draw.renderpass.indirect_draw.indexed*triangle_strip`, not looked into).
   - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%

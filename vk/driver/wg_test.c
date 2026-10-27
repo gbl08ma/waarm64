@@ -38,6 +38,10 @@ int wgt_fl_init(uint8_t *window);
 uint8_t *wgt_fl_map(uint32_t which);
 int wgt_fl_submit(uint32_t i);
 int wgt_fl_done(uint32_t i);
+int wgt_link(void);
+int wgt_pass(uint32_t scenario);
+const uint8_t *wgt_pass_pixels(void);
+int wgt_pass_done(void);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -69,6 +73,8 @@ static struct {
    VkBuffer vertices, indices;
    VkDescriptorSet set;
    VkCommandPool pool;
+   VkImage color;
+   VkBuffer readback;
    uint32_t w, h;
 } scene;
 
@@ -449,6 +455,8 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    scene.vertices = vertices;
    scene.indices = indices;
    scene.set = sets[0];
+   scene.color = color;
+   scene.readback = readback;
    scene.w = W;
    scene.h = H;
    return 0;
@@ -634,8 +642,18 @@ static VkFence draw_fence;
 static VkShaderModule draw_fs;
 static VkPipeline last;
 
+static int draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline given);
+
 EXPORT int
 wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant)
+{
+   return draw_with(fs, fs_words, variant, VK_NULL_HANDLE);
+}
+
+/* wgt_draw's draw, with `given` (not destroyed here) in place of the pipeline if not null, the colour image then copied
+ * into wgt_pixels. */
+static int
+draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline given)
 {
    static PFN_vkResetCommandPool ResetCommandPool;
    static PFN_vkDestroyPipeline DestroyPipeline;
@@ -646,7 +664,7 @@ wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant)
    if (!draw_fence) {
       const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
       CHECK(CreateFence(dev, &fi, NULL, &draw_fence));
-      if (shader(fs, fs_words, &draw_fs))
+      if (fs && shader(fs, fs_words, &draw_fs))
          return 1;
       const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
       CHECK(CreateCommandPool(dev, &cpo, NULL, &scene.pool));
@@ -661,8 +679,8 @@ wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant)
    last = VK_NULL_HANDLE;
    CHECK(ResetFences(dev, 1, &draw_fence));
    CHECK(ResetCommandPool(dev, scene.pool, 0));
-   VkPipeline pipeline = scene.pipeline;
-   if (variant) {
+   VkPipeline pipeline = given ? given : scene.pipeline;
+   if (variant && !given) {
       const float k = (float)variant;
       const VkSpecializationMapEntry entry = { 0, 0, 4 };
       const VkSpecializationInfo spec = { 1, &entry, 4, &k };
@@ -699,13 +717,204 @@ wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant)
    CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
    CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
    CmdEndRenderPass(cmd);
+   if (given) {
+      const VkBufferImageCopy down = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                       .imageExtent = { scene.w, scene.h, 1 } };
+      CmdCopyImageToBuffer(cmd, scene.color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, scene.readback, 1, &down);
+   }
    CHECK(EndCommandBuffer(cmd));
    const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
                                  .pCommandBuffers = &cmd };
    CHECK(QueueSubmit(queue, 1, &submit, draw_fence));
    /* Freed at the next draw, once this one is done. */
-   last = variant ? pipeline : VK_NULL_HANDLE;
+   last = variant && !given ? pipeline : VK_NULL_HANDLE;
    return 0;
+}
+
+/*
+ * A draw whose vertex and fragment shaders came with different programs (VK3 L4c-D; the review's finding 4), after
+ * wgt_run: wgt_run's graphics pipeline made through a pipeline cache, the cache's data changed so that its vertex
+ * shader's link (the last 32 bytes of its entry, wg_shader.c `wg_serialize`) differs from its fragment shader's, a cache
+ * made from that data, and the pipeline made again from it (both stages found there: the fragment shader joins the live
+ * program of its link, the vertex shader gets one of its own). Then wgt_draw's quad with it, copied into wgt_pixels;
+ * wgt_draw_done says when. Its left half is the texture's (red over green) only if the draw kept its fragment shader.
+ */
+EXPORT int
+wgt_link(void)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   const VkPipelineCacheCreateInfo pci = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+   VkPipelineCache c1, c2;
+   CHECK(CreatePipelineCache(dev, &pci, NULL, &c1));
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   gpi.pStages = scene.stages;
+   VkPipeline p1, p2;
+   CHECK(CreateGraphicsPipelines(dev, c1, 1, &gpi, NULL, &p1));
+   size_t n = 0;
+   CHECK(GetPipelineCacheData(dev, c1, &n, NULL));
+   uint8_t *d = malloc(n);
+   CHECK(GetPipelineCacheData(dev, c1, &n, d));
+   /* vk_pipeline_cache.c's data: the header (its size first), a count, then each object's type, key size, data size,
+    * key and (8-aligned) data. A shader's data: format, stage (0: vertex), translated, its WGSL, ..., its link. */
+   uint32_t at, count, changed = 0;
+   memcpy(&at, d, 4);
+   memcpy(&count, d + at, 4);
+   at += 4;
+   for (uint32_t i = 0; i < count && at + 12 <= n; i++) {
+      uint32_t head[3];
+      memcpy(head, d + at, 12);
+      at = (at + 12 + head[1] + 7) & ~7u;
+      const uint32_t size = head[2];
+      if (at + size > n)
+         break;
+      uint32_t shader[3];
+      if (size >= 12 + 32) {
+         memcpy(shader, d + at, 12);
+         bool vertex = false;
+         for (uint32_t k = 12; k + 7 <= size && !vertex; k++)
+            vertex = !memcmp(d + at + k, "@vertex", 7);
+         if (shader[1] == 0 && shader[2] == 1 && vertex) {
+            d[at + size - 1] ^= 0x5a;
+            changed++;
+         }
+      }
+      at += size;
+   }
+   if (changed != 1) {
+      snprintf(error, sizeof(error), "%u vertex shaders in a pipeline cache's %u objects", changed, count);
+      return 1;
+   }
+   const VkPipelineCacheCreateInfo pci2 = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+                                            .initialDataSize = n, .pInitialData = d };
+   CHECK(CreatePipelineCache(dev, &pci2, NULL, &c2));
+   free(d);
+   CHECK(CreateGraphicsPipelines(dev, c2, 1, &gpi, NULL, &p2));
+   return draw_with(NULL, 0, 0, p2);
+}
+
+/*
+ * Load and store ops (VK3 L4c-D; the review's finding 6 and "suspended and resumed passes"), after wgt_run: a 64×64
+ * RGBA8 image, first cleared blue by a pass of its own, then, by `scenario`, with dynamic rendering:
+ * 0: a pass loading with LOAD_OP_NONE (clear value red): stays blue;
+ * 1: a pass over the left half only, DONT_CARE (clear value red): the right half stays blue;
+ * 2: a pass clearing green that suspends (its store op DONT_CARE), red put into its left half by vkCmdClearAttachments,
+ *    then the pass resuming it (CLEAR green, STORE): the left half red, the right green;
+ * 3: as 2 over the top half only (CLEAR as clear rects): top left red, top right green, the bottom half blue.
+ * All in one submit, the image then copied into wgt_pass_pixels (rows of 256 bytes); wgt_pass_done says when.
+ */
+static struct {
+   VkImage image;
+   VkImageView view;
+   VkBuffer readback;
+   uint8_t *pixels;
+   VkFence fence;
+   VkCommandPool pool;
+} lo;
+
+static void
+rendering(VkCommandBuffer cmd, VkRect2D area, VkRenderingFlags flags, VkAttachmentLoadOp load,
+          VkAttachmentStoreOp store, const float color[4])
+{
+   static PFN_vkCmdBeginRendering CmdBeginRendering;
+   if (!CmdBeginRendering)
+      CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   const VkRenderingAttachmentInfo att = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = lo.view,
+      .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .loadOp = load, .storeOp = store,
+      .clearValue = { .color = { .float32 = { color[0], color[1], color[2], color[3] } } },
+   };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .flags = flags, .renderArea = area,
+                                .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &att };
+   CmdBeginRendering(cmd, &ri);
+}
+
+EXPORT int
+wgt_pass(uint32_t scenario)
+{
+   static PFN_vkCmdEndRendering CmdEndRendering;
+   static PFN_vkCmdClearAttachments CmdClearAttachments;
+   if (!dev && init())
+      return 1;
+   if (!lo.image) {
+      CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+      CmdClearAttachments = (PFN_vkCmdClearAttachments)GetDeviceProcAddr(dev, "vkCmdClearAttachments");
+      if (image(VK_FORMAT_R8G8B8A8_UNORM, 64, 64,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
+                &lo.image, &lo.view) ||
+          buffer(64 * 64 * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &lo.readback, (void **)&lo.pixels))
+         return 1;
+      const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fi, NULL, &lo.fence));
+      const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+      CHECK(CreateCommandPool(dev, &cpo, NULL, &lo.pool));
+   } else {
+      CHECK(ResetFences(dev, 1, &lo.fence));
+   }
+   VkCommandBuffer cmd;
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                             .commandPool = lo.pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                             .commandBufferCount = 1 };
+   CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(cmd, &begin));
+   VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                              .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                              .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                              .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .image = lo.image,
+                              .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,
+                      NULL, 0, NULL, 1, &b);
+   const float blue[4] = { 0, 0, 1, 1 }, red[4] = { 1, 0, 0, 1 }, green[4] = { 0, 1, 0, 1 };
+   const VkRect2D full = { { 0, 0 }, { 64, 64 } }, left = { { 0, 0 }, { 32, 64 } }, top = { { 0, 0 }, { 64, 32 } };
+   rendering(cmd, full, 0, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, blue);
+   CmdEndRendering(cmd);
+   if (scenario == 0) {
+      rendering(cmd, full, 0, VK_ATTACHMENT_LOAD_OP_NONE, VK_ATTACHMENT_STORE_OP_STORE, red);
+      CmdEndRendering(cmd);
+   } else if (scenario == 1) {
+      rendering(cmd, left, 0, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE, red);
+      CmdEndRendering(cmd);
+   } else {
+      const VkRect2D area = scenario == 2 ? full : top;
+      rendering(cmd, area, VK_RENDERING_SUSPENDING_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                green);
+      const VkClearAttachment ca = { VK_IMAGE_ASPECT_COLOR_BIT, 0, { .color = { .float32 = { 1, 0, 0, 1 } } } };
+      const VkClearRect rect = { { { 0, 0 }, { 32, area.extent.height } }, 0, 1 };
+      CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+      CmdEndRendering(cmd);
+      rendering(cmd, area, VK_RENDERING_RESUMING_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE,
+                green);
+      CmdEndRendering(cmd);
+   }
+   b.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+   b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+   b.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+   b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL,
+                      0, NULL, 1, &b);
+   const VkBufferImageCopy down = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                    .imageExtent = { 64, 64, 1 } };
+   CmdCopyImageToBuffer(cmd, lo.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, lo.readback, 1, &down);
+   CHECK(EndCommandBuffer(cmd));
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, lo.fence));
+   return 0;
+}
+
+EXPORT const uint8_t *
+wgt_pass_pixels(void)
+{
+   return lo.pixels;
+}
+
+EXPORT int
+wgt_pass_done(void)
+{
+   return lo.fence && GetFenceStatus(dev, lo.fence) == VK_SUCCESS;
 }
 
 EXPORT int
