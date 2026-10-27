@@ -646,6 +646,26 @@ The dev VM sees no real USB devices, but the Mac mini that hosts it does. A by-h
   guest and read back in short pieces. Interactive bash drops the rest of a command line when a child dies of
   SIGINT, so stop a timed run with `timeout` (SIGTERM) or a count, not `timeout -s INT`.
 
+## Out-of-context reviews
+
+Loops review their own work with a context full of their own theory; a fresh reader finds what they miss (VK3,
+2026-10-27: one static review of the path of a VA-API picture under Venus found 14 real defects: VK3-HANDOVER.md
+"The green"). So, besides the tests:
+- **When:** at each track's end, over the code the track changed (before its final CI); mid-track every ~3 loops,
+  or after a loop that adds a subsystem (a new path through the driver, the worker, the core), over that area.
+- **Who:** a fresh agent (a subagent, or a cloud session: [cloud.md](cloud.md)) with only the repo. Read-only on
+  main.
+- **The brief:** short and neutral: the area and its entry points (docs and files), "a careful static review for real
+  defects: races, missing ordering or synchronization, lifetimes and reuse, silent failures, spec gaps, state that
+  differs between a first and a later run". A symptom may be named when there is one, never a theory, the
+  handover's findings or what has been ruled out: they steer the reader away from what they didn't think of.
+- **The output:** one Markdown file on a `review/<area>` branch, findings ranked, each with file:line, the defect,
+  the condition or interleaving that triggers it, and a test that would confirm it; plus what was checked and found
+  fine.
+- **After:** the supervisor (or the session) triages each finding into a fix loop or the backlog. A fix starts with
+  its confirming test, failing first (as a planted bug for a JIT rule). The findings move into docs/backlog as they
+  are fixed or filed; the branch is deleted.
+
 ## Planned layers
 
 - **In-guest suites** not yet run: more LTP areas (need `mkfs` tools and a scratch disk), the

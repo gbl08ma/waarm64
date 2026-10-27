@@ -989,6 +989,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **Out-of-context reviews of Venus's other areas** (testing.md "Out-of-context reviews"; the user, 2026-10-27: after
+  VK3's fix loops for the green's review): (1) the translator, NIR → WGSL (vk/compiler/), and the caps and features the
+  device advertises against what WebGPU allows; (2) the driver outside the import path: descriptors and bind groups,
+  pipelines and the shader store, queries, command recording and replay (vk/driver/, web/venus-gpu.ts). Each a cloud
+  session with a neutral brief, as the green's (`origin/review/venus-green`).
+
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
   hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long
