@@ -192,10 +192,8 @@ decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 
 - **Worth not re-discovering:** Venus's query feedback fills a slot and copies results into it in one submit; a first
   version of the fix took the fill's bytes for the guest's and mixed timestamp bytes (the scene's GPU ms became 1e11).
   The "ordered" check covers it. Read the scene's GPU ms as a correctness check after any completion change.
-- **Cost:** VK0's scene at 1,000 fish on the M4, alternated: before 2.428, 2.605, 2.567, after 2.549, 2.589, 2.599 ms a
-  frame: overlapping, no difference (`results/vk3/l4c/b-scene-1000-*.json`).
-- **The green: 0 of 12 bare** after A+B (`results/vk3/l4c/b-green.jsonl`); 0 of 32 since A.
-- **CI at the commit:** ci.sh OK (439 s), ci-debian.sh OK (369 s), ci-deqp-vk.sh OK (243 s).
+- **Cost:** none on the scene at 1,000 fish (M4, rounds overlap: `results/vk3/l4c/b-scene-1000-*.json`). **Green: 0 of
+  12 bare** after A+B (`b-green.jsonl`; 0 of 32 since A). CI: ci.sh, ci-debian.sh, ci-deqp-vk.sh OK.
 
 ## State (2026-10-27, after L4c-A)
 
