@@ -16,7 +16,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
-  wgt_link(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number;
+  wgt_link(): number; wgt_variant(scenario: number): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number;
 };
 
@@ -322,10 +322,11 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (vk/driver/wg_test.c `wgt_link`, `wgt_pass`). `link`: a draw whose vertex and fragment shaders came with different
  * programs (a pipeline cache's entries disagreeing on their link), its quad drawn into the scene's image. `none`,
  * `partial`, `resume`, `resumePartial`: load ops NONE, DONT_CARE over part of the attachment, and a pass suspended
- * and resumed (over the whole, then part), on an image cleared blue first. Named pixels of the image, and WebGPU's
- * errors.
+ * and resumed (over the whole, then part), on an image cleared blue first. `strip`, `vertexOnly`, `lineBias`
+ * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
+ * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -347,10 +348,11 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: text(ex.wgt_error() >>> 0), errors };
     await wait(() => ex.wgt_done(), 'the scene');
     const index = { none: 0, partial: 1, resume: 2, resumePartial: 3 } as const;
+    const variant = { strip: 0, vertexOnly: 1, lineBias: 2 } as const;
     let at: number;
-    if (scenario === 'link') {
+    if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
-      if (ex.wgt_link()) return { error: text(ex.wgt_error() >>> 0), errors };
+      if (scenario === 'link' ? ex.wgt_link() : ex.wgt_variant(variant[scenario])) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draw');
       at = ex.wgt_pixels() >>> 0;
     } else {
@@ -371,10 +373,12 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for
  * (vk/driver/wg_test.c `wgt_misc`). `copy`: buffer copies at offsets and sizes that aren't 4-aligned, from host-visible,
  * device-local and GPU-written memory; `clear`: a clear of a format WebGPU can't render to, and of a 3D image;
- * `blit`: a blit from a 3D image's second slice; `push`: 5,000 dispatches' push constants in one submit. Each check:
- * the first byte that differs from what Vulkan says (-1: none).
+ * `blit`: a blit from a 3D image's second slice; `push`: 5,000 dispatches' push constants in one submit; `pushGrown`:
+ * the same after a submit of one (the push buffer grown); `freedImage`: a submit after a linear image's memory was
+ * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
+ * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -388,11 +392,11 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push', push
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   for (let k = 0; k < 1000 && !ex.wgt_misc_done(); k++) await new Promise((r) => setTimeout(r, 10));
   if (!ex.wgt_misc_done()) return { error: 'the fence never signalled', errors, warnings: v.gpu.stats.errors };
-  const size = scenario === 'push' ? 20000 : 4096;
+  const size = scenario === 'push' || scenario === 'pushGrown' ? 20000 : 4096;
   const got = new Uint8Array(memory.buffer, ex.wgt_misc_map() >>> 0, size).slice();
   const want = new Uint8Array(size).fill(0xee);
   const u32 = (b: Uint8Array) => new Uint32Array(b.buffer, b.byteOffset, b.length >> 2);
@@ -416,6 +420,17 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push', push
   } else if (scenario === 'blit') {
     u32(want.subarray(0, 64)).fill(0xff00ff00);
     Object.assign(checks, { slice: [0, 4096, want] });
+  } else if (scenario === 'dynamicStorage') {
+    const w = u32(want.subarray(256, 272));
+    for (let k = 0; k < 4; k++) w[k] = k * 3 + 1;
+    Object.assign(checks, { dynamic: [0, 4096, want] });
+  } else if (scenario === 'oddStorage') {
+    const w = u32(want.subarray(0, 16));
+    for (let k = 0; k < 4; k++) w[k] = k * 3 + 1;
+    Object.assign(checks, { odd: [0, 4096, want] });
+  } else if (scenario === 'freedImage') {
+    want.fill(0x11);
+    Object.assign(checks, { filled: [0, 1024, want] });
   } else {
     const w = u32(want);
     for (let k = 0; k < 5000; k++) w[k] = k * 3 + 1;

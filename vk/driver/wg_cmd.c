@@ -697,8 +697,9 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
    k.vs = vs;
    k.fs = fs && fs->program ? fs : NULL;
    k.topology = dyn->ia.primitive_topology;
-   if (indexed && (k.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP ||
-                   k.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) && dyn->ia.primitive_restart_enable)
+   /* WebGPU takes no indexed strip without its index format, and always restarts it at the format's largest index:
+    * with restart off in Vulkan, that index is a vertex (rare: it is the largest possible). */
+   if (indexed && (k.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || k.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP))
       k.strip_index = cmd->ib_type == VK_INDEX_TYPE_UINT32 ? 2 : 1;
    k.front_face = dyn->rs.front_face == VK_FRONT_FACE_CLOCKWISE;
    k.cull = dyn->rs.cull_mode & 3;
@@ -718,7 +719,11 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
       k.depth_test = dyn->ds.depth.test_enable;
       k.depth_write = dyn->ds.depth.write_enable;
       k.depth_compare = dyn->ds.depth.compare_op;
-      k.depth_bias = dyn->rs.depth_bias.enable;
+      /* Vulkan biases polygons only; WebGPU refuses a bias on points and lines. */
+      k.depth_bias = dyn->rs.depth_bias.enable && k.topology >= VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST &&
+                     k.topology != VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY &&
+                     k.topology != VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY &&
+                     k.topology != VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
       if (k.depth_bias) {
          k.bias_constant = dyn->rs.depth_bias.constant_factor;
          k.bias_slope = dyn->rs.depth_bias.slope_factor;
@@ -1404,8 +1409,9 @@ push_buffer(struct wg_device *dev)
 }
 
 /* Room for `bytes` of push constants in one submit: the buffer is written once before the submit, so a submit's
- * places can't be reused within it (VK3 L4c-F). A larger buffer replaces it (bind groups of the old one, kept by
- * its `push_gen`, aren't found again); the old one is destroyed after the work already queued. */
+ * places can't be reused within it (VK3 L4c-F). A larger buffer replaces it at once, with a new `push_gen` (bind
+ * groups of the old one, kept by theirs, aren't found again, though the submit's first binds come before its first
+ * use); the old one is destroyed after the work already queued. */
 static void
 push_reserve(struct wg_device *dev, uint64_t bytes)
 {
@@ -1422,6 +1428,7 @@ push_reserve(struct wg_device *dev, uint64_t bytes)
       free(dev->push_data);
       dev->push_buffer = 0;
       dev->push_data = NULL;
+      push_buffer(dev);
    }
 }
 
@@ -1505,6 +1512,9 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
          /* A uniform block the shader declares larger than the range bound (std140 rounds up): within the memory. */
          if (res->kind == WGSL_UNIFORM)
             size = MIN2(MAX2(size, res->size), d->buffer->mem->size - at);
+         /* WebGPU binds storage in whole words; a buffer of an odd size bound whole loses its last bytes' word. */
+         else if (size > 4)
+            size &= ~3ull;
          wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":%llu,\"size\":%llu}", sep, res->binding,
                         wg_memory_buffer(d->buffer->mem), (unsigned long long)at, (unsigned long long)size);
          break;
@@ -1546,14 +1556,21 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
       holder->groups[i].version = version;
    }
 found:
-   /* What shaders may write in host-visible memory is read back after the submit. */
+   /* What shaders may write in host-visible memory is read back after the submit, at its dynamic offset if it has one
+    * (the group's offsets go by resource, as record_sets puts them). */
+   uint32_t n = 0;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *res = &p->resources[k];
-      if (res->group != b->group || res->kind != WGSL_STORAGE)
+      if (res->group != b->group)
+         continue;
+      const uint32_t dynamic = p->dynamic[k] >= 0 && n < b->offset_count ? b->offsets[n] : 0;
+      n += p->dynamic[k] != -1;
+      if (res->kind != WGSL_STORAGE)
          continue;
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       if (d && d->buffer && d->buffer->mem && d->buffer->mem->host)
-         readback(r, d->buffer->mem, d->buffer->offset + d->offset, vk_buffer_range(&d->buffer->vk, d->offset, d->range));
+         readback(r, d->buffer->mem, d->buffer->offset + d->offset + dynamic,
+                  vk_buffer_range(&d->buffer->vk, d->offset, d->range));
    }
    return group;
 }

@@ -340,6 +340,7 @@ struct wg_shader {
    char *wgsl;
    struct wgsl_info info;
    uint32_t module;
+   uint32_t empty_fs; /* a vertex shader's: the fragment stage of its pipelines without one in a pass with colour */
    struct wg_program *program;
 };
 

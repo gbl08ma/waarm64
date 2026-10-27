@@ -21,9 +21,17 @@ for p in qemu-aarch64:qemu-user qemu-img:qemu-utils flex:flex bison:bison make:m
   command -v "${p%%:*}" >/dev/null || need+=("${p##*:}")
 done
 fc-list 2>/dev/null | grep -qi dejavu || need+=(fonts-dejavu-core)
+# vk/build.sh (Venus's module and its native translator) and the Venus tests' shaders (docs/cloud.md).
+for p in glslc:glslc glslangValidator:glslang-tools spirv-as:spirv-tools ninja:ninja-build; do
+  command -v "${p%%:*}" >/dev/null || need+=("${p##*:}")
+done
+for p in libvulkan-dev libzstd-dev libdrm-dev python3-mako; do
+  dpkg -s "$p" >/dev/null 2>&1 || need+=("$p")
+done
 if [ ${#need[@]} -gt 0 ]; then
   apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${need[@]}" >/dev/null
 fi
+command -v meson >/dev/null || pip install -q --break-system-packages meson >/dev/null 2>&1 || true
 if [ ! -x "$DTC_DIR/dtc" ]; then
   t=$(mktemp -d)
   git clone -q --depth 1 --branch v1.7.2 https://git.kernel.org/pub/scm/utils/dtc/dtc.git "$t/dtc"

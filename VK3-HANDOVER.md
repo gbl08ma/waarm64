@@ -6,7 +6,7 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## Where VK3 stands (2026-10-27, after L4e; the second supervisor session halted here, before L5)
+## Where VK3 stands (2026-10-27, after L4e and the out-of-context reviews; next L4f, then L5)
 
 - **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
   pollers' clamped timers, Dawn's late done), L3 (async pipelines; translated shaders kept across runs, 32 MiB, the
@@ -30,20 +30,40 @@ docs and the backlog; git keeps the old handovers.
   scene clause is held at 1,000 fish and the toolkit unless the user reopens it (backlog "Venus at 1 fish on NVIDIA").
 - **The review's branch** `origin/review/venus-green` (78d08509) holds the review itself; its findings now live in
   vk/README.md and the backlog. Kept until the user says to delete it.
-- **Next:** the two out-of-context reviews in the backlog (the translator; the driver outside the import path), then L5.
+- **The out-of-context reviews of the translator and caps and of the driver** (a cloud session, 2026-10-27, after
+  L4e; `VENUS-COMPILER-REVIEW.md`, `VENUS-DRIVER-REVIEW.md`, each triaged at its top): 17 and 11+ findings. Fixed
+  there, each with its test failing first on SwiftShader (`tests/venus-driver.test.ts`, `tests/wgsl.test.ts`,
+  `tests/venus-renderer.test.ts`; 31 pass): indexed strips without restart, a pipeline without a fragment shader in a
+  pass with colour, depth bias on lines (each an invalid WebGPU submit); the submit that grows the push buffer
+  (invalid); a linear image's freed memory reached by every submit (heap use after free); dynamic storage offsets read
+  back at 0; odd-sized storage bindings; `packHalf2x16`/`unpackHalf2x16` refused; a weak compare-exchange;
+  `pipelineCacheUUID` blind to the caps. `scripts/ci.sh` ran there; **dEQP-VK didn't** (no images in the cloud).
+- **Next:** L4f (the reviews' remaining findings, below), then L5.
 
 ## The plan (loops; the supervisor may reorder)
 
 - [x] L4d: L4's remainder checked: right and at its bar warm, but a cold first run freezes mpv's window; still held.
 - [x] L4e: the cold freeze is Mesa's async present (the desktop image presents synchronously); the advanced path on by default.
+- [ ] L4f: the out-of-context reviews' remaining findings. First `scripts/ci-deqp-vk.sh` on the reviews' fixes (the
+  cases they turn into passes, e.g. `draw.renderpass.*indexed*triangle_strip`, added to `tests/deqp/vk.txt`), and
+  `scripts/ci-debian.sh`. Then, by the files' rank: cube storage views (`2d-array` views; likely backlog's 7 dEQP
+  failures), an SSBO read in one stage and written in another (an invalid layout), signed shared atomics, a read-only
+  depth attachment that is also sampled (`depthReadOnly`), mutable-format views, separately indexed texture and
+  sampler arrays, compute variants made from a freed module id, semaphore waits never honoured, depth/stencil
+  resolves dropped, query availability, `vkCmdDispatchBase`, inverted depth ranges, `CONSTANT_ALPHA`, shadow
+  sampling's LOD, helper invocations and `terminateInvocation`, `workgroupUniformLoad`'s workgroup memory,
+  multisample counts, fans; and the user's call on what's advertised but not done (dual-source blending: implement
+  `@blend_src` or stop advertising; 1.3's required features). Each fixed with its test failing first, or filed in the
+  backlog with why. At its end the two files go (their findings in docs/backlog.md), and an out-of-context review of
+  what L4f changed.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`: see
   backlog for what L4c-F refused).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
   dEQP-VK on the Mac's GPU; the 34 `load_store_op_none` failures; bind groups remade every frame).
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
-- [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the two in the backlog (the translator; the driver outside
-  the import path) after L4d, and one every ~3 loops after.
+- [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
+  takes their findings); one every ~3 loops after.
 - [ ] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, ci-debian.sh and
   ci-machines.sh, an out-of-context review of what VK3 changed).
 

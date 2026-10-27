@@ -632,14 +632,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `renderpasses.*.load_store_op_none`'s 91 supported cases (VK3 L4c-D: stencil8 attachments, depth or stencil
     NONE/DONT_CARE, an integer resolve, `alphablend`; not looked into further), vertex buffer offsets that aren't
     multiples of 4, early fragment tests (`fragment_operations.early_fragment`), indexed indirect strips
-    (`draw.renderpass.indirect_draw.indexed*triangle_strip`, not looked into).
+    (`draw.renderpass.indirect_draw.indexed*triangle_strip`: likely the strip index format WebGPU wants, given since
+    the driver's out-of-context review; not yet rerun).
   - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%
     by more than 24, the same counts on SwiftShader and on the M4's Metal (so not the GPU's rasterization), its text
     and grid edges the largest; to the eye the same, no bias. The tolerance is 3% meanwhile. Next: diff its passes
     one at a time (GFXReconstruct's `--screenshots` of an earlier draw), suspects its screen effects' dithering and a
     conversion's rounding.
   - **Memory**: some `memory.binding` cases (aliasing and odd sizes) and two `memory` crashes (vkr's
-    `vkFreeMemory resulted in CS error`), not looked into. `memory.allocation.random.*` and
+    `vkFreeMemory resulted in CS error`), not looked into (a linear image whose memory was freed was still loaded
+    and stored by every submit until the driver's out-of-context review: a suspect; not yet rerun). `memory.allocation.random.*` and
     `memory.mapping.suballocation.random.*` pass alone but crash deqp-vk after enough earlier cases (VK3 L4c-F: with
     its 179 cases added to the pass list, on the renderer of before as on the new one): something the renderer keeps
     across cases (its arena's use or fragmentation?); they're out of `tests/deqp/vk.txt` until it's found.
@@ -655,7 +657,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left 13 failing, all failing before too, not
     looked into: linear 3D blits of `r32_sfloat`/`r32g32_sfloat` (unfilterable without `float32-filterable`), a
     4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255), storage images of
-    cube views through descriptors (7), `push_constant.graphics_pipeline.overwrite`.
+    cube views through descriptors (7: likely their `cube` views against the layout's `2d-array`, the translator's
+    out-of-context review's finding 2, VK3 L4f), `push_constant.graphics_pipeline.overwrite`.
   - **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
     ~1M draws with push constants past the immediates still wraps, with a warning).
 
@@ -1018,12 +1021,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
 
 ## Tests and tools
-
-- **Out-of-context reviews of Venus's other areas** (testing.md "Out-of-context reviews"; the user, 2026-10-27: after
-  VK3's fix loops for the green's review): (1) the translator, NIR → WGSL (vk/compiler/), and the caps and features the
-  device advertises against what WebGPU allows; (2) the driver outside the import path: descriptors and bind groups,
-  pipelines and the shader store, queries, command recording and replay (vk/driver/, web/venus-gpu.ts). Each a cloud
-  session with a neutral brief, as the green's (`origin/review/venus-green`).
 
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused

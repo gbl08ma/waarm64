@@ -31,6 +31,17 @@ with a per-environment egress policy (Network access in the environment's settin
 | `perf`, `wasm-tools`, `../webpc-exp` worktrees | not installed | dev-only; install if needed |
 | Benchmarks | x86_64 runner of unknown, shared hardware: a run's samples spread ±20%, `bench/interp/ab.sh`'s A/A rounds up to 3% | absolute numbers are not comparable with the VM's; don't record any. An A/B of builds that the user asks for here (x86_64 is the point) goes through `bench/interp/paired.ts`: arms side by side in one process, paired samples, an A/A arm (docs/benchmarking.md); `bench/interp/yardstick.sh` drops its memory cap without a systemd bus |
 
+## Venus (vk/)
+
+`vk/build.sh native` works here (2026-10-27: a few minutes from nothing; wasi-sdk, Mesa and virglrenderer download
+through the proxy), with what `cloud-setup.sh` installs (glslc, glslang, spirv-tools, the Vulkan, zstd and DRM headers,
+Mako, meson). Two things the dev VM never showed, handled in `vk/build.sh` and `vk/gen.ts`: meson 1.12 builds
+`libvirgl.a` without `libmesa.a`'s objects (built by name), and an x86_64 host's native flags (`-mtls-dialect=gnu2`,
+SSE, CET, valgrind, OpenMP) and BLAKE3's x86 assembly are dropped from the wasm compile. Headless Chromium's
+SwiftShader gives WebGPU, so `tests/venus-driver.test.ts`, `tests/wgsl.test.ts` and `tests/venus-renderer.test.ts`
+run (31 tests, ~20 s). dEQP-VK (`scripts/ci-deqp-vk.sh`) needs `images/deqp/build.sh vk` and the Vulkan guest images:
+not here.
+
 ## Networking work (net/, tests/net/)
 
 Go modules download through the proxy (Go 1.26 is fetched on demand by `go.mod`'s toolchain line),

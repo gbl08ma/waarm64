@@ -63,7 +63,9 @@ Vulkan's minimum is 128), a uniform buffer of the driver's at `@group(3) @bindin
 draw; a compute shader's `if` around a barrier, or breaking out of a loop that holds one, takes its condition through
 `workgroupUniformLoad` (WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow, every
 value being a `var`; a barrier after it keeps the next write from racing the read); a vertex shader's outputs are typed and interpolated as its
-fragment shader reads them, and its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport). What
+fragment shader reads them, and its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport);
+`packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
+compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). What
 WGSL can't express fails the stage with a reason: 16-bit values, texel buffers, dynamically indexed buffers and
 images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
@@ -149,7 +151,10 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   copy, a storage binding, a fill) isn't in the CPU's bytes until it completes, so each such range keeps its base (the
   CPU's bytes before its submit's look at the watch): a later upload leaves out the range's words the guest hasn't
   written since (they'd put stale bytes over the GPU's; a word with both goes up), and the range's pages go up again
-  once it completes (VK3 L4c-B).
+  once it completes (VK3 L4c-B). A linear image in host-visible memory is loaded from it before each submit and stored
+  back after; freeing that memory takes the image off that list (Vulkan lets the image outlive it, only to be
+  destroyed). A storage binding is a whole number of words (WebGPU's): a buffer of an odd size bound whole loses its
+  last bytes' word.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render
@@ -178,13 +183,16 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   its places can't be reused within one: it is 1 MiB, and a submit whose draws and dispatches could fill it (256 bytes
   each, a command buffer counts them) first replaces it with one large enough, up to 256 MiB (VK3 L4c-F: past 4,096
   changes it used to wrap, and earlier draws read later ones' constants). Bind groups of it are kept by the push
-  buffer they name (`push_gen`).
+  buffer they name (`push_gen`); the replacement is made at once, so that the submit's first binds, before any draw,
+  don't find groups of the old one (which invalidated that submit).
 - **Commands** (`wg_cmd.c`): recorded into a list of our own; each draw or dispatch records the state it needs where
   it changed. A submit replays the list into one encoder (passes opened and closed as the commands need; render passes
   from the runtime's dynamic rendering, with legacy passes through its emulation; clears as load ops, or draws for a
   partial render area and `vkCmdClearAttachments`; LOAD and NONE load, DONT_CARE clears but loads for a partial render
   area, whose outside Vulkan keeps; a pass that resumes a suspended one (`VK_RENDERING_RESUMING_BIT`) loads and clears
-  nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); blits, resolves and image clears as the worker's draws), copies
+  nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); blits, resolves and image clears as the worker's draws;
+  pipelines as WebGPU takes them: an indexed strip always has its index format, depth bias only for polygons, and a
+  pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer copies WebGPU can't make (an
   offset or size not 4-aligned) go through a compute pass of the worker's: the source's words copied to a temporary
   buffer, then each destination word the copy touches written, its other bytes kept; on the GPU in the encoder's
@@ -204,7 +212,7 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
   feedback slots) applied there too (outside the readbacks, which have the GPU's last word), each only where the CPU
   still has the range's base: a range read back is wider than what the GPU wrote (a copy's row gaps, a whole storage
-  binding, 4-byte rounding), and what the guest wrote there since its submit stays; a byte that changes moves a later
+  binding at its dynamic offset, 4-byte rounding), and what the guest wrote there since its submit stays; a byte that changes moves a later
   in-flight range's base with it (VK3 L4c-B). Then the submit's syncs signal; vkr's fences retire at the next poll, which the
   completion runs at once. Only the window and the arena are written then (anything else is logged and dropped).
   While a submit is in flight the host's poller sends an empty submit at most every 1 ms (web/venus-gpu.ts `nudge`):
@@ -251,8 +259,9 @@ with `ENABLE_SHADER_CACHE`) hands lookups and stores to the worker as `wg` impor
 `gpu_cache_put`). The runtime stores two kinds of entry: a stage's NIR after `spirv_to_nir` (keyed by its SPIR-V,
 specialization and robustness) and a pipeline's shaders (keyed by its stages and layouts). The keys are BLAKE3 of the
 cache's identity, which is the driver's build ID (`WG_BUILD_ID`, vk/gen.ts: a hash of vk/'s sources and build script)
-and a hash of the device's caps, then the runtime's key. The build ID also makes `pipelineCacheUUID` and
-`shaderBinaryUUID`, so a guest program's saved cache from another build is refused (its header), not misread.
+and a hash of the device's caps, then the runtime's key. Both also make `pipelineCacheUUID` and `shaderBinaryUUID`, so
+a guest program's saved cache from another build or other caps (its WGSL made for those) is refused (its header), not
+misread.
 
 The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `webpc-shaders` when Vulkan starts.
 It is the origin's, shared by every machine (an entry depends on the shader and the device, not the machine), and kept

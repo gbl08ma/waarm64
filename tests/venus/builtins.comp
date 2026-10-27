@@ -1,0 +1,11 @@
+#version 450
+// tests/wgsl.test.ts "built-ins WGSL has": packHalf2x16, unpackHalf2x16 and ldexp (the out-of-context review of the
+// translator, finding 1: ldexp NIR lowers), and atomicCompSwap, which must be the strong compare-and-swap (finding 6).
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) buffer B { uint u[4]; vec2 w; float x; int e; uint lock; } b;
+void main() {
+  b.u[0] = packHalf2x16(b.w);
+  b.w = unpackHalf2x16(b.u[1]);
+  b.x = ldexp(b.x, b.e);
+  b.u[2] = atomicCompSwap(b.lock, 0u, 1u);
+}
