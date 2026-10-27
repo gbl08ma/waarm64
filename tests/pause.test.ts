@@ -91,8 +91,8 @@ const poweredOff = (r: Run) => {
 };
 const booted = /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/;
 
-// Each test well under a minute alone: a deadline names the one that hangs (one hung once under
-// scripts/ci.sh with nothing left to wake it, and its cancelled file said nothing: docs/backlog.md).
+// Each test well under a minute alone: a deadline names the one that hangs (this file's hangs under
+// scripts/ci.sh were its process kept up after the tests: docs/testing.md "A test file that never ends").
 const TIMEOUT = 120_000;
 
 test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 10 ms of running, and at console markers)', { skip, timeout: TIMEOUT }, async () => {

@@ -1170,29 +1170,34 @@ export class Devices {
     // starve behind it, for up to a second. Yield to the event loop every few ms of work.
     const turn = new MessageChannel();
     const macrotask = () => new Promise<void>((resolve) => { turn.port1.onmessage = () => resolve(); turn.port2.postMessage(0); });
+    // The listening port keeps Node's process alive: closed on every way out.
     let since = performance.now();
-    for (let seen = 0; !this.closed;) {
-      if (performance.now() - since > 2) {
-        await macrotask();
-        since = performance.now();
-      }
-      const rung = Atomics.load(bell, 0);
-      if (rung === seen) {
-        const w = Atomics.waitAsync(bell, 0, seen);
-        if (w.async) await w.value;
-        continue;
-      }
-      seen = rung;
-      try {
-        await this.poll();
-      } catch (e) {
-        Atomics.store(bell, 1, -1);
+    try {
+      for (let seen = 0; !this.closed;) {
+        if (performance.now() - since > 2) {
+          await macrotask();
+          since = performance.now();
+          continue; // a `close` meanwhile notified no one: the wait below would be for good
+        }
+        const rung = Atomics.load(bell, 0);
+        if (rung === seen) {
+          const w = Atomics.waitAsync(bell, 0, seen);
+          if (w.async) await w.value;
+          continue;
+        }
+        seen = rung;
+        try {
+          await this.poll();
+        } catch (e) {
+          Atomics.store(bell, 1, -1);
+          Atomics.notify(bell, 1);
+          throw e;
+        }
+        Atomics.store(bell, 1, seen);
         Atomics.notify(bell, 1);
-        throw e;
       }
-      Atomics.store(bell, 1, seen);
-      Atomics.notify(bell, 1);
+    } finally {
+      turn.port1.close();
     }
-    turn.port1.close();
   }
 }

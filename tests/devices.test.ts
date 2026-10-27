@@ -1,6 +1,7 @@
 // Device backends without a guest: the 9P2000.L server (web/9p.ts), the
 // loopback network adapter (web/net.ts), virtio-input's config answers, and
-// the blk and net backends' I/O counters (the page's status, `Ctx.io`).
+// the blk and net backends' I/O counters (the page's status, `Ctx.io`), and
+// the doorbell's server's end (`Devices.serve`, parallel mode in Node).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { P9Server } from '../web/9p.ts';
@@ -301,4 +302,30 @@ test('the I/O counters: blk counts the bytes of completed reads and writes, net 
   n.request({ w0: 2, queue: 0, read: [], write: [{ off: 4096, len: 2048, mem: 0 }] });
   assert.equal(done.at(-1), 12 + 42);
   assert.deepEqual([...io], [4096, 8192, 42, 42]);
+});
+
+test('serve ends on a close that lands while it yields to the event loop', async () => {
+  // `serve` yields through a MessageChannel after 2 ms of work; a listening port keeps Node's process alive, so a
+  // close it missed there left the process up for good once the tests ended (docs/backlog.md, tests/pause.test.ts).
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const d = await Devices.open({ memory, shared: [], ram: 0, ramSize: 0, signal: 0, specs: [], deterministic: false }, () => {});
+  const bell = new Int32Array(memory.buffer, 64, 2);
+  // A poll that works 3 ms, then closes the devices on the microtask after the one where `serve` answered the
+  // ring and started its yield (the yield's message can't arrive between microtasks).
+  d.poll = async () => {
+    for (const t = performance.now(); performance.now() - t < 3;);
+    const closeOnAnswer = () => (Atomics.load(bell, 1) === 1 ? d.close() : queueMicrotask(closeOnAnswer));
+    queueMicrotask(closeOnAnswer);
+  };
+  const served = d.serve(bell).then(() => 'ended');
+  Atomics.add(bell, 0, 1);
+  Atomics.notify(bell, 0);
+  const r = await Promise.race([served, new Promise((resolve) => setTimeout(resolve, 2000, 'hung'))]);
+  if (r === 'hung') {
+    // Let it out (a ring wakes it and it sees the close), or this file's process never exits.
+    Atomics.add(bell, 0, 1);
+    Atomics.notify(bell, 0);
+    await served;
+  }
+  assert.equal(r, 'ended');
 });

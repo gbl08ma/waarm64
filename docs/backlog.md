@@ -1049,16 +1049,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
-- **`tests/pause.test.ts` hung twice under `scripts/ci.sh`** (2026-10-18, its file cancelled after 1,337 and 1,351 s: "Promise
-  resolution is still pending but the event loop has already resolved", so a pause or an end that nothing will
-  resolve, with no timer left), passed alone and 9 times in 3 copies at once. Which of its tests is unknown (a
-  cancelled file prints none); its tests have a 2-minute deadline since. **A third time 2026-10-24**, after the
-  deadlines: 20 min at ~1% CPU, nothing printed. Its diagnostic report (`kill -USR2`: the runner starts files with
-  `--report-signal=SIGUSR2`) had no timer, no worker and no socket, only the pipes to the runner: no test's deadline
-  timer was armed, so it waits outside a test (a top-level await or a hook, where per-test timeouts don't apply).
-  **A fourth time 2026-10-27** (merging the clock branch; the code under test unchanged): idle at ~3% CPU, nothing
-  printed after 6 min; the report again had no JS stack, no armed timer and no worker.
-  Next: a deadline on the file's own setup, or the same report taken earlier with the JS stack of each pending await.
+- **A pause pending as the VM closes can stay pending** (parallel, backends on the VM's thread): a `close` that lands
+  after `pause()` passed its parked check and rang the doorbell for its quiesce (`ringAsync`) ends `Devices.serve`
+  before it answers, and `ringAsync` polls the served word for good (unref'd waits: in Node it doesn't hold the process,
+  but the promise never resolves false as `pause()` promises). Found reading the code for `tests/pause.test.ts`'s hangs
+  ([testing.md](testing.md) "A test file that never ends"), not seen in a run; a stop condition for `ringAsync` (the
+  host's close) would end it.
 - **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
   0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall
