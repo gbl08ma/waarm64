@@ -86,6 +86,20 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   baseline and an independent review of L4's evidence (re-ranking the leads); then one step per lead in the log's
   order. Ends when the cause is found and fixed (the advanced path on by default, if right everywhere), or when the
   ranked leads are spent: then the log says what's left and the supervisor takes it to the user.
+- [ ] L4c (the user, 2026-10-27: **fix the static review's findings first, then re-measure**; the experiments resume
+  only if the green persists). The review: `git show origin/review/venus-green:VENUS-GREEN-REVIEW.md` (78d08509, a
+  fresh agent, read-only, of the picture's path). Serial loops, each starting with tests that fail today:
+  - [ ] A: finding 1 (the window's dirty pages taken by one device and lost to the others; completion serials per
+    device matched across devices), and "the last bytes of an odd-sized memory never uploaded". Then green.sh:
+    ≥20 bare sessions against the pooled base rate (~8 of 31 so far): 0 of 20 at ~0.25 happens by chance ~0.3%.
+  - [ ] B: finding 2 (a page's upload overwriting GPU-written bytes of an in-flight submit; completions overwriting
+    CPU writes made since).
+  - [ ] C: finding 3 (the import's ordering: the readback before the picture lands, `forget` against the deferred
+    `bind`/`plane`, the `blob-ctx` attach against the ring) and "the import maps outlive resets".
+  - [ ] D: findings 4 and 6 (the lost fragment stage: padding in the link hash, fail loudly; load ops NONE and partial
+    DONT_CARE) and "suspended and resumed passes". Then green.sh again if A didn't settle it.
+  - [ ] E, F (after the green is settled, before L5): finding 5 (the core's page-crossing store: the JIT's rules), and
+    the review's other real defects.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
   dEQP-VK on the Mac's GPU).
