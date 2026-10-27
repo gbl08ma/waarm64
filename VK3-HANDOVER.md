@@ -92,8 +92,8 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   - [x] A (done 2026-10-27, "State after L4c-A"): finding 1 (the window's dirty pages taken by one device and lost to
     the others; completion serials per device matched across devices), and "the last bytes of an odd-sized memory
     never uploaded". Then green.sh: **0 green of 20 bare** against the pooled base rate (~8 of 31 so far).
-  - [ ] B: finding 2 (a page's upload overwriting GPU-written bytes of an in-flight submit; completions overwriting
-    CPU writes made since).
+  - [x] B (done 2026-10-27, "State after L4c-B"): finding 2 (a page's upload overwriting GPU-written bytes of an
+    in-flight submit; completions overwriting CPU writes made since). Then green.sh: **0 green of 12 bare** (A+B).
   - [ ] C: finding 3 (the import's ordering: the readback before the picture lands, `forget` against the deferred
     `bind`/`plane`, the `blob-ctx` attach against the ring) and "the import maps outlive resets".
   - [ ] D: findings 4 and 6 (the lost fragment stage: padding in the link hash, fail loudly; load ops NONE and partial
@@ -159,6 +159,7 @@ per bind, 0 of 22 with extra GPU work, 4 of 7 with a JS-only trace.
 | L4b-0 | baseline at 2f229f0a | bare `vkformats=all` (green.sh, alternated with `held`) | 1/8 | the rate today is lower than L4's 7/23 (or drifts by sitting); the green is L4's rg16float bytes exactly (2,279,070 off), and the page's screen agrees |
 | L4b-0 | control | `held` (formats held, the default) | 0/8 | as expected |
 | L4c-A | finding 1 fixed (the window's pages to every device, serials global, odd sizes whole) | bare `vkformats=all` at e3d4cd46 | 0/20 | fits a fix (chance ~0.3% at 0.25); the second device during mpv's first run not observed directly; `results/vk3/l4c/a-green.jsonl` |
+| L4c-B | confirm after A+B | bare | 0/12 | at 4f76f3e2 (finding 2 fixed too); with A's 0/20: 0 of 32 since A; `results/vk3/l4c/b-green.jsonl` |
 
 **The harness (L4b-0):** `ARMS='bare:vkformats=all|held:' N='15 8' bench/vulkan/green.sh <results.jsonl> [budget s]`: fresh
 sessions on the Mac (mpv-frames.ts through sway-mac.sh), arms alternated, each classified green/right/odd/error from
@@ -181,6 +182,20 @@ decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 
   texture, all-zero LUT weights or a chroma FBO never rendered would all give exactly these: "the import never wrote
   chroma" is one candidate among several.
 
+
+## State (2026-10-27, after L4c-B)
+
+- **Done: finding 2 fixed, both directions** (4f76f3e2), confirmed by tests that failed on the old code
+  (tests/venus-driver.test.ts "in flight: …", wg_test.c `wgt_fl_*`): a page uploaded while a copy into it was in flight
+  put the old bytes back on the GPU (the next copy read them); a completion's readback of a row-gapped range overwrote a
+  byte the guest wrote meanwhile. The fix (each in-flight range keeps a base; vk/README.md "The driver", "Completion").
+- **Worth not re-discovering:** Venus's query feedback fills a slot and copies results into it in one submit; a first
+  version of the fix took the fill's bytes for the guest's and mixed timestamp bytes (the scene's GPU ms became 1e11).
+  The "ordered" check covers it. Read the scene's GPU ms as a correctness check after any completion change.
+- **Cost:** VK0's scene at 1,000 fish on the M4, alternated: before 2.428, 2.605, 2.567, after 2.549, 2.589, 2.599 ms a
+  frame: overlapping, no difference (`results/vk3/l4c/b-scene-1000-*.json`).
+- **The green: 0 of 12 bare** after A+B (`results/vk3/l4c/b-green.jsonl`); 0 of 32 since A.
+- **CI at the commit:** ci.sh OK (439 s), ci-debian.sh OK (369 s), ci-deqp-vk.sh OK (243 s).
 
 ## State (2026-10-27, after L4c-A)
 
