@@ -583,8 +583,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     guest's Mesa"): Venus's `vn_wsi_present_async` (Mesa 26.x, main as of 8598bb5c) returns the previous present's
     error for the next present, of any swapchain, and drops that one unsubmitted (frame never shown, present fence
     never signalled): a cold mpv's fullscreen window froze and it couldn't exit, also at a file's end. The desktop image
-    works around it with `VN_PERF=no_async_present`. Left: report it upstream with the fix (always hand the present to
-    the thread; report a deferred error only for its own swapchain), and drop the workaround once Arch ships one;
+    works around it with `VN_PERF=no_async_present`. Left: report it upstream ("Upstream reports" below), and drop the
+    workaround once Arch ships a fix;
     mpv on SIGTERM wasn't rechecked. **The hosted desktop disk needs replacing** with one built since L4e (the
     local one is) before a deploy of the page, which since L4e takes libplacebo's advanced path by default
     (`?gpu=vkformats=held`: off), so that an old disk's first cold mpv doesn't meet the freeze.
@@ -1124,4 +1124,17 @@ report it. Nothing has been filed.
   in the prologue of a locally streaming function compiled with SVE (LLVM saves the vector length with an SVE
   instruction there). Seen with openSUSE's Chromium 153.0.8010.52 on aarch64; libyuv picks SME from
   `getauxval(AT_HWCAP2)`. Our workaround: `tools/nosme` as `LD_PRELOAD` for the tests' Chromium.
+- **Mesa, Venus's async present drops a present after a failed one** ([vk/README.md](../vk/README.md) "The guest's
+  Mesa"; bench/vulkan/REPORT.md "VK3 L4e"): with no implicit fencing (virtio-gpu's case), `vn_wsi_present_async`
+  (`src/virtio/vulkan/vn_wsi.c`, since MR 39283) returns the previous present's result; when that is an error it
+  returns it for the next present, of any swapchain, and drops that present without handing it to the present thread,
+  so its wait semaphores aren't waited, its image never reaches the compositor and its present fence never signals.
+  A swapchain retired while its last present waits for slow GPU work gives the error (`VK_ERROR_OUT_OF_DATE_KHR`), so
+  the new swapchain's first present is lost: mpv's window stays on its pre-fullscreen frame and `vo` waits forever in
+  `drmSyncobjTimelineWait` under `pl_swapchain_destroy`. Seen with Mesa 26.2.5 (Arch's `vulkan-virtio`), unfixed on
+  main as of 8598bb5c (2026-10-23); gdb stacks in `bench/vulkan/results/vk3/l4e/swiftshader-frozen-stacks.txt`.
+  Repro: mpv 0.41 `--vo=gpu-next --gpu-api=vulkan` going fullscreen while its first pipelines compile (every first
+  session on SwiftShader; on a warm host with webpc's `?gpu=vkpipedelay=1500`). Fix: always hand the present to the
+  thread, and report a deferred error only for the swapchain it came from. Our workaround: `VN_PERF=no_async_present`
+  in the desktop image (images/arch/desktop-setup.sh), which goes away with the fix.
 
