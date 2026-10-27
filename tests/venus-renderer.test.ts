@@ -57,10 +57,11 @@ test("what the driver advertises follows the WebGPU device's features and limits
     const { v, memory } = await renderer(c, options);
     const at = (v.raw.wgt_caps as () => number)() >>> 0;
     assert.ok(at, 'wgt_caps failed');
-    const w = new Uint32Array(memory.buffer, at, 16);
+    const w = new Uint32Array(memory.buffer, at, 17);
     return {
       dim2D: w[0], invocations: w[1], sizeX: w[2], storageImages: w[3], sampledImages: w[4], storageRange: w[5], subgroupSize: w[6],
       subgroupOps: w[7], bc: w[8], extendedFormats: w[9], depthClamp: w[10], r16float: w[11], r16unorm: w[12], rg11b10: w[13], r32float: w[14], vendor: w[15],
+      cacheUuid: w[16],
     };
   };
   const SAMPLED = 0x1, STORAGE = 0x2, COLOR = 0x80, BLEND = 0x100, FILTER = 0x1000;
@@ -78,6 +79,9 @@ test("what the driver advertises follows the WebGPU device's features and limits
   // driver then copies every WSI frame into a buffer, which isn't shared, and Vulkan's windows are black
   // (web/venus-gpu.ts `VENDORS`).
   assert.deepEqual([mac.vendor, swiftshader.vendor, none.vendor, nvidia.vendor], [0x106b, 0x1ae0, 0, 0]);
+  // A guest's saved pipeline cache holds WGSL made for the caps: one made with others isn't taken (the out-of-context
+  // review of the translator, finding 9).
+  assert.equal(new Set([mac.cacheUuid, swiftshader.cacheUuid, none.cacheUuid]).size, 3, 'pipelineCacheUUID ignores the caps');
   // Subgroups of one invocation, basic operations only (the translator has none of WebGPU's yet).
   assert.deepEqual([mac.subgroupSize, mac.subgroupOps], [1, 1]);
   // Features: BC and depth clamp where the adapter has them; texture-formats-tier1 (the Mac's) adds the 16-bit normalized

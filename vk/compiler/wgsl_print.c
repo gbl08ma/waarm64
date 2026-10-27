@@ -795,6 +795,12 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
    case nir_op_fpow: F2("pow"); break;
    case nir_op_fsign: F1("sign"); break;
    case nir_op_fquantize2f16: F1("quantizeToF16"); break;
+   case nir_op_ldexp: F2("ldexp"); break;
+   /* Kept whole (wgsl_nir.c's options): NIR's lowerings of these go through 16-bit values. */
+   case nir_op_pack_half_2x16:
+      e = fmt(c, "pack2x16float(vec2f(%s, %s))", alu_in(c, alu, 0, 0), alu_in(c, alu, 0, 1));
+      break;
+   case nir_op_unpack_half_2x16: e = fmt(c, "unpack2x16float(%s)[%u]", alu_in(c, alu, 0, 0), comp); break;
    case nir_op_flt: case nir_op_ilt: case nir_op_ult: BIN("<"); break;
    case nir_op_fge: case nir_op_ige: case nir_op_uge: BIN(">="); break;
    case nir_op_feq: case nir_op_ieq: BIN("=="); break;
@@ -977,9 +983,15 @@ emit_word_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
    }
    case nir_intrinsic_ssbo_atomic_swap:
    case nir_intrinsic_shared_atomic_swap: {
+      /* SPIR-V's compare-exchange is strong; WGSL's may fail spuriously: tried again until it exchanged or saw
+       * another value. */
       const unsigned at = intr->intrinsic == nir_intrinsic_ssbo_atomic_swap ? 2 : 1;
-      line(c, "t%u = %s(atomicCompareExchangeWeak(&%s[%s], %s(%s), %s(%s)).old_value);", intr->def.index, conv_out, arr,
-           word, conv_in, src_name(c, &intr->src[at]), conv_in, src_name(c, &intr->src[at + 1]));
+      line(c, "loop {");
+      line(c, "  let wg_cas = atomicCompareExchangeWeak(&%s[%s], %s(%s), %s(%s));", arr, word, conv_in,
+           src_name(c, &intr->src[at]), conv_in, src_name(c, &intr->src[at + 1]));
+      line(c, "  if (wg_cas.exchanged || wg_cas.old_value != %s(%s)) { t%u = %s(wg_cas.old_value); break; }", conv_in,
+           src_name(c, &intr->src[at]), intr->def.index, conv_out);
+      line(c, "}");
       return;
    }
    default:

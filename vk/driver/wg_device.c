@@ -105,18 +105,6 @@ wg_build_id(void)
    return WG_BUILD_ID;
 }
 
-static void
-build_uuid(uint8_t *out, const char *salt)
-{
-   blake3_hash h;
-   blake3_hasher b;
-   _mesa_blake3_init(&b);
-   _mesa_blake3_update(&b, WG_BUILD_ID, strlen(WG_BUILD_ID));
-   _mesa_blake3_update(&b, salt, strlen(salt));
-   _mesa_blake3_final(&b, h);
-   memcpy(out, h, VK_UUID_SIZE);
-}
-
 /* The device's caps (features and limits: what the translation depends on besides the shaders), for the cache's key. */
 static uint64_t
 caps_hash(void)
@@ -130,6 +118,22 @@ caps_hash(void)
    uint64_t v;
    memcpy(&v, h, sizeof(v));
    return v;
+}
+
+static void
+build_uuid(uint8_t *out, const char *salt)
+{
+   blake3_hash h;
+   blake3_hasher b;
+   _mesa_blake3_init(&b);
+   _mesa_blake3_update(&b, WG_BUILD_ID, strlen(WG_BUILD_ID));
+   _mesa_blake3_update(&b, salt, strlen(salt));
+   /* What the translation depends on besides the shaders: a cache made with other caps is another's (a guest's saved
+    * pipeline cache holds WGSL). */
+   const uint64_t caps = caps_hash();
+   _mesa_blake3_update(&b, &caps, sizeof(caps));
+   _mesa_blake3_final(&b, h);
+   memcpy(out, h, VK_UUID_SIZE);
 }
 
 static void
@@ -589,6 +593,13 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
    if (!mem)
       return;
    wg_submits_forget(dev, mem);
+   /* An image may outlive its memory (then only to be destroyed): off the submits' linear images. */
+   list_for_each_entry_safe (struct wg_image, image, &dev->linear_images, linear_link) {
+      if (image->mem == mem) {
+         list_del(&image->linear_link);
+         image->linear_host = false;
+      }
+   }
    if (mem->image)
       list_del(&mem->shared_link);
    if (mem->host)

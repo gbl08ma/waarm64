@@ -13,7 +13,8 @@ user's NVIDIA runs processed (step 4's last blocker, a cold mpv's frozen window,
 image presents synchronously; the hosted disk still needs replacing before a deploy, the user's call); steps 5–8 are
 open; the user's third NVIDIA run (after L4e) confirmed step 4 there. **The user parked step 2's bar at 1 fish on NVIDIA** (not representative; likely
 the driver or the GPU's power states): the gate's scene clause is held at 1,000 fish and the toolkit unless the user
-reopens it. Start with the two out-of-context reviews in the backlog, then L5.
+reopens it. The two out-of-context reviews are done and their easier findings fixed (a cloud session, 2026-10-27);
+start with L4f (their remaining findings, step 4 below), then L5.
 
 Start **VK3: Venus right everywhere, then the emulated rows.** VK2 made Venus draw: the direct set translated onto
 WebGPU, frames to the screen through virgl, mpv on Vulkan at its bar, 1,463 dEQP-VK cases in CI (bench/vulkan/REPORT.md
@@ -125,6 +126,13 @@ re-discovering" and each state's.
    while one is made, and WGSL is kept by SPIR-V hash in the browser's storage.
 4. **[done: L4, L4b, L4c, L4d, L4e]** **libplacebo's advanced path:** the M4's green VA-API chroma with `float32-blendable`. Then that format and tier1's
    storage formats can come back, and mpv gets its scalers.
+
+   **Then L4f** (the user, 2026-10-27: before L5): **the out-of-context reviews' remaining findings.** The reviews of
+   the translator and caps and of the driver outside the import path ran (`VENUS-COMPILER-REVIEW.md`,
+   `VENUS-DRIVER-REVIEW.md`, each with its triage), and a cloud session fixed what SwiftShader's tests could confirm.
+   L4f: dEQP-VK on those fixes (`scripts/ci-deqp-vk.sh`, the cases they turn into passes added to the list), then each
+   remaining finding fixed (its test failing first) or filed in the backlog with why; the guest-visible ones
+   (advertising less: dual-source blending, the 1.3 conformance) are the user's call.
 5. **The translator's missing adapter features:** `subgroups`, `shader-f16`, read-write storage with `tier2`.
 6. **The driver's gaps from dEQP-VK:**
    - per-face stencil, occlusion queries

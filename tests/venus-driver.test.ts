@@ -181,6 +181,10 @@ for (const [scenario, what, want] of [
   ['partial', 'DONT_CARE over part of the attachment keeps what\'s outside the render area', { topRight: blue, bottomRight: blue }],
   ['resume', 'a resumed pass doesn\'t clear again, and a suspended one stores whatever its store op', { topLeft: red, bottomLeft: red, topRight: green, bottomRight: green }],
   ['resumePartial', 'a resumed pass over part of the attachment doesn\'t clear its area again', { topLeft: red, bottomLeft: blue, topRight: green, bottomRight: blue }],
+  // The out-of-context review of the driver (findings 1, 6, 11): pipelines WebGPU must take.
+  ['strip', 'an indexed triangle strip without primitive restart draws', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  ['vertexOnly', 'a pipeline without a fragment shader in a pass with a colour attachment', { topLeft: blue, bottomLeft: blue, topRight: blue, bottomRight: blue }],
+  ['lineBias', 'lines drawn with depth bias on', { topRight: blue, bottomRight: blue }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -205,6 +209,11 @@ for (const [scenario, what] of [
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
   ['blit', 'a blit from a 3D image samples its slice'],
   ['push', 'thousands of push-constant changes in one submit each keep their own'],
+  // The out-of-context review of the driver (findings 3, 4, 5).
+  ['pushGrown', 'a submit that grows the push buffer after one that bound it'],
+  ['freedImage', 'a submit after a linear image\'s memory was freed leaves other memory alone'],
+  ['dynamicStorage', 'a host-visible storage buffer\'s writes come back at its dynamic offset'],
+  ['oddStorage', 'a storage buffer of an odd size bound whole'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

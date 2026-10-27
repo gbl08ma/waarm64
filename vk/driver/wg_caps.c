@@ -228,7 +228,7 @@ wg_caps_properties(struct vk_properties *p)
    p->mipmapPrecisionBits = 4;
    p->maxDrawIndexedIndexValue = 0xffffffffu;
    p->maxDrawIndirectCount = 1;
-   p->maxSamplerLodBias = 2; /* WebGPU's samplers have no bias: the shader adds it */
+   p->maxSamplerLodBias = 2; /* WebGPU's samplers have no bias, and nothing adds it yet (docs/backlog.md) */
    p->maxSamplerAnisotropy = 16;
    p->maxViewports = 1;
    p->maxViewportDimensions[0] = p->maxViewportDimensions[1] = L->max_texture_2d;

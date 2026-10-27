@@ -176,3 +176,24 @@ test('a storage image loaded and stored is read_write where WebGPU allows it, an
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('built-ins WGSL has translate to its own, and a compare-exchange is strong (the review of the translator)', { skip: missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc'), timeout: 120_000 }, async (t) => {
+  // Findings 1 and 6: packHalf2x16 and unpackHalf2x16 went through 16-bit values (ldexp, which NIR lowers to bits,
+  // translated already); atomicCompSwap was WGSL's weak exchange, which may fail spuriously.
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const spv = join(tmp, 'builtins.spv');
+    const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', spv, join(root, 'tests/venus/builtins.comp')], { encoding: 'utf8' });
+    assert.equal(c.status, 0, c.stderr);
+    const b = readFileSync(spv);
+    const r = translate({ name: 'builtins', stage: 5, words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) });
+    assert.equal(r.rc, 0, r.text);
+    for (const re of [/pack2x16float\(/, /unpack2x16float\(/, /loop \{\s*let wg_cas = atomicCompareExchangeWeak/]) assert.match(r.text, re);
+    const errors = await compile([r.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

@@ -503,6 +503,7 @@ shader_destroy(struct vk_device *dev, struct vk_shader *vk, const VkAllocationCa
 {
    struct wg_shader *s = container_of(vk, struct wg_shader, vk);
    wg_id_release(s->module);
+   wg_id_release(s->empty_fs);
    wg_program_unref(s->program);
    free(s->wgsl);
    vk_shader_free(dev, pAllocator, &s->vk);
@@ -956,6 +957,28 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
          wg_json_printf(&j, "}");
       }
       wg_json_printf(&j, "]}");
+   } else {
+      /* No fragment shader: WebGPU's pipeline would have no colour targets, which no pass with colour takes. One
+       * that writes nothing, its targets the pass's, unwritten. */
+      bool colour = false;
+      for (uint32_t i = 0; i < k->color_count; i++)
+         colour |= k->colors[i] && wg_texture_format(k->colors[i]);
+      if (colour) {
+         if (!k->vs->empty_fs) {
+            static const char empty[] = "@fragment fn main() {}\n";
+            k->vs->empty_fs = wg_id();
+            gpu_shader(k->vs->empty_fs, empty, sizeof(empty) - 1);
+         }
+         wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",\"targets\":[", k->vs->empty_fs);
+         for (uint32_t i = 0; i < k->color_count; i++) {
+            const struct wg_texture_format *f = k->colors[i] ? wg_texture_format(k->colors[i]) : NULL;
+            if (f)
+               wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":0}", i ? "," : "", f->name);
+            else
+               wg_json_printf(&j, "%snull", i ? "," : "");
+         }
+         wg_json_printf(&j, "]}");
+      }
    }
    wg_json_printf(&j, "}");
    const uint32_t id = wg_create_json(WG_KIND_RENDER, &j);

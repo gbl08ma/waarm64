@@ -39,6 +39,7 @@ uint8_t *wgt_fl_map(uint32_t which);
 int wgt_fl_submit(uint32_t i);
 int wgt_fl_done(uint32_t i);
 int wgt_link(void);
+int wgt_variant(uint32_t scenario);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
 int wgt_pass_done(void);
@@ -583,12 +584,12 @@ wgt_imported(void)
  * words: maxImageDimension2D, maxComputeWorkGroupInvocations, maxComputeWorkGroupSize[0],
  * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
  * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
- * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, and vendorID; NULL with wgt_error(). Its own
- * instance: the device's caps are read when the instance enumerates it. */
+ * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, vendorID and pipelineCacheUUID's first
+ * word; NULL with wgt_error(). Its own instance: the device's caps are read when the instance enumerates it. */
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[16];
+   static uint32_t out[17];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -633,6 +634,7 @@ wgt_caps(void)
       out[i++] = fp.optimalTilingFeatures;
    }
    out[i++] = p.properties.vendorID;
+   memcpy(&out[i++], p.properties.pipelineCacheUUID, 4);
    destroy(inst, NULL);
    return out;
 }
@@ -796,6 +798,43 @@ wgt_link(void)
    free(d);
    CHECK(CreateGraphicsPipelines(dev, c2, 1, &gpi, NULL, &p2));
    return draw_with(NULL, 0, 0, p2);
+}
+
+/*
+ * Pipelines a valid Vulkan program makes that WebGPU must not refuse (the out-of-context review of the driver, findings
+ * 1, 6 and 11), after wgt_run: wgt_draw's quad (indexed, six indices) with wgt_run's pipeline changed by `scenario`,
+ * copied into wgt_pixels; wgt_draw_done says when.
+ * 0: a triangle strip, primitive restart off: the quad drawn (its indices 0 1 2 0 2 3 as a strip cover it);
+ * 1: no fragment shader, in the pass with a colour attachment: nothing coloured (blue);
+ * 2: a line list with depth bias on (Vulkan biases only polygons): blue on the right half.
+ */
+EXPORT int
+wgt_variant(uint32_t scenario)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   gpi.pStages = scene.stages;
+   VkPipelineInputAssemblyStateCreateInfo ias = *gpi.pInputAssemblyState;
+   VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+   gpi.pInputAssemblyState = &ias;
+   gpi.pRasterizationState = &rs;
+   if (scenario == 0) {
+      ias.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+      rs.cullMode = VK_CULL_MODE_NONE;
+   } else if (scenario == 1) {
+      gpi.stageCount = 1;
+   } else {
+      ias.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+      rs.depthBiasEnable = VK_TRUE;
+      rs.depthBiasConstantFactor = 4;
+      rs.depthBiasSlopeFactor = 1;
+   }
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   return draw_with(NULL, 0, 0, p);
 }
 
 /*
@@ -1209,6 +1248,15 @@ wgt_fl_done(uint32_t i)
  * 2: a blit from a 3D image (4×4×2 RGBA8, slice 0 red, slice 1 green) of its slice 1 into a 2D image → [0, 64).
  * 3: `cs` (push.comp) dispatched 5,000 times, each with its index as push constant k → v[k], [0, 20000) of a
  *    buffer of its own (`wgt_misc_map` then that).
+ * 4: as 3, after a submit of one dispatch with the same pipeline (its push buffer's bind group kept, then the buffer
+ *    grown for the 5,000: the out-of-context review of the driver, finding 3).
+ * 5: a linear image in host-visible memory, that memory freed (the image kept), then host-visible memory of the same
+ *    size (`wgt_misc_map` then that) written 0x5a by the CPU and filled 0x11 by the submit through a buffer: 0x11 (the
+ *    review's finding 4: the submit must not reach the freed memory, nor what took its place, through the image).
+ * 6: `cs` dispatched 4 times (k 0 to 3) on the result bound as a dynamic storage buffer (64 bytes at dynamic offset
+ *    256): v[k] = 3k + 1 at [256, 272) (the review's finding 5: read back at its dynamic offset).
+ * 7: as 6 on a result of 4,098 bytes bound whole, without dynamic offset: v[k] at [0, 16) (WebGPU binds storage in
+ *    multiples of 4 bytes: the review's "smaller spec gaps").
  */
 static struct {
    VkFence fence;
@@ -1256,7 +1304,8 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    PFN_vkCmdBlitImage CmdBlitImage = (PFN_vkCmdBlitImage)GetDeviceProcAddr(dev, "vkCmdBlitImage");
    const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
    VkBuffer out;
-   if (buffer(scenario == 3 ? 20000 : 4096, both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, &out, (void **)&misc.map))
+   if (buffer(scenario == 3 || scenario == 4 ? 20000 : scenario == 7 ? 4098 : 4096, both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, &out,
+              (void **)&misc.map))
       return 1;
    if (!misc.fence) {
       const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
@@ -1274,7 +1323,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
    const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
    CHECK(BeginCommandBuffer(cmd, &begin));
-   if (scenario != 3)
+   if (scenario != 3 && scenario != 4)
       CmdFillBuffer(cmd, out, 0, VK_WHOLE_SIZE, 0xeeeeeeee);
    if (scenario == 0) {
       VkBuffer src, local;
@@ -1340,12 +1389,40 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
       CmdCopyImageToBuffer(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
                            &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   } else if (scenario == 5) {
+      PFN_vkFreeMemory FreeMemory = (PFN_vkFreeMemory)GetDeviceProcAddr(dev, "vkFreeMemory");
+      const VkImageCreateInfo info = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM,
+         .extent = { 4, 4, 1 }, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
+         .tiling = VK_IMAGE_TILING_LINEAR, .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+      };
+      VkImage linear;
+      CHECK(CreateImage(dev, &info, NULL, &linear));
+      VkMemoryRequirements req;
+      GetImageMemoryRequirements(dev, linear, &req);
+      VkDeviceMemory mem;
+      void *m;
+      if (memory_for(req, true, &mem, &m))
+         return 1;
+      CHECK(BindImageMemory(dev, linear, mem, 0));
+      FreeMemory(dev, mem, NULL);
+      /* The next memory made at once, of the same size: the freed one's place. */
+      VkDeviceMemory mem2;
+      if (memory_for(req, true, &mem2, (void **)&misc.map))
+         return 1;
+      const VkBufferCreateInfo bi = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = req.size, .usage = both };
+      VkBuffer b;
+      CHECK(CreateBuffer(dev, &bi, NULL, &b));
+      CHECK(BindBufferMemory(dev, b, mem2, 0));
+      memset(misc.map, 0x5a, req.size);
+      CmdFillBuffer(cmd, b, 0, VK_WHOLE_SIZE, 0x11111111);
    } else {
       VkShaderModule m;
       if (shader(cs, cs_words, &m))
          return 1;
-      const VkDescriptorSetLayoutBinding binding = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
-                                                     VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+      const VkDescriptorType type =
+         scenario == 6 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      const VkDescriptorSetLayoutBinding binding = { 0, type, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
       const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                                                     .bindingCount = 1, .pBindings = &binding };
       VkDescriptorSetLayout dsl;
@@ -1363,7 +1440,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       };
       VkPipeline pipeline;
       CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
-      const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
+      const VkDescriptorPoolSize ps = { type, 1 };
       const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
                                                .poolSizeCount = 1, .pPoolSizes = &ps };
       VkDescriptorPool dp;
@@ -1372,15 +1449,28 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
                                                 .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
       VkDescriptorSet set;
       CHECK(AllocateDescriptorSets(dev, &dai, &set));
-      const VkDescriptorBufferInfo bi = { out, 0, VK_WHOLE_SIZE };
+      const VkDescriptorBufferInfo bi = { out, 0, scenario == 6 ? 64 : VK_WHOLE_SIZE };
       const VkWriteDescriptorSet w = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set,
-                                       .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                       .pBufferInfo = &bi };
+                                       .descriptorCount = 1, .descriptorType = type, .pBufferInfo = &bi };
+      const uint32_t dynamic = 256;
       UpdateDescriptorSets(dev, 1, &w, 0, NULL);
-      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
       uint32_t push[32] = { 0 };
-      for (uint32_t k = 0; k < 5000; k++) {
+      if (scenario == 4) {
+         VkCommandBuffer first;
+         CHECK(AllocateCommandBuffers(dev, &cbi, &first));
+         CHECK(BeginCommandBuffer(first, &begin));
+         CmdBindPipeline(first, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+         CmdBindDescriptorSets(first, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+         CmdPushConstants(first, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
+         CmdDispatch(first, 1, 1, 1);
+         CHECK(EndCommandBuffer(first));
+         const VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                   .pCommandBuffers = &first };
+         CHECK(QueueSubmit(queue, 1, &si, VK_NULL_HANDLE));
+      }
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, scenario == 6, &dynamic);
+      for (uint32_t k = 0; k < (scenario >= 6 ? 4 : 5000); k++) {
          push[28] = k;
          CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
          CmdDispatch(cmd, 1, 1, 1);
