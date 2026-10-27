@@ -579,20 +579,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **libplacebo renders without FBOs on Venus** ("Failed creating FBO texture! Disabling advanced rendering"), since
     the device holds back `float32-blendable` and tier1's storage formats by default (web/venus-gpu.ts `HELD_FEATURES`;
     `?gpu=vkformats=all` takes them: then mpv gets its FBOs, scalers and debanding). With them, **mpv's VA-API chroma
-    reads as zeros on the M4 in about a third of fresh sessions** (bench/vulkan/REPORT.md "VK3 L4"; a green picture,
-    byte for byte the one with the imported chroma never written). Found so far: it isn't the FBO family (32-bit and
-    16-bit floats both), happens at the session's first mpv on Vulkan, and stays for that frame whatever renders it
-    again (a re-render with debanding toggled, a screenshot that imports the planes anew); the worker's calls and the
-    translated WGSL are the same in green and right runs, the import writes the right bytes, completions put back
-    nothing the CPU wrote, and `queue.writeTexture` then a compute pass that samples it is right in isolation
-    (`bench/vulkan/upload-race.ts`). Any probe in the GPU worker hides it: 0 green in 47 sessions with a few µs of CPU in each
-    bind or extra GPU work, against 11 of 30 without (`results/vk3/l4/green-sessions-m4.json`). Never seen on SwiftShader. Leads not taken: libplacebo's filter LUTs (made once at the first frame from
-    host-visible memory: the persistent chroma-only object, `--cscale=bicubic` has none), libplacebo's trace log in a
-    green run, the first frame's held submits (async pipelines) against `?gpu=vkpipelines=sync` (VK2 L7 saw it before
-    async pipelines existed). The user's NVIDIA run says whether NVIDIA shows it (`nvidia.sh`'s `mpv-frames` steps).
-    **Likely fixed by VK3 L4c-A** (VK3-HANDOVER.md): the window's written pages were taken by whichever device
-    submitted and lost to the others' memories; with that fixed, 0 green in 20 bare sessions (was ~8 of 31). To
-    confirm with a second 12 sessions before the advanced path goes on by default.
+    read as zeros on the M4 in about a third of fresh sessions**: found and fixed in VK3 L4c-A (a window page taken by
+    one Venus device's submit was lost to the others' memories; bench/vulkan/REPORT.md "VK3 L4b–L4c"), 0 green in 32
+    bare sessions since. Left: turn the advanced path on by default, after mpv's frames and bar with it on are checked
+    again at today's code (VK3 L4c-F changed storage access) and the user's NVIDIA run's mpv questions.
   - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
     syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
     host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the

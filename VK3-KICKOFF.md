@@ -1,6 +1,18 @@
 **Drafted 2026-10-26, at the user's request, by the session that supervised VK2's last loops and processed the user's
 NVIDIA run; the user approved the content (2026-10-26).** Covers **VK3** of the Vulkan plan
 ([docs/plans/graphics.md](docs/plans/graphics.md) §6), M8's graphics track. Later phases get their own kickoffs.
+**Updated 2026-10-27, at the user's request, by VK3's first supervisor session** (halted after L4c, before L5) so a new
+supervisor can pick up: the status below, the plan's marks, the lessons in "How VK3 runs".
+
+## Status for a new supervisor (2026-10-27)
+
+Read `VK3-HANDOVER.md` first (lean: where VK3 stands, the plan, the next NVIDIA run's questions, findings worth not
+re-discovering); REPORT.md's "VK3 …" sections have the history. In short: steps 1–3 of the plan below are done, the
+user's two NVIDIA runs processed; step 4 is half done (its green chroma found and fixed by a static review's fix loops,
+L4c; the advanced path not yet on by default: the handover's L4d); steps 5–8 are open. **The user parked step 2's bar
+at 1 fish on NVIDIA** (not representative; likely the driver or the GPU's power states): the gate's scene clause is held
+at 1,000 fish and the toolkit unless the user reopens it. Start with L4d, then the two out-of-context reviews in the
+backlog, then L5.
 
 Start **VK3: Venus right everywhere, then the emulated rows.** VK2 made Venus draw: the direct set translated onto
 WebGPU, frames to the screen through virgl, mpv on Vulkan at its bar, 1,463 dEQP-VK cases in CI (bench/vulkan/REPORT.md
@@ -26,6 +38,21 @@ This kickoff starts **a supervising session**, which doesn't do the loops' work 
 - Waits on the subagent's completion notification. It doesn't poll, and doesn't touch the files a running loop is
   changing.
 - Writes the user a short status line after each loop (the user may be away: the report is for when they're back).
+- **Keeps the handover lean** (the user, 2026-10-27): a loop writes a short state (≤ 10 lines); the supervisor folds
+  older states into "Where VK3 stands" and moves history to REPORT.md. A long session hands over by updating this
+  kickoff's status and the handover, then stops.
+- **Runs out-of-context reviews** (CLAUDE.md, docs/testing.md): a fresh agent's static review with a neutral brief every
+  ~3 loops and at the track's end. The user may run them as cloud sessions; the supervisor writes the brief (short,
+  no theories) and triages the findings into fix loops.
+- **Builds each NVIDIA bundle itself**, from a clean checkout with no loop running (the handover says how), and gives
+  the user the command; loops never build or delete bundles.
+
+Lessons from the first session, for the briefs:
+- Loops wait on their background runs **inside their turn** (the Monitor tool's until-loop, bounded): ending a turn to
+  wait sends the supervisor a notification each time, which the user found noisy.
+- A command a permission or safety check refuses is left and reported, never retried in another form.
+- A bug that hides under probes is counted only in bare sessions with arms alternated (`bench/vulkan/green.sh`), and
+  gets a static review before long experiment series: L4's experiments narrowed the green; a fresh review found it.
 
 **Ground rules for every loop** (each brief repeats them):
 - Work only in `~/Development/webpc`. **No git worktrees and no side checkouts**: cross-worktree access and symlinks
@@ -80,22 +107,22 @@ re-discovering" and each state's.
 
 ## The plan (loops; the supervisor may reorder by what each loop finds)
 
-1. **Presentation on NVIDIA.** Find why the bitmap way gives black on Linux with Dawn on Vulkan and ANGLE on GL:
+1. **[done: L1]** **Presentation on NVIDIA.** Find why the bitmap way gives black on Linux with Dawn on Vulkan and ANGLE on GL:
    - Read Chromium's paths for `transferToImageBitmap` from a WebGPU canvas into WebGL. Try the other ways L4 measured:
      `texSubImage2D` straight from the canvas, and readback.
    - Make the page check a first copy (a one-off readback of a few pixels against the WebGPU texture) and fall back
      on mismatch.
    - Extend nvidia.sh with a presentation check: vkcube and mpv on the desktop guest, the page's screenshots compared
      with the frames inside the guest, for each way.
-2. **The fence's round trip.** Instrument submit → `onSubmittedWorkDone` → the guest's fence on every host. Shorten
+2. **[done: L2, L2b; 1 fish parked by the user]** **The fence's round trip.** Instrument submit → `onSubmittedWorkDone` → the guest's fence on every host. Shorten
    what can be shortened: fences with nothing to read back, Dawn's device ticks, the copy's place in the frame.
    **The first suspect is backlog "The host's pollers and their timers"**: a nested `setTimeout(f, 0)` costs 4.6 ms
    a turn in a Chromium worker, about the 4.5 ms wait, and Venus's ring poller is one. The user: tackle it in VK3, if
    only to rule a source of doubt out. Measure on the M4 and SwiftShader, and add the breakdown to nvidia.sh. The bar:
    Venus's frame at 1 fish no slower than virgl's on any host.
-3. **Pipelines made asynchronously, and cached across runs** (plan §7: Metal's ~80 ms first compile): the ring stalls
+3. **[done: L3]** **Pipelines made asynchronously, and cached across runs** (plan §7: Metal's ~80 ms first compile): the ring stalls
    while one is made, and WGSL is kept by SPIR-V hash in the browser's storage.
-4. **libplacebo's advanced path:** the M4's green VA-API chroma with `float32-blendable`. Then that format and tier1's
+4. **[half done: L4, L4b, L4c; L4d next]** **libplacebo's advanced path:** the M4's green VA-API chroma with `float32-blendable`. Then that format and tier1's
    storage formats can come back, and mpv gets its scalers.
 5. **The translator's missing adapter features:** `subgroups`, `shader-f16`, read-write storage with `tier2`.
 6. **The driver's gaps from dEQP-VK:**

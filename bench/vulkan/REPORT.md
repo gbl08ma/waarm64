@@ -1229,6 +1229,34 @@ The scalers cost mpv ~5% more of its CPU and the guest nothing measurable, under
 **nvidia.sh** (`page`, the `mpv` step) runs `mpv-frames.ts` as the page has it and twice with `vkformats=all`, then the
 gate as before and once more on Vulkan with the advanced path on: whether NVIDIA shows the green, and its bar.
 
+## VK3 L4b–L4c: the green found by a static review, and fixed with the review's other findings
+
+**2026-10-26/27.** L4 left the M4's green VA-API chroma (`?gpu=vkformats=all`: libplacebo's advanced path) narrowed but
+not found. **L4b-0** built the session harness, `bench/vulkan/green.sh` (fresh sessions on the Mac, arms alternated,
+each classified green/right from mpv's screenshot and the page's screen against software decoding, one JSON line each;
+~116 s a session), and measured 1 green of 8 bare and 0 of 8 held (`results/vk3/l4b/baseline.jsonl`; pooled with L4's,
+~8 of 31). It also found L4's "established" list weaker than it read: the arms that "hid" the green were never
+alternated with bare ones, and the byte and completion checks never ran in a green session.
+
+Meanwhile **a fresh cloud agent reviewed the picture's path statically**, given only the repo and the symptom
+(`origin/review/venus-green`, `VENUS-GREEN-REVIEW.md`, 78d08509): six ranked findings and eight other defects. The user
+chose to fix them before more experiments (docs/testing.md "Out-of-context reviews" came of it). **L4c**, six loops, each
+finding verified against the code first, then by a test that failed on the old code:
+
+| loop | finding | result |
+| --- | --- | --- |
+| A (e3d4cd46) | 1: the window's written pages taken by whichever Venus device submitted and lost to the others' memories; completion serials per device matched across devices; an odd-sized memory's last bytes never uploaded | fixed. **The green: 0 of 20 bare sessions** (`results/vk3/l4c/a-green.jsonl`) |
+| B (4f76f3e2) | 2: a page's upload put old bytes over an in-flight GPU write; a completion overwrote the guest's newer bytes | fixed (in-flight ranges keep a base). **Green: 0 of 12** (`b-green.jsonl`): 0 of 32 since A, ~0.01% by chance at the old rate |
+| C (86ab0902) | 3: the import's readback before its picture landed (the `vaSyncSurface` claim was false), `forget` against deferred binds, the attach against the ring; import maps outliving resets | fixed |
+| D (42a96e26) | 4: a draw losing its fragment stage when its stages' programs differed (link hash on padded structs); 6: `LOAD_OP_NONE` and a partial `DONT_CARE` cleared; suspended/resumed passes; a partial clear's colour lost | fixed; `load_store_op_none` advertised, 119 dEQP-VK cases newly pass |
+| E (eb6f24ef) | 5: the core's page-crossing store could lose its first page's write-watch mark on a record overflow | fixed in `Mmu::span`; watch.c over 80 pages and the wide/pair/exclusive stores |
+| F (01bbffac) | unaligned buffer copies, storage access WebGPU refuses, clears of non-renderable formats and 3D blits, the push buffer's wrap, storage writes for presentation | fixed (two of seven not confirmed: the bind-group key, a failed create's stale object); 84 dEQP-VK cases newly pass |
+
+The green fits finding 1: libplacebo's chroma LUT, written once by the CPU into host-visible memory, its pages taken by
+another device's submit (a second Venus device during mpv's first frames wasn't observed directly). Loops A–F cost
+nothing measurable: VK0's scene at 1,000 fish on the M4, three alternated rounds each, overlapping
+(`results/vk3/l4c/*-scene-1000-*.json`). Of the review's fourteen findings, twelve held up.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
