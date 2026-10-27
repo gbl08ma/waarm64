@@ -30,9 +30,11 @@ const DROP = new Set([
   '-Wno-error=maybe-uninitialized', '-Wno-format-truncation', '-Wno-nonnull-compare', '-Wno-override-init',
   '-Wno-misleading-indentation', '-Wmisleading-indentation', '-Werror=enum-int-mismatch', '-Wpedantic', '-Werror=pedantic',
   '-g',
+  // An x86_64 host's (a cloud session's: docs/cloud.md).
+  '-mtls-dialect=gnu2', '-DUSE_SSE41', '-DHAVE___BUILTIN_IA32_CLFLUSHOPT', '-DHAVE_CET_H', '-DHAVE_VALGRIND', '-DHAVE_OPENMP',
 ]);
 // Files a renderer in a worker never calls that need what WASI lacks (files, processes, shared memory, dlopen, DRM).
-const SKIP = /\/(os_memory_fd|os_socket|u_process|disk_cache|disk_cache_os|xmlconfig|mesa_cache_db|mesa_cache_db_multipart|fossilize_db|u_debug_stack|u_debug_stack_android|u_debug_symbol|os_file_notify|anon_file|u_dl|futex|perf\/.*|ralloc_test|u_sync_provider|blake3_neon|cache_ops_aarch64|os_misc|vk_drm_syncobj|vk_sync_timeline_drm|proxy\/.*)\.c$/;
+const SKIP = /\/(os_memory_fd|os_socket|u_process|disk_cache|disk_cache_os|xmlconfig|mesa_cache_db|mesa_cache_db_multipart|fossilize_db|u_debug_stack|u_debug_stack_android|u_debug_symbol|os_file_notify|anon_file|u_dl|futex|perf\/.*|ralloc_test|u_sync_provider|blake3_neon|cache_ops_aarch64|os_misc|vk_drm_syncobj|vk_sync_timeline_drm|proxy\/.*)\.c$|_x86-64_unix\.S$/;
 
 const split = (cmd: string): string[] => {
   const args: string[] = [];

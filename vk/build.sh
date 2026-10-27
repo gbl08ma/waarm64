@@ -52,7 +52,8 @@ if [ ! -d "$W/build-virgl" ]; then
   meson setup "$W/build-virgl" "$W/virglrenderer" -Dbuildtype=release -Dvrend=false -Dvenus=true -Dvulkan-dload=false \
     -Dtests=false -Dplatforms= -Ddrm-renderers= -Dvideo=false >/dev/null
 fi
-ninja -C "$W/build-virgl" src/libvirgl.a >/dev/null
+# src/mesa/libmesa.a by name: meson 1.12 builds libvirgl.a without its objects (gen.ts reads them).
+ninja -C "$W/build-virgl" src/libvirgl.a src/mesa/libmesa.a >/dev/null
 
 # Our driver's entrypoint tables (prefix wg), as Mesa's drivers make theirs.
 G=$W/gen
