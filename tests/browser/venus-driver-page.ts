@@ -82,7 +82,8 @@ export async function runImport() {
   const importer = new VenusImport(device, {
     resourceInfo: (id) => (id === 7 ? { format: RG8, width: 4, height: 2 } : undefined),
     readResource: (id) => (id === 7 ? first.slice() : null),
-  });
+    videoPending: { res: () => false },
+  }, (f) => v.gpu.later(f));
   const binds: number[] = [];
   v.gpu.onImport = (t, res) => { binds.push(res); importer.bind(t, res); };
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };

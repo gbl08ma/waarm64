@@ -289,7 +289,20 @@ export class CallQueue<M extends WorkerCall> {
           // After every earlier call (a fence says they've all run; the screen shows what they drew), in order.
           go = !waits;
           break;
-        default: // reset, load, ram
+        case 'vctx': case 'blob-ctx':
+          // Venus's calls that end things are as an unref: after every earlier call, and nothing passes them.
+          if (!(m.t === 'vctx' ? m.create : m.attach)) {
+            if (waits) return ran;
+            go = true;
+            break;
+          }
+        // falls through: one that makes a context or attaches a resource runs at once, as do the others below
+        case 'blob': case 'blob-map': case 'vsubmit':
+          // Venus's own: no virgl call waits on them, and its rings, which are polled and pass every queued call,
+          // may name what they make (a resource the guest imports: web/venus-import.ts) before the queue would run it.
+          go = true;
+          break;
+        default: // reset, load, ram, venus-init; Venus's blob-unmap and blob-unref
           if (waits) return ran;
           go = true;
       }

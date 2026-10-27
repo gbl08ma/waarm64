@@ -495,6 +495,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: plan §6's VK4.
+- **Venus's contexts outlive a virtio reset** (seen in the code by VK3 L4c-C, not run): the device's `reset` clears its
+  `venusContexts` and sends the GPU worker `reset`, which resets the virgl renderer and the import's maps only; Venus's
+  renderer keeps its contexts, rings, blobs and imports (web/venus-host.ts). After a guest reboot a context id may be
+  made again (vkr likely refuses an id it has; not checked), and an old ring may still be polled over memory the new
+  guest reuses. The fix: destroy every Venus context at `reset` (and clear `owner`/`imported`).
 - **Venus's submit path costs the guest** (VK1's gate, REPORT.md "VK1: the gate"): GTK4's frames +11% on Venus (9
   execbuffers a frame against virgl's 4, ~0.17 ms of the emulated kernel each). Ideas, unmeasured: a cheaper virtqueue
   notify (the MMIO write's exit), profiling the guest kernel's execbuffer and syncobj paths under our emulator.
@@ -597,7 +602,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     and written only when a picture changes it, would make a bind free.
   - A resource with no picture written yet is read back once at its first import (WebGL's synchronous `readPixels`);
     what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
-    Venus's copy. Ordering relies on the guest syncing the surface before it maps it (mpv's `vaSyncSurface`).
+    Venus's copy. Nothing makes the guest wait for a picture before it samples the import (`vaSyncSurface` waits for
+    nothing): a draw queued before the picture lands samples the texture's earlier bytes (vk/README.md "Imports").
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of

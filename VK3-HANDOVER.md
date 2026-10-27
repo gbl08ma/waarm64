@@ -94,8 +94,9 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
     never uploaded". Then green.sh: **0 green of 20 bare** against the pooled base rate (~8 of 31 so far).
   - [x] B (done 2026-10-27, "State after L4c-B"): finding 2 (a page's upload overwriting GPU-written bytes of an
     in-flight submit; completions overwriting CPU writes made since). Then green.sh: **0 green of 12 bare** (A+B).
-  - [ ] C: finding 3 (the import's ordering: the readback before the picture lands, `forget` against the deferred
-    `bind`/`plane`, the `blob-ctx` attach against the ring) and "the import maps outlive resets".
+  - [x] C (done 2026-10-27, "State after L4c-C"): finding 3 (the import's ordering: the readback before the picture
+    lands, `forget` against the deferred `bind`/`plane`, the `blob-ctx` attach against the ring) and "the import maps
+    outlive resets".
   - [ ] D: findings 4 and 6 (the lost fragment stage: padding in the link hash, fail loudly; load ops NONE and partial
     DONT_CARE) and "suspended and resumed passes". Then green.sh again if A didn't settle it.
   - [ ] E, F (after the green is settled, before L5): finding 5 (the core's page-crossing store: the JIT's rules), and
@@ -182,6 +183,18 @@ decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 
   texture, all-zero LUT weights or a chroma FBO never rendered would all give exactly these: "the import never wrote
   chroma" is one candidate among several.
 
+
+## State (2026-10-27, after L4c-C)
+
+- **Done: finding 3 (a, b, c) and "the import maps outlive resets", all confirmed** by tests that failed on the old
+  code (tests/venus-import.test.ts, tests/virgl-video.test.ts "CallQueue: Venus's calls…"). web/venus-import.ts orders
+  its own writes (`later`), skips the readback while the picture is pending, drops a held bind whose resource ended
+  since its call, routes `unref` through `later` and prunes `textures`, and forgets everything at `reset`/`load`; the
+  call queue runs Venus's making calls (attach included) past waiting virgl calls. The `vaSyncSurface` claim corrected.
+- **Not fixed:** a draw queued before its picture lands still samples the texture's earlier bytes (nothing makes the
+  guest wait), and the device's attach and the polled ring stay two paths (vk/README.md "Imports"). Found on the way
+  (backlog): Venus's contexts outlive a virtio reset. mpv on SwiftShader: vkva ~ vkno as VK2 L6 (243 > 24, mean 0.026).
+- CI: ci.sh, ci-debian.sh, ci-machines.sh, ci-deqp-vk.sh OK. No hot path changed (no benchmark).
 
 ## State (2026-10-27, after L4c-B)
 

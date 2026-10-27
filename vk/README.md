@@ -376,13 +376,25 @@ two images, a draw, and the images and memories freed again.
   order before the submits that sample it. At the bind, the last picture written into the resource (kept for every
   resource imported before; a surface is imported again at every frame it shows), or the virgl texture read back (its
   first import); and every picture the video path writes into a plane afterwards goes to the textures imported from it
-  too (`VirglRenderer.onPlane`, the decoded bytes the host has anyway). mpv syncs a surface (`vaSyncSurface`: a virgl
-  fence, which the call queue answers only once its picture is written) before it maps it, so the bind sees the
-  picture.
+  too (`VirglRenderer.onPlane`, the decoded bytes the host has anyway).
+- **The order:** nothing makes the guest wait for a picture before it imports and samples its surface. Mesa's virgl VA
+  driver makes no fence for a decode, so mpv's `vaSyncSurface` returns at once (docs/plans/video.md), and Venus's ring
+  is polled, past the GPU worker's call queue, which holds calls behind pending pictures. A bind while the resource's
+  picture is still decoding (`videoPending.res`) reads nothing back and leaves the texture to the picture, written when
+  it lands; a draw already submitted samples the texture's earlier bytes (a reused surface's last picture, or zeros for
+  a fresh one) and the next one the picture. Binds, pictures and a resource's end (`unref`) all go through the queue's
+  order (`VenusGpu.later`, behind submits held for their pipelines), and a bind held past its resource's end, its id
+  perhaps reused, is dropped (counted at the call). A virtio reset or a snapshot's load forgets every resource. The
+  call queue runs Venus's calls that make things (a context, a blob, its map, a resource's attach, a submit) past the
+  calls waiting for pictures, so a resource is imported in vkr before the ring names it; those that end things wait in
+  order as an unref does. The kernel's attach and the ring are still two paths: the device worker hands the attach
+  over as soon as it reads the virtqueue, while the ring is read from shared memory, so a ring polled in that gap
+  would miss the resource (never seen).
 
 `tests/venus-driver.test.ts` imports a resource in the driver's test program (`wgt_import`: an R8G8 image with the
 LINEAR modifier on imported memory, copied to a buffer) through `VenusImport` with a fake renderer, before and after a
-picture; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
+picture; `tests/venus-import.test.ts` checks the order (pending pictures, held binds and pictures across a resource's
+end, resets), `tests/virgl-video.test.ts` the call queue's; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
 `bench/audio/avsync.ts` (`MPV_VARIANTS`): bench/vulkan/REPORT.md "VK2 L6".
 
 ## On the page

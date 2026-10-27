@@ -603,6 +603,35 @@ test('CallQueue: a context sharing a resource with a waiting one waits behind it
   assert.ok(!q.stalled);
 });
 
+test('CallQueue: Venus\'s calls that make things run past waiting calls (its ring, polled, may import a resource now); those that end things wait', () => {
+  // The decoder's context (1) draws from its pending plane (31): it waits. Meanwhile mpv's Venus context (5) is made,
+  // the plane attached to it (the kernel's attach for the guest's dma-buf import, which Venus's ring names next), and
+  // its ring's submit sent: none of them waits for the picture.
+  const pending = new Set<number>([31]), attached = new Map<number, Set<number>>([[1, new Set([31])]]);
+  const ran: string[] = [];
+  const q = new CallQueue<WorkerCall>({
+    run: (m) => void ran.push(m.t === 'vctx' ? `vctx${m.id}${m.create ? '+' : '-'}` : m.t === 'blob-ctx' ? `blob-ctx${m.ctx}:${m.res}${m.attach ? '+' : '-'}` : name(m)),
+    pending: pendingOf(pending, attached),
+    drain: () => {}, giveUp: () => {},
+  });
+  q.push(submit(1, 8), 0);
+  q.push({ t: 'vctx', id: 5, create: true, name: 'mpv' }, 0);
+  q.push({ t: 'blob', ctx: 5, res: 40, mem: 0, flags: 0, blobId: 1n, size: 4096 }, 0);
+  q.push({ t: 'blob-map', res: 40, offset: 0 }, 0);
+  q.push({ t: 'blob-ctx', ctx: 5, res: 31, attach: true, size: 4096 }, 0);
+  q.push({ t: 'vsubmit', ctx: 5, bytes: new Uint8Array(4) }, 0);
+  assert.deepEqual(ran, ['vctx5+', 'blob', 'blob-map', 'blob-ctx5:31+', 'vsubmit']);
+  // A detach waits (in the guest's order, after what came before it), and holds back what follows, Venus's too.
+  q.push({ t: 'blob-ctx', ctx: 5, res: 31, attach: false, size: 4096 }, 0);
+  q.push({ t: 'blob-ctx', ctx: 5, res: 31, attach: true, size: 4096 }, 0);
+  q.push({ t: 'vctx', id: 5, create: false }, 0);
+  q.push({ t: 'vctx', id: 6, create: true }, 0);
+  assert.equal(ran.length, 5);
+  pending.clear();
+  q.progress(5);
+  assert.deepEqual(ran.slice(5), ['1:8', 'blob-ctx5:31-', 'blob-ctx5:31+', 'vctx5-', 'vctx6+']);
+});
+
 test('padPlane: a picture widened to its plane, the last column and row repeated', () => {
   // 3×2 luma into a 5×3 plane.
   const y = padPlane(new Uint8Array([1, 2, 3, 4, 5, 6]), 3, 2, 1, 5, 3);

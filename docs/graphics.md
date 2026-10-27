@@ -320,7 +320,10 @@ drained; past 1 s the pending pictures are given up (the guest sees the old plan
 pending for 3 s is given up whatever else comes out (`giveUpOld`): one a decoder never outputs while later ones do
 would otherwise hold every fence behind it for as long as decoding went on (the idle give-up never comes). A Vulkan
 program's image on its way into virgl's texture (the readback way, web/venus-share.ts) is held back as a pending plane
-is: the compositor's submit that may sample it waits for its bytes.
+is: the compositor's submit that may sample it waits for its bytes. Venus's calls that make things (a context, a blob,
+its map, a resource attached to a Venus context, a submit) never wait: Venus's ring is polled past the queue and may
+import an attached resource at once ([vk/README.md](../vk/README.md) "Imports"); those that end things (a context
+destroyed, a detach, a blob's unmap and unref) wait as an unref does.
 
 **Why the cross-context rule:** the guest has no sync between virtio-gpu contexts. A compositor samples a client's
 buffer right after the client's draws into it were sent, trusting the host to run every context's commands in the

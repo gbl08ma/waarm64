@@ -203,7 +203,8 @@ export class VenusGpu {
   /** The submit (its count in `stats.submits`) that last wrote each texture, and those the open encoder writes. */
   private readonly written = new WeakMap<GPUTexture, number>();
   private touched = new Set<GPUTexture>();
-  /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts. */
+  /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts, called at the bind (it
+   * writes the texture in the queue's order itself). */
   onImport: ((texture: GPUTexture, res: number) => void) | undefined;
   /** The shaders across runs (web/venus-cache.ts), once loaded: until then every lookup misses. */
   cache: ShaderCache | undefined;
@@ -321,7 +322,8 @@ export class VenusGpu {
       gpu_dirty: (ptr: number, max: number) => this.dirtyInto(ptr, max),
       gpu_texture_import(tex: number, res: number) {
         const t = self.get<GPUTexture>(tex);
-        if (t instanceof GPUTexture) later(() => self.onImport?.(t, res));
+        // web/venus-import.ts writes the texture in the queue's order (`later`).
+        if (t instanceof GPUTexture) self.onImport?.(t, res);
       },
       gpu_encoder() {
         self.encodeAt = performance.now();

@@ -152,10 +152,10 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
           const mode = vkShare ?? (vkBreak?.length ? 'bitmap' : shareMode(adapter, glInfo(gl).renderer));
           share = new VenusShare(device, mode, renderer, (id) => v.shared(id), { forced: !!vkShare, broken: new Set(vkBreak), idle: () => v.gpu.idle() });
           console.log(`venus: Vulkan on ${adapter.info.vendor || 'an unnamed'} ${adapter.info.architecture} adapter; its frames reach virgl by ${mode}${vkShare ? ' (forced)' : mode === 'readback' ? '' : ', checked at the first copies'}`);
-          const im = imports = new VenusImport(device, renderer);
+          // Its textures' writes in the queue's order: after the submits held for their pipelines (web/venus-gpu.ts `later`).
+          const im = imports = new VenusImport(device, renderer, (f) => v.gpu.later(f));
           v.gpu.onImport = (t, res) => im.bind(t, res);
-          // In the queue's order: after the submits held for their pipelines (web/venus-gpu.ts `later`).
-          renderer.onPlane = (res, data, w, h, bpp) => v.gpu.later(() => im.plane(res, data, w, h, bpp));
+          renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);
         }
         renderer.external = { has: (id) => v.has(id), refresh: (r) => share?.refresh(r) };
         for (const v of venusBacklog!) venusCall(v);
@@ -209,7 +209,8 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       ram = c.ram.map((m) => new Uint8Array(m.buffer, m.offset, m.length));
       return;
     }
-    if (c.t === 'unref') imports?.forget(c.id);
+    if (c.t === 'unref') imports?.unref(c.id);
+    else if (c.t === 'reset' || c.t === 'load') imports?.reset();
     const t0 = performance.now();
     try {
       runCall(c, renderer, screen);
