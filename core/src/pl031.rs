@@ -42,6 +42,12 @@ impl Pl031 {
         r
     }
 
+    /// Keeps it on the host's time when the realtime clock moves on by `ms`
+    /// that didn't pass on the host (`Vm::clock_skip`).
+    pub fn shift(&mut self, ms: u64) {
+        self.base_ms = self.base_ms.wrapping_sub(ms);
+    }
+
     /// Saves the clock's base and the registers.
     pub fn save(&self, w: &mut Writer) {
         w.u64(self.base_ms);

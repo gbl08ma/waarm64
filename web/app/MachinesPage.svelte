@@ -50,6 +50,7 @@
   /** The page's preferences (this browser's, for every machine). */
   const PREFERENCES = 'preferences';
   let warnOnLeave = $state(leaveWarning());
+  let catchUpClock = $state(settings().clockSync !== false);
 
   const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
   /** This browser offers WebGPU (a Vulkan machine's renderer draws on it; without it, Vulkan programs draw nothing). */
@@ -107,7 +108,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || !!a.vulkan !== !!b.vulkan || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || !!a.vulkan !== !!b.vulkan || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch || !!a.clock !== !!b.clock;
   /** What takes a restart: the shape, and the JIT's budget (the guest doesn't see it: no snapshot is orphaned). */
   const restartChanged = (a: MachineRecord, b: MachineRecord) => shapeChanged(a, b) || (a.jitMiB ?? 0) !== (b.jitMiB ?? 0);
   async function saveSettings() {
@@ -217,7 +218,8 @@
     {@const rec = machines.find((x) => x.id === draft?.id)}
     <Check bind:checked={draft.mouse} field="mouse" title="A relative mouse (virtio-input) for the mouse lock's Raw mode: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), at the guest's own mouse speed. Without it the lock has the Pointer mode only. The guest sees it, so turning it on or off changes the machine's shape">Mouse (the mouse lock's Raw mode)</Check>
     <Check bind:checked={draft.touch} field="touch" title="A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape">Touchscreen</Check>
-    {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch}<p class="note warn" data-pointer-orphans>Adding or removing the mouse or the touchscreen changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+    <Check bind:checked={draft.clock} field="clock" title="A clock device (virtio-rtc) that reads the browser's clock: a guest with a driver for it (Linux 6.16 and later) gets a PTP clock that chrony can follow (refclock PHC), so its time stays the browser's across snapshots and the host's sleep, and a read-only RTC. The guest sees it, so turning it on or off changes the machine's shape">Clock device (the browser's time)</Check>
+    {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock}<p class="note warn" data-pointer-orphans>Adding or removing the mouse, the touchscreen or the clock device changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
   {/if}
 {/snippet}
 
@@ -274,6 +276,8 @@
         <div class="tab settings">
           <Check bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} field="leave-warning"
             note="Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.">Ask before leaving the page while a machine runs</Check>
+          <Check bind:checked={catchUpClock} onchange={() => remember({ clockSync: catchUpClock })} field="clock-sync"
+            note="Snapshot and Suspend first press the guest's sleep key, so the guest suspends itself (as a laptop does when its lid closes) and is woken once the file is written; loading the file wakes it the same way, so its clock catches up with the time the file sat. A guest that doesn't sleep on the key (no systemd-logind) is saved as it is, after waiting up to 10 s. Off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.">Suspend the guest before taking a snapshot</Check>
         </div>
         <div class="tab">
           <h4>Status bar</h4>
@@ -397,7 +401,7 @@
               {@render usbSwitch()}
               {@render pointerSwitches()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse and the touchscreen make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
+              <p class="note">vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse, the touchscreen and the clock device make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">

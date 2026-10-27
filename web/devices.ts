@@ -3,6 +3,7 @@
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
+import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, echoLease, gateway, gatewayOf, portBackend } from './gateway.ts';
 import { busy, gpuBackend, type GpuOptions } from './gpu.ts';
@@ -53,7 +54,8 @@ export type DeviceSpec =
   | P9Spec
   | InputSpec
   | GpuSpec
-  | SndSpec;
+  | SndSpec
+  | { type: 'clock' };
 
 export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][] };
 
@@ -183,6 +185,8 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     // max_nr_ports, emerg_wr, unused without them.
     case 'console': return { entry: [3n, 0n, 2n, 64n, 12n], config: new Uint8Array(12) };
     case 'rng': return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
+    // virtio-rtc (web/clock.ts): no features (no alarms), the requestq alone; no config space.
+    case 'clock': return { entry: [BigInt(CLOCK_ID), 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
     case 'blk': {
       // Features SEG_MAX (2), and RO (5) or, with an overlay, FLUSH (9); config:
       // capacity in sectors (u64 at 0), seg_max (u32 at 12) = queue size - 2, as QEMU.
@@ -346,6 +350,23 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
       if (typeof t?.s !== 'string' || typeof t.word !== 'string' || !(t.left >= 0 && t.left <= 8)) throw new Error('the snapshot has no state for the random number device');
       [s, word, left] = [BigInt(`0x${t.s}`) & M64, BigInt(`0x${t.word}`) & M64, t.left];
     },
+  };
+}
+
+/**
+ * virtio-rtc (web/clock.ts): each request answered at once from the browser's clock. Deterministic runs read a fixed
+ * time (the PL031's there: 2026-09-01), so a step count doesn't depend on the date.
+ */
+function clock(ctx: Ctx, deterministic: boolean): Backend {
+  const now = deterministic ? () => 1_788_220_800_000_000_000n : browserClock();
+  return {
+    request(r) {
+      const ram = ctx.ram();
+      const answer = clockAnswer(gather(ram, r.read, 64), now);
+      scatter(ram, r.write, answer);
+      return Math.min(answer.length, r.write.reduce((n, s) => n + s.len, 0));
+    },
+    reset() {},
   };
 }
 
@@ -947,6 +968,7 @@ export class Devices {
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
+        case 'clock': return clock(ctx, deterministic);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
           return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic);

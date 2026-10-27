@@ -66,10 +66,12 @@ that needs those (Buildroot/Alpine step counts, kernel changes) belongs in the l
 milestone loop still needs a local `scripts/ci.sh` with all images.
 
 **The UEFI firmware** (`images/build.sh edk2`, Podman on arm64) can't be built here either, but its
-build is pinned and reproducible, so `scripts/cloud-setup.sh` fetches the deployed page's
-`QEMU_EFI.fd` and `LICENSES.txt` from `https://vm.tny.im/target/images/edk2/`, keeps them only if
-both match `images/SHA256SUMS`, and writes `images/build.sh --inputs edk2`'s key to `.inputs` (so
-`--check edk2` passes). With it, Debian boots on the page (`?machine=debian`). `shell.img` (the Node
+build is pinned and reproducible, so `scripts/cloud-setup.sh` fetches the deployed page's copy
+(`https://vm.tny.im`: the firmware under its hashed name in `assets/`, found in the page's bundled
+code, and `EDK2-LICENSES.txt`, as `npm run dist` writes them; `target/images/edk2/` first, where an
+older deploy had them), keeps both only if they match `images/SHA256SUMS`, and writes `images/build.sh
+--inputs edk2`'s key to `.inputs` (so `--check edk2` passes). The hashed names broke the old fetch
+until 2026-10-25. With it, Debian boots on the page (`?machine=debian`). `shell.img` (the Node
 firmware test's disk) isn't deployed: that test skips.
 
 ## What was measured in a fresh session

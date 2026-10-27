@@ -511,7 +511,11 @@ impl Transport {
         let max = self.entry.queue_size;
         let Some(q) = self.queue() else { return 0 };
         if !on {
+            // The driver takes the queue's buffers back (Linux's virtio-input freezes for a suspend so, without a
+            // reset): a completion for one of them is dropped, as for any chain not in flight, and doesn't reach
+            // the rings the driver may have freed.
             q.ready = false;
+            q.inflight.clear();
             return 0;
         }
         // A QueueNum never written, or written 0 (EDK2's virtio-gpu driver does, and QEMU ignores it), is the

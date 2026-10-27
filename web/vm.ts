@@ -60,6 +60,9 @@ type Exports = {
   vm_snapshot_save(vm: number, ptr: number, len: number): bigint;
   vm_snapshot_restore(vm: number, ptr: number, len: number): number;
   snapshot_version(): number;
+  vm_suspended(vm: number): number;
+  vm_wake(vm: number): number;
+  vm_clock_skip(vm: number, ns: bigint): number;
 };
 
 /**
@@ -1003,6 +1006,16 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm)) : undefined,
     /** The spill memories (`BootOptions.spill`), memory 1 first: the guest RAM past memory 0. */
     spill,
+    /** Whether the guest is in PSCI SYSTEM_SUSPEND: every vCPU off until `wake` (docs/platform.md "System suspend"). */
+    suspended: () => ex.vm_suspended(vm) !== 0,
+    /** Wakes a guest in SYSTEM_SUSPEND: its vCPU resumes where the guest asked. False if it wasn't suspended. */
+    wake() {
+      if (!ex.vm_wake(vm)) return false;
+      raise(0); // round-robin's host may sleep on the signal word with no deadline
+      return true;
+    },
+    /** Moves a suspended guest's clock on by `ms` (the time it was away); false if it isn't suspended or time is deterministic. */
+    clockSkip: (ms: number) => ex.vm_clock_skip(vm, BigInt(Math.max(0, Math.round(ms * 1e6)))) !== 0,
     /**
      * The VM's state for a snapshot, with every vCPU out of the core: between `run` calls after
      * `settle()`, or once `pause()` resolved true. Guest RAM (`memory` at `ram`, `ramSize` bytes) is

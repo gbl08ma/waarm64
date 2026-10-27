@@ -99,7 +99,8 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
 
 /**
  * Opens a snapshot for a restore: its header, and what `bootVm` takes as `restore`. `coreVersion`
- * is the running core's `snapshot_version`; `devices` the device specs of the machine it will
+ * is the running core's `snapshot_version` (it reads that and older formats down to the codec's
+ * `snapshotVersionMin`, when it is the codec's own); `devices` the device specs of the machine it will
  * start (the `BootOptions.devices`), whose writable disks must be the ones the snapshot pins:
  * the same identity, or the same SHA-256 (`sha256` hashes a slot's base image: seconds, so only
  * asked when the identity differs and the file has the hash). Everything that can be refused is
@@ -113,7 +114,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
  * `suspended`): they are kept. Such a file is refused without `resume`, and any other with it.
  */
 export async function readSnapshot(
-  source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
+  source: ReadableStream<Uint8Array> | Blob, codec: Codec & { snapshotVersion?: number; snapshotVersionMin?: number }, coreVersion: number,
   opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore }> {
   if (source instanceof Blob) {
@@ -124,8 +125,10 @@ export async function readSnapshot(
   }
   const s = await openSnapshot(source, { codecs: [codec] });
   const { header } = s;
-  if (header.coreVersion !== coreVersion) {
-    throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state is format ${header.coreVersion}; this version reads ${coreVersion}). Open it in the version that made it.`);
+  // The codec's core reads back to its `snapshotVersionMin` (a caller naming another version means another core).
+  const min = codec.snapshotVersion === coreVersion ? Math.min(codec.snapshotVersionMin ?? coreVersion, coreVersion) : coreVersion;
+  if (typeof header.coreVersion !== 'number' || header.coreVersion > coreVersion || header.coreVersion < min) {
+    throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state is format ${header.coreVersion}; this version reads ${min === coreVersion ? coreVersion : `${min} to ${coreVersion}`}). Open it in the version that made it.`);
   }
   if (!!header.suspend !== !!opts.resume) {
     throw header.suspend

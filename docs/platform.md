@@ -295,7 +295,9 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
   continues from its saved reading (`Clock::base`), so the counter doesn't jump and timers that
   were due fire at once; it **stands at that reading until a vCPU first runs** (`Clock::start`, in
   `run` and `run_cpu`), and so does the saved VM's from the moment its state is taken (`Clock::hold`)
-  until it runs on, so the saved and every restored machine go on from the same instant. On the page
+  until it runs on, so the saved and every restored machine go on from the same instant. A guest that was suspended
+  (PSCI SYSTEM_SUSPEND, "System suspend" above) is restored suspended, and the host may move its clock on by the time
+  away before it wakes it (`vm_clock_skip`): the page's clock catch-up does. On the page
   the vCPU workers start ~130 ms after the state is restored and a save pauses the machine for as
   long as the file takes; a guest waiting with a shorter timeout (ALSA's wait for a sound period,
   100 ms) found it expired before it ran ([audio.md](audio.md) "Linux driver behavior"). The vCPU workers of a parallel VM start
@@ -432,10 +434,33 @@ later CPU_ON restarts the vCPU), **AFFINITY_INFO** (level 0: ON 0 / OFF 1), MIGR
 answered in the core; SYSTEM_OFF and SYSTEM_RESET exit to the host (exit kind `PSCI`, PC past the
 HVC, the host writes x0 if it resumes); SMCCC 1.1 on the same conduit (`SMCCC_VERSION`,
 `SMCCC_ARCH_FEATURES`, which reports `ARCH_WORKAROUND_1/2/3` as NOT_REQUIRED: nothing speculates,
-so Linux says "Not affected" for Spectre-v4, [cpu.md](cpu.md)); everything else NOT_SUPPORTED (CPU_SUSPEND included).
+so Linux says "Not affected" for Spectre-v4, [cpu.md](cpu.md)); **SYSTEM_SUSPEND** in realtime mode (below); everything else NOT_SUPPORTED (CPU_SUSPEND included).
 Only CPU 0 is on at boot. kvm-unit-tests' `psci` passes all five checks, including the concurrent
 cpu-on one QEMU TCG fails. In parallel SMP every vCPU's worker starts at boot and sleeps on its
 wake word (`IDLE`, u64::MAX) until a CPU_ON, which its own thread carries out.
+
+### System suspend
+
+**SYSTEM_SUSPEND** (SMC32/64: entry, context) is answered in realtime mode only: a deterministic guest gets
+NOT_SUPPORTED from it and from FEATURES, so its PSCI and its step counts are as before. It is DENIED while another vCPU
+is on (or starting); otherwise the caller goes off and the machine is **suspended** (`Platform::suspended`: the vCPU,
+its entry and context; `Shared::suspended` for the host to read from any thread) until the host wakes it
+(`vm_wake`): the vCPU resumes at the entry as from CPU_ON. Nothing in the core wakes it (Linux masks every interrupt
+that isn't a wakeup source before it suspends); the page wakes it on a key or a click ([frontend.md](frontend.md)
+"The guest's clock"). Linux takes it as suspend-to-RAM (`/sys/power/mem_sleep` lists `deep`, its default), so
+`systemctl suspend` and logind's sleep key use it.
+
+**The clock across it.** The counter runs on while the guest is suspended, and Linux's resume counts its progress as
+sleep (the arch timer is a nonstop clocksource): CLOCK_REALTIME and CLOCK_BOOTTIME move on, CLOCK_MONOTONIC doesn't,
+and the soft-lockup and RCU-stall detectors are reset. So **`vm_clock_skip(ns)`, allowed only while the guest is
+suspended**, moves the clock on by time that didn't pass in the VM (a snapshot sitting in a file; the clock held while
+a state is written), and the guest's own resume catches its wall clock up; the PL031's base moves back by as much
+(`Pl031::shift`), so it still shows the host's time. The same jump in a guest that isn't suspended is what the core
+never does: measured on Debian 13 (an hour on CNTVCT at a restore), `date` was right at once, but RCU reported a
+self-detected stall and systemd killed journald for its watchdog (`WatchdogSec=`, on CLOCK_MONOTONIC); arm64 has no
+"guest was paused" signal to the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`: arm64 takes asm-generic's
+`kvm_check_and_clear_guest_paused`, which returns false). A snapshot taken while the guest is suspended saves that
+(snapshot format 3), so the restored machine is suspended too.
 
 ## Bare-metal test convention
 

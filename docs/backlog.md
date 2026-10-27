@@ -856,10 +856,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The network across a snapshot:** the guest keeps its lease and its connections' state; the
   restored machine's card is on whatever the page connects it to now. A link down/up at restore
   would make the guest ask for a lease again; open connections are lost either way.
-- **The guest's clock after a restore** is behind by the time the snapshot sat in its file (the
-  RTC shows the host's time, the counter continues): until something sets it (`hwclock -s`,
-  timesyncd over a network). A hint to the guest (an RTC alarm, a virtio device event) could
-  make it resync.
+- **The guest's clock after a restore**: the catch-up is done (on by default) (docs/frontend.md "The guest's clock": the guest
+  suspends itself for the file, PSCI SYSTEM_SUSPEND, and wakes with its clock moved on; why moving a running guest's
+  counter can't: platform.md "System suspend"), and the virtio-rtc device. What's left:
+  - **virtio-rtc against a running driver.** Checked against the driver's message formats only: Debian's kernels (up
+    to 6.17 in trixie-backports) leave `CONFIG_VIRTIO_RTC` out. In the dev VM: our kernel (`images/linux`) with it
+    on, the guest's `/sys/class/rtc/rtc*/since_epoch` and its PTP clock (`phc_ctl`, chrony's `refclock PHC`) against
+    the host; the Arch desktop guest's kernel, if it has it.
+  - **virtio-rtc's cross-timestamps** (READ_CROSS with the ARM virtual counter: the reading and CNTVCT at one instant,
+    which the device worker would need the core's clock for) and **alarms** (an RTC alarm that wakes a suspended
+    guest: `rtcwake`).
+  - **Guests that don't sleep on the key** (no systemd-logind: Alpine with OpenRC; a desktop that takes the key and
+    asks first) are saved as before; an agent (`guest-set-time`, [plans/agent.md](plans/agent.md) step 2) or a link
+    flap for timesyncd (a virtio-net `VIRTIO_NET_F_STATUS` down and up on restore: Debian's networkd and timesyncd
+    re-sync at once on it; networked guests only) would cover them.
+  - **The host's own sleep** (a laptop's lid): `performance.now()` may not count it, so the guest's counter doesn't
+    either and its clock falls behind as after a snapshot. The page could notice `Date.now()` moving away from it and
+    run the catch-up (sleep key, skip, wake) by itself.
 - **One worker compresses RAM** (the core's LZ): 0.44 s for 304 MB of pages. Four would take it
   to 0.15 s (`bench/boot/REPORT.md` "M8 phase C loop 4"); chunks must then be dealt out
   interleaved, not as ranges. And the file's blocks are copied through the codec's own instance
