@@ -1061,6 +1061,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   deadlines: 20 min at ~1% CPU, nothing printed. Its diagnostic report (`kill -USR2`: the runner starts files with
   `--report-signal=SIGUSR2`) had no timer, no worker and no socket, only the pipes to the runner: no test's deadline
   timer was armed, so it waits outside a test (a top-level await or a hook, where per-test timeouts don't apply).
+  **A fourth time 2026-10-27** (merging the clock branch; the code under test unchanged): idle at ~3% CPU, nothing
+  printed after 6 min; the report again had no JS stack, no armed timer and no worker.
   Next: a deadline on the file's own setup, or the same report taken earlier with the JS stack of each pending await.
 - **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
   0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
