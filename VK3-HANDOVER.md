@@ -120,13 +120,19 @@ per bind, 0 of 22 with extra GPU work, 4 of 7 with a JS-only trace.
 - **One variable per arm**; the bare arm alternated with it in the same sitting (the Mac's state drifts).
 - **Time box** per step as its brief says; when it runs out, write what was learned and stop.
 
-**Leads** (ranked by the supervisor; L4b-0 re-ranks after its review):
-1. L4's ranked leads: (a) libplacebo's filter LUTs, made once at the first frame from host-visible memory: test
-   `--cscale=bicubic` (no LUT), then the write-watch's view of the guest's stores there; (b) libplacebo's trace log in a
-   green session (perturbs); (c) `?gpu=vkpipelines=sync`.
-2. Amplification: delays (no data reads) injected at single points in the worker (before an import's chroma write,
-   between an import and its bind, at a completion, at the first submit sampling a new texture) to find one that makes
-   it frequent.
+**Leads** (L4b-0's ranking, after reading the import, bind and upload paths; each ~12 bare + 12 arm sessions, alternated, ~50 min):
+1. **Order (`twice`, then `swfirst`):** is the green tied to the session's first run (cold host and guest caches, submits
+   held for async pipelines) or to VA-API on Vulkan any time? Cheapest and most informative; it splits the rest.
+2. **Held submits (amplify):** a knob that delays the async pipelines' readiness (e.g. 50 ms) without reading data, to
+   see whether the rate rises. `web/venus-import.ts`'s binds and pictures go through `later`, but `forget` (virgl unref)
+   and `renderer.unrefResource` run at once, and a held bind reads the virgl texture back at drain time, not at call time.
+   Then `?gpu=vkpipelines=sync` (L4's c).
+3. **The LUT / staging uploads:** `--cscale=bicubic` (L4's a), then a record of `upload()`'s dirty pages (vk/driver/wg_cmd.c)
+   kept in memory, compared green vs right. Note that `upload()` consumes the watch's pages once per submit, for memories
+   with a GPU buffer only.
+4. **Wait-before-signal:** wg_sync declares `VK_SYNC_FEATURE_WAIT_PENDING`, and a wait on a value not yet submitted counts
+   as met (the submit runs before its signaller). Cheap check: count such waits in the driver (a counter, no data read).
+5. L4's b (libplacebo's trace log in a green session): perturbs; last.
 
 **Tried** (step, theory, arm, result k/n, conclusion):
 
@@ -136,6 +142,30 @@ per bind, 0 of 22 with extra GPU work, 4 of 7 with a JS-only trace.
 | L4 | worker CPU probe | a scan of a few µs per bind | 0/22 | hides (not evidence of cause) |
 | L4 | GPU probe | extra GPU work | 0/22 | hides |
 | L4 | JS-only trace | trace of calls | 4/7 | doesn't hide; calls identical green/right |
+| L4b-0 | baseline at 2f229f0a | bare `vkformats=all` (green.sh, alternated with `held`) | 1/8 | the rate today is lower than L4's 7/23 (or drifts by sitting); the green is L4's rg16float bytes exactly (2,279,070 off), and the page's screen agrees |
+| L4b-0 | control | `held` (formats held, the default) | 0/8 | as expected |
+
+**The harness (L4b-0):** `ARMS='bare:vkformats=all|held:' N='15 8' bench/vulkan/green.sh <results.jsonl> [budget s]`: fresh
+sessions on the Mac (mpv-frames.ts through sway-mac.sh), arms alternated, each classified green/right/odd/error from
+mpv's screenshot and the page's screen (`__webpcGrab`, read only after mpv's screenshot exists) against software
+decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 s a session. Harness-only knobs:
+`swfirst` (software decoding's mpv first) and `twice` (VA-API again after software decoding: `verdict2`). The baseline:
+`bench/vulkan/results/vk3/l4b/baseline.jsonl` (stopped by the supervisor at 8 + 8 sessions, short of the brief's 15).
+
+**L4b-0's doubts about L4's "established" list:**
+- The hiding arms weren't alternated with bare: the scan arms (0/22) ran as loops a, c–e, all with `rg32float` FBOs,
+  and the bare greens came mostly from other loops (i, j: 5/16, `rg16float`). Greens cluster by loop (j: 3 in a row), and
+  today's 1/8 is under 7/23. So "any probe hides it" is confounded with time and the FBO family; not established.
+- "Each bind writes the same non-zero bytes" and "completions put back nothing" were measured only by the probes that
+  never showed green (0/22 scan, 0/3 detector): never observed in a green session.
+- "Calls identical" covered imports, textures, views, destroys, shaders and held submits, not `gpu_write` (the dirty
+  pages uploaded and their bytes), copies, bind groups, samplers or pipeline descriptors: the LUT and staging path is unseen.
+- "Only the session's first mpv on Vulkan": VA-API on Vulkan never ran second in a session (the later arms were vkno, GL),
+  so this might just as well be "VA-API on Vulkan, any time" (`swfirst` and `twice` test it).
+- The green bytes are exactly those of chroma = 0 per FBO family (2,280,642 rg32float, 2,279,070 rg16float). A zero chroma
+  texture, all-zero LUT weights or a chroma FBO never rendered would all give exactly these: "the import never wrote
+  chroma" is one candidate among several.
+
 
 ## State (2026-10-26, after L4)
 
