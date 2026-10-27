@@ -172,7 +172,7 @@ their code.**
   `bench/results/local/`.
 - **Out-of-context reviews** ([docs/testing.md](docs/testing.md) "Out-of-context reviews"): at each track's end, and
   mid-track every ~3 loops or after a loop that adds a subsystem, a fresh agent with only the repo and a neutral brief
-  (the area, "find real defects"; never the handover's theories or a symptom to chase) reviews the code statically and
+  (the area, "find real defects", a symptom at most; never the handover's theories or what was ruled out) reviews the code statically and
   leaves ranked findings on a `review/<area>` branch. The supervisor triages them into fix loops or the backlog; each
   fix starts with its confirming test, failing first. (VK3's static review of one picture's path found six defects
   that fit the bug being chased and eight more besides, all missed by the loops that wrote the code.)
