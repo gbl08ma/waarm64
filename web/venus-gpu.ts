@@ -66,21 +66,21 @@ export type GpuCaps = { readonly features: ReadonlySet<string>; readonly limits:
 export const VENDORS: Record<string, number> = { apple: 0x106b, nvidia: 0, amd: 0x1002, ati: 0x1002, intel: 0x8086, google: 0x1ae0, arm: 0x13b5, qualcomm: 0x5143, 'img-tec': 0x1010, imagination: 0x1010, microsoft: 0x1414, samsung: 0x144d };
 
 /**
- * The adapter's features the device doesn't take by default (VK3 L4; vk/README.md "The driver"): with them libplacebo's
- * FBOs, and with those its advanced rendering, under which mpv's VA-API chroma reads as zeros on the M4 in about a third
- * of fresh sessions (a green picture; bench/vulkan/REPORT.md "VK3 L4"). `?gpu=vkformats=all` takes them.
+ * The adapter's features `?gpu=vkformats=held` keeps from the device (VK3 L4–L4e; vk/README.md "The driver"): with them
+ * libplacebo has its FBOs, and with those its advanced rendering (scalers, debanding). Held by default until VK3 L4e
+ * (bench/vulkan/REPORT.md "VK3 L4", "VK3 L4d", "VK3 L4e"); the switch is kept for A/B.
  */
 export const HELD_FEATURES = ['float32-blendable', 'tier1-storage'];
 
 /**
  * The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`), and whether there is a device.
  * Bit 14 is storage for texture-formats-tier1's formats, a part of that feature the driver can take apart (`tier1-storage`).
- * `hold` names features the driver doesn't take, as if the adapter lacked them (`HELD_FEATURES`; `?gpu=vkhold=<name>`).
+ * `hold` names features the driver doesn't take, as if the adapter lacked them (`HELD_FEATURES` with `?gpu=vkformats=held`; `?gpu=vkhold=<name>`).
  */
 const FEATURES = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
   'depth-clip-control', 'dual-source-blending', 'clip-distances', 'indirect-first-instance', 'texture-formats-tier1', 'texture-formats-tier2',
   'rg11b10ufloat-renderable', 'float32-blendable', 'bgra8unorm-storage'];
-export function gpuFeatures(caps: GpuCaps | undefined, device: boolean, hold: readonly string[] = HELD_FEATURES) {
+export function gpuFeatures(caps: GpuCaps | undefined, device: boolean, hold: readonly string[] = []) {
   let flags = device ? 1 << 31 : 0;
   const has = (f: string) => !!caps?.features.has(f) && !hold.includes(f);
   FEATURES.forEach((f, i) => { if (has(f)) flags |= 1 << i; });
@@ -195,6 +195,9 @@ export class VenusGpu {
   /** Pipelines being made asynchronously (`Later`), unless `syncPipelines` (`?gpu=vkpipelines=sync`). */
   private making = 0;
   private readonly syncPipelines: boolean;
+  /** `?gpu=vkpipedelay=<ms>`: each pipeline made asynchronously is ready this much later than WebGPU says (VK3 L4e: a cold
+   * compile of the host's GPU, as Metal's first one, on any host). */
+  private readonly pipelineDelayMs: number;
   /** The open submit's commands while it is recorded to be held, the pipelines it waits for, its temporary buffers. */
   private rec: (() => void)[] | undefined;
   private recWaits: Later[] = [];
@@ -230,9 +233,10 @@ export class VenusGpu {
   private readonly complete: (serial: number) => void;
   private readonly dirty: () => number[] | undefined;
 
-  constructor(device: GPUDevice | undefined, memory: WebAssembly.Memory, complete: (serial: number) => void, dirty: () => number[] | undefined, options: { syncPipelines?: boolean; gpuTime?: boolean } = {}) {
+  constructor(device: GPUDevice | undefined, memory: WebAssembly.Memory, complete: (serial: number) => void, dirty: () => number[] | undefined, options: { syncPipelines?: boolean; pipelineDelayMs?: number; gpuTime?: boolean } = {}) {
     [this.device, this.complete, this.dirty] = [device, complete, dirty];
     this.syncPipelines = !!options.syncPipelines;
+    this.pipelineDelayMs = options.pipelineDelayMs ?? 0;
     this.gpuTime = !!options.gpuTime && !!device?.features.has('timestamp-query');
     this.mem = () => memory.buffer as ArrayBuffer;
     device?.addEventListener('uncapturederror', (e) => this.warn(`WebGPU: ${(e as GPUUncapturedErrorEvent).error.message}`));
@@ -804,7 +808,9 @@ export class VenusGpu {
         } else {
           // Made off the GPU process's main thread (Dawn's workers), and Venus's ring goes on meanwhile; a submit
           // drawing with it is held until it's ready (`gpu_set_pipeline`). Refused, it is made at once for its error.
-          const made = kind === 6 ? d.createRenderPipelineAsync(j as GPURenderPipelineDescriptor) : d.createComputePipelineAsync(j as GPUComputePipelineDescriptor);
+          let made: Promise<GPURenderPipeline | GPUComputePipeline> = kind === 6 ? d.createRenderPipelineAsync(j as GPURenderPipelineDescriptor) : d.createComputePipelineAsync(j as GPUComputePipelineDescriptor);
+          const delay = this.pipelineDelayMs;
+          if (delay > 0) made = made.then((p) => new Promise((resolve) => setTimeout(() => resolve(p), delay)));
           const later = new Later(made, now);
           this.making++;
           void later.ready.then(() => {

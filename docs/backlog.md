@@ -579,26 +579,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
 - **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
-  - **libplacebo renders without FBOs on Venus** ("Failed creating FBO texture! Disabling advanced rendering"), since
-    the device holds back `float32-blendable` and tier1's storage formats by default (web/venus-gpu.ts `HELD_FEATURES`;
-    `?gpu=vkformats=all` takes them: then mpv gets its FBOs, scalers and debanding). With them, **mpv's VA-API chroma
-    read as zeros on the M4 in about a third of fresh sessions**: found and fixed in VK3 L4c-A (a window page taken by
-    one Venus device's submit was lost to the others' memories; bench/vulkan/REPORT.md "VK3 L4b–L4c"), 0 green in 48
-    bare sessions since. VK3 L4d checked it again (REPORT.md "VK3 L4d": frames right, mpv at its bar, dEQP-VK's list
-    passing, nothing refused) but kept it held for the next entry. Left: that entry, then turn it on.
-  - **mpv's window freezes when its first pipelines are cold** (VK3 L4d, REPORT.md "VK3 L4d"; the M4): an mpv whose
-    shaders the host's GPU cache (Metal's, which outlives Chrome's profiles) hasn't seen leaves the page's screen on its
-    pre-fullscreen frame for good (no fullscreen swapchain resource reaches venus-share), and can't exit; its
-    screenshot is right and the host's fences aren't stuck. Every such session with the advanced path (5 of 5, async
-    pipelines or `vkpipelines=sync`), and with the formats held under `--profile=high-quality`; mpv's defaults with the
-    formats held were right. This blocks the advanced path's default. Leads: what mpv's present path waits on at the
-    resize while its pipelines are being made (a WSI image's release, a present's fence), and Venus's held submits
-    around a swapchain's destruction; a host knob that delays pipelines' readiness would reproduce it anywhere
-    (proposed VK3 L4e). Maybe the same as the next entry's wait.
-  - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
-    syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
-    host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the
-    swapchain's destruction; not looked into. avsync.ts and mpv-frames.ts kill it.
+  - **Mesa's async present drops a present after a failed one** (VK3 L4e, REPORT.md "VK3 L4e"; vk/README.md "The
+    guest's Mesa"): Venus's `vn_wsi_present_async` (Mesa 26.x, main as of 8598bb5c) returns the previous present's
+    error for the next present, of any swapchain, and drops that one unsubmitted (frame never shown, present fence
+    never signalled): a cold mpv's fullscreen window froze and it couldn't exit, also at a file's end. The desktop image
+    works around it with `VN_PERF=no_async_present`. Left: report it upstream with the fix (always hand the present to
+    the thread; report a deferred error only for its own swapchain), and drop the workaround once Arch ships one;
+    mpv on SIGTERM wasn't rechecked. **The hosted desktop disk needs replacing** with one built since L4e (the
+    local one is) before a deploy of the page, which since L4e takes libplacebo's advanced path by default
+    (`?gpu=vkformats=held`: off), so that an old disk's first cold mpv doesn't meet the freeze.
   - **Every frame's planes are written again** (libplacebo imports a surface each time it shows it): ~0.2 ms of the
     GPU worker and 0.6 MB a frame at 480p, ~3 MB at 1080p. A Venus texture per resource, kept while the resource lives
     and written only when a picture changes it, would make a bind free.

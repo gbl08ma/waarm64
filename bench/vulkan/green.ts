@@ -9,7 +9,7 @@ import { basename } from 'node:path';
 
 const [dir, out, arm, knobs, extra, commit, seconds, rc] = process.argv.slice(2);
 type Cmp = { bytes: number; off24: number; mean: number; greenness?: number[] } | undefined;
-type Arm = { hardwareDecoding?: boolean; size?: string; placebo?: string; seconds?: number; shotSeconds?: number; page?: { greenness?: number } };
+type Arm = { hardwareDecoding?: boolean; size?: string; placebo?: string; seconds?: number; mpvExit?: number; shotSeconds?: number; page?: { greenness?: number } };
 const r = existsSync(`${dir}/results.json`) ? JSON.parse(readFileSync(`${dir}/results.json`, 'utf8')) as Record<string, unknown> : {};
 const va = r.vkva as Arm | undefined, no = r.vkno as Arm | undefined;
 const mpv = r['vkva ~ vkno'] as (Cmp & { page?: Cmp }) | undefined;
@@ -38,6 +38,9 @@ const line = {
   date: new Date().toISOString(), session: basename(dir), arm, knobs, mpv: extra, commit, verdict, page, ...(verdict2 ? { verdict2, page2: classify(mpv2?.page, va2?.page?.greenness, no?.page?.greenness) } : {}), ...(why ? { why } : {}),
   mpvShot: mpv && { off24: mpv.off24, bytes: mpv.bytes, mean: mpv.mean, greenness: mpv.greenness },
   pageShot: mpv?.page && { ...mpv.page, greenness: [va?.page?.greenness, no?.page?.greenness] },
+  // mpv's exits (VK3 L4e: 0 by itself, 124/137 ended by shot.sh's timeout: a frozen window), VA-API's then software's;
+  // the guest's Venus settings.
+  mpvExit: [va?.mpvExit, no?.mpvExit], environment: r.environment || undefined,
   seconds: Number(seconds), vkvaSeconds: va?.seconds, vkvaShotSeconds: va?.shotSeconds, placebo: va?.placebo || undefined,
   chromium: r.chromium, macos: existsSync(`${dir}.macos`) ? readFileSync(`${dir}.macos`, 'utf8').trim() : undefined,
   pageErrors: (log.match(/\[page error\]|pageerror/g) ?? []).length,

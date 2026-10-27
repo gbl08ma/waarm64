@@ -1307,6 +1307,74 @@ pipelines' readiness on the host would reproduce it on any host (SwiftShader in 
 `mpv-frames.ts` now reads shot.sh's own words at the end of its output (a killed mpv's "Killed" line made L4d's first
 cold sessions read as "VA-API not used"), keeps each page grab as `<tag>-page.ppm`, and takes `REGRAB=<s>`.
 
+## VK3 L4e: the cold freeze was Mesa's async present; the desktop guest presents synchronously, the advanced path is on
+
+**2026-10-27**, at 41f75a09 (with this loop's changes). JSON in `results/vk3/l4e/`. The M4 (Metal, Chrome for Testing
+153.0.8010.12, macOS 26.6.2) through `bench/vulkan/green.sh` and `bench/gpu/sway-mac.sh`; the dev VM's SwiftShader
+(Chromium 153.0.8010.52). Desktop guest: mpv 0.41.0, libplacebo 7.360.1, Mesa 26.2.5 (`vulkan-virtio`).
+
+**The cause is in the guest's Mesa, not the host.** Venus's guest driver presents on a thread of its own when the
+renderer has no implicit fencing (ours: virtio-gpu's), `vn_wsi_present_async` in `src/virtio/vulkan/vn_wsi.c` (since
+Mesa MR 39283, 2026-01): `vkQueuePresentKHR` hands the present to the thread and returns the *previous* present's
+result. When that result is an error, it returns it **and drops the present it was given**: never handed to the
+thread, so its wait semaphores aren't waited, its image never reaches the compositor and its present fence (libplacebo
+asks for one, `VK_KHR_swapchain_maintenance1`) is never submitted. What makes the error: mpv resizes to fullscreen
+while the present thread still holds the old swapchain's last present, waiting in `vn_wsi_sync_wait` for that frame's
+GPU work (seconds when its pipelines are compiled for the first time); libplacebo makes the new swapchain with the old
+one as `oldSwapchain`, which retires it (`wsi_common_wayland.c`), and the held present then fails with
+`VK_ERROR_OUT_OF_DATE_KHR`. The next present, the new swapchain's first (mpv's fullscreen frame), gets that error and is
+dropped; libplacebo ignores an out-of-date present, mpv is paused, so nothing replaces the frame: **the page shows the
+pre-fullscreen one for good**. At quit, libplacebo's swapchain teardown waits for every present fence: the dropped one
+is a DRM syncobj with no fence attached, waited with `WAIT_FOR_SUBMIT`, so **mpv's `vo` thread waits forever**
+(`swiftshader-frozen-stacks.txt`: `vo` in `drmSyncobjTimelineWait` under `pl_swapchain_destroy`, the `vn_wsi` thread
+idle). The Wayland trace (WAYLAND_DEBUG) agrees: neither the old swapchain's last present nor the new one's first is
+attached. Why only cold: a warm frame's GPU work is done before the resize, so the old present succeeds. Mesa main
+(as of 8598bb5c, 2026-10-23, which reworked this function's error handling in MR 45415) still drops it; no issue or MR
+upstream covers it. The fix upstream: always hand the present to the thread (`wsi_common_queue_present` submits its
+waits and fences before the WSI's own present fails) and report a deferred error only for its own swapchain.
+
+**The remedy, the least invasive one in the guest:** `VN_PERF=no_async_present` (Venus's own switch: presents on the
+calling thread, as Venus did before 26.0 and as Debian's Mesa 25.0 still does) in the desktop image's
+`/etc/environment` and `/etc/environment.d/` (`images/arch/desktop-setup.sh`). Nothing on the host can prevent it: the
+guest driver picks async present from the renderer's lack of implicit fencing, hard-coded for virtio-gpu.
+
+| | without the remedy | with it |
+| --- | --- | --- |
+| SwiftShader, the session's first mpv on Vulkan (VA-API), the advanced path on | frozen: page off by >24 in 1.62 M bytes, mpv killed (exit 137): every session (9 in L4e) | right: page 358 bytes off (as the screenshots), mpv exits (0), 3 of 3 |
+| SwiftShader, mpv on Vulkan playing to the end of the file (backlog "mpv on Vulkan doesn't exit") | killed at the limit (137, 48.7 s) | exits at the end (0, 13.9 s) |
+| the M4, a cold first session (new mpv options), the advanced path on | frozen (1.71 M off, 137; L4d: 5 of 5) | right, mpv exits: 3 of 3 cold, 2 of 2 warm |
+| the M4, warm, `?gpu=vkpipedelay=1500` | mpv can't exit in either arm (2 of 2; the screen right) | right, exits: 2 of 2 |
+
+`?gpu=vkpipedelay=<ms>` (each pipeline made asynchronously is ready that much later) makes a warm M4 session meet the
+bug (the present after one that failed is a later one there: the screen is right but mpv can't exit), so it stays as a
+knob for reproducing cold compiles. The check: `CHECK=1 GUEST_ENV=… node bench/vulkan/mpv-frames.ts` on SwiftShader
+fails without the remedy (`mpv didn't exit by itself in vkva`) and passes with it (`swiftshader-d-base.json`,
+`swiftshader-d-fix.json`; GUEST_ENV writes the image's line on a disk built before it).
+
+**mpv's bar holds with synchronous presents** (`mpv-mac-sync.json`, one session, against L4d's `mpv-mac-all.json`
+from earlier the same day, the advanced path on in both; the `vn_wsi` thread is gone from the sync session's threads):
+
+| the M4, 4 vCPUs | frames shown, dropped | the guest busy | mpv's CPU (ms a second) | sway's |
+| --- | --- | --- | --- | --- |
+| Vulkan with VA-API, synchronous presents | 536, 530; **0** | 14, 13% | 373, 338 | 89, 99 |
+| the same, async presents (L4d) | 532, 531; 0 | 15, 13% | 388, 345 | 91, 95 |
+| GL (both sessions) | 527–529; 0 | 12–13% | 299–310 | 100–103 |
+
+**The advanced path is on by default** (`HELD_FEATURES` taken unless `?gpu=vkformats=held`): right in every session
+above (0 green in 10 more sessions on the M4, 58 since L4c-A), at mpv's bar, dEQP-VK's pass list green with it (`ci-deqp-vk.sh`).
+**The desktop image is rebuilt with it** (`images/arch/desktop.sh`, the mirror's packages of the day: Mesa 26.2.5
+still). The sessions above set the line at boot (GUEST_ENV/MPV_ENV) on the earlier disk; on the rebuilt one, with
+nothing set: SwiftShader's check passes (`swiftshader-rebuilt.json`; `GUEST_ENV=VN_PERF=` clears it and it fails again,
+`swiftshader-rebuilt-off.json`), and on the M4 a cold and a warm session are right, mpv exiting
+(`green-rebuilt-image.jsonl`). The hosted disk (vmdisks.tny.im) is the old one until it's replaced: a page deployed
+with the advanced path on would meet the freeze with its first cold mpv.
+
+How the stacks were had: gdb isn't in the desktop image and an image build didn't fit the disk then (5 GB free), so gdb's packages
+(`pacman -Sp gdb` in the guest for the list, from arch.bens.haus) went on a copy of the media disk
+(`target/video/media-gdb.ext4`, local) and `mpv-frames.ts` installed them at boot (`DISK2=/target/video/media-gdb.ext4
+PRE='pacman -U --noconfirm /mnt/media/gdb/*.zst' DIAG=…`). The guest's libraries are stripped: exported names
+(libc, libdrm, libplacebo's API) placed the waits, Mesa's source (`target/vk/mesa`, 26.2.4) the rest.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

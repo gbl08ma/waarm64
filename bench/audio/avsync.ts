@@ -125,7 +125,7 @@ const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - 
 
 // mpv:<file>: the video too, in sway (`--hwdec=vaapi`, mpv's default output), its frames and drops from its status.
 // MPV_VARIANTS=<label>:<options>|<label>:<options>...: each mpv:<file> clip under each set of mpv's options in turn
-// (added to MPV_ARGS), ROUNDS times, alternating; their records are mpv-<file>@<label>-r<round> (VK2 L6: mpv on virgl's
+// (added to MPV_ARGS), ROUNDS times, alternating (MPV_ENV='VAR=x …': mpv's environment, e.g. VK3 L4e's VN_PERF); their records are mpv-<file>@<label>-r<round> (VK2 L6: mpv on virgl's
 // GL against Vulkan in one boot).
 const mpvVariants = process.env.MPV_VARIANTS ? process.env.MPV_VARIANTS.split('|').map((v) => ({ label: v.slice(0, v.indexOf(':')), args: v.slice(v.indexOf(':') + 1) })) : [{ label: '', args: '' }];
 results.mpvVariants = process.env.MPV_VARIANTS;
@@ -133,7 +133,7 @@ for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) for (let round = 0
   const file = name.slice(4), clip = `mpv-${file.replace(/\W/g, '-')}${v.label ? `@${v.label}-r${round}` : ''}`;
   const args = [MPV_ARGS, v.args].filter(Boolean).join(' ');
   // Under `script` (mpv prints its status line only to a terminal), from a script (no quoting through su and script).
-  await pasteSerial(`cat > /home/arch/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec mpv --hwdec=vaapi ${args} --log-file=/tmp/mpv-full.log --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/arch/mpv-run.sh`);
+  await pasteSerial(`cat > /home/arch/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec env ${process.env.MPV_ENV ?? ''} mpv --hwdec=vaapi ${args} --log-file=/tmp/mpv-full.log --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/arch/mpv-run.sh`);
   await run(asUser('script -qfc /home/arch/mpv-run.sh /tmp/mpv.log >/dev/null 2>&1 &'));
   await page.waitForTimeout(WARM_S * 1000);
   const status = async () => (await run(`grep -a -o 'MPV [0-9]* [0-9]* [0-9]* [a-z0-9-]*' /tmp/mpv.log | tail -1`)).trim().split(' ');

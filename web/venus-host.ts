@@ -45,13 +45,15 @@ export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs:
  * How the renderer's pipelines are made (`?gpu=vkpipelines=sync`: at once, as before VK3 L3, for A/B) and where its
  * shaders persist across runs (`cache`: the store for a renderer build, web/venus-cache.ts; none with `?gpu=vkcache=off`).
  */
-export type VenusOptions = { syncPipelines?: boolean; cache?: (buildId: string) => Promise<ShaderCache | undefined>;
+export type VenusOptions = { syncPipelines?: boolean;
+  /** `?gpu=vkpipedelay=<ms>`: each pipeline made asynchronously ready that much later (web/venus-gpu.ts; tests, VK3 L4e). */
+  pipelineDelayMs?: number; cache?: (buildId: string) => Promise<ShaderCache | undefined>;
   /** `?gpu=vknudge=<ms>`: the pump's nudges at most this often (0: none; default `NUDGE_MS`); `?gpu=vkgputime`: each
    * submit's passes timed on the GPU (VK3 L2b, A/B and diagnosis). */
   nudgeMs?: number; gpuTime?: boolean;
-  /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take besides `HELD_FEATURES` (web/venus-gpu.ts
-   * `gpuFeatures`), which `allFormats` (`?gpu=vkformats=all`) takes too. */
-  hold?: readonly string[]; allFormats?: boolean };
+  /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
+   * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
+  hold?: readonly string[]; heldFormats?: boolean };
 
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
@@ -141,7 +143,7 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = HELD_FEATURES) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = []) {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
@@ -171,7 +173,7 @@ export class VenusRenderer {
    */
   static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump', options: VenusOptions = {}) {
     let self: VenusRenderer | undefined;
-    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines, gpuTime: options.gpuTime });
+    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines, pipelineDelayMs: options.pipelineDelayMs, gpuTime: options.gpuTime });
     const imports = {
       env: {
         memory,
@@ -183,7 +185,7 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.allFormats ? [] : HELD_FEATURES), ...(options.hold ?? [])]);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])]);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.

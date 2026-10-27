@@ -121,18 +121,16 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types (device-local; host-visible, coherent, cached and
   device-local) on a 2 GiB heap, one queue family. `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
-- **Held back from the adapter's by default** (VK2 L7, VK3 L4; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable`
-  and tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
+- **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
+  tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
   `shaderStorageImageExtendedFormats`). Either gives mpv's libplacebo a family of FBO formats (32-bit floats, or
-  16-bit floats with tier1's storage), and with them its advanced rendering (scalers, debanding, its frame cache). Under
-  it mpv's VA-API chroma read as zeros on the M4 in about a third of fresh sessions, until VK3 L4c-A fixed the window's
-  pages being lost between devices (bench/vulkan/REPORT.md "VK3 L4b–L4c"; 0 of 48 since). They stay held because of
-  VK3 L4d (REPORT.md "VK3 L4d"): right and at mpv's bar once the host's shader cache is warm, but an mpv whose pipelines
-  the host compiles for the first time leaves its window frozen on its pre-fullscreen frame and can't exit (every such
-  session on the M4; with the formats held only under `--profile=high-quality`). Without them libplacebo has no FBOs and mpv renders as in VK2 L6, its VA-API frames
-  byte for byte its software ones. The driver takes both where the adapter has them once `?gpu=vkformats=all` asks
-  (the advanced path on; tests, the NVIDIA run); `?gpu=vkhold=<feature>` holds one more (`tier1-storage` is tier1's
-  storage alone).
+  16-bit floats with tier1's storage), and with them its advanced rendering (scalers, debanding, its frame cache). The
+  driver takes both where the adapter has them, by default since VK3 L4e. They were held while mpv's VA-API chroma
+  read as zeros on the M4 in about a third of fresh sessions (the window's pages lost between devices, fixed in VK3
+  L4c-A: bench/vulkan/REPORT.md "VK3 L4b–L4c"; 0 of 58 sessions since), then while a cold mpv's window froze (Mesa's
+  async present, "The guest's Mesa" below; REPORT.md "VK3 L4d", "VK3 L4e"). `?gpu=vkformats=held` holds them again
+  (libplacebo then has no FBOs and mpv renders as in VK2 L6: "Failed creating FBO texture", its VA-API frames byte for
+  byte its software ones); `?gpu=vkhold=<feature>` holds one (`tier1-storage` is tier1's storage alone).
 - **YCbCr conversions aren't advertised** (VK2 L7's choice, by measurement): advertised and not honoured, GTK4's
   Vulkan renderer (`GSK_RENDERER=vulkan`) drew black or near-empty frames for more CPU than its GL one (REPORT.md "VK2
   L7"); without them GTK4 stays on GL, its default here anyway (forced onto Vulkan it aborts on its own assertion).
@@ -239,7 +237,9 @@ compositor's submit that samples a Vulkan image waits until no submit is held (w
 `VenusGpu.idle`), so a frame isn't copied before the submits that draw it. A pipeline WebGPU refuses is made again
 at once for its error (an invalid pipeline, as before); one a command needs before it's ready without a held submit
 (made after its submit's encoder began: the driver never does) is made at once (`syncPipelines` counts them; 0 in the
-tests). `?gpu=vkpipelines=sync` makes them at once, as before, for A/B. tests/venus-gpu.test.ts checks the order on a
+tests). `?gpu=vkpipelines=sync` makes them at once, as before, for A/B; `?gpu=vkpipedelay=<ms>` makes each one ready that much
+later than WebGPU says (VK3 L4e: a cold compile on a host whose GPU cache is warm, e.g. the M4's Metal, whose cache
+outlives Chrome's profiles). tests/venus-gpu.test.ts checks the order on a
 stand-in device; tests/venus-driver.test.ts that the driver's program draws right with them held.
 
 ## The shader cache
@@ -352,6 +352,18 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
   GPU channel, and with it every WebGPU device and WebGL context of the page; a probe in a worker of its own took the
   page's down too. So the first way is chosen by the adapter and WebGL's renderer (`shareMode`), and the check only
   drops ways that work but copy wrong.
+
+**The guest's Mesa** (VK3 L4e; bench/vulkan/REPORT.md "VK3 L4e"): Venus's guest driver (Mesa 26.x) presents on a
+thread of its own when the renderer has no implicit fencing (virtio-gpu's never has), and `vn_wsi_present_async`
+returns the previous present's result: an error there (`VK_ERROR_OUT_OF_DATE_KHR` from a swapchain retired while its
+last present waited for slow GPU work, e.g. a resize during a first pipeline compile) is returned for the next present,
+of any swapchain, and that present is dropped unsubmitted: its frame never shows and its present fence never signals,
+so the app's window freezes and it can't tear its swapchain down (mpv: the pre-fullscreen frame, `vo` waiting in
+`drmSyncobjTimelineWait` at quit). Unfixed upstream as of Mesa main 8598bb5c (2026-10-23). The desktop image sets
+`VN_PERF=no_async_present` (images/arch/desktop-setup.sh: `/etc/environment`, `/etc/environment.d/`): presents on the
+app's thread, as Venus did before 26.0 and Debian's Mesa 25.0 does; mpv keeps its bar with it. The check:
+`CHECK=1 node bench/vulkan/mpv-frames.ts` on SwiftShader (the session's first mpv on Vulkan freezes there every time
+without it; `GUEST_ENV=VN_PERF=no_async_present` sets it on a disk built before).
 
 Per frame at 1920×1080 (`bench/vulkan/share.ts`: an app's frame, the copy, a compositor's draw sampling it; medians
 of 5 rounds, IQR ≤ 0.07 ms; `bench/vulkan/results/vk2/l4/`):

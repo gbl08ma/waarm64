@@ -45,11 +45,10 @@
 #   5. pipelines (VK3 L3): pipelines made one by one against all at once (bench/vulkan/pipelines.ts), and vkQuake's and
 #      a vkmark scene's replays with pipelines made at once and no shader store, then cold and warm across a restart on
 #      one kept profile (bench/vulkan/venus-run.ts; ~8 min);
-#   6. mpv: its frames on Vulkan (VA-API, software) and GL compared, with libplacebo's complaints, as the page has it and
-#      twice with libplacebo's advanced path on (`vkformats=all`, VK3 L4; the page's screen read too, VK3 L4d;
-#      bench/vulkan/mpv-frames.ts; ~3 min each), then
-#      the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds, and once more on Vulkan with the
-#      advanced path on (bench/audio/avsync.ts).
+#   6. mpv: its frames on Vulkan (VA-API, software) and GL compared, with libplacebo's complaints, twice as the page has
+#      it (libplacebo's advanced path on since VK3 L4e; the page's screen read too, and mpv's exit) and once with it held
+#      (`vkformats=held`; bench/vulkan/mpv-frames.ts; ~3 min each), then the gate, mpv on Vulkan with VA-API against
+#      mpv on GL, two alternated rounds (bench/audio/avsync.ts).
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz: send that file back.
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
@@ -181,26 +180,26 @@ if [ "${1:-}" = page ]; then
       }' "$R") || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" mpv "* ]]; then
-    # VK3 L4: mpv's paused frame on Vulkan (VA-API's surfaces, and decoded in software) and on GL, compared, with
-    # libplacebo's complaints: as the page has it (libplacebo without FBOs: "Failed creating FBO texture"), then with its
-    # advanced path (`vkformats=all`: no complaint; the M4's green chroma, fixed in L4c, would be "all ... vkva ~ vkno"
-    # off by >24 in ~2.3 M bytes). Two sessions of the latter, each also reading the page's screen once mpv's screenshot
-    # exists and 20 s later (GRAB, REGRAB; VK3 L4d: on the M4, an mpv whose pipelines weren't in the host's shader cache
-    # yet left its window on the pre-fullscreen frame for good and couldn't exit: "page" off by >24 in ~1.6 M bytes,
-    # "late" 0 from it, the arm ~50 s instead of ~23).
-    for f in default all all2; do
-      knobs= grab=; [ $f != default ] && knobs=vkformats=all grab="GRAB=1 REGRAB=20"
-      step "mpv-frames-$f" 900 env SHIM=1 GPU_KNOBS="$knobs" $grab node bench/vulkan/mpv-frames.ts target/arch/desktop.qcow2 "$R/mpv-frames-$f"
+    # VK3 L4, L4e: mpv's paused frame on Vulkan (VA-API's surfaces, and decoded in software) and on GL, compared, with
+    # libplacebo's complaints, as the page has it (its advanced path on since L4e: no "Failed creating FBO texture"; the
+    # M4's green chroma, fixed in L4c, would be "default ... vkva ~ vkno" off by >24 in ~2.3 M bytes), twice: the first
+    # session compiles libplacebo's pipelines (Chromium's shader cache is in the temporary profile), the second may find
+    # NVIDIA's driver cache warm. Each also reads the page's screen once mpv's screenshot exists and 20 s later (GRAB,
+    # REGRAB) and records mpv's exit (`mpvExit` 0; VK3 L4e: Mesa's async present dropped the first fullscreen frame of
+    # a cold mpv, which froze its window and couldn't exit, "page" off by >24 in ~1.6 M bytes and the arm ~50 s: the
+    # desktop image sets VN_PERF=no_async_present, GUEST_ENV sets it again on an image built before). Then once with
+    # the advanced path held (`vkformats=held`, as before L4e: "Failed creating FBO texture").
+    for f in default default2 held; do
+      knobs= grab="GRAB=1 REGRAB=20"; [ $f = held ] && knobs=vkformats=held grab=
+      step "mpv-frames-$f" 900 env SHIM=1 GPU_KNOBS="$knobs" GUEST_ENV=VN_PERF=no_async_present $grab node bench/vulkan/mpv-frames.ts target/arch/desktop.qcow2 "$R/mpv-frames-$f"
       grep -hE "^\[[0-9.]+\] (vk|gl)" "$R/mpv-frames-$f.log" | grep -v ' venus ' | cut -c1-200 | sed "s/^/  $f /" || true
       [ -n "$grab" ] && node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-        for (const t of ["vkva", "vkno"]) { const a = r[t] ?? {}; console.log(`  ${t}: ${a.seconds} s, page ${JSON.stringify(a.page)}`); }
+        for (const t of ["vkva", "vkno"]) { const a = r[t] ?? {}; console.log(`  ${t}: ${a.seconds} s, mpv exit ${a.mpvExit}, page ${JSON.stringify(a.page)}`); }
         console.log(`  vkva ~ vkno page: ${JSON.stringify(r["vkva ~ vkno"]?.page)}`);' "$R/mpv-frames-$f/results.json" 2>/dev/null || true
     done
+    # The gate (the advanced path on, as the page has it since VK3 L4e; presents on mpv's thread, VN_PERF).
     step mpv 1800 env VIRGL_GPU=virgl,vulkan MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=2 \
-      MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan|gl:--vo=gpu --gpu-api=opengl" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv"
-    # The gate with libplacebo's advanced path on (VK3 L4).
-    step mpv-all 1800 env VIRGL_GPU=virgl,vulkan,vkformats=all MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=1 \
-      MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv-all"
+      MPV_ENV=VN_PERF=no_async_present MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan|gl:--vo=gpu --gpu-api=opengl" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv"
   fi
   { uname -a; nvidia-smi --query-gpu=name,driver_version --format=csv 2>/dev/null || true; "$CHROMIUM" --version 2>/dev/null || true; cat "$P/BUNDLE.txt"; } > "$R/host.txt"
 

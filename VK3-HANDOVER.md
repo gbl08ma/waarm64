@@ -6,6 +6,20 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-27, after L4e)
+
+- **The cold freeze was the guest's Mesa** (REPORT.md "VK3 L4e", `results/vk3/l4e/`): Venus's async present
+  (`vn_wsi_present_async`, Mesa 26.x and main) returns a failed present's error for the next present and drops that one
+  unsubmitted; a resize while the old swapchain's last present waits for cold GPU work makes the error, and mpv's first
+  fullscreen frame and its present fence are lost (frozen window, `vo` waiting forever at quit). Not upstream yet.
+- **Remedy:** `VN_PERF=no_async_present` in the desktop image (`images/arch/desktop-setup.sh`). Right on SwiftShader (3/3
+  first mpv; the end-of-file hang gone too) and the M4 (3/3 cold, 2/2 warm, 2/2 with `?gpu=vkpipedelay=1500`, which
+  without it leaves mpv unable to exit warm: the knob stays); mpv's bar holds (0 drops, 13–14%).
+- **The advanced path is on by default** (`?gpu=vkformats=held` holds it). `target/arch/desktop.qcow2` is rebuilt with
+  the setting (checked on SwiftShader and the M4); the hosted disk still needs replacing before the page is deployed
+  (backlog; the user's call).
+- Check: `CHECK=1 [GUEST_ENV=VN_PERF=no_async_present] node bench/vulkan/mpv-frames.ts` on SwiftShader.
+
 ## State (2026-10-27, after L4d)
 
 - **The advanced path stays held** (REPORT.md "VK3 L4d", `results/vk3/l4d/`). Warm on the M4 it's right (0 green in 10
@@ -41,7 +55,7 @@ docs and the backlog; git keeps the old handovers.
 ## The plan (loops; the supervisor may reorder)
 
 - [x] L4d: L4's remainder checked: right and at its bar warm, but a cold first run freezes mpv's window; still held.
-- [ ] L4e (proposed by L4d): the cold-pipeline freeze (backlog), then the advanced path on by default; ~1 loop.
+- [x] L4e: the cold freeze is Mesa's async present (the desktop image presents synchronously); the advanced path on by default.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`: see
   backlog for what L4c-F refused).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
@@ -68,20 +82,29 @@ in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvid
 in `bench/results/local/`, delete the tarball.) The last bundle (`target/vk3-nvidia-bundle-f55eacd7.tar`) predates L4c:
 build a new one.
 
-**Open for the next run** (the advanced path still held after L4d; rewrite them when L4e turns it on):
-- (L4) `mpv-frames-default`: as the page has it, libplacebo complains "Failed creating FBO texture" and VA-API's frame is
-  byte for byte the software one (`vkva ~ vkno` 0) — the same as on the M4?
-- (L4, L4d) `mpv-frames-all`, `mpv-frames-all2` (`?gpu=vkformats=all`): no complaint; VA-API's chroma right (`vkva ~ vkno`
-  near 0)? Which FBO family did NVIDIA's adapter give (`texture-formats-tier1` in `adapter.json` says `rg16float`)?
-- (L4d) the same runs' page screens (the lines after each, `GRAB=1 REGRAB=20`): does the window freeze on mpv's
-  pre-fullscreen frame (vkva's `page` off by >24 in ~1.6 M bytes against vkno, `late` 0 from it, the arm ~50 s instead of
-  ~23)? `-all` is a first run there (Chromium's shader cache is in the temporary profile), `-all2` has NVIDIA's driver
-  cache warm: frozen in one, both or neither?
-- (L4) `mpv-all`: mpv on Vulkan with the advanced path on meets the bar (no drops, the guest no busier than 19–27%)?
+**Open for the next run** (the advanced path on by default since L4e; the bundle's desktop image should be one
+rebuilt with `VN_PERF=no_async_present`, though nvidia.sh sets it again with GUEST_ENV/MPV_ENV):
+- (L4, L4e) `mpv-frames-default`, `mpv-frames-default2`: libplacebo without complaint; VA-API's chroma right (`vkva ~
+  vkno` near 0)? Which FBO family did NVIDIA's adapter give (`texture-formats-tier1` in `adapter.json` says
+  `rg16float`)? The page's screens (the lines after each, `GRAB=1 REGRAB=20`) the fullscreen frame (vkva's `page` off
+  by few bytes against vkno), and `mpv exit 0` in every arm (L4e: the freeze is gone with synchronous presents)?
+- (L4) `mpv-frames-held` (`vkformats=held`): "Failed creating FBO texture", VA-API byte for byte software (`vkva ~ vkno` 0)?
+- (L4, L4e) `mpv`: mpv on Vulkan with the advanced path and synchronous presents meets the bar (no drops, the guest no
+  busier than 19–27%)?
 
 ## Things worth not re-discovering
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
+
+- (L4e) A Vulkan window frozen with its app unable to exit, host fences fine: look at the guest's present path first.
+  Mesa 26's Venus presents on a thread (`vn_wsi[q,i]`) and drops a present after one that failed (OUT_OF_DATE from a
+  retired swapchain); `VN_PERF=no_async_present` is the A/B. A `vo` thread in `drm_syncobj_array_wait_timeout` with no
+  host fence pending means a guest syncobj point nobody submitted (Venus waits with `WAIT_FOR_SUBMIT`).
+- (L4e) User stacks in the desktop guest without an image build: gdb's packages on a copy of the media disk,
+  installed at boot (`DISK2`, `PRE`, `DIAG` in mpv-frames.ts; REPORT.md "VK3 L4e"). `su` from root runs no pam_env:
+  /etc/environment doesn't reach `su arch -c` (shot.sh sources it), and the file's last line has no newline.
+- (L4e) A desktop image build needs ~12 GB free (packages, a copy of the root, the ext4); the dev VM's disk is near
+  full: check `df` before one, and run it alone (an earlier L4e session's VM crashed with one beside Chromium).
 
 - (L1) Guest-visible identity matters: Venus's guest driver keys its WSI path on the device's vendor ID (0x10de →
   prime blit, frames into buffers that aren't shared). Read a NVIDIA run's render stats first: `shareRefreshes` 0 meant

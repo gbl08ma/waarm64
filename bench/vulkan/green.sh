@@ -7,12 +7,12 @@
 # file and it carries on. It starts a session only while BUDGET seconds (default 540) leave room for one (~200 s), so
 # one call stays under the Bash tool's cap; nothing is added to the GPU worker beyond L4's bare sessions (the page's
 # screen is read once mpv's screenshot exists).
-#   ARMS='bare:vkformats=all|held:' N='15 8' bench/vulkan/green.sh <results.jsonl> [budget s]
+#   ARMS='bare:|held:vkformats=held' N='15 8' bench/vulkan/green.sh <results.jsonl> [budget s]
 # An arm is `name:knobs[ mpv options]`: knobs go to the page's `?gpu=virgl,vulkan,<knobs>` (empty: as the page has
 # it), the options to both mpv runs (VA-API first, the session's first mpv on Vulkan, then software decoding), e.g.
-# `bicubic:vkformats=all --cscale=bicubic`. Two knobs are the harness's own (not the page's): `swfirst` runs software
+# `bicubic: --cscale=bicubic`. Two knobs are the harness's own (not the page's): `swfirst` runs software
 # decoding first (VA-API's mpv then isn't the session's first on Vulkan), `twice` runs VA-API again after software
-# decoding (vkva2: classified too). N: sessions per arm, one number or one per arm (default 12). Sessions'
+# decoding (vkva2: classified too). GUEST_ENV and the rest of mpv-frames.ts's settings pass through. N: sessions per arm, one number or one per arm (default 12). Sessions'
 # logs and results: bench/results/local/green-<arm>-<time>/ (and .log, .driver.log).
 set -euo pipefail
 cd "$(dirname "$0")/../.."

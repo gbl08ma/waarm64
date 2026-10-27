@@ -7,11 +7,18 @@
 // many differ at all, the largest difference, the mean). Each arm also records libplacebo's complaints (VK3 L4: "Failed
 // creating FBO texture" while its advanced path is off) and Venus's submits. Writes <out>/results.json.
 //   node bench/vulkan/mpv-frames.ts [image] [outdir]   (default target/arch/desktop.qcow2; SHIM=1 installs the media
-//   disk's VA driver; GPU_KNOBS adds to the page's `?gpu=` (e.g. `vkformats=all`: the advanced path on); MPV_ARMS and
+//   disk's VA driver; GPU_KNOBS adds to the page's `?gpu=` (e.g. `vkformats=held`: the advanced path off); MPV_ARMS and
 //   PAIRS replace the arms and comparisons; SHOT2=1 takes a second screenshot after turning debanding on (the frame
 //   rendered anew); GRAB=1 also reads the page's screen (`window.__webpcGrab`) once mpv's screenshot exists, mpv still
 //   showing the frame, and compares the arms' grabs as PAIRS says (VK3 L4b: bench/vulkan/green.sh; each kept as <tag>-page.ppm;
-//   REGRAB=<s> grabs again that much later, <tag>-late); HOLD=<s> keeps mpv
+//   REGRAB=<s> grabs again that much later, <tag>-late; DIAG=1 keeps mpv's threads' kernel waits and its log's end then,
+//   <tag>-diag.txt, with gdb's stacks if the guest has gdb; DIAG=<n> its last n lines, DIAG_GREP=<re> those matching, DIAG_FROM=<re>
+//   the first n from the first line matching; MPV_ENV='VAR=x …' sets mpv's environment, GUEST_ENV='VAR=x …' adds lines to
+//   the guest's /etc/environment (shot.sh reads it), PRE='cmd' runs as root first, DISK2 replaces the media disk's URL);
+//   each arm records mpv's exit (`mpvExit`: 0 by itself, 124/137 ended by the limit), and CHECK=1 fails the run when an
+//   arm's mpv didn't exit by itself (VK3 L4e: on SwiftShader the session's first mpv on Vulkan without the desktop
+//   image's VN_PERF=no_async_present);
+//   HOLD=<s> keeps mpv
 //   that long after its screenshot (default 3, 6 with GRAB); bench/gpu/sway-mac.sh runs it with
 //   SCRIPT=../vulkan/mpv-frames.ts, mode `-`)
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -21,7 +28,7 @@ const args = process.argv.slice(2);
 const out = args.at(-1) ?? new URL('../results/local/vk2/mpv-frames/', import.meta.url).pathname;
 mkdirSync(out, { recursive: true });
 const image = (args.length > 1 ? args[0] : process.env.IMAGE) ?? new URL('../../target/arch/desktop.qcow2', import.meta.url).pathname;
-const s = await openSession({ gpu: `virgl,vulkan${process.env.GPU_KNOBS ? `,${process.env.GPU_KNOBS}` : ''}`, image, out, ncpus: 4, ramMiB: 4096, disk2: '/target/video/media.ext4' });
+const s = await openSession({ gpu: `virgl,vulkan${process.env.GPU_KNOBS ? `,${process.env.GPU_KNOBS}` : ''}`, image, out, ncpus: 4, ramMiB: 4096, disk2: process.env.DISK2 ?? '/target/video/media.ext4' });
 const results: Record<string, unknown> = { chromium: s.browser.version(), gl: s.gl };
 // MPV_ARMS='tag=args|tag=args' replaces the arms (PAIRS='a~b c~d' the comparisons), e.g. one arm's mpv options varied.
 const ARMS: Record<string, string> = process.env.MPV_ARMS
@@ -63,6 +70,14 @@ try {
   await s.rootShell();
   await s.run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media');
   if (process.env.SHIM) await s.run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/');
+  // GUEST_ENV='VAR=x …' (VK3 L4e): lines added to the guest's /etc/environment before the arms, as an image would have
+  // them (e.g. desktop-setup.sh's VN_PERF=no_async_present on an image built before it, or `VN_PERF=` to clear it on one
+  // built after); PRE='cmd' runs as root before the arms (e.g. `pacman -U --noconfirm /mnt/media/gdb/*.zst` with DISK2 a
+  // media disk holding them: gdb for DIAG).
+  if (process.env.GUEST_ENV) await s.run(`sed -i -e '$a\\' /etc/environment; printf '%s\\n' ${process.env.GUEST_ENV} >> /etc/environment`);
+  if (process.env.PRE) s.log('pre', (await s.run(process.env.PRE, 300_000)).trim().slice(-300));
+  // shot.sh reads /etc/environment itself: `su` from root runs no pam_env (a login's session does).
+  results.environment = (await s.run(`su arch -c 'set -a; . /etc/environment; env' | grep -E '^(VN_|MESA_|VK_)' | tr '\\n' ' '`)).trim();
   results.info = await s.run('pacman -Q mpv libplacebo mesa vulkan-virtio webpc-va | tr "\\n" " "');
   results.sway = await s.startSway('gles2');
   // The screenshot 10 s after the start (the seek done, the frame shown), then quit; mpv on Vulkan may not exit (its
@@ -74,7 +89,8 @@ cat > /root/shot.sh <<'EOF'
 #!/bin/sh
 tag=$1; shift
 rm -f /tmp/$tag.png
-su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png SHOT2=${'$'}{SHOT2:+/tmp/$tag-b.png} HOLD=${'$'}{HOLD:-3}; timeout -k 5 ${'$'}{MPV_S:-40} mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
+su arch -c "set -a; . /etc/environment; set +a; export ${'$'}{MPV_ENV:-} XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png SHOT2=${'$'}{SHOT2:+/tmp/$tag-b.png} HOLD=${'$'}{HOLD:-3}; timeout -k 5 ${'$'}{MPV_S:-40} mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
+echo $? > /tmp/$tag.rc
 pkill -9 -x mpv; ffmpeg -loglevel error -y -i /tmp/$tag.png -f rawvideo -pix_fmt rgb24 /tmp/$tag.rgb
 [ -f /tmp/$tag-b.png ] && ffmpeg -loglevel error -y -i /tmp/$tag-b.png -f rawvideo -pix_fmt rgb24 /tmp/$tag-b.rgb
 echo "$(ffprobe -v error -show_entries stream=width,height -of csv=p=0 /tmp/$tag.png) $(grep -c 'Using hardware' /tmp/$tag.log)"
@@ -103,6 +119,8 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
     }, tag);
     if (rgb && width) writeFileSync(`${out}/${tag}-page.ppm`, Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`), Buffer.from(rgb, 'base64')]));
   };
+  /** The arms whose mpv didn't exit by itself (CHECK=1 makes the script fail on any). */
+  const stuck: string[] = [];
   for (const [tag, a] of Object.entries(ARMS)) {
     await s.display();
     const t0 = performance.now();
@@ -111,10 +129,15 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
     if (GRAB) {
       // mpv in the background, the shell waiting (a check a second, typed once before mpv starts) for its screenshot;
       // then the page's screen while mpv still shows the frame (HOLD), then shot.sh's own line once it's done.
-      await s.run(`rm -f /tmp/${tag}.png /tmp/${tag}.out; (${process.env.SHOT2 ? 'SHOT2=1 ' : ''}HOLD=${HOLD + REGRAB} MPV_S=${40 + REGRAB} /root/shot.sh ${tag} ${a} >/tmp/${tag}.out 2>&1 &); for i in $(seq 90); do [ -s /tmp/${tag}.png ] && break; sleep 1; done; sleep 1`, 150_000);
+      await s.run(`rm -f /tmp/${tag}.png /tmp/${tag}.out; (${process.env.SHOT2 ? 'SHOT2=1 ' : ''}${process.env.MPV_ENV ? `MPV_ENV='${process.env.MPV_ENV}' ` : ''}HOLD=${HOLD + REGRAB} MPV_S=${40 + REGRAB} /root/shot.sh ${tag} ${a} >/tmp/${tag}.out 2>&1 &); for i in $(seq 90); do [ -s /tmp/${tag}.png ] && break; sleep 1; done; sleep 1`, 150_000);
       shotS = (performance.now() - t0) / 1000;
       page = await grabScreen(tag);
       await savePage(tag, page);
+      // DIAG=1 (VK3 L4e): where mpv's threads wait in the kernel now, and its log's end (put `-v` in MPV_ARMS for more).
+      if (process.env.DIAG) {
+        const diag = await s.runLines(`{ p=$(pgrep -x mpv | head -1); for t in /proc/$p/task/*; do echo "== $(cat $t/comm) $(cat $t/wchan) $(cut -d' ' -f1-3 $t/syscall)"; head -3 $t/stack; done; ls -l /proc/$p/fd | grep -E 'sync|anon|socket|dri' | sed 's/.* \\([0-9]* ->\\)/\\1/'; command -v gdb >/dev/null && gdb -p $p -batch -ex 'thread apply all bt 30' 2>/dev/null | grep -E '^Thread|^#'; echo "== log"; tr '\\r' '\\n' < /tmp/${tag}.log | grep -v statusline | awk '/${process.env.DIAG_FROM ?? '.'}/{f=1} f' | grep -E '${process.env.DIAG_GREP ?? '.'}' | ${process.env.DIAG_FROM ? 'head' : 'tail'} -n ${Number(process.env.DIAG) > 1 ? Number(process.env.DIAG) : 60}; }`, 300_000);
+        writeFileSync(`${out}/${tag}-diag.txt`, diag.join('\n'));
+      }
       // REGRAB=<s>: the page's screen again that long after the first grab (<tag>-late; VK3 L4d: whether a stale screen
       // ever catches up), mpv kept as long (HOLD and shot.sh's limit raised to match).
       if (REGRAB) {
@@ -132,9 +155,13 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
     const venus = (await s.display()).renderer?.venus as { submits?: number; perSubmit?: Record<string, number> } | undefined;
     // An arm that asked for VA-API and didn't get it (VK3 L4d saw one): mpv's own log's end, to tell why.
     const mpvLog = hw !== '1' && a.includes('vaapi') ? (await s.run(`tail -n 40 /tmp/${tag}.log | cut -c1-200; cat /tmp/${tag}.out 2>/dev/null | head -5`)).trim() : undefined;
-    results[tag] = { args: a, size, hardwareDecoding: hw === '1', placebo, venus, seconds: +((performance.now() - t0) / 1000).toFixed(1), ...(GRAB ? { shotSeconds: shotS && +shotS.toFixed(1), page } : {}), ...(mpvLog ? { mpvLog } : {}) };
+    // mpv's exit: 0 when it quit by itself, 124 when shot.sh's timeout ended it (VK3 L4e: a frozen window's mpv can't
+    // exit, its swapchain's teardown waiting for a present fence that was never submitted).
+    const mpvExit = Number((await s.run(`cat /tmp/${tag}.rc`)).trim().split(/\s+/).at(-1));
+    if (mpvExit !== 0) stuck.push(tag);
+    results[tag] = { args: a, size, mpvExit, hardwareDecoding: hw === '1', placebo, venus, seconds: +((performance.now() - t0) / 1000).toFixed(1), ...(GRAB ? { shotSeconds: shotS && +shotS.toFixed(1), page } : {}), ...(mpvLog ? { mpvLog } : {}) };
     if (venus) s.log(tag, 'venus', JSON.stringify({ submits: venus.submits, ...venus.perSubmit }).slice(0, 300));
-    s.log(tag, size, hw === '1' ? 'VA-API' : 'software', placebo);
+    s.log(tag, size, hw === '1' ? 'VA-API' : 'software', `mpv exit ${mpvExit}`, placebo);
   }
   // SHOT2=1: a second screenshot of each arm after debanding is turned on (the frame rendered anew, not from
   // libplacebo's frame cache), compared with the first.
@@ -143,6 +170,10 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
     const [bytes, , off24, differ, max, mean, greenX, greenY] = (await s.run(`python3 /root/cmp.py /tmp/${x}.rgb /tmp/${y}.rgb`, 300_000)).trim().split(' ').map(Number);
     results[`${x} ~ ${y}`] = { bytes, off24, differ, max, mean, greenness: [greenX, greenY], ...(GRAB ? { page: await comparePages(x, y) } : {}) };
     s.log(`${x} ~ ${y}`, `off by >24: ${off24}, differ: ${differ}, max ${max}, mean ${mean}`);
+  }
+  if (process.env.CHECK && stuck.length) {
+    s.log('CHECK', `mpv didn't exit by itself in ${stuck.join(', ')}`);
+    process.exitCode = 1;
   }
 } finally {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));

@@ -529,7 +529,9 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   written it since, by one of three ways (bitmap, canvas, readback), a GPU way checked at its first copies against a
   readback and dropped for the next if it copies wrong. The device never reports NVIDIA's vendor ID: Venus's guest
   driver would then export a buffer it copies each frame into (the prime blit) instead of the image, which isn't
-  shared (black windows on the user's NVIDIA desktop, VK3 L1). The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
+  shared (black windows on the user's NVIDIA desktop, VK3 L1). The desktop guest turns the guest driver's async present
+  off (`VN_PERF=no_async_present`: Mesa 26's drops a present after one that failed, freezing a resized window, VK3 L4e;
+  vk/README.md "The guest's Mesa"). The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
   `ERR_UNSPEC`): sway composited vkcube's tiled window; a fullscreen window, which wlroots may scan out directly, isn't
   tried yet (docs/backlog.md).
 - **Imports** (VK2 L6, [vk/README.md](../vk/README.md) "Imports"): the other way, a virgl resource attached to a Venus
