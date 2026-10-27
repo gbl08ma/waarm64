@@ -9,7 +9,7 @@
 import type { ShaderCache } from './venus-cache.ts';
 
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
-const COPY_SRC = 4, COPY_DST = 8, UNIFORM = 64, MAP_READ = 1, MAP_MODE_READ = 1;
+const COPY_SRC = 4, COPY_DST = 8, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -186,6 +186,11 @@ export class VenusGpu {
   private nextSlot = 1;
   private chain: Promise<void> = Promise.resolve();
   private readonly metaPipelines = new Map<string, GPURenderPipeline>();
+  private readonly metaComputes = new Map<string, GPUComputePipeline>();
+  /** A bind group layout's bindings of storage textures a shader may write, and the textures a bind group binds
+   * there: a pass that sets the group writes them (`touched`, for presentation). */
+  private readonly writableBindings = new WeakMap<GPUBindGroupLayout, Set<number>>();
+  private readonly groupWrites: (GPUTexture[] | undefined)[] = []; // by the bind group's id
   private readonly views = new WeakMap<GPUTexture, Map<string, GPUTextureView>>();
   /** Pipelines being made asynchronously (`Later`), unless `syncPipelines` (`?gpu=vkpipelines=sync`). */
   private making = 0;
@@ -340,7 +345,9 @@ export class VenusGpu {
       gpu_copy_bb(src: number, so: number, dst: number, dO: number, size: number) {
         if (!size) return;
         const a = buf(src), b = buf(dst);
-        later(() => self.enc!.copyBufferToBuffer(a, so, b, dO, size));
+        // WebGPU copies 4-aligned offsets and sizes; Vulkan any (VK3 L4c-F): the others by a compute pass.
+        if ((so | dO | size) & 3) later(() => self.copyUnaligned(a, so, b, dO, size));
+        else later(() => self.enc!.copyBufferToBuffer(a, so, b, dO, size));
       },
       gpu_copy_bt(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
         const B = buf(b), T = self.get<GPUTexture>(tex);
@@ -440,7 +447,11 @@ export class VenusGpu {
       gpu_set_bind_group(index: number, id: number, ptr: number, n: number) {
         const offsets = n ? Array.from(new Uint32Array(self.mem(), ptr >>> 0, n)) : [];
         const g = self.get<GPUBindGroup>(id);
-        later(() => self.pass!.setBindGroup(index, g, offsets));
+        const writes = self.groupWrites[id];
+        later(() => {
+          if (writes) for (const t of writes) self.touched.add(t);
+          self.pass!.setBindGroup(index, g, offsets);
+        });
       },
       gpu_set_vertex_buffer(slot: number, b: number, offset: number, size: number) { const B = buf(b); later(() => rp().setVertexBuffer(slot, B, offset, size)); },
       gpu_set_index_buffer(b: number, wide: number, offset: number, size: number) { const B = buf(b); later(() => rp().setIndexBuffer(B, wide ? 'uint32' : 'uint16', offset, size)); },
@@ -756,7 +767,13 @@ export class VenusGpu {
         return;
       }
       case 3: this.objs[id] = d.createSampler(j as GPUSamplerDescriptor); return;
-      case 4: this.objs[id] = d.createBindGroupLayout(j as GPUBindGroupLayoutDescriptor); return;
+      case 4: {
+        const layout = d.createBindGroupLayout(j as GPUBindGroupLayoutDescriptor);
+        const writable = (j.entries as Json[]).filter((e) => e.storageTexture && e.storageTexture.access !== 'read-only').map((e) => e.binding as number);
+        if (writable.length) this.writableBindings.set(layout, new Set(writable));
+        this.objs[id] = layout;
+        return;
+      }
       case 5: {
         const desc: Json = { bindGroupLayouts: ids(j.bindGroupLayouts) };
         if (j.immediateSize) desc.immediateSize = j.immediateSize;
@@ -806,8 +823,13 @@ export class VenusGpu {
           resource: e.buffer !== undefined ? { buffer: this.get<GPUBuffer>(e.buffer), offset: e.offset, size: e.size }
             : e.view !== undefined ? this.get<View>(e.view).view : this.get<GPUSampler>(e.sampler),
         }));
+        const layout = this.get<GPUBindGroupLayout>(j.layout);
         d.pushErrorScope('validation');
-        this.objs[id] = d.createBindGroup({ layout: this.get<GPUBindGroupLayout>(j.layout), entries });
+        const group = d.createBindGroup({ layout, entries });
+        this.objs[id] = group;
+        const writable = this.writableBindings.get(layout);
+        const writes = writable && (j.entries as Json[]).filter((e) => writable.has(e.binding) && e.view !== undefined).map((e) => this.get<View>(e.view).tex);
+        this.groupWrites[id] = writes?.length ? writes : undefined;
         void d.popErrorScope().then((e) => { if (e) this.warn(`a bind group: ${e.message}`); });
         this.stats.bindGroups++;
         return;
@@ -853,13 +875,23 @@ export class VenusGpu {
         if (/depth/.test(fmt)) Object.assign(ds, j.depth !== undefined ? { depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: j.depth } : { depthLoadOp: 'load', depthStoreOp: 'store' });
         if (/stencil/.test(fmt)) Object.assign(ds, j.stencil !== undefined ? { stencilLoadOp: 'clear', stencilStoreOp: 'store', stencilClearValue: j.stencil } : { stencilLoadOp: 'load', stencilStoreOp: 'store' });
         enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds }).end();
+      } else if (!(tex.usage & RENDER_ATTACHMENT)) {
+        // A format WebGPU can't render to (VK3 L4c-F): its texels encoded here and copied in.
+        this.clearByCopy(tex, j.dstMip, j.dstLayer, fmt, (j.color ?? [0, 0, 0, 0]) as number[]);
       } else {
-        enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, j.dstLayer), loadOp: 'clear', storeOp: 'store', clearValue: j.color ?? [0, 0, 0, 0] }] }).end();
+        // A 3D texture: every slice of the level (Vulkan clears the whole subresource).
+        const slices = tex.dimension === '3d' ? Math.max(1, tex.depthOrArrayLayers >> j.dstMip) : 1;
+        for (let z = 0; z < slices; z++)
+          enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, tex.dimension === '3d' ? z : j.dstLayer), loadOp: 'clear', storeOp: 'store', clearValue: j.color ?? [0, 0, 0, 0] }] }).end();
       }
       return;
     }
     if (j.op === 'resolve' && /int$/.test(fmt)) {
       this.warn(`a resolve of ${fmt}, which WebGPU can't resolve: skipped`);
+      return;
+    }
+    if (j.op === 'resolve' && tex.dimension === '3d') {
+      this.warn('a resolve into a 3D image, which WebGPU can\'t resolve into: skipped');
       return;
     }
     if (j.op === 'resolve') {
@@ -870,14 +902,18 @@ export class VenusGpu {
     const kind = sampleKind(fmt);
     const srcKind = sampleKind(j.srcFormat);
     const linear = j.filter === 'linear' && srcKind === 'f32' && !/32float/.test(j.srcFormat);
-    const key = `blit:${fmt}:${srcKind}:${linear}`;
+    // A 3D source is sampled as one (its view is 3D) at the slice each destination slice maps to (VK3 L4c-F).
+    const src3d = (j.src as GPUTexture).dimension === '3d';
+    const key = `blit:${fmt}:${srcKind}:${linear}:${src3d}`;
     let pipeline = this.metaPipelines.get(key);
     if (!pipeline) {
       const out = kind === 'f32' ? 'vec4<f32>' : kind === 'u32' ? 'vec4<u32>' : 'vec4<i32>';
-      const tex = srcKind === 'f32' ? 'texture_2d<f32>' : srcKind === 'u32' ? 'texture_2d<u32>' : 'texture_2d<i32>';
-      const read = linear ? 'textureSampleLevel(t, s, uv, 0.0)' : 'textureLoad(t, vec2<i32>(floor(uv * vec2<f32>(textureDimensions(t)))), 0)';
+      const tex = `texture_${src3d ? '3d' : '2d'}<${srcKind}>`;
+      const read = src3d
+        ? (linear ? 'textureSampleLevel(t, s, vec3<f32>(uv, u.z.x), 0.0)' : 'textureLoad(t, vec3<i32>(floor(vec3<f32>(uv, u.z.x) * vec3<f32>(textureDimensions(t)))), 0)')
+        : (linear ? 'textureSampleLevel(t, s, uv, 0.0)' : 'textureLoad(t, vec2<i32>(floor(uv * vec2<f32>(textureDimensions(t)))), 0)');
       const conv = kind === srcKind ? 'v' : kind === 'f32' ? 'vec4<f32>(v)' : `${out}(v)`;
-      const code = `struct U { r: vec4<f32>, flip: vec4<f32> }
+      const code = `struct U { r: vec4<f32>, flip: vec4<f32>, z: vec4<f32> }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var t: ${tex};
 ${linear ? '@group(0) @binding(2) var s: sampler;' : ''}
@@ -899,21 +935,106 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     const [sx0, sy0, sx1, sy1] = j.from as number[], [dx0, dy0, dx1, dy1] = j.to as number[];
     const [sw, sh] = j.srcSize as number[];
     if (dx0 === dx1 || dy0 === dy1) return;
-    const u = this.staging(32, (m) => new Float32Array(m).set([sx0 / sw, sy0 / sh, (sx1 - sx0) / sw, (sy1 - sy0) / sh, dx0 > dx1 ? 1 : 0, dy0 > dy1 ? 1 : 0, 0, 0]));
-    const uniform = this.device!.createBuffer({ size: 32, usage: UNIFORM | COPY_DST });
-    enc.copyBufferToBuffer(u, 0, uniform, 0, 32);
-    this.temps.push(uniform);
-    const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: this.viewOf(j.src, j.srcMip, j.srcLayer) }];
-    if (linear) entries.push({ binding: 2, resource: this.sampler() });
-    const group = this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
-    const pass = enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] });
-    const x = Math.min(dx0, dx1), y = Math.min(dy0, dy1);
-    pass.setViewport(x, y, Math.abs(dx1 - dx0), Math.abs(dy1 - dy0), 0, 1);
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, group);
-    pass.draw(3);
-    pass.end();
-    void tex;
+    // Slices: a 3D destination's each, else the one layer; each samples the source's slice at its centre.
+    const [sz0, sz1] = (j.srcZ ?? [0, 1]) as number[], [dz0, dz1] = (j.dstZ ?? [0, 1]) as number[];
+    const sd = (j.srcDepth ?? 1) as number;
+    const dst3d = tex.dimension === '3d';
+    const slices = dst3d ? [...Array(Math.abs(dz1 - dz0)).keys()].map((i) => Math.min(dz0, dz1) + i) : [j.dstLayer as number];
+    for (const slice of slices) {
+      const at = dst3d ? slice : dz0;
+      const w = (sz0 + ((at + 0.5 - dz0) / ((dz1 - dz0) || 1)) * (sz1 - sz0)) / sd;
+      const u = this.staging(48, (m) => new Float32Array(m).set([sx0 / sw, sy0 / sh, (sx1 - sx0) / sw, (sy1 - sy0) / sh, dx0 > dx1 ? 1 : 0, dy0 > dy1 ? 1 : 0, 0, 0, w, 0, 0, 0]));
+      const uniform = this.device!.createBuffer({ size: 48, usage: UNIFORM | COPY_DST });
+      enc.copyBufferToBuffer(u, 0, uniform, 0, 48);
+      this.temps.push(uniform);
+      const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: this.viewOf(j.src, j.srcMip, j.srcLayer) }];
+      if (linear) entries.push({ binding: 2, resource: this.sampler() });
+      const group = this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+      const pass = enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, slice), loadOp: 'load', storeOp: 'store' }] });
+      const x = Math.min(dx0, dx1), y = Math.min(dy0, dy1);
+      pass.setViewport(x, y, Math.abs(dx1 - dx0), Math.abs(dy1 - dy0), 0, 1);
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.draw(3);
+      pass.end();
+    }
+  }
+
+  /** A clear of a colour format WebGPU can't render to: its texel encoded (`encodeTexel`) into rows copied into the
+   * level (a 3D texture's every slice). */
+  private clearByCopy(tex: GPUTexture, mip: number, layer: number, fmt: string, color: number[]) {
+    const texel = encodeTexel(fmt, color);
+    if (!texel) {
+      this.warn(`a clear of ${fmt}, which WebGPU can't render to: skipped`);
+      return;
+    }
+    const w = Math.max(1, tex.width >> mip), h = Math.max(1, tex.height >> mip);
+    const depth = tex.dimension === '3d' ? Math.max(1, tex.depthOrArrayLayers >> mip) : 1;
+    const bpr = Math.ceil((w * texel.length) / 256) * 256;
+    const t = this.staging(bpr * h * depth, (m) => {
+      const b = new Uint8Array(m);
+      for (let r = 0; r < h * depth; r++) for (let x = 0; x < w; x++) b.set(texel, r * bpr + x * texel.length);
+    });
+    this.enc!.copyBufferToTexture({ buffer: t, bytesPerRow: bpr, rowsPerImage: h }, { texture: tex, mipLevel: mip, origin: { x: 0, y: 0, z: tex.dimension === '3d' ? 0 : layer } }, { width: w, height: h, depthOrArrayLayers: depth });
+  }
+
+  /**
+   * `vkCmdCopyBuffer` at offsets or a size WebGPU can't copy (not 4-aligned): the source's words copied whole into a
+   * temporary buffer, then a compute pass that writes each destination word the copy touches, keeping its bytes outside
+   * the copy. On the GPU, in the encoder's order: the source's bytes are what earlier commands wrote.
+   */
+  private copyUnaligned(src: GPUBuffer, so: number, dst: GPUBuffer, dO: number, size: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('copy');
+    if (!pipeline) {
+      const code = `struct P { src: u32, dst: u32, size: u32, pad: u32 }
+@group(0) @binding(0) var<storage, read> s: array<u32>;
+@group(0) @binding(1) var<storage, read_write> d: array<u32>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) n: vec3<u32>) {
+  let last = (p.dst + p.size + 3u) >> 2u;
+  for (var w = (p.dst >> 2u) + id.x; w < last; w += n.x * 64u) {
+    var v = d[w];
+    for (var b = 0u; b < 4u; b++) {
+      let a = w * 4u + b;
+      if (a >= p.dst && a < p.dst + p.size) {
+        let i = a - p.dst + p.src;
+        let byte = (s[i >> 2u] >> ((i & 3u) * 8u)) & 0xffu;
+        v = (v & ~(0xffu << (b * 8u))) | (byte << (b * 8u));
+      }
+    }
+    d[w] = v;
+  }
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('copy', pipeline);
+    }
+    // In pieces, so that each binding stays well under the device's limits.
+    const PIECE = 1 << 24;
+    for (let done = 0; done < size; done += PIECE) {
+      const n = Math.min(PIECE, size - done), s0 = so + done, d0 = dO + done;
+      const from = s0 & ~3, words = ((s0 + n + 3) & ~3) - from;
+      const temp = d.createBuffer({ size: words, usage: STORAGE | COPY_DST });
+      this.temps.push(temp);
+      enc.copyBufferToBuffer(src, from, temp, 0, words);
+      // The destination's binding from a 256-aligned offset (minStorageBufferOffsetAlignment is at most 256).
+      const at = d0 & ~255, end = (d0 + n + 3) & ~3;
+      const u = d.createBuffer({ size: 16, usage: UNIFORM, mappedAtCreation: true });
+      new Uint32Array(u.getMappedRange()).set([s0 & 3, d0 - at, n, 0]);
+      u.unmap();
+      this.temps.push(u);
+      const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+        { binding: 0, resource: { buffer: temp } },
+        { binding: 1, resource: { buffer: dst, offset: at, size: end - at } },
+        { binding: 2, resource: { buffer: u } },
+      ] });
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.min(Math.ceil(((end - (d0 & ~3)) >> 2) / 64), 65535));
+      pass.end();
+    }
   }
 
   private linearSampler: GPUSampler | undefined;
@@ -992,6 +1113,40 @@ function parseJson(text: string): Json {
   if (!/nan|inf/i.test(text)) return JSON.parse(text);
   // WebGPU's colours are finite doubles: NaN as 0, infinities as f32's largest.
   return JSON.parse(text.replace(/-?\bnan\b/gi, '0').replace(/(-?)\binf\b/gi, '$13.4028234663852886e38'));
+}
+
+/** A clear colour as one texel of a colour format WebGPU can't render to (the snorm8 ones, rgb9e5ufloat,
+ * rg11b10ufloat), or undefined for another. */
+export function encodeTexel(fmt: string, c: number[]): Uint8Array | undefined {
+  const snorm = { r8snorm: 1, rg8snorm: 2, rgba8snorm: 4 }[fmt];
+  if (snorm) return Uint8Array.from(c.slice(0, snorm), (v) => Math.round(Math.min(1, Math.max(-1, v || 0)) * 127) & 255);
+  const out = new Uint8Array(4), dv = new DataView(out.buffer);
+  if (fmt === 'rgb9e5ufloat') {
+    // Vulkan's (and GL's) shared-exponent encoding: 9-bit mantissas, a 5-bit exponent biased by 15.
+    const max = ((511 / 512) * 2 ** 16);
+    const [r, g, b] = c.slice(0, 3).map((v) => Math.min(max, Math.max(0, v || 0)));
+    const m = Math.max(r, g, b);
+    let e = Math.max(-16, Math.floor(Math.log2(m))) + 16;
+    if (Math.floor(m / 2 ** (e - 24) + 0.5) === 512) e++;
+    const q = (v: number) => Math.floor(v / 2 ** (e - 24) + 0.5);
+    dv.setUint32(0, (q(r) | (q(g) << 9) | (q(b) << 18) | (e << 27)) >>> 0, true);
+    return out;
+  }
+  if (fmt === 'rg11b10ufloat') {
+    // Unsigned floats: a 5-bit exponent biased by 15 and `bits` of mantissa, rounded to nearest.
+    const uf = (v: number, bits: number) => {
+      if (Number.isNaN(v)) return (31 << bits) | 1;
+      if (!(v > 0)) return 0;
+      let e = Math.max(-14, Math.floor(Math.log2(v)));
+      let m = Math.round((v / 2 ** e) * 2 ** bits);
+      if (m >= 2 ** (bits + 1)) { e++; m = Math.round((v / 2 ** e) * 2 ** bits); }
+      if (e > 15) return (30 << bits) | (2 ** bits - 1);
+      return m < 2 ** bits ? m : ((e + 15) << bits) | (m - 2 ** bits);
+    };
+    dv.setUint32(0, (uf(c[0], 6) | (uf(c[1], 6) << 11) | (uf(c[2], 5) << 22)) >>> 0, true);
+    return out;
+  }
+  return undefined;
 }
 
 /** A texture format's WGSL sample type. */

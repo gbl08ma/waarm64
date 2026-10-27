@@ -92,7 +92,8 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
       ralloc_free(nir);
       return 2;
    }
-   char *text = wgsl_print(NULL, nir, NULL, 64, &info, error, sizeof(error));
+   /* As the test's device (tests/wgsl.test.ts): no texture-formats-tier2. */
+   char *text = wgsl_print(NULL, nir, NULL, 64, false, &info, error, sizeof(error));
    ralloc_free(nir);
    if (!text) {
       result = ralloc_strdup(NULL, error);

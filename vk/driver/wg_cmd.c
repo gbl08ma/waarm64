@@ -101,8 +101,6 @@ struct op_copy_bb {
    double src_offset, dst_offset, size;
    struct wg_device_memory *dst_mem;    /* host-visible: read back */
    VkDeviceSize dst_mem_offset;
-   struct wg_device_memory *src_mem;    /* unaligned copies from host-visible memory: the bytes from here */
-   VkDeviceSize src_mem_offset;
 };
 
 struct op_copy_bt {
@@ -148,6 +146,8 @@ emit(struct wg_cmd_buffer *cmd, enum op op, const void *data, uint32_t size)
 {
    const uint32_t padded = align(size, 8);
    struct op_head *h = util_dynarray_grow_bytes(&cmd->cmds, 1, sizeof(*h) + padded);
+   if (op >= OP_DRAW && op <= OP_DISPATCH_INDIRECT)
+      cmd->draws++;
    *h = (struct op_head){ .op = op, .size = padded };
    void *payload = h + 1;
    if (data)
@@ -232,6 +232,7 @@ wg_cmd_buffer_reset(struct vk_command_buffer *vk, VkCommandBufferResetFlags flag
    cmd->vk.dynamic_graphics_state.vi = &cmd->vi;
    cmd->vk.dynamic_graphics_state.ms.sample_locations = &cmd->sample_locations;
    util_dynarray_clear(&cmd->cmds);
+   cmd->draws = 0;
    free_push_sets(cmd);
    memset(cmd->shaders, 0, sizeof(cmd->shaders));
    memset(cmd->sets, 0, sizeof(cmd->sets));
@@ -958,8 +959,7 @@ wg_CmdCopyBuffer2(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2 *info)
       emit(cmd, OP_COPY_BB,
            &(struct op_copy_bb){ .src = buffer_gpu(src), .dst = buffer_gpu(dst), .src_offset = src->offset + r->srcOffset,
                                  .dst_offset = dst->offset + r->dstOffset, .size = r->size, .dst_mem = host_mem(dst),
-                                 .dst_mem_offset = dst->offset + r->dstOffset, .src_mem = host_mem(src),
-                                 .src_mem_offset = src->offset + r->srcOffset },
+                                 .dst_mem_offset = dst->offset + r->dstOffset },
            sizeof(struct op_copy_bb));
    }
 }
@@ -1075,12 +1075,13 @@ wg_CmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2 *info)
          struct wg_json j = { 0 };
          wg_json_printf(&j, "{\"op\":\"blit\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"srcFormat\":\"%s\",\"dst\":%u,"
                         "\"dstMip\":%u,\"dstLayer\":%u,\"format\":\"%s\",\"filter\":\"%s\",\"srcSize\":[%u,%u],"
-                        "\"from\":[%d,%d,%d,%d],\"to\":[%d,%d,%d,%d]}",
+                        "\"from\":[%d,%d,%d,%d],\"to\":[%d,%d,%d,%d],\"srcZ\":[%d,%d],\"dstZ\":[%d,%d],\"srcDepth\":%u}",
                         src->tex, r->srcSubresource.mipLevel, r->srcSubresource.baseArrayLayer + l, src->fmt->name,
                         dst->tex, r->dstSubresource.mipLevel, r->dstSubresource.baseArrayLayer + l, dst->fmt->name,
                         info->filter == VK_FILTER_LINEAR ? "linear" : "nearest", se.width, se.height,
                         r->srcOffsets[0].x, r->srcOffsets[0].y, r->srcOffsets[1].x, r->srcOffsets[1].y,
-                        r->dstOffsets[0].x, r->dstOffsets[0].y, r->dstOffsets[1].x, r->dstOffsets[1].y);
+                        r->dstOffsets[0].x, r->dstOffsets[0].y, r->dstOffsets[1].x, r->dstOffsets[1].y,
+                        r->srcOffsets[0].z, r->srcOffsets[1].z, r->dstOffsets[0].z, r->dstOffsets[1].z, se.depth);
          meta(cmd, &j);
       }
    }
@@ -1266,6 +1267,7 @@ wg_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t count, const VkCom
    for (uint32_t i = 0; i < count; i++) {
       struct wg_cmd_buffer *secondary = wg_cmd_buffer_from_handle(buffers[i]);
       emit(cmd, OP_EXEC, &secondary, sizeof(secondary));
+      cmd->draws += secondary->draws;
    }
    forget(cmd);
 }
@@ -1389,12 +1391,38 @@ static uint32_t
 push_buffer(struct wg_device *dev)
 {
    if (!dev->push_buffer) {
+      static uint32_t gens;
+      if (!dev->push_size)
+         dev->push_size = WG_PUSH_BUFFER_SIZE;
       struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", WG_PUSH_BUFFER_SIZE, 0x40 | 0x8); /* UNIFORM | COPY_DST */
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", dev->push_size, 0x40 | 0x8); /* UNIFORM | COPY_DST */
       dev->push_buffer = wg_create_json(WG_KIND_BUFFER, &j);
-      dev->push_data = malloc(WG_PUSH_BUFFER_SIZE);
+      dev->push_data = malloc(dev->push_size);
+      dev->push_gen = ++gens;
    }
    return dev->push_buffer;
+}
+
+/* Room for `bytes` of push constants in one submit: the buffer is written once before the submit, so a submit's
+ * places can't be reused within it (VK3 L4c-F). A larger buffer replaces it (bind groups of the old one, kept by
+ * its `push_gen`, aren't found again); the old one is destroyed after the work already queued. */
+static void
+push_reserve(struct wg_device *dev, uint64_t bytes)
+{
+   const uint64_t most = MIN2(wg_limits.max_buffer_size, 1u << 28) & ~255ull;
+   const uint32_t size = dev->push_size ? dev->push_size : WG_PUSH_BUFFER_SIZE;
+   if (bytes <= size || size >= most)
+      return;
+   uint64_t grown = size;
+   while (grown < bytes && grown < most)
+      grown *= 2;
+   dev->push_size = (uint32_t)MIN2(grown, most);
+   if (dev->push_buffer) {
+      wg_id_release(dev->push_buffer);
+      free(dev->push_data);
+      dev->push_buffer = 0;
+      dev->push_data = NULL;
+   }
 }
 
 /* A resource's descriptor in an op_bind's sets, or NULL. */
@@ -1432,8 +1460,14 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
          if (b->sets[i])
             words[2 * i] = b->sets[i]->uid, words[2 * i + 1] = b->sets[i]->version;
       version = _mesa_hash_data(words, sizeof(words)) | 1u << 31;
-   } else if (p->push_ubo_size && b->group == WGSL_MAX_GROUPS - 1 && p->push_group) {
+   } else if (p->push_ubo_size && b->group == WGSL_MAX_GROUPS - 1 && p->push_group &&
+              p->push_group_gen == r->dev->push_gen) {
       return p->push_group;
+   }
+   /* Group 3 holds the push buffer's binding too: a group is of one push buffer. */
+   if (holder && p->push_ubo_size && b->group == WGSL_MAX_GROUPS - 1) {
+      const uint32_t words[2] = { version, r->dev->push_gen };
+      version = _mesa_hash_data(words, sizeof(words)) | 1u << 31;
    }
    uint32_t group = 0;
    if (holder)
@@ -1494,7 +1528,10 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
    group = wg_create_json(WG_KIND_BIND_GROUP, &j);
    if (!holder) {
       if (push_only) {
+         if (p->push_group)
+            util_dynarray_append_typed(&released_groups, uint32_t, p->push_group);
          p->push_group = group;
+         p->push_group_gen = r->dev->push_gen;
          return group;
       }
       *transient = true; /* an empty group: released once the submit is encoded */
@@ -1557,7 +1594,7 @@ apply(struct replay *r, uint32_t point)
          struct wg_device *dev = r->dev;
          push_buffer(dev);
          const uint32_t size = align(p->push_ubo_size, 16);
-         if (dev->push_used + size > WG_PUSH_BUFFER_SIZE) {
+         if (dev->push_used + size > dev->push_size) {
             static bool told;
             if (!told)
                fprintf(stderr, "wg: a submit's push constants overflow the push buffer\n");
@@ -1758,15 +1795,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_COPY_BB: {
          const struct op_copy_bb *c = d;
          end_pass(r);
-         const bool aligned = !((uint64_t)c->src_offset % 4) && !((uint64_t)c->dst_offset % 4) && !((uint64_t)c->size % 4);
-         if (aligned)
+         /* On the GPU whatever the alignment: the worker copies unaligned offsets and sizes with a compute pass
+          * (WebGPU's copies want 4), so the source's bytes are the GPU's, written by this submit or earlier ones. */
+         if (c->src && c->dst)
             gpu_copy_bb(c->src, c->src_offset, c->dst, c->dst_offset, c->size);
-         else if (c->src_mem && c->src_mem->data && c->dst)
-            gpu_update(c->dst, c->dst_offset, c->src_mem->data + c->src_mem_offset, c->size);
-         if (c->dst_mem && c->src_mem && c->src_mem->data && !aligned)
-            cpu_write(r, c->dst_mem, c->dst_mem_offset, c->src_mem->data + c->src_mem_offset, c->size, false, 0);
-         else
-            readback(r, c->dst_mem, c->dst_mem_offset, c->size);
+         readback(r, c->dst_mem, c->dst_mem_offset, c->size);
          break;
       }
       case OP_COPY_BT:
@@ -2067,6 +2100,10 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    gpu_encoder();
    linear_images(dev, true, NULL);
    struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX };
+   uint64_t draws = 0;
+   for (uint32_t i = 0; i < submit->command_buffer_count; i++)
+      draws += container_of(submit->command_buffers[i], struct wg_cmd_buffer, vk)->draws;
+   push_reserve(dev, draws * 256);
    dev->push_used = 0;
    for (uint32_t i = 0; i < submit->command_buffer_count; i++) {
       struct wg_cmd_buffer *cmd = container_of(submit->command_buffers[i], struct wg_cmd_buffer, vk);

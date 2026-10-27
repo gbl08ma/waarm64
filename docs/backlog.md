@@ -648,9 +648,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     one at a time (GFXReconstruct's `--screenshots` of an earlier draw), suspects its screen effects' dithering and a
     conversion's rounding.
   - **Memory**: some `memory.binding` cases (aliasing and odd sizes) and two `memory` crashes (vkr's
-    `vkFreeMemory resulted in CS error`), not looked into.
-  - **Elsewhere**: the push buffer is 1 MiB a submit (4,096 changes of push constants past the immediates; more wrap
-    and are wrong, with a warning).
+    `vkFreeMemory resulted in CS error`), not looked into. `memory.allocation.random.*` and
+    `memory.mapping.suballocation.random.*` pass alone but crash deqp-vk after enough earlier cases (VK3 L4c-F: with
+    its 179 cases added to the pass list, on the renderer of before as on the new one): something the renderer keeps
+    across cases (its arena's use or fragmentation?); they're out of `tests/deqp/vk.txt` until it's found.
+  - **Storage images WebGPU gives one way** (VK3 L4c-F refuses them): a shader that loads and stores an image of a
+    format WebGPU allows only read-only or write-only (every format but r32's without `texture-formats-tier2`, and
+    rg8/rg16/rg32, the snorm and 16-bit unorm formats, `rgb10a2*`, `rg11b10ufloat` even with it) fails its stage, and
+    a read-only `bgra8unorm` too; so does a pipeline whose stages access one storage image differently (no test of its
+    own: the refusal is the translation failures' path). The formats stay advertised as `STORAGE_IMAGE`, since their
+    write-only and read-only uses are right; a full fix would bind such an image as a storage buffer of its texels
+    (the format's encode and decode in the shader, a copy in and out around the pass), or advertise per-use what can't
+    be advertised per-format. L5 takes `tier2` itself (its read-write formats are translated now).
+  - **Transfers**: a resolve into a 3D image is skipped with a warning (WebGPU resolves into 2D views only). VK3
+    L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left 13 failing, all failing before too, not
+    looked into: linear 3D blits of `r32_sfloat`/`r32g32_sfloat` (unfilterable without `float32-filterable`), a
+    4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255), storage images of
+    cube views through descriptors (7), `push_constant.graphics_pipeline.overwrite`.
+  - **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
+    ~1M draws with push constants past the immediates still wraps, with a warning).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

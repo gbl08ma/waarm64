@@ -164,10 +164,11 @@ struct wg_device {
    uint32_t pages_lo, pages_hi;
    bool pages_all;
    /* Push constants past the immediates (wg_cmd.c): a uniform buffer the draws read at dynamic offsets, written from
-    * `push_data` before each submit. */
+    * `push_data` before each submit; `push_size` bytes (grown before a submit that could fill it), `push_gen` naming
+    * it among every device's push buffers (bind groups of it are kept by it). */
    uint32_t push_buffer;
    uint8_t *push_data;
-   uint32_t push_used;
+   uint32_t push_used, push_size, push_gen;
    uint32_t fan_indices;   /* wg_fan_indices */
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
@@ -312,6 +313,7 @@ struct wg_program {
    uint32_t immediate_size;
    uint32_t push_ubo_size;  /* push constants read from the device's push buffer */
    uint32_t push_group;     /* a group 3 of the push buffer alone (no set there) */
+   uint32_t push_group_gen; /* ... of the push buffer `wg_device.push_gen` */
    uint8_t vis[WGSL_MAX_RESOURCES];                    /* the stages that see each resource */
    uint32_t pair_count;
    uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
@@ -445,6 +447,7 @@ struct wg_cmd_buffer {
    /* What was last recorded, so that unchanged state isn't recorded again. */
    struct wg_pipeline_key last_key;
    bool have_key;
+   uint32_t draws;   /* draws and dispatches recorded (secondaries' included): at most a push buffer place each */
    uint32_t emitted; /* WG_EMIT_* bits valid */
    uint8_t last_dyn[64];
    struct wg_descriptor_set *last_sets[2][WGSL_MAX_GROUPS][WG_GROUP_SETS];

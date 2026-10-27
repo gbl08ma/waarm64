@@ -65,8 +65,12 @@ draw; a compute shader's `if` around a barrier, or breaking out of a loop that h
 value being a `var`; a barrier after it keeps the next write from racing the read); a vertex shader's outputs are typed and interpolated as its
 fragment shader reads them, and its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport). What
 WGSL can't express fails the stage with a reason: 16-bit values, texel buffers, dynamically indexed buffers and
-images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`. A
-pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
+images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
+storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
+and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
+its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
+A pipeline whose stages access one storage image differently is refused the same way (one layout entry can't match
+both modules' access). A pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
 pipeline without waiting for its result, and a pipeline that failed would fail the guest's whole context.
 
 `tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
@@ -169,15 +173,26 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   on the group's first set, keyed by the layout's uid (ids are reused: a stale bind group of a freed layout's id once
   bound group 2's layout at index 3). Groups a set lets go are released after the submit is encoded. Push
   descriptors are sets of the command buffer's own. Push constants past the immediates go to the device's push buffer
-  (a 1 MiB uniform buffer written with `queue.writeBuffer` before each submit, ordered after the work before it), a
-  256-byte-aligned place each time they change, its offset the last dynamic offset of group 3.
+  (a uniform buffer written with `queue.writeBuffer` before each submit, ordered after the work before it), a
+  256-byte-aligned place each time they change, its offset the last dynamic offset of group 3. Written once a submit,
+  its places can't be reused within one: it is 1 MiB, and a submit whose draws and dispatches could fill it (256 bytes
+  each, a command buffer counts them) first replaces it with one large enough, up to 256 MiB (VK3 L4c-F: past 4,096
+  changes it used to wrap, and earlier draws read later ones' constants). Bind groups of it are kept by the push
+  buffer they name (`push_gen`).
 - **Commands** (`wg_cmd.c`): recorded into a list of our own; each draw or dispatch records the state it needs where
   it changed. A submit replays the list into one encoder (passes opened and closed as the commands need; render passes
   from the runtime's dynamic rendering, with legacy passes through its emulation; clears as load ops, or draws for a
   partial render area and `vkCmdClearAttachments`; LOAD and NONE load, DONT_CARE clears but loads for a partial render
   area, whose outside Vulkan keeps; a pass that resumes a suspended one (`VK_RENDERING_RESUMING_BIT`) loads and clears
   nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); blits, resolves and image clears as the worker's draws), copies
-  what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer ↔ image copies whose rows
+  what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer copies WebGPU can't make (an
+  offset or size not 4-aligned) go through a compute pass of the worker's: the source's words copied to a temporary
+  buffer, then each destination word the copy touches written, its other bytes kept; on the GPU in the encoder's
+  order, so device-local sources and what earlier commands wrote are copied too (VK3 L4c-F; they used to be copied
+  from the CPU's bytes at the destination's unaligned offset, which invalidated the submit). An image clear of a
+  format WebGPU can't render to (`rgb9e5ufloat`, the snorm8 formats without tier1, `rg11b10ufloat` without its
+  feature) is its clear colour encoded in the worker (`encodeTexel`) and copied in; a 3D image's clear covers every
+  slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F). Buffer ↔ image copies whose rows
   aren't 256 bytes apart go a row of blocks at a time, but for depth and stencil, which WebGPU copies only whole
   (the worker realigns their rows through a temporary buffer); what WebGPU can't copy at all (into depth32float's or
   depth24plus's depth, of multisampled textures, part of a depth image) or resolve (integer formats) is skipped with a
@@ -295,8 +310,9 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
 - **Which texture:** the driver keeps the shared image bound to each memory (`wg_device_memory.image`, for images with
   dma-buf memory or a modifier), vkr the memory a resource was exported from, so `venus_resource_texture(ctx, res)`
   names the WebGPU texture. Shared images are made with `COPY_SRC` and `TEXTURE_BINDING` and their sRGB twin as a view
-  format. web/venus-gpu.ts records the submit that last wrote each texture (attachments, copies and blits into it):
-  an image is copied only when it was written since its last copy.
+  format. web/venus-gpu.ts records the submit that last wrote each texture (attachments, copies and blits into it,
+  and storage textures a pass sets a bind group writable to: VK3 L4c-F): an image is copied only when it was written
+  since its last copy.
 - **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-gpu.ts `VENDORS`), but
   never NVIDIA's 0x10de: Venus's guest driver (Mesa 26's `vn_wsi_init`) then takes the device for Venus on NVIDIA's own
   driver, which can't render to linear images, and its WSI renders into an optimal image and copies each frame into a

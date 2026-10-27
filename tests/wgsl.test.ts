@@ -148,3 +148,31 @@ test('every stage translates to WGSL that Chromium compiles, or fails for a reas
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('a storage image loaded and stored is read_write where WebGPU allows it, and refused where it doesn\'t (VK3 L4c-F)', { skip: missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc'), timeout: 120_000 }, async (t) => {
+  // The review's "storage access WebGPU refuses": rg16float or rgba8unorm printed read_write made an invalid module.
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const stage = (format: string) => {
+      const spv = join(tmp, `${format}.spv`);
+      const r = spawnSync('glslc', ['--target-env=vulkan1.2', `-DSTORAGE_RW_FORMAT=${format}`, '-fshader-stage=comp', '-o', spv, join(root, 'tests/venus/storage-rw.comp')], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const b = readFileSync(spv);
+      return translate({ name: format, stage: 5, words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) });
+    };
+    const ok = stage('r32f');
+    assert.equal(ok.rc, 0, ok.text);
+    assert.match(ok.text, /texture_storage_2d<r32float, read_write>/);
+    for (const [format, name] of [['rgba8', 'rgba8unorm'], ['rg16f', 'rg16float'], ['rg32f', 'rg32float']]) {
+      const r = stage(format);
+      assert.equal(r.rc, 3, `${format} translated: ${r.text.slice(0, 200)}`);
+      assert.equal(r.text, `a read_write storage image of format ${name}`);
+    }
+    const errors = await compile([ok.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

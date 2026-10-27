@@ -204,3 +204,39 @@ test('?gpu=vkgputime times a submit\'s passes on the GPU with timestamp queries,
   wp.gpu_submit(1);
   assert.equal(descs[0].timestampWrites, undefined);
 });
+
+test('a storage texture a pass may write counts as written (VK3 L4c-F: presentation copies only written images)', async () => {
+  // The review's "storage writes don't count as writes": a WSI image written by a compute shader wasn't marked.
+  class Tex extends (globalThis as unknown as { GPUTexture: typeof FakeTexture }).GPUTexture { createView() { return {}; } }
+  const pass = { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} };
+  const device = {
+    addEventListener() {},
+    pushErrorScope() {},
+    popErrorScope: () => Promise.resolve(null),
+    createTexture: () => new Tex(),
+    createBindGroupLayout: (d: object) => ({ d }),
+    createBindGroup: () => ({}),
+    createCommandEncoder: () => ({ beginComputePass: () => pass, finish: () => ({}) }),
+    queue: { submit() {}, writeBuffer() {}, onSubmittedWorkDone: () => Promise.resolve() },
+  } as unknown as GPUDevice;
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const gpu = new VenusGpu(device, memory, () => {}, () => []);
+  const wg = gpu.imports() as Record<string, (...a: number[]) => number | void>;
+  const u8 = new Uint8Array(memory.buffer);
+  const put = (s: string) => { const b = new TextEncoder().encode(s); u8.set(b, 0); return [0, b.length] as const; };
+  wg.gpu_create(1, 1, ...put('{"size":[4,4],"format":"rgba8unorm","usage":12}'));
+  wg.gpu_create(1, 2, ...put('{"size":[4,4],"format":"rgba8unorm","usage":12}'));
+  wg.gpu_create(2, 3, ...put('{"texture":1}'));
+  wg.gpu_create(2, 4, ...put('{"texture":2}'));
+  wg.gpu_create(4, 5, ...put('{"entries":[{"binding":0,"visibility":4,"storageTexture":{"access":"write-only","format":"rgba8unorm"}},{"binding":2,"visibility":4,"storageTexture":{"access":"read-only","format":"rgba8unorm"}}]}'));
+  wg.gpu_create(8, 6, ...put('{"layout":5,"entries":[{"binding":0,"view":3},{"binding":2,"view":4}]}'));
+  wg.gpu_encoder();
+  wg.gpu_compute_pass();
+  wg.gpu_set_bind_group(0, 6, 0, 0);
+  wg.gpu_dispatch(1, 1, 1);
+  wg.gpu_pass_end();
+  wg.gpu_submit(1);
+  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(gpu.texture(1)?.written, 1, 'the texture bound for writing');
+  assert.equal(gpu.texture(2)?.written, 0, 'the texture bound read-only');
+});

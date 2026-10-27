@@ -42,6 +42,9 @@ int wgt_link(void);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
 int wgt_pass_done(void);
+int wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words);
+uint8_t *wgt_misc_map(void);
+int wgt_misc_done(void);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -1190,4 +1193,214 @@ EXPORT int
 wgt_fl_done(uint32_t i)
 {
    return GetFenceStatus(fl.dev, fl.fence[i]) == VK_SUCCESS;
+}
+
+/*
+ * Transfers and pushes WebGPU has no direct form for (VK3 L4c-F; the static review's "other real defects"), each
+ * scenario one submit on new objects, its results in a host-visible buffer (`wgt_misc_map`, 4 KiB; 0xee where
+ * nothing was written), `wgt_misc_done` when its fence signalled:
+ * 0: buffer copies at offsets and sizes that aren't 4-aligned, in one submit after a fill of the result: from
+ *    host-visible memory (S, bytes i * 7 + 3 written by the CPU) S[1, 14) → 6; from device-local memory written
+ *    on the GPU (filled 0x04030201, its [16, 32) updated to 0x40 + i) L[17, 27) → 101; from host-visible memory
+ *    the same submit filled on the GPU (S[4096, 4112) = 0x0d0c0b0a) S[4097, 4104) → 203; aligned S[8, 72) → 300;
+ *    and a long one, S[2, 3003) → 1001.
+ * 1: clears: an E5B9G9R9 image (4×4, not renderable in WebGPU) cleared to (1, 0.5, 0.25) → [0, 64) (each texel
+ *    0x81010100); a 3D RGBA8 image (4×4×2) cleared to blue → [256, 384) (both slices).
+ * 2: a blit from a 3D image (4×4×2 RGBA8, slice 0 red, slice 1 green) of its slice 1 into a 2D image → [0, 64).
+ * 3: `cs` (push.comp) dispatched 5,000 times, each with its index as push constant k → v[k], [0, 20000) of a
+ *    buffer of its own (`wgt_misc_map` then that).
+ */
+static struct {
+   VkFence fence;
+   uint8_t *map;
+} misc;
+
+static int
+misc_image(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags usage, VkImage *out)
+{
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = type, .format = format, .extent = { 4, 4, depth },
+      .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = usage,
+   };
+   CHECK(CreateImage(dev, &info, NULL, out));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, *out, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, *out, mem, 0));
+   return 0;
+}
+
+static void
+misc_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayout to)
+{
+   const VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                    .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                    .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                                    .oldLayout = from, .newLayout = to, .image = image,
+                                    .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &b);
+}
+
+EXPORT int
+wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
+{
+   if (!dev && init())
+      return 1;
+   PFN_vkCmdCopyBuffer CmdCopyBuffer = (PFN_vkCmdCopyBuffer)GetDeviceProcAddr(dev, "vkCmdCopyBuffer");
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdBlitImage CmdBlitImage = (PFN_vkCmdBlitImage)GetDeviceProcAddr(dev, "vkCmdBlitImage");
+   const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+   VkBuffer out;
+   if (buffer(scenario == 3 ? 20000 : 4096, both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, &out, (void **)&misc.map))
+      return 1;
+   if (!misc.fence) {
+      const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fi, NULL, &misc.fence));
+   } else {
+      CHECK(ResetFences(dev, 1, &misc.fence));
+   }
+   VkCommandPool pool;
+   const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+   CHECK(CreateCommandPool(dev, &cpo, NULL, &pool));
+   VkCommandBuffer cmd;
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                             .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                             .commandBufferCount = 1 };
+   CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(cmd, &begin));
+   if (scenario != 3)
+      CmdFillBuffer(cmd, out, 0, VK_WHOLE_SIZE, 0xeeeeeeee);
+   if (scenario == 0) {
+      VkBuffer src, local;
+      uint8_t *s;
+      if (buffer(8192, both, true, &src, (void **)&s) || buffer(4096, both, false, &local, NULL))
+         return 1;
+      for (uint32_t i = 0; i < 8192; i++)
+         s[i] = (uint8_t)(i * 7 + 3);
+      uint8_t update[16];
+      for (uint32_t i = 0; i < 16; i++)
+         update[i] = (uint8_t)(0x40 + i);
+      CmdCopyBuffer(cmd, src, out, 1, &(VkBufferCopy){ 1, 6, 13 });
+      CmdFillBuffer(cmd, local, 0, 4096, 0x04030201);
+      CmdUpdateBuffer(cmd, local, 16, 16, update);
+      CmdCopyBuffer(cmd, local, out, 1, &(VkBufferCopy){ 17, 101, 10 });
+      CmdFillBuffer(cmd, src, 4096, 16, 0x0d0c0b0a);
+      CmdCopyBuffer(cmd, src, out, 1, &(VkBufferCopy){ 4097, 203, 7 });
+      CmdCopyBuffer(cmd, src, out, 1, &(VkBufferCopy){ 8, 300, 64 });
+      CmdCopyBuffer(cmd, src, out, 1, &(VkBufferCopy){ 2, 1001, 3001 });
+   } else if (scenario == 1) {
+      VkImage e5, v3;
+      const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      if (misc_image(VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, VK_IMAGE_TYPE_2D, 1, usage, &e5) ||
+          misc_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_3D, 2, usage, &v3))
+         return 1;
+      const VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+      const VkImageSubresourceLayers layer = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+      misc_barrier(cmd, e5, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      CmdClearColorImage(cmd, e5, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &(VkClearColorValue){ .float32 = { 1, 0.5f, 0.25f, 0 } }, 1, &all);
+      misc_barrier(cmd, e5, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+      CmdCopyImageToBuffer(cmd, e5, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+      misc_barrier(cmd, v3, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      CmdClearColorImage(cmd, v3, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &(VkClearColorValue){ .float32 = { 0, 0, 1, 1 } }, 1, &all);
+      misc_barrier(cmd, v3, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+      CmdCopyImageToBuffer(cmd, v3, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 256, .imageSubresource = layer,
+                                                 .imageExtent = { 4, 4, 2 } });
+   } else if (scenario == 2) {
+      VkImage v3, flat;
+      VkBuffer src;
+      uint32_t *s;
+      if (misc_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_3D, 2,
+                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &v3) ||
+          misc_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, 1,
+                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &flat) ||
+          buffer(128, both, true, &src, (void **)&s))
+         return 1;
+      for (uint32_t i = 0; i < 32; i++)
+         s[i] = i < 16 ? 0xff0000ff : 0xff00ff00;
+      const VkImageSubresourceLayers layer = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+      misc_barrier(cmd, v3, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      CmdCopyBufferToImage(cmd, src, v3, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 2 } });
+      misc_barrier(cmd, v3, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+      misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      const VkImageBlit blit = { .srcSubresource = layer, .srcOffsets = { { 0, 0, 1 }, { 4, 4, 2 } },
+                                 .dstSubresource = layer, .dstOffsets = { { 0, 0, 0 }, { 4, 4, 1 } } };
+      CmdBlitImage(cmd, v3, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+                   VK_FILTER_NEAREST);
+      misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+      CmdCopyImageToBuffer(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   } else {
+      VkShaderModule m;
+      if (shader(cs, cs_words, &m))
+         return 1;
+      const VkDescriptorSetLayoutBinding binding = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                                                     VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 1, .pBindings = &binding };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl,
+                                               .pushConstantRangeCount = 1, .pPushConstantRanges = &range };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      VkPipeline pipeline;
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+      const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 1, .pPoolSizes = &ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      const VkDescriptorBufferInfo bi = { out, 0, VK_WHOLE_SIZE };
+      const VkWriteDescriptorSet w = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set,
+                                       .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                       .pBufferInfo = &bi };
+      UpdateDescriptorSets(dev, 1, &w, 0, NULL);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+      uint32_t push[32] = { 0 };
+      for (uint32_t k = 0; k < 5000; k++) {
+         push[28] = k;
+         CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
+         CmdDispatch(cmd, 1, 1, 1);
+      }
+   }
+   CHECK(EndCommandBuffer(cmd));
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, misc.fence));
+   return 0;
+}
+
+EXPORT uint8_t *
+wgt_misc_map(void)
+{
+   return misc.map;
+}
+
+EXPORT int
+wgt_misc_done(void)
+{
+   return misc.fence && GetFenceStatus(dev, misc.fence) == VK_SUCCESS;
 }

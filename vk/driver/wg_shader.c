@@ -235,6 +235,7 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    v->merged = NULL;
    v->pipelines = NULL;
    v->push_group = 0;
+   v->push_group_gen = 0;
    v->compute = 0;
    v->mask = mask;
    for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
@@ -570,7 +571,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          }
          shaders[i] = s;
          char *text = wgsl_print(NULL, infos[i].nir, infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
-                                 wg_max_immediates, &s->info, error, sizeof(error));
+                                 wg_max_immediates, wg_features & WG_FEATURE_TIER2, &s->info, error,
+                                 sizeof(error));
          if (!text) {
             ok = false;
             break;
@@ -583,6 +585,20 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             fs_reads = &s->info.varyings;
       }
    }
+   /* A storage image the stages bind with different access: its one layout entry can't match both modules' (WebGPU
+    * wants each module's access to be the entry's), so the pipeline would be invalid (VK3 L4c-F): refused. */
+   for (uint32_t a = 0; ok && a < count; a++)
+      for (uint32_t b = a + 1; ok && b < count; b++)
+         for (uint32_t i = 0; ok && i < shaders[a]->info.resource_count; i++)
+            for (uint32_t k = 0; ok && k < shaders[b]->info.resource_count; k++) {
+               const struct wgsl_resource *x = &shaders[a]->info.resources[i], *y = &shaders[b]->info.resources[k];
+               if (x->kind == WGSL_STORAGE_TEXTURE && y->kind == WGSL_STORAGE_TEXTURE && x->group == y->group &&
+                   x->binding == y->binding && x->access != y->access) {
+                  snprintf(error, sizeof(error), "a storage image the stages access differently (group %u binding %u)",
+                           x->group, x->binding);
+                  ok = false;
+               }
+            }
    for (uint32_t i = 0; i < count; i++)
       ralloc_free(infos[i].nir);
    if (!ok) {

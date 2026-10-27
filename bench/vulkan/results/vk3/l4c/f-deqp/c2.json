@@ -1,0 +1,73 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.vk vk-main.txt",
+ "cases": 37,
+ "seconds": 5.289102466000004,
+ "counts": {
+  "NotSupported": 17,
+  "Pass": 20
+ },
+ "notPassed": [
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_1_shader_vert_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_2_shaders_vert_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_3_shaders_vert_geom_frag NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_3_shaders_vert_geom_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_5_shaders_vert_tess_geom_frag NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_5_shaders_vert_tess_geom_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_multiple_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_partial_1_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_partial_2_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.dynamic_index_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.dynamic_index_vert_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_2_shaders_vert_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_3_shaders_vert_geom_frag NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_3_shaders_vert_geom_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_4_shaders_vert_tess_frag NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_5 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_6 NotSupported"
+ ],
+ "passed": [
+  "dEQP-VK.pipeline.monolithic.push_constant.compute_pipeline.overwrite",
+  "dEQP-VK.pipeline.monolithic.push_constant.compute_pipeline.simple_test",
+  "dEQP-VK.pipeline.monolithic.push_constant.compute_pipeline.uninitialized",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_1_shader_vert_frag",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_2_shaders_vert_frag",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_multiple",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_partial_1",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_partial_2",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.dynamic_index_frag",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.dynamic_index_vert",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_2_shaders_vert_frag",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.bind_layout1_push_range0_bind_layout0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_diff_range_bind_push_vert_and_comp",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_same_range_bind_push_vert_and_comp",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_diff_overlapping_range1_push_range0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_range1_push_range0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_bind_layout0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_overlapping_range_bind_layout0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range1_bind_layout1_push_range0"
+ ],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.push_constant.compute_pipeline.overwrite Pass 1",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range1_bind_layout1_push_range0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_overlapping_range_bind_layout0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_bind_layout0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_range1_push_range0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_diff_overlapping_range1_push_range0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_same_range_bind_push_vert_and_comp Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_diff_range_bind_push_vert_and_comp Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.bind_layout1_push_range0_bind_layout0 Pass 0"
+ ],
+ "last": "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_bind_layout0 Pass 0dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_overlapping_range_bind_layout0 Pass 0dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range1_bind_layout1_push_range0 Pass 0",
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

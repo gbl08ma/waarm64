@@ -125,9 +125,10 @@ bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, 
 void wgsl_link(nir_shader *vs, nir_shader *fs);
 
 /* Prints a lowered shader; a vertex shader's outputs follow `fs` (its fragment shader's inputs; NULL: as written).
- * Push constants past `max_immediates` bytes are read from the uniform buffer. Returns ralloc'd text owned by
- * `mem_ctx`, or NULL with `error`. */
-char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates,
+ * Push constants past `max_immediates` bytes are read from the uniform buffer; `tier2`: the device has
+ * texture-formats-tier2 (read-write storage images of more formats). Returns ralloc'd text owned by `mem_ctx`, or
+ * NULL with `error`. */
+char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, bool tier2,
                  struct wgsl_info *info, char *error, size_t error_size);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */

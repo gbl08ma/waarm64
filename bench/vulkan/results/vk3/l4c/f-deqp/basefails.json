@@ -1,0 +1,57 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.vk vk-main.txt",
+ "cases": 13,
+ "seconds": 6.673631110000002,
+ "counts": {
+  "Fail": 13
+ },
+ "notPassed": [
+  "dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.3d.r32_sfloat.r32_sfloat.general_optimal_linear Fail",
+  "dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.3d.r32g32_sfloat.r32g32_sfloat.general_optimal_linear Fail",
+  "dEQP-VK.api.copy_and_blit.core.blit_image.all_formats.color.3d.r32g32_sfloat.r32g32_sfloat.optimal_optimal_linear_stripes_y Fail",
+  "dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.b10g11r11_ufloat_pack32_sample_count_4 Fail",
+  "dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.a2b10g10r10_uint_pack32 Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.storage_image.compute.multiple_contiguous_descriptors.cube_array_base_slice Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.storage_image.compute.multiple_descriptor_sets.multiple_contiguous_descriptors.cube Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_push.storage_image.compute.single_descriptor.cube_base_mip Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_push.storage_image.fragment.multiple_contiguous_descriptors.cube_array Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_push_template.storage_image.compute.descriptor_array.cube_array_base_mip Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_template.storage_image.fragment.multiple_descriptor_sets.descriptor_array.cube_base_mip Fail",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_template.storage_image.fragment.single_descriptor.cube Fail",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overwrite Fail"
+ ],
+ "passed": [],
+ "slowest": [
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_push_template.storage_image.compute.descriptor_array.cube_array_base_mip Fail 1",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overwrite Fail 0",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_template.storage_image.fragment.single_descriptor.cube Fail 0",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_template.storage_image.fragment.multiple_descriptor_sets.descriptor_array.cube_base_mip Fail 0",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_push.storage_image.fragment.multiple_contiguous_descriptors.cube_array Fail 0",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_push.storage_image.compute.single_descriptor.cube_base_mip Fail 0",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.storage_image.compute.multiple_descriptor_sets.multiple_contiguous_descriptors.cube Fail 0",
+  "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.storage_image.compute.multiple_contiguous_descriptors.cube_array_base_slice Fail 0",
+  "dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.a2b10g10r10_uint_pack32 Fail 0",
+  "dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.b10g11r11_ufloat_pack32_sample_count_4 Fail 0"
+ ],
+ "last": "dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_template.storage_image.fragment.multiple_descriptor_sets.descriptor_array.cube_base_mip Fail 0dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind.with_template.storage_image.fragment.single_descriptor.cube Fail 0dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overwrite Fail 0",
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus-gpu: WebGPU: Dimension (TextureViewDimension::e3D) of [TextureView \"Dawn_ClearTexture_View\"] doesn't match the expected dimension (TextureViewDimension::e2D).\n - While validating entries[1] agai": 1,
+  "venus-gpu: WebGPU: [Invalid BindGroup (unlabeled)] is invalid due to a previous error.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).\n - Wh": 1,
+  "venus-gpu: WebGPU: [Invalid CommandBuffer] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n": 1,
+  "venus-gpu: WebGPU: The depthOrArrayLayers (8) of a multisampled texture is not 1.\n - While validating [TextureDescriptor].\n - While calling [Device].CreateTexture([TextureDescriptor]).\n": 1,
+  "venus-gpu: WebGPU: [Invalid Texture] is invalid due to a previous error.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor]).\n": 1,
+  "venus-gpu: WebGPU: [Invalid TextureView] is invalid due to a previous error.\n - While validating colorAttachments[0].\n - While encoding [CommandEncoder (unlabeled)].BeginRenderPass([RenderPassDescript": 1,
+  "venus-gpu: a bind group: Dimension (TextureViewDimension::CubeArray) of [TextureView of Texture (unlabeled 64x64 px, 12 layer, TextureFormat::RGBA8Unorm)] doesn't match the expected dimension (Texture": 1,
+  "venus-gpu: WebGPU: [Invalid BindGroup (unlabeled)] is invalid due to a previous error.\n - While encoding [ComputePassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).\n - W": 1,
+  "venus-gpu: a bind group: Dimension (TextureViewDimension::Cube) of [TextureView of Texture (unlabeled 64x64 px, 12 layer, TextureFormat::RGBA8Unorm)] doesn't match the expected dimension (TextureViewD": 1,
+  "venus-gpu: a render pipeline: No attachment was specified.\n - While calling [Device].CreateRenderPipeline([RenderPipelineDescriptor]).\n ({\"layout\":20,\"vertex\":{\"module\":10,\"entryPoint\":\"main\",\"constan": 1,
+  "venus-gpu: WebGPU: Render pass has no attachments.\n - While encoding [CommandEncoder (unlabeled)].BeginRenderPass([RenderPassDescriptor]).\n - While finishing [CommandEncoder (unlabeled)].\n": 1
+ }
+}

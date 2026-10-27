@@ -1,0 +1,83 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.vk vk-main.txt",
+ "cases": 39,
+ "seconds": 5.069221335000002,
+ "counts": {
+  "Fail": 1,
+  "NotSupported": 23,
+  "Pass": 15
+ },
+ "notPassed": [
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_4_shaders_vert_tess_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_5_shaders_vert_tess_geom_frag NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_5_shaders_vert_tess_geom_frag_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overwrite Fail",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_128_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_128_longvec NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_128_longvec_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_16_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_256 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_256_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_256_longvec NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_256_longvec_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_4_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_max_command2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_3 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_4 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_5 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_6 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_2 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_3 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_4 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_5 NotSupported",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_6 NotSupported"
+ ],
+ "passed": [
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_128",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_16",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_4",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_max",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_1",
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_1",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.bind_layout1_push_range0_bind_layout0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_diff_range_bind_push_vert_and_comp",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_same_range_bind_push_vert_and_comp",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_diff_overlapping_range1_push_range0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_range1_push_range0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_bind_layout0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_overlapping_range_bind_layout0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range1_bind_layout1_push_range0"
+ ],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_4 Pass 1",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range1_bind_layout1_push_range0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_overlapping_range_bind_layout0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_bind_layout0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_range1_push_range0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout0_push_diff_overlapping_range1_push_range0 Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_same_range_bind_push_vert_and_comp Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.pipeline_change_diff_range_bind_push_vert_and_comp Pass 0",
+  "dEQP-VK.pipeline.monolithic.push_constant.lifetime.bind_layout1_push_range0_bind_layout0 Pass 0"
+ ],
+ "last": "dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_bind_layout0 Pass 0dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range0_bind_layout1_overlapping_range_bind_layout0 Pass 0dEQP-VK.pipeline.monolithic.push_constant.lifetime.push_range1_bind_layout1_push_range0 Pass 0",
+ "detail": [
+  "== dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overwrite",
+  "<Text>Unexpected value in output image at coords (0, 0, 0, 0): found (0, 0, 0, 0) and expected (130, 130, 130, 131) at vktPipelinePushConstantTests.cpp:3307</Text>",
+  "<Result StatusCode=\"Fail\">Unexpected value in output image at coords (0, 0, 0, 0): found (0, 0, 0, 0) and expected (130, 130, 130, 131) at vktPipelinePushConstantTests.cpp:3307</Result>"
+ ],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus-gpu: a render pipeline: No attachment was specified.\n - While calling [Device].CreateRenderPipeline([RenderPipelineDescriptor]).\n ({\"layout\":10,\"vertex\":{\"module\":5,\"entryPoint\":\"main\",\"constant": 1,
+  "venus-gpu: WebGPU: Render pass has no attachments.\n - While encoding [CommandEncoder (unlabeled)].BeginRenderPass([RenderPassDescriptor]).\n - While finishing [CommandEncoder (unlabeled)].\n": 1,
+  "venus-gpu: WebGPU: [Invalid CommandBuffer] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n": 1
+ }
+}

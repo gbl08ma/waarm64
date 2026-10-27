@@ -198,3 +198,31 @@ for (const [scenario, what, want] of [
     for (const [k, v] of Object.entries(want)) assert.deepEqual(pixels[k], v, `${k}: ${JSON.stringify(pixels)}`);
   });
 }
+
+// VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
+for (const [scenario, what] of [
+  ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
+  ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
+  ['blit', 'a blit from a 3D image samples its slice'],
+  ['push', 'thousands of push-constant changes in one submit each keep their own'],
+] as const) {
+  test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    // After the first test, which made target/vk/test.
+    const out = join(root, 'target/vk/test');
+    mkdirSync(out, { recursive: true });
+    const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, 'push.comp.spv'), join(root, 'tests/venus/push.comp')], { encoding: 'utf8' });
+    assert.equal(c.status, 0, c.stderr);
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, '/target/vk/test/push.comp.spv'), scenario);
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    const checks = r.checks as Record<string, number>;
+    for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
+    assert.equal(r.warnings, 0, 'the worker warned');
+  });
+}

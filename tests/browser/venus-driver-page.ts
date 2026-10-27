@@ -17,6 +17,7 @@ type Test = {
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
   wgt_link(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number;
+  wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number;
 };
 
 /** Two runs of the program, each on a renderer of its own (a machine started again), sharing a shader store: the
@@ -364,4 +365,67 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
   } catch (e) {
     return { error: String(e), errors };
   }
+}
+
+/**
+ * VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for
+ * (vk/driver/wg_test.c `wgt_misc`). `copy`: buffer copies at offsets and sizes that aren't 4-aligned, from host-visible,
+ * device-local and GPU-written memory; `clear`: a clear of a format WebGPU can't render to, and of a 3D image;
+ * `blit`: a blit from a 3D image's second slice; `push`: 5,000 dispatches' push constants in one submit. Each check:
+ * the first byte that differs from what Vulkan says (-1: none).
+ */
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push', push: string) {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const ex = v.raw as unknown as Test;
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
+  const cs = ex.venus_alloc(words.length) >>> 0;
+  new Uint8Array(memory.buffer, cs, words.length).set(words);
+  const index = { copy: 0, clear: 1, blit: 2, push: 3 }[scenario];
+  if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
+  for (let k = 0; k < 1000 && !ex.wgt_misc_done(); k++) await new Promise((r) => setTimeout(r, 10));
+  if (!ex.wgt_misc_done()) return { error: 'the fence never signalled', errors, warnings: v.gpu.stats.errors };
+  const size = scenario === 'push' ? 20000 : 4096;
+  const got = new Uint8Array(memory.buffer, ex.wgt_misc_map() >>> 0, size).slice();
+  const want = new Uint8Array(size).fill(0xee);
+  const u32 = (b: Uint8Array) => new Uint32Array(b.buffer, b.byteOffset, b.length >> 2);
+  const S = Uint8Array.from({ length: 8192 }, (_, i) => (i * 7 + 3) & 255);
+  const checks: Record<string, [number, number, Uint8Array]> = {};
+  if (scenario === 'copy') {
+    S.set([0x0a, 0x0b, 0x0c, 0x0d, 0x0a, 0x0b, 0x0c, 0x0d, 0x0a, 0x0b, 0x0c, 0x0d, 0x0a, 0x0b, 0x0c, 0x0d], 4096);
+    const L = new Uint8Array(4096);
+    u32(L).fill(0x04030201);
+    L.set(Uint8Array.from({ length: 16 }, (_, i) => 0x40 + i), 16);
+    want.set(S.subarray(1, 14), 6);
+    want.set(L.subarray(17, 27), 101);
+    want.set(S.subarray(4097, 4104), 203);
+    want.set(S.subarray(8, 72), 300);
+    want.set(S.subarray(2, 3003), 1001);
+    Object.assign(checks, { hostSource: [0, 100, want], deviceLocal: [100, 200, want], gpuWritten: [200, 300, want], aligned: [300, 1000, want], long: [1000, 4096, want] });
+  } else if (scenario === 'clear') {
+    u32(want.subarray(0, 64)).fill(0x81010100);
+    u32(want.subarray(256, 384)).fill(0xffff0000);
+    Object.assign(checks, { unrenderable: [0, 256, want], slices: [256, 4096, want] });
+  } else if (scenario === 'blit') {
+    u32(want.subarray(0, 64)).fill(0xff00ff00);
+    Object.assign(checks, { slice: [0, 4096, want] });
+  } else {
+    const w = u32(want);
+    for (let k = 0; k < 5000; k++) w[k] = k * 3 + 1;
+    Object.assign(checks, { push: [0, size, want] });
+  }
+  const differs: Record<string, number> = {};
+  for (const [k, [from, to, w]] of Object.entries(checks)) {
+    differs[k] = -1;
+    for (let i = from; i < to; i++) if (got[i] !== w[i]) { differs[k] = i; break; }
+  }
+  device.destroy();
+  return { checks: differs, errors, warnings: v.gpu.stats.errors, got: [...got.subarray(0, 16)] };
 }

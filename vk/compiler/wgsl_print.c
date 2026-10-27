@@ -33,6 +33,7 @@ struct ctx {
    size_t error_size;
    struct wgsl_info *info;
    const struct wgsl_varyings *fs;
+   bool tier2; /* texture-formats-tier2: read-write storage for more formats */
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
@@ -242,6 +243,28 @@ tex_dim(struct ctx *c, enum glsl_sampler_dim dim, bool array)
       failf(c, "a texture of sampler dim %d (texel buffers aren't offered)", dim);
       return WGSL_DIM_2D;
    }
+}
+
+/* Whether WebGPU lets a storage texture of this format be bound with `access` (WebGPU's format tables): read-write
+ * only for r32 in core and tier2's formats with texture-formats-tier2; bgra8unorm (bgra8unorm-storage) write-only. */
+static bool
+storage_access_ok(const char *format, uint8_t access, bool tier2)
+{
+   if (!strcmp(format, "bgra8unorm"))
+      return access == WGSL_ACCESS_WRITE;
+   if (access != (WGSL_ACCESS_READ | WGSL_ACCESS_WRITE))
+      return true;
+   static const char *const core[] = { "r32uint", "r32sint", "r32float" };
+   static const char *const t2[] = { "r8unorm", "r8uint", "r8sint", "rgba8unorm", "rgba8uint", "rgba8sint",
+                                     "r16uint", "r16sint", "r16float", "rgba16uint", "rgba16sint", "rgba16float",
+                                     "rgba32uint", "rgba32sint", "rgba32float" };
+   for (unsigned i = 0; i < ARRAY_SIZE(core); i++)
+      if (!strcmp(format, core[i]))
+         return true;
+   for (unsigned i = 0; tier2 && i < ARRAY_SIZE(t2); i++)
+      if (!strcmp(format, t2[i]))
+         return true;
+   return false;
 }
 
 /* The WGSL texel format of a storage image's format, or NULL. */
@@ -566,6 +589,10 @@ declare_resources(struct ctx *c)
          const char *access = r->access == WGSL_ACCESS_READ    ? "read"
                               : r->access == WGSL_ACCESS_WRITE ? "write"
                                                                : "read_write";
+         /* A shader that loads and stores an image WebGPU gives only one way (VK3 L4c-F): refused (it would make an
+          * invalid module, and its submits would be dropped). */
+         if (storage_format(r->format) && !storage_access_ok(storage_format(r->format), r->access, c->tier2))
+            failf(c, "a %s storage image of format %s", access, storage_format(r->format));
          line(c, "%s var %s: texture_storage_%s<%s, %s>;", at, name, dims[r->dim], storage_format(r->format), access);
          break;
       }
@@ -1594,7 +1621,7 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
 }
 
 char *
-wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates,
+wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, bool tier2,
            struct wgsl_info *info, char *error, size_t error_size)
 {
    wgsl_finish(nir);
@@ -1608,6 +1635,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
       .error_size = error_size,
       .info = info,
       .fs = nir->info.stage == MESA_SHADER_VERTEX ? fs : NULL,
+      .tier2 = tier2,
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
