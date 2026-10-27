@@ -89,9 +89,9 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
 - [ ] L4c (the user, 2026-10-27: **fix the static review's findings first, then re-measure**; the experiments resume
   only if the green persists). The review: `git show origin/review/venus-green:VENUS-GREEN-REVIEW.md` (78d08509, a
   fresh agent, read-only, of the picture's path). Serial loops, each starting with tests that fail today:
-  - [ ] A: finding 1 (the window's dirty pages taken by one device and lost to the others; completion serials per
-    device matched across devices), and "the last bytes of an odd-sized memory never uploaded". Then green.sh:
-    ≥20 bare sessions against the pooled base rate (~8 of 31 so far): 0 of 20 at ~0.25 happens by chance ~0.3%.
+  - [x] A (done 2026-10-27, "State after L4c-A"): finding 1 (the window's dirty pages taken by one device and lost to
+    the others; completion serials per device matched across devices), and "the last bytes of an odd-sized memory
+    never uploaded". Then green.sh: **0 green of 20 bare** against the pooled base rate (~8 of 31 so far).
   - [ ] B: finding 2 (a page's upload overwriting GPU-written bytes of an in-flight submit; completions overwriting
     CPU writes made since).
   - [ ] C: finding 3 (the import's ordering: the readback before the picture lands, `forget` against the deferred
@@ -158,6 +158,7 @@ per bind, 0 of 22 with extra GPU work, 4 of 7 with a JS-only trace.
 | L4 | JS-only trace | trace of calls | 4/7 | doesn't hide; calls identical green/right |
 | L4b-0 | baseline at 2f229f0a | bare `vkformats=all` (green.sh, alternated with `held`) | 1/8 | the rate today is lower than L4's 7/23 (or drifts by sitting); the green is L4's rg16float bytes exactly (2,279,070 off), and the page's screen agrees |
 | L4b-0 | control | `held` (formats held, the default) | 0/8 | as expected |
+| L4c-A | finding 1 fixed (the window's pages to every device, serials global, odd sizes whole) | bare `vkformats=all` at e3d4cd46 | 0/20 | fits a fix (chance ~0.3% at 0.25); the second device during mpv's first run not observed directly; `results/vk3/l4c/a-green.jsonl` |
 
 **The harness (L4b-0):** `ARMS='bare:vkformats=all|held:' N='15 8' bench/vulkan/green.sh <results.jsonl> [budget s]`: fresh
 sessions on the Mac (mpv-frames.ts through sway-mac.sh), arms alternated, each classified green/right/odd/error from
@@ -180,6 +181,32 @@ decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 
   texture, all-zero LUT weights or a chroma FBO never rendered would all give exactly these: "the import never wrote
   chroma" is one candidate among several.
 
+
+## State (2026-10-27, after L4c-A)
+
+- **Done: the review's finding 1 and "the last bytes of an odd-sized memory never uploaded" are fixed** (e3d4cd46).
+  Both confirmed against the code first, then by tests that failed on the old code (tests/venus-driver.test.ts "two
+  devices: …", vk/driver/wg_test.c `wgt_two_*`: two devices with memories in one window and a write-watch of the
+  test's own whose pages the page marks):
+  - a page device 1 wrote, after device 0 submitted, read back stale (old: byte 0 differed);
+  - device 1 and device 0 submitting at once with equal per-device serials: device 1's readback lost (byte 0);
+  - a 4,099-byte memory through an R8 image: its last 3 bytes zero (byte 4096).
+- **The fix** (vk/driver/wg_cmd.c `take_pages`, `upload`): each submit's look at the watch ORs the pages into every
+  registered device's bitmap (`wg_device.pages`, a bit a page of the window, 8 KiB at 256 MiB, made at the first look);
+  a device's upload walks only its in-window memories' page ranges and clears its own bits. Serials are global; a
+  17th device fails `vkCreateDevice` (it used to be unregistered: its submits would never complete). Uploads go to
+  `mem->size` (4-aligned) instead of `vk.size & ~3`. vk/README.md "The driver" and "Completion" say so.
+- **Cost** (the M4, Chromium 153.0.8010.12, VK0's scene at 1,000 fish, WARMUP 200, FRAMES 300, alternated): before
+  2.447, 2.459, 2.548 ms a frame, after 2.481, 2.533, 2.493: the rounds overlap, no difference
+  (`results/vk3/l4c/a-scene-1000-*.json`).
+- **The green: 0 of 20 bare sessions** (`ARMS='bare:vkformats=all' N=20`, `results/vk3/l4c/a-green.jsonl`), against a
+  pooled ~8 of 31 before. 0 of 20 at 0.25 happens by chance ~0.3%: finding 1 fits as the cause (libplacebo's LUT
+  written by the CPU, its pages taken by another device's submit). Not observed directly: that a second Venus device
+  is alive during mpv's first frames (the review's "Confirm": count `wg_device_register` adds). The method asks for a
+  second 12 to call it fixed; the `held` arm wasn't run.
+- **Review findings fixed so far:** 1 and "the last bytes of an odd-sized memory". Open: 2, 3, 4, 5, 6 and the other
+  real defects (loops B–F).
+- **CI at the commit:** ci.sh OK (442 s), ci-debian.sh OK (383 s), ci-deqp-vk.sh OK (243 s).
 
 ## State (2026-10-26, after L4)
 

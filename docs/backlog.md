@@ -585,6 +585,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     host-visible memory: the persistent chroma-only object, `--cscale=bicubic` has none), libplacebo's trace log in a
     green run, the first frame's held submits (async pipelines) against `?gpu=vkpipelines=sync` (VK2 L7 saw it before
     async pipelines existed). The user's NVIDIA run says whether NVIDIA shows it (`nvidia.sh`'s `mpv-frames` steps).
+    **Likely fixed by VK3 L4c-A** (VK3-HANDOVER.md): the window's written pages were taken by whichever device
+    submitted and lost to the others' memories; with that fixed, 0 green in 20 bare sessions (was ~8 of 31). To
+    confirm with a second 12 sessions before the advanced path goes on by default.
   - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
     syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
     host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the
