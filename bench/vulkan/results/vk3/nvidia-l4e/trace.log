@@ -1,0 +1,13 @@
+[0.8] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap, checked at the first copies
+[36.0] running
+[41.0] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[43.5] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[55.3] fish-1-msaa1 trace: 137.3 MB, not summarized: RangeError: Maximum call stack size exceeded
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[59.0] fish-1-msaa1 2.51 ms a frame (IQR 0.072), guest CPU 0.744 ms; GPU worker busy 2 ms/s, 0 draws/s
+[59.0] fish-1-msaa1 venus: 669 submits/s done in 3.25 ms (max 16.4), then 0.00 ms in order (by second: 3.135 0 4.766 3.077 3.126 3.126 3.082 3.655 3.274 3.196 3.237 3.335 3.147 3.082 3.061); 3592 polls/s 0.24 ms apart (max 34.8); 671 nudges/s; 334 fences/s retired in 3.36 ms
+[59.0] fish-1-msaa1 venus a submit: encode 0.205 ms, queue.submit 0.011 ms, 1.5 writes (18.8 KB), 0.00 readbacks, 0.49 passes, 59 draws; 49% have a pass, done in 3.26 ms (by second: 5.705 3.075 3.128 3.125 3.048 3.648 3.262 3.21 3.264 3.35 3.155 3.098 3.059)

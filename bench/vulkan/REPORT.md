@@ -1375,6 +1375,34 @@ How the stacks were had: gdb isn't in the desktop image and an image build didn'
 PRE='pacman -U --noconfirm /mnt/media/gdb/*.zst' DIAG=…`). The guest's libraries are stripped: exported names
 (libc, libdrm, libplacebo's API) placed the waits, Mesa's source (`target/vk/mesa`, 26.2.4) the rest.
 
+## VK3: the NVIDIA run after L4e — libplacebo's advanced path right on NVIDIA, mpv exits, the rest unchanged
+
+**2026-10-27.** The user ran the whole default `bench/vulkan/nvidia.sh page` with the bundle of 4fdc69fb
+(`results/vk3/nvidia-l4e/`; RTX 3070, driver 615.71.09, Arch's Chromium 153.0.8010.52, the desktop image rebuilt in L4e
+with `VN_PERF=no_async_present`, checked in its root filesystem before bundling). The page grabs (16 PPMs, 48 MB) and
+the 137 MB trace aren't committed (`bench/results/local/vk3-nvidia-l4e/`).
+
+**The advanced path on NVIDIA** (`mpv-frames-default`, `-default2`): libplacebo takes it without complaint (no "Failed
+creating FBO texture"); the adapter reports `ampere`. **VA-API byte for byte software** on Vulkan (`vkva ~ vkno`: 0
+bytes off, mean 0) in both runs; the page's screens (`GRAB=1 REGRAB=20`) are the fullscreen frame, identical 20 s
+later, and match each other (`vkva ~ vkno` page: 0) and GL's software frame as the screenshots do (`vkno ~ glno` page:
+388 bytes off by >24, mean 1.09). **mpv exits 0 in every arm** (8 of 8 Vulkan sessions across the three steps): no
+freeze on this host's cold first session. `glva ~ glno` (mean 10.6) is GL's VA-API path, the same on SwiftShader and the
+M4 since VK2 L6.
+
+**Held** (`mpv-frames-held`, `vkformats=held`): "Failed creating FBO texture! Disabling advanced rendering" as
+expected, VA-API still byte for byte software (0 off).
+
+**mpv's bar with synchronous presents** (`mpv`): on Vulkan 540 and 533 frames, **0 dropped**, the guest **14 and 12%**
+busy (the run after L2b, async presents: 13 and 11%); GL 9 and 8%. Within the bar (19–27%).
+
+**Unchanged from the run after L2b:** presentation right in every way (bitmap, canvas, readback, auto: vkcube and
+mpv); the replays as before (vkQuake's known 1.67% difference, the rest within tolerance); pipelines one by one 1.95 s
+with WebGL stalled 1.95 s, async 0.52 s with WebGL's longest wait 79 ms; vkQuake's cold translation 237 ms, 282 misses;
+the fence's shapes within 0.02 ms (a lone pass done 2.24 ms, nudged 1.18, queued 0.27). The scene (ms a frame, two
+rounds): 1 fish Venus 2.47, 2.59 against virgl 1.54, 1.50 (parked by the user); 1,000 fish 5.71, 5.70 against 8.85,
+8.68; toolkit 3.19, 3.05 against 6.81, 7.43.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

@@ -1,0 +1,88 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "toolkit",
+ "fish": 0,
+ "quads": 2000,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 7.43,
+  "iqr": 0.066
+ },
+ "guestCpuMs": 7.181,
+ "line": "virgl toolkit: 7.430 ms a frame (IQR 0.066), CPU 7.181 ms, 400 draws a frame",
+ "seconds": 15.149055336000005,
+ "renderer": {
+  "seconds": 15,
+  "busyMs": 405.6619999885559,
+  "submitMs": 403.5520000139872,
+  "drawMs": 0.08366672197977702,
+  "presents": 4.8,
+  "glDraws": 45066.666666666664,
+  "commands": 293499.86666666664,
+  "uploadKB": 10816.279557291668,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 1.950333340962728,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 40,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 110.33333333333333,
+  "submitKB": 9177.028125,
+  "fences": {
+   "n": 111.86666666666666,
+   "meanMs": 3.7417610213071715,
+   "maxMs": 41.40499997138977,
+   "heldMs": 430.00633277893064,
+   "behindMs": 6.395999987920125,
+   "fullMs": 0,
+   "heldMax": 7,
+   "toGpuMs": 3.65552014202888,
+   "toGpuMaxMs": 41.369873046875,
+   "backMs": 0.04483879734989571,
+   "backMaxMs": 6.929931640625
+  }
+ },
+ "vm": {
+  "seconds": 15.000004999876023,
+  "Msteps": 390.971869,
+  "irqs": 1396,
+  "exceptions": {
+   "0x15": 1035,
+   "0x20": 31,
+   "0x24": 359,
+   "0x25": 31
+  },
+  "tlbMisses": 281836,
+  "tlbFlushes": 462,
+  "jitFlushes": 0,
+  "jitInvalidations": 2,
+  "jitCompileMs": 0.896375
+ }
+}

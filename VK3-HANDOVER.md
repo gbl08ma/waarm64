@@ -20,10 +20,12 @@ docs and the backlog; git keeps the old handovers.
   `VN_PERF=no_async_present` in the desktop image (`images/arch/desktop-setup.sh`; `target/arch/desktop.qcow2` rebuilt).
   Right on SwiftShader and the M4, cold and warm; mpv's bar holds (0 drops, 13–14%). Check: `CHECK=1 node
   bench/vulkan/mpv-frames.ts` on SwiftShader; `?gpu=vkpipedelay=<ms>` makes a warm host cold.
+- **Confirmed on NVIDIA** (the run of 4fdc69fb, REPORT.md "VK3: the NVIDIA run after L4e"): the advanced path taken,
+  VA-API byte for byte software, the page on the fullscreen frame, mpv exits in every arm, mpv at its bar (0 drops,
+  12–14%); presentation, replays, pipelines, the fence and the scene as in the run after L2b.
 - **Open from L4e:** report the Mesa bug upstream (the fix is written in vk/README.md "The guest's Mesa") and drop the
   workaround when Arch ships one; **the hosted desktop disk (vmdisks.tny.im) is still the old image**: replace it before
-  the page is next deployed, or a user's first cold mpv freezes (backlog; deploys are the user's call). A new NVIDIA
-  bundle is due (the last predates L4c; questions below).
+  the page is next deployed, or a user's first cold mpv freezes (backlog; deploys are the user's call).
 - **Parked by the user (2026-10-26): Venus at 1 fish on NVIDIA** (2.4–2.6 ms a frame against virgl's 1.5): the gate's
   scene clause is held at 1,000 fish and the toolkit unless the user reopens it (backlog "Venus at 1 fish on NVIDIA").
 - **The review's branch** `origin/review/venus-green` (78d08509) holds the review itself; its findings now live in
@@ -57,18 +59,11 @@ commit without "with uncommitted changes". On the desktop, in a checkout at the 
 
 (~56 min whole; `VK2_STEPS="…"` runs some steps; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user puts
 in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvidia-<name>/`, leave traces over a few MB
-in `bench/results/local/`, delete the tarball.) The last bundle (`target/vk3-nvidia-bundle-f55eacd7.tar`) predates L4c:
-build a new one.
+in `bench/results/local/`, delete the tarball.) The last bundle is `target/vk3-nvidia-bundle-4fdc69fb.tar` (run 2026-10-27: REPORT.md "VK3: the NVIDIA run after
+L4e").
 
-**Open for the next run** (the advanced path on by default since L4e; the bundle's desktop image should be one
-rebuilt with `VN_PERF=no_async_present`, though nvidia.sh sets it again with GUEST_ENV/MPV_ENV):
-- (L4, L4e) `mpv-frames-default`, `mpv-frames-default2`: libplacebo without complaint; VA-API's chroma right (`vkva ~
-  vkno` near 0)? Which FBO family did NVIDIA's adapter give (`texture-formats-tier1` in `adapter.json` says
-  `rg16float`)? The page's screens (the lines after each, `GRAB=1 REGRAB=20`) the fullscreen frame (vkva's `page` off
-  by few bytes against vkno), and `mpv exit 0` in every arm (L4e: the freeze is gone with synchronous presents)?
-- (L4) `mpv-frames-held` (`vkformats=held`): "Failed creating FBO texture", VA-API byte for byte software (`vkva ~ vkno` 0)?
-- (L4, L4e) `mpv`: mpv on Vulkan with the advanced path and synchronous presents meets the bar (no drops, the guest no
-  busier than 19–27%)?
+**Open for the next run:** nothing yet. The next loop that needs an NVIDIA number adds its step to nvidia.sh and its
+question here.
 
 ## Things worth not re-discovering
 

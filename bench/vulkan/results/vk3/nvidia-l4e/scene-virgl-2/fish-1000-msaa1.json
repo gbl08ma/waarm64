@@ -1,0 +1,88 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 8.68,
+  "iqr": 0.022
+ },
+ "guestCpuMs": 5.585,
+ "line": "virgl aquarium: 8.680 ms a frame (IQR 0.022), CPU 5.585 ms, 1119 draws a frame",
+ "seconds": 17.911202940999996,
+ "renderer": {
+  "seconds": 18,
+  "busyMs": 810.6877778106266,
+  "submitMs": 809.2311111158795,
+  "drawMs": 0.08222222328186035,
+  "presents": 4.888888888888889,
+  "glDraws": 105683.33333333333,
+  "commands": 354521,
+  "uploadKB": 5900.769205729167,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 1.8949999941719904,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 36,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 95.5,
+  "submitKB": 14014.003038194445,
+  "fences": {
+   "n": 102.22222222222223,
+   "meanMs": 10.366907608897789,
+   "maxMs": 87.08999991416931,
+   "heldMs": 1123.6313891278373,
+   "behindMs": 33.88833358552721,
+   "fullMs": 0,
+   "heldMax": 10,
+   "toGpuMs": 10.431813117114645,
+   "toGpuMaxMs": 87.054931640625,
+   "backMs": 0.08107697860054348,
+   "backMaxMs": 9.60498046875
+  }
+ },
+ "vm": {
+  "seconds": 17.999995000123977,
+  "Msteps": 392.033362,
+  "irqs": 1452,
+  "exceptions": {
+   "0x15": 1601,
+   "0x20": 54,
+   "0x24": 2159,
+   "0x25": 28
+  },
+  "tlbMisses": 34557,
+  "tlbFlushes": 2705,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.303239
+ }
+}

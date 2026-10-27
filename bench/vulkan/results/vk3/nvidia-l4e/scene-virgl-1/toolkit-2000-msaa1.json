@@ -1,0 +1,88 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "toolkit",
+ "fish": 0,
+ "quads": 2000,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 6.806,
+  "iqr": 0.028
+ },
+ "guestCpuMs": 6.563,
+ "line": "virgl toolkit: 6.806 ms a frame (IQR 0.028), CPU 6.563 ms, 400 draws a frame",
+ "seconds": 13.947574055999997,
+ "renderer": {
+  "seconds": 14,
+  "busyMs": 431.398571235793,
+  "submitMs": 429.98607119492124,
+  "drawMs": 0.08249996389661517,
+  "presents": 4.857142857142857,
+  "glDraws": 48473.78571428572,
+  "commands": 313922.85714285716,
+  "uploadKB": 11513.071847098214,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 1.4635714462825231,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 40,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 119.64285714285714,
+  "submitKB": 10148.677455357143,
+  "fences": {
+   "n": 121.28571428571429,
+   "meanMs": 3.897075971108022,
+   "maxMs": 33.68999981880188,
+   "heldMs": 482.3982141188213,
+   "behindMs": 5.6017857279096335,
+   "fullMs": 0,
+   "heldMax": 7,
+   "toGpuMs": 3.652437320573069,
+   "toGpuMaxMs": 33.639892578125,
+   "backMs": 0.04438605813419118,
+   "backMaxMs": 6.375
+  }
+ },
+ "vm": {
+  "seconds": 13.999984999895096,
+  "Msteps": 424.109505,
+  "irqs": 1421,
+  "exceptions": {
+   "0x15": 1124,
+   "0x20": 39,
+   "0x24": 393,
+   "0x25": 33
+  },
+  "tlbMisses": 17252,
+  "tlbFlushes": 435,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 0.839553
+ }
+}

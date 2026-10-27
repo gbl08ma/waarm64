@@ -9,9 +9,9 @@ lessons in "How VK3 runs".
 
 Read `VK3-HANDOVER.md` first (lean: where VK3 stands, the plan, the next NVIDIA run's questions, findings worth not
 re-discovering); REPORT.md's "VK3 …" sections have the history. In short: steps 1–4 of the plan below are done, the
-user's two NVIDIA runs processed (step 4's last blocker, a cold mpv's frozen window, was the guest's Mesa: the desktop
+user's NVIDIA runs processed (step 4's last blocker, a cold mpv's frozen window, was the guest's Mesa: the desktop
 image presents synchronously; the hosted disk still needs replacing before a deploy, the user's call); steps 5–8 are
-open, and a new NVIDIA bundle is due. **The user parked step 2's bar at 1 fish on NVIDIA** (not representative; likely
+open; the user's third NVIDIA run (after L4e) confirmed step 4 there. **The user parked step 2's bar at 1 fish on NVIDIA** (not representative; likely
 the driver or the GPU's power states): the gate's scene clause is held at 1,000 fish and the toolkit unless the user
 reopens it. Start with the two out-of-context reviews in the backlog, then L5.
 

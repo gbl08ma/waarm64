@@ -1,0 +1,89 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 1.498,
+  "iqr": 0.133
+ },
+ "guestCpuMs": 1.42,
+ "line": "virgl aquarium: 1.498 ms a frame (IQR 0.133), CPU 1.420 ms, 120 draws a frame",
+ "seconds": 5.863430421999998,
+ "renderer": {
+  "seconds": 6,
+  "busyMs": 303.71833364168805,
+  "submitMs": 302.1408340930939,
+  "drawMs": 0.09083346525828044,
+  "presents": 5,
+  "glDraws": 34000,
+  "commands": 208178,
+  "uploadKB": 17702.3076171875,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 6.701666673024495,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 24,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 279.8333333333333,
+  "submitKB": 6552.728515625,
+  "fences": {
+   "n": 306,
+   "meanMs": 1.278382356909625,
+   "maxMs": 100.35500001907349,
+   "heldMs": 418.00333456198376,
+   "behindMs": 15.693334062894186,
+   "fullMs": 0.09416663646697998,
+   "heldMax": 16,
+   "toGpuMs": 1.1088401137376578,
+   "toGpuMaxMs": 79.619873046875,
+   "backMs": 0.03406832744380109,
+   "backMaxMs": 0.655029296875
+  }
+ },
+ "vm": {
+  "seconds": 5.999994999885559,
+  "Msteps": 333.195619,
+  "irqs": 1856,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 3086,
+   "0x20": 85,
+   "0x24": 7011,
+   "0x25": 77
+  },
+  "tlbMisses": 62909,
+  "tlbFlushes": 8935,
+  "jitFlushes": 0,
+  "jitInvalidations": 1,
+  "jitCompileMs": 3.415726
+ }
+}

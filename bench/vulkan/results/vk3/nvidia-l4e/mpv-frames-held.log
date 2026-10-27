@@ -1,0 +1,22 @@
+[0.8] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap, checked at the first copies
+[36.5] running
+[page warning] venus-share: resource 81 (854x480) isn't (or no longer) a Vulkan image's memory: not shown
+[page warning] venus-share: resource 91 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown
+[page warning] venus-share: resource 92 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown
+[90.8] vkva venus {"submits":1.55,"encodeMs":0.6424193382263184,"submitCallMs":0.009838704139955582,"uploads":0.4838709677419355,"uploadKB":297.3225806451613,"readbacks":0.03225806451612903,"passes":0.12903225806451613,"draws":0.12903225806451613,"withPass":0.12903225806451613,"withPassDoneMs":7.941249966621399,"with
+[90.8] vkva 1376,762 VA-API mpv exit 0 1 [vo/gpu-next/libplacebo] Failed creating FBO texture! Disabling advanced rendering..;      1 [vo/gpu-next/libplacebo] Failed dispatching scaler.. disabling;
+[page warning] venus-share: resource 108 (854x480) isn't (or no longer) a Vulkan image's memory: not shown
+[page log] venus-share: the bitmap way checked right (3 frames)
+[page warning] venus-share: resource 120 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown
+[page warning] venus-share: resource 121 (1376x762) isn't (or no longer) a Vulkan image's memory: not shown
+[110.7] vkno venus {"submits":1.736842105263158,"encodeMs":0.5354545260920669,"submitCallMs":0.008181824828639175,"uploads":0.6363636363636364,"uploadKB":630.5681818181819,"readbacks":0.030303030303030304,"passes":0.15151515151515152,"draws":0.15151515151515152,"withPass":0.15151515151515152,"withPassDoneMs":5.3849999
+[110.7] vkno 1376,762 software mpv exit 0 1 [vo/gpu-next/libplacebo] Failed creating FBO texture! Disabling advanced rendering..;      1 [vo/gpu-next/libplacebo] Failed dispatching scaler.. disabling;
+[130.1] glva venus {"submits":0,"encodeMs":0,"submitCallMs":0,"uploads":0,"uploadKB":0,"readbacks":0,"passes":0,"draws":0,"withPass":0,"withPassDoneMsBySecond":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+[130.1] glva 1376,762 VA-API mpv exit 0 1 [vo/gpu] Disabling linear/sigmoid scaling (GLSL version too old).;      1 [vo/gpu] Disabling scaler #0 lanczos (GLSL version too old).;      1 [vo/gpu] Disabling scaler #1 hermite (GLSL version too old).;
+[149.4] glno venus {"submits":0,"encodeMs":0,"submitCallMs":0,"uploads":0,"uploadKB":0,"readbacks":0,"passes":0,"draws":0,"withPass":0,"withPassDoneMsBySecond":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+[149.4] glno 1376,762 software mpv exit 0 1 [vo/gpu] Disabling linear/sigmoid scaling (GLSL version too old).;      1 [vo/gpu] Disabling scaler #0 lanczos (GLSL version too old).;      1 [vo/gpu] Disabling scaler #1 hermite (GLSL version too old).;
+[156.3] vkva ~ vkno off by >24: 0, differ: 0, max 0, mean 0
+[164.7] glva ~ glno off by >24: 399992, differ: 2183723, max 224, mean 10.6
+[172.3] vkno ~ glno off by >24: 0, differ: 706005, max 4, mean 0.232
+[180.5] vkva ~ glva off by >24: 400327, differ: 2194986, max 225, mean 10.623
