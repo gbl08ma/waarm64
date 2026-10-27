@@ -249,7 +249,11 @@ and 172 on Alpine's (15.4 s). **Its yardstick** (`bench/interp/yardstick.sh <out
 those five, one `bench/run.ts` call each under a cap; `CONFIG=liftoff-only` the reference set); `bench/interp/ab.sh
 <outdir> <rounds> <name>=<core.wasm>… [-- bench…]` alternates core builds on it and `node bench/interp/ab-summary.ts
 <outdir>` sums them up (the arm that sorts first is the base); `bench/interp/ab-mac.sh` does the same on the Mac
-host; `node bench/interp/boot-node.ts [buildroot|alpine] [jit]` boots in Node for `perf`. I/O (M4 step 7,
+host; on a host whose speed drifts (a cloud session, where the rounds spread past the effect),
+`bench/interp/paired.ts` runs the arms' small guests side by side in one process, alternating 20M-step chunks in a
+shuffled order, so a sample is a paired ratio (`node bench/interp/paired.ts <iterations> <name>=<core.wasm>…`, or
+in Chromium `bench/run.ts --page bench/interp/paired.html --query='arms=<name>=<core.wasm>,…&iters=60'` over several
+sessions; `--summary <json>…` pools them; an A/A arm shows its floor, ~±1% a session); `node bench/interp/boot-node.ts [buildroot|alpine] [jit]` boots in Node for `perf`. I/O (M4 step 7,
 interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 full-size pings/s.
 
 ## Workloads still planned

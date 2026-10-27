@@ -22,9 +22,12 @@ if [[ $# -eq 0 ]]; then
   fi
 fi
 mkdir -p "$out"
+# A memory cap where there is a systemd user bus (not in a cloud session: docs/cloud.md).
+cap=(systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 --)
+"${cap[@]}" true 2>/dev/null || cap=()
 for b in "$@"; do
   case $b in boot* | alpine_* | smp_* | coremark_vm*) page=bench/boot/index.html ;; *) page=bench/interp/index.html ;; esac
-  systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 -- timeout 590 \
+  "${cap[@]}" timeout 590 \
     node --disable-warning=ExperimentalWarning bench/run.ts ${QUICK:+--quick} --config "$config" --page "$page" --only "$b" \
     --out "$out/$label-$b.json" 2>&1 | grep -E '^[a-z_]+ +[{(].*±|MIPS \(warm-up\)|Error' | sed -E 's/ \{.*\}//' || true
 done

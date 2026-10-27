@@ -31,7 +31,7 @@ if [ ! -x "$DTC_DIR/dtc" ]; then
   mkdir -p "$DTC_DIR" && cp "$t/dtc/dtc" "$DTC_DIR/" && rm -rf "$t"
 fi
 # The Playwright Chromium the container ships stands in for /usr/bin/chromium.
-chrome=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | sort | tail -1 || true)
+chrome=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome 2>/dev/null | sort | tail -1 || true)
 if [ -n "${CLAUDE_ENV_FILE-}" ]; then
   {
     echo "export PATH=$NODE_DIR/bin:$DTC_DIR:\$PATH"
