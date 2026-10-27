@@ -34,6 +34,10 @@ uint8_t *wgt_two_map(uint32_t d);
 uint8_t *wgt_two_read(uint32_t d);
 int wgt_two_submit(uint32_t d);
 int wgt_two_done(uint32_t d);
+int wgt_fl_init(uint8_t *window);
+uint8_t *wgt_fl_map(uint32_t which);
+int wgt_fl_submit(uint32_t i);
+int wgt_fl_done(uint32_t i);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -852,4 +856,129 @@ EXPORT int
 wgt_two_done(uint32_t d)
 {
    return GetFenceStatus(two.dev[d], two.fence[d]) == VK_SUCCESS;
+}
+
+/*
+ * GPU writes to host-visible memory in flight against the guest's writes to the same pages (VK3 L4c-B; the review's
+ * finding 2). One device; memory M in the window (`window`, 8 KiB, two pages), `aux` (host-visible, 8 KiB, its own
+ * storage) and `rd` (host-visible, 8 KiB) with buffers over them, and three command buffers:
+ * 0: copy aux[0, 2048) into M[0, 2048) (a GPU write to page 0's first half);
+ * 1: copy the whole of M into rd;
+ * 2: copy aux[4096, 4104) into a 1×2 RGBA8 image, then the image into M at 4096 with rows 256 bytes apart (writes
+ *    M[4096, 4100) and M[4352, 4356); the submit reads back [4096, 4356), the gap included);
+ * 3: fill M[6144, 6160) with 0x04030201, then update the same bytes with 16, 17, ... 31 (two writes of the driver's own
+ *    to one range in one submit, as Venus's query feedback resets a slot and copies results into it).
+ * wgt_fl_map: 0 M, 1 aux, 2 rd. Each command buffer has its own fence.
+ */
+static struct {
+   VkDevice dev;
+   VkQueue queue;
+   VkFence fence[4];
+   VkCommandBuffer cmd[4];
+   uint8_t *map[3];
+} fl;
+
+EXPORT int
+wgt_fl_init(uint8_t *window)
+{
+   PFN_vkCmdCopyBuffer CmdCopyBuffer;
+   if (!dev && init())
+      return 1;
+   CmdCopyBuffer = (PFN_vkCmdCopyBuffer)GetDeviceProcAddr(dev, "vkCmdCopyBuffer");
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   CHECK(EnumeratePhysicalDevices(instance, &n, &pdev));
+   const float priority = 1;
+   const VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueCount = 1,
+                                        .pQueuePriorities = &priority };
+   const VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,
+                                   .pQueueCreateInfos = &qi };
+   VkDevice D;
+   CHECK(CreateDevice(pdev, &di, NULL, &D));
+   fl.dev = D;
+   GetDeviceQueue(D, 0, 0, &fl.queue);
+   const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+   VkBuffer m, aux, rd;
+   if (two_buffer(D, 8192, both, window, &m, (void **)&fl.map[0]) ||
+       two_buffer(D, 8192, both, NULL, &aux, (void **)&fl.map[1]) ||
+       two_buffer(D, 8192, both, NULL, &rd, (void **)&fl.map[2]))
+      return 1;
+   const VkImageCreateInfo ii = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .extent = { 1, 2, 1 }, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+   };
+   VkImage img;
+   CHECK(CreateImage(D, &ii, NULL, &img));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(D, img, &req);
+   const VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = req.size,
+                                     .memoryTypeIndex = 0 };
+   VkDeviceMemory imem;
+   CHECK(AllocateMemory(D, &ai, NULL, &imem));
+   CHECK(BindImageMemory(D, img, imem, 0));
+   VkCommandPool pool;
+   const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+   CHECK(CreateCommandPool(D, &cpo, NULL, &pool));
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                             .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                             .commandBufferCount = 4 };
+   CHECK(AllocateCommandBuffers(D, &cbi, fl.cmd));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+   for (uint32_t i = 0; i < 4; i++) {
+      CHECK(CreateFence(D, &fi, NULL, &fl.fence[i]));
+      CHECK(BeginCommandBuffer(fl.cmd[i], &begin));
+   }
+   CmdCopyBuffer(fl.cmd[0], aux, m, 1, &(VkBufferCopy){ 0, 0, 2048 });
+   CmdCopyBuffer(fl.cmd[1], m, rd, 1, &(VkBufferCopy){ 0, 0, 8192 });
+   VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                              .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                              .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .image = img,
+                              .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   CmdPipelineBarrier(fl.cmd[2], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL,
+                      1, &b);
+   const VkBufferImageCopy up = { .bufferOffset = 4096, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                  .imageExtent = { 1, 2, 1 } };
+   CmdCopyBufferToImage(fl.cmd[2], aux, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &up);
+   b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+   b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+   b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+   b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+   CmdPipelineBarrier(fl.cmd[2], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
+                      &b);
+   const VkBufferImageCopy down = { .bufferOffset = 4096, .bufferRowLength = 64,
+                                    .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .imageExtent = { 1, 2, 1 } };
+   CmdCopyImageToBuffer(fl.cmd[2], img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m, 1, &down);
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   uint8_t update[16];
+   for (uint32_t i = 0; i < 16; i++)
+      update[i] = (uint8_t)(16 + i);
+   CmdFillBuffer(fl.cmd[3], m, 6144, 16, 0x04030201);
+   CmdUpdateBuffer(fl.cmd[3], m, 6144, 16, update);
+   for (uint32_t i = 0; i < 4; i++)
+      CHECK(EndCommandBuffer(fl.cmd[i]));
+   return 0;
+}
+
+EXPORT uint8_t *
+wgt_fl_map(uint32_t which)
+{
+   return fl.map[which];
+}
+
+EXPORT int
+wgt_fl_submit(uint32_t i)
+{
+   CHECK(ResetFences(fl.dev, 1, &fl.fence[i]));
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &fl.cmd[i] };
+   CHECK(QueueSubmit(fl.queue, 1, &submit, fl.fence[i]));
+   return 0;
+}
+
+EXPORT int
+wgt_fl_done(uint32_t i)
+{
+   return GetFenceStatus(fl.dev, fl.fence[i]) == VK_SUCCESS;
 }

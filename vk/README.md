@@ -141,7 +141,11 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   4-aligned size (an odd-sized memory's last bytes too). The write-watch is the window's, one for every device (each
   Venus context has its own): each submit's look at it gives the pages to every device (`wg_device.pages`, a bit a
   page), and a device's submit uploads those over its own memories and clears its own bits; so one device's look
-  never drops another's pages (VK3 L4c-A).
+  never drops another's pages (VK3 L4c-A). What an in-flight submit writes to host-visible memory on the GPU (a
+  copy, a storage binding, a fill) isn't in the CPU's bytes until it completes, so each such range keeps its base (the
+  CPU's bytes before its submit's look at the watch): a later upload leaves out the range's words the guest hasn't
+  written since (they'd put stale bytes over the GPU's; a word with both goes up), and the range's pages go up again
+  once it completes (VK3 L4c-B).
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render
@@ -178,7 +182,10 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 - **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
   devices at once, a 17th fails to be made). The worker calls `venus_complete(serial)` in submit order once the work is done and its staging
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
-  feedback slots) applied there too, and the submit's syncs signal; vkr's fences retire at the next poll, which the
+  feedback slots) applied there too (outside the readbacks, which have the GPU's last word), each only where the CPU
+  still has the range's base: a range read back is wider than what the GPU wrote (a copy's row gaps, a whole storage
+  binding, 4-byte rounding), and what the guest wrote there since its submit stays; a byte that changes moves a later
+  in-flight range's base with it (VK3 L4c-B). Then the submit's syncs signal; vkr's fences retire at the next poll, which the
   completion runs at once. Only the window and the arena are written then (anything else is logged and dropped).
   While a submit is in flight the host's poller sends an empty submit at most every 1 ms (web/venus-gpu.ts `nudge`):
   Chromium looks at a Dawn device on Vulkan whose work is pending only on a slow timer, but at once when commands

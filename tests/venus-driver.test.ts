@@ -149,3 +149,25 @@ for (const [scenario, what] of [
     assert.equal(r.warnings, 0, 'the worker warned');
   });
 }
+
+// VK3 L4c-B (the static review's finding 2): GPU writes to host-visible memory in flight against the guest's writes.
+for (const [scenario, what] of [
+  ['upload', 'a page uploaded while a copy into it is in flight keeps the copy\'s bytes on the GPU'],
+  ['since', 'a completion keeps what the guest wrote since its submit inside the range it reads back'],
+] as const) {
+  test(`in flight: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runInFlight(s: string): Promise<Record<string, unknown>> } }).venus.runInFlight(s), scenario);
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    const checks = r.checks as Record<string, number>;
+    assert.ok(Object.keys(checks).length > 1);
+    for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at}`);
+    assert.equal(r.warnings, 0, 'the worker warned');
+  });
+}

@@ -14,6 +14,8 @@ type Test = {
   wgt_draw(fs: number, fn: number, variant: number): number; wgt_draw_done(): number;
   wgt_two_init(window: number, size: number): number; wgt_two_map(d: number): number; wgt_two_read(d: number): number;
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
+  wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
+  wgt_fl_done(i: number): number;
 };
 
 /** Two runs of the program, each on a renderer of its own (a machine started again), sharing a shader store: the
@@ -213,6 +215,97 @@ export async function runTwo(scenario: 'watch' | 'serials' | 'odd') {
       await new Promise((r) => setTimeout(r, 50));
       checks.dev1 = differs(read(1), a0);
       checks.dev0 = differs(read(0), b0);
+    }
+  } catch (e) {
+    return { error: String(e), checks, errors, warnings: v.gpu.stats.errors };
+  }
+  device.destroy();
+  return { checks, errors, warnings: v.gpu.stats.errors };
+}
+
+/** GPU writes to host-visible memory in flight against the guest's writes to the same page (VK3 L4c-B; the review's
+ * finding 2; vk/driver/wg_test.c `wgt_fl_*`). `upload`: a page uploaded while an earlier submit's copy into it is in
+ * flight keeps that copy's bytes on the GPU. `since`: a completion keeps the bytes the guest wrote since its submit
+ * inside the range it reads back (a texture-to-buffer copy's row gap), alone and with a submit between; and two of
+ * the driver's writes to one range in one submit land in order. */
+export async function runInFlight(scenario: 'upload' | 'since') {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const at = 0x1000_0000, bytes = 1 << 20, watchAt = 0x2000_0000;
+  const head = new Int32Array(memory.buffer, watchAt, 4 + 256 + bytes / 4096 / 32);
+  head[2] = bytes / 4096 / 32;
+  head[3] = bytes / 4096;
+  const mark = (p: number, n: number) => {
+    for (let page = Math.floor((p - at) / 4096); page <= Math.floor((p + n - 1 - at) / 4096); page++) Atomics.or(head, 4 + 256 + (page >> 5), 1 << (page & 31));
+  };
+  const v = await VenusRenderer.create(module, memory, { at, bytes, watch: watchAt }, device);
+  const ex = v.raw as unknown as Test;
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  if (ex.wgt_fl_init(at)) return { error: text(ex.wgt_error() >>> 0), errors };
+  const view = (which: number) => new Uint8Array(memory.buffer, ex.wgt_fl_map(which) >>> 0, 8192);
+  const M = view(0), aux = view(1), rd = view(2);
+  const pattern = (n: number, seed: number) => Uint8Array.from({ length: n }, (_, i) => (i * 13 + seed) & 255);
+  const wait = async (i: number) => {
+    for (let k = 0; k < 500 && !ex.wgt_fl_done(i); k++) await new Promise((r) => setTimeout(r, 10));
+    if (!ex.wgt_fl_done(i)) throw new Error(`submit ${i}'s fence never signalled`);
+  };
+  // Where `got` first differs from `want` (-1: none).
+  const differs = (got: Uint8Array, want: Uint8Array) => { for (let i = 0; i < want.length; i++) if (got[i] !== want[i]) return i; return -1; };
+  const checks: Record<string, number> = {};
+  try {
+    // Fresh memories go up whole at the first submit: M's bytes, then aux's (P).
+    const P = pattern(8192, 5);
+    aux.set(P);
+    M.set(pattern(8192, 1));
+    ex.wgt_fl_submit(1); await wait(1);
+    checks.start = differs(rd, M.slice());
+    if (scenario === 'upload') {
+      // Submit 0 copies P into M[0, 2048) on the GPU; before it completes the guest writes M[2048, 4096) and submit 1
+      // copies M: the page's upload must not put M's old [0, 2048) back over the copy.
+      ex.wgt_fl_submit(0);
+      const W = pattern(2048, 77);
+      M.set(W, 2048);
+      mark(at + 2048, 2048);
+      ex.wgt_fl_submit(1);
+      await wait(0); await wait(1);
+      checks.copied = differs(rd.subarray(0, 2048), P.subarray(0, 2048));
+      checks.written = differs(rd.subarray(2048, 4096), W);
+      checks.cpuCopied = differs(M.subarray(0, 2048), P.subarray(0, 2048));
+      checks.cpuWritten = differs(M.subarray(2048, 4096), W);
+    } else {
+      // Submit 2 writes M[4096, 4100) and M[4352, 4356) through an image and reads back [4096, 4356); the guest writes
+      // M[4200, 4204) before it completes, which the completion must keep.
+      const rows = [P.subarray(4096, 4100), P.subarray(4100, 4104)];
+      const X = Uint8Array.of(0xa1, 0xa2, 0xa3, 0xa4), Y = Uint8Array.of(0xb1, 0xb2, 0xb3, 0xb4);
+      ex.wgt_fl_submit(2);
+      M.set(X, 4200);
+      mark(at + 4200, 4);
+      await wait(2);
+      checks.kept = differs(M.subarray(4200, 4204), X);
+      checks.row0 = differs(M.subarray(4096, 4100), rows[0]);
+      checks.row1 = differs(M.subarray(4352, 4356), rows[1]);
+      // Again with a submit between: submit 1 must see both the image's rows and Y, and the completions keep Y.
+      M.fill(0, 4096, 4100);
+      M.fill(0, 4352, 4356);
+      mark(at + 4096, 4);
+      ex.wgt_fl_submit(1); await wait(1);
+      ex.wgt_fl_submit(2);
+      M.set(Y, 4200);
+      mark(at + 4200, 4);
+      ex.wgt_fl_submit(1);
+      await wait(2); await wait(1);
+      checks.keptBetween = differs(M.subarray(4200, 4204), Y);
+      checks.gpuY = differs(rd.subarray(4200, 4204), Y);
+      checks.gpuRow0 = differs(rd.subarray(4096, 4100), rows[0]);
+      checks.gpuRow1 = differs(rd.subarray(4352, 4356), rows[1]);
+      // Two of the driver's writes to one range in one submit (a fill, then an update): the last one's bytes.
+      ex.wgt_fl_submit(3); await wait(3);
+      checks.ordered = differs(M.subarray(6144, 6160), Uint8Array.from({ length: 16 }, (_, i) => 16 + i));
     }
   } catch (e) {
     return { error: String(e), checks, errors, warnings: v.gpu.stats.errors };

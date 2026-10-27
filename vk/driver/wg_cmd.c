@@ -1256,10 +1256,23 @@ wg_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t count, const VkCom
 
 /* Submits. */
 
+/*
+ * A submit's writes to host-visible memory (readbacks: what the GPU wrote, read back whole ranges; cpu_writes: bytes the
+ * driver knows) land in the CPU's copy at its completion. Until then the GPU's buffer has them and the CPU's copy
+ * doesn't, so each range keeps `base`, the CPU's bytes when it was submitted (before that submit's look at the
+ * write-watch), and a byte the CPU has changed since then is the guest's write (VK3 L4c-B; the review's finding 2):
+ * - an upload leaves out the words of an in-flight range that the guest hasn't written since (they'd put the CPU's
+ *   stale bytes over the GPU's), so a later submit reads what the earlier one wrote;
+ * - a completion lands only the bytes the guest hasn't written since: a range read back is wider than what the GPU
+ *   wrote (a copy's row gaps, a whole storage binding, 4-byte rounding), and the guest may write the rest meanwhile;
+ * - a completion that changes a byte a later in-flight range covers moves that range's base along, as that is what the
+ *   GPU had when the later one ran.
+ */
 struct readback {
    struct wg_device_memory *mem;
    VkDeviceSize offset, size;
    uint32_t slot;
+   uint32_t base; /* index into the submit's `bases` (UINT32_MAX: none) */
 };
 
 struct cpu_write {
@@ -1268,6 +1281,7 @@ struct cpu_write {
    uint32_t size, value;
    bool fill;
    uint32_t data; /* index into `bytes` */
+   uint32_t base;
 };
 
 struct wg_submit {
@@ -1276,7 +1290,9 @@ struct wg_submit {
    struct util_dynarray readbacks;  /* struct readback: GPU writes to host-visible memory */
    struct util_dynarray writes;     /* struct cpu_write */
    struct util_dynarray bytes;
+   struct util_dynarray bases;      /* the ranges' bases */
    struct util_dynarray signals;    /* struct vk_sync_signal */
+   bool shadowed;                   /* an upload left out some of its ranges' words: their pages go up again at its end */
 };
 
 /* The replay's state: what the current pass has been given, applied at its draws and dispatches. */
@@ -1319,7 +1335,8 @@ readback(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, Vk
          return;
       }
    }
-   util_dynarray_append_typed(&r->submit->readbacks, struct readback, ((struct readback){ mem, start, end - start, 0 }));
+   util_dynarray_append_typed(&r->submit->readbacks, struct readback,
+                              ((struct readback){ mem, start, end - start, 0, UINT32_MAX }));
 }
 
 static void
@@ -1572,7 +1589,7 @@ cpu_write(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, c
           bool fill, uint32_t value)
 {
    struct cpu_write w = { .mem = mem, .offset = offset, .size = size, .fill = fill, .value = value,
-                          .data = util_dynarray_num_elements(&r->submit->bytes, uint8_t) };
+                          .data = util_dynarray_num_elements(&r->submit->bytes, uint8_t), .base = UINT32_MAX };
    if (!fill)
       util_dynarray_append_array(&r->submit->bytes, uint8_t, data, size);
    util_dynarray_append_typed(&r->submit->writes, struct cpu_write, w);
@@ -1816,6 +1833,24 @@ static struct wg_device *devices[16];
 /* Submits are numbered across devices: wg_complete finds a submit by its number alone. */
 static uint32_t submit_serial;
 
+/* Marks a page of the window for a device's next upload. */
+static void
+mark_page(struct wg_device *d, uint32_t p)
+{
+   const uint32_t npages = (uint32_t)(wg_window_bytes / 4096);
+   if (p >= npages)
+      return;
+   if (!d->pages)
+      d->pages = calloc(DIV_ROUND_UP(npages, 32), 4);
+   if (!d->pages) {
+      d->pages_all = true;
+      return;
+   }
+   d->pages[p / 32] |= 1u << (p % 32);
+   d->pages_lo = d->pages_hi > d->pages_lo ? MIN2(d->pages_lo, p / 32) : p / 32;
+   d->pages_hi = MAX2(d->pages_hi, p / 32 + 1);
+}
+
 /* Looks at the window's write-watch: the pages written since the last look go to every device (each uploads those over
  * its own memories at its next submit), since the watch is one for the whole window and every device's memories are
  * in it (VK3 L4c-A: a look by one device's submit used to drop the pages of the others'). */
@@ -1824,25 +1859,102 @@ take_pages(void)
 {
    static uint32_t pages[16384];
    const int32_t n = gpu_dirty(pages, sizeof(pages) / sizeof(pages[0]));
-   const uint32_t npages = (uint32_t)(wg_window_bytes / 4096), words = DIV_ROUND_UP(npages, 32);
    for (uint32_t i = 0; i < 16; i++) {
       struct wg_device *d = devices[i];
       if (!d || !n)
          continue;
-      if (n > 0 && !d->pages)
-         d->pages = calloc(words, 4);
-      if (n < 0 || !d->pages) {
+      if (n < 0) {
          d->pages_all = true;
          continue;
       }
-      for (int32_t k = 0; k < n; k++) {
-         const uint32_t p = pages[k];
-         if (p >= npages)
-            continue;
-         d->pages[p / 32] |= 1u << (p % 32);
-         d->pages_lo = d->pages_hi > d->pages_lo ? MIN2(d->pages_lo, p / 32) : p / 32;
-         d->pages_hi = MAX2(d->pages_hi, p / 32 + 1);
+      for (int32_t k = 0; k < n; k++)
+         mark_page(d, pages[k]);
+   }
+}
+
+/* The in-flight ranges (the comment at struct readback) of `mem` over [lo, hi) in `dev`'s pending submits after
+ * `after` (all: NULL), oldest first. */
+struct span {
+   struct wg_submit *s;
+   VkDeviceSize offset, size;
+   uint8_t *base;
+};
+
+static struct util_dynarray span_list, scratch;
+
+static uint32_t
+spans(struct wg_device *dev, struct wg_submit *after, struct wg_device_memory *mem, VkDeviceSize lo, VkDeviceSize hi)
+{
+   util_dynarray_clear(&span_list);
+   struct list_head *from = after ? &after->link : &dev->pending;
+   for (struct list_head *l = from->next; l != &dev->pending; l = l->next) {
+      struct wg_submit *s = list_entry(l, struct wg_submit, link);
+      util_dynarray_foreach (&s->readbacks, struct readback, b)
+         if (b->mem == mem && b->base != UINT32_MAX && b->offset < hi && b->offset + b->size > lo)
+            util_dynarray_append_typed(&span_list, struct span,
+                                       ((struct span){ s, b->offset, b->size, (uint8_t *)s->bases.data + b->base }));
+      util_dynarray_foreach (&s->writes, struct cpu_write, w)
+         if (w->mem == mem && w->base != UINT32_MAX && w->offset < hi && w->offset + w->size > lo)
+            util_dynarray_append_typed(&span_list, struct span,
+                                       ((struct span){ s, w->offset, w->size, (uint8_t *)s->bases.data + w->base }));
+   }
+   return util_dynarray_num_elements(&span_list, struct span);
+}
+
+/* Uploads [off, off + len) of a memory (4-aligned), but not the words an in-flight submit writes on the GPU that the
+ * guest hasn't written since (a word with both goes up: the guest's bytes are the newer). */
+static void
+upload_range(struct wg_device *dev, struct wg_device_memory *mem, VkDeviceSize off, VkDeviceSize len)
+{
+   const VkDeviceSize end = off + len;
+   const uint32_t n = spans(dev, NULL, mem, off, end);
+   if (!n) {
+      gpu_write(mem->gpu, off, mem->data + off, len);
+      return;
+   }
+   const struct span *sp = span_list.data;
+   VkDeviceSize run = off;
+   for (VkDeviceSize w = off; w < end; w += 4) {
+      bool keep = false, wrote = false;
+      for (VkDeviceSize b = w; b < MIN2(w + 4, end); b++) {
+         /* The newest range over the byte: its base is what the GPU has, unless the guest wrote it since. */
+         for (uint32_t k = n; k-- > 0;) {
+            if (b < sp[k].offset || b >= sp[k].offset + sp[k].size)
+               continue;
+            if (mem->data[b] == sp[k].base[b - sp[k].offset]) {
+               keep = true;
+               sp[k].s->shadowed = true;
+            } else {
+               wrote = true;
+            }
+            break;
+         }
       }
+      if (keep && !wrote) {
+         if (w > run)
+            gpu_write(mem->gpu, run, mem->data + run, w - run);
+         run = w + 4;
+      }
+   }
+   if (end > run)
+      gpu_write(mem->gpu, run, mem->data + run, end - run);
+}
+
+/* A submit's ranges' bases: the CPU's bytes before its look at the write-watch. */
+static void
+snapshot(struct wg_submit *s)
+{
+   util_dynarray_foreach (&s->readbacks, struct readback, b) {
+      if (!b->mem || !b->mem->data)
+         continue;
+      b->base = util_dynarray_num_elements(&s->bases, uint8_t);
+      util_dynarray_append_array(&s->bases, uint8_t, b->mem->data + b->offset, b->size);
+   }
+   util_dynarray_foreach (&s->writes, struct cpu_write, w) {
+      if (!w->mem || !w->mem->data)
+         continue;
+      w->base = util_dynarray_num_elements(&s->bases, uint8_t);
+      util_dynarray_append_array(&s->bases, uint8_t, w->mem->data + w->offset, w->size);
    }
 }
 
@@ -1860,7 +1972,7 @@ upload(struct wg_device *dev)
       const uintptr_t at = (uintptr_t)mem->data;
       const bool in_window = at >= wg_window_at && at < wg_window_at + wg_window_bytes;
       if (mem->dirty || (in_window && dev->pages_all)) {
-         gpu_write(mem->gpu, 0, mem->data, mem->size);
+         upload_range(dev, mem, 0, mem->size);
          mem->dirty = false;
          continue;
       }
@@ -1879,7 +1991,7 @@ upload(struct wg_device *dev)
             q++;
          const uintptr_t s = MAX2((uintptr_t)p * 4096, lo), e = MIN2((uintptr_t)q * 4096, hi);
          const uintptr_t off = (s - lo) & ~3ull, len = align64(e - lo, 4) - off;
-         gpu_write(mem->gpu, off, mem->data + off, MIN2(len, mem->size - off));
+         upload_range(dev, mem, off, MIN2(len, mem->size - off));
          p = q;
       }
    }
@@ -1928,6 +2040,7 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    util_dynarray_init(&s->readbacks, NULL);
    util_dynarray_init(&s->writes, NULL);
    util_dynarray_init(&s->bytes, NULL);
+   util_dynarray_init(&s->bases, NULL);
    util_dynarray_init(&s->signals, NULL);
    for (uint32_t i = 0; i < submit->signal_count; i++)
       util_dynarray_append_typed(&s->signals, struct vk_sync_signal, submit->signals[i]);
@@ -1935,7 +2048,6 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    /* Linear images in host-visible memory: their memory's buffer made first, so that upload() fills it. */
    list_for_each_entry (struct wg_image, image, &dev->linear_images, linear_link)
       wg_memory_buffer(image->mem);
-   upload(dev);
    gpu_encoder();
    linear_images(dev, true, NULL);
    struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX };
@@ -1947,6 +2059,9 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
       r.dirty = RD_ALL;
    }
    linear_images(dev, false, &r);
+   /* The bases, then the look at the write-watch and the uploads: queue.writeBuffer, so ahead of the commands. */
+   snapshot(s);
+   upload(dev);
    util_dynarray_foreach (&s->readbacks, struct readback, b)
       b->slot = gpu_readback(b->mem->gpu, b->offset, b->size);
    /* Ordered after the earlier submits' work and before this one's (queue.writeBuffer). */
@@ -1967,6 +2082,7 @@ submit_free(struct wg_submit *s)
    util_dynarray_fini(&s->readbacks);
    util_dynarray_fini(&s->writes);
    util_dynarray_fini(&s->bytes);
+   util_dynarray_fini(&s->bases);
    util_dynarray_fini(&s->signals);
    free(s);
 }
@@ -2016,6 +2132,63 @@ writable(const uint8_t *p, uint64_t size)
    return ok;
 }
 
+/* Lands bytes a completed submit wrote into the CPU's copy of a memory: those the guest hasn't written since the submit
+ * (the CPU still has `base`); `outside` (a cpu_write): only where none of the submit's readbacks covers, as the
+ * readback has the GPU's last word. A later in-flight range, or another write of this submit's, over a changed byte
+ * gets it as its base (Venus's query feedback fills a slot, then copies results into it, in one submit). */
+static void
+land(struct wg_device *dev, struct wg_submit *s, struct wg_device_memory *mem, VkDeviceSize offset,
+     const uint8_t *src, uint32_t n, const uint8_t *base, bool outside)
+{
+   uint8_t *cpu = mem->data + offset;
+   bool covered = false;
+   if (outside)
+      util_dynarray_foreach (&s->readbacks, struct readback, b)
+         covered |= b->mem == mem && b->offset < offset + n && b->offset + b->size > offset;
+   uint32_t later = spans(dev, s, mem, offset, offset + n);
+   /* The submit's own writes too: one landed before another over the same bytes isn't the guest's. */
+   util_dynarray_foreach (&s->writes, struct cpu_write, w)
+      if (w->mem == mem && w->base != UINT32_MAX && w->offset < offset + n && w->offset + w->size > offset &&
+          (uint8_t *)s->bases.data + w->base != base) {
+         util_dynarray_append_typed(&span_list, struct span,
+                                    ((struct span){ s, w->offset, w->size, (uint8_t *)s->bases.data + w->base }));
+         later++;
+      }
+   if (!later && !covered && !memcmp(cpu, base, n)) {
+      memcpy(cpu, src, n);
+      return;
+   }
+   const struct span *sp = span_list.data;
+   for (uint32_t i = 0; i < n; i++) {
+      if (cpu[i] != base[i] || cpu[i] == src[i])
+         continue;
+      const VkDeviceSize at = offset + i;
+      bool skip = false;
+      if (covered)
+         util_dynarray_foreach (&s->readbacks, struct readback, b)
+            skip |= b->mem == mem && at >= b->offset && at < b->offset + b->size;
+      if (skip)
+         continue;
+      for (uint32_t k = 0; k < later; k++)
+         if (at >= sp[k].offset && at < sp[k].offset + sp[k].size && sp[k].base[at - sp[k].offset] == cpu[i])
+            sp[k].base[at - sp[k].offset] = src[i];
+      cpu[i] = src[i];
+   }
+}
+
+/* Marks the window's pages under [offset, offset + size) of a memory for this device's next upload. */
+static void
+mark_range(struct wg_device *dev, struct wg_device_memory *mem, VkDeviceSize offset, VkDeviceSize size)
+{
+   if (!mem || !mem->data || !size)
+      return;
+   const uintptr_t at = (uintptr_t)mem->data + offset;
+   if (at < wg_window_at || at >= wg_window_at + wg_window_bytes)
+      return;
+   for (uintptr_t p = (at - wg_window_at) / 4096; p <= (at + size - 1 - wg_window_at) / 4096; p++)
+      mark_page(dev, (uint32_t)p);
+}
+
 __attribute__((visibility("default"))) void
 wg_complete(uint32_t serial)
 {
@@ -2026,18 +2199,44 @@ wg_complete(uint32_t serial)
       list_for_each_entry_safe (struct wg_submit, s, &dev->pending, link) {
          if (s->serial != serial)
             continue;
-         util_dynarray_foreach (&s->writes, struct cpu_write, w) {
-            if (!w->mem || !w->mem->data || !writable(w->mem->data + w->offset, w->size))
+         /* What the GPU read back is its last word on its range: first, then the writes outside it. */
+         util_dynarray_foreach (&s->readbacks, struct readback, b) {
+            if (!b->mem || !b->mem->data || b->base == UINT32_MAX)
                continue;
-            if (w->fill)
-               for (uint32_t k = 0; k + 4 <= w->size; k += 4)
-                  memcpy(w->mem->data + w->offset + k, &w->value, 4);
-            else
-               memcpy(w->mem->data + w->offset, (uint8_t *)s->bytes.data + w->data, w->size);
+            const uint32_t n = (uint32_t)MIN2(b->size, b->mem->vk.size - b->offset);
+            if (!writable(b->mem->data + b->offset, n))
+               continue;
+            util_dynarray_clear(&scratch);
+            uint8_t *bytes = util_dynarray_grow_bytes(&scratch, 1, b->size);
+            if (!bytes)
+               continue;
+            /* The base first: a readback that copies nothing (no device, a lost slot) changes nothing. */
+            memcpy(bytes, (uint8_t *)s->bases.data + b->base, b->size);
+            gpu_readback_copy(b->slot, bytes, (uint32_t)b->size);
+            land(dev, s, b->mem, b->offset, bytes, n, (uint8_t *)s->bases.data + b->base, false);
          }
-         util_dynarray_foreach (&s->readbacks, struct readback, b)
-            if (b->mem && b->mem->data && writable(b->mem->data + b->offset, MIN2(b->size, b->mem->vk.size - b->offset)))
-               gpu_readback_copy(b->slot, b->mem->data + b->offset, MIN2(b->size, b->mem->vk.size - b->offset));
+         util_dynarray_foreach (&s->writes, struct cpu_write, w) {
+            if (!w->mem || !w->mem->data || w->base == UINT32_MAX || !writable(w->mem->data + w->offset, w->size))
+               continue;
+            const uint8_t *bytes = (uint8_t *)s->bytes.data + w->data;
+            if (w->fill) {
+               util_dynarray_clear(&scratch);
+               uint8_t *f = util_dynarray_grow_bytes(&scratch, 1, w->size);
+               if (!f)
+                  continue;
+               for (uint32_t k = 0; k < w->size; k++)
+                  f[k] = (uint8_t)(w->value >> (k % 4 * 8));
+               bytes = f;
+            }
+            land(dev, s, w->mem, w->offset, bytes, w->size, (uint8_t *)s->bases.data + w->base, true);
+         }
+         /* Words an upload left out (the GPU had them): their pages go up again with what the CPU has now. */
+         if (s->shadowed) {
+            util_dynarray_foreach (&s->readbacks, struct readback, b)
+               mark_range(dev, b->mem, b->offset, b->size);
+            util_dynarray_foreach (&s->writes, struct cpu_write, w)
+               mark_range(dev, w->mem, w->offset, w->size);
+         }
          util_dynarray_foreach (&s->signals, struct vk_sync_signal, sig)
             vk_sync_signal(&dev->vk, sig->sync, sig->signal_value);
          submit_free(s);
