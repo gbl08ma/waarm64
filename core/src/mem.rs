@@ -1014,6 +1014,14 @@ pub(crate) mod tests {
             Self::with_spill(size, &[])
         }
 
+        /// Watches writes to `len` bytes at PA `pa` for one vCPU (`Mem::with_watch`).
+        pub fn watch(self, pa: u64, len: u64) -> Self {
+            TestRam {
+                mem: self.mem.with_watch(pa, len, 1),
+                ..self
+            }
+        }
+
         /// Memory 0 of `size` bytes at PA 0 and a spill memory per `(phys, size)`.
         pub fn with_spill(size: usize, spill: &[(u64, usize)]) -> Self {
             let mut buf = vec![0u128; size.div_ceil(16)];

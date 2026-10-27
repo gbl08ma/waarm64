@@ -613,3 +613,56 @@ fn spill_memory_pages() {
     b.flush_va(0x1000);
     assert_eq!(b.read(&c, 0x1030, 8), Ok(0x55));
 }
+
+/// The window's write-watch (docs/devices.md "virtio-gpu"): a page-crossing store whose second page's write entry
+/// overflows the TLB's records (which drops and marks them all, the first page's too) must still leave the first
+/// page recorded once both are translated, so a host that looks between the translations and the store (the seam
+/// here: `span`, then the look, then `write_el`'s stores) still sees the first page written at its next look.
+#[test]
+fn watched_page_crossing_store_after_overflow() {
+    const WIN: u64 = 0x20_0000;
+    const VA: u64 = 0x4000_0000;
+    let mut p = Pt {
+        r: TestRam::new(RAM).watch(WIN, 0x10_0000),
+        next: ROOT1 + 0x1000,
+    };
+    for k in 0..WATCHED as u64 + 2 {
+        p.map(VA + (k << 12), 3, (WIN + (k << 12)) | PAGE);
+    }
+    let c = cpu();
+    let w = p.r.mem.watch().unwrap();
+    // Page 63 is new (its record is the 64th, page 64's overflows), or already recorded (a TLB hit, the first record).
+    for hit in [false, true] {
+        let mut v = Vcpu::new(c.clone());
+        let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+        let last = WATCHED as u64 - 1;
+        if hit {
+            b.write(&c, VA + (last << 12), 8, 0).unwrap();
+        }
+        for k in 0..last {
+            b.write(&c, VA + (k << 12), 8, k).unwrap();
+        }
+        let _ = w.take();
+        let va = VA + ((WATCHED as u64) << 12) - 4;
+        let (p1, Some((p2, first))) = b.span(&c, va, 8, Access::Write, Use::Write, 1).unwrap()
+        else {
+            panic!("crosses a page")
+        };
+        // The host looks now (the vCPU acked earlier and runs on).
+        w.bump();
+        let _ = w.take();
+        for k in 0..8 {
+            let h = if k < first {
+                p1.plus(k)
+            } else {
+                p2.plus(k - first)
+            };
+            // SAFETY: span found RAM at both.
+            unsafe { p.r.mem.store(h, 1, 0xa5) };
+        }
+        // The next look: the vCPU drops its records at the bump.
+        w.bump();
+        v.tlb.unwatch(&p.r.mem);
+        assert_eq!(w.take(), [last, last + 1], "hit {hit}");
+    }
+}

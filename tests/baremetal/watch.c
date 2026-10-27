@@ -42,6 +42,7 @@ int main(void) {
   l1[1] = (u64)l2 | 3;
   for (u64 k = 0; k < 9; k++)
     l2[k] = (RAM + (k << 21)) | BLOCK;
+  l2[8] |= 1UL << 6; // the window: EL0 may write it too (STTR)
   set_sysreg(mair_el1, 0xff);
   set_sysreg(tcr_el1, 25UL | 1UL << 8 | 1UL << 10 | 3UL << 12 | 1UL << 23); // T0SZ 25, WB caches, ISH, EPD1
   set_sysreg(ttbr0_el1, (u64)l1);
@@ -66,7 +67,34 @@ int main(void) {
                      : "=&r"(old), "=&r"(fail) : "r"(WINDOW + 10 * PAGE_SZ) : "memory");
   }
   phase(5); // pages 9 and 10, by atomics
+  for (u64 i = 0; i < ITERS; i++)
+    for (u64 p = 20; p < 100; p++)
+      *(volatile u64 *)(WINDOW + p * PAGE_SZ + 8 * (i & 7)) = i;
+  phase(6); // pages 20 to 99: more than a vCPU's 64 records, so they overflow
+  for (u64 i = 0; i < ITERS; i++) {
+    __asm__ volatile(".arch_extension lse\n.arch_extension fp\n.arch_extension simd\n"
+                     "dup v0.2d, %0; dup v1.2d, %0; dup v2.2d, %0; dup v3.2d, %0\n"
+                     "stp q0, q1, [%1]\n"                           // crosses from page 110 into 111
+                     "str q0, [%2]\n"                               // crosses from page 112 into 113
+                     "st1 {v0.16b, v1.16b, v2.16b, v3.16b}, [%3]\n" // crosses from page 114 into 115
+                     "dc zva, %4\n"                                 // page 116
+                     "stlr %0, [%5]\n"                              // page 117
+                     "ldp x4, x5, [%6]; mov x6, %0; mov x7, %0; casp x4, x5, x6, x7, [%6]\n" // page 118
+                     "1: ldxp x8, x9, [%7]; stxp w10, %0, %0, [%7]; cbnz w10, 1b\n"       // page 119
+                     "sttr %0, [%8]"                                 // page 120, with EL0's permissions
+                     :
+                     : "r"(i), "r"(WINDOW + 111 * PAGE_SZ - 12), "r"(WINDOW + 113 * PAGE_SZ - 4),
+                       "r"(WINDOW + 115 * PAGE_SZ - 20), "r"(WINDOW + 116 * PAGE_SZ + 64 * (i & 7)),
+                       "r"(WINDOW + 117 * PAGE_SZ), "r"(WINDOW + 118 * PAGE_SZ), "r"(WINDOW + 119 * PAGE_SZ),
+                       "r"(WINDOW + 120 * PAGE_SZ)
+                     : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "v0", "v1", "v2", "v3", "memory");
+  }
+  phase(7); // pages 110 to 120: wide, pair and vector stores across pages, DC ZVA, STLR, CASP, STXP, STTR
   check(*(volatile u64 *)(WINDOW + 9 * PAGE_SZ) == ITERS, 1);
   check(*(volatile u64 *)(WINDOW + 10 * PAGE_SZ) == ITERS, 2);
+  for (u64 p = 117; p <= 120; p++)
+    check(*(volatile u64 *)(WINDOW + p * PAGE_SZ) == ITERS - 1, p);
+  check(*(volatile u64 *)(WINDOW + 111 * PAGE_SZ + 12) == ITERS - 1, 3); // STP's q1
+  check(*(volatile u64 *)(WINDOW + 115 * PAGE_SZ + 36) == ITERS - 1, 4); // ST1's v3
   power_off(0);
 }

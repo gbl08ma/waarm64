@@ -840,7 +840,8 @@ impl<'a> Mmu<'a> {
     }
 
     /// Host pointers for the two pages of a page-crossing access, both
-    /// translated before either is touched, and the byte count in the first.
+    /// translated before either is touched, and the byte count in the first;
+    /// a page of the watched window keeps its record until the store.
     /// `SCTLR_EL1.A` makes every misaligned access fault first.
     #[inline(always)]
     fn span(
@@ -860,6 +861,7 @@ impl<'a> Mmu<'a> {
             return Ok((self.host(c, va, size as u64, access, u, el)?, None));
         }
         let p1 = self.host(c, va, first, access, u, el)?;
+        let n = self.tlb.as_ref().map_or(0, |t| t.nwatched);
         let p2 = self.host(
             c,
             va.wrapping_add(first),
@@ -868,6 +870,12 @@ impl<'a> Mmu<'a> {
             u,
             el,
         )?;
+        // The second page's watched write entry overflowed the records (`Tlb::fill_watched`): that dropped the
+        // first page's record and marked it before its bytes are stored, so a look in between would miss them.
+        // Translating it again records it anew (one record is left, so this one can't overflow).
+        if self.tlb.as_ref().is_some_and(|t| t.nwatched < n) {
+            return Ok((self.host(c, va, first, access, u, el)?, Some((p2, first))));
+        }
         Ok((p1, Some((p2, first))))
     }
 }

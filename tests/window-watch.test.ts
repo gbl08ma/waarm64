@@ -9,7 +9,9 @@ import { bootVm, Counter, Exit } from '../web/vm.ts';
 
 const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const kernel = readFileSync(new URL('baremetal/watch.bin', import.meta.url));
-const PHASES = [[1, 2, 3], [5], [1], [3, 7, 8], [9, 10]];
+const range = (a: number, b: number) => Array.from({ length: b - a }, (_, k) => a + k);
+// Phase 6 overflows a vCPU's 64 records; phase 7 is wide, pair and vector stores across pages, DC ZVA and the rest.
+const PHASES = [[1, 2, 3], [5], [1], [3, 7, 8], [9, 10], range(20, 100), range(110, 121)];
 const MAILBOX = 8 << 20; // from the start of RAM (watch.c)
 
 for (const jit of [0, 4, 1] as const) {

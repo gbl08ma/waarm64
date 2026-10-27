@@ -100,8 +100,8 @@ The kickoff's eight steps, one loop each unless a loop says otherwise:
   - [x] D (done 2026-10-27, "State after L4c-D"): findings 4 and 6 (the lost fragment stage: padding in the link hash,
     a program of both stages' when they differ; load ops NONE and partial DONT_CARE) and "suspended and resumed passes".
     No green.sh: A settled it (0 of 32).
-  - [ ] E, F (after the green is settled, before L5): finding 5 (the core's page-crossing store: the JIT's rules), and
-    the review's other real defects.
+  - [ ] E, F (after the green is settled, before L5): ~~finding 5 (the core's page-crossing store: the JIT's rules)~~
+    (E done 2026-10-27, "State after L4c-E"), and the review's other real defects.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
   dEQP-VK on the Mac's GPU).
@@ -184,6 +184,15 @@ decoding, one JSON line each; resumable, one call ≤ ~570 s (4 sessions). ~116 
   texture, all-zero LUT weights or a chroma FBO never rendered would all give exactly these: "the import never wrote
   chroma" is one candidate among several.
 
+
+## State (2026-10-27, after L4c-E)
+
+- **Done: finding 5, confirmed** by `core/src/mmu/tests.rs` `watched_page_crossing_store_after_overflow` (a look
+  between `span`'s translations and the store lost the first page; it failed on the old code, page 63 missing).
+  Fixed in `Mmu::span`: when the second page's record overflows the 64, the first page is translated again (only the
+  page-crossing branch changed; no JIT code, no hot path, no benchmark; steps.txt unchanged). watch.c gained a phase
+  over 80 pages and one of STP Q, STR Q, ST1 across pages, DC ZVA, STLR, CASP, STXP, STTR (docs/devices.md).
+- CI: ci.sh, ci-deqp-vk.sh OK. F (the review's other real defects) is next.
 
 ## State (2026-10-27, after L4c-D)
 

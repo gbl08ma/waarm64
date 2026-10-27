@@ -539,15 +539,20 @@ guest share without copies (Venus's ring, its command streams, its reply buffers
   leaves its run loop, before it clears its running word, so an idle vCPU is never waited for. Then the host swaps the
   bitmap's words out. The marks are the pages written since the last look, plus pages whose entry was dropped
   without a write since; writes through an entry after the look reach the next one, since the entry was dropped
-  first. A vCPU that runs on without reaching a chunk boundary within the host's bound (100 ms) makes every page count
+  first. A page-crossing store translates both pages before writing either (`Mmu::span`); when the second page's
+  record overflows the 64, dropping the first page's with the rest, `span` translates the first page again, so its
+  record outlives its store (else a look between the mark and the store would report the page with its old bytes,
+  and the next look not at all). A vCPU that runs on without reaching a chunk boundary within the host's bound (100 ms) makes every page count
   as written. Writes with the MMU off (the JIT's flat path) and devices' writes aren't watched: nothing writes the
   window that way.
 - **What it costs:** a machine without a window pays a compare on each TLB fill and an `Option` test at each chunk
   boundary (measured: VK1's report). With one, a page's first write after each look takes a TLB miss.
 - **Tests:** `tests/baremetal/watch.c` (`// window`: phases that store to chosen pages in hot loops, a page-crossing
-  store, LSE and exclusive atomics), driven by `core/tests/baremetal.rs` `window_watch` (round-robin and parallel,
+  store, LSE and exclusive atomics, 80 pages in one phase (past the 64 records), and STP Q, STR Q and ST1 across
+  pages, DC ZVA, STLR, CASP, STXP and STTR), driven by `core/tests/baremetal.rs` `window_watch` (round-robin and parallel,
   the interpreter and the block interpreter) and `tests/window-watch.test.ts` (wasm: the interpreter, the block
-  interpreter and the JIT); each look must report exactly the phase's pages.
+  interpreter and the JIT); each look must report exactly the phase's pages. `core/src/mmu/tests.rs`
+  `watched_page_crossing_store_after_overflow` looks between a page-crossing store's translations and its bytes.
 
 ### snd (ID 25)
 - `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
