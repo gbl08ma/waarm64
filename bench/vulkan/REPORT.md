@@ -1257,6 +1257,56 @@ another device's submit (a second Venus device during mpv's first frames wasn't 
 nothing measurable: VK0's scene at 1,000 fish on the M4, three alternated rounds each, overlapping
 (`results/vk3/l4c/*-scene-1000-*.json`). Of the review's fourteen findings, twelve held up.
 
+## VK3 L4d: the advanced path checked again — right when warm, but a cold first run freezes mpv's window; still held
+
+**2026-10-27**, at 7ce86cb2. JSON in `results/vk3/l4d/`. The M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2)
+through `bench/vulkan/green.sh` and `bench/gpu/sway-mac.sh`; dEQP-VK on the dev VM's SwiftShader. Bare sessions, arms
+alternated.
+
+**The green stays gone, and nothing is refused** (`green.jsonl`, `green-hq.jsonl`): with `?gpu=vkformats=all`, VA-API's
+frame is byte for byte the software one (mpv's screenshot and the page's screen) in 10 of 10 sessions with mpv's
+defaults and 6 of 6 warm ones with `--profile=high-quality` (polar scalers, debanding); 4 of 4 held sessions alike.
+With the 32 of L4c-A/B, 0 green in 48. No session logged "a shader didn't translate" (L4c-F's refusal of `read_write`
+storage WebGPU gives one way): libplacebo's paths here, compute ones included, write their storage images only.
+
+**mpv's bar holds warm** (`mpv-mac-all.json` against `mpv-mac-default.json`, one session each, two alternated rounds of
+Vulkan with VA-API and GL, as L4): Vulkan 532, 531 frames, **0 dropped**, the guest **15, 13%** busy, mpv 388, 345 ms a
+second, against 530, 529, 0, 14, 13%, 364, 322 with the formats held; GL 527–529, 0, 12–13% in both.
+
+**dEQP-VK with the advanced path on**: the pass list's 1,807 cases all pass on SwiftShader (`float32-blendable` only;
+`deqp-vk-all-swiftshader.json`). The M4's tier1 storage isn't covered (dEQP-VK on the Mac's GPU is L6's).
+
+**But a cold first run freezes mpv's window** (`green-cold.jsonl`; the page's screens `cold-vkva-page-late.png` against
+`cold-vkno-page.png`). The M4 sessions above were warm: Metal's shader cache outlives Chrome's profiles (L3), so only
+the first session with new shaders compiles them. Each first session of a new set of mpv options (new shaders for
+Metal) went wrong the same way: mpv's screenshot is right (VA-API's frame equals software's), but **the page's screen
+stays on mpv's pre-fullscreen frame** (854×480 in the middle, ~1.6 M bytes off by more than 24, mean 35), still the same
+25 s later (`REGRAB=25`), and **mpv can't exit** (killed at shot.sh's limit: the arm takes ~50 s instead of ~23). No
+1376×762 swapchain resource of that mpv ever reaches venus-share (the warm sessions' first mpv has two); the host's
+fences meanwhile aren't stuck (~30–160 ms, at most 0.35 s).
+
+| first session of new shaders | the page's screen |
+| --- | --- |
+| advanced path: mpv's defaults (`--dither=ordered`, `--deband`), `high-quality`, two polar-scaler sets | **frozen** in 5 of 5 |
+| the same with `?gpu=vkpipelines=sync` | frozen (1 of 1): not L3's async pipelines |
+| formats held, `--profile=high-quality` | frozen (1 of 1) |
+| formats held, mpv's defaults (`--dither=ordered`): no FBOs, few shaders | right (1 of 1) |
+| the second session of each set (Metal warm) | right in every one |
+
+So the freeze isn't the advanced path's own (held formats show it with heavy enough shaders), but the advanced path
+makes mpv's defaults heavy enough to meet it: a user's first mpv on a host whose GPU cache lacks libplacebo's pipelines
+would get a frozen window. **The formats stay held by default.** On NVIDIA, Chromium's own shader cache is in the
+profile (temporary in nvidia.sh) while the driver's persists in the run's directory: `mpv-frames-all` is a first run
+there, `-all2` likely a warm one, and both now read the page's screen twice (nvidia.sh `GRAB=1 REGRAB=20`).
+
+**Next (proposed L4e)**: find where mpv waits. Leads: the guest's present path at the resize to fullscreen (mpv makes
+its new swapchain while its first pipelines are still being made; something it waits on, a WSI image's release or a
+present's fence, never comes), and Venus's held submits (`deferred`) around a swapchain's destruction. A knob delaying
+pipelines' readiness on the host would reproduce it on any host (SwiftShader in the VM too) without Metal's cache.
+
+`mpv-frames.ts` now reads shot.sh's own words at the end of its output (a killed mpv's "Killed" line made L4d's first
+cold sessions read as "VA-API not used"), keeps each page grab as `<tag>-page.ppm`, and takes `REGRAB=<s>`.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
@@ -1269,6 +1319,8 @@ nothing measurable: VK0's scene at 1,000 fish on the M4, three alternated rounds
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK3 L4d: `mpv-frames.ts` keeps its page grabs (`<tag>-page.ppm`) and takes `REGRAB=<s>` (the screen again that much later,
+  mpv held as long; through `sway-mac.sh`, `green.sh` and nvidia.sh's `mpv` step too).
 - VK3 L4: `upload-race.ts` (orderings libplacebo's advanced path leans on, in WebGPU alone; `mac-costs.sh` with
   `SCRIPT=upload-race.ts`); `mpv-frames.ts` takes `GPU_KNOBS`, `MPV_ARMS`, `PAIRS` and `SHOT2` (through `sway-mac.sh` too)
   and records libplacebo's complaints and Venus's submits; the page takes `?gpu=vkformats=all` and `?gpu=vkhold=<feature>`.

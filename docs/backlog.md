@@ -583,9 +583,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the device holds back `float32-blendable` and tier1's storage formats by default (web/venus-gpu.ts `HELD_FEATURES`;
     `?gpu=vkformats=all` takes them: then mpv gets its FBOs, scalers and debanding). With them, **mpv's VA-API chroma
     read as zeros on the M4 in about a third of fresh sessions**: found and fixed in VK3 L4c-A (a window page taken by
-    one Venus device's submit was lost to the others' memories; bench/vulkan/REPORT.md "VK3 L4b–L4c"), 0 green in 32
-    bare sessions since. Left: turn the advanced path on by default, after mpv's frames and bar with it on are checked
-    again at today's code (VK3 L4c-F changed storage access) and the user's NVIDIA run's mpv questions.
+    one Venus device's submit was lost to the others' memories; bench/vulkan/REPORT.md "VK3 L4b–L4c"), 0 green in 48
+    bare sessions since. VK3 L4d checked it again (REPORT.md "VK3 L4d": frames right, mpv at its bar, dEQP-VK's list
+    passing, nothing refused) but kept it held for the next entry. Left: that entry, then turn it on.
+  - **mpv's window freezes when its first pipelines are cold** (VK3 L4d, REPORT.md "VK3 L4d"; the M4): an mpv whose
+    shaders the host's GPU cache (Metal's, which outlives Chrome's profiles) hasn't seen leaves the page's screen on its
+    pre-fullscreen frame for good (no fullscreen swapchain resource reaches venus-share), and can't exit; its
+    screenshot is right and the host's fences aren't stuck. Every such session with the advanced path (5 of 5, async
+    pipelines or `vkpipelines=sync`), and with the formats held under `--profile=high-quality`; mpv's defaults with the
+    formats held were right. This blocks the advanced path's default. Leads: what mpv's present path waits on at the
+    resize while its pipelines are being made (a WSI image's release, a present's fence), and Venus's held submits
+    around a swapchain's destruction; a host knob that delays pipelines' readiness would reproduce it anywhere
+    (proposed VK3 L4e). Maybe the same as the next entry's wait.
   - **mpv on Vulkan doesn't exit** (SwiftShader, at the end of a file or on SIGTERM): its `vo` thread waits on a DRM
     syncobj (`drm_syncobj_array_wait_timeout`) while sway still shows its window, and no Venus fence is pending on the
     host (`venus: fence … unretired` never fires). Likely Mesa's Wayland WSI waiting for an image's release at the

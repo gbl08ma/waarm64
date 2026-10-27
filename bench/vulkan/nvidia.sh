@@ -46,7 +46,8 @@
 #      a vkmark scene's replays with pipelines made at once and no shader store, then cold and warm across a restart on
 #      one kept profile (bench/vulkan/venus-run.ts; ~8 min);
 #   6. mpv: its frames on Vulkan (VA-API, software) and GL compared, with libplacebo's complaints, as the page has it and
-#      twice with libplacebo's advanced path on (`vkformats=all`, VK3 L4; bench/vulkan/mpv-frames.ts; ~3 min each), then
+#      twice with libplacebo's advanced path on (`vkformats=all`, VK3 L4; the page's screen read too, VK3 L4d;
+#      bench/vulkan/mpv-frames.ts; ~3 min each), then
 #      the gate, mpv on Vulkan with VA-API against mpv on GL, two alternated rounds, and once more on Vulkan with the
 #      advanced path on (bench/audio/avsync.ts).
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz: send that file back.
@@ -182,12 +183,18 @@ if [ "${1:-}" = page ]; then
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" mpv "* ]]; then
     # VK3 L4: mpv's paused frame on Vulkan (VA-API's surfaces, and decoded in software) and on GL, compared, with
     # libplacebo's complaints: as the page has it (libplacebo without FBOs: "Failed creating FBO texture"), then with its
-    # advanced path (`vkformats=all`: no complaint; on the M4 VA-API's chroma came out zeros, a green picture, in about
-    # a third of sessions: "all ... vkva ~ vkno" off by >24 in ~2.3 M bytes). Two sessions of the latter.
+    # advanced path (`vkformats=all`: no complaint; the M4's green chroma, fixed in L4c, would be "all ... vkva ~ vkno"
+    # off by >24 in ~2.3 M bytes). Two sessions of the latter, each also reading the page's screen once mpv's screenshot
+    # exists and 20 s later (GRAB, REGRAB; VK3 L4d: on the M4, an mpv whose pipelines weren't in the host's shader cache
+    # yet left its window on the pre-fullscreen frame for good and couldn't exit: "page" off by >24 in ~1.6 M bytes,
+    # "late" 0 from it, the arm ~50 s instead of ~23).
     for f in default all all2; do
-      knobs=; [ $f != default ] && knobs=vkformats=all
-      step "mpv-frames-$f" 900 env SHIM=1 GPU_KNOBS="$knobs" node bench/vulkan/mpv-frames.ts target/arch/desktop.qcow2 "$R/mpv-frames-$f"
+      knobs= grab=; [ $f != default ] && knobs=vkformats=all grab="GRAB=1 REGRAB=20"
+      step "mpv-frames-$f" 900 env SHIM=1 GPU_KNOBS="$knobs" $grab node bench/vulkan/mpv-frames.ts target/arch/desktop.qcow2 "$R/mpv-frames-$f"
       grep -hE "^\[[0-9.]+\] (vk|gl)" "$R/mpv-frames-$f.log" | grep -v ' venus ' | cut -c1-200 | sed "s/^/  $f /" || true
+      [ -n "$grab" ] && node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        for (const t of ["vkva", "vkno"]) { const a = r[t] ?? {}; console.log(`  ${t}: ${a.seconds} s, page ${JSON.stringify(a.page)}`); }
+        console.log(`  vkva ~ vkno page: ${JSON.stringify(r["vkva ~ vkno"]?.page)}`);' "$R/mpv-frames-$f/results.json" 2>/dev/null || true
     done
     step mpv 1800 env VIRGL_GPU=virgl,vulkan MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=2 \
       MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan|gl:--vo=gpu --gpu-api=opengl" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv"

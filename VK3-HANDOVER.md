@@ -6,6 +6,19 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-27, after L4d)
+
+- **The advanced path stays held** (REPORT.md "VK3 L4d", `results/vk3/l4d/`). Warm on the M4 it's right (0 green in 10
+  bare sessions, 0 of 48 since L4c-A; 6 of 6 under `--profile=high-quality`), at mpv's bar (0 drops, the guest 13–15%),
+  nothing refused by L4c-F's `read_write` check; dEQP-VK's 1,807 cases pass with it on SwiftShader.
+- **The blocker:** an mpv whose pipelines the host compiles for the first time (Metal's cache outlives profiles: every
+  first session of new mpv options) leaves the page's screen on its pre-fullscreen frame for good and can't exit (5 of 5
+  with the advanced path, `vkpipelines=sync` too; with the formats held only under `high-quality`). No fullscreen
+  swapchain resource reaches venus-share; fences aren't stuck. Backlog "mpv's window freezes when its first pipelines are cold".
+- **Proposed L4e** (bounded): a host knob delaying pipelines' readiness to reproduce it anywhere (SwiftShader too), then
+  find what mpv's present path waits on at the resize. Then turn the advanced path on.
+- nvidia.sh's `mpv-frames-all*` now read the page's screen twice (`GRAB=1 REGRAB=20`); questions below rewritten.
+
 ## Where VK3 stands (2026-10-27, after L4c-F; the first supervisor session halted here, before L5)
 
 - **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
@@ -27,7 +40,8 @@ docs and the backlog; git keeps the old handovers.
 
 ## The plan (loops; the supervisor may reorder)
 
-- [ ] L4d: L4's remainder (above): the advanced path on by default if right; ~1 loop.
+- [x] L4d: L4's remainder checked: right and at its bar warm, but a cold first run freezes mpv's window; still held.
+- [ ] L4e (proposed by L4d): the cold-pipeline freeze (backlog), then the advanced path on by default; ~1 loop.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`: see
   backlog for what L4c-F refused).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
@@ -54,13 +68,15 @@ in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvid
 in `bench/results/local/`, delete the tarball.) The last bundle (`target/vk3-nvidia-bundle-f55eacd7.tar`) predates L4c:
 build a new one.
 
-**Open for the next run** (rewrite them if L4d turns the advanced path on by default):
+**Open for the next run** (the advanced path still held after L4d; rewrite them when L4e turns it on):
 - (L4) `mpv-frames-default`: as the page has it, libplacebo complains "Failed creating FBO texture" and VA-API's frame is
   byte for byte the software one (`vkva ~ vkno` 0) — the same as on the M4?
-- (L4) `mpv-frames-all`, `mpv-frames-all2` (`?gpu=vkformats=all`: libplacebo's advanced path): no complaint; is VA-API's
-  chroma right (`vkva ~ vkno` near 0) or green (~2.28 M bytes off by more than 24, mean ~77) in either session? Which
-  FBO family did NVIDIA's adapter give (the log's `venus` line has no format; `texture-formats-tier1` in
-  `adapter.json` says `rg16float`)?
+- (L4, L4d) `mpv-frames-all`, `mpv-frames-all2` (`?gpu=vkformats=all`): no complaint; VA-API's chroma right (`vkva ~ vkno`
+  near 0)? Which FBO family did NVIDIA's adapter give (`texture-formats-tier1` in `adapter.json` says `rg16float`)?
+- (L4d) the same runs' page screens (the lines after each, `GRAB=1 REGRAB=20`): does the window freeze on mpv's
+  pre-fullscreen frame (vkva's `page` off by >24 in ~1.6 M bytes against vkno, `late` 0 from it, the arm ~50 s instead of
+  ~23)? `-all` is a first run there (Chromium's shader cache is in the temporary profile), `-all2` has NVIDIA's driver
+  cache warm: frozen in one, both or neither?
 - (L4) `mpv-all`: mpv on Vulkan with the advanced path on meets the bar (no drops, the guest no busier than 19–27%)?
 
 ## Things worth not re-discovering
@@ -115,3 +131,8 @@ VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not r
   first). Software decoding gives three R8 planes, VA-API an R8 and an RG8, so only VA-API needs the 2-component FBO.
 - (L4) `grep -f`/`pgrep -f` patterns: a kill pipeline whose pattern (`ssh macmini`) appeared later in the same command
   line killed its own shell (exit 144). Find PIDs with `ps` first, in a command of their own.
+- (L4d) Metal's shader cache makes M4 sessions warm after the first with the same shaders: a bug that needs a cold
+  compile shows only in the first session of new shaders. Vary mpv's options (`--dither=ordered`, `--deband`, another
+  polar scaler) to get a cold one; count cold and warm sessions apart.
+- (L4d) shot.sh's output under a killed mpv starts with the shell's "Killed" line, and the serial joins lines: parse
+  its last words (`mpv-frames.ts`), or a frozen mpv reads as "VA-API not used".

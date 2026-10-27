@@ -10,7 +10,8 @@
 //   disk's VA driver; GPU_KNOBS adds to the page's `?gpu=` (e.g. `vkformats=all`: the advanced path on); MPV_ARMS and
 //   PAIRS replace the arms and comparisons; SHOT2=1 takes a second screenshot after turning debanding on (the frame
 //   rendered anew); GRAB=1 also reads the page's screen (`window.__webpcGrab`) once mpv's screenshot exists, mpv still
-//   showing the frame, and compares the arms' grabs as PAIRS says (VK3 L4b: bench/vulkan/green.sh); HOLD=<s> keeps mpv
+//   showing the frame, and compares the arms' grabs as PAIRS says (VK3 L4b: bench/vulkan/green.sh; each kept as <tag>-page.ppm;
+//   REGRAB=<s> grabs again that much later, <tag>-late); HOLD=<s> keeps mpv
 //   that long after its screenshot (default 3, 6 with GRAB); bench/gpu/sway-mac.sh runs it with
 //   SCRIPT=../vulkan/mpv-frames.ts, mode `-`)
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -73,7 +74,7 @@ cat > /root/shot.sh <<'EOF'
 #!/bin/sh
 tag=$1; shift
 rm -f /tmp/$tag.png
-su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png SHOT2=${'$'}{SHOT2:+/tmp/$tag-b.png} HOLD=${'$'}{HOLD:-3}; timeout -k 5 40 mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
+su arch -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SHOT=/tmp/$tag.png SHOT2=${'$'}{SHOT2:+/tmp/$tag-b.png} HOLD=${'$'}{HOLD:-3}; timeout -k 5 ${'$'}{MPV_S:-40} mpv --start=20 --pause --fs --osc=no --osd-level=0 --ao=null --script=/home/arch/shot.lua $* /mnt/media/sintel_trailer-480p.mp4 >/tmp/$tag.log 2>&1"
 pkill -9 -x mpv; ffmpeg -loglevel error -y -i /tmp/$tag.png -f rawvideo -pix_fmt rgb24 /tmp/$tag.rgb
 [ -f /tmp/$tag-b.png ] && ffmpeg -loglevel error -y -i /tmp/$tag-b.png -f rawvideo -pix_fmt rgb24 /tmp/$tag-b.rgb
 echo "$(ffprobe -v error -show_entries stream=width,height -of csv=p=0 /tmp/$tag.png) $(grep -c 'Using hardware' /tmp/$tag.log)"
@@ -87,7 +88,21 @@ gr = lambda p: round((sum(p[1::3]) - (sum(p[0::3]) + sum(p[2::3])) / 2) / max(1,
 print(len(a), len(b), sum(1 for x in d if x > 24), sum(1 for x in d if x), max(d), round(sum(d) / n, 3), gr(a), gr(b))
 EOF
 chmod 755 /root/shot.sh /home/arch/shot.lua`);
-  const GRAB = !!process.env.GRAB, HOLD = Number(process.env.HOLD || (GRAB ? 6 : 3));
+  const GRAB = !!process.env.GRAB, HOLD = Number(process.env.HOLD || (GRAB ? 6 : 3)), REGRAB = Number(process.env.REGRAB || 0);
+  /** A grab kept beside the results (<tag>-page.ppm), to look at when it differs. */
+  const savePage = async (tag: string, g: unknown) => {
+    const { width, height } = g as { width?: number; height?: number };
+    const rgb = await s.page.evaluate((tag) => {
+      const p = (window as unknown as W).__mpvGrabs?.[tag];
+      if (!p) return '';
+      const o = new Uint8Array((p.length / 4) * 3);
+      for (let i = 0, j = 0; i < p.length; i += 4, j += 3) { o[j] = p[i]; o[j + 1] = p[i + 1]; o[j + 2] = p[i + 2]; }
+      let bin = '';
+      for (let i = 0; i < o.length; i += 0x8000) bin += String.fromCharCode(...o.subarray(i, i + 0x8000));
+      return btoa(bin);
+    }, tag);
+    if (rgb && width) writeFileSync(`${out}/${tag}-page.ppm`, Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`), Buffer.from(rgb, 'base64')]));
+  };
   for (const [tag, a] of Object.entries(ARMS)) {
     await s.display();
     const t0 = performance.now();
@@ -96,16 +111,28 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
     if (GRAB) {
       // mpv in the background, the shell waiting (a check a second, typed once before mpv starts) for its screenshot;
       // then the page's screen while mpv still shows the frame (HOLD), then shot.sh's own line once it's done.
-      await s.run(`rm -f /tmp/${tag}.png /tmp/${tag}.out; (${process.env.SHOT2 ? 'SHOT2=1 ' : ''}HOLD=${HOLD} /root/shot.sh ${tag} ${a} >/tmp/${tag}.out 2>&1 &); for i in $(seq 90); do [ -s /tmp/${tag}.png ] && break; sleep 1; done; sleep 1`, 150_000);
+      await s.run(`rm -f /tmp/${tag}.png /tmp/${tag}.out; (${process.env.SHOT2 ? 'SHOT2=1 ' : ''}HOLD=${HOLD + REGRAB} MPV_S=${40 + REGRAB} /root/shot.sh ${tag} ${a} >/tmp/${tag}.out 2>&1 &); for i in $(seq 90); do [ -s /tmp/${tag}.png ] && break; sleep 1; done; sleep 1`, 150_000);
       shotS = (performance.now() - t0) / 1000;
       page = await grabScreen(tag);
+      await savePage(tag, page);
+      // REGRAB=<s>: the page's screen again that long after the first grab (<tag>-late; VK3 L4d: whether a stale screen
+      // ever catches up), mpv kept as long (HOLD and shot.sh's limit raised to match).
+      if (REGRAB) {
+        await new Promise((r) => setTimeout(r, REGRAB * 1000));
+        const late = await grabScreen(`${tag}-late`);
+        (page as Record<string, unknown>).late = { ...late, page: await comparePages(`${tag}-late`, tag) };
+        await savePage(`${tag}-late`, late);
+      }
       line = await s.run(`while pgrep -x shot.sh >/dev/null; do sleep 1; done; cat /tmp/${tag}.out`, 120_000);
     } else line = await s.run(`${process.env.SHOT2 ? 'SHOT2=1 ' : ''}HOLD=${HOLD} /root/shot.sh ${tag} ${a}`, 120_000);
-    const [size, hw] = line.trim().split(' ');
+    // shot.sh's own words are the last two: a killed mpv (VK3 L4d: one that doesn't exit) puts the shell's "Killed" before them.
+    const [, size, hw] = /(\d{1,4},\d{1,4}) (\d+)\s*$/.exec(line) ?? [, line.trim(), '0'];
     // libplacebo's own complaints (its advanced path: "Failed creating FBO texture", "Failed dispatching scaler").
     const placebo = (await s.run(`grep -iE 'disabling|failed|error' /tmp/${tag}.log | sort | uniq -c | head -20 | tr '\\n' ';'`)).trim();
     const venus = (await s.display()).renderer?.venus as { submits?: number; perSubmit?: Record<string, number> } | undefined;
-    results[tag] = { args: a, size, hardwareDecoding: hw === '1', placebo, venus, seconds: +((performance.now() - t0) / 1000).toFixed(1), ...(GRAB ? { shotSeconds: shotS && +shotS.toFixed(1), page } : {}) };
+    // An arm that asked for VA-API and didn't get it (VK3 L4d saw one): mpv's own log's end, to tell why.
+    const mpvLog = hw !== '1' && a.includes('vaapi') ? (await s.run(`tail -n 40 /tmp/${tag}.log | cut -c1-200; cat /tmp/${tag}.out 2>/dev/null | head -5`)).trim() : undefined;
+    results[tag] = { args: a, size, hardwareDecoding: hw === '1', placebo, venus, seconds: +((performance.now() - t0) / 1000).toFixed(1), ...(GRAB ? { shotSeconds: shotS && +shotS.toFixed(1), page } : {}), ...(mpvLog ? { mpvLog } : {}) };
     if (venus) s.log(tag, 'venus', JSON.stringify({ submits: venus.submits, ...venus.perSubmit }).slice(0, 300));
     s.log(tag, size, hw === '1' ? 'VA-API' : 'software', placebo);
   }

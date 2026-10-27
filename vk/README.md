@@ -126,8 +126,10 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   `shaderStorageImageExtendedFormats`). Either gives mpv's libplacebo a family of FBO formats (32-bit floats, or
   16-bit floats with tier1's storage), and with them its advanced rendering (scalers, debanding, its frame cache). Under
   it mpv's VA-API chroma read as zeros on the M4 in about a third of fresh sessions, until VK3 L4c-A fixed the window's
-  pages being lost between devices (bench/vulkan/REPORT.md "VK3 L4b–L4c"; 0 of 32 since); they stay held until the
-  advanced path is checked again and turned on. Without them libplacebo has no FBOs and mpv renders as in VK2 L6, its VA-API frames
+  pages being lost between devices (bench/vulkan/REPORT.md "VK3 L4b–L4c"; 0 of 48 since). They stay held because of
+  VK3 L4d (REPORT.md "VK3 L4d"): right and at mpv's bar once the host's shader cache is warm, but an mpv whose pipelines
+  the host compiles for the first time leaves its window frozen on its pre-fullscreen frame and can't exit (every such
+  session on the M4; with the formats held only under `--profile=high-quality`). Without them libplacebo has no FBOs and mpv renders as in VK2 L6, its VA-API frames
   byte for byte its software ones. The driver takes both where the adapter has them once `?gpu=vkformats=all` asks
   (the advanced path on; tests, the NVIDIA run); `?gpu=vkhold=<feature>` holds one more (`tier1-storage` is tier1's
   storage alone).
