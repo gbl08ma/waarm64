@@ -125,3 +125,27 @@ test('a submit\'s fence comes back without waiting for the browser\'s slow look 
   assert.ok(pump.empty > 0, 'the pump sent no empty submit');
   assert.equal(pump.empty, pump.nudges, 'every nudge reached the queue');
 });
+
+// VK3 L4c-A (the static review's finding 1 and its odd-sized memories): two devices on one window, as two Venus contexts.
+for (const [scenario, what] of [
+  ['watch', 'a page one device wrote reaches its GPU buffer though another device submitted first'],
+  ['serials', 'two devices\' submits with the same count behind them each complete their own'],
+  ['odd', 'every byte of an odd-sized host-visible memory is uploaded, whole and by page'],
+] as const) {
+  test(`two devices: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runTwo(s: string): Promise<Record<string, unknown>> } }).venus.runTwo(s), scenario);
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    // Each check: the first byte read back that differs from what was written (-1: none).
+    const checks = r.checks as Record<string, number>;
+    assert.ok(Object.keys(checks).length > 0);
+    for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes read back differ from byte ${at}`);
+    assert.equal(r.warnings, 0, 'the worker warned');
+  });
+}

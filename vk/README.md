@@ -137,7 +137,11 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   with views made as Vulkan made them (a depth or stencil aspect's with the image's format and the aspect) and, for
   attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`). Host-visible memory's bytes
   are in memory 0 (vkr's storage, or the window while its blob is mapped); at each submit the driver uploads the
-  window's written pages of the memories mapped there, and the whole of those that moved or are new.
+  window's written pages of the memories mapped there, and the whole of those that moved or are new, each to its
+  4-aligned size (an odd-sized memory's last bytes too). The write-watch is the window's, one for every device (each
+  Venus context has its own): each submit's look at it gives the pages to every device (`wg_device.pages`, a bit a
+  page), and a device's submit uploads those over its own memories and clears its own bits; so one device's look
+  never drops another's pages (VK3 L4c-A).
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render
@@ -171,7 +175,8 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   warning, since one invalid command invalidates the whole submit. Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
-- **Completion**: the worker calls `venus_complete(serial)` in submit order once the work is done and its staging
+- **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
+  devices at once, a 17th fails to be made). The worker calls `venus_complete(serial)` in submit order once the work is done and its staging
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
   feedback slots) applied there too, and the submit's syncs signal; vkr's fences retire at the next poll, which the
   completion runs at once. Only the window and the arena are written then (anything else is logged and dropped).

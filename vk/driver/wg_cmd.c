@@ -1810,48 +1810,84 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
    }
 }
 
-/* What the guest wrote to host-visible memory since the last submit: the window's written pages of the memories
- * mapped there, and the whole of those that moved or are new. */
+/* The devices whose submits complete and whose memories the window's written pages are for. */
+static struct wg_device *devices[16];
+
+/* Submits are numbered across devices: wg_complete finds a submit by its number alone. */
+static uint32_t submit_serial;
+
+/* Looks at the window's write-watch: the pages written since the last look go to every device (each uploads those over
+ * its own memories at its next submit), since the watch is one for the whole window and every device's memories are
+ * in it (VK3 L4c-A: a look by one device's submit used to drop the pages of the others'). */
+static void
+take_pages(void)
+{
+   static uint32_t pages[16384];
+   const int32_t n = gpu_dirty(pages, sizeof(pages) / sizeof(pages[0]));
+   const uint32_t npages = (uint32_t)(wg_window_bytes / 4096), words = DIV_ROUND_UP(npages, 32);
+   for (uint32_t i = 0; i < 16; i++) {
+      struct wg_device *d = devices[i];
+      if (!d || !n)
+         continue;
+      if (n > 0 && !d->pages)
+         d->pages = calloc(words, 4);
+      if (n < 0 || !d->pages) {
+         d->pages_all = true;
+         continue;
+      }
+      for (int32_t k = 0; k < n; k++) {
+         const uint32_t p = pages[k];
+         if (p >= npages)
+            continue;
+         d->pages[p / 32] |= 1u << (p % 32);
+         d->pages_lo = d->pages_hi > d->pages_lo ? MIN2(d->pages_lo, p / 32) : p / 32;
+         d->pages_hi = MAX2(d->pages_hi, p / 32 + 1);
+      }
+   }
+}
+
+/* What the guest wrote to host-visible memory since this device's last submit: the window's written pages of its
+ * memories mapped there, and the whole of those that moved or are new. A memory's bytes are uploaded to its 4-aligned
+ * size (wg_AllocateMemory's `size`: its storage is whole pages, so the bytes past its end are there to read). */
 static void
 upload(struct wg_device *dev)
 {
-   static uint32_t pages[16384];
-   int32_t n = -2;
+   take_pages();
+   const bool any = dev->pages_all || dev->pages_hi > dev->pages_lo;
    list_for_each_entry (struct wg_device_memory, mem, &dev->host_memories, link) {
       if (!mem->gpu || !mem->data)
          continue;
       const uintptr_t at = (uintptr_t)mem->data;
       const bool in_window = at >= wg_window_at && at < wg_window_at + wg_window_bytes;
-      if (mem->dirty) {
-         gpu_write(mem->gpu, 0, mem->data, mem->vk.size & ~3ull);
+      if (mem->dirty || (in_window && dev->pages_all)) {
+         gpu_write(mem->gpu, 0, mem->data, mem->size);
          mem->dirty = false;
          continue;
       }
-      if (!in_window)
+      if (!in_window || !any)
          continue;
-      if (n == -2)
-         n = gpu_dirty(pages, sizeof(pages) / sizeof(pages[0]));
-      if (n < 0) {
-         gpu_write(mem->gpu, 0, mem->data, mem->vk.size & ~3ull);
-         continue;
-      }
       /* Runs of written pages inside this memory. */
-      const uintptr_t lo = at - wg_window_at, hi = lo + mem->vk.size;
-      for (int32_t i = 0; i < n;) {
-         uintptr_t s = (uintptr_t)pages[i] * 4096, e = s + 4096;
-         int32_t k = i + 1;
-         while (k < n && pages[k] == pages[k - 1] + 1)
-            e += 4096, k++;
-         i = k;
-         s = MAX2(s, lo), e = MIN2(e, hi);
-         if (s >= e)
+      const uintptr_t lo = at - wg_window_at, hi = MIN2(lo + mem->size, (uintptr_t)wg_window_bytes);
+      const uint32_t last = (uint32_t)((hi - 1) / 4096);
+      for (uint32_t p = (uint32_t)(lo / 4096); p <= last;) {
+         if (!(dev->pages[p / 32] >> (p % 32) & 1)) {
+            p = dev->pages[p / 32] >> (p % 32) ? p + 1 : (p | 31) + 1;
             continue;
+         }
+         uint32_t q = p + 1;
+         while (q <= last && dev->pages[q / 32] >> (q % 32) & 1)
+            q++;
+         const uintptr_t s = MAX2((uintptr_t)p * 4096, lo), e = MIN2((uintptr_t)q * 4096, hi);
          const uintptr_t off = (s - lo) & ~3ull, len = align64(e - lo, 4) - off;
-         gpu_write(mem->gpu, off, mem->data + off, MIN2(len, (mem->vk.size & ~3ull) - off));
+         gpu_write(mem->gpu, off, mem->data + off, MIN2(len, mem->size - off));
+         p = q;
       }
    }
-   if (n == -2)
-      gpu_dirty(pages, 0); /* nothing mapped: the watch is still taken, so the next look starts here */
+   /* Every page is now this device's no more: those over its memories went up, the rest are other devices'. */
+   if (dev->pages_hi > dev->pages_lo)
+      memset(dev->pages + dev->pages_lo, 0, (dev->pages_hi - dev->pages_lo) * 4);
+   dev->pages_lo = dev->pages_hi = 0;
+   dev->pages_all = false;
 }
 
 /* Linear images in host-visible memory, whose bytes the guest maps: each level and layer loaded from the memory into
@@ -1888,7 +1924,7 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    struct wg_submit *s = calloc(1, sizeof(*s));
    if (!s)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
-   s->serial = ++dev->serial;
+   s->serial = ++submit_serial;
    util_dynarray_init(&s->readbacks, NULL);
    util_dynarray_init(&s->writes, NULL);
    util_dynarray_init(&s->bytes, NULL);
@@ -1948,22 +1984,22 @@ wg_submits_forget(struct wg_device *dev, struct wg_device_memory *mem)
    }
 }
 
-/* The device whose submits complete (one: vkr makes one device a context, and a guest one context). */
-static struct wg_device *devices[16];
-
-void
+bool
 wg_device_register(struct wg_device *dev, bool add)
 {
    for (uint32_t i = 0; i < 16; i++) {
       if (add && !devices[i]) {
          devices[i] = dev;
-         return;
+         return true;
       }
       if (!add && devices[i] == dev) {
          devices[i] = NULL;
-         return;
+         return true;
       }
    }
+   if (add)
+      fprintf(stderr, "wg: more than 16 devices at once: device creation fails\n");
+   return false;
 }
 
 /* Whether [p, p + size) is memory the renderer may write: the host-visible window or its own arena (memory 0's top

@@ -496,7 +496,13 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
       return result;
    }
    dev->queue.vk.driver_submit = wg_queue_submit;
-   wg_device_register(dev, true);
+   if (!wg_device_register(dev, true)) {
+      vk_queue_finish(&dev->queue.vk);
+      vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
+      vk_device_finish(&dev->vk);
+      vk_free(&dev->vk.alloc, dev);
+      return vk_error(pdev, VK_ERROR_TOO_MANY_OBJECTS);
+   }
    *pDevice = wg_device_to_handle(dev);
    return VK_SUCCESS;
 }
@@ -513,6 +519,7 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    wg_id_release(dev->push_buffer);
    wg_id_release(dev->fan_indices);
    free(dev->push_data);
+   free(dev->pages);
    if (dev->vk.mem_cache)
       vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
    vk_device_finish(&dev->vk);

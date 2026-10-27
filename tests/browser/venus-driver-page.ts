@@ -12,6 +12,8 @@ type Test = {
   venus_alloc(n: number): number;
   wgt_import(res: number): number; wgt_imported(): number;
   wgt_draw(fs: number, fn: number, variant: number): number; wgt_draw_done(): number;
+  wgt_two_init(window: number, size: number): number; wgt_two_map(d: number): number; wgt_two_read(d: number): number;
+  wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
 };
 
 /** Two runs of the program, each on a renderer of its own (a machine started again), sharing a shader store: the
@@ -129,4 +131,92 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
   ms.sort((a, b) => a - b);
   device.destroy();
   return { median: ms[ms.length >> 1], nudges: v.gpu.stats.nudges, empty, adapter: adapter.info.architecture };
+}
+
+/**
+ * Two devices on one window (vk/driver/wg_test.c `wgt_two_*`; VK3 L4c-A, the review's finding 1), with a write-watch
+ * of the test's own (web/window.ts's layout, no vCPUs) whose pages the test marks as the guest's stores would.
+ * `scenario`:
+ * - 'watch': device 1 writes its window memory without submitting, device 0 submits, then device 1 copies it back: the
+ *   bytes it wrote (the window's pages are taken once for every device).
+ * - 'serials': both devices' memories filled before their first submits; then device 1 and device 0 submit at once,
+ *   each with the same count of submits behind it: each reads back its own bytes (completions are matched to their
+ *   device's submit).
+ * - 'odd': device 0's window memory is `size` bytes (odd) and goes through an R8 image; its first submit uploads it
+ *   whole, its second the page the test marked: every byte arrives both times.
+ * Each step's bytes read back, against what was written.
+ */
+export async function runTwo(scenario: 'watch' | 'serials' | 'odd') {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const at = 0x1000_0000, bytes = 1 << 20, watchAt = 0x2000_0000;
+  // web/window.ts: GEN, NCPUS, WORDS, PAGES, ACK[128], RUNNING[128], the bitmap.
+  const head = new Int32Array(memory.buffer, watchAt, 4 + 256 + bytes / 4096 / 32);
+  head[2] = bytes / 4096 / 32;
+  head[3] = bytes / 4096;
+  const mark = (p: number, n: number) => {
+    for (let page = Math.floor((p - at) / 4096); page <= Math.floor((p + n - 1 - at) / 4096); page++) Atomics.or(head, 4 + 256 + (page >> 5), 1 << (page & 31));
+  };
+  const v = await VenusRenderer.create(module, memory, { at, bytes, watch: watchAt }, device);
+  const ex = v.raw as unknown as Test;
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  const size = scenario === 'odd' ? 4099 : 8192;
+  if (ex.wgt_two_init(at, size)) return { error: text(ex.wgt_error() >>> 0), errors };
+  const wait = async (d: number) => {
+    for (let k = 0; k < 500 && !ex.wgt_two_done(d); k++) await new Promise((r) => setTimeout(r, 10));
+    if (!ex.wgt_two_done(d)) throw new Error(`device ${d}'s fence never signalled`);
+  };
+  const write = (d: number, seed: number, watched: boolean) => {
+    const p = ex.wgt_two_map(d) >>> 0;
+    const b = Uint8Array.from({ length: size }, (_, i) => (i * 7 + seed) & 255);
+    new Uint8Array(memory.buffer, p, size).set(b);
+    if (watched) mark(p, size);
+    return b;
+  };
+  const read = (d: number) => new Uint8Array(memory.buffer, ex.wgt_two_read(d) >>> 0, size).slice();
+  // Where each check's read-back bytes first differ from what was written (-1: none).
+  const differs = (a: Uint8Array, b: Uint8Array) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i; return -1; };
+  const checks: Record<string, number> = {};
+  try {
+    if (scenario === 'odd') {
+      const first = write(0, 1, false);
+      ex.wgt_two_submit(0); await wait(0);
+      checks.whole = differs(read(0), first);
+      const second = write(0, 101, true);
+      ex.wgt_two_submit(0); await wait(0);
+      checks.page = differs(read(0), second);
+    } else if (scenario === 'watch') {
+      const a0 = write(1, 1, false), b0 = write(0, 2, false);
+      ex.wgt_two_submit(1); await wait(1);
+      ex.wgt_two_submit(0); await wait(0);
+      checks.first1 = differs(read(1), a0);
+      checks.first0 = differs(read(0), b0);
+      const a1 = write(1, 3, true);
+      ex.wgt_two_submit(0); await wait(0);
+      ex.wgt_two_submit(1); await wait(1);
+      checks.after = differs(read(1), a1);
+    } else {
+      const a0 = write(1, 1, false), b0 = write(0, 2, false);
+      ex.wgt_two_submit(0); await wait(0);
+      ex.wgt_two_submit(1); await wait(1);
+      for (const d of [0, 1]) new Uint8Array(memory.buffer, ex.wgt_two_read(d) >>> 0, size).fill(0);
+      ex.wgt_two_submit(1);
+      ex.wgt_two_submit(0);
+      await wait(1);
+      await wait(0);
+      // Both fences signalled: give a stray completion its turn before reading.
+      await new Promise((r) => setTimeout(r, 50));
+      checks.dev1 = differs(read(1), a0);
+      checks.dev0 = differs(read(0), b0);
+    }
+  } catch (e) {
+    return { error: String(e), checks, errors, warnings: v.gpu.stats.errors };
+  }
+  device.destroy();
+  return { checks, errors, warnings: v.gpu.stats.errors };
 }

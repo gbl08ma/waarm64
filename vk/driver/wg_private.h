@@ -157,7 +157,12 @@ struct wg_device {
    struct list_head linear_images;
    /* Submits whose work isn't done yet, oldest first (struct wg_submit). */
    struct list_head pending;
-   uint32_t serial;
+   /* The window's pages written since this device last uploaded (a bit each; wg_cmd.c `take_pages`: the write-watch is
+    * the window's, so each look's pages go to every device), with the words [pages_lo, pages_hi) that may hold bits;
+    * `pages_all`: every page counts. */
+   uint32_t *pages;
+   uint32_t pages_lo, pages_hi;
+   bool pages_all;
    /* Push constants past the immediates (wg_cmd.c): a uniform buffer the draws read at dynamic offsets, written from
     * `push_data` before each submit. */
    uint32_t push_buffer;
@@ -471,8 +476,9 @@ extern const struct vk_sync_type wg_sync_type;
 VkResult wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit);
 /* A memory's GPU buffer, made if it has none (0 without a device). */
 uint32_t wg_memory_buffer(struct wg_device_memory *mem);
-/* The devices whose submits wg_complete looks in; a device's pending submits dropped (it's being destroyed). */
-void wg_device_register(struct wg_device *dev, bool add);
+/* The devices whose submits wg_complete looks in and the window's written pages go to (at most 16: false when full);
+ * a device's pending submits dropped (it's being destroyed). */
+bool wg_device_register(struct wg_device *dev, bool add);
 void wg_device_drain(struct wg_device *dev);
 /* Forgets a memory in the pending submits' readbacks (it's being freed). */
 void wg_submits_forget(struct wg_device *dev, struct wg_device_memory *mem);
