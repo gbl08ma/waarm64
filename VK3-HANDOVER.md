@@ -6,51 +6,29 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-27, after L4e)
-
-- **The cold freeze was the guest's Mesa** (REPORT.md "VK3 L4e", `results/vk3/l4e/`): Venus's async present
-  (`vn_wsi_present_async`, Mesa 26.x and main) returns a failed present's error for the next present and drops that one
-  unsubmitted; a resize while the old swapchain's last present waits for cold GPU work makes the error, and mpv's first
-  fullscreen frame and its present fence are lost (frozen window, `vo` waiting forever at quit). Not upstream yet.
-- **Remedy:** `VN_PERF=no_async_present` in the desktop image (`images/arch/desktop-setup.sh`). Right on SwiftShader (3/3
-  first mpv; the end-of-file hang gone too) and the M4 (3/3 cold, 2/2 warm, 2/2 with `?gpu=vkpipedelay=1500`, which
-  without it leaves mpv unable to exit warm: the knob stays); mpv's bar holds (0 drops, 13–14%).
-- **The advanced path is on by default** (`?gpu=vkformats=held` holds it). `target/arch/desktop.qcow2` is rebuilt with
-  the setting (checked on SwiftShader and the M4); the hosted disk still needs replacing before the page is deployed
-  (backlog; the user's call).
-- Check: `CHECK=1 [GUEST_ENV=VN_PERF=no_async_present] node bench/vulkan/mpv-frames.ts` on SwiftShader.
-
-## State (2026-10-27, after L4d)
-
-- **The advanced path stays held** (REPORT.md "VK3 L4d", `results/vk3/l4d/`). Warm on the M4 it's right (0 green in 10
-  bare sessions, 0 of 48 since L4c-A; 6 of 6 under `--profile=high-quality`), at mpv's bar (0 drops, the guest 13–15%),
-  nothing refused by L4c-F's `read_write` check; dEQP-VK's 1,807 cases pass with it on SwiftShader.
-- **The blocker:** an mpv whose pipelines the host compiles for the first time (Metal's cache outlives profiles: every
-  first session of new mpv options) leaves the page's screen on its pre-fullscreen frame for good and can't exit (5 of 5
-  with the advanced path, `vkpipelines=sync` too; with the formats held only under `high-quality`). No fullscreen
-  swapchain resource reaches venus-share; fences aren't stuck. Backlog "mpv's window freezes when its first pipelines are cold".
-- **Proposed L4e** (bounded): a host knob delaying pipelines' readiness to reproduce it anywhere (SwiftShader too), then
-  find what mpv's present path waits on at the resize. Then turn the advanced path on.
-- nvidia.sh's `mpv-frames-all*` now read the page's screen twice (`GRAB=1 REGRAB=20`); questions below rewritten.
-
-## Where VK3 stands (2026-10-27, after L4c-F; the first supervisor session halted here, before L5)
+## Where VK3 stands (2026-10-27, after L4e; the second supervisor session halted here, before L5)
 
 - **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
   pollers' clamped timers, Dawn's late done), L3 (async pipelines; translated shaders kept across runs, 32 MiB, the
   origin's: approved by the user, the budget to become configurable), L3b (ci-machines.sh green), L4c (a fresh static
-  review's twelve real defects fixed, among them the M4's green chroma: REPORT.md "VK3 L4b–L4c"). NVIDIA runs of
-  5b9654ac and f55eacd7: presentation right in every way, mpv at its bar, pipelines right (REPORT.md "VK3: the NVIDIA
-  run after L2", "… after L2b").
-- **Parked by the user (2026-10-26): Venus at 1 fish on NVIDIA** (2.4–2.6 ms a frame against virgl's 1.5): 1 fish isn't
-  representative; likely NVIDIA's driver latency or its GPU leaving low power slowly. Venus is well ahead at 1,000 fish
-  and the toolkit (5.5 against 8.8 ms, 3.2 against 6.4), so the gate's scene clause is held at those sizes unless the
-  user reopens it (backlog "Venus at 1 fish on NVIDIA").
-- **L4's remainder:** libplacebo's advanced path (`float32-blendable`, tier1's storage formats) is still held by default
-  (`HELD_FEATURES`; `?gpu=vkformats=all` takes it). The green is fixed (0 of 32 bare sessions since L4c-A), so: check
-  mpv's frames and bar with it on at today's code (L4c-F refused `read_write` storage WebGPU can't give: libplacebo's
-  compute paths may meet it), dEQP-VK with it on, then turn it on by default; the NVIDIA run's mpv questions below.
+  review's twelve real defects fixed, among them the M4's green chroma: REPORT.md "VK3 L4b–L4c"), L4d–L4e (below).
+  NVIDIA runs of 5b9654ac and f55eacd7: presentation right in every way, mpv at its bar, pipelines right.
+- **Step 4 done: libplacebo's advanced path is on by default** (`?gpu=vkformats=held` holds it; REPORT.md "VK3 L4d",
+  "VK3 L4e"). Warm it was right at L4d; a cold first mpv froze its window, which L4e found in the **guest's Mesa**:
+  Venus's async present (`vn_wsi_present_async`, Mesa 26.x and main) returns a failed present's error (OUT_OF_DATE from
+  a swapchain retired at a resize) for the next present and drops that one unsubmitted. **Remedy:**
+  `VN_PERF=no_async_present` in the desktop image (`images/arch/desktop-setup.sh`; `target/arch/desktop.qcow2` rebuilt).
+  Right on SwiftShader and the M4, cold and warm; mpv's bar holds (0 drops, 13–14%). Check: `CHECK=1 node
+  bench/vulkan/mpv-frames.ts` on SwiftShader; `?gpu=vkpipedelay=<ms>` makes a warm host cold.
+- **Open from L4e:** report the Mesa bug upstream (the fix is written in vk/README.md "The guest's Mesa") and drop the
+  workaround when Arch ships one; **the hosted desktop disk (vmdisks.tny.im) is still the old image**: replace it before
+  the page is next deployed, or a user's first cold mpv freezes (backlog; deploys are the user's call). A new NVIDIA
+  bundle is due (the last predates L4c; questions below).
+- **Parked by the user (2026-10-26): Venus at 1 fish on NVIDIA** (2.4–2.6 ms a frame against virgl's 1.5): the gate's
+  scene clause is held at 1,000 fish and the toolkit unless the user reopens it (backlog "Venus at 1 fish on NVIDIA").
 - **The review's branch** `origin/review/venus-green` (78d08509) holds the review itself; its findings now live in
   vk/README.md and the backlog. Kept until the user says to delete it.
+- **Next:** the two out-of-context reviews in the backlog (the translator; the driver outside the import path), then L5.
 
 ## The plan (loops; the supervisor may reorder)
 

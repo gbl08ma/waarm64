@@ -1,18 +1,19 @@
 **Drafted 2026-10-26, at the user's request, by the session that supervised VK2's last loops and processed the user's
 NVIDIA run; the user approved the content (2026-10-26).** Covers **VK3** of the Vulkan plan
 ([docs/plans/graphics.md](docs/plans/graphics.md) §6), M8's graphics track. Later phases get their own kickoffs.
-**Updated 2026-10-27, at the user's request, by VK3's first supervisor session** (halted after L4c, before L5) so a new
-supervisor can pick up: the status below, the plan's marks, the lessons in "How VK3 runs".
+**Updated 2026-10-27, at the user's request, by VK3's first supervisor session** (halted after L4c, before L5) and again
+by the second (halted after L4e, before L5) so a new supervisor can pick up: the status below, the plan's marks, the
+lessons in "How VK3 runs".
 
 ## Status for a new supervisor (2026-10-27)
 
 Read `VK3-HANDOVER.md` first (lean: where VK3 stands, the plan, the next NVIDIA run's questions, findings worth not
-re-discovering); REPORT.md's "VK3 …" sections have the history. In short: steps 1–3 of the plan below are done, the
-user's two NVIDIA runs processed; step 4 is half done (its green chroma found and fixed by a static review's fix loops,
-L4c; the advanced path not yet on by default: the handover's L4d); steps 5–8 are open. **The user parked step 2's bar
-at 1 fish on NVIDIA** (not representative; likely the driver or the GPU's power states): the gate's scene clause is held
-at 1,000 fish and the toolkit unless the user reopens it. Start with L4d, then the two out-of-context reviews in the
-backlog, then L5.
+re-discovering); REPORT.md's "VK3 …" sections have the history. In short: steps 1–4 of the plan below are done, the
+user's two NVIDIA runs processed (step 4's last blocker, a cold mpv's frozen window, was the guest's Mesa: the desktop
+image presents synchronously; the hosted disk still needs replacing before a deploy, the user's call); steps 5–8 are
+open, and a new NVIDIA bundle is due. **The user parked step 2's bar at 1 fish on NVIDIA** (not representative; likely
+the driver or the GPU's power states): the gate's scene clause is held at 1,000 fish and the toolkit unless the user
+reopens it. Start with the two out-of-context reviews in the backlog, then L5.
 
 Start **VK3: Venus right everywhere, then the emulated rows.** VK2 made Venus draw: the direct set translated onto
 WebGPU, frames to the screen through virgl, mpv on Vulkan at its bar, 1,463 dEQP-VK cases in CI (bench/vulkan/REPORT.md
@@ -122,7 +123,7 @@ re-discovering" and each state's.
    Venus's frame at 1 fish no slower than virgl's on any host.
 3. **[done: L3]** **Pipelines made asynchronously, and cached across runs** (plan §7: Metal's ~80 ms first compile): the ring stalls
    while one is made, and WGSL is kept by SPIR-V hash in the browser's storage.
-4. **[half done: L4, L4b, L4c; L4d next]** **libplacebo's advanced path:** the M4's green VA-API chroma with `float32-blendable`. Then that format and tier1's
+4. **[done: L4, L4b, L4c, L4d, L4e]** **libplacebo's advanced path:** the M4's green VA-API chroma with `float32-blendable`. Then that format and tier1's
    storage formats can come back, and mpv gets its scalers.
 5. **The translator's missing adapter features:** `subgroups`, `shader-f16`, read-write storage with `tier2`.
 6. **The driver's gaps from dEQP-VK:**
