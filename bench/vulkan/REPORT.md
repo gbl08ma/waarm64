@@ -1519,7 +1519,7 @@ deqp-vk in the Arch guest, `bench/gpu/deqp-run.ts vk` with `CASES=`); the deskto
   `flatLast`, `flatFanLast`, `flatFanFirst`, four `transform feedback:` cases; `tests/wgsl.test.ts` a captured block's
   record. The link test's parse of pipeline cache data now steps to 4-aligned headers (a shader's data needn't end on
   a word: the vertex stage's longer WGSL made one that didn't).
-- **CI** (the code at cde8ac0a/990483ac): `scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (828 s: the
+- **CI** (the code at 9f3fd87e, docs after it): `scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (828 s: the
   4,599-case list in 570 s, YCbCr's 773 in 89 s, the replays).
 
 ## VK3 L7.3: GTK4's black frames were L4c-D's partial CLEAR; GTK4 takes GL anyway; YCbCr on by default (GTK4 aborted without it)
