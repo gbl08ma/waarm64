@@ -417,11 +417,12 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
       .maxMipLevels = util_logbase2(dim) + 1,
       .maxArrayLayers = info->type == VK_IMAGE_TYPE_3D ? 1 : p->maxImageArrayLayers,
-      /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage, and none of the formats
-       * of two or four 32-bit channels. */
+      /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage, and none of the 32-bit
+       * integer formats nor the float ones of two or four channels. */
       .sampleCounts = info->tiling == VK_IMAGE_TILING_OPTIMAL && info->type == VK_IMAGE_TYPE_2D && attachment &&
                             !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) && tf && strncmp(tf->name, "rg32", 4) &&
-                            strncmp(tf->name, "rgba32", 6) &&
+                            strncmp(tf->name, "rgba32", 6) && strcmp(tf->name, "r32uint") &&
+                            strcmp(tf->name, "r32sint") &&
                             !(info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
                          ? VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT
                          : VK_SAMPLE_COUNT_1_BIT,

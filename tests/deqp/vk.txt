@@ -12,7 +12,10 @@
 # (7), which crash deqp-vk after enough earlier cases, with the renderer of before too (docs/backlog.md "Memory").
 # VK3 L4f: the cases the out-of-context reviews' fixes (the cloud session's and L4f's) turn into passes, and the
 # passing cases of the groups L4f sampled for them (indexed strips, storage images of cube views, inverted depth
-# ranges, demote, depth and stencil input attachments, memory binding: 533 more), in the mustpass list's order.
+# ranges, demote, depth and stencil input attachments, memory binding: 533 more, less the 7 below), in mustpass order.
+# Out since L4f: samplemask_early_fragment_tests_depth_samples_4 (it passed while depth resolves were dropped; early
+# fragment tests aren't honoured), multisampled 32-bit integer and two- and four-channel float formats (now not
+# supported, as WebGPU has them), zero_initialize_workgroup_memory.max_workgroup_memory.* (crash deqp-vk in a long run).
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -615,8 +618,6 @@ dEQP-VK.compute.pipeline.indirect_dispatch.upload_buffer.multi_dispatch
 dEQP-VK.compute.pipeline.indirect_dispatch.upload_buffer.multiple_groups_multiple_invocations
 dEQP-VK.compute.pipeline.indirect_dispatch.upload_buffer.single_invocation
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.composites.1
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.16
-dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.4
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroups.x
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroups.z
 dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.repeat_pipeline.x_16_even_repeat_2
@@ -1067,7 +1068,6 @@ dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r16g16b16a16_sint.
 dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32_sfloat.input.load.store.clear_draw
 dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32_uint.input.dont_care.dont_care.clear_draw
 dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32g32_sfloat.input.dont_care.dont_care.draw
-dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32g32_uint.input.dont_care.dont_care.self_dep_clear_draw_use_input_aspect_ms
 dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32g32b32a32_sfloat.load.clear_draw
 dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32g32b32a32_sint.input.dont_care.dont_care.self_dep_draw_use_input_aspect
 dEQP-VK.renderpasses.renderpass1.dedicated_allocation.formats.r32g32b32a32_uint.input.dont_care.store.clear_draw
@@ -1226,12 +1226,9 @@ dEQP-VK.renderpasses.renderpass1.suballocation.formats.r16g16_sint.input.load.do
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r16g16b16a16_sfloat.input.load.store.draw_use_input_aspect
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r16g16b16a16_uint.input.dont_care.dont_care.self_dep_clear_draw_ms
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32_sfloat.input.dont_care.dont_care.self_dep_draw
-dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32_sint.input.dont_care.dont_care.self_dep_draw_use_input_aspect_ms
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32_uint.input.dont_care.store.clear_draw_use_input_aspect
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32g32_sfloat.dont_care.draw
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32g32_sint.input.clear.dont_care.clear_draw_use_input_aspect
-dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32g32b32a32_sfloat.input.clear.dont_care.self_dep_clear_draw_ms
-dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32g32b32a32_sint.input.clear.dont_care.self_dep_clear_ms
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r32g32b32a32_uint.input.load.dont_care.clear_draw_use_input_aspect
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r8_sint.input.load.dont_care.self_dep_clear_draw_ms
 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r8_uint.input.load.dont_care.self_dep_draw
@@ -2244,7 +2241,6 @@ dEQP-VK.fragment_operations.early_fragment.discard_no_early_fragment_tests_depth
 dEQP-VK.fragment_operations.early_fragment.early_fragment_tests_stencil_no_attachment
 dEQP-VK.fragment_operations.early_fragment.no_early_fragment_tests_depth_no_attachment
 dEQP-VK.fragment_operations.early_fragment.no_early_fragment_tests_stencil
-dEQP-VK.fragment_operations.early_fragment.samplemask_early_fragment_tests_depth_samples_4
 dEQP-VK.fragment_operations.early_fragment.samplemask_no_early_fragment_tests_depth_samples_4
 dEQP-VK.fragment_operations.occlusion_query.conservative_test_depth_clear
 dEQP-VK.fragment_operations.occlusion_query.conservative_test_depth_clear_depth_write

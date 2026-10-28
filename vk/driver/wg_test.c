@@ -595,7 +595,7 @@ wgt_imported(void)
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[22];
+   static uint32_t out[23];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -644,8 +644,8 @@ wgt_caps(void)
    /* The out-of-context review of the translator, findings 3, 12 and 13. */
    PFN_vkGetPhysicalDeviceImageFormatProperties image_formats =
       (PFN_vkGetPhysicalDeviceImageFormatProperties)vkGetInstanceProcAddr(inst, "vkGetPhysicalDeviceImageFormatProperties");
-   const VkFormat ms[] = { VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM };
-   for (uint32_t k = 0; k < 2; k++) {
+   const VkFormat ms[] = { VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R32_UINT };
+   for (uint32_t k = 0; k < 3; k++) {
       VkImageFormatProperties ip = { 0 };
       image_formats(pdev, ms[k], VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 0, &ip);
       out[i++] = ip.sampleCounts;

@@ -6,6 +6,19 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-28, after L4f)
+
+- **Done:** the reviews' remaining findings: 14 fixed (cube storage views, dual-source `@blend_src`, read-only depth
+  attachments, signed shared atomics, separately indexed texture/sampler arrays, terminate and demoted helpers, one
+  uniform-condition var, inverted depth ranges, `CONSTANT_ALPHA`, depth/stencil resolves, a compute variant's freed
+  module, sample counts, mutable format lists, a depth LOD's rounding), the rest filed (backlog "The Vulkan driver's gaps").
+- **dEQP-VK:** the list 1,807 → 2,333 (533 in: 65 old failures the cloud's fixes turned, L4f's, and its samples'
+  passes; 7 out: 4 multisampled 32-bit formats now NotSupported as WebGPU has them, an early-fragment case that passed
+  only while depth resolves were dropped, 2 crash-prone; backlog). The Mac's dual-source samples 0 → 45 of 49.
+- **Not shown:** the review's finding 4 (an SSBO read in one stage, written in another) didn't reproduce:
+  `nir_opt_access` marks the reader's loads non-writeable; the translator now types by writes anyway, and refuses a
+  buffer the fragment stage writes and the vertex stage reads. Resolves can't run dEQP until `sampleRateShading` (L7).
+
 ## Where VK3 stands (2026-10-27, after L4e and the out-of-context reviews; next L4f, then L5)
 
 - **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
@@ -31,41 +44,35 @@ docs and the backlog; git keeps the old handovers.
 - **The review's branch** `origin/review/venus-green` (78d08509) holds the review itself; its findings now live in
   vk/README.md and the backlog. Kept until the user says to delete it.
 - **The out-of-context reviews of the translator and caps and of the driver** (a cloud session, 2026-10-27, after
-  L4e; `VENUS-COMPILER-REVIEW.md`, `VENUS-DRIVER-REVIEW.md`, each triaged at its top): 17 and 11+ findings. Fixed
+  L4e; their files deleted at L4f's end: `git show 301dd138:VENUS-COMPILER-REVIEW.md`, `…:VENUS-DRIVER-REVIEW.md`):
+  17 and 11+ findings, the open ones in docs/backlog.md "The Vulkan driver's gaps". Fixed
   there, each with its test failing first on SwiftShader (`tests/venus-driver.test.ts`, `tests/wgsl.test.ts`,
   `tests/venus-renderer.test.ts`; 31 pass): indexed strips without restart, a pipeline without a fragment shader in a
   pass with colour, depth bias on lines (each an invalid WebGPU submit); the submit that grows the push buffer
   (invalid); a linear image's freed memory reached by every submit (heap use after free); dynamic storage offsets read
   back at 0; odd-sized storage bindings; `packHalf2x16`/`unpackHalf2x16` refused; a weak compare-exchange;
-  `pipelineCacheUUID` blind to the caps. `scripts/ci.sh` ran there; **dEQP-VK didn't** (no images in the cloud).
-- **Next:** L4f (the reviews' remaining findings, below), then L5.
+  `pipelineCacheUUID` blind to the caps; L4f the rest (above).
+- **Next:** L5.
 
 ## The plan (loops; the supervisor may reorder)
 
 - [x] L4d: L4's remainder checked: right and at its bar warm, but a cold first run freezes mpv's window; still held.
 - [x] L4e: the cold freeze is Mesa's async present (the desktop image presents synchronously); the advanced path on by default.
-- [ ] L4f: the out-of-context reviews' remaining findings. First `scripts/ci-deqp-vk.sh` on the reviews' fixes (the
-  cases they turn into passes, e.g. `draw.renderpass.*indexed*triangle_strip`, added to `tests/deqp/vk.txt`), and
-  `scripts/ci-debian.sh`. Then, by the files' rank: cube storage views (`2d-array` views; likely backlog's 7 dEQP
-  failures), an SSBO read in one stage and written in another (an invalid layout), signed shared atomics, a read-only
-  depth attachment that is also sampled (`depthReadOnly`), mutable-format views, separately indexed texture and
-  sampler arrays, compute variants made from a freed module id, semaphore waits never honoured, depth/stencil
-  resolves dropped, query availability, `vkCmdDispatchBase`, inverted depth ranges, `CONSTANT_ALPHA`, shadow
-  sampling's LOD, helper invocations and `terminateInvocation`, `workgroupUniformLoad`'s workgroup memory,
-  multisample counts, fans. **The user's calls (2026-10-28):** dual-source blending: implement `@blend_src` (WGSL's
-  `dual_source_blending`) and keep advertising it where the adapter has the feature; if it can't pass
-  `pipeline.*.blend.dual_source.*`, stop advertising it in that commit. API 1.3: **keep it**; its missing required
-  features (multiview, inline uniform blocks, BDA, R32 storage atomics, texel buffers) are gaps the rest of VK3 and VK4
-  fill as they go, not defects to hide: take the cheap ones in L4f if they fit, else file them (backlog "The Vulkan
-  driver's gaps"). Each finding fixed with its test failing first, or filed in the backlog (or this handover's plan, if
-  a later loop of VK3 takes it) with why. At its end the two review files are deleted (their open findings in
-  docs/backlog.md or here), and an out-of-context review of what L4f changed.
+- [x] L4f: the reviews' remaining findings fixed (each with its test failing first or planted back) or filed in
+  docs/backlog.md "The Vulkan driver's gaps"; dual-source blending implemented and kept advertised (the user's call:
+  it passes the Mac's `dual_source` samples but where a draw mixes the constant's colour and alpha); API 1.3 kept, its
+  gaps filed. The review files deleted. The out-of-context review of what L4f changed is the supervisor's.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`: see
   backlog for what L4c-F refused).
-- [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
-  dEQP-VK on the Mac's GPU; the 34 `load_store_op_none` failures; bind groups remade every frame).
+- [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries with their availability and strided
+  copies (the driver review's 10), texel buffers, depth/stencil copies, dEQP-VK on the Mac's GPU (`sway-mac.sh vk`
+  runs it since L4f: `SCRIPT=deqp-run.ts CASES=… bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`); the 34
+  `load_store_op_none` failures; bind groups remade every frame; timeline waits before their signal (the driver
+  review's 8: backlog "Synchronization")).
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
+  With `sampleRateShading`, dEQP-VK's `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to
+  the list (L4f's resolves are checked by `tests/venus-driver.test.ts` only).
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
 - [ ] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed; the findings worth taking in VK3

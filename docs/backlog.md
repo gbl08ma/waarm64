@@ -644,7 +644,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), 34 of
     `renderpasses.*.load_store_op_none`'s 91 supported cases (VK3 L4c-D: stencil8 attachments, depth or stencil
     NONE/DONT_CARE, an integer resolve, `alphablend`; not looked into further), vertex buffer offsets that aren't
-    multiples of 4, early fragment tests (`fragment_operations.early_fragment`); a depth or stencil attachment that is
+    multiples of 4, early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
+    passed only while depth resolves were dropped, and is out of the list since L4f); a depth or stencil attachment that is
     also an input attachment in a writable layout with a self-dependency (a feedback loop: WebGPU refuses a texture
     both written and sampled in one pass; `renderpasses.*.formats.*.input.*self_dep*` fail with a usage-scope error;
     a copy of the attachment to sample would do it); a draw whose colour blends with both `CONSTANT_COLOR` and
@@ -676,9 +677,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     and grid edges the largest; to the eye the same, no bias. The tolerance is 3% meanwhile. Next: diff its passes
     one at a time (GFXReconstruct's `--screenshots` of an earlier draw), suspects its screen effects' dithering and a
     conversion's rounding.
-  - **Memory**: some `memory.binding` cases (aliasing and odd sizes) and two `memory` crashes (vkr's
-    `vkFreeMemory resulted in CS error`), not looked into (a linear image whose memory was freed was still loaded
-    and stored by every submit until the driver's out-of-context review: a suspect; not yet rerun). `memory.allocation.random.*` and
+  - **Compute**: `compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.*` crash deqp-vk (`.1` alone;
+    `.16` and `.4` pass alone but crashed it in the long list, VK3 L4f: out of `tests/deqp/vk.txt`); not looked into
+    (the device's workgroup storage, advertised 16 bytes under WebGPU's since L4f, is the suspect to rule out first).
+  - **Memory**: 3 `memory.binding.aliasing` cases and two `memory` crashes (vkr's `vkFreeMemory resulted in CS
+    error`), not looked into (VK3 L4f's rerun, after the driver review's fix of a linear image's freed memory: the
+    other `memory.binding` failures of L5's samples pass, the crashes stay). `memory.allocation.random.*` and
     `memory.mapping.suballocation.random.*` pass alone but crash deqp-vk after enough earlier cases (VK3 L4c-F: with
     its 179 cases added to the pass list, on the renderer of before as on the new one): something the renderer keeps
     across cases (its arena's use or fragmentation?); they're out of `tests/deqp/vk.txt` until it's found.

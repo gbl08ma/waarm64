@@ -130,8 +130,8 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
   `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers
-  only vertex input), samples 1 and 4 (1 for the formats of two or four 32-bit channels, which WebGPU doesn't
-  multisample), views of a mutable image in its format's sRGB twin only (WebGPU's `viewFormats`: a format list naming
+  only vertex input), samples 1 and 4 (1 for the 32-bit integer formats and the float ones of two or four
+  channels, which WebGPU doesn't multisample), views of a mutable image in its format's sRGB twin only (WebGPU's `viewFormats`: a format list naming
   another format is refused by the image-format query, and such a view warned of); plus the extensions
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
