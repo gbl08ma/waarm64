@@ -237,6 +237,7 @@ for (const [scenario, what] of [
   ['indirectBeside', 'a dispatch whose arguments share a memory with a read-only storage buffer it reads'],
   // L6c (the review of L5-L6a: finding 1).
   ['emptyAfterHeld', 'a submit of a fence alone behind a held submit signals after it'],
+  ['queryAfterDispatch', 'an occlusion query begun and ended outside a render pass around dispatches'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

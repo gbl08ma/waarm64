@@ -1568,7 +1568,10 @@ readback(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, Vk
 
 #define WG_QUERY_SET_MAX 4096 /* WebGPU's largest query set */
 
-/* A query reported as passing: its value 1 in the pool's buffer (outside a pass; in one, at its end). */
+static void end_pass(struct replay *r);
+
+/* A query reported as passing: its value 1 in the pool's buffer (outside a render pass, a compute pass ended first: the
+ * encoder takes no write while one is open; in a render pass, at its end). */
 static void
 query_passing(struct replay *r, struct wg_query_pool *pool, uint32_t index)
 {
@@ -1576,6 +1579,8 @@ query_passing(struct replay *r, struct wg_query_pool *pool, uint32_t index)
       util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, true }));
       return;
    }
+   if (r->pass != NONE)
+      end_pass(r);
    static const uint64_t one = 1;
    gpu_update(pool->buf, index * 8.0, &one, 8);
 }

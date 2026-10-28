@@ -60,6 +60,8 @@ FN(CmdEndRenderPass); FN(CmdBindPipeline); FN(CmdBindDescriptorSets); FN(CmdBind
 FN(CmdPushConstants); FN(CmdDrawIndexed); FN(CmdDraw); FN(CmdSetViewport); FN(CmdSetScissor); FN(CmdCopyImageToBuffer);
 FN(CmdDispatch); FN(CmdFillBuffer); FN(CreateFence); FN(GetFenceStatus); FN(QueueSubmit); FN(ResetFences);
 FN(GetMemoryFdPropertiesKHR); FN(CreatePipelineCache); FN(GetPipelineCacheData);
+FN(CreateQueryPool); FN(DestroyQueryPool); FN(CmdResetQueryPool); FN(CmdBeginQuery); FN(CmdEndQuery);
+FN(CmdCopyQueryPoolResults);
 
 static VkInstance instance;
 static VkDevice dev;
@@ -187,7 +189,8 @@ init(void)
    DLOAD(CmdPushConstants); DLOAD(CmdDrawIndexed); DLOAD(CmdDraw); DLOAD(CmdSetViewport); DLOAD(CmdSetScissor);
    DLOAD(CmdCopyImageToBuffer); DLOAD(CmdDispatch); DLOAD(CmdFillBuffer); DLOAD(CreateFence); DLOAD(GetFenceStatus);
    DLOAD(QueueSubmit); DLOAD(ResetFences); DLOAD(GetMemoryFdPropertiesKHR); DLOAD(CreatePipelineCache);
-   DLOAD(GetPipelineCacheData);
+   DLOAD(GetPipelineCacheData); DLOAD(CreateQueryPool); DLOAD(DestroyQueryPool); DLOAD(CmdResetQueryPool);
+   DLOAD(CmdBeginQuery); DLOAD(CmdEndQuery); DLOAD(CmdCopyQueryPoolResults);
    GetDeviceQueue(dev, 0, 0, &queue);
    return 0;
 }
@@ -1404,6 +1407,9 @@ wgt_fl_done(uint32_t i)
  *    101, 102, 103, 104 (the L5-L6a review's finding 2: `a` read-write made the uniform and it one usage scope's
  *    conflict, which invalidated the submit).
  * 18: as 17, dispatched indirectly with its arguments (1, 1, 1) at [512, 524) of that memory: the same.
+ * 20: as 7 (4,096 bytes) inside an occlusion query begun and ended outside a render pass, its result copied to
+ *    [1024, 1028): v[k] at [0, 16) and 1 there (passing; the L5-L6a review's finding 3: the query's write was recorded
+ *    with the compute pass open, which invalidated the submit).
  * 19: as 13's copy, held for its wait, then a submit of nothing but a fence (vkQueueSubmit(queue, 0, NULL, fence), as
  *    Mesa's vkQueueWaitIdle): the fence unsignalled until the host's signal (`wgt_misc_signal`), and the copy 0x22 (the
  *    L5-L6a review's finding 1: such a submit went ahead of held ones, its fence saying they were done).
@@ -2156,10 +2162,22 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       }
       CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, scenario == 6, &dynamic);
+      VkQueryPool qp = VK_NULL_HANDLE;
+      if (scenario == 20) {
+         const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                            .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = 1 };
+         CHECK(CreateQueryPool(dev, &qi, NULL, &qp));
+         CmdResetQueryPool(cmd, qp, 0, 1);
+         CmdBeginQuery(cmd, qp, 0, 0);
+      }
       for (uint32_t k = 0; k < (scenario >= 6 ? 4 : 5000); k++) {
          push[28] = k;
          CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
          CmdDispatch(cmd, 1, 1, 1);
+      }
+      if (scenario == 20) {
+         CmdEndQuery(cmd, qp, 0);
+         CmdCopyQueryPoolResults(cmd, qp, 0, 1, out, 1024, 4, VK_QUERY_RESULT_WAIT_BIT);
       }
    }
    CHECK(EndCommandBuffer(cmd));
