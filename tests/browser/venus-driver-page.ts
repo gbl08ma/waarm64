@@ -378,7 +378,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -392,7 +392,7 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   for (let k = 0; k < 1000 && !ex.wgt_misc_done(); k++) await new Promise((r) => setTimeout(r, 10));
   if (!ex.wgt_misc_done()) return { error: 'the fence never signalled', errors, warnings: v.gpu.stats.errors };
@@ -448,6 +448,29 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   } else if (scenario === 'freedModule') {
     new Float32Array(want.buffer, 0, 1)[0] = 0.25;
     Object.assign(checks, { depth: [0, 4096, want] });
+  } else if (scenario === 'texelBuffer') {
+    // What texel-buffer.comp reads of S through each view, as integers, and writes as half floats.
+    const w = new Int32Array(want.buffer, 0, 1024);
+    const dv = new DataView(S.buffer);
+    const s8 = (b: number) => (b << 24) >> 24;
+    for (let i = 0; i < 16; i++) {
+      const o = i * 16;
+      w.set([S[4 * i + 2], S[4 * i + 1], S[4 * i], S[4 * i + 3]], o);
+      w.set([dv.getInt16(256 + 2 * i, true), 0, 0, 1], o + 4);
+      const p = dv.getUint32(512 + 4 * i, true);
+      w.set([p & 0x3ff, (p >>> 10) & 0x3ff, (p >>> 20) & 0x3ff, p >>> 30], o + 8);
+      w.set([0, 1, 2].map((k) => Math.max(s8(S[768 + 3 * i + k]), -127)).concat(127), o + 12);
+    }
+    w.set([16, 16, 16, 7], 256);
+    // Half floats of small integers and halves: exact.
+    const half = (x: number) => {
+      if (x === 0) return Object.is(x, -0) ? 0x8000 : 0;
+      const sign = x < 0 ? 0x8000 : 0, a = Math.abs(x), e = Math.floor(Math.log2(a));
+      return sign | ((e + 15) << 10) | Math.round((a / 2 ** e - 1) * 1024);
+    };
+    const h = new Uint16Array(want.buffer, 2048, 64);
+    for (let i = 0; i < 16; i++) h.set([half(i), half(-0.5 * i), half(0.25), half(1 + i)], 4 * i);
+    Object.assign(checks, { fetched: [0, 1024, want], sizes: [1024, 1040, want], stored: [2048, 2176, want], rest: [2176, 4096, want] });
   } else if (scenario === 'waitBeforeSignal') {
     want.fill(0x22, 0, 64);
     Object.assign(checks, { copied: [0, 4096, want] });

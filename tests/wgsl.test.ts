@@ -19,7 +19,7 @@ const MODULE = join(root, 'target/vk/venus.wasm');
 
 /** Why a stage may not translate: what the direct set doesn't offer, and the translator's known gaps (docs/backlog.md
  * "The Vulkan driver's gaps": vkQuake's variants for 16-bit floats, translated since VK3 L5, reach these). */
-const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|texel buffers|dynamically indexed|^image atomics$|^a texture offset that isn't a constant$/;
+const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|dynamically indexed|^image atomics$|^a texture offset that isn't a constant$/;
 
 type Stage = { name: string; stage: number; words: Uint32Array };
 

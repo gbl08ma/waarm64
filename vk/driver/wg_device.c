@@ -1125,6 +1125,24 @@ wg_CreateBufferView(VkDevice _device, const VkBufferViewCreateInfo *pCreateInfo,
    struct wg_buffer_view *view = vk_buffer_view_create(&dev->vk, pCreateInfo, pAllocator, sizeof(*view));
    if (!view)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   VK_FROM_HANDLE(wg_buffer, buffer, pCreateInfo->buffer);
+   uint32_t x = 0, p1[3] = { 0 };
+   bool storage;
+   if (!wg_texel_buffer_layout(view->vk.format, &x, p1, &storage))
+      fprintf(stderr, "wg: a buffer view of format %u, which texel buffers don't offer\n", view->vk.format);
+   /* Its words bound from the memory's GPUBuffer at a storage-aligned offset; the parameters say where its first texel
+    * is in that binding, and how many texels it has (a texel past them reads 0). */
+   view->mem = buffer->mem;
+   const uint64_t start = buffer->offset + view->vk.offset, align = MAX2(wg_limits.min_storage_buffer_offset_alignment, 4);
+   view->at = start / align * align;
+   view->size = align64(start - view->at + view->vk.range, 4);
+   if (view->mem && view->at + view->size > view->mem->size)
+      view->size = view->mem->size - view->at;
+   const uint32_t params[8] = { x, (uint32_t)(start - view->at), view->vk.elements, 0, p1[0], p1[1], p1[2], 0 };
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"size\":32,\"usage\":%u}", 0x40 | 0x8); /* UNIFORM | COPY_DST */
+   view->params = wg_create_json(WG_KIND_BUFFER, &j);
+   gpu_write(view->params, 0, params, sizeof(params));
    *pView = wg_buffer_view_to_handle(view);
    return VK_SUCCESS;
 }
@@ -1134,8 +1152,10 @@ wg_DestroyBufferView(VkDevice _device, VkBufferView _view, const VkAllocationCal
 {
    VK_FROM_HANDLE(wg_device, dev, _device);
    VK_FROM_HANDLE(wg_buffer_view, view, _view);
-   if (view)
-      vk_buffer_view_destroy(&dev->vk, pAllocator, &view->vk);
+   if (!view)
+      return;
+   wg_id_release(view->params);
+   vk_buffer_view_destroy(&dev->vk, pAllocator, &view->vk);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

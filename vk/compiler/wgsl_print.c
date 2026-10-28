@@ -21,6 +21,7 @@ struct res_use {
    bool used;
    struct wgsl_resource r;
    bool signed_atomic, unsigned_atomic;
+   bool texel; /* a texel buffer's words (texel_buffer) */
 };
 
 struct ctx {
@@ -38,6 +39,7 @@ struct ctx {
    bool subgroups;   /* subgroups (wgsl_lower's subgroups of the adapter's size); else of one invocation */
    bool f16;         /* shader-f16 */
    bool uses_subgroup_ops, uses_sg_inv, uses_sg_size;
+   bool uses_texel_buffers;
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
@@ -376,6 +378,22 @@ atomic_sign(struct ctx *c, nir_atomic_op op, bool *is_signed, bool *is_unsigned)
       failf(c, "signed and unsigned atomic min or max on one array");
 }
 
+/* A texel buffer (uniform or storage) at `index`: its words as a storage buffer there, and its view's parameters as a
+ * uniform buffer at the next binding (the driver's, made with the VkBufferView: the format's layout, the first texel's
+ * byte and the texel count). The format is the view's, known only when the descriptor is bound, so loads and stores
+ * decode and encode it from the parameters (`wg_tb_*`). */
+static void
+texel_buffer(struct ctx *c, unsigned index, bool writes)
+{
+   struct res_use *r = resource(c, index, WGSL_STORAGE_READ);
+   r->texel = true;
+   if (writes)
+      r->r.kind = WGSL_STORAGE, r->r.written = true;
+   struct res_use *p = resource(c, index + 1, WGSL_UNIFORM);
+   p->r.size = 32;
+   c->uses_texel_buffers = true;
+}
+
 /* The gather: resources, I/O and what the entry point needs. */
 static void
 gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
@@ -428,6 +446,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_image_load:
    case nir_intrinsic_image_store:
    case nir_intrinsic_image_size: {
+      if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
+         texel_buffer(c, const_index(c, &intr->src[0]), intr->intrinsic == nir_intrinsic_image_store);
+         break;
+      }
       struct res_use *r = resource(c, const_index(c, &intr->src[0]), WGSL_STORAGE_TEXTURE);
       r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
       r->r.format = nir_intrinsic_format(intr);
@@ -591,6 +613,12 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
 static void
 gather_tex(struct ctx *c, nir_tex_instr *tex)
 {
+   if (tex->sampler_dim == GLSL_SAMPLER_DIM_BUF) {
+      if (tex->op != nir_texop_txf && tex->op != nir_texop_txs)
+         failf(c, "the texel buffer op %d", tex->op);
+      texel_buffer(c, tex->texture_index, false);
+      return;
+   }
    const bool sampled = tex->op != nir_texop_txf && tex->op != nir_texop_txf_ms && tex->op != nir_texop_txs &&
                         tex->op != nir_texop_query_levels && tex->op != nir_texop_texture_samples;
    struct res_use *t = resource(c, tex->texture_index, WGSL_TEXTURE);
@@ -702,6 +730,86 @@ declare_resources(struct ctx *c)
       }
       }
       c->info->resources[c->info->resource_count++] = *r;
+   }
+}
+
+/* Texel buffers' loads and stores (texel_buffer): the view's parameters are two vec4s, p0 = (type | texel bytes << 8 |
+ * swizzle << 16, the first texel's byte in the binding, the texel count, 0) and p1 = (each channel's width, each
+ * channel's first bit in the texel, a byte each; the output component each channel is stored from, 3 bits each; 0):
+ * the driver's (wg_format.c `wg_texel_buffer_layout`). The type is 0 unorm, 1 snorm, 2 uint, 3 sint, 4 float (16 or
+ * 32 bits), 5 an unsigned 11- or 10-bit float, 6 uscaled, 7 sscaled (loads only); the swizzle picks each output component from a channel (0-3) or 0 or 1
+ * (4, 5), as pipe_swizzle. A channel never straddles a word (the driver offers only such formats); a texel past the
+ * count reads 0 and isn't written. Values travel as their 32-bit patterns, as everything in the printer does. */
+static const char *const texel_buffer_helpers =
+   "fn wg_tb_dec(v: u32, ty: u32, n: u32) -> u32 {\n"
+   "  switch ty {\n"
+   "    case 0u: { return bitcast<u32>(f32(v) / f32(0xffffffffu >> (32u - n))); }\n"
+   "    case 1u: { let s = bitcast<i32>(v << (32u - n)) >> (32u - n);\n"
+   "      return bitcast<u32>(max(f32(s) / f32((1u << (n - 1u)) - 1u), -1.0)); }\n"
+   "    case 3u: { return bitcast<u32>(bitcast<i32>(v << (32u - n)) >> (32u - n)); }\n"
+   "    case 6u: { return bitcast<u32>(f32(v)); }\n"
+   "    case 7u: { return bitcast<u32>(f32(bitcast<i32>(v << (32u - n)) >> (32u - n))); }\n"
+   "    case 4u: { if (n == 16u) { return bitcast<u32>(unpack2x16float(v).x); } return v; }\n"
+   "    case 5u: { let mb = n - 5u; let e = v >> mb; let m = v & ((1u << mb) - 1u);\n"
+   "      if (e == 0u) { return bitcast<u32>(f32(m) * exp2(-14.0 - f32(mb))); }\n"
+   "      if (e == 31u) { return select(0x7f800000u, 0x7fc00000u, m != 0u); }\n"
+   "      return ((e + 112u) << 23u) | (m << (23u - mb)); }\n"
+   "    default: { return v; }\n"
+   "  }\n"
+   "}\n"
+   "fn wg_tb_enc(x: u32, ty: u32, n: u32) -> u32 {\n"
+   "  let m = 0xffffffffu >> (32u - n);\n"
+   "  switch ty {\n"
+   "    case 0u: { return u32(round(clamp(bitcast<f32>(x), 0.0, 1.0) * f32(m))); }\n"
+   "    case 1u: { return bitcast<u32>(i32(round(clamp(bitcast<f32>(x), -1.0, 1.0) * f32(m >> 1u)))) & m; }\n"
+   "    case 4u: { if (n == 16u) { return pack2x16float(vec2<f32>(bitcast<f32>(x), 0.0)) & 0xffffu; } return x; }\n"
+   "    default: { return x & m; }\n"
+   "  }\n"
+   "}\n";
+
+static void
+declare_texel_buffers(struct ctx *c)
+{
+   if (!c->uses_texel_buffers)
+      return;
+   _mesa_string_buffer_append(c->out, texel_buffer_helpers);
+   for (unsigned i = 0; i < c->res_count; i++) {
+      if (!c->res[i].texel)
+         continue;
+      const struct wgsl_resource *r = &c->res[i].r;
+      const char *words = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
+      const char *name = fmt(c, "%u_%u", r->group, r->binding);
+      line(c, "fn wg_tb_size_%s() -> u32 { return %s[0].z; }", name, params);
+      line(c, "fn wg_tb_load_%s(i: u32) -> vec4<u32> {", name);
+      line(c, "  let p0 = %s[0]; let p1 = %s[1];", params, params);
+      line(c, "  if (i >= p0.z) { return vec4<u32>(0u); }");
+      line(c, "  let a = p0.y + i * ((p0.x >> 8u) & 0xffu); let ty = p0.x & 0xffu;");
+      line(c, "  var ch = array<u32, 6>(0u, 0u, 0u, 0u, 0u, select(1u, 0x3f800000u, ty < 2u || ty >= 4u));");
+      line(c, "  for (var k = 0u; k < 4u; k++) {");
+      line(c, "    let n = (p1.x >> (8u * k)) & 0xffu;");
+      line(c, "    if (n == 0u) { continue; }");
+      line(c, "    let b = (a & 3u) * 8u + ((p1.y >> (8u * k)) & 0xffu);");
+      line(c, "    ch[k] = wg_tb_dec(extractBits(%s[(a >> 2u) + (b >> 5u)], b & 31u, n), ty, n);", words);
+      line(c, "  }");
+      line(c, "  let s = p0.x >> 16u;");
+      line(c, "  return vec4<u32>(ch[s & 7u], ch[(s >> 3u) & 7u], ch[(s >> 6u) & 7u], ch[(s >> 9u) & 7u]);");
+      line(c, "}");
+      if (r->kind != WGSL_STORAGE || !r->written)
+         continue;
+      /* Only formats of whole words are offered for storage: a texel's words are written whole. */
+      line(c, "fn wg_tb_store_%s(i: u32, v: vec4<u32>) {", name);
+      line(c, "  let p0 = %s[0]; let p1 = %s[1];", params, params);
+      line(c, "  if (i >= p0.z) { return; }");
+      line(c, "  let a = p0.y + i * ((p0.x >> 8u) & 0xffu); let ty = p0.x & 0xffu;");
+      line(c, "  var w = array<u32, 4>(0u, 0u, 0u, 0u);");
+      line(c, "  for (var k = 0u; k < 4u; k++) {");
+      line(c, "    let n = (p1.x >> (8u * k)) & 0xffu;");
+      line(c, "    if (n == 0u) { continue; }");
+      line(c, "    let b = (p1.y >> (8u * k)) & 0xffu;");
+      line(c, "    w[b >> 5u] = insertBits(w[b >> 5u], wg_tb_enc(v[(p1.z >> (3u * k)) & 3u], ty, n), b & 31u, n);");
+      line(c, "  }");
+      line(c, "  for (var k = 0u; k < ((p0.x >> 10u) & 0x3fu); k++) { %s[(a >> 2u) + k] = w[k]; }", words);
+      line(c, "}");
    }
 }
 
@@ -1658,6 +1766,11 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       return;
    case nir_intrinsic_image_load: {
       const unsigned index = const_index(c, &intr->src[0]);
+      if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
+         assign_vec4(c, def, fmt(c, "wg_tb_load_%u_%u(%s)", index >> 16, index & 0xffff, src_comp(c, &intr->src[1], 0)),
+                     WGSL_U32);
+         return;
+      }
       const char *xy, *layer;
       image_coords(c, intr, &intr->src[1], &xy, &layer);
       const char *e = layer ? fmt(c, "textureLoad(%s, %s, %s)", res_name(c, index), xy, layer)
@@ -1668,6 +1781,15 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    }
    case nir_intrinsic_image_store: {
       const unsigned index = const_index(c, &intr->src[0]);
+      if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
+         nir_src *value = &intr->src[3];
+         const unsigned n = value->ssa->num_components;
+         const char *v = n == 4 ? src_name(c, value)
+                         : n == 1 ? fmt(c, "vec4<u32>(%s, 0u, 0u, 0u)", src_name(c, value))
+                                  : fmt(c, "vec4<u32>(%s, %s)", src_name(c, value), n == 2 ? "0u, 0u" : "0u");
+         line(c, "wg_tb_store_%u_%u(%s, %s);", index >> 16, index & 0xffff, src_comp(c, &intr->src[1], 0), v);
+         return;
+      }
       const char *xy, *layer;
       image_coords(c, intr, &intr->src[1], &xy, &layer);
       const char *b = texel_base(nir_intrinsic_format(intr));
@@ -1683,6 +1805,10 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    }
    case nir_intrinsic_image_size: {
       const unsigned index = const_index(c, &intr->src[0]);
+      if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
+         line(c, "t%u = wg_tb_size_%u_%u();", def->index, index >> 16, index & 0xffff);
+         return;
+      }
       const unsigned dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
       const char *name = res_name(c, index);
       /* A cube array's size counts cubes, its 2D array's layers faces. */
@@ -1738,6 +1864,16 @@ emit_tex(struct ctx *c, nir_tex_instr *tex)
    const unsigned rbase = r->r.sample == WGSL_SAMPLE_SINT ? WGSL_I32 : r->r.sample == WGSL_SAMPLE_UINT ? WGSL_U32
                                                                                                          : WGSL_F32;
    const bool fragment = c->nir->info.stage == MESA_SHADER_FRAGMENT;
+
+   if (tex->sampler_dim == GLSL_SAMPLER_DIM_BUF) {
+      const unsigned g = tex->texture_index >> 16, b = tex->texture_index & 0xffff;
+      if (tex->op == nir_texop_txs)
+         line(c, "t%u = wg_tb_size_%u_%u();", def->index, g, b);
+      else
+         assign_vec4(c, def, fmt(c, "wg_tb_load_%u_%u(%s)", g, b, src_comp(c, tex_src(tex, nir_tex_src_coord), 0)),
+                     WGSL_U32);
+      return;
+   }
 
    switch (tex->op) {
    case nir_texop_txs: {
@@ -2124,6 +2260,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       line(&c, "var<immediate> immediates: Immediates;");
    }
    declare_resources(&c);
+   declare_texel_buffers(&c);
    declare_io(&c);
    if (stage == MESA_SHADER_COMPUTE && nir->info.shared_size)
       line(&c, "var<workgroup> shm: array<%s, %u>;", !c.shm_atomic ? "u32" : c.shm_signed ? "atomic<i32>" : "atomic<u32>",

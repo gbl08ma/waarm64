@@ -4,6 +4,9 @@
  */
 #include <string.h>
 
+#include "util/format/u_format.h"
+#include "vk_format.h"
+
 #include "wg_private.h"
 
 #define F(vk, name, bytes, bw, bh, flags) { VK_FORMAT_##vk, name, bytes, bw, bh, flags }
@@ -189,9 +192,66 @@ wg_vertex_format(VkFormat format)
    return NULL;
 }
 
+/* A texel buffer's format as the translator's loads and stores decode it (wgsl_print.c `texel_buffer_helpers`): p0's
+ * x (type, texel bytes, swizzle) and p1's x, y, z (channel widths, first bits, the components stored). False for a
+ * format they can't read: not plain RGB, a channel past 32 bits or straddling a word, mixed channel types, sRGB;
+ * `storage` says whether they can write it too (whole words, no packed floats). */
+bool
+wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *storage)
+{
+   const enum pipe_format pf = vk_format_to_pipe_format(format);
+   const struct util_format_description *d = pf != PIPE_FORMAT_NONE ? util_format_description(pf) : NULL;
+   if (!d || (d->layout != UTIL_FORMAT_LAYOUT_PLAIN && pf != PIPE_FORMAT_R11G11B10_FLOAT) ||
+       d->colorspace != UTIL_FORMAT_COLORSPACE_RGB ||
+       d->block.width != 1 || d->block.height != 1 || d->block.depth != 1 || d->block.bits % 8 ||
+       d->block.bits > 128)
+      return false;
+   const uint32_t bytes = d->block.bits / 8;
+   int type = -1;
+   p1[0] = p1[1] = p1[2] = 0;
+   for (uint32_t k = 0; k < 4; k++) {
+      const struct util_format_channel_description *ch = &d->channel[k];
+      if (k >= d->nr_channels || ch->type == UTIL_FORMAT_TYPE_VOID)
+         continue;
+      int t;
+      if (pf == PIPE_FORMAT_R11G11B10_FLOAT)
+         t = 5;
+      else if (ch->type == UTIL_FORMAT_TYPE_FLOAT)
+         t = ch->size == 16 || ch->size == 32 ? 4 : -1;
+      else if (ch->type == UTIL_FORMAT_TYPE_UNSIGNED)
+         t = ch->pure_integer ? 2 : ch->normalized ? 0 : 6;
+      else if (ch->type == UTIL_FORMAT_TYPE_SIGNED)
+         t = ch->pure_integer ? 3 : ch->normalized ? 1 : 7;
+      else
+         t = -1;
+      if (t < 0 || (type >= 0 && t != type) || ch->size == 0 || ch->size > 32 ||
+          ch->shift / 32 != (ch->shift + ch->size - 1) / 32)
+         return false;
+      /* A texel of 1, 2 or 4 bytes lies in one word; another's channels are whole bytes at their own alignment (an
+       * RGB8 texel at byte 3 has its channels at bytes 3, 4, 5). */
+      if (((bytes & (bytes - 1)) || bytes > 4) && (ch->size % 8 || ch->shift % ch->size))
+         return false;
+      type = t;
+      p1[0] |= ch->size << (8 * k);
+      p1[1] |= ch->shift << (8 * k);
+   }
+   if (type < 0)
+      return false;
+   uint32_t swizzle = 0;
+   for (uint32_t i = 0; i < 4; i++) {
+      const uint32_t s = d->swizzle[i];
+      swizzle |= (s <= PIPE_SWIZZLE_1 ? s : PIPE_SWIZZLE_0) << (3 * i);
+      if (s <= PIPE_SWIZZLE_W)
+         p1[2] |= i << (3 * s);
+   }
+   *x = (uint32_t)type | bytes << 8 | swizzle << 16;
+   *storage = bytes % 4 == 0 && type != 5 && type < 6;
+   return true;
+}
+
 /* What the device reports of a format: optimal tiling from WebGPU's capabilities, linear tiling only copies (a linear
- * image is a texture like any other, but the guest can't sample what it maps), buffers only vertex input (no texel
- * buffers). */
+ * image is a texture like any other, but the guest can't sample what it maps), buffers vertex input and texel buffers
+ * (wg_texel_buffer_layout). */
 void
 wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatureFlags *optimal,
                    VkFormatFeatureFlags *buffer)
@@ -219,4 +279,8 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
                 ? o & (VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
                 : 0;
    *buffer = wg_vertex_format(format) ? VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT : 0;
+   uint32_t x, p1[3];
+   bool storage;
+   if (wg_texel_buffer_layout(format, &x, p1, &storage))
+      *buffer |= VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT | (storage ? VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT : 0);
 }

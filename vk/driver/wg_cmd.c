@@ -1788,6 +1788,20 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
       case WGSL_UNIFORM:
       case WGSL_STORAGE:
       case WGSL_STORAGE_READ: {
+         if (d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
+            /* A texel buffer: its words, and at the next binding its view's parameters (wgsl_print.c). */
+            const struct wg_buffer_view *v = d->texel;
+            if (!v || !v->mem || !v->params)
+               continue;
+            if (res->binding & 1)
+               wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":32}", sep, res->binding,
+                              v->params);
+            else
+               wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":%llu,\"size\":%llu}", sep,
+                              res->binding, wg_memory_buffer(v->mem), (unsigned long long)v->at,
+                              (unsigned long long)MAX2(v->size, 4));
+            break;
+         }
          if (!d->buffer || !d->buffer->mem)
             continue;
          const VkDeviceSize at = d->buffer->offset + d->offset;
@@ -1852,6 +1866,11 @@ found:
       if (res->kind != WGSL_STORAGE || !res->written)
          continue;
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
+      if (d && d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
+         if (d->texel && d->texel->mem && d->texel->mem->host)
+            readback(r, d->texel->mem, d->texel->at, d->texel->size);
+         continue;
+      }
       if (d && d->buffer && d->buffer->mem && d->buffer->mem->host)
          readback(r, d->buffer->mem, d->buffer->offset + d->offset + dynamic,
                   vk_buffer_range(&d->buffer->vk, d->offset, d->range));

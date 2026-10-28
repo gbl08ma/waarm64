@@ -128,6 +128,7 @@ void wg_format_init(uint32_t features);
 const struct wg_texture_format *wg_texture_format(VkFormat format);
 bool wg_format_filterable(const struct wg_texture_format *f);
 const char *wg_vertex_format(VkFormat format);
+bool wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *storage);
 void wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatureFlags *optimal,
                         VkFormatFeatureFlags *buffer);
 
@@ -247,8 +248,13 @@ struct wg_image_view {
    int32_t slice;   /* a 3D image's: the attachment is its level's 3D view, drawn into at this depth slice (else -1) */
 };
 
+/* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
+ * its parameters for the translator's loads and stores (a uniform buffer of 32 bytes: wg_texel_buffer_layout). */
 struct wg_buffer_view {
    struct vk_buffer_view vk;
+   struct wg_device_memory *mem;
+   uint64_t at, size;
+   uint32_t params;
 };
 
 struct wg_sampler {
@@ -277,6 +283,7 @@ struct wg_descriptor {
    VkDeviceSize offset, range;
    struct wg_image_view *view;
    struct wg_sampler *sampler;
+   struct wg_buffer_view *texel;
 };
 
 #define WG_SET_GROUPS 4

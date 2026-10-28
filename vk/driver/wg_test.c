@@ -1383,6 +1383,10 @@ wgt_fl_done(uint32_t i)
  * 12: `cs` (ssbo-copy.comp: b[i] = a[i] · 2 + 1, `a` read-only) on two storage buffers of the result's memory, `a` at
  *    [512, 528) (1, 2, 3, 4 written by the submit), `b` at [0, 16): 3, 5, 7, 9 (the L4f review's finding 2: a buffer
  *    read and one written in one memory, one GPUBuffer).
+ * 14: `cs` (texel-buffer.comp) reading four uniform texel buffers of a host-visible buffer (S, as in 0) through views
+ *    at 0, 256, 512 and 768 (B8G8R8A8_UNORM, R16_SINT, A2B10G10R10_UINT_PACK32, R8G8B8_SNORM; 16 texels each), each
+ *    invocation's four texels at [64i, 64i + 64) as integers, the views' sizes and a fetch past one at [1024, 1040),
+ *    and writing a storage texel buffer (R16G16B16A16_SFLOAT, a view of the result at 2048) (L6b: texel buffers).
  * 13: 64 bytes copied from a host-visible buffer by a submit that waits on a timeline semaphore's value 1, which the
  *    host signals after writing the source (0x11, then 0x22): the copy sees 0x22 (the driver review's finding 8: a wait
  *    before its signal used to run at once).
@@ -1437,7 +1441,8 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    PFN_vkCmdBlitImage CmdBlitImage = (PFN_vkCmdBlitImage)GetDeviceProcAddr(dev, "vkCmdBlitImage");
    const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
    VkBuffer out;
-   if (buffer(scenario == 3 || scenario == 4 ? 20000 : scenario == 7 ? 4098 : 4096, both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, &out,
+   if (buffer(scenario == 3 || scenario == 4 ? 20000 : scenario == 7 ? 4098 : 4096,
+              both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT, true, &out,
               (void **)&misc.map))
       return 1;
    if (!misc.fence) {
@@ -1627,6 +1632,75 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
       CmdDispatch(cmd, 1, 1, 1);
       (void)c;
+   } else if (scenario == 14) {
+      PFN_vkCreateBufferView CreateBufferView = (PFN_vkCreateBufferView)GetDeviceProcAddr(dev, "vkCreateBufferView");
+      VkShaderModule m;
+      VkBuffer src;
+      uint8_t *sb;
+      if (shader(cs, cs_words, &m) || buffer(4096, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&sb))
+         return 1;
+      for (uint32_t i = 0; i < 4096; i++)
+         sb[i] = (uint8_t)(i * 7 + 3);
+      VkDescriptorSetLayoutBinding bindings[6];
+      for (uint32_t b = 0; b < 6; b++)
+         bindings[b] = (VkDescriptorSetLayoutBinding){
+            b, b < 4 ? VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER : b == 4 ? VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER
+                                                                        : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 6, .pBindings = bindings };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      VkPipeline pipeline;
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+      const VkDescriptorPoolSize ps[3] = { { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 4 },
+                                           { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1 },
+                                           { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 3, .pPoolSizes = ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      /* The views: of `src` at 0, 256, 512, 768 (16 texels each), and of the result at 2048 (16 texels). */
+      const VkFormat formats[5] = { VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R16_SINT, VK_FORMAT_A2B10G10R10_UINT_PACK32,
+                                    VK_FORMAT_R8G8B8_SNORM, VK_FORMAT_R16G16B16A16_SFLOAT };
+      const VkDeviceSize ranges[5] = { 64, 32, 64, 48, 128 };
+      VkBufferView views[5];
+      for (uint32_t b = 0; b < 5; b++) {
+         const VkBufferViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+                                             .buffer = b < 4 ? src : out, .format = formats[b],
+                                             .offset = b < 4 ? 256 * b : 2048, .range = ranges[b] };
+         CHECK(CreateBufferView(dev, &vi, NULL, &views[b]));
+      }
+      const VkDescriptorBufferInfo bi = { out, 0, 2048 };
+      const VkWriteDescriptorSet w[3] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 4,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, .pTexelBufferView = views },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 4, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, .pTexelBufferView = &views[4] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 5, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+      };
+      UpdateDescriptorSets(dev, 3, w, 0, NULL);
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                         NULL);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+      CmdDispatch(cmd, 1, 1, 1);
    } else if (scenario == 12) {
       VkShaderModule m;
       if (shader(cs, cs_words, &m))

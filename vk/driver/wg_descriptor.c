@@ -231,10 +231,14 @@ slot(struct wg_descriptor_set *set, uint32_t binding, uint32_t element)
 
 static void
 write_one(struct wg_descriptor *d, VkDescriptorType type, const VkDescriptorImageInfo *image,
-          const VkDescriptorBufferInfo *buffer)
+          const VkDescriptorBufferInfo *buffer, const VkBufferView *texel)
 {
    d->type = type;
    switch (type) {
+   case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+      d->texel = texel ? wg_buffer_view_from_handle(*texel) : NULL;
+      break;
    case VK_DESCRIPTOR_TYPE_SAMPLER:
       if (image->sampler)
          d->sampler = wg_sampler_from_handle(image->sampler);
@@ -257,7 +261,7 @@ write_one(struct wg_descriptor *d, VkDescriptorType type, const VkDescriptorImag
       d->range = buffer->range;
       break;
    default:
-      break; /* texel buffers and inline blocks: not offered */
+      break; /* inline blocks: not offered */
    }
 }
 
@@ -268,7 +272,7 @@ wg_descriptor_write(struct wg_descriptor_set *set, const VkWriteDescriptorSet *w
       struct wg_descriptor *d = slot(set, w->dstBinding, w->dstArrayElement + i);
       if (d)
          write_one(d, w->descriptorType, w->pImageInfo ? &w->pImageInfo[i] : NULL,
-                   w->pBufferInfo ? &w->pBufferInfo[i] : NULL);
+                   w->pBufferInfo ? &w->pBufferInfo[i] : NULL, w->pTexelBufferView ? &w->pTexelBufferView[i] : NULL);
    }
    set->version++;
 }
@@ -302,7 +306,7 @@ wg_descriptor_write_template(struct wg_descriptor_set *set, const struct vk_desc
          struct wg_descriptor *d = slot(set, e->binding, e->array_element + k);
          const void *p = (const uint8_t *)data + e->offset + k * e->stride;
          if (d)
-            write_one(d, e->type, p, p);
+            write_one(d, e->type, p, p, p);
       }
    }
    set->version++;
