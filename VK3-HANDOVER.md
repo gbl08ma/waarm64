@@ -107,8 +107,9 @@ commit without "with uncommitted changes". On the desktop, in a checkout at the 
 
 (~75 min whole since L8; `VK2_STEPS="…"` runs some steps; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user puts
 in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvidia-<name>/`, leave traces over a few MB
-in `bench/results/local/`, delete the tarball.) The last bundle is `target/vk3-nvidia-bundle-4fdc69fb.tar` (run 2026-10-27: REPORT.md "VK3: the NVIDIA run after
-L4e").
+in `bench/results/local/`, delete the tarball.) The final run's bundle is `target/vk3-nvidia-bundle-c8087cb0.tar` (4.7 GiB, built 2026-10-28; the run is the
+user's, outstanding). The one before, `target/vk3-nvidia-bundle-4fdc69fb.tar`, ran 2026-10-27 (REPORT.md "VK3: the NVIDIA
+run after L4e").
 
 **The final run's questions** (each answered by a step; `results/summary.txt` gathers the verdicts):
 1. The gate again on L5–L8a's code: `present` (vkcube and mpv right on the page, every way), `mpv` (its bar),
