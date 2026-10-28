@@ -6,20 +6,20 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7a)
+## State (2026-10-28, after L7b)
 
-- **One count of the bindings WebGPU takes** (`wg_caps.c` `wg_bindings_fit`; vk/README.md "Bindings past WebGPU's"):
-  the advertised limits follow it (`maxDescriptorSetUniformBuffersDynamic` 7, uniform alignment the larger, storage
-  every stage's least); a pipeline past WebGPU's limits within them is refused at creation, saying why. dEQP-VK's
-  list unchanged (4,672, none NotSupported); REPORT.md "VK3 L7a".
-- All L7a findings fixed with tests failing first but the binding review's 8 (a guard) and L7.4–L7.5's 8 (one line),
-  untested: no adapter differs. Not covered by a test: a draw of > 64 resources, the split sampler in a render
-  pipeline (backlog "Bindings past WebGPU's").
-- **ANGLE's 205**: not the folding; 156 sRGB-encoded (ANGLE resolves into the SRGB view of Chromium's SRGB canvas
-  image). Filed with the next step (backlog "ANGLE with Chromium's own Vulkan device too").
-- Next: L7b.
+- **The reviews' findings all taken** (REPORT.md "VK3 L7b"): L7.4–L7.5's 1 (16-bit index ranges rounded down), 2
+  (indirect draws captured), 4 (dummy attachments counted per command buffer), 6 (eight null colour attachments), 7
+  (a restarted strip walked by 256 invocations), 9 (ANGLE's uniform layout tested: right); L6b–L7.3's 1
+  (`interpolateAt*` translated; 18 dEQP-VK cases join the list, 4,672 → 4,690), 3 (plane formats in format lists;
+  plane views of other formats warned, filed), 4 (multi-planar on external memory refused, filed), 5. None wrong.
+- Next: L8.
 
-## Where VK3 stands (2026-10-28, after L7a; next L7b)
+## Where VK3 stands (2026-10-28, after L7b; next L8)
+
+- **L7a:** one count of the bindings WebGPU takes (`wg_caps.c` `wg_bindings_fit`), the advertised limits from it, a
+  pipeline past them refused saying why; ANGLE's 205 an sRGB view (backlog "ANGLE with Chromium's own Vulkan device
+  too"). Untested: a draw of > 64 resources, the split sampler in a render pipeline.
 
 - **L7.5:** vkd3d's row backed (draw parameters in the push buffer at byte 128); vkd3d 1.19 makes an 11_0 device in
   the desktop guest, its own draw tests pass; dEQP-VK's list 4,599 → 4,672.
@@ -149,20 +149,10 @@ docs and the backlog; git keeps the old handovers.
 - [x] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed: L6b–L7.3
   (`origin/review/venus-l6b-l73`, 5 findings), L7.4–L7.5 and the binding model whole (`origin/review/venus-after-l7`,
   `VENUS-L74-L75-REVIEW.md` 9, `VENUS-BINDING-REVIEW.md` 8 new). All taken, in two fix loops:
-  - [x] L7a: **the binding model's limits and identities.** **Done:** one count, the limits from it, refusals;
-    every finding fixed or guarded; ANGLE's 205 an sRGB view, filed. All of VENUS-BINDING-REVIEW.md (xfb's dispatch past the
-    storage-buffer count and binding size: the submit lost, not the capture; one sampler's nearest twin for both
-    textures; widened compute variants sharing a layout identity, writes not read back; the 64-resource caps; oversized
-    uniform blocks; input attachments uncounted; immutable samplers overridden; slot numbers near 998/1000); L7.4–L7.5's
-    3 (same as the first), 5 (draw parameters' push buffer as a 9th dynamic uniform) and 8 (storage alignment on
-    folded uniforms); L6b–L7.3's 2 (texel buffers' hidden bindings uncounted). The rule to land: one place that counts
-    every hidden binding a stage and a layout take against WebGPU's limits, the device's advertised limits derived
-    from it, and a refusal that names the cause instead of an invalid submit. ANGLE's 205-for-156 (L7.4, its 24
-    uniform blocks with `--enable-features=Vulkan`) re-checked here: the reviewer found the folding consistent.
-  - [ ] L7b: **the rest.** L7.4–L7.5's 1 (16-bit index ranges rounded down in `provoke()`: high), 2 (indirect draws
-    never captured), 4 (dummy attachments evicted under recorded buffers), 6 (`pass.colors[8]` overrun), 7 (strips with
-    restart on one GPU thread), 9 (tests); L6b–L7.3's 1 (`interpolateAt*` advertised, refused), 3 (mutable
-    multi-planar formats, plane views in other formats), 4 (multi-planar on imported memory), 5 (comments).
+  - [x] L7a: **the binding model's limits and identities.** **Done:** one count, the limits from it, refusals; every
+    finding fixed or guarded; ANGLE's 205 an sRGB view, filed.
+  - [x] L7b: **the rest.** **Done:** every finding fixed with its test (7's a performance hazard: its test guards the
+    new walk) but L6b–L7.3's 3b and 4's import (warned, refused; filed).
 
 - [ ] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, ci-debian.sh and
   ci-machines.sh, an out-of-context review of what VK3 changed).

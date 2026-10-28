@@ -550,8 +550,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the sampler's (Mesa's implicit reconstruction, which dEQP-VK's conversion cases pass); planes aren't attachments or
   storage images. Failing (out of `tests/deqp/vk-ycbcr.txt`): **a plane viewed in another format of its class**
   (r8_uint of an r8unorm plane: WebGPU's views differ only in sRGB-ness; 66 `plane_view.image_view.*compatible_format*`,
-  the view invalid and its submit dropped) and **an image aliasing a plane's memory** (48 `plane_view.memory_alias`:
-  images are textures of their own, never their memory's bytes).
+  the view invalid and its submit dropped; since VK3 L7b warned, `wg: a view of format … of plane …`, and a mutable
+  image's format list may name its planes' formats: Vulkan allows such a view without a list, so the image-format
+  query can't refuse it; a plane texture per view format would need copies between them) and **an image aliasing a
+  plane's memory** (48 `plane_view.memory_alias`: images are textures of their own, never their memory's bytes). **No
+  multi-planar image on external memory** (VK3 L7b, the review of L6b-L7.3's finding 4: refused by the image-format
+  query, since its planes' textures were neither imported from an imported memory's resource nor registered as
+  shared): an import would take each plane's region of the resource (`gpu_texture_import` at the plane's offset).
 - **GSK's Vulkan renderer on Venus misses GTK4's bar** (VK3 L7.3, bench/vulkan/REPORT.md "VK3 L7.3"; GTK takes GL by
   default, so only `GSK_RENDERER=vulkan` meets it). Its frames are right since VK3 L4c-D (VK2 L7's black was a partial
   render area's CLEAR clearing to zeros; reproduced by planting it back). On the M4: fishbowl holds more icons for less
@@ -713,7 +718,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
-    `textureQueryLod` (9), image atomics, interpolation at an offset or a sample (`interpolateAt*`: `multisample_interpolation`'s offset and `sample_interpolate_at_*` groups); integer cube textures sampled with a sampler (`glsl.opaque_type_indexing.sampler.*.compute.isamplercube` read zeros: `lower_int_sample` skips cubes); derivatives in non-uniform control flow
+    `textureQueryLod` (9), image atomics; integer cube textures sampled with a sampler (`glsl.opaque_type_indexing.sampler.*.compute.isamplercube` read zeros: `lower_int_sample` skips cubes); derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
     shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,
     `textureSampleCompareLevel` only level 0: a mipmapped shadow map sampled at a LOD is sampled at level 0, silently;

@@ -1479,6 +1479,62 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7b: the reviews' remaining findings (L7.4–L7.5's and L6b–L7.3's)
+
+2026-10-28. The dev VM's SwiftShader (Chromium 153.0.8010.52) for the driver's and translator's tests and dEQP-VK. The
+findings: `origin/review/venus-after-l7` (`VENUS-L74-L75-REVIEW.md` 1, 2, 4, 6, 7, 9) and `origin/review/venus-l6b-l73`
+(`VENUS-L6B-L73-REVIEW.md` 1, 3, 4, 5). Each was checked against the code and given a test, which failed first where
+the finding is a wrong result; none turned out wrong. Advertised: nothing new; the image-format query now takes a
+multi-planar image's plane formats in its format list and refuses it on external memory.
+
+- **L7.4–L7.5's 1, high** (a provoked draw's 16-bit index range rounded down to a word): real, and wider than the
+  review said: the end was rounded down whatever the memory around the buffer, so any OP_PROVOKE draw with an odd
+  number of 16-bit indices used to the end of its bound range lost its last index. Rounded up within the memory's
+  GPUBuffer (4-aligned). Tests `passes: an indexed fan of 5 16-bit indices in a 10-byte buffer`, `… a triangle list of
+  3 16-bit indices in a 6-byte buffer` (the fan's third triangle and the list's triangle were the clear colour).
+- **2** (indirect draws never captured by transform feedback): real. An indirect draw's capture copies its arguments
+  over the capture's parameters on the GPU (VkDrawIndexedIndirectCommand's five words are its count to first
+  instance; VkDrawIndirectCommand's first three, then its first instance), takes its index buffer and vertex bindings
+  whole, and counts its primitives in the shader (`wgx_prims`), 1,024 workgroups looping. One per `drawCount` (1:
+  `multiDrawIndirect` is off). Tests `transform feedback: an indirect draw captured`, `… an indexed indirect draw
+  captured` (nothing written, the counter 0).
+- **4** (dummy attachments released under recorded command buffers): real, but harmless in the review's form (17 sizes
+  growing: the freed id is the next dummy's view, larger than the pass needs). With sizes shrinking the evicted pass
+  gets a smaller attachment: "Scissor rect … is not contained in the render area", the submit lost. Dummies are now
+  counted (`wg_dummy`): each command buffer whose passes name one holds it until it is reset or freed. Test
+  `transform feedback: captures in 17 passes without attachments, each of its own size` (17×17 down to 1×1).
+- **6** (8 null colour attachments overrunning `pass.colors`): real, as the review said (the depth format R8, a ninth
+  attachment). The dummy takes the eighth's place. Test `… a capture in a pass of eight colour attachments, all null`.
+- **7** (a restarted strip or fan walked by one invocation): real (a performance hazard: time, not a wrong result; not
+  measured, no test can fail on it cheaply). The walk is 256 invocations, a part each: each finds its part's last
+  restart, then walks its part from the run the parts before it leave, a primitive where Vulkan's ends (degenerate
+  where a restart leaves none), so the serial depth is the count over 256. Test `passes: an indexed strip with primitive
+  restart whose last vertex provokes` (its runs across the parts), which passed on the old walk and fails with the new
+  walk planted wrong (the parts before it ignored).
+- **9** (the tests miss the configurations): covered by the tests above (odd 16-bit ranges, indirect draws; more
+  vertex buffers by L7a's `xfbMany`) and `passes: ANGLE's layout of 13 uniform buffers in each of two stages`
+  (`wgt_angle_ubo`: each stage's dynamic default block in set 0, 12 blocks each stage alone sees in set 1), which
+  passes: the folding is right for ANGLE's layout, as the review found.
+- **L6b–L7.3's 1** (`interpolateAt*` advertised with `sampleRateShading`, refused by the translator): real. The input
+  where WebGPU interpolates it (the centre, or the sample at the sample rate) moved to the offset or the sample's
+  position along its fine derivatives; flat inputs as they are. Test `tests/wgsl.test.ts` "interpolateAtOffset and
+  interpolateAtSample move the input along its derivatives" (the stage failed: "interpolation at an offset or
+  sample"); dEQP-VK's 18 samples_4 (and single-sample) cases of `multisample_interpolation`'s
+  `offset_interpolate_at_pixel_center`, `offset_interpolation_at_sample_position` and `sample_interpolate_at_*` all pass
+  and join the list (4,672 → 4,690).
+- **3** (multi-planar images: plane-format lists refused, plane views in other formats invalid): (a) real, fixed: a
+  mutable multi-planar image's format list may name its planes' formats or their twins. (b) real, warned (`wg: a view
+  of format … of plane …`, no longer suppressed) and left filed (backlog "YCbCr's gaps": Vulkan allows such a view
+  without a list, so the query can't refuse it). Test: `tests/venus-renderer.test.ts` "what the driver advertises"
+  (NV12, mutable, the list {R8, R8G8}: VK_ERROR_FORMAT_NOT_SUPPORTED before; a list naming RGBA8 still refused).
+- **4** (multi-planar images on imported or shared memory): real; refused by the image-format query where an external
+  handle type is asked (the planes' textures are neither imported nor exported); an import of each plane's region is
+  filed (backlog "YCbCr's gaps"). Test: the same (NV12 with a dma-buf handle type: supported before). The YCbCr list
+  (773 cases) passes unchanged: Venus's guest asks for external memory only where the program does.
+- **5** (comments of the YCbCr default): fixed (`wg_caps.c`, `wg_private.h`).
+- **CI** (the code at 789c5f32, docs after it): `scripts/ci.sh` OK (535 s); `scripts/ci-deqp-vk.sh` OK (846 s: the
+  4,690-case list in 588 s, YCbCr's 773 in 88 s, the replays). Nothing newly NotSupported.
+
 ## VK3 L7a: the binding model's limits and identities (the reviews after L7)
 
 2026-10-28. The dev VM's SwiftShader (Chromium 153.0.8010.52) for the driver's tests and dEQP-VK; the desktop guest
