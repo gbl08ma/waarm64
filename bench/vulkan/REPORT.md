@@ -1510,7 +1510,7 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   opaque syncobj fd (`vn_renderer_sync_export_syncobj(…, sync_file = false)`), which the kernel gives; that needs a
   patched Mesa in the guest images (or Chromium exporting sync files). Not tried within the hour: filed
   (docs/backlog.md "Dawn in the guest's Chromium on Venus"), so Dawn's samples weren't run on Venus.
-- **CI:** CIRESULTS
+- **CI:** `scripts/ci.sh` OK (452 s); `scripts/ci-deqp-vk.sh` OK (822 s: tests/deqp/vk.txt, vk-ycbcr.txt with `vkycbcr`, page-venus).
 
 ## VK3 L7.1b: the semaphore vkr never made; Dawn on Venus still not
 
