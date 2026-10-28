@@ -1237,9 +1237,12 @@ wg_CreateQueryPool(VkDevice _device, const VkQueryPoolCreateInfo *pCreateInfo,
    }
    if (pCreateInfo->queryType == VK_QUERY_TYPE_OCCLUSION) {
       struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", MIN2(n, 4096));
+      /* 64 spare slots where WebGPU's 4096 leave room. */
+      pool->spares = n < 4096 ? MIN2(4096 - n, 64) : 0;
+      wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", MIN2(n, 4096) + pool->spares);
       pool->set = wg_create_json(WG_KIND_QUERY_SET, &j);
-      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", n * 8, 0x200 | 4 | 8); /* QUERY_RESOLVE | COPY_SRC | COPY_DST */
+      /* QUERY_RESOLVE | STORAGE (gpu_query_add) | COPY_SRC | COPY_DST */
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", (n + pool->spares) * 8, 0x200 | 0x80 | 4 | 8);
       pool->buf = wg_create_json(WG_KIND_BUFFER, &j);
    }
    *pPool = wg_query_pool_to_handle(pool);

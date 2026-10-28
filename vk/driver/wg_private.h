@@ -430,6 +430,9 @@ struct wg_query_pool {
    uint8_t *avail;
    uint32_t *ended;
    uint32_t set, buf;
+   /* Occlusion: slots of the set past the pool's queries, each render pass's to carry on a query a clear draw cut
+    * (wg_cmd.c `OP_CLEAR_RECTS`); the buffer holds their values too. */
+   uint32_t spares;
 };
 /* The serial of the last submit completed (submits complete in their order). */
 extern uint32_t wg_completed_serial;

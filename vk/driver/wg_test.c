@@ -43,6 +43,7 @@ int wgt_variant(uint32_t scenario);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
 int wgt_pass_done(void);
+const uint64_t *wgt_pass_query(void);
 int wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words);
 uint8_t *wgt_misc_map(void);
 int wgt_misc_done(void);
@@ -888,12 +889,17 @@ wgt_variant(uint32_t scenario)
  *    DEPTH_STENCIL_READ_ONLY_OPTIMAL and the colour image loaded, drawing wgt_run's quad (depth 0.5, tested LESS) with
  *    its texture the same depth image: the left half (0.75, 0, 0, 1) (the driver review's finding 2: an attachment
  *    sampled in its pass must be WebGPU's read-only one, or the pass is invalid).
+ * 5: as 4 with the depth image cleared to 1.0 and an occlusion pool of three queries (VK3 L6c; the L5-L6a review's
+ *    finding 4: the worker's clear draws were counted): 0 around a vkCmdClearAttachments of the left half, 1 around
+ *    that clear, the quad and the clear again, 2 around the quad alone; their 64-bit values at wgt_pass_query: 0, and
+ *    1's equal to 2's.
  * All in one submit, the image then copied into wgt_pass_pixels (rows of 256 bytes); wgt_pass_done says when.
  */
 static struct {
    VkImage image;
    VkImageView view;
-   VkBuffer readback;
+   VkBuffer readback, query;
+   uint64_t *values;
    uint8_t *pixels;
    VkFence fence;
    VkCommandPool pool;
@@ -929,7 +935,8 @@ wgt_pass(uint32_t scenario)
       if (image(VK_FORMAT_R8G8B8A8_UNORM, 64, 64,
                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
                 &lo.image, &lo.view) ||
-          buffer(64 * 64 * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &lo.readback, (void **)&lo.pixels))
+          buffer(64 * 64 * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &lo.readback, (void **)&lo.pixels) ||
+          buffer(256, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &lo.query, (void **)&lo.values))
          return 1;
       const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
       CHECK(CreateFence(dev, &fi, NULL, &lo.fence));
@@ -962,7 +969,7 @@ wgt_pass(uint32_t scenario)
    } else if (scenario == 1) {
       rendering(cmd, left, 0, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE, red);
       CmdEndRendering(cmd);
-   } else if (scenario == 4) {
+   } else if (scenario == 4 || scenario == 5) {
       if (!scene.pipeline) {
          snprintf(error, sizeof(error), "wgt_run first");
          return 1;
@@ -972,10 +979,17 @@ wgt_pass(uint32_t scenario)
       if (image(VK_FORMAT_D32_SFLOAT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &dview))
          return 1;
+      VkQueryPool qp = VK_NULL_HANDLE;
+      if (scenario == 5) {
+         const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                            .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = 3 };
+         CHECK(CreateQueryPool(dev, &qi, NULL, &qp));
+         CmdResetQueryPool(cmd, qp, 0, 3);
+      }
       VkRenderingAttachmentInfo d = {
          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dview,
          .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { 0.75f, 0 } } };
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { scenario == 5 ? 1.0f : 0.75f, 0 } } };
       VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = full, .layerCount = 1,
                              .pDepthAttachment = &d };
       static PFN_vkCmdBeginRendering CmdBeginRendering;
@@ -1033,8 +1047,25 @@ wgt_pass(uint32_t scenario)
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.layout, 0, 1, &set, 1, &offset);
       const float right[4] = { 0.5f, 0, 0, 0 };
       CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
+      if (scenario == 5) {
+         const VkClearAttachment ca = { VK_IMAGE_ASPECT_COLOR_BIT, 0, { .color = { .float32 = { 1, 0, 0, 1 } } } };
+         const VkClearRect rect = { { { 0, 0 }, { 32, 64 } }, 0, 1 };
+         CmdBeginQuery(cmd, qp, 0, 0);
+         CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+         CmdEndQuery(cmd, qp, 0);
+         CmdBeginQuery(cmd, qp, 1, 0);
+         CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+         CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+         CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+         CmdEndQuery(cmd, qp, 1);
+         CmdBeginQuery(cmd, qp, 2, 0);
+      }
       CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+      if (scenario == 5)
+         CmdEndQuery(cmd, qp, 2);
       CmdEndRendering(cmd);
+      if (scenario == 5)
+         CmdCopyQueryPoolResults(cmd, qp, 0, 3, lo.query, 0, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
    } else {
       const VkRect2D area = scenario == 2 ? full : top;
       rendering(cmd, area, VK_RENDERING_SUSPENDING_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -1067,6 +1098,12 @@ EXPORT const uint8_t *
 wgt_pass_pixels(void)
 {
    return lo.pixels;
+}
+
+EXPORT const uint64_t *
+wgt_pass_query(void)
+{
+   return lo.values;
 }
 
 EXPORT int

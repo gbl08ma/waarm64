@@ -278,7 +278,9 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   (VK3 L6a); occlusion queries on the GPU (VK3 L6a): a pool is a WebGPU query set and a buffer of each query's last value;
   a render pass whose commands begin a query takes the pool's set (the first pool's: a query of another pool, or one
   begun outside a pass, is reported as passing, warned once), its queries are resolved into the buffer at the pass's
-  end (consecutive ones together, through the device's scratch buffer), and `vkCmdCopyQueryPoolResults` copies each value
+  end (consecutive ones together, through the device's scratch buffer); a `vkCmdClearAttachments` inside a query (the
+  worker's draw, which Vulkan doesn't count) ends the WebGPU query and carries it on in one of the set's 64 spare slots,
+  whose count the worker adds to the query's on the GPU at the resolve (VK3 L6c; past the spares, passing), and `vkCmdCopyQueryPoolResults` copies each value
   from it on the GPU, with each availability (the queue's order: what the replay has seen ended and not reset since),
   leaving the bytes between results untouched and an unavailable query's value unwritten without `PARTIAL_BIT`; a
   submit reads the values its queries ended back for `vkGetQueryPoolResults`, which reports a query available once that

@@ -87,6 +87,9 @@ WG_IMPORT(gpu_begin_occlusion) void gpu_begin_occlusion(uint32_t index);
 WG_IMPORT(gpu_end_occlusion) void gpu_end_occlusion(void);
 WG_IMPORT(gpu_resolve_queries) void gpu_resolve_queries(uint32_t set, uint32_t first, uint32_t count, uint32_t buffer,
                                                         double offset);
+/* A query's 64-bit value at `src` (bytes) of a buffer added to the one at `dst` of the same buffer, on the GPU (a
+ * compute pass of the worker's; outside a pass). */
+WG_IMPORT(gpu_query_add) void gpu_query_add(uint32_t buffer, double dst, double src);
 
 /* A buffer range copied to a staging buffer at this point of the encoder, to be read at completion: its slot. */
 WG_IMPORT(gpu_readback) uint32_t gpu_readback(uint32_t buffer, double offset, uint32_t size);

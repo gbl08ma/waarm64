@@ -547,6 +547,7 @@ export class VenusGpu {
         const Q = self.get<GPUQuerySet>(set), B = buf(b);
         later(() => self.enc!.resolveQuerySet(Q, first, count, B, offset));
       },
+      gpu_query_add(b: number, dst: number, src: number) { const B = buf(b); later(() => self.queryAdd(B, dst, src)); },
       gpu_readback(b: number, offset: number, size: number) {
         const staging = d.createBuffer({ size, usage: MAP_READ | COPY_DST });
         const B = buf(b);
@@ -1376,6 +1377,43 @@ ${vs}
     }
   }
 
+  /**
+   * An occlusion query's 64-bit value at `src` of a buffer added to the one at `dst` (bytes, 8-aligned): what a clear
+   * cut a query into, carried on in a spare slot (vk/driver/wg_cmd.c `OP_CLEAR_RECTS`). A compute pass of one
+   * invocation, in the encoder's order.
+   */
+  private queryAdd(b: GPUBuffer, dst: number, src: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('queryAdd');
+    if (!pipeline) {
+      const code = `struct P { dst: u32, src: u32, pad0: u32, pad1: u32 }
+@group(0) @binding(0) var<storage, read_write> q: array<u32>;
+@group(0) @binding(1) var<uniform> p: P;
+@compute @workgroup_size(1) fn main() {
+  let a = q[p.dst];
+  let lo = a + q[p.src];
+  q[p.dst + 1u] = q[p.dst + 1u] + q[p.src + 1u] + select(0u, 1u, lo < a);
+  q[p.dst] = lo;
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('queryAdd', pipeline);
+    }
+    const u = d.createBuffer({ size: 16, usage: UNIFORM, mappedAtCreation: true });
+    new Uint32Array(u.getMappedRange()).set([dst / 4, src / 4, 0, 0]);
+    u.unmap();
+    this.temps.push(u);
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: b } },
+      { binding: 1, resource: { buffer: u } },
+    ] });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+  }
+
   private linearSampler: GPUSampler | undefined;
   private sampler() {
     return (this.linearSampler ??= this.device!.createSampler({ magFilter: 'linear', minFilter: 'linear' }));
@@ -1498,4 +1536,4 @@ const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_write', 'gpu_di
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
   'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
-  'gpu_resolve_queries', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];
+  'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

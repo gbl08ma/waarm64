@@ -1494,6 +1494,7 @@ struct pass_query {
    struct wg_query_pool *pool;
    uint32_t index;
    bool passing;
+   uint32_t of; /* a spare slot's: the query it carries on (its value added to that one's), else UINT32_MAX */
 };
 
 struct cpu_write {
@@ -1543,6 +1544,7 @@ struct replay {
     * NULL), the pass's queries (struct pass_query). */
    struct wg_query_pool *qpool, *qactive_pool;
    uint32_t qactive;
+   uint32_t qspares; /* the pass's spare slots taken */
    struct util_dynarray pass_queries;
 };
 
@@ -1576,7 +1578,7 @@ static void
 query_passing(struct replay *r, struct wg_query_pool *pool, uint32_t index)
 {
    if (r->pass == RENDER) {
-      util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, true }));
+      util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, true, UINT32_MAX }));
       return;
    }
    if (r->pass != NONE)
@@ -1624,6 +1626,10 @@ resolve_queries(struct replay *r)
       }
    }
    free(idx);
+   /* What clears cut a query into: each spare's count added to its query's. */
+   util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
+      if (q->of != UINT32_MAX && !q->passing)
+         gpu_query_add(q->pool->buf, q->of * 8.0, q->index * 8.0);
    util_dynarray_clear(&r->pass_queries);
 }
 
@@ -2070,6 +2076,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          /* Its occlusion queries' set (WebGPU's pass takes one, at its start). */
          bool stop = false;
          r->qpool = pass_query_pool(p, end, &stop);
+         r->qspares = 0;
          if (r->qpool) {
             struct wg_json j = { 0 };
             wg_json_printf(&j, "{\"occlusionQuerySet\":%u,%s", r->qpool->set, json + 1);
@@ -2092,8 +2099,25 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       case OP_CLEAR_RECTS:
          if (r->pass == RENDER) {
+            /* A clear draws (the worker's), and a Vulkan occlusion query doesn't count clears: the active query ends
+             * before it and carries on in a spare slot of the set (WebGPU can't take a query's index again in one
+             * pass), added to it at the resolve. Past the spares, the query is reported as passing. */
+            struct wg_query_pool *qp = r->qactive_pool;
+            if (qp)
+               gpu_end_occlusion();
             gpu_clear_rects(d, strlen(d));
             r->dirty = RD_ALL;
+            if (qp && r->qspares < qp->spares) {
+               const uint32_t slot = qp->vk.query_count + r->qspares++;
+               gpu_begin_occlusion(slot);
+               util_dynarray_append_typed(&r->pass_queries, struct pass_query,
+                                          ((struct pass_query){ qp, slot, false, r->qactive }));
+            } else if (qp) {
+               util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
+                  if (q->pool == qp && q->index == r->qactive)
+                     q->passing = true;
+               r->qactive_pool = NULL;
+            }
          }
          break;
       case OP_PIPELINE: {
@@ -2250,7 +2274,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                r->qactive_pool = pool;
                r->qactive = q->first;
                util_dynarray_append_typed(&r->pass_queries, struct pass_query,
-                                          ((struct pass_query){ pool, q->first, false }));
+                                          ((struct pass_query){ pool, q->first, false, UINT32_MAX }));
             } else {
                static bool warned;
                if (!warned)
