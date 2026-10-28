@@ -89,6 +89,15 @@ docs and the backlog; git keeps the old handovers.
 - [x] L6b: texel buffers; the depth/stencil copies WebGPU refuses; bind groups remade every frame (a performance item,
   A/B-measured); a dEQP-VK sweep on the Mac's GPU (`SCRIPT=deqp-run.ts CASES=… VIRGL_GPU=virgl,vulkan
   bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`).
+- [ ] L6c: **first, vkQuake's frame 5** (80% off lavapipe at a82e482d, 1.7% in vk/README.md's table): find the commit
+  (bisect by building the wasm and Venus's module at L4e's 4fdc69fb, 6ccdcd77, 20e9980e, 96a0142f; run
+  `scripts/ci-debian.sh`, whose `page-venus.test.ts` checks the replays), fix it with a test that catches it. **Then**
+  the out-of-context review of L5–L6a (`origin/review/venus-l5-l6a`, `VENUS-L5-L6A-REVIEW.md` there; 8 findings, all
+  taken): an empty signal-only submit overtaking held timeline submits (high); compute SSBOs all `read_write` against a
+  uniform or indirect buffer in the same memory (L5b's choice: re-decide it); a query's copy while a compute pass is
+  open; clears counted in occlusion queries; a query pool freed under a pending submit; the shared-memory restore test
+  blind; a barrier under an `if` with atomics filling the limit; the stencil split's comment. Each with its test
+  failing first; `ci-debian.sh` green at the end.
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
   With `sampleRateShading`, dEQP-VK's `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to
