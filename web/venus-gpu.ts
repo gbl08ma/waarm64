@@ -567,6 +567,7 @@ export class VenusGpu {
         const j = parseJson(self.text(ptr, len));
         // Its buffers now (ids are reused).
         if (j.ib) j.ib = buf(j.ib);
+        if (j.indirect) j.indirect = [buf((j.indirect as number[])[0]), (j.indirect as number[])[1]];
         for (const k of ['buffers', 'counters']) if (j[k]) j[k] = (j[k] as (number[] | null)[]).map((e) => e && [buf(e[0]), ...e.slice(1)]);
         later(() => self.xfbJobs.push(j.op === 'draw' ? { ...j, xfb: self.cur.xfb, groups: [...self.cur.groups], vb: [...self.cur.vb], imm: self.cur.imm } : j));
       },
@@ -1432,7 +1433,9 @@ ${vs}
 
   /** A captured draw: its vertex stage (`wg_vs`) run as compute for its primitives' vertices, in Vulkan's order, as many
    * whole primitives as every buffer has room for; then the counters advanced by them. Its index range and each vertex
-   * binding's reachable range are copied into one buffer first (`wgx_in`). */
+   * binding's reachable range are copied into one buffer first (`wgx_in`). An indirect draw's (`job.indirect`: VK3 L7b,
+   * the review of L7.4-L7.5's finding 2) arguments are copied over its parameters on the GPU, its index buffer and
+   * vertex bindings taken whole, its primitives counted by the shader (`wgx_prims`). */
   private xfbDraw(session: XfbSession, job: Json) {
     const x = job.xfb as Xfb | undefined;
     const vpp = [1, 2, 2, 3, 3, 3][job.topology as number];
@@ -1444,8 +1447,9 @@ ${vs}
     const p = this.xfbPipeline(x);
     if (!p) return;
     const count = job.count as number, instances = job.instances as number, wide = job.wide as number;
+    const indirect = job.indirect as [GPUBuffer, number] | undefined;
     const prims = [count, count >> 1, Math.max(count - 1, 0), Math.floor(count / 3), Math.max(count - 2, 0), Math.max(count - 2, 0)][job.topology as number];
-    if (!prims) return;
+    if (!prims && !indirect) return;
     const params = new Uint32Array(28);
     // The copies into `wgx_in`: from 4-aligned offsets, whole words, each at a word of its own.
     const copies: { b: GPUBuffer; from: number; size: number; at: number }[] = [];
@@ -1457,10 +1461,11 @@ ${vs}
       bytes += Math.max(n, 0);
       return at + (offset - from);
     };
+    // The index of the bound range's start in `wgx_in` (the shader adds the first index: a u32 that wraps).
     let ibFirst = 0;
     if (wide !== 2 && job.ib) {
-      const el = wide ? 4 : 2, start = (job.offset as number) + (job.first as number) * el;
-      ibFirst = take(job.ib as GPUBuffer, start, Math.max((job.size as number) - (job.first as number) * el, count * el)) / el;
+      const el = wide ? 4 : 2, first = indirect ? 0 : (job.first as number), start = (job.offset as number) + first * el;
+      ibFirst = (take(job.ib as GPUBuffer, start, Math.max((job.size as number) - first * el, count * el)) / el - first) >>> 0;
     }
     for (const slot of p.slots) {
       const v = (job.vb as ({ b: GPUBuffer; offset: number; size: number } | undefined)[])[slot];
@@ -1468,7 +1473,7 @@ ${vs}
       // What the draw can reach of it: past its last vertex or instance (non-indexed), or all of it.
       const b = x.buffers[slot] as Json;
       const end = Math.max(0, ...(b.attributes as Json[]).map((a) => (a.offset as number) + 16));
-      const last = b.stepMode === 'instance' ? (job.firstInstance as number) + instances : wide === 2 ? (job.first as number) + count : Infinity;
+      const last = indirect ? Infinity : b.stepMode === 'instance' ? (job.firstInstance as number) + instances : wide === 2 ? (job.first as number) + count : Infinity;
       params[16 + slot] = take(v.b, v.offset, Math.min(v.size, last * (b.arrayStride as number) + end));
     }
     if (bytes > d.limits.maxStorageBufferBindingSize) {
@@ -1487,6 +1492,12 @@ ${vs}
     params.set([job.topology, count, instances, job.first, (job.base as number) >>> 0, job.firstInstance, wide, ibFirst, prims, vpp]);
     const [u, uat] = this.scratch(UNIFORM | COPY_DST, params.byteLength);
     d.queue.writeBuffer(u, uat, params);
+    if (indirect) {
+      // VkDrawIndexedIndirectCommand's five words are the parameters' count to firstInstance; VkDrawIndirectCommand's
+      // the count, instances and first, then firstInstance (its base vertex 0).
+      enc.copyBufferToBuffer(indirect[0], indirect[1], u, uat + 4, wide === 2 ? 12 : 20);
+      if (wide === 2) enc.copyBufferToBuffer(indirect[0], indirect[1] + 12, u, uat + 20, 4);
+    }
     const entries: GPUBindGroupEntry[] = [
       { binding: 12, resource: { buffer: session.out } },
       { binding: 13, resource: { buffer: u, offset: uat, size: params.byteLength } },
@@ -1500,7 +1511,8 @@ ${vs}
     pass.setBindGroup(x.bgls.length, group);
     if (x.immediateSize && job.imm) (pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(0, job.imm as Uint8Array);
     pass.setPipeline(p.main);
-    pass.dispatchWorkgroups(Math.min(65535, Math.ceil((prims * instances * vpp) / 64)));
+    // An indirect draw's count is on the GPU: as many workgroups as a large draw's (each invocation loops).
+    pass.dispatchWorkgroups(indirect ? 1024 : Math.min(65535, Math.ceil((prims * instances * vpp) / 64)));
     pass.setPipeline(p.advance);
     pass.dispatchWorkgroups(1);
     pass.end();
@@ -1537,18 +1549,19 @@ ${vs}
     fetch += '  return i;\n}';
     if (inputs) L(fetch);
     const room = captured.map((b) => `fit = min(fit, (wgx_p.xs${b} - min(wgx_p.xs${b}, wgx_o[${b}])) / (${x.stride[b]}u * wgx_p.vpp));`).join(' ');
-    L(`fn wgx_fit() -> u32 { var fit = wgx_p.prims * wgx_p.instances; ${room} return fit; }`);
+    L('fn wgx_prims() -> u32 { let c = wgx_p.count; switch wgx_p.topo { case 0u: { return c; } case 1u: { return c >> 1u; } case 2u: { return max(c, 1u) - 1u; } case 3u: { return c / 3u; } default: { return max(c, 2u) - 2u; } } }');
+    L(`fn wgx_fit() -> u32 { var fit = wgx_prims() * wgx_p.instances; ${room} return fit; }`);
     L('fn wgx_vertex(j: u32) -> u32 {');
     L('  if (wgx_p.wide == 2u) { return wgx_p.first + j; }');
-    L('  let k = wgx_p.ibFirst + j;');
+    L('  let k = wgx_p.ibFirst + wgx_p.first + j;');
     L('  var v = wgx_in[k];');
     L('  if (wgx_p.wide == 0u) { v = extractBits(wgx_in[k >> 1u], (k & 1u) * 16u, 16u); }');
     L('  return v + wgx_p.base;');
     L('}');
     L('@compute @workgroup_size(64) fn wgx_main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {');
-    L('  let n = wgx_fit() * wgx_p.vpp;');
+    L('  let n = wgx_fit() * wgx_p.vpp; let prims = wgx_prims();');
     L('  for (var t = gid.x; t < n; t += nwg.x * 64u) {');
-    L('    let g = t / wgx_p.vpp; let k = t % wgx_p.vpp; let inst = g / wgx_p.prims; let p = g % wgx_p.prims;');
+    L('    let g = t / wgx_p.vpp; let k = t % wgx_p.vpp; let inst = g / prims; let p = g % prims;');
     L('    var j = p;');
     L('    switch wgx_p.topo {');
     L('      case 1u: { j = 2u * p + k; }');
@@ -1608,7 +1621,8 @@ ${vs}
    * A draw's primitives as a list of 32-bit indices, each one's vertices rotated so that Vulkan's provoking vertex comes
    * first (WebGPU's flat interpolation takes the first), in a compute pass before the render pass (wg_gpu.h
    * `gpu_provoke`, VK3 L7.4): `mode` WG_PROVOKE_* (triangle list, strip, fan's last, fan's first, line list, strip).
-   * With `restart`, one invocation walks the strip or fan and pads what a restart leaves with degenerate primitives.
+   * With `restart`, 256 invocations walk the strip or fan in parts (`restart`: VK3 L7b, the review of L7.4-L7.5's finding
+   * 7: one walked it all), a degenerate primitive where a restart leaves none.
    */
   private provoke(ticket: number, src: GPUBuffer | undefined, offset: number, size: number, wide: number, mode: number, restart: number, first: number, count: number, prims: number) {
     const d = this.device!, enc = this.enc!;
@@ -1632,22 +1646,37 @@ fn joined(g: u32, j: u32, c: u32, a: u32, b: u32, x: u32) {
   else if (p.mode == 2u) { tri(g, x, c, b); }
   else { tri(g, b, x, c); }
 }
-@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) n: vec3<u32>) {
-  if (p.restart != 0u) {
-    if (id.x != 0u) { return; }
-    let r = select(0xffffu, 0xffffffffu, p.wide == 1u);
-    var g = 0u; var run = 0u; var c = 0u; var a = 0u; var b = 0u;
-    for (var i = 0u; i < p.count && g < p.prims; i++) {
-      let x = ix(i);
-      if (x == r) { run = 0u; continue; }
-      if (run == 0u) { c = x; }
-      if (p.mode == 5u) { if (run >= 1u) { line(g, x, b); g++; } }
-      else if (run >= 2u) { joined(g, run - 2u, c, a, b, x); g++; }
-      a = b; b = x; run++;
+// With restart: the indices in 256 parts, an invocation each; each finds its part's last restart, then walks its part
+// from the run the parts before it left: position i's primitive (the one it completes) at i less the vertices before
+// it, a degenerate one where none.
+var<workgroup> wl: array<u32, 256>;
+@compute @workgroup_size(256) fn restart(@builtin(local_invocation_index) t: u32) {
+  let r = select(0xffffu, 0xffffffffu, p.wide == 1u);
+  let before = select(2u, 1u, p.mode == 5u);
+  let per = (p.count + 255u) / 256u;
+  let lo = min(t * per, p.count);
+  let hi = min(lo + per, p.count);
+  var last = 0u;
+  for (var i = lo; i < hi; i++) { if (ix(i) == r) { last = i + 1u; } }
+  wl[t] = last;
+  workgroupBarrier();
+  var s = 0u;
+  for (var k = 0u; k < t; k++) { s = max(s, wl[k]); }
+  for (var i = lo; i < hi; i++) {
+    let x = ix(i);
+    if (x == r) { s = i + 1u; }
+    if (i < before) { continue; }
+    let g = i - before;
+    if (x == r || i - s < before) {
+      if (p.mode == 5u) { line(g, 0u, 0u); } else { tri(g, 0u, 0u, 0u); }
+    } else if (p.mode == 5u) {
+      line(g, x, ix(i - 1u));
+    } else {
+      joined(g, i - s - 2u, ix(s), ix(i - 2u), ix(i - 1u), x);
     }
-    for (; g < p.prims; g++) { if (p.mode == 5u) { line(g, b, b); } else { tri(g, b, b, b); } }
-    return;
   }
+}
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) n: vec3<u32>) {
   for (var g = id.x; g < p.prims; g += n.x * 64u) {
     switch p.mode {
       case 0u: { tri(g, ix(3u * g + 2u), ix(3u * g), ix(3u * g + 1u)); }
@@ -1658,16 +1687,25 @@ fn joined(g: u32, j: u32, c: u32, a: u32, b: u32, x: u32) {
   }
 }`;
       const m = d.createShaderModule({ code });
-      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      // One layout for both entry points (a pipeline's 'auto' one is its own).
+      const layout = d.createPipelineLayout({ bindGroupLayouts: [d.createBindGroupLayout({ entries: [
+        { binding: 0, visibility: 4, buffer: { type: 'read-only-storage' } },
+        { binding: 1, visibility: 4, buffer: { type: 'storage' } },
+        { binding: 2, visibility: 4, buffer: { type: 'uniform' } },
+      ] })] });
+      pipeline = d.createComputePipeline({ layout, compute: { module: m, entryPoint: 'main' } });
       this.metaComputes.set('provoke', pipeline);
+      this.metaComputes.set('provokeRestart', d.createComputePipeline({ layout, compute: { module: m, entryPoint: 'restart' } }));
     }
     const per = mode >= 4 ? 2 : 3, bytes = prims * per * 4;
     const [out, at] = this.scratch(STORAGE | INDEX, bytes);
-    // The source's binding from a 256-aligned offset (minStorageBufferOffsetAlignment is at most 256), in words.
+    // The source's binding from a 256-aligned offset (minStorageBufferOffsetAlignment is at most 256), in words: its
+    // end rounded up (a 16-bit range may end on a half-word: VK3 L7b, the review of L7.4-L7.5's finding 1), within
+    // the memory's buffer (4-aligned, wg_memory_buffer).
     let source: GPUBufferBinding, el0 = first;
     if (src && wide !== 2) {
       const el = wide ? 4 : 2, start = offset + first * el, from = start - (start % 256);
-      const end = Math.min(src.size, offset + Math.max(size, (first + count) * el)) & ~3;
+      const end = Math.min(src.size, Math.ceil((offset + Math.max(size, (first + count) * el)) / 4) * 4);
       source = { buffer: src, offset: from, size: Math.max(4, end - from) };
       el0 = (start - from) / el;
     } else {
@@ -1682,7 +1720,7 @@ fn joined(g: u32, j: u32, c: u32, a: u32, b: u32, x: u32) {
       { binding: 2, resource: { buffer: u, offset: uat, size: 32 } },
     ] });
     const pass = enc.beginComputePass();
-    pass.setPipeline(pipeline);
+    pass.setPipeline(restart ? this.metaComputes.get('provokeRestart')! : pipeline);
     pass.setBindGroup(0, group);
     pass.dispatchWorkgroups(restart ? 1 : Math.min(65535, Math.ceil(prims / 64)));
     pass.end();

@@ -45,6 +45,7 @@ int wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words);
 uint8_t *wgt_xfb_map(void);
 int wgt_xfb_done(void);
 int wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
+int wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 int wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t first_instance);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
@@ -606,11 +607,12 @@ wgt_imported(void)
  * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
  * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
  * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, vendorID and pipelineCacheUUID's first
- * word; NULL with wgt_error(). Its own instance: the device's caps are read when the instance enumerates it. */
+ * word, the sample counts and features below, then NV12's queries (last); NULL with wgt_error(). Its own instance: the
+ * device's caps are read when the instance enumerates it. */
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[26];
+   static uint32_t out[29];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -693,6 +695,26 @@ wgt_caps(void)
    VkFormatProperties nv12;
    formats(pdev, VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, &nv12);
    out[i++] = nv12.optimalTilingFeatures;
+   /* The out-of-context review of L6b-L7.3, findings 3 and 4: a mutable NV12 image whose format list names its
+    * planes' formats (supported), one naming a format no plane has (refused), and NV12 on external memory (refused:
+    * planes aren't imported nor exported); each the query's VkResult. */
+   PFN_vkGetPhysicalDeviceImageFormatProperties2 image_formats2 =
+      (PFN_vkGetPhysicalDeviceImageFormatProperties2)vkGetInstanceProcAddr(inst, "vkGetPhysicalDeviceImageFormatProperties2");
+   const VkFormat planes[2] = { VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM }, other[2] = { VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8B8A8_UNORM };
+   for (uint32_t k = 0; k < 3; k++) {
+      const VkImageFormatListCreateInfo list = { .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+                                                 .viewFormatCount = 2, .pViewFormats = k ? other : planes };
+      const VkPhysicalDeviceExternalImageFormatInfo ext = {
+         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT };
+      const VkPhysicalDeviceImageFormatInfo2 fi = {
+         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .pNext = k == 2 ? (const void *)&ext : &list,
+         .format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, .type = VK_IMAGE_TYPE_2D, .tiling = VK_IMAGE_TILING_OPTIMAL,
+         .usage = VK_IMAGE_USAGE_SAMPLED_BIT, .flags = k == 2 ? 0 : VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT };
+      VkExternalImageFormatProperties ep = { .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES };
+      VkImageFormatProperties2 ip = { .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2, .pNext = k == 2 ? &ep : NULL };
+      out[i++] = (uint32_t)image_formats2(pdev, &fi, &ip);
+   }
    destroy(inst, NULL);
    return out;
 }
@@ -944,7 +966,31 @@ wgt_variant(uint32_t scenario)
  * 0: indexed, the last vertex provoking: v2's (1, 1) top left, v3's (0, 1) bottom left;
  * 1: its four vertices as a fan, not indexed, the last vertex provoking (triangles (1, 2, 0), (2, 3, 0)): as 0;
  * 2: as 1, the first vertex provoking: v1's (1, 0) top left, v2's (1, 1) bottom left.
+ * The out-of-context review of L7.4-L7.5 (finding 1: a 16-bit index range ending on a half-word lost its last index),
+ * through a 16-bit index buffer of its own whose size isn't a multiple of 4:
+ * 3: an indexed fan, the first vertex provoking, its 5 indices (0, 0, 1, 2, 3) in 10 bytes: a degenerate triangle,
+ *    then as 2;
+ * 4: an indexed triangle list, the last vertex provoking, its 3 indices (0, 1, 2) in 6 bytes: v2's (1, 1) top left,
+ *    the bottom left not drawn (blue).
+ * 5: (the review's finding 7: a restarted strip walked by one invocation) an indexed strip with primitive restart,
+ *    the last vertex provoking: 255 restarts, then (0, 1, 2), a restart, (0, 2, 3), so that its runs cross the walk's
+ *    parts: as 0.
  */
+static struct {
+   VkBuffer fan, list, strip;
+   uint32_t which; /* 0 fan, 1 list, 2 strip */
+} flat;
+
+static void
+flat_record(VkCommandBuffer cmd, bool in_pass)
+{
+   if (!in_pass)
+      return;
+   CmdBindIndexBuffer(cmd, flat.which == 0 ? flat.fan : flat.which == 1 ? flat.list : flat.strip, 0,
+                      VK_INDEX_TYPE_UINT16);
+   CmdDrawIndexed(cmd, flat.which == 0 ? 5 : flat.which == 1 ? 3 : 262, 1, 0, 0, 0);
+}
+
 EXPORT int
 wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words)
 {
@@ -960,22 +1006,43 @@ wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
    gpi.pStages = stages;
    VkPipelineInputAssemblyStateCreateInfo ias = *gpi.pInputAssemblyState;
    VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
-   const VkPipelineRasterizationProvokingVertexStateCreateInfoEXT pv = {
+   VkPipelineRasterizationProvokingVertexStateCreateInfoEXT pv = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT,
-      .provokingVertexMode = scenario < 2 ? VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT
-                                          : VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT,
    };
+   pv.provokingVertexMode = scenario < 2 || scenario >= 4 ? VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT
+                                                          : VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT;
    rs.pNext = &pv;
    rs.cullMode = VK_CULL_MODE_NONE;
-   if (scenario > 0)
+   if (scenario > 0 && scenario < 4)
       ias.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+   if (scenario == 5) {
+      ias.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+      ias.primitiveRestartEnable = VK_TRUE;
+   }
    gpi.pInputAssemblyState = &ias;
    gpi.pRasterizationState = &rs;
    VkPipeline p;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   if (scenario >= 3 && !flat.fan) {
+      uint16_t *fan, *list;
+      if (buffer(10, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &flat.fan, (void **)&fan) ||
+          buffer(6, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &flat.list, (void **)&list))
+         return 1;
+      memcpy(fan, (const uint16_t[]){ 0, 0, 1, 2, 3 }, 10);
+      memcpy(list, (const uint16_t[]){ 0, 1, 2 }, 6);
+      uint16_t *strip;
+      if (buffer(262 * 2, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &flat.strip, (void **)&strip))
+         return 1;
+      memset(strip, 0xff, 262 * 2);
+      memcpy(strip + 255, (const uint16_t[]){ 0, 1, 2, 0xffff, 0, 2, 3 }, 14);
+   }
    draw_vertices = scenario > 0 ? 4 : 0;
+   flat.which = scenario - 3;
+   if (scenario >= 3)
+      draw_custom = flat_record;
    const int r = draw_with(NULL, 0, 0, p);
    draw_vertices = 0;
+   draw_custom = NULL;
    return r;
 }
 
@@ -1064,6 +1131,103 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
 }
 
 /*
+ * ANGLE's ES3 layout of uniform buffers (VK3 L7b, the review of L7.4-L7.5's finding 9: the tests of more than WebGPU's
+ * uniform buffers a stage had one stage, one arrayed binding), after wgt_run: `vs` and `fs` (angle-ubo.vert, .frag), a
+ * full-screen triangle; set 0 a dynamic uniform buffer for each stage (the default blocks: 100 and 44, at dynamic
+ * offsets), set 1 12 blocks each stage alone sees (the vertex stage's k + 1, the fragment stage's 2k + 2): 13 uniform
+ * buffers a stage, past WebGPU's 12. The image (178, 200, 0, 255) everywhere; wgt_draw_done says when.
+ */
+static struct {
+   VkPipelineLayout layout;
+   VkDescriptorSet sets[2];
+} au;
+
+static void
+angle_record(VkCommandBuffer cmd, bool in_pass)
+{
+   if (!in_pass)
+      return;
+   const uint32_t offsets[2] = { 256, 512 };
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, au.layout, 0, 2, au.sets, 2, offsets);
+   CmdDraw(cmd, 3, 1, 0, 0);
+}
+
+EXPORT int
+wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   VkBuffer ub;
+   uint32_t *w;
+   if (buffer(32 * 256, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &ub, (void **)&w))
+      return 1;
+   memset(w, 0, 32 * 256);
+   /* At 256 the vertex stage's default block, at 512 the fragment stage's; from 1024 the 24 blocks. */
+   w[64] = 100;
+   w[128] = 44;
+   for (uint32_t k = 0; k < 12; k++) {
+      w[64 * (4 + k)] = k + 1;
+      w[64 * (16 + k)] = 2 * k + 2;
+   }
+   VkDescriptorSetLayoutBinding b0[2] = {
+      { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+   };
+   VkDescriptorSetLayoutBinding b1[24];
+   for (uint32_t k = 0; k < 24; k++)
+      b1[k] = (VkDescriptorSetLayoutBinding){ k, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                                              k < 12 ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT, NULL };
+   VkDescriptorSetLayout dsl[2];
+   const VkDescriptorSetLayoutCreateInfo l0 = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 2, .pBindings = b0 };
+   const VkDescriptorSetLayoutCreateInfo l1 = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 24, .pBindings = b1 };
+   CHECK(CreateDescriptorSetLayout(dev, &l0, NULL, &dsl[0]));
+   CHECK(CreateDescriptorSetLayout(dev, &l1, NULL, &dsl[1]));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 2, .pSetLayouts = dsl };
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &au.layout));
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 2 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 24 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 2,
+                                            .poolSizeCount = 2, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 2, .pSetLayouts = dsl };
+   CHECK(AllocateDescriptorSets(dev, &dai, au.sets));
+   VkDescriptorBufferInfo bi[26];
+   VkWriteDescriptorSet wr[26];
+   for (uint32_t k = 0; k < 26; k++) {
+      bi[k] = (VkDescriptorBufferInfo){ ub, k < 2 ? 0 : 256 * (2 + k), 16 };
+      wr[k] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = au.sets[k >= 2],
+                                      .dstBinding = k < 2 ? k : k - 2, .descriptorCount = 1,
+                                      .descriptorType = k < 2 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+                                                              : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                      .pBufferInfo = &bi[k] };
+   }
+   UpdateDescriptorSets(dev, 26, wr, 0, NULL);
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   VkPipelineShaderStageCreateInfo stages[2] = { scene.stages[0], scene.stages[1] };
+   stages[1].pSpecializationInfo = NULL;
+   if (shader(vs, vs_words, &stages[0].module) || shader(fs, fs_words, &stages[1].module))
+      return 1;
+   gpi.pStages = stages;
+   gpi.layout = au.layout;
+   VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+   rs.cullMode = VK_CULL_MODE_NONE;
+   gpi.pRasterizationState = &rs;
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   draw_custom = angle_record;
+   const int r = draw_with(NULL, 0, 0, p);
+   draw_custom = NULL;
+   return r;
+}
+
+/*
  * Transform feedback (VK3 L7.4, VK_EXT_transform_feedback), after wgt_run: `vs` (xfb.vert: each vertex's position and
  * (u, v, gl_VertexIndex, 7) captured, 32 bytes a vertex) on the scene's vertices, rasterizer discard on, in the scene's
  * render pass, into a host-visible buffer (`wgt_xfb_map`, 4 KiB filled 0xee, the capture bound at 0), its counter at
@@ -1077,6 +1241,12 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
  * 4: `vs` xfb-many.vert (VK3 L7a, the binding review's finding 1): a triangle list of vertices 0 to 5 read through six
  *    vertex bindings (the position from binding 0, from bindings 1 to 5 one float of the vertex, at bytes 4, 8, 12,
  *    16, 0), captured into four buffers at 0, 512, 1024 and 1536 (16 bytes a vertex each), the first's counter 96.
+ * The out-of-context review of L7.4-L7.5 (findings 2, 6, 4):
+ * 5: as 0, drawn by vkCmdDrawIndirect (host-written arguments: 6 vertices from 0);
+ * 6: the scene's indices (0 1 2 0 2 3) drawn by vkCmdDrawIndexedIndirect: their 6 records, the counter 192;
+ * 7: as 0, in a dynamic rendering pass of 8 colour attachments, all null;
+ * 8: 17 dynamic rendering passes without attachments, render areas 17x17 down to 1x1, each capturing vertices 0 to 2
+ *    into its own 96 bytes (at 96 * i): 17 times the first triangle's 3 records, the counter 96.
  */
 static struct {
    VkFence fence;
@@ -1124,8 +1294,28 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
       }
       gpi.pVertexInputState = &vis;
    }
+   /* Dynamic rendering's: its colour formats (none), no render pass. */
+   const VkFormat nulls[8] = { VK_FORMAT_UNDEFINED };
+   const VkPipelineRenderingCreateInfo pri = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                                               .colorAttachmentCount = scenario == 7 ? 8 : 0,
+                                               .pColorAttachmentFormats = nulls };
+   if (scenario >= 7) {
+      gpi.pNext = &pri;
+      gpi.renderPass = VK_NULL_HANDLE;
+      gpi.pColorBlendState = NULL;
+      gpi.pDepthStencilState = NULL;
+   }
    VkPipeline p;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   VkBuffer args = VK_NULL_HANDLE;
+   if (scenario == 5 || scenario == 6) {
+      uint32_t *a;
+      if (buffer(64, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, &args, (void **)&a))
+         return 1;
+      memset(a, 0, 64);
+      /* At 16: VkDrawIndirectCommand (6 vertices, 1 instance, from 0) or VkDrawIndexedIndirectCommand (6 indices). */
+      memcpy(a + 4, (const uint32_t[]){ 6, 1, 0, 0, 0 }, 20);
+   }
    VkBuffer out;
    if (buffer(4096, VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT |
                        VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1152,13 +1342,61 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
    const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = scene.rp,
                                        .framebuffer = scene.fb, .renderArea = { { 0, 0 }, { scene.w, scene.h } },
                                        .clearValueCount = 2, .pClearValues = clears };
-   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   const VkDeviceSize zero = 0, size = scenario == 1 ? 160 : 1024, counter_at = 2048;
+   if (scenario == 8) {
+      static PFN_vkCmdBeginRendering BeginRendering;
+      static PFN_vkCmdEndRendering EndRendering;
+      if (!BeginRendering) {
+         BeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+         EndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+      }
+      for (uint32_t i = 0; i < 17; i++) {
+         /* Smaller each time: a pass given a later pass's attachment would have its viewport past it. */
+         const uint32_t e = 17 - i;
+         const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                                      .renderArea = { { 0, 0 }, { e, e } }, .layerCount = 1 };
+         BeginRendering(cmd, &ri);
+         CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+         const VkViewport viewport = { 0, 0, e, e, 0, 1 };
+         const VkRect2D scissor = { { 0, 0 }, { e, e } };
+         CmdSetViewport(cmd, 0, 1, &viewport);
+         CmdSetScissor(cmd, 0, 1, &scissor);
+         CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+         const VkDeviceSize at = 96 * i, n = 96;
+         Bind(cmd, 0, 1, &out, &at, &n);
+         Begin(cmd, 0, 0, NULL, NULL);
+         CmdDraw(cmd, 3, 1, 0, 0);
+         End(cmd, 0, 1, &out, &counter_at);
+         EndRendering(cmd);
+      }
+      CHECK(EndCommandBuffer(cmd));
+      const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                    .pCommandBuffers = &cmd };
+      CHECK(QueueSubmit(queue, 1, &submit, xfb.fence));
+      return 0;
+   }
+   static PFN_vkCmdEndRendering EndRendering;
+   if (scenario == 7) {
+      static PFN_vkCmdBeginRendering BeginRendering;
+      if (!BeginRendering) {
+         BeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+         EndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+      }
+      VkRenderingAttachmentInfo atts[8];
+      for (uint32_t i = 0; i < 8; i++)
+         atts[i] = (VkRenderingAttachmentInfo){ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+      const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                                   .renderArea = { { 0, 0 }, { scene.w, scene.h } }, .layerCount = 1,
+                                   .colorAttachmentCount = 8, .pColorAttachments = atts };
+      BeginRendering(cmd, &ri);
+   } else {
+      CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   }
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
    const VkViewport viewport = { 0, 0, scene.w, scene.h, 0, 1 };
    const VkRect2D scissor = { { 0, 0 }, { scene.w, scene.h } };
    CmdSetViewport(cmd, 0, 1, &viewport);
    CmdSetScissor(cmd, 0, 1, &scissor);
-   const VkDeviceSize zero = 0, size = scenario == 1 ? 160 : 1024, counter_at = 2048;
    CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
    if (scenario == 4) {
       const VkBuffer vb[5] = { scene.vertices, scene.vertices, scene.vertices, scene.vertices, scene.vertices };
@@ -1176,12 +1414,23 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
       End(cmd, 0, 1, &out, &counter_at);
       Begin(cmd, 0, 1, &out, &counter_at);
       CmdDraw(cmd, 3, 1, 3, 0);
+   } else if (scenario == 5 || scenario == 6) {
+      Begin(cmd, 0, 0, NULL, NULL);
+      if (scenario == 6) {
+         CmdBindIndexBuffer(cmd, scene.indices, 0, VK_INDEX_TYPE_UINT16);
+         ((PFN_vkCmdDrawIndexedIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndexedIndirect"))(cmd, args, 16, 1, 20);
+      } else {
+         ((PFN_vkCmdDrawIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndirect"))(cmd, args, 16, 1, 16);
+      }
    } else {
       Begin(cmd, 0, 0, NULL, NULL);
       CmdDraw(cmd, scenario == 2 ? 4 : 6, 1, 0, 0);
    }
    End(cmd, 0, 1, &out, &counter_at);
-   CmdEndRenderPass(cmd);
+   if (scenario == 7)
+      EndRendering(cmd);
+   else
+      CmdEndRenderPass(cmd);
    CHECK(EndCommandBuffer(cmd));
    const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
                                  .pCommandBuffers = &cmd };

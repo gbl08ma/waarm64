@@ -207,6 +207,24 @@ struct push_set {
    struct wg_descriptor_set *set;
 };
 
+void
+wg_dummy_unref(struct wg_dummy *d)
+{
+   if (!d || --d->refs)
+      return;
+   wg_id_release(d->view);
+   wg_id_release(d->texture);
+   free(d);
+}
+
+static void
+free_dummies(struct wg_cmd_buffer *cmd)
+{
+   util_dynarray_foreach (&cmd->dummies, struct wg_dummy *, d)
+      wg_dummy_unref(*d);
+   util_dynarray_clear(&cmd->dummies);
+}
+
 static void
 free_push_sets(struct wg_cmd_buffer *cmd)
 {
@@ -221,7 +239,9 @@ wg_cmd_buffer_destroy(struct vk_command_buffer *vk)
 {
    struct wg_cmd_buffer *cmd = container_of(vk, struct wg_cmd_buffer, vk);
    free_push_sets(cmd);
+   free_dummies(cmd);
    util_dynarray_fini(&cmd->push_sets);
+   util_dynarray_fini(&cmd->dummies);
    util_dynarray_fini(&cmd->cmds);
    vk_command_buffer_finish(vk);
    vk_free(&vk->pool->alloc, cmd);
@@ -240,6 +260,7 @@ wg_cmd_buffer_create(struct vk_command_pool *pool, VkCommandBufferLevel level, s
    }
    util_dynarray_init(&cmd->cmds, NULL);
    util_dynarray_init(&cmd->push_sets, NULL);
+   util_dynarray_init(&cmd->dummies, NULL);
    /* The runtime's dynamic state keeps these where the driver says. */
    cmd->vk.dynamic_graphics_state.vi = &cmd->vi;
    cmd->vk.dynamic_graphics_state.ms.sample_locations = &cmd->sample_locations;
@@ -257,6 +278,7 @@ wg_cmd_buffer_reset(struct vk_command_buffer *vk, VkCommandBufferResetFlags flag
    util_dynarray_clear(&cmd->cmds);
    cmd->draws = 0;
    free_push_sets(cmd);
+   free_dummies(cmd);
    memset(cmd->shaders, 0, sizeof(cmd->shaders));
    memset(cmd->sets, 0, sizeof(cmd->sets));
    memset(cmd->vbs, 0, sizeof(cmd->vbs));
@@ -473,27 +495,41 @@ stencil_read_only(VkImageLayout l)
 
 /* An attachment for a pass that has none (Vulkan's attachment-less passes; WebGPU's need one): an R8 texture of the
  * render area's size, the device's, kept by size (VK3 L7.4: transform feedback's passes have none). Its pipelines
- * write nothing to it (record_draw). */
+ * write nothing to it (record_draw). The command buffer keeps a reference to it while its passes name it (VK3 L7b, the
+ * review of L7.4-L7.5's finding 4: one the device let go of was released under a recorded pass, its id another's). */
 static uint32_t
-dummy_attachment(struct wg_device *dev, uint32_t width, uint32_t height)
+dummy_attachment(struct wg_cmd_buffer *cmd, uint32_t width, uint32_t height)
 {
-   uint32_t free = 0;
-   for (uint32_t i = 0; i < 16; i++) {
-      if (dev->dummies[i].view && dev->dummies[i].width == width && dev->dummies[i].height == height)
-         return dev->dummies[i].view;
-      if (!dev->dummies[i].view && !free)
-         free = i + 1;
+   struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
+   struct wg_dummy *d = NULL;
+   uint32_t free_slot = 0;
+   for (uint32_t i = 0; i < 16 && !d; i++) {
+      if (dev->dummies[i] && dev->dummies[i]->width == width && dev->dummies[i]->height == height)
+         d = dev->dummies[i];
+      else if (!dev->dummies[i] && !free_slot)
+         free_slot = i + 1;
    }
-   const uint32_t i = free ? free - 1 : 15;
-   wg_id_release(dev->dummies[i].view);
-   wg_id_release(dev->dummies[i].texture);
-   struct wg_json j = { 0 };
-   wg_json_printf(&j, "{\"size\":[%u,%u],\"format\":\"r8unorm\",\"usage\":16}", width, height); /* RENDER_ATTACHMENT */
-   dev->dummies[i].texture = wg_create_json(WG_KIND_TEXTURE, &j);
-   wg_json_printf(&j, "{\"texture\":%u}", dev->dummies[i].texture);
-   dev->dummies[i].view = wg_create_json(WG_KIND_VIEW, &j);
-   dev->dummies[i].width = width, dev->dummies[i].height = height;
-   return dev->dummies[i].view;
+   if (!d) {
+      const uint32_t i = free_slot ? free_slot - 1 : 15;
+      wg_dummy_unref(dev->dummies[i]);
+      d = calloc(1, sizeof(*d));
+      d->refs = 1;
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":[%u,%u],\"format\":\"r8unorm\",\"usage\":16}", width, height); /* RENDER_ATTACHMENT */
+      d->texture = wg_create_json(WG_KIND_TEXTURE, &j);
+      wg_json_printf(&j, "{\"texture\":%u}", d->texture);
+      d->view = wg_create_json(WG_KIND_VIEW, &j);
+      d->width = width, d->height = height;
+      dev->dummies[i] = d;
+   }
+   bool held = false;
+   util_dynarray_foreach (&cmd->dummies, struct wg_dummy *, h)
+      held |= *h == d;
+   if (!held) {
+      d->refs++;
+      util_dynarray_append_typed(&cmd->dummies, struct wg_dummy *, d);
+   }
+   return d->view;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -541,6 +577,10 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          dummy = true;
       }
    }
+   /* Eight colour attachments, all null: the device's in the last's place (WebGPU's at most 8; VK3 L7b, the review of
+    * L7.4-L7.5's finding 6: a ninth overran pass.colors). */
+   if (dummy && cmd->pass.color_count == 8)
+      cmd->pass.color_count = 7;
    partial = area.offset.x || area.offset.y || area.extent.width < width || area.extent.height < height;
    cmd->pass.area = area;
    /* A pass that suspends or resumes (VK_RENDERING_SUSPENDING_BIT, RESUMING_BIT) is part of one render pass instance
@@ -581,9 +621,8 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
       }
    }
    if (dummy) {
-      struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
       wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"clear\",\"storeOp\":\"discard\",\"clearValue\":[0,0,0,0]}",
-                     cmd->pass.color_count ? "," : "", dummy_attachment(dev, width, height));
+                     cmd->pass.color_count ? "," : "", dummy_attachment(cmd, width, height));
       cmd->pass.colors[cmd->pass.color_count] = VK_FORMAT_R8_UNORM;
       cmd->pass.dummy = cmd->pass.color_count++;
       cmd->pass.dummy++;
@@ -1191,7 +1230,7 @@ draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t 
  * rasterizes nothing (rasterizer discard, both faces culled), its state recorded for it (VK3 L7.4). */
 static void
 xfb_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t count, uint32_t instances, uint32_t first, int32_t base,
-         uint32_t first_instance)
+         uint32_t first_instance, struct wg_buffer *indirect, VkDeviceSize indirect_offset)
 {
    struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX];
    if (!cmd->xfb_active || !vs || !vs->program || !wg_shader_xfb(vs))
@@ -1222,9 +1261,14 @@ xfb_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t count, uint32_t insta
    }
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"op\":\"draw\",\"topology\":%u,\"wide\":%u,\"ib\":%u,\"offset\":%.0f,\"size\":%.0f,"
-                  "\"count\":%u,\"instances\":%u,\"first\":%u,\"base\":%d,\"firstInstance\":%u}",
+                  "\"count\":%u,\"instances\":%u,\"first\":%u,\"base\":%d,\"firstInstance\":%u",
                   dyn->ia.primitive_topology, indexed ? cmd->ib_type == VK_INDEX_TYPE_UINT32 : 2, ib, ib_offset,
                   ib_size, count, instances, first, base, first_instance);
+   /* An indirect draw's (VK3 L7b, the review of L7.4-L7.5's finding 2): its arguments copied over the parameters. */
+   if (indirect && buffer_gpu(indirect))
+      wg_json_printf(&j, ",\"indirect\":[%u,%.0f]}", buffer_gpu(indirect), (double)(indirect->offset + indirect_offset));
+   else
+      wg_json_printf(&j, "}");
    struct op_xfb *o = emit(cmd, OP_XFB, NULL, sizeof(struct op_xfb) + j.len + 1);
    memset(o, 0, sizeof(*o));
    o->kind = 1;
@@ -1327,7 +1371,7 @@ wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances,
    const uint32_t faces = draw_faces(cmd);
    for (uint32_t i = 0; i < faces; i++)
       draw(cmd, vertices, instances, first, first_instance, face_of(faces, i));
-   xfb_draw(cmd, false, vertices, instances, first, 0, first_instance);
+   xfb_draw(cmd, false, vertices, instances, first, 0, first_instance, NULL, 0);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1349,7 +1393,7 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
       emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance },
            sizeof(struct op_draw_indexed));
    }
-   xfb_draw(cmd, true, indices, instances, first, base, first_instance);
+   xfb_draw(cmd, true, indices, instances, first, base, first_instance, NULL, 0);
 }
 
 static void
@@ -1367,14 +1411,18 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
          fprintf(stderr, "wg: an indirect draw whose provoking vertex is the last, or an indexed fan: drawn as is\n");
       warned = true;
    }
+   stride = stride ? stride : (indexed ? 20 : 16);
    for (uint32_t i = 0; i < faces; i++) {
       if (!record_draw(cmd, indexed, face_of(faces, i), -1))
-         return;
+         break;
       emit(cmd, OP_DRAW_INDIRECT,
-           &(struct op_indirect){ .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count,
-                                  .stride = stride ? stride : (indexed ? 20 : 16), .offset = buffer->offset + offset },
+           &(struct op_indirect){ .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count, .stride = stride,
+                                  .offset = buffer->offset + offset },
            sizeof(struct op_indirect));
    }
+   /* Captured with its arguments read at the capture (the counts here are only the most it may draw: none). */
+   for (uint32_t i = 0; i < count; i++)
+      xfb_draw(cmd, indexed, 0, 0, 0, 0, 0, buffer, offset + (VkDeviceSize)i * stride);
 }
 
 VKAPI_ATTR void VKAPI_CALL

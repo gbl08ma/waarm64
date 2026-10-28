@@ -33,7 +33,7 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert']]) {
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -196,6 +196,13 @@ for (const [scenario, what, want] of [
   ['flatLast', 'an indexed triangle list whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['flatFanLast', 'a fan whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['flatFanFirst', 'a fan whose first vertex provokes (Vulkan\'s: each triangle\'s second vertex of the fan)', { topLeft: red, bottomLeft: yellow, topRight: blue, bottomRight: blue }],
+  // L7b (the review of L7.4-L7.5: finding 1): 16-bit index buffers whose size isn't a multiple of 4, used to their end.
+  ['flatFanOdd', 'an indexed fan of 5 16-bit indices in a 10-byte buffer', { topLeft: red, bottomLeft: yellow, topRight: blue, bottomRight: blue }],
+  ['flatListOdd', 'a triangle list of 3 16-bit indices in a 6-byte buffer, its last vertex provoking', { topLeft: yellow, bottomLeft: blue, topRight: blue, bottomRight: blue }],
+  // L7b (the review's finding 7): a restarted strip's walk in parts, its runs across them.
+  ['flatRestart', 'an indexed strip with primitive restart whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  // L7b (the review's finding 9): ANGLE's ES3 uniform buffers, 13 a stage, each stage's its own, a default block dynamic.
+  ['angleUniforms', 'ANGLE\'s layout of 13 uniform buffers in each of two stages', { topLeft: [178, 200, 0, 255], bottomLeft: [178, 200, 0, 255], topRight: [178, 200, 0, 255], bottomRight: [178, 200, 0, 255] }],
   // L7.5: draw parameters (each quad's base vertex, base instance, 200 + its draw's index; indirect first instances
   // 0 where the adapter has none: checked below).
   ['drawParams', 'the base vertex, base instance and draw index of direct, indexed and indirect draws in one pass', { topLeft: [10, 20, 200, 255], bottomLeft: [30, 40, 200, 255] }],
@@ -236,6 +243,11 @@ for (const [scenario, what] of [
   ['xfbResume', 'a capture ended and begun again resumes from its counter'],
   // L7a (the binding review's finding 1): more vertex bindings and buffers than WebGPU's storage buffers a stage.
   ['xfbMany', 'four buffers captured from six vertex bindings'],
+  // L7b (the review of L7.4-L7.5: findings 2, 6, 4).
+  ['xfbIndirect', 'an indirect draw captured'],
+  ['xfbIndexedIndirect', 'an indexed indirect draw captured'],
+  ['xfbNullColors', 'a capture in a pass of eight colour attachments, all null'],
+  ['xfbPasses', 'captures in 17 passes without attachments, each of its own size, in one command buffer'],
 ] as const) {
   test(`transform feedback: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.

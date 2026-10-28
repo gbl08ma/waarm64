@@ -46,6 +46,7 @@ struct ctx {
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
    bool shm_atomic, shm_signed, shm_unsigned, uses_helper, uses_frag_coord, uses_front_face, uses_draw_params, uses_sample_id, uses_sample_mask_in;
+   bool uses_interp_at_sample; /* interpolateAtSample: wg_sample_pos without the sample rate */
    uint32_t ubo_sizes_unused;
    /* Fragment inputs and vertex outputs, by location (VARYING_SLOT_VAR0 + n). */
    struct wgsl_varyings vary;
@@ -506,9 +507,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
                                           nir->info.fs.uses_sample_shading
                                        ? WGSL_SAMPLING_SAMPLE
                                        : WGSL_SAMPLING_CENTER;
-            if (bary->intrinsic == nir_intrinsic_load_barycentric_at_offset ||
-                bary->intrinsic == nir_intrinsic_load_barycentric_at_sample)
-               failf(c, "interpolation at an offset or sample");
+            /* interpolateAtOffset, interpolateAtSample: from the input where it is interpolated, by its derivatives
+             * (emit_input; VK3 L7b, the review of L6b-L7.3's finding 1: sampleRateShading brings them). */
+            if (bary->intrinsic == nir_intrinsic_load_barycentric_at_sample)
+               c->uses_interp_at_sample = true;
          }
       }
       break;
@@ -908,7 +910,7 @@ declare_io(struct ctx *c)
       /* At the sample rate, a sample's position (gl_SamplePosition; gl_FragCoord is at it, as Vulkan has it, where
        * WGSL's position is the pixel's centre): Vulkan's standard locations, by the pipeline's sample count (the
        * driver's override). */
-      if (nir->info.fs.uses_sample_shading) {
+      if (nir->info.fs.uses_sample_shading || c->uses_interp_at_sample) {
          c->info->per_sample = true;
          line(c, "override wg_samples: u32 = 1u;");
          line(c, "fn wg_sample_pos(s: u32) -> vec2<f32> {");
@@ -1470,6 +1472,23 @@ emit_input(struct ctx *c, nir_intrinsic_instr *intr)
       const unsigned loc = sem.location - VARYING_SLOT_VAR0;
       e = fmt(c, "i.v%u.%s", loc, comps(c, first, n));
       base = c->vary.base[loc];
+      /* At an offset from the pixel's centre, or at a sample: the input where WebGPU interpolates it (the centre, or
+       * the sample at the sample rate; the centroid taken as the centre) moved there along its fine derivatives
+       * (exact for linear interpolation; within a pixel, close for perspective). */
+      nir_intrinsic_instr *bary =
+         intr->intrinsic == nir_intrinsic_load_interpolated_input ? nir_src_as_intrinsic(intr->src[0]) : NULL;
+      if (bary && c->vary.interp[loc] != WGSL_INTERP_FLAT &&
+          (bary->intrinsic == nir_intrinsic_load_barycentric_at_offset ||
+           bary->intrinsic == nir_intrinsic_load_barycentric_at_sample)) {
+         const char *at = bary->intrinsic == nir_intrinsic_load_barycentric_at_offset
+                             ? fmt(c, "(vec2<f32>(0.5) + %s)", as_base(c, src_name(c, &bary->src[0]), WGSL_F32, 2))
+                             : fmt(c, "wg_sample_pos(%s)", src_comp(c, &bary->src[0], 0));
+         const char *from = c->vary.sampling[loc] == WGSL_SAMPLING_SAMPLE ? "wg_sample_pos(sid)" : "vec2<f32>(0.5)";
+         const char *v = fmt(c, "i.v%u", loc);
+         line(c, "{ let d = %s - %s; let v = %s + dpdxFine(%s) * d.x + dpdyFine(%s) * d.y; t%u = %s; }", at, from, v,
+              v, v, intr->def.index, to_storage(c, fmt(c, "v.%s", comps(c, first, n)), base, n));
+         return;
+      }
    }
    line(c, "t%u = %s;", intr->def.index, to_storage(c, e, base, n));
 }
@@ -1651,6 +1670,8 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_barycentric_pixel:
    case nir_intrinsic_load_barycentric_centroid:
    case nir_intrinsic_load_barycentric_sample:
+   case nir_intrinsic_load_barycentric_at_offset:
+   case nir_intrinsic_load_barycentric_at_sample:
       return;
    case nir_intrinsic_load_reg:
       line(c, "t%u = %s;", def->index, src_name(c, &intr->src[0]));

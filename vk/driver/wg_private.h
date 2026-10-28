@@ -58,8 +58,8 @@ enum wg_feature {
                                         * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
-   WG_FEATURE_YCBCR = 1 << 30, /* not the adapter's: `?gpu=vkycbcr` (VK3 L7.1b, L7.2): samplerYcbcrConversion and the
-                                * multi-planar formats (wg_ycbcr_format), off by default until GTK4's row */
+   WG_FEATURE_YCBCR = 1 << 30, /* not the adapter's (VK3 L7.2): samplerYcbcrConversion and the multi-planar formats
+                                * (wg_ycbcr_format), on by default since L7.3; `?gpu=vkycbcr=off` holds them */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 
@@ -202,9 +202,7 @@ struct wg_device {
    uint32_t push_used, push_size, push_gen;
    uint32_t fan_indices;   /* wg_fan_indices */
    /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size. */
-   struct {
-      uint32_t width, height, texture, view;
-   } dummies[16];
+   struct wg_dummy *dummies[16];
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
@@ -519,9 +517,17 @@ struct wg_op_ib {
    double offset, size;
 };
 
+/* An attachment for passes without any (wg_cmd.c `dummy_attachment`): its ids released at its last reference's end,
+ * the device's (while it keeps it) and each command buffer's that names it. */
+struct wg_dummy {
+   uint32_t width, height, texture, view, refs;
+};
+void wg_dummy_unref(struct wg_dummy *d);
+
 struct wg_cmd_buffer {
    struct vk_command_buffer vk;
    struct util_dynarray cmds;
+   struct util_dynarray dummies; /* struct wg_dummy *: the attachments its passes without any name */
    struct util_dynarray push_sets; /* struct wg_descriptor_set *: push descriptors, the command buffer's own */
    struct vk_vertex_input_state vi;
    struct vk_sample_locations_state sample_locations;

@@ -49,6 +49,9 @@
 # not supported without multiDrawIndirect), the two api cases of its feature, and the passing cases of every tenth
 # draw.renderpass.instanced case (11 of 102; most need vertex attribute divisors, buffer device addresses or multiview),
 # at the end.
+# VK3 L7b: interpolateAtOffset and interpolateAtSample (the input moved along its derivatives): every samples_4 case of
+# multisample_interpolation's offset_interpolate_at_pixel_center, offset_interpolation_at_sample_position and
+# sample_interpolate_at groups, and sample_interpolate_at_single_sample's, at the end.
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -4721,3 +4724,21 @@ dEQP-VK.draw.renderpass.shader_draw_parameters.base_vertex_only.draw
 dEQP-VK.draw.renderpass.shader_draw_parameters.base_vertex_only.draw_indexed
 dEQP-VK.draw.renderpass.shader_draw_parameters.base_vertex_only.draw_indexed_indirect
 dEQP-VK.draw.renderpass.shader_draw_parameters.base_vertex_only.draw_indirect
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolate_at_pixel_center.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolate_at_pixel_center.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.all_components.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.all_components.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.component_0.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.component_0.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.component_1.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.component_1.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.pushc_component_0.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.pushc_component_0.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.pushc_component_1.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.offset_interpolation_at_sample_position.pushc_component_1.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_distinct_values.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_distinct_values.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_ignores_centroid.128_128_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_ignores_centroid.137_191_1.samples_4
+dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_single_sample.128_128_1.samples_1
+dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_single_sample.137_191_1.samples_1

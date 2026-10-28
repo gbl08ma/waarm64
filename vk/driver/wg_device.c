@@ -392,12 +392,27 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
     * naming another format is refused (an image made without one gets views of other formats, which WebGPU refuses:
     * CreateImageView warns). */
    const VkImageFormatListCreateInfo *list = vk_find_struct_const(info->pNext, IMAGE_FORMAT_LIST_CREATE_INFO);
+   const struct vk_format_ycbcr_info *ycbcr = wg_ycbcr_format(info->format);
    if ((info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && list) {
-      for (uint32_t i = 0; i < list->viewFormatCount; i++)
-         if (!view_format_ok(info->format, list->pViewFormats[i])) {
+      for (uint32_t i = 0; i < list->viewFormatCount; i++) {
+         /* A multi-planar image's: its planes' formats (a plane's view, each plane a texture of its own: VK3 L7b,
+          * the review of L6b-L7.3's finding 3), or their twins. */
+         bool ok = view_format_ok(info->format, list->pViewFormats[i]);
+         for (uint8_t p = 0; ycbcr && p < ycbcr->n_planes && !ok; p++)
+            ok = view_format_ok(ycbcr->planes[p].format, list->pViewFormats[i]);
+         if (!ok) {
             pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
          }
+      }
+   }
+   /* A multi-planar image on external memory: its planes' textures are neither imported nor exported
+    * (wg_BindImageMemory2; the review of L6b-L7.3's finding 4): refused. */
+   const VkPhysicalDeviceExternalImageFormatInfo *external =
+      vk_find_struct_const(info->pNext, PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
+   if (ycbcr && external && external->handleType) {
+      pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
    /* WebGPU: no 3D depth or compressed 3D textures, no cube arrays of 1D. */
    const bool depth = features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -409,7 +424,6 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
    /* A multi-planar image (VK3 L7.2): 2D, one level, one sample (EXT_ycbcr_image_arrays: layers). */
-   const struct vk_format_ycbcr_info *ycbcr = wg_ycbcr_format(info->format);
    if (ycbcr && (info->type != VK_IMAGE_TYPE_2D || info->tiling != VK_IMAGE_TILING_OPTIMAL ||
                  (info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT))) {
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
@@ -585,10 +599,8 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    vk_queue_finish(&dev->queue.vk);
    wg_id_release(dev->push_buffer);
    wg_id_release(dev->fan_indices);
-   for (uint32_t i = 0; i < 16; i++) {
-      wg_id_release(dev->dummies[i].view);
-      wg_id_release(dev->dummies[i].texture);
-   }
+   for (uint32_t i = 0; i < 16; i++)
+      wg_dummy_unref(dev->dummies[i]);
    wg_id_release(dev->query_scratch);
    free(dev->push_data);
    free(dev->pages);
@@ -1210,6 +1222,16 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       const bool one = a == VK_IMAGE_ASPECT_PLANE_0_BIT || a == VK_IMAGE_ASPECT_PLANE_1_BIT ||
                        a == VK_IMAGE_ASPECT_PLANE_2_BIT;
       const uint32_t first = one ? wg_image_plane(image, a) : 0;
+      /* A plane's view in a format other than the plane's (or its twin): WebGPU's views differ only in sRGB-ness, so
+       * WebGPU refuses it (the review of L6b-L7.3's finding 3; docs/backlog.md "YCbCr's gaps"). */
+      const struct vk_format_ycbcr_info *yi = wg_ycbcr_format(image->vk.format);
+      if (one && yi && !view_format_ok(yi->planes[first].format, view->vk.view_format)) {
+         static bool warned;
+         if (!warned)
+            fprintf(stderr, "wg: a view of format %d of plane %u of an image of format %d: WebGPU's views differ only "
+                            "in sRGB-ness\n", view->vk.view_format, first, image->vk.format);
+         warned = true;
+      }
       view->plane_count = one ? 1 : image->plane_count;
       for (uint32_t p = 0; p < view->plane_count; p++) {
          const struct wg_image_plane *plane = &image->planes[first + p];

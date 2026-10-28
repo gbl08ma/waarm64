@@ -146,7 +146,11 @@ point reads `@builtin(sample_index)` (WGSL runs a fragment shader per sample whe
 `FragCoord` is at the sample), as is `gl_SamplePosition`: Vulkan's standard locations by the pipeline's sample count
 (`override wg_samples`, the render pipeline's constant). The pipeline's state reaches the WGSL through `hash_state`
 (the shaders' keys), so a stage made for both kinds of pipeline is two. Interpolation at an offset or a sample
-(`interpolateAt*`) still fails the stage.
+(`interpolateAtOffset`, `interpolateAtSample`; VK3 L7b, which `sampleRateShading` brings in SPIR-V) is the input
+where WebGPU interpolates it (the pixel's centre, or its sample at the sample rate; the centroid taken as the centre)
+moved to the offset from the centre or to the sample's position along its fine derivatives (`dpdxFine`, `dpdyFine`):
+exact for linear interpolation, within a pixel close for perspective (dEQP-VK's `multisample_interpolation` samples_4
+cases of it pass); a flat input as it is.
 
 Subgroups are in compute and fragment shaders only
 (WGSL's), and a subgroup-scoped barrier does nothing. Without them, the basic operations of subgroups of one invocation.
@@ -160,7 +164,7 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
+16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), integer textures sampled with a sampler, image atomics, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
 its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
@@ -215,7 +219,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
-  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, interpolation at an offset,
+  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs,
   inline uniform blocks, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of every kind of descriptor (`if` trees), formats from WebGPU's tables
@@ -224,7 +228,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers
   vertex input and texel buffers: "The shader path"), samples 1 and 4 (1 for the 32-bit integer formats and the float ones of two or four
   channels, which WebGPU doesn't multisample), views of a mutable image in its format's sRGB twin only (WebGPU's `viewFormats`: a format list naming
-  another format is refused by the image-format query, and such a view warned of); plus the extensions
+  another format is refused by the image-format query, and such a view warned of; a multi-planar image's list may
+  name its planes' formats, VK3 L7b), no multi-planar image on external memory (its planes' textures are neither
+  imported nor exported: refused by the image-format query, VK3 L7b); plus the extensions
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
@@ -371,7 +377,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   secondaries' too, numbering them as tickets), the worker's compute pass writes the draw's primitives as a list of
   32-bit indices, each one's vertices rotated so that Vulkan's provoking vertex comes first and the winding kept
   (`provoke`: triangle lists, strips and fans, line lists and strips; a strip or fan with primitive restart walked by
-  one invocation, the rest of its primitives degenerate), into a scratch buffer of the worker's whose places start
+  256 invocations, a part each, each from the run its part's predecessors leave (VK3 L7b: one walked it all, long
+  enough at millions of indices for the browser's GPU watchdog), a primitive where Vulkan's ends, degenerate where a
+  restart leaves none; a 16-bit range bound rounded up to a word, VK3 L7b: rounded down, it lost an odd range's last
+  index), into a scratch buffer of the worker's whose places start
   again at each encoder (the queue's order keeps an earlier submit's reads before a later one's writes); in the pass
   the draw is an indexed list draw of its ticket's indices (`gpu_draw_ticket`). Non-indexed fans take the device's fan
   indices, (i + 1, i + 2, 0) for triangle i (Vulkan's order; they used to be (0, i + 1, i + 2), each triangle provoked
@@ -402,7 +411,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   pipeline's creation, as one whose stage's bindings and the capture's don't fit, "Bindings past WebGPU's"); then one
   invocation advances the state; an end copies the ranges back and the state into its counters. A draw that
   rasterizes nothing (rasterizer discard, both faces culled) records its state for the capture alone (`xfb_record`).
-  Host-visible buffers and counters are read back after the submit.
+  An indirect draw is captured too (VK3 L7b: it wasn't): its arguments copied over the capture's parameters on the GPU,
+  its index buffer and vertex bindings taken whole, its primitives counted in the shader (`wgx_prims`), 1,024
+  workgroups looping over them. Host-visible buffers and counters are read back after the submit.
 - **Bindings past WebGPU's** (VK3 L7a, the reviews after L7; `wg_caps.c` "The bindings WebGPU takes", the one place
   that counts them): besides a descriptor's own binding, WebGPU binds the push buffer (a uniform buffer every stage
   counts, dynamic in its layout), a texel buffer's two (a storage buffer and a uniform buffer, where Vulkan counts an
@@ -430,7 +441,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   keeps them whatever a write passes.
 - **Attachment-less passes** (VK3 L7.4: transform feedback's passes have none): WebGPU's passes need an attachment, so
   such a pass gets one of the device's (an R8 texture of the render area's size, kept by size, `dummy_attachment`),
-  which no pipeline writes.
+  which no pipeline writes; at the place of the last of eight null colour attachments (VK3 L7b: a ninth overran
+  `pass.colors`). It is counted (`wg_dummy`): the device keeps 16 by size, and each command buffer whose passes name
+  one holds it until it is reset or freed (VK3 L7b: a 17th size released one under a recorded pass, its id another's).
 - **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
   devices at once, a 17th fails to be made). The worker calls `venus_complete(serial)` in submit order once the work is done and its staging
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's

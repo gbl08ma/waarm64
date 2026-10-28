@@ -120,7 +120,7 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * conversions integer code: wgsl_nir.c `lower_16bit`). */
       .KHR_shader_float16_int8 = HAS(F16),
       .KHR_16bit_storage = true,
-      /* YCbCr conversions and the multi-planar formats (VK3 L7.2; `?gpu=vkycbcr`, off by default until GTK4's row). */
+      /* YCbCr conversions and the multi-planar formats (VK3 L7.2; on by default since L7.3, `?gpu=vkycbcr=off`). */
       .KHR_sampler_ycbcr_conversion = HAS(YCBCR),
       .EXT_ycbcr_image_arrays = HAS(YCBCR),
       /* The last vertex provoking: a draw whose fragment shader reads a flat input goes through indices of its own,
@@ -193,10 +193,10 @@ wg_caps_features(struct vk_features *f)
       .extendedDynamicState = true,
       .extendedDynamicState2 = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
-      /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr) only with
-       * `?gpu=vkycbcr`: by default GTK4's Vulkan renderer stays off and GTK draws on GL (VK2 L7: GTK4 on Venus drew
-       * black or near-empty frames for more CPU); GTK4's row (L7.3) decides the default. Chromium's own Vulkan device
-       * refuses a device without them (VK3 L7.1b). */
+      /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr), on by default
+       * since L7.3 (GTK 4.24 asserts them on a device with dma-buf modifiers; GTK4 still takes GL: its Vulkan renderer
+       * misses its bar), held by `?gpu=vkycbcr=off`. Chromium's own Vulkan device refuses a device without them (VK3
+       * L7.1b). */
       .samplerYcbcrConversion = HAS(YCBCR),
       .ycbcrImageArrays = HAS(YCBCR),
       .provokingVertexLast = true,

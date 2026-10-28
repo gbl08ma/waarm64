@@ -694,6 +694,34 @@ test('a fragment stage at the sample rate reads its inputs at their sample and W
   }
 });
 
+test('interpolateAtOffset and interpolateAtSample move the input along its derivatives (VK3 L7b)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  // The review of L6b-L7.3 (finding 1): sampleRateShading is advertised, and with it SPIR-V's InterpolationFunction;
+  // the translator refused both.
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const file = 'tests/venus/l7b/interpolate-at.frag';
+    const pixel = glslStage(translate, tmp, file);
+    assert.equal(pixel.rc, 0, pixel.text);
+    const shading = glslStage(translate, tmp, file, { features: WGSL.DUAL_SOURCE | TEST_SAMPLE_SHADING });
+    assert.equal(shading.rc, 0, shading.text);
+    for (const r of [pixel, shading]) {
+      assert.match(r.text, /dpdxFine\(i\.v0\)/);
+      assert.match(r.text, /wg_sample_pos\(/);
+      // The flat input as it is.
+      assert.doesNotMatch(r.text, /dpdxFine\(i\.v2\)/);
+    }
+    // At the sample rate, from the sample the input is at.
+    assert.match(shading.text, /- wg_sample_pos\(sid\)/);
+    assert.doesNotMatch(pixel.text, /\bsid\b/);
+    const errors = await compile([pixel.text, shading.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 /**
  * Runs a translated compute shader (one workgroup) over textures in headless Chromium's WebGPU: each texture made of
  * its bytes at its WGSL binding, a sampler (`filter`) at `sampler`, a storage buffer of `size` bytes at `out`, read back.
