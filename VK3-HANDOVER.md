@@ -16,8 +16,8 @@ docs and the backlog; git keeps the old handovers.
   ci-deqp-vk.sh 846 s, ci-debian.sh 416 s, ci-machines.sh 168 s, all OK.
 - **The gate:** met on SwiftShader and the M4 but for Dawn's program (the guest's Mesa: backlog); on NVIDIA as of
   4fdc69fb but for 1 fish (parked by the user). L5–L7b haven't run on NVIDIA.
-- **Open:** (1) the out-of-context review of what VK3 changed (the supervisor runs it); (2) the user's final NVIDIA
-  run (the supervisor builds the bundle from a clean checkout at the last commit). Then the track's kickoff and
+- **Open:** (1) L8a, the fixes from the out-of-context review of what VK3 changed (below); (2) the user's final
+  NVIDIA run (the supervisor builds the bundle from a clean checkout after L8a). Then the track's kickoff and
   handover leave the tree (the supervisor).
 
 ## Where VK3 stands
@@ -88,6 +88,12 @@ Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **th
 
 - [x] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, the four CI
   scripts). Left to the supervisor: an out-of-context review of what VK3 changed.
+  - [ ] L8a: **the track-end review's findings** (`git show origin/review/venus-vk3:VENUS-VK3-REVIEW.md`, of
+    3f8aa595..dedd54e6, now 72d2f561): 1 (a 4-aligned `vkCmdCopyBuffer` within one VkDeviceMemory is a same-buffer
+    `copyBufferToBuffer`, which WebGPU rejects, losing the submit: high), 2 (the provoking-vertex pass binds the index
+    buffer to its end, past `maxStorageBufferBindingSize` on big buffers; xfb's index range skips the capture the same
+    way), 3 (attachment-less passes rasterize at 1 sample with 4 advertised), 4 (descriptor copies overwrite immutable
+    samplers), 5 (xfb across a suspended/resumed pass: check the spec allows it; fix or file).
 
 ## What the next NVIDIA run must answer
 

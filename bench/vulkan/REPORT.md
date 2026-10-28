@@ -852,7 +852,7 @@ test_draw_indexed_instanced and test_root_constants pass, test_vertex_id still f
 captures weren't its cause alone) and test_instance_id 84 of 372; a 28-case slice of the list through `deqp-run.ts`
 all pass.
 
-**CI at the track's end** (the code at dedd54e6, this loop's changes being scripts and docs; one at a time, alone):
+**CI at the track's end** (the code at 72d2f561, this loop's changes being scripts and docs; one at a time, alone):
 `scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (846 s: the 4,690-case list in 588 s, YCbCr's 773 in 89 s,
 the replays 169 s); `scripts/ci-debian.sh` OK (416 s); `scripts/ci-machines.sh` OK (168 s). steps.txt unmoved.
 
@@ -1617,7 +1617,7 @@ multi-planar image's plane formats in its format list and refuses it on external
   filed (backlog "YCbCr's gaps"). Test: the same (NV12 with a dma-buf handle type: supported before). The YCbCr list
   (773 cases) passes unchanged: Venus's guest asks for external memory only where the program does.
 - **5** (comments of the YCbCr default): fixed (`wg_caps.c`, `wg_private.h`).
-- **CI** (the code at 789c5f32, docs after it): `scripts/ci.sh` OK (535 s); `scripts/ci-deqp-vk.sh` OK (846 s: the
+- **CI** (the code at 4cfaf2ae, docs after it): `scripts/ci.sh` OK (535 s); `scripts/ci-deqp-vk.sh` OK (846 s: the
   4,690-case list in 588 s, YCbCr's 773 in 88 s, the replays). Nothing newly NotSupported.
 
 ## VK3 L7a: the binding model's limits and identities (the reviews after L7)
@@ -1650,7 +1650,7 @@ checked real and given a test that failed first; JSON in `results/vk3/l7a/`.
   alignment). L6b–L7.3: 2 (texel buffers: counted, refused).
 - **Tests** (`tests/venus-driver.test.ts` misc `texelStorage`, `dynamicUniforms`, `writtenShared`,
   `immutableSampler`, `bigUniform`, `sharedSampler`, transform feedback `xfbMany`, fits `inputAttachments`;
-  `tests/wgsl.test.ts` "texture-sampler pairs past what the translator records"): each failed at 6ff7f272 as its
+  `tests/wgsl.test.ts` "texture-sampler pairs past what the translator records"): each failed at 15667724 as its
   finding said (11 storage buffers, 9 dynamic uniform buffers, a 128 KiB uniform binding, 12 storage buffers in the
   capture: WebGPU errors; X's 7s not read back; the nearest filter; 144 pairs translated). The count planted out
   (`wg_bindings_fit` returning true) fails `texelStorage` and `inputAttachments` again. Not tested: a draw of more
@@ -1663,7 +1663,7 @@ checked real and given a test that failed first; JSON in `results/vk3/l7a/`.
   (`angle-es3-vulkan-views.log`) shows Chromium's canvas image `R8G8B8A8_SRGB`, mutable (SRGB, UNORM), and ANGLE's
   only attachment view of it SRGB, into which its 4-sample UNORM target is resolved. Filed (backlog "ANGLE with
   Chromium's own Vulkan device too").
-- **CI** (the code at 20e9dae4, docs after it): `scripts/ci.sh` OK (465 s); `scripts/ci-deqp-vk.sh` OK (848 s: the
+- **CI** (the code at 987196c6, docs after it): `scripts/ci.sh` OK (465 s); `scripts/ci-deqp-vk.sh` OK (848 s: the
   4,672-case list in 590 s, YCbCr's 773 in 89 s, the replays).
 
 ## VK3 L7.5: vkd3d's row backed (draw parameters); vkd3d makes a Direct3D 12 device at feature level 11_0 on Venus
