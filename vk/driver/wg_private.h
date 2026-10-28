@@ -338,9 +338,11 @@ struct wg_program {
    uint32_t pair_count;
    uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
    uint32_t compute_module;
+   char *compute_wgsl;       /* a compute program's WGSL (a base's: its variants' modules are made from it) */
    bool owns_compute_module; /* the shader that made it was destroyed while others shared the program: it frees it */
-   /* Variants of the program for views the shader didn't type (wg_program_variant): textures declared filterable
-    * float bound to depth or unfilterable views, by a mask of those resources; a base's list, through `variants`. */
+   /* Variants of the program for what the shader didn't type (wg_program_variant): textures declared filterable
+    * float bound to depth or unfilterable views, and a dispatch's read-only storage buffers bound from a memory it
+    * writes through another, by a mask of those resources; a base's list, through `variants`. */
    uint64_t mask;
    struct wg_program *variants;
    uint32_t compute;        /* a compute pipeline */
@@ -372,7 +374,8 @@ void wg_program_unref(struct wg_program *p);
 /* The driver's build ID (vk/gen.ts), the shader caches' identity. */
 const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
- * samplers they're sampled with as non-filtering; made at its first use, kept with the program. */
+ * samplers they're sampled with as non-filtering, and whose read-only storage buffers in it as writable storage; made
+ * at its first use, kept with the program. */
 struct wg_program *wg_program_variant(struct wg_program *p, uint64_t mask);
 struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
 

@@ -1398,6 +1398,11 @@ wgt_fl_done(uint32_t i)
  * 13: 64 bytes copied from a host-visible buffer by a submit that waits on a timeline semaphore's value 1, which the
  *    host signals after writing the source (0x11, then 0x22): the copy sees 0x22 (the driver review's finding 8: a wait
  *    before its signal used to run at once).
+ * 17: `cs` (ubo-ssbo.comp: b[i] = a[i] + k) with `k` a uniform buffer at [0, 16) and `a` a read-only storage buffer
+ *    at [256, 272) of one host-visible memory (100; 1, 2, 3, 4, written by the CPU), `b` at [0, 16) of the result:
+ *    101, 102, 103, 104 (the L5-L6a review's finding 2: `a` read-write made the uniform and it one usage scope's
+ *    conflict, which invalidated the submit).
+ * 18: as 17, dispatched indirectly with its arguments (1, 1, 1) at [512, 524) of that memory: the same.
  */
 static struct {
    VkFence fence;
@@ -1836,6 +1841,68 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
       CmdDispatch(cmd, 1, 1, 1);
+   } else if (scenario == 17 || scenario == 18) {
+      PFN_vkCmdDispatchIndirect CmdDispatchIndirect =
+         (PFN_vkCmdDispatchIndirect)GetDeviceProcAddr(dev, "vkCmdDispatchIndirect");
+      VkShaderModule m;
+      VkBuffer in;
+      uint32_t *w;
+      if (shader(cs, cs_words, &m) ||
+          buffer(1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, &in, (void **)&w))
+         return 1;
+      w[0] = 100;
+      for (uint32_t i = 0; i < 4; i++)
+         w[64 + i] = i + 1;
+      w[128] = w[129] = w[130] = 1;
+      const VkDescriptorSetLayoutBinding bindings[3] = {
+         { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+         { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+         { 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 3, .pBindings = bindings };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      VkPipeline pipeline;
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+      const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
+                                           { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 } };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 2, .pPoolSizes = ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      const VkDescriptorBufferInfo bi[3] = { { in, 0, 16 }, { in, 256, 16 }, { out, 0, 16 } };
+      const VkWriteDescriptorSet wr[2] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[0] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 2,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[1] },
+      };
+      UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                         NULL);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+      if (scenario == 18)
+         CmdDispatchIndirect(cmd, in, 512);
+      else
+         CmdDispatch(cmd, 1, 1, 1);
    } else if (scenario == 12) {
       VkShaderModule m;
       if (shader(cs, cs_words, &m))

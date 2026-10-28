@@ -114,6 +114,7 @@ program_free(struct wg_program *p)
    wg_id_release(p->compute);
    if (p->owns_compute_module)
       wg_id_release(p->compute_module);
+   free(p->compute_wgsl);
    free(p);
 }
 
@@ -265,11 +266,19 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    v->push_group = 0;
    v->push_group_gen = 0;
    v->compute = 0;
+   v->compute_wgsl = NULL;
    v->owns_compute_module = false;
    v->mask = mask;
+   bool widened = false;
    for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
       if (!(mask & (1ull << k)))
          continue;
+      /* A read-only storage buffer beside a writable one of its memory: "storage" (wg_cmd.c `program_for`). */
+      if (v->resources[k].kind == WGSL_STORAGE_READ) {
+         v->resources[k].kind = WGSL_STORAGE;
+         widened = true;
+         continue;
+      }
       v->resources[k].sample = WGSL_SAMPLE_UNFILTERABLE;
       /* Its samplers: non-filtering (the bind group gives them the sampler's nearest twin). */
       const uint32_t index = (uint32_t)v->resources[k].group << 16 | v->resources[k].binding;
@@ -283,10 +292,37 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
       }
    }
    program_layouts(v);
+   /* WebGPU wants a binding's access in the module to be its layout entry's: widened bindings' read_write in a module
+    * of the variant's own, from the program's WGSL (wgsl_print.c declares each `@group(g) @binding(b) var<storage,
+    * read>`). */
+   if (widened && p->compute_wgsl) {
+      char *text = strdup(p->compute_wgsl);
+      for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
+         if (!(mask & (1ull << k)) || p->resources[k].kind != WGSL_STORAGE_READ)
+            continue;
+         char decl[96];
+         snprintf(decl, sizeof(decl), "@group(%u) @binding(%u) var<storage, read> ", p->resources[k].group,
+                  p->resources[k].binding);
+         char *at = strstr(text, decl);
+         if (!at)
+            continue;
+         const size_t head = at - text + strlen(decl) - strlen("read> ");
+         char *t = malloc(strlen(text) + 8);
+         memcpy(t, text, head);
+         strcpy(t + head, "read_write> ");
+         strcat(t, at + strlen(decl));
+         free(text);
+         text = t;
+      }
+      v->compute_module = wg_id();
+      v->owns_compute_module = true;
+      gpu_shader(v->compute_module, text, strlen(text));
+      free(text);
+   }
    if (p->compute_module) {
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", v->layout,
-                     p->compute_module);
+                     v->compute_module);
       v->compute = wg_create_json(WG_KIND_COMPUTE, &j);
    }
    v->variants = p->variants;
@@ -436,12 +472,13 @@ program_link(struct wg_program *p, struct wg_shader *const *shaders, uint32_t co
    _mesa_blake3_final(&h, p->link);
 }
 
-/* The program's WebGPU objects: its layouts, and a compute stage's pipeline (of `compute_module`). */
+/* The program's WebGPU objects: its layouts, and a compute stage's pipeline (of `compute_module`, made of `wgsl`). */
 static void
-program_objects(struct wg_program *p, uint32_t compute_module)
+program_objects(struct wg_program *p, uint32_t compute_module, const char *wgsl)
 {
    program_layouts(p);
    if (compute_module) {
+      p->compute_wgsl = strdup(wgsl);
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", p->layout,
                      compute_module);
@@ -688,7 +725,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       p->refs += count;
    } else {
       p->refs = count;
-      program_objects(p, infos[0].stage == MESA_SHADER_COMPUTE ? shaders[0]->module : 0);
+      program_objects(p, infos[0].stage == MESA_SHADER_COMPUTE ? shaders[0]->module : 0, shaders[0]->wgsl);
       program_list(p);
    }
    for (uint32_t i = 0; i < count; i++) {
@@ -760,7 +797,7 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
       s->program = same;
    } else {
       p->refs = 1;
-      program_objects(p, stage == MESA_SHADER_COMPUTE ? s->module : 0);
+      program_objects(p, stage == MESA_SHADER_COMPUTE ? s->module : 0, s->wgsl);
       program_list(p);
       s->program = p;
    }

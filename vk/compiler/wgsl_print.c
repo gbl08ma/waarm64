@@ -421,8 +421,7 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       const bool writes = intr->intrinsic != nir_intrinsic_load_ssbo && intr->intrinsic != nir_intrinsic_get_ssbo_size;
       struct res_use *r = resource(c, const_index(c, &intr->src[src]), WGSL_STORAGE_READ);
       /* Read-write where this stage writes it (a buffer one stage reads and another writes is read-only in the reader:
-       * a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's); wgsl_print
-       * widens the rest in compute stages. */
+       * a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's). */
       if (writes)
          r->r.kind = WGSL_STORAGE, r->r.written = true;
       /* A 16-bit store is two atomics on its word (emit_half_access). */
@@ -2202,16 +2201,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
    gather(&c, impl);
-   /* WebGPU's usage scopes see one GPUBuffer per VkDeviceMemory (the driver's), in which "storage" and
-    * "read-only-storage" can't meet: two buffers of one memory, one read and one written, would make a dispatch
-    * invalid. So a compute stage's storage buffers are all read_write, written or not. A fragment stage's stay
-    * read-only where it doesn't write them: its scope is the whole render pass, where vertex stages read storage
-    * read-only (WebGPU has no other there), so read_write would trade one conflict for a commoner one (VK3 L5b: dEQP-VK's
-    * `memory.pipeline_barrier.graphics.host_write_storage_buffer` reads one buffer in both stages' draws). */
-   if (nir->info.stage == MESA_SHADER_COMPUTE)
-      for (unsigned i = 0; i < c.res_count; i++)
-         if (c.res[i].r.kind == WGSL_STORAGE_READ)
-            c.res[i].r.kind = WGSL_STORAGE;
+   /* A storage buffer this stage doesn't write is read-only, in every stage: the driver binds it as writable storage
+    * where a dispatch writes its memory through another binding (WebGPU's usage scopes: wg_cmd.c `program_for`). */
    /* The uniform conditions' word (emit_cf_list). */
    c.shm_words = DIV_ROUND_UP(nir->info.shared_size, 4);
    if (nir->info.stage == MESA_SHADER_COMPUTE) {

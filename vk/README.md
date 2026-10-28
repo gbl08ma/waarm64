@@ -73,11 +73,15 @@ right way round);
 `packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
 compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). Location
 0's second source (`index = 1`) is WGSL's `@blend_src(1)` (`enable dual_source_blending`, where the device has it); a
-storage buffer is `read_write` in a compute stage whether it writes it or not, since the driver binds every buffer of a
-`VkDeviceMemory` from one GPUBuffer and WebGPU's usage scopes refuse "storage" beside "read-only-storage" in it (a
-dispatch's; VK3 L5b), and in other stages only where they write it (else `read`: a vertex stage can then read what the
-fragment stage only reads, and a render pass's draws, whose scope is the whole pass, agree with its vertex stages',
-which WebGPU has read-only); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
+storage buffer is `read_write` only where the stage writes it (or declares it of atomics), else `read` (a vertex stage
+can then read what the fragment stage only reads, and a render pass's draws, whose scope is the whole pass, agree with
+its vertex stages', which WebGPU has read-only). The driver binds every buffer of a `VkDeviceMemory` from one
+GPUBuffer, and WebGPU's usage scope (a dispatch's) refuses writable storage beside any other usage of it, so a dispatch
+whose read-only storage buffer shares its memory with a storage buffer it writes takes a variant of its program
+(`program_for` in wg_cmd.c): that binding `storage` in the layout and `read_write` in a module of the variant's own
+(the program keeps its WGSL for that); read-only elsewhere, it shares a memory with uniform buffers and indirect
+arguments (VK3 L6c: L5b made every compute storage buffer `read_write`, and vkQuake's first frame, whose dispatch reads
+a uniform and a read-only storage buffer of one memory, lost its submit); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
 array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max is refused; a texture
 and a sampler array indexed apart get an `if` tree each (every texture with every sampler); a terminate
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
@@ -87,7 +91,7 @@ helpers); a cube or cube array storage image is its faces as a 2D array (the dri
 the nearest level.
 
 **Texel buffers** (VK3 L6b): a texel buffer at slot s is its view's words, a storage buffer of `u32` at the slot's
-binding (read-only but in compute stages, where storage is `read_write` as above, and written storage texel buffers),
+binding (read-only but written storage texel buffers, and as above in a dispatch that writes its memory elsewhere),
 and its view's parameters, a uniform buffer of two vec4s at the next binding (made with the `VkBufferView`,
 `wg_texel_buffer_layout` in `wg_format.c`: the format's type, texel bytes and swizzle, each channel's width and first
 bit, the first texel's byte in the binding and the texel count). The format is the view's, so `texelFetch`,

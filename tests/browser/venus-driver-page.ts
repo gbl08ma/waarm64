@@ -378,7 +378,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -392,7 +392,7 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   for (let k = 0; k < 1000 && !ex.wgt_misc_done(); k++) await new Promise((r) => setTimeout(r, 10));
   if (!ex.wgt_misc_done()) return { error: 'the fence never signalled', errors, warnings: v.gpu.stats.errors };
@@ -437,6 +437,9 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
       stencil[i] = inside ? 0x5a : 0x33;
     }
     Object.assign(checks, { depth: [0, 256, want], stencil: [256, 4096, want] });
+  } else if (scenario === 'uniformBeside' || scenario === 'indirectBeside') {
+    u32(want.subarray(0, 16)).set([101, 102, 103, 104]);
+    Object.assign(checks, { written: [0, 4096, want] });
   } else if (scenario === 'storageAliased') {
     u32(want.subarray(0, 16)).set([3, 5, 7, 9]);
     u32(want.subarray(512, 528)).set([1, 2, 3, 4]);

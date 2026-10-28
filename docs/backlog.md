@@ -679,13 +679,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the view's format, or alias through a storage buffer). Depth and stencil resolves (SAMPLE_ZERO, VK3 L4f) are
     checked by `tests/venus-driver.test.ts` only: dEQP-VK's `depth_stencil_resolve` groups need `sampleRateShading`
     (L7's row); MIN, MAX and AVERAGE aren't advertised.
-  - **Usage scopes** (VK3 L5b, after the out-of-context review of L4f's finding 2): the driver binds every buffer of a
-    `VkDeviceMemory` from one GPUBuffer, and WebGPU refuses a writable usage beside any other of the same GPUBuffer in
-    one usage scope (a dispatch; a whole render pass). A compute stage's storage buffers are all `read_write` for that
-    (vk/README.md "The shader path"), but a dispatch that reads a uniform buffer and writes a storage buffer of one
-    memory, and a render pass where any read usage (a vertex, index or uniform buffer, storage a stage only reads)
-    shares a memory with storage a fragment stage writes, still fail validation (the dispatch or the pass dropped, a
-    WebGPU error). Fragment stages' unwritten buffers stay `read`: made `read_write`, they broke
+  - **Usage scopes** (VK3 L5b, L6c; the out-of-context reviews of L4f's and L5-L6a's finding 2): the driver binds every
+    buffer of a `VkDeviceMemory` from one GPUBuffer, and WebGPU refuses a writable usage beside any other of the same
+    GPUBuffer in one usage scope (a dispatch; a whole render pass). A dispatch's read-only storage buffer beside a
+    storage buffer it writes in one memory is bound writable (a variant of its program: vk/README.md "The shader
+    path"), and stays read-only otherwise, beside uniform buffers and indirect arguments; but a dispatch that reads a
+    uniform buffer or takes its indirect arguments from a memory it writes storage of, two writable bindings of one
+    memory whose ranges overlap ("Writable storage buffer binding aliasing"), and a render pass where any read usage (a
+    vertex, index or uniform buffer, storage a stage only reads) shares a memory with storage a fragment stage writes,
+    still fail validation (the dispatch or the pass dropped, a WebGPU error). The same per-binding analysis can't serve a
+    render pass: its scope is every draw of the pass, which the variant of each draw doesn't see. Fragment stages' unwritten buffers stay `read`: made `read_write`, they broke
     `memory.pipeline_barrier.graphics.host_write_storage_buffer` (one buffer read by a vertex and a fragment stage in
     one pass), the commoner case. Sub-allocating programs (VMA, DXVK, most engines) meet it once their compute or fragment shaders write
     storage. A fix would give such a binding a GPUBuffer of its own over the same bytes (a copy in before the scope and
@@ -733,8 +736,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader), which Vulkan counts with
     sampled or storage images, so a stage with many storage buffers and texel buffers fails its layout (2
     `binding_model.descriptor_copy` cases: "The number of storage buffers (13) in the Compute stage exceeds the
-    maximum"); a texel buffer whose range overlaps another writable binding of its memory in a dispatch (compute stages'
-    storage is `read_write`) is refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
+    maximum"); a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
+    then, or else a usage-scope conflict) is refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
     cases: "Writable storage buffer binding aliasing", the dispatch dropped; "Usage scopes" below has the same root);
     `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` aren't advertised though texel buffers don't need a
     format (images do: 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases NotSupported; advertising them

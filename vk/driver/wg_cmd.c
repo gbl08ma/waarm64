@@ -716,15 +716,50 @@ buffer_gpu(struct wg_buffer *b)
    return b && b->mem ? wg_memory_buffer(b->mem) : 0;
 }
 
+/* The memory a buffer resource of a program is bound from at `point` (its texel buffer view's for a texel buffer), or
+ * NULL. */
+static const struct wg_device_memory *
+resource_memory(const struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, uint32_t k)
+{
+   const int s = p->res_set[k];
+   if (s < 0)
+      return NULL;
+   const struct wg_descriptor_set *set = cmd->sets[point][s].set;
+   const uint32_t slot = p->resources[k].binding / 2 - p->set_base[s];
+   if (!set || slot >= set->layout->slot_count)
+      return NULL;
+   const struct wg_descriptor *d = &set->slots[slot];
+   if (d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
+      return d->texel ? d->texel->mem : NULL;
+   return d->buffer ? d->buffer->mem : NULL;
+}
+
 /* The program to draw or dispatch with: a variant where a texture the shader declared filterable float is bound to a
- * view WebGPU can't filter (a depth view, r32float without float32-filterable). */
+ * view WebGPU can't filter (a depth view, r32float without float32-filterable), or where a dispatch's read-only
+ * storage buffer is bound from a memory one of its writable storage buffers is bound from too. Each VkDeviceMemory is
+ * one GPUBuffer, and WebGPU's usage scope (a dispatch's) lets writable storage share a buffer only with more writable
+ * storage: such a binding is "storage" in the variant's layout (WebGPU takes it for the shader's `read`), and read-only
+ * everywhere else, where it may share its memory with uniform buffers and the dispatch's indirect arguments (VK3 L6c:
+ * L5b made every compute storage buffer read_write, and vkQuake's first frame's dispatch, a uniform buffer and a
+ * read-only storage buffer of one memory, invalidated its submit). A render pass's scope is the whole pass: draws keep
+ * the shader's access (docs/backlog.md "Usage scopes"). */
 static struct wg_program *
 program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
    uint64_t mask = 0;
-   for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
+   const uint32_t n = MIN2(p->resource_count, 64);
+   for (uint32_t k = 0; k < n; k++) {
       const struct wgsl_resource *r = &p->resources[k];
       const int s = p->res_set[k];
+      if (r->kind == WGSL_STORAGE_READ && point == 1) {
+         const struct wg_device_memory *mem = resource_memory(cmd, point, p, k);
+         for (uint32_t j = 0; mem && j < n; j++)
+            if (p->resources[j].kind == WGSL_STORAGE && resource_memory(cmd, point, p, j) == mem) {
+               mask |= 1ull << k;
+               break;
+            }
+         continue;
+      }
       if (r->kind != WGSL_TEXTURE || r->sample != WGSL_SAMPLE_FLOAT || r->multisampled || s < 0)
          continue;
       const struct wg_descriptor_set *set = cmd->sets[point][s].set;

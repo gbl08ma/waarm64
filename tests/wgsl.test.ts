@@ -532,7 +532,7 @@ test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratc
   }
 });
 
-test('the out-of-context review of L4f: a compute stage\'s storage buffers read_write, the uniform conditions\' word in the workgroup\'s storage, terminate and demote run (VK3 L5b)', { skip: noGlslc, timeout: 180_000 }, async (t) => {
+test('the out-of-context review of L4f: a compute stage\'s readonly storage buffers read-only, the uniform conditions\' word in the workgroup\'s storage, terminate and demote run (VK3 L5b)', { skip: noGlslc, timeout: 180_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
     const translate = await translator();
@@ -541,10 +541,11 @@ test('the out-of-context review of L4f: a compute stage\'s storage buffers read_
       assert.equal(r.rc, 0, `${file}: ${r.text}`);
       return r.text;
     };
-    // 2: a compute stage's buffers are read_write, the one it declares readonly too: "storage" and "read-only-storage"
-    // can't meet in one GPUBuffer (one per memory) in a dispatch.
+    // 2: a compute stage's buffer it declares readonly is read-only (VK3 L6c: the driver binds it as writable storage,
+    // in a module of the program's variant, only where a dispatch writes its memory through another binding;
+    // tests/venus-driver.test.ts's misc storageAliased, uniformBeside).
     const copy = ok('tests/venus/ssbo-copy.comp');
-    assert.match(copy, /@group\(0\) @binding\(0\) var<storage, read_write> r0_0/);
+    assert.match(copy, /@group\(0\) @binding\(0\) var<storage, read> r0_0/);
     assert.match(copy, /@group\(0\) @binding\(2\) var<storage, read_write> r0_2/);
     // A fragment stage's buffers it only reads stay read-only, readonly or not (its scope is the render pass, where
     // vertex stages read storage read-only: dEQP-VK's memory.pipeline_barrier.graphics.host_write_storage_buffer).

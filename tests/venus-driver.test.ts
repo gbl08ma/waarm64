@@ -206,6 +206,8 @@ for (const [scenario, what, want] of [
 }
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
+// Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
+const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -230,19 +232,22 @@ for (const [scenario, what] of [
   ['texelBuffer', 'uniform texel buffers of four layouts read and a storage texel buffer written'],
   ['bindGroupsShared', 'six pipelines of equal set layouts in turn share a set\'s bind group'],
   ['depthCopies', 'depth copies WebGPU won\'t make: into depth, out of depth24plus, part of a subresource'],
+  // L6c (the out-of-context review of L5-L6a: finding 2, vkQuake's first frame).
+  ['uniformBeside', 'a uniform buffer and a read-only storage buffer of one memory in one dispatch'],
+  ['indirectBeside', 'a dispatch whose arguments share a memory with a read-only storage buffer it reads'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
     const out = join(root, 'target/vk/test');
     mkdirSync(out, { recursive: true });
-    const src = scenario === 'freedModule' ? 'depth-read.comp' : scenario === 'storageAliased' ? 'ssbo-copy.comp' : scenario === 'texelBuffer' ? 'texel-buffer.comp' : scenario === 'bindGroupsShared' ? 'spec-add.comp' : 'push.comp';
+    const src = `${source[scenario as keyof typeof source] ?? 'push'}.comp`;
     const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${src}.spv`), join(root, `tests/venus/${src}`)], { encoding: 'utf8' });
     assert.equal(c.status, 0, c.stderr);
     const page = await browser.newPage();
     page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, `/target/vk/test/${s === 'freedModule' ? 'depth-read' : s === 'storageAliased' ? 'ssbo-copy' : s === 'texelBuffer' ? 'texel-buffer' : s === 'bindGroupsShared' ? 'spec-add' : 'push'}.comp.spv`), scenario);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s.scenario, `/target/vk/test/${s.src}.spv`), { scenario, src });
     await page.close();
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);

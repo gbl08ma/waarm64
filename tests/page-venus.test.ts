@@ -5,7 +5,8 @@
 // presented on a sway that renders with GLES on virgl (the WSI's images shared into virgl's textures); and, with
 // images/vkframes/build.sh's disk, its captures (vkcube, vkmark's scenes, vkQuake) replayed on the device and their
 // frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
-// the dev VM), as without the image or the renderer. In scripts/ci-debian.sh, ~1.5 min.
+// the dev VM), as without the image or the renderer. Any WebGPU error the page logged fails it (an invalid command drops
+// its whole submit: VK3 L6c's vkQuake frame, 80% off). In scripts/ci-debian.sh and scripts/ci-deqp-vk.sh, ~1.5 min.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -102,6 +103,8 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
       }
     }
     assert.match(res[OOPS] ?? '', /oopses 0/, `the guest kernel oopsed: ${res[OOPS]}`);
+    const invalid = Object.keys((res as unknown as { warnings: Record<string, number> }).warnings ?? {}).filter((w) => /^venus-gpu: WebGPU: /.test(w));
+    assert.deepEqual(invalid, [], 'WebGPU errors on the page (each drops a submit)');
     passed = true;
   } finally {
     if (passed) rmSync(out, { recursive: true, force: true });
