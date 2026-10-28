@@ -6,21 +6,22 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L6b)
+## State (2026-10-28, after L6c)
 
-- **Done:** texel buffers (the view's words as a storage buffer, its format decoded in WGSL from a uniform of the
-  view's layout; uniform for every plain format whose channels don't straddle a word, storage for whole-word ones); the
-  depth/stencil copies WebGPU refuses (draws writing `frag_depth`, stencil a bit a draw, compute passes reading depth;
-  D24 copies advertised); bind group layouts' uids by content (the scene's bind groups a submit 6.7 → 2.9 on the M4,
-  the worker's encode −7 to −11%, frame times within noise). Each with a `tests/venus-driver.test.ts` case, planted back.
-- **dEQP-VK list:** 3,972 → 4,251; ci.sh and ci-deqp-vk.sh green (the list in 552 s). On the M4 (the VM idle): 3,547
-  of the list pass, 7 fail (5 mipmap chains blitted over 6 layers, an occlusion count, a 3D filter: filed), 697 not
-  supported (all subgroups, held there since L5).
-- **Open:** vkQuake's frame 5 is 80% off lavapipe's (735 K bytes) already at a82e482d (README's table had 1.7%):
-  find which loop changed the first replayed frame; frames 15/30 unmoved by L6b (1.7%). Filed: texel buffers past
-  WebGPU's storage-buffer count or aliasing a writable binding, storage without format, D16's partial copies.
+- **vkQuake's frame 5:** broken by L5b (96a0142f), not the table: every compute SSBO `read_write` made its dispatch's
+  uniform and read-only SSBO of one memory a usage-scope conflict, the submit dropped. Now a read-only SSBO is bound
+  writable only where the dispatch writes its memory elsewhere (a program variant, its own module): frames 5/15/30 at
+  15,438/15,352/15,449 (1.7%), as at L5. `ci-deqp-vk.sh` now also runs page-venus (the replays), which fails on any
+  WebGPU error the page logged (REPORT.md "VK3 L6c").
+- **The L5–L6a review's 8 findings:** all real, all fixed with tests (the residue of 2 and 7 filed: backlog "Usage
+  scopes", vk/README.md "Commands"). dEQP-VK's list unchanged (4,251).
+- **Open:** the usage-scope residue (uniform/indirect beside written storage of one memory; render passes).
 
-## Where VK3 stands (2026-10-28, after L6b; next L7)
+## Where VK3 stands (2026-10-28, after L6c; next L7)
+
+- **L6b:** texel buffers, the depth/stencil copies WebGPU refuses, bind group layouts' uids by content; dEQP-VK's list
+  3,972 → 4,251 (on the M4: 3,547 pass, 7 fail, 697 subgroups not supported). Filed: texel buffers past the storage
+  count or aliasing, storage without format, D16's partial copies.
 
 - **L6a:** per-face stencil, depth24plus-stencil8's stencil copied, occlusion queries on the GPU, submits held for
   timeline waits nothing signalled (signal-only submits go at once: holding vkr's ring fences hung the guest);
@@ -89,15 +90,8 @@ docs and the backlog; git keeps the old handovers.
 - [x] L6b: texel buffers; the depth/stencil copies WebGPU refuses; bind groups remade every frame (a performance item,
   A/B-measured); a dEQP-VK sweep on the Mac's GPU (`SCRIPT=deqp-run.ts CASES=… VIRGL_GPU=virgl,vulkan
   bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`).
-- [ ] L6c: **first, vkQuake's frame 5** (80% off lavapipe at a82e482d, 1.7% in vk/README.md's table): find the commit
-  (bisect by building the wasm and Venus's module at L4e's 4fdc69fb, 6ccdcd77, 20e9980e, 96a0142f; run
-  `scripts/ci-debian.sh`, whose `page-venus.test.ts` checks the replays), fix it with a test that catches it. **Then**
-  the out-of-context review of L5–L6a (`origin/review/venus-l5-l6a`, `VENUS-L5-L6A-REVIEW.md` there; 8 findings, all
-  taken): an empty signal-only submit overtaking held timeline submits (high); compute SSBOs all `read_write` against a
-  uniform or indirect buffer in the same memory (L5b's choice: re-decide it); a query's copy while a compute pass is
-  open; clears counted in occlusion queries; a query pool freed under a pending submit; the shared-memory restore test
-  blind; a barrier under an `if` with atomics filling the limit; the stencil split's comment. Each with its test
-  failing first; `ci-debian.sh` green at the end.
+- [x] L6c: vkQuake's frame 5 (L5b's compute SSBOs `read_write`: a dispatch's read-only SSBO now writable only beside a
+  write of its memory; page-venus in ci-deqp-vk.sh); the review of L5–L6a's 8 findings fixed, each with its test.
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
   With `sampleRateShading`, dEQP-VK's `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to
@@ -132,6 +126,10 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
 
+- (L6c) Dawn refuses a `storage` layout entry for a shader's `var<storage, read>` (an invalid pipeline): widening a
+  binding's layout takes a module with it `read_write` too. A vkQuake replay with a frame far off: look first for
+  `venus-gpu: WebGPU:` warnings in the run's results.json (an invalid command drops the whole submit). Heap canaries
+  for use-after-free in the wasm driver don't land (dlmalloc coalesces the freed arrays): test the references instead.
 - (L6b) Dawn refuses two writable storage bindings of one GPUBuffer whose ranges overlap ("Writable storage buffer
   binding aliasing"), besides the usage scopes' storage/read-only-storage rule: with every compute storage binding
   `read_write`, overlapping views of one memory in a dispatch fail. A WGSL division rounds differently from the CPU's

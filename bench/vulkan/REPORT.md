@@ -1479,6 +1479,28 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L6c: vkQuake's first frame, the out-of-context review of L5-L6a
+
+2026-10-28, the dev VM (SwiftShader, Chromium 153); JSON in `results/vk3/l6c/`.
+
+- **vkQuake's frame 5** (`vkquake-<commit>.json`, the Debian guest's replay): bytes off by more than 24 from lavapipe's,
+  of 921,654, frames 5 / 15 / 30: at 20e9980e (L5) 15,438 / 15,352 / 15,449 (1.7%, vk/README.md's table); at
+  96a0142f (L5b) and a82e482d (L6a) **735,281** / 15,915 / 15,743. The table was right; L5b broke it. The page logged
+  `usage (Uniform|Storage(read-write)) includes writable usage and another usage in the same synchronization scope`
+  and an invalid command buffer: L5b made every compute storage buffer `read_write`, and the frame's dispatch reads a
+  uniform buffer and a read-only storage buffer of one memory, so its submit was dropped (the review's finding 2).
+  Fixed by binding a read-only storage buffer writable only in a dispatch that writes its memory through another
+  binding (a program variant with a module of its own): **15,438 / 15,352 / 15,449**, L5's counts byte for byte
+  (`vkquake-fix.json`). Why CI missed it: the replays were only in `ci-debian.sh` (page-venus), which L5b–L6b, Vulkan
+  changes, didn't run; `ci-deqp-vk.sh` runs page-venus now, and page-venus fails on any WebGPU error the page logged.
+- **The review's 8 findings, all real, all fixed** (each test failing first or with its fix planted out;
+  `tests/venus-driver.test.ts` 43, `tests/wgsl.test.ts` 8): 1 a submit of signals alone overtook held submits (held
+  now, but vkr's ring fences, flagged by vkr's patch; dEQP-VK's 92 timeline and fence cases of the list pass); 2 above;
+  3 a query's write with a compute pass open; 4 clears counted by occlusion queries (the query carried on in one of
+  the set's 64 spare slots, added on the GPU); 5 the restore test blind; 6 shared atomics filling the storage with a
+  barrier under an `if` (the word borrowed through atomics); 7 the face split now only where both faces use the value
+  that differs (the reorder left is inherent: one WebGPU reference); 8 a pool destroyed under a pending submit.
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
