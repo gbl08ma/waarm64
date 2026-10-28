@@ -19,7 +19,7 @@ docs and the backlog; git keeps the old handovers.
 ## Where VK3 stands (2026-10-28, after L7.1b; next L7.2)
 
 - **L7.1:** Dawn's row backed and advertised (the four `shader*ArrayDynamicIndexing`, `sampleRateShading`, `gl_FragCoord`
-  at the sample); dEQP-VK's list 4,251 → 4,424. The program (Dawn in the guest's Chromium) needs YCbCr (L7.4), the guest
+  at the sample); dEQP-VK's list 4,251 → 4,424. The program (Dawn in the guest's Chromium) needs YCbCr (L7.2), the guest
   side above, and a window (no Xwayland; `--headless=new` starts).
 
 - **L6c:** vkQuake's frame 5 back at L5's counts (L5b's compute SSBOs `read_write` made a usage-scope conflict: a
@@ -103,17 +103,23 @@ docs and the backlog; git keeps the old handovers.
 - [ ] L7: §4's emulated rows in order, a loop a row (dotted: the review fix loops after L7 are L7a, L7b, …):
   - [x] L7.1: Dawn's row: dynamically indexed descriptor arrays, sample-rate shading, their dEQP-VK cases and the
     SAMPLE_ZERO `depth_stencil_resolve` ones. **Remainder:** the program (Dawn in the guest's Chromium) needs
-    YCbCr (L7.4's), Chromium's Vulkan context alive on Venus (the semaphore vkr never made) and a window (Xwayland in
+    YCbCr (L7.2's), Chromium's Vulkan context alive on Venus (the semaphore vkr never made) and a window (Xwayland in
     the image, or headless): backlog "Dawn in the guest's Chromium on Venus".
   - [x] L7.1b (the supervisor, 2026-10-28): the remainder's semaphore. **Done:** opaque-fd exports the driver refused
     (now dropped); Dawn not yet on Venus (the guest's Venus hands back fd 0 for them: backlog). The brief: A submit naming a semaphore vkr never made is a
     driver or vkr defect whatever brings it: reproduce it (Chromium's Vulkan device in the guest, YCbCr advertised
-    **only behind an opt-in switch**, never by default: YCbCr by default stays L7.4's, since GTK4 would take Vulkan and
+    **only behind an opt-in switch**, never by default: YCbCr by default stays GTK4's row's (L7.3), since GTK4 would take Vulkan and
     draw black), find which object type or external-semaphore path the driver doesn't make, fix it with a test failing
     first. Time-boxed ~3 h; if Dawn then runs on Venus (`--headless=new`), its samples against the dev VM's frames.
-  - [ ] L7.2: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
-  - [ ] L7.3: vkd3d's draw parameters.
-  - [ ] L7.4: GTK4's YCbCr with modifiers, only once GTK4's black frames are understood.
+  - **The rows reordered by the user (2026-10-28; VK3-KICKOFF.md "Decisions"):** Chromium's own Vulkan device needs
+    YCbCr, so YCbCr comes next, behind `?gpu=vkycbcr`; GTK4 after it decides the default.
+  - [ ] L7.2: YCbCr conversion (`samplerYcbcrConversion`, its formats and multi-planar images) behind `?gpu=vkycbcr`,
+    dEQP-VK's `ycbcr` groups as its gate. Time-boxed lead: the guest Venus's fd 0 for opaque-fd semaphore exports
+    (L7.1b), the way to Dawn's program.
+  - [ ] L7.3: GTK4: its black frames understood, dma-buf modifiers, its bar (REPORT.md G); YCbCr on by default only
+    once GTK4 meets it, else GTK4 stays on GL and YCbCr opt-in.
+  - [ ] L7.4: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
+  - [ ] L7.5: vkd3d's draw parameters.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
 - [ ] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed; the findings worth taking in VK3
