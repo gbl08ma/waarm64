@@ -74,11 +74,12 @@ docs and the backlog; git keeps the old handovers.
   `framebuffer(Integer)ColorSampleCounts` past what the 32-bit formats report; `maxComputeSharedMemorySize` 16368 under
   Vulkan's 16384 minimum; the depth resolve's `renderArea` and layers; the tests that defend 3 and 4 or match text only.
   Each with its test failing first. Done: all six fixed (the resolve's layers moot), the usage scopes left filed.
-- [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries with their availability and strided
-  copies (the driver review's 10), texel buffers, depth/stencil copies, dEQP-VK on the Mac's GPU (`sway-mac.sh vk`
-  runs it since L4f: `SCRIPT=deqp-run.ts CASES=… bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`); the 34
-  `load_store_op_none` failures; bind groups remade every frame; timeline waits before their signal (the driver
-  review's 8: backlog "Synchronization")).
+- [ ] L6a: the driver's semantics: per-face stencil; occlusion queries with their availability and strided result
+  copies (the driver review's 10); timeline waits before their signal (the driver review's 8: backlog
+  "Synchronization"); the 34 `load_store_op_none` failures.
+- [ ] L6b: texel buffers; the depth/stencil copies WebGPU refuses; bind groups remade every frame (a performance item,
+  A/B-measured); a dEQP-VK sweep on the Mac's GPU (`SCRIPT=deqp-run.ts CASES=… VIRGL_GPU=virgl,vulkan
+  bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`).
 - [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
   With `sampleRateShading`, dEQP-VK's `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to
