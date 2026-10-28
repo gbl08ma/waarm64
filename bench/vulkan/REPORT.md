@@ -1433,6 +1433,52 @@ script's default machine has no Vulkan and deqp-vk exits at once with no statuse
 - **The pass list** (`tests/deqp/vk.txt`): 2,333 → 3,261 (723 subgroup cases, the large groups thinned to every
   third, and the 205 16-bit-storage ones; the Mac-only cases stay out: CI's adapter is SwiftShader).
 
+## VK3 L6b: texel buffers, the depth and stencil copies WebGPU refuses, bind groups kept, dEQP-VK on the M4
+
+**2026-10-28.** JSON in `results/vk3/l6b/`. dEQP-VK on the dev VM's SwiftShader (Chromium 153.0.8010.52) and on the
+M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sway-mac.sh`.
+
+- **Texel buffers** (`swiftshader-texel-buffers.json`; vk/README.md "The shader path"): a storage buffer of the view's
+  words and its format decoded and encoded in WGSL from a uniform buffer of the view's layout. Of a sample of 875
+  texel-buffer cases (`texture.texel_buffer`, `api.buffer_view.*`, every twelfth `binding_model.shader_access` one,
+  `descriptor_copy`, `memory.pipeline_barrier`), **315 pass, 17 fail, 543 not supported** (geometry and tessellation,
+  sRGB, ASTC and 64-bit formats, `uniform_storage_texel_buffer`'s 122 that need storage without a format); before L6b
+  no format had texel-buffer features, so all were not supported. The 17 failures are WebGPU's limits: binding
+  aliasing of a texel buffer with another writable binding of its memory, and 13 storage buffers in a stage past
+  SwiftShader's 10 (backlog "Texel buffers"). `tests/wgsl.test.ts`: 124 of 127 stages translate (vkQuake's
+  palettization now does).
+- **Depth and stencil copies** (`swiftshader-depth-copies.json`, `…-before.json`): the worker's draws (`frag_depth`
+  from the buffer; stencil a bit a draw) and compute passes (depth loaded into the buffer); D24's copies advertised.
+  Of 544 `api.copy_and_blit.core` depth/stencil cases (every buffer-image one, every fourth image-image one): **45 →
+  81 pass**, 74 → 42 fail; what fails now is depth16unorm's part (1 offset case and its partial image copies) and
+  image copies between colour formats (ASTC to and from 32-bit formats: "copies between formats").
+- **vkQuake's frames** (`vkquake-replay*.json`, the Debian guest's replay on SwiftShader): frames 15 and 30 differ
+  from lavapipe's as before (15,915 and 15,743 bytes past 24 of 921,654, 1.7%), byte for byte the same counts with
+  and without texel buffers and the copies: neither was the 1.7%. **Frame 5 differs in 735,281 bytes (80%)** at
+  a82e482d (before L6b) as now: vk/README.md's table had it at 1.7%, so something between it and L6a changed the
+  first replayed frame (GFXReconstruct's trimmed state restore); not looked into (handover).
+- **Bind groups** (`bind-groups/`, VK0's scene in the desktop guest on the M4, three alternated rounds, WARMUP=200
+  FRAMES=300; ms a frame, the median of 5 samples, IQR in the logs): layouts' uids by content. Bind groups made a
+  submit 6.7 → 2.9 (1 fish), 7.7 → 3.4 (1,000), 1.5 → 0.5 (toolkit 2,000); the worker's encode a submit 0.081–0.087
+  → 0.072–0.075 ms, 0.271–0.279 → 0.259–0.262, 0.102–0.106 → 0.095–0.097 (rounds apart in each). Frame times:
+
+  | setting | before (3 rounds) | after (3 rounds) |
+  |---|---|---|
+  | 1 fish | 0.938, 0.861, 0.849 | 0.842, 0.838, 0.854 |
+  | 1,000 fish | 2.612, 2.561, 2.499 | 2.535, 2.537, 2.522 |
+  | toolkit 2,000 | 0.933, 0.913, 0.885 | 0.880, 0.902, 0.892 |
+
+  The rounds overlap: no frame-time difference claimed, and not slower; landed for the worker's time.
+- **The pass list on the M4** (`mac-list.json`; the VM idle; 4,251 cases in 187 s of deqp-vk): **3,547 pass, 7 fail,
+  697 not supported** (every one a subgroup case: the M4's subgroups are held by the worker's check, L5). The 7 fail
+  only there: 5 `blit_image.*.generate_mipmaps.from_previous_level.layercount_6` (each level blitted from the one
+  before over 6 layers, "Result image is incorrect"; other formats and layer counts pass),
+  `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an occlusion count of 496, out of range:
+  Metal's visibility results in counting mode, likely) and `texture.mipmap.3d.projected.nearest_linear_mirror` (a
+  filtering difference). Not cheap to fix blind: filed (docs/backlog.md "The Vulkan driver's gaps"); the cases stay in
+  the list, which CI runs on SwiftShader.
+- **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

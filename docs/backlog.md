@@ -715,6 +715,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     and grid edges the largest; to the eye the same, no bias. The tolerance is 3% meanwhile. Next: diff its passes
     one at a time (GFXReconstruct's `--screenshots` of an earlier draw), suspects its screen effects' dithering and a
     conversion's rounding.
+  - **The M4's own failures** (VK3 L6b, bench/vulkan/REPORT.md "VK3 L6b": the pass list on Metal, 3,547 pass, 7
+    fail): 5 `api.copy_and_blit.*.blit_image.all_formats.generate_mipmaps.from_previous_level.layercount_6` (a level
+    blitted from the one the previous blit wrote, over 6 layers; other layer counts pass: a hazard between the
+    worker's blit draws on Metal?), `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
+    occlusion count of 496, out of range) and `texture.mipmap.3d.projected.nearest_linear_mirror`; not looked into.
   - **Compute**: `compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.*` crash deqp-vk (`.1` alone;
     `.16` and `.4` pass alone but crashed it in the long list, VK3 L4f: out of `tests/deqp/vk.txt`); not looked into
     (L4f's suspect, the device's workgroup storage advertised 16 bytes under WebGPU's, is gone since L5b: rerun them).
