@@ -107,8 +107,12 @@ re-discovering" and each state's.
   render-pass rule applied. GTK4's row (YCbCr, modifiers) goes last of the rows VK3 takes, and only once GTK4's
   black frames are understood. **Reordered by the user (2026-10-28):** Chromium's own Vulkan device needs YCbCr
   (VK3 L7.1), so YCbCr conversion comes right after Dawn's row, behind an opt-in switch (L7.2); then GTK4 (its black
-  frames, modifiers, its bar; YCbCr on by default only once GTK4 meets it, L7.3); then ANGLE's ES3 (L7.4) and vkd3d's
-  draw parameters (L7.5).
+  frames, modifiers, its bar, L7.3); then ANGLE's ES3 (L7.4) and vkd3d's draw parameters (L7.5). **YCbCr is on by
+  default since L7.3 (the user, 2026-10-28):** the condition is that GTK4 doesn't take Vulkan by itself while it misses
+  its bar, not that it meets the bar. GTK 4.24 aborts without YCbCr on a device with the dma-buf extensions, and with
+  it takes GL because the device offers only the LINEAR modifier ("Not using Vulkan: no dmabuf support"). **Any change
+  that offers GTK a modifier other than LINEAR must first show GTK4 on Vulkan meeting its bar** (REPORT.md G), or GTK4
+  moves to the slower path. `?gpu=vkycbcr=off` turns YCbCr off.
 
 ## The plan (loops; the supervisor may reorder by what each loop finds)
 
