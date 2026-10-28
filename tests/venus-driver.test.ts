@@ -185,6 +185,8 @@ for (const [scenario, what, want] of [
   ['strip', 'an indexed triangle strip without primitive restart draws', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['vertexOnly', 'a pipeline without a fragment shader in a pass with a colour attachment', { topLeft: blue, bottomLeft: blue, topRight: blue, bottomRight: blue }],
   ['lineBias', 'lines drawn with depth bias on', { topRight: blue, bottomRight: blue }],
+  // L4f (the driver review's finding 2): a depth attachment in a read-only layout, sampled in its pass.
+  ['readOnlyDepth', 'a depth attachment in a read-only layout sampled by the pass\'s draw', { topLeft: [191, 0, 0, 255], bottomLeft: [191, 0, 0, 255], topRight: blue, bottomRight: blue }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -214,18 +216,23 @@ for (const [scenario, what] of [
   ['freedImage', 'a submit after a linear image\'s memory was freed leaves other memory alone'],
   ['dynamicStorage', 'a host-visible storage buffer\'s writes come back at its dynamic offset'],
   ['oddStorage', 'a storage buffer of an odd size bound whole'],
+  // L4f (the driver review's finding 7).
+  ['freedModule', 'a compute program\'s variant made after the shader that made the program was destroyed'],
+  // L4f (the reviews' depth and stencil resolves: the translator's 10, the driver's 9).
+  ['depthResolve', 'a multisampled depth and stencil attachment resolved at the pass\'s end'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
     const out = join(root, 'target/vk/test');
     mkdirSync(out, { recursive: true });
-    const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, 'push.comp.spv'), join(root, 'tests/venus/push.comp')], { encoding: 'utf8' });
+    const src = scenario === 'freedModule' ? 'depth-read.comp' : 'push.comp';
+    const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${src}.spv`), join(root, `tests/venus/${src}`)], { encoding: 'utf8' });
     assert.equal(c.status, 0, c.stderr);
     const page = await browser.newPage();
     page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, '/target/vk/test/push.comp.spv'), scenario);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, `/target/vk/test/${s === 'freedModule' ? 'depth-read' : 'push'}.comp.spv`), scenario);
     await page.close();
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);

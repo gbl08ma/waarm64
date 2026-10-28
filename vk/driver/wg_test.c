@@ -80,6 +80,9 @@ static struct {
    VkImage color;
    VkBuffer readback;
    uint32_t w, h;
+   VkDescriptorSetLayout set_layout;
+   VkSampler sampler;
+   VkBuffer uniforms;
 } scene;
 
 #define CHECK(x)                                                                                                       \
@@ -459,6 +462,9 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    scene.vertices = vertices;
    scene.indices = indices;
    scene.set = sets[0];
+   scene.set_layout = set_layout;
+   scene.sampler = sampler;
+   scene.uniforms = uniforms;
    scene.color = color;
    scene.readback = readback;
    scene.w = W;
@@ -589,7 +595,7 @@ wgt_imported(void)
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[17];
+   static uint32_t out[22];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -635,6 +641,21 @@ wgt_caps(void)
    }
    out[i++] = p.properties.vendorID;
    memcpy(&out[i++], p.properties.pipelineCacheUUID, 4);
+   /* The out-of-context review of the translator, findings 3, 12 and 13. */
+   PFN_vkGetPhysicalDeviceImageFormatProperties image_formats =
+      (PFN_vkGetPhysicalDeviceImageFormatProperties)vkGetInstanceProcAddr(inst, "vkGetPhysicalDeviceImageFormatProperties");
+   const VkFormat ms[] = { VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM };
+   for (uint32_t k = 0; k < 2; k++) {
+      VkImageFormatProperties ip = { 0 };
+      image_formats(pdev, ms[k], VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 0, &ip);
+      out[i++] = ip.sampleCounts;
+   }
+   VkPhysicalDeviceVulkan12Properties p12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES };
+   VkPhysicalDeviceProperties2 q = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &p12 };
+   props2(pdev, &q);
+   out[i++] = p12.framebufferIntegerColorSampleCounts;
+   out[i++] = l->maxComputeSharedMemorySize;
+   out[i++] = f.features.dualSrcBlend;
    destroy(inst, NULL);
    return out;
 }
@@ -845,6 +866,10 @@ wgt_variant(uint32_t scenario)
  * 2: a pass clearing green that suspends (its store op DONT_CARE), red put into its left half by vkCmdClearAttachments,
  *    then the pass resuming it (CLEAR green, STORE): the left half red, the right green;
  * 3: as 2 over the top half only (CLEAR as clear rects): top left red, top right green, the bottom half blue.
+ * 4: a D32 image cleared to 0.75 by a pass of its own, then a pass with it as the depth attachment in
+ *    DEPTH_STENCIL_READ_ONLY_OPTIMAL and the colour image loaded, drawing wgt_run's quad (depth 0.5, tested LESS) with
+ *    its texture the same depth image: the left half (0.75, 0, 0, 1) (the driver review's finding 2: an attachment
+ *    sampled in its pass must be WebGPU's read-only one, or the pass is invalid).
  * All in one submit, the image then copied into wgt_pass_pixels (rows of 256 bytes); wgt_pass_done says when.
  */
 static struct {
@@ -918,6 +943,79 @@ wgt_pass(uint32_t scenario)
       CmdEndRendering(cmd);
    } else if (scenario == 1) {
       rendering(cmd, left, 0, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE, red);
+      CmdEndRendering(cmd);
+   } else if (scenario == 4) {
+      if (!scene.pipeline) {
+         snprintf(error, sizeof(error), "wgt_run first");
+         return 1;
+      }
+      VkImage depth;
+      VkImageView dview;
+      if (image(VK_FORMAT_D32_SFLOAT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &dview))
+         return 1;
+      VkRenderingAttachmentInfo d = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dview,
+         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { 0.75f, 0 } } };
+      VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = full, .layerCount = 1,
+                             .pDepthAttachment = &d };
+      static PFN_vkCmdBeginRendering CmdBeginRendering;
+      if (!CmdBeginRendering)
+         CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+      CmdBeginRendering(cmd, &ri);
+      CmdEndRendering(cmd);
+      const VkImageMemoryBarrier db = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                                        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                                                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+                                        .oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                        .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, .image = depth,
+                                        .subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 } };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
+                         NULL, 0, NULL, 1, &db);
+      const VkDescriptorPoolSize sizes[2] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 },
+                                              { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 } };
+      VkDescriptorPool pool;
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 2, .pPoolSizes = sizes };
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &pool));
+      VkDescriptorSet set;
+      const VkDescriptorSetAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                               .descriptorPool = pool, .descriptorSetCount = 1,
+                                               .pSetLayouts = &scene.set_layout };
+      CHECK(AllocateDescriptorSets(dev, &ai, &set));
+      const VkDescriptorBufferInfo ubo = { scene.uniforms, 0, 16 };
+      const VkDescriptorImageInfo img = { scene.sampler, dview, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
+      const VkWriteDescriptorSet writes[2] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, .pBufferInfo = &ubo },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &img },
+      };
+      UpdateDescriptorSets(dev, 2, writes, 0, NULL);
+      const VkRenderingAttachmentInfo c = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = lo.view,
+         .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE };
+      d.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+      d.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      d.storeOp = VK_ATTACHMENT_STORE_OP_NONE;
+      ri.colorAttachmentCount = 1;
+      ri.pColorAttachments = &c;
+      CmdBeginRendering(cmd, &ri);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.pipeline);
+      const VkViewport viewport = { 0, 0, 64, 64, 0, 1 };
+      CmdSetViewport(cmd, 0, 1, &viewport);
+      CmdSetScissor(cmd, 0, 1, &full);
+      const VkDeviceSize zero = 0;
+      CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+      CmdBindIndexBuffer(cmd, scene.indices, 0, VK_INDEX_TYPE_UINT16);
+      const uint32_t offset = 0;
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.layout, 0, 1, &set, 1, &offset);
+      const float right[4] = { 0.5f, 0, 0, 0 };
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
+      CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
       CmdEndRendering(cmd);
    } else {
       const VkRect2D area = scenario == 2 ? full : top;
@@ -1257,6 +1355,13 @@ wgt_fl_done(uint32_t i)
  *    256): v[k] = 3k + 1 at [256, 272) (the review's finding 5: read back at its dynamic offset).
  * 7: as 6 on a result of 4,098 bytes bound whole, without dynamic offset: v[k] at [0, 16) (WebGPU binds storage in
  *    multiples of 4 bytes: the review's "smaller spec gaps").
+ * 8: `cs` (depth-read.comp) as pipeline A and, through a pipeline cache of A's data, as pipeline B (a shader of its
+ *    own on A's program); A and its cache destroyed, then a pipeline C of `cs` with its scale 2 (a new module, which may
+ *    take A's module's id); B dispatched reading a D32 image cleared to 0.25 (the program's variant for a depth view,
+ *    made now): 0.25 at [0, 4) (the review's finding 7: the variant was made from A's freed module, C's then).
+ * 9: a 4-sample D32S8 attachment cleared to depth 0.25 and stencil 0x5a by dynamic rendering, resolved (SAMPLE_ZERO)
+ *    into a single-sample one: its depth at [0, 64), its stencil at [256, 272) (the reviews' depth and stencil resolves,
+ *    which WebGPU doesn't do: the worker's draws).
  */
 static struct {
    VkFence fence;
@@ -1389,6 +1494,156 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
       CmdCopyImageToBuffer(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
                            &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   } else if (scenario == 8) {
+      PFN_vkDestroyPipeline DestroyPipeline = (PFN_vkDestroyPipeline)GetDeviceProcAddr(dev, "vkDestroyPipeline");
+      PFN_vkDestroyPipelineCache DestroyPipelineCache =
+         (PFN_vkDestroyPipelineCache)GetDeviceProcAddr(dev, "vkDestroyPipelineCache");
+      PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+         (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+      VkShaderModule m;
+      if (shader(cs, cs_words, &m))
+         return 1;
+      const VkDescriptorSetLayoutBinding bindings[2] = {
+         { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+         { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 2, .pBindings = bindings };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      const float two = 2;
+      const VkSpecializationMapEntry entry = { 0, 0, 4 };
+      const VkSpecializationInfo spec = { 1, &entry, 4, &two };
+      VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      const VkPipelineCacheCreateInfo pci = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+      VkPipelineCache ca, cb;
+      CHECK(CreatePipelineCache(dev, &pci, NULL, &ca));
+      VkPipeline a, b, c;
+      CHECK(CreateComputePipelines(dev, ca, 1, &ci, NULL, &a));
+      size_t size = 0;
+      CHECK(GetPipelineCacheData(dev, ca, &size, NULL));
+      void *data = malloc(size);
+      CHECK(GetPipelineCacheData(dev, ca, &size, data));
+      const VkPipelineCacheCreateInfo pcb = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+                                              .initialDataSize = size, .pInitialData = data };
+      CHECK(CreatePipelineCache(dev, &pcb, NULL, &cb));
+      free(data);
+      CHECK(CreateComputePipelines(dev, cb, 1, &ci, NULL, &b));
+      DestroyPipeline(dev, a, NULL);
+      DestroyPipelineCache(dev, ca, NULL);
+      ci.stage.pSpecializationInfo = &spec;
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &c));
+      VkImage depth;
+      if (misc_image(VK_FORMAT_D32_SFLOAT, VK_IMAGE_TYPE_2D, 1,
+                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &depth))
+         return 1;
+      const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = depth,
+                                         .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_D32_SFLOAT,
+                                         .subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 } };
+      VkImageView view;
+      CHECK(CreateImageView(dev, &vi, NULL, &view));
+      const VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+      VkSampler sampler;
+      CHECK(CreateSampler(dev, &si, NULL, &sampler));
+      const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 },
+                                           { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 } };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 2, .pPoolSizes = ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      const VkDescriptorBufferInfo bi = { out, 0, VK_WHOLE_SIZE };
+      const VkDescriptorImageInfo ii = { sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+      const VkWriteDescriptorSet w[2] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii },
+      };
+      UpdateDescriptorSets(dev, 2, w, 0, NULL);
+      const VkImageSubresourceRange range = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+      const VkImageMemoryBarrier to_dst = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .image = depth,
+                                            .subresourceRange = range };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
+                         &to_dst);
+      CmdClearDepthStencilImage(cmd, depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                &(VkClearDepthStencilValue){ .depth = 0.25f }, 1, &range);
+      const VkImageMemoryBarrier to_read = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                             .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                             .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .image = depth,
+                                             .subresourceRange = range };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL,
+                         1, &to_read);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, b);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+      CmdDispatch(cmd, 1, 1, 1);
+      (void)c;
+   } else if (scenario == 9) {
+      PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+      PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+      VkImage img[2];
+      VkImageView view[2];
+      for (uint32_t k = 0; k < 2; k++) {
+         const VkImageCreateInfo info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .extent = { 4, 4, 1 }, .mipLevels = 1, .arrayLayers = 1,
+            .samples = k ? VK_SAMPLE_COUNT_1_BIT : VK_SAMPLE_COUNT_4_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | (k ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0),
+         };
+         CHECK(CreateImage(dev, &info, NULL, &img[k]));
+         VkMemoryRequirements req;
+         GetImageMemoryRequirements(dev, img[k], &req);
+         VkDeviceMemory mem;
+         if (memory_for(req, false, &mem, NULL))
+            return 1;
+         CHECK(BindImageMemory(dev, img[k], mem, 0));
+         const VkImageViewCreateInfo vi = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img[k], .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+            .subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 } };
+         CHECK(CreateImageView(dev, &vi, NULL, &view[k]));
+      }
+      const VkRenderingAttachmentInfo att = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = view[0],
+         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
+         .resolveImageView = view[1], .resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .clearValue = { .depthStencil = { 0.25f, 0x5a } } };
+      const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { 4, 4 } },
+                                   .layerCount = 1, .pDepthAttachment = &att, .pStencilAttachment = &att };
+      CmdBeginRendering(cmd, &ri);
+      CmdEndRendering(cmd);
+      const VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                       .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                                       .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                                       .oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                       .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, .image = img[1],
+                                       .subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 } };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0,
+                         NULL, 1, &b);
+      CmdCopyImageToBuffer(cmd, img[1], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
+                                                 .imageExtent = { 4, 4, 1 } });
+      CmdCopyImageToBuffer(cmd, img[1], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 256,
+                                                 .imageSubresource = { VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1 },
+                                                 .imageExtent = { 4, 4, 1 } });
    } else if (scenario == 5) {
       PFN_vkFreeMemory FreeMemory = (PFN_vkFreeMemory)GetDeviceProcAddr(dev, "vkFreeMemory");
       const VkImageCreateInfo info = {

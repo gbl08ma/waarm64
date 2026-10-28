@@ -100,6 +100,8 @@ struct wgsl_info {
    uint32_t outputs;
    uint8_t output_base[8];
    bool writes_depth, writes_sample_mask, discards;
+   bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
+   uint8_t dual_base;           /* its WGSL type */
    bool clip_distances;         /* uses `clip_distances` (vertex) */
    uint8_t clip_distance_count;
    uint16_t workgroup[3];
@@ -125,10 +127,12 @@ bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, 
 void wgsl_link(nir_shader *vs, nir_shader *fs);
 
 /* Prints a lowered shader; a vertex shader's outputs follow `fs` (its fragment shader's inputs; NULL: as written).
- * Push constants past `max_immediates` bytes are read from the uniform buffer; `tier2`: the device has
- * texture-formats-tier2 (read-write storage images of more formats). Returns ralloc'd text owned by `mem_ctx`, or
+ * Push constants past `max_immediates` bytes are read from the uniform buffer; `features`: the device's WGSL_*
+ * (WGSL_TIER2: read-write storage images of more formats; WGSL_DUAL_SOURCE: @blend_src). Returns ralloc'd text owned by `mem_ctx`, or
  * NULL with `error`. */
-char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, bool tier2,
+#define WGSL_TIER2       (1u << 0) /* texture-formats-tier2 */
+#define WGSL_DUAL_SOURCE (1u << 1) /* dual-source-blending */
+char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, unsigned features,
                  struct wgsl_info *info, char *error, size_t error_size);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */

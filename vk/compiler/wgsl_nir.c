@@ -435,25 +435,30 @@ dynamic_array_deref(nir_tex_instr *tex, unsigned i)
              : NULL;
 }
 
+/* The texture's and the sampler's arrays may be indexed apart (texture2D t[4], sampler s[2]: t[i], s[j]): one
+ * dynamic deref, `d`, is lowered at a time, with any other that has its index and its length; a copy left with
+ * another index is lowered by the pass's next round. */
 static nir_def *
-emit_element(nir_builder *b, nir_tex_instr *tex, nir_def *index, unsigned lo, unsigned hi)
+emit_element(nir_builder *b, nir_tex_instr *tex, nir_deref_instr *d, nir_def *index, unsigned lo, unsigned hi)
 {
    if (hi - lo == 1) {
       /* The clone's sources aren't in use lists until it's inserted: set, not rewritten. */
       nir_tex_instr *copy = nir_instr_as_tex(nir_instr_clone(b->shader, &tex->instr));
       for (unsigned i = 0; i < copy->num_srcs; i++) {
-         nir_deref_instr *d = dynamic_array_deref(tex, i);
-         if (d)
-            copy->src[i].src = nir_src_for_ssa(&nir_build_deref_array_imm(b, nir_deref_instr_parent(d), lo)->def);
+         nir_deref_instr *e = dynamic_array_deref(tex, i);
+         if (e && (e == d || (e->arr.index.ssa == d->arr.index.ssa &&
+                              glsl_get_length(nir_deref_instr_parent(e)->type) ==
+                                 glsl_get_length(nir_deref_instr_parent(d)->type))))
+            copy->src[i].src = nir_src_for_ssa(&nir_build_deref_array_imm(b, nir_deref_instr_parent(e), lo)->def);
       }
       nir_builder_instr_insert(b, &copy->instr);
       return &copy->def;
    }
    const unsigned mid = (lo + hi) / 2;
    nir_push_if(b, nir_ult_imm(b, index, mid));
-   nir_def *x = emit_element(b, tex, index, lo, mid);
+   nir_def *x = emit_element(b, tex, d, index, lo, mid);
    nir_push_else(b, NULL);
-   nir_def *y = emit_element(b, tex, index, mid, hi);
+   nir_def *y = emit_element(b, tex, d, index, mid, hi);
    nir_pop_if(b, NULL);
    return nir_if_phi(b, x, y);
 }
@@ -471,7 +476,7 @@ lower_dynamic_tex_index(nir_builder *b, nir_tex_instr *tex, void *data)
       return false;
    b->cursor = nir_before_instr(&tex->instr);
    nir_def *index = nir_umin(b, d->arr.index.ssa, nir_imm_int(b, n - 1));
-   nir_def *res = emit_element(b, tex, index, 0, n);
+   nir_def *res = emit_element(b, tex, d, index, 0, n);
    nir_def_replace(&tex->def, res);
    return true;
 }
@@ -589,7 +594,10 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_
    optimize(nir);
 
    /* Descriptors once their indices are constants (an array of textures indexed dynamically chosen from). */
-   NIR_PASS(_, nir, nir_shader_tex_pass, lower_dynamic_tex_index, nir_metadata_none, NULL);
+   for (bool more = true; more;) {
+      more = false;
+      NIR_PASS(more, nir, nir_shader_tex_pass, lower_dynamic_tex_index, nir_metadata_none, NULL);
+   }
    NIR_PASS(_, nir, nir_shader_instructions_pass, lower_descriptors_instr, nir_metadata_control_flow, &s);
    if (s.failed)
       return false;

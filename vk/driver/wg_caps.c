@@ -216,7 +216,8 @@ wg_caps_properties(struct vk_properties *p)
    p->maxFragmentDualSrcAttachments = HAS(DUAL_SOURCE) ? 1 : 0;
    p->maxFragmentCombinedOutputResources =
       L->max_color_attachments + L->max_storage_buffers_in_fragment_stage + L->max_storage_textures_in_fragment_stage;
-   p->maxComputeSharedMemorySize = L->max_compute_workgroup_storage_size;
+   /* Less the translator's one workgroup var of its own (wgsl_print.c's wg_uc: 16 bytes as WebGPU counts it). */
+   p->maxComputeSharedMemorySize = L->max_compute_workgroup_storage_size - 16;
    for (int i = 0; i < 3; i++)
       p->maxComputeWorkGroupCount[i] = L->max_compute_workgroups_per_dimension;
    p->maxComputeWorkGroupInvocations = L->max_compute_invocations_per_workgroup;
@@ -282,7 +283,8 @@ wg_caps_properties(struct vk_properties *p)
 
    p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
    p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-   p->framebufferIntegerColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+   /* As the image formats' (WebGPU multisamples its 8-, 16- and 32-bit single-channel integer formats). */
+   p->framebufferIntegerColorSampleCounts = samples;
    p->maxTimelineSemaphoreValueDifference = 2147483647;
    p->storageTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->uniformTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;

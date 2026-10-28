@@ -621,8 +621,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     subgroup invocation ids (12, `subgroups`), `textureQueryLod` (9), dynamically indexed buffers and storage images,
     16-bit values (`shader-f16`), image atomics, interpolation at an offset; derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
-    immediates (the push buffer is a 13th).
-  - **Queries**: occlusion queries are reported as passing (WebGPU's occlusion query sets need the pass's set at its
+    immediates (the push buffer is a 13th). From the out-of-context review of the translator (VK3 L4f left them):
+    shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,
+    `textureSampleCompareLevel` only level 0: a mipmapped shadow map sampled at a LOD is sampled at level 0, silently;
+    an emulation would `textureLoad` the level's texels and compare and filter them in the shader, which needs the
+    sampler's filter as a variant); `gl_HelperInvocation` of the rasterizer's helpers (WGSL has no built-in: only
+    demoted invocations read true); signed and unsigned atomic min or max on one array (refused: WGSL's atomics have one
+    type; shared memory is one array); `vkCmdDispatchBase`'s base (warned and dropped: a compute pipeline made per base
+    with overrides added to the workgroup and global ids would do it; `compute.*.device_group.dispatch_base`); flat
+    varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
+    load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
+  - **Queries**: `vkGetQueryPoolResults` reports every query available and `VK_SUCCESS` (a reset query never ended
+    included: `VK_NOT_READY` and availability 0 are what Vulkan wants without `WAIT_BIT`), and
+    `vkCmdCopyQueryPoolResults` writes its whole span, zeroing the bytes between results of a wide stride (the
+    out-of-context review of the driver, finding 10; L6's occlusion queries take it: `query_pool.occlusion_query`'s
+    `*_stride_*` and `*with_availability*` cases fail); occlusion queries are reported as passing (WebGPU's occlusion query sets need the pass's set at its
     start: the pass's op patched when a query begins in it), timestamps are the CPU's at replay (`timestamp-query`): a program's "GPU time" under Venus, VK0's scene's
     included, is the replay's span, not the GPU's (VK3 L2b; the worker's `?gpu=vkgputime` measures the GPU's).
   - **Rendering**: stencil state per face (WebGPU has one reference and one pair of masks: about a third of
@@ -631,9 +644,33 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), 34 of
     `renderpasses.*.load_store_op_none`'s 91 supported cases (VK3 L4c-D: stencil8 attachments, depth or stencil
     NONE/DONT_CARE, an integer resolve, `alphablend`; not looked into further), vertex buffer offsets that aren't
-    multiples of 4, early fragment tests (`fragment_operations.early_fragment`), indexed indirect strips
-    (`draw.renderpass.indirect_draw.indexed*triangle_strip`: likely the strip index format WebGPU wants, given since
-    the driver's out-of-context review; not yet rerun).
+    multiples of 4, early fragment tests (`fragment_operations.early_fragment`); a depth or stencil attachment that is
+    also an input attachment in a writable layout with a self-dependency (a feedback loop: WebGPU refuses a texture
+    both written and sampled in one pass; `renderpasses.*.formats.*.input.*self_dep*` fail with a usage-scope error;
+    a copy of the attachment to sample would do it); a draw whose colour blends with both `CONSTANT_COLOR` and
+    `CONSTANT_ALPHA` (WebGPU has one constant: the colour's taken, warned; 4 of the Mac's 49 supported
+    `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`); a storage buffer the fragment
+    stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); indirect fans
+    drawn as lists, without the fan-index conversion, and non-indexed fans past 65,536 vertices dropped without a
+    warning (the driver review's "smaller gaps"); uniform bindings widened to the shader's block size (std140 rounds
+    up) within the memory but not past a dynamic offset: such a binding near a memory's end makes `setBindGroup`
+    invalid (the review's same list and the translator review's note on UBOs at a memory's end); views of a mutable
+    image in a format other than its sRGB twin (WebGPU's `viewFormats`; the image-format query refuses a format list
+    that names one, but an image made without a list gets an invalid view, warned: `image.mutable.*` isn't in the
+    direct set; ffmpeg's and libplacebo's filters and DXVK alias formats this way; a fix would copy into a texture of
+    the view's format, or alias through a storage buffer). Depth and stencil resolves (SAMPLE_ZERO, VK3 L4f) are
+    checked by `tests/venus-driver.test.ts` only: dEQP-VK's `depth_stencil_resolve` groups need `sampleRateShading`
+    (L7's row); MIN, MAX and AVERAGE aren't advertised.
+  - **Synchronization**: a submit that waits on a timeline value nothing has signalled yet runs at once
+    (`wg_sync_wait_many` answers every wait "pending", so Mesa's runtime hands the submit straight to the driver; the
+    driver review's finding 8). A fix would hold such a submit in the driver until its wait's value is signalled
+    (vkr runs on one thread: no submit thread of Mesa's), replaying it then. `synchronization*.timeline_semaphore.
+    wait_before_signal.*` aren't in the direct set; single-queue programs with binary semaphores are unaffected.
+  - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
+    they go): multiview, inline uniform blocks, buffer device addresses, storage-image atomics on `R32_UINT`/`R32_SINT`
+    (the translator refuses image atomics), uniform and storage texel buffers (formats' mandatory buffer features), and
+    `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
+    guarantees without checking them fails at pipeline or descriptor creation.
   - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%
     by more than 24, the same counts on SwiftShader and on the M4's Metal (so not the GPU's rasterization), its text
     and grid edges the largest; to the eye the same, no bias. The tolerance is 3% meanwhile. Next: diff its passes
@@ -656,9 +693,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Transfers**: a resolve into a 3D image is skipped with a warning (WebGPU resolves into 2D views only). VK3
     L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left 13 failing, all failing before too, not
     looked into: linear 3D blits of `r32_sfloat`/`r32g32_sfloat` (unfilterable without `float32-filterable`), a
-    4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255), storage images of
-    cube views through descriptors (7: likely their `cube` views against the layout's `2d-array`, the translator's
-    out-of-context review's finding 2, VK3 L4f), `push_constant.graphics_pipeline.overwrite`.
+    4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255),
+    `push_constant.graphics_pipeline.overwrite`.
   - **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
     ~1M draws with push constants past the immediates still wraps, with a warning).
 

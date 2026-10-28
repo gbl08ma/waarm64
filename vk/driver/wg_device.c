@@ -352,6 +352,18 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
    }
 }
 
+/* A view format WebGPU gives an image of `format`: its own, or its sRGB or linear twin. */
+static bool
+view_format_ok(VkFormat format, VkFormat view)
+{
+   if (view == format || view == VK_FORMAT_UNDEFINED)
+      return true;
+   const VkFormat twin = vk_format_is_srgb(format)
+                            ? vk_format_srgb_to_linear(format)
+                            : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(format)));
+   return view == twin;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
                                            const VkPhysicalDeviceImageFormatInfo2 *info,
@@ -376,6 +388,17 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       needed |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
    if (info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
       needed |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+   /* A mutable image's views may differ from its format only in sRGB-ness in WebGPU (viewFormats): a format list
+    * naming another format is refused (an image made without one gets views of other formats, which WebGPU refuses:
+    * CreateImageView warns). */
+   const VkImageFormatListCreateInfo *list = vk_find_struct_const(info->pNext, IMAGE_FORMAT_LIST_CREATE_INFO);
+   if ((info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && list) {
+      for (uint32_t i = 0; i < list->viewFormatCount; i++)
+         if (!view_format_ok(info->format, list->pViewFormats[i])) {
+            pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+         }
+   }
    /* WebGPU: no 3D depth or compressed 3D textures, no cube arrays of 1D. */
    const bool depth = features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
    const struct wg_texture_format *tf = wg_texture_format(info->format);
@@ -394,9 +417,11 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
       .maxMipLevels = util_logbase2(dim) + 1,
       .maxArrayLayers = info->type == VK_IMAGE_TYPE_3D ? 1 : p->maxImageArrayLayers,
-      /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage. */
+      /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage, and none of the formats
+       * of two or four 32-bit channels. */
       .sampleCounts = info->tiling == VK_IMAGE_TILING_OPTIMAL && info->type == VK_IMAGE_TYPE_2D && attachment &&
-                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) && tf && strncmp(tf->name, "rg32", 4) &&
+                            strncmp(tf->name, "rgba32", 6) &&
                             !(info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
                          ? VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT
                          : VK_SAMPLE_COUNT_1_BIT,
@@ -819,6 +844,9 @@ wg_texture_create(struct wg_image *image)
       usage |= 8;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
+   /* A multisampled depth or stencil attachment is read by its resolve's draw (the worker's resolveDepth). */
+   if (vi->samples > 1 && (vi->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+      usage |= 4;
    /* A linear image may be bound to host-visible memory: copied to and from it at each submit. */
    if (vi->tiling == VK_IMAGE_TILING_LINEAR)
       usage |= 1 | 2;
@@ -1005,6 +1033,14 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
    view->fmt = wg_texture_format(view->vk.view_format);
+   if (!view_format_ok(image->vk.format, view->vk.view_format) &&
+       !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !vk_format_is_compressed(image->vk.format)) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a view of format %d of an image of format %d: WebGPU's views differ only in sRGB-ness\n",
+                 view->vk.view_format, image->vk.format);
+      warned = true;
+   }
    /* A depth or stencil aspect of a combined format is the image's format with an aspect in WebGPU (the runtime's
     * view format is the aspect's own). */
    if (!view->fmt || (image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
@@ -1034,6 +1070,16 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                   dim, aspect, view->vk.base_mip_level, view->vk.level_count,
                   layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
    view->view = wg_create_json(WG_KIND_VIEW, &j);
+   /* A storage texture's binding has no cube dimension: a cube view's faces as a 2D array (the translator declares
+    * cube storage images as 2D arrays). */
+   if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
+       (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+      wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"2d-array\",\"baseMipLevel\":%u,"
+                     "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
+                     image->tex, view->fmt->name, view->vk.base_mip_level, view->vk.level_count,
+                     view->vk.base_array_layer, view->vk.layer_count);
+      view->storage = wg_create_json(WG_KIND_VIEW, &j);
+   }
    /* As an attachment: one level and one layer, 2D; a 3D image's level as a 3D view and the slice the view starts at
     * (a 2D view of a 3D image), the render pass's depthSlice. */
    view->slice = -1;
@@ -1063,6 +1109,7 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    if (!view)
       return;
    wg_id_release(view->view);
+   wg_id_release(view->storage);
    wg_id_release(view->att);
    vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);
 }

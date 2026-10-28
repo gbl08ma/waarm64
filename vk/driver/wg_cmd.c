@@ -429,6 +429,24 @@ store_op(VkAttachmentStoreOp op, bool suspending)
    return op == VK_ATTACHMENT_STORE_OP_DONT_CARE && !suspending ? "discard" : "store";
 }
 
+/* An attachment's layout that only reads its depth or its stencil: the aspect is WebGPU's read-only (it may then be
+ * sampled in the pass, a usage WebGPU otherwise refuses beside the attachment's). */
+static bool
+depth_read_only(VkImageLayout l)
+{
+   return l == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
+          l == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL ||
+          l == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL || l == VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+}
+
+static bool
+stencil_read_only(VkImageLayout l)
+{
+   return l == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
+          l == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL ||
+          l == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL || l == VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
 {
@@ -514,7 +532,23 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
       if (sv)
          cmd->pass.stencil = sv->vk.format;
       wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", ds->att);
-      if (flags & WG_FMT_DEPTH) {
+      /* SAMPLE_ZERO resolves (the modes advertised) of a multisampled depth or stencil, done at the pass's end. */
+      cmd->pass.suspending = suspending;
+      for (uint32_t a = 0; a < 2; a++) {
+         const VkRenderingAttachmentInfo *at = a ? s : d;
+         VK_FROM_HANDLE(wg_image_view, src, at ? at->imageView : VK_NULL_HANDLE);
+         VK_FROM_HANDLE(wg_image_view, dst, at ? at->resolveImageView : VK_NULL_HANDLE);
+         if (src && dst && at->resolveMode != VK_RESOLVE_MODE_NONE && src->vk.image->samples > 1 &&
+             (flags & (a ? WG_FMT_STENCIL : WG_FMT_DEPTH))) {
+            cmd->pass.resolve_src[a] = src;
+            cmd->pass.resolve_dst[a] = dst;
+         }
+      }
+      cmd->pass.depth_ro = (flags & WG_FMT_DEPTH) && dv && depth_read_only(d->imageLayout);
+      cmd->pass.stencil_ro = (flags & WG_FMT_STENCIL) && sv && stencil_read_only(s->imageLayout);
+      if (cmd->pass.depth_ro) {
+         wg_json_printf(&j, ",\"depthReadOnly\":true");
+      } else if (flags & WG_FMT_DEPTH) {
          const bool clear = dv && !resumed && d->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
          wg_json_printf(&j, ",\"depthLoadOp\":\"%s\",\"depthStoreOp\":\"%s\",\"depthClearValue\":%.9g",
                         dv ? load_op(d->loadOp, partial, resumed) : "load",
@@ -524,7 +558,9 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
             any_clear = true;
          }
       }
-      if (flags & WG_FMT_STENCIL) {
+      if (cmd->pass.stencil_ro) {
+         wg_json_printf(&j, ",\"stencilReadOnly\":true");
+      } else if (flags & WG_FMT_STENCIL) {
          const bool clear = sv && !resumed && s->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
          wg_json_printf(&j, ",\"stencilLoadOp\":\"%s\",\"stencilStoreOp\":\"%s\",\"stencilClearValue\":%u",
                         sv ? load_op(s->loadOp, partial, resumed) : "load",
@@ -546,6 +582,8 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
       wg_json_free(&clears);
 }
 
+static void meta(struct wg_cmd_buffer *cmd, struct wg_json *j);
+
 static void
 end_rendering(struct wg_cmd_buffer *cmd)
 {
@@ -554,6 +592,20 @@ end_rendering(struct wg_cmd_buffer *cmd)
    emit(cmd, OP_PASS_END, NULL, 0);
    cmd->pass.active = false;
    forget(cmd);
+   /* A suspended pass's resolves are its last part's. */
+   for (uint32_t a = 0; a < 2 && !cmd->pass.suspending; a++) {
+      const struct wg_image_view *src = cmd->pass.resolve_src[a], *dst = cmd->pass.resolve_dst[a];
+      if (!src)
+         continue;
+      const struct wg_image *si = container_of(src->vk.image, struct wg_image, vk);
+      const struct wg_image *di = container_of(dst->vk.image, struct wg_image, vk);
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
+                     "\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,\"dstLayer\":%u}",
+                     a ? "stencil" : "depth", di->fmt->name, si->tex, src->vk.base_mip_level, src->vk.base_array_layer,
+                     di->tex, dst->vk.base_mip_level, dst->vk.base_array_layer);
+      meta(cmd, &j);
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -709,6 +761,9 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
                      (dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP && !dyn->rs.depth_clamp_enable);
    k.unclipped = (dyn->rs.depth_clamp_enable || !clip) && (wg_features & WG_FEATURE_DEPTH_CLIP);
    k.flip = dyn->vp.viewport_count && dyn->vp.viewports[0].height < 0;
+   /* WebGPU wants minDepth <= maxDepth: an inverted range (reverse-Z) is the range the right way round and the vertex
+    * shader's z mirrored (w - z), which lands each depth where the inverted range would. */
+   k.flip_z = dyn->vp.viewport_count && dyn->vp.viewports[0].minDepth > dyn->vp.viewports[0].maxDepth;
    k.samples = cmd->pass.samples;
    k.sample_mask = dyn->ms.sample_mask == 0xffff ? 0xffffffffu : dyn->ms.sample_mask;
    k.alpha_to_coverage = dyn->ms.alpha_to_coverage_enable && k.samples > 1;
@@ -717,7 +772,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
    k.depth = cmd->pass.depth ? cmd->pass.depth : cmd->pass.stencil;
    if (cmd->pass.depth) {
       k.depth_test = dyn->ds.depth.test_enable;
-      k.depth_write = dyn->ds.depth.write_enable;
+      k.depth_write = dyn->ds.depth.write_enable && !cmd->pass.depth_ro;
       k.depth_compare = dyn->ds.depth.compare_op;
       /* Vulkan biases polygons only; WebGPU refuses a bias on points and lines. */
       k.depth_bias = dyn->rs.depth_bias.enable && k.topology >= VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST &&
@@ -740,7 +795,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
          k.stencil[f][3] = faces[f]->op.compare;
       }
       k.stencil_read = dyn->ds.stencil.front.compare_mask;
-      k.stencil_write = dyn->ds.stencil.front.write_mask;
+      k.stencil_write = cmd->pass.stencil_ro ? 0 : dyn->ds.stencil.front.write_mask;
    }
    for (uint32_t i = 0; i < k.color_count; i++) {
       const struct vk_color_blend_attachment_state *a = &dyn->cb.attachments[i];
@@ -798,6 +853,26 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
       d.scissor[2] = INT32_MAX, d.scissor[3] = INT32_MAX;
    }
    memcpy(d.blend, dyn->cb.blend_constants, sizeof(d.blend));
+   /* WebGPU's one constant factor is Vulkan's CONSTANT_COLOR (as an alpha factor, both are the constant's alpha): a
+    * colour factor of CONSTANT_ALPHA is the constant (a, a, a), unless another colour factor wants its colour. */
+   bool cc = false, ca = false;
+   for (uint32_t i = 0; i < k.color_count; i++) {
+      if (!k.blend[i].enable)
+         continue;
+      const uint8_t f[2] = { k.blend[i].src, k.blend[i].dst };
+      for (uint32_t n = 0; n < 2; n++) {
+         cc |= f[n] == VK_BLEND_FACTOR_CONSTANT_COLOR || f[n] == VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+         ca |= f[n] == VK_BLEND_FACTOR_CONSTANT_ALPHA || f[n] == VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+      }
+   }
+   if (ca && !cc)
+      d.blend[0] = d.blend[1] = d.blend[2] = d.blend[3];
+   else if (ca && cc) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a draw's colour blends with both the constant's colour and its alpha: its colour taken\n");
+      warned = true;
+   }
    d.stencil_ref = dyn->ds.stencil.front.reference;
    if (memcmp(&d, cmd->last_dyn, sizeof(d))) {
       emit(cmd, OP_DYN, &d, sizeof(d));
@@ -924,6 +999,13 @@ wg_CmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t bx, uint32_t by, uint
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    if (!x || !y || !z || !record_dispatch(cmd))
       return;
+   /* WebGPU's dispatches start at workgroup 0: a base would need a pipeline made with it (docs/backlog.md). */
+   if (bx || by || bz) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: vkCmdDispatchBase's base (%u, %u, %u) ignored: workgroup ids start at 0\n", bx, by, bz);
+      warned = true;
+   }
    emit(cmd, OP_DISPATCH, (uint32_t[]){ x, y, z }, 12);
 }
 
@@ -1529,7 +1611,8 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
       default:
          if (!d->view)
             continue;
-         wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding, d->view->view);
+         wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
+                        res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage : d->view->view);
          break;
       }
       first = false;

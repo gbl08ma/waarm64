@@ -62,17 +62,31 @@ can't be arrays, copied into an array the shader indexes), or, past the device's
 Vulkan's minimum is 128), a uniform buffer of the driver's at `@group(3) @binding(998)`, bound at a dynamic offset a
 draw; a compute shader's `if` around a barrier, or breaking out of a loop that holds one, takes its condition through
 `workgroupUniformLoad` (WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow, every
-value being a `var`; a barrier after it keeps the next write from racing the read); a vertex shader's outputs are typed and interpolated as its
-fragment shader reads them, and its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport);
+value being a `var`; a barrier after it keeps the next write from racing the read, so one workgroup var, `wg_uc`, serves
+every condition, and the device advertises WebGPU's workgroup storage less its 16 bytes); a vertex shader's outputs are typed and interpolated as its
+fragment shader reads them, its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport) and its z
+mirrored (`w - z`) by `wg_flip_z` for an inverted depth range (WebGPU wants `minDepth <= maxDepth`: the range is set the
+right way round);
 `packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
-compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). What
+compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). Location
+0's second source (`index = 1`) is WGSL's `@blend_src(1)` (`enable dual_source_blending`, where the device has it); a
+storage buffer is `read_write` only in a stage that writes it (else `read`: a vertex stage can then read what the
+fragment stage only reads); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
+array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max is refused; a texture
+and a sampler array indexed apart get an `if` tree each (every texture with every sampler); a terminate
+(`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
+`helperInvocationEXT()` and `gl_HelperInvocation` read (true only after a demote: WGSL can't see the rasterizer's
+helpers); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
+`2d-array` view of their own), its size counted in cubes; an explicit LOD on a depth texture without a comparison picks
+the nearest level. What
 WGSL can't express fails the stage with a reason: 16-bit values, texel buffers, dynamically indexed buffers and
 images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
 its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
 A pipeline whose stages access one storage image differently is refused the same way (one layout entry can't match
-both modules' access). A pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
+both modules' access), and so is one whose fragment stage writes a storage buffer its vertex stage reads (WebGPU has no
+writable storage in vertex shaders). A pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
 pipeline without waiting for its result, and a pipeline that failed would fail the guest's whole context.
 
 `tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
@@ -116,7 +130,9 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
   `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers
-  only vertex input), samples 1 and 4; plus the extensions
+  only vertex input), samples 1 and 4 (1 for the formats of two or four 32-bit channels, which WebGPU doesn't
+  multisample), views of a mutable image in its format's sRGB twin only (WebGPU's `viewFormats`: a format list naming
+  another format is refused by the image-format query, and such a view warned of); plus the extensions
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
@@ -190,7 +206,13 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   from the runtime's dynamic rendering, with legacy passes through its emulation; clears as load ops, or draws for a
   partial render area and `vkCmdClearAttachments`; LOAD and NONE load, DONT_CARE clears but loads for a partial render
   area, whose outside Vulkan keeps; a pass that resumes a suspended one (`VK_RENDERING_RESUMING_BIT`) loads and clears
-  nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); blits, resolves and image clears as the worker's draws;
+  nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); a depth or
+  stencil attachment in a read-only layout is WebGPU's `depthReadOnly`/`stencilReadOnly` (so the pass may sample it; its
+  pipelines then write neither); blits, resolves and image clears as the worker's draws, depth and stencil resolves too
+  (SAMPLE_ZERO, the modes advertised, at the end of the pass instance: a draw writing sample 0 as `frag_depth`, and for
+  stencil, which no shader writes, eight draws, one a bit, each keeping the pixels whose sample 0 has it; VK3 L4f);
+  `CONSTANT_ALPHA` colour factors as WebGPU's one constant set to the constant's alpha (a draw mixing it with
+  `CONSTANT_COLOR` in its colour can't be expressed: warned, the colour kept);
   pipelines as WebGPU takes them: an indexed strip always has its index format, depth bias only for polygons, and a
   pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer copies WebGPU can't make (an

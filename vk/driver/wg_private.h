@@ -230,6 +230,8 @@ struct wg_image_view {
    struct vk_image_view vk;
    const struct wg_texture_format *fmt;
    uint32_t view;
+   uint32_t storage; /* a cube or cube-array view's faces as a 2D array, for a storage binding (WebGPU has no cube storage
+                      * views); 0: `view` serves */
    uint32_t att;
    int32_t slice;   /* a 3D image's: the attachment is its level's 3D view, drawn into at this depth slice (else -1) */
 };
@@ -318,6 +320,7 @@ struct wg_program {
    uint32_t pair_count;
    uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
    uint32_t compute_module;
+   bool owns_compute_module; /* the shader that made it was destroyed while others shared the program: it frees it */
    /* Variants of the program for views the shader didn't type (wg_program_variant): textures declared filterable
     * float bound to depth or unfilterable views, by a mask of those resources; a base's list, through `variants`. */
    uint64_t mask;
@@ -365,7 +368,7 @@ struct wg_pipeline_key {
    VkFormat depth;
    uint8_t depth_test, depth_write, depth_compare, stencil_test;
    uint8_t stencil[2][4];   /* front, back: fail, pass, depth fail, compare */
-   uint8_t stencil_read, stencil_write, depth_bias, pad;
+   uint8_t stencil_read, stencil_write, depth_bias, flip_z; /* flip_z: the viewport's depth range inverted */
    float bias_constant, bias_slope, bias_clamp;
    struct {
       uint8_t enable, src, dst, op, asrc, adst, aop, mask;
@@ -443,6 +446,10 @@ struct wg_cmd_buffer {
       uint32_t color_count;
       VkFormat colors[8];
       VkFormat depth, stencil;
+      bool depth_ro, stencil_ro; /* attached in a read-only layout: WebGPU's depthReadOnly, stencilReadOnly */
+      /* The depth and stencil resolves at the pass's end (WebGPU resolves colour only: the worker's draws). */
+      struct wg_image_view *resolve_src[2], *resolve_dst[2]; /* depth, stencil */
+      bool suspending;
       uint32_t samples;
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */

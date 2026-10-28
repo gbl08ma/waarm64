@@ -20,7 +20,7 @@ void wgsl_finish(nir_shader *nir);
 struct res_use {
    bool used;
    struct wgsl_resource r;
-   bool signed_atomic;
+   bool signed_atomic, unsigned_atomic;
 };
 
 struct ctx {
@@ -34,10 +34,11 @@ struct ctx {
    struct wgsl_info *info;
    const struct wgsl_varyings *fs;
    bool tier2; /* texture-formats-tier2: read-write storage for more formats */
+   bool dual_source; /* dual-source-blending */
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
-   bool shm_atomic, uses_frag_coord, uses_front_face, uses_sample_id, uses_sample_mask_in;
+   bool shm_atomic, shm_signed, shm_unsigned, uses_helper, uses_frag_coord, uses_front_face, uses_sample_id, uses_sample_mask_in;
    uint32_t ubo_sizes_unused;
    /* Fragment inputs and vertex outputs, by location (VARYING_SLOT_VAR0 + n). */
    struct wgsl_varyings vary;
@@ -328,6 +329,19 @@ image_dim(struct ctx *c, enum glsl_sampler_dim dim, bool array)
    return tex_dim(c, dim, array);
 }
 
+/* An array's atomics compare signed (imin, imax: atomic<i32>) or unsigned (umin, umax: atomic<u32>); WGSL's atomics
+ * have one type, so an array that needs both is refused. */
+static void
+atomic_sign(struct ctx *c, nir_atomic_op op, bool *is_signed, bool *is_unsigned)
+{
+   if (op == nir_atomic_op_imin || op == nir_atomic_op_imax)
+      *is_signed = true;
+   else if (op == nir_atomic_op_umin || op == nir_atomic_op_umax)
+      *is_unsigned = true;
+   if (*is_signed && *is_unsigned)
+      failf(c, "signed and unsigned atomic min or max on one array");
+}
+
 /* The gather: resources, I/O and what the entry point needs. */
 static void
 gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
@@ -354,19 +368,20 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       const unsigned src = intr->intrinsic == nir_intrinsic_store_ssbo ? 1 : 0;
       const bool writes = intr->intrinsic != nir_intrinsic_load_ssbo && intr->intrinsic != nir_intrinsic_get_ssbo_size;
       struct res_use *r = resource(c, const_index(c, &intr->src[src]), WGSL_STORAGE_READ);
-      if (writes || !(nir_intrinsic_has_access(intr) && (nir_intrinsic_access(intr) & ACCESS_NON_WRITEABLE)))
+      /* Read-write only where this stage writes it: a buffer one stage reads and another writes is read-only in the
+       * reader (a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's). */
+      if (writes)
          r->r.kind = WGSL_STORAGE;
       if (intr->intrinsic == nir_intrinsic_ssbo_atomic || intr->intrinsic == nir_intrinsic_ssbo_atomic_swap) {
          r->r.atomic = true;
-         const nir_atomic_op op = nir_intrinsic_atomic_op(intr);
-         if (op == nir_atomic_op_imin || op == nir_atomic_op_imax)
-            r->signed_atomic = true;
+         atomic_sign(c, nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
       }
       break;
    }
    case nir_intrinsic_shared_atomic:
    case nir_intrinsic_shared_atomic_swap:
       c->shm_atomic = true;
+      atomic_sign(c, nir_intrinsic_atomic_op(intr), &c->shm_signed, &c->shm_unsigned);
       break;
    case nir_intrinsic_image_load:
    case nir_intrinsic_image_store:
@@ -442,8 +457,14 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
          if (sem.location >= FRAG_RESULT_DATA0 && sem.location < FRAG_RESULT_DATA0 + 8) {
             const unsigned loc = sem.location - FRAG_RESULT_DATA0;
-            if (sem.dual_source_blend_index)
-               failf(c, "dual-source blending");
+            if (sem.dual_source_blend_index) {
+               /* WGSL's dual_source_blending: location 0 alone, its two outputs @blend_src(0) and (1). */
+               if (!c->dual_source)
+                  failf(c, "dual-source blending without the device's dual-source-blending");
+               c->info->dual_source = true;
+               c->info->dual_base = base_of(nir_intrinsic_src_type(intr));
+               break;
+            }
             c->info->outputs |= 1u << loc;
             c->info->output_base[loc] = base_of(nir_intrinsic_src_type(intr));
          } else if (sem.location == FRAG_RESULT_DEPTH) {
@@ -473,6 +494,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_terminate:
    case nir_intrinsic_terminate_if:
       c->info->discards = true;
+      break;
+   case nir_intrinsic_is_helper_invocation:
+   case nir_intrinsic_load_helper_invocation:
+      c->uses_helper = true;
       break;
    case nir_intrinsic_load_push_constant: {
       const unsigned end = nir_intrinsic_base(intr) + nir_intrinsic_range(intr);
@@ -644,6 +669,8 @@ declare_io(struct ctx *c)
       line(c, "var<private> o: Out;");
       /* A positive-height Vulkan viewport is upside down for WebGPU: y negated unless the pipeline's is flipped. */
       line(c, "override wg_flip_y: f32 = -1.0;");
+      /* An inverted depth range (the driver's flip_z): z mirrored in clip space, the range given the right way. */
+      line(c, "override wg_flip_z: bool = false;");
    } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       if (c->vary.mask || c->uses_frag_coord) {
          line(c, "struct In {");
@@ -656,8 +683,19 @@ declare_io(struct ctx *c)
       }
       if (c->info->outputs || c->info->writes_depth || c->info->writes_sample_mask) {
          line(c, "struct Out {");
-         u_foreach_bit(loc, c->info->outputs)
-            line(c, "  @location(%u) f%u: vec4<%s>,", loc, loc, base_name(c->info->output_base[loc]));
+         if (c->info->dual_source) {
+            /* Both of location 0's sources, whether or not the shader wrote the first; no other location. */
+            if (c->info->outputs & ~1u)
+               failf(c, "dual-source blending with outputs past location 0");
+            if (!(c->info->outputs & 1u))
+               c->info->output_base[0] = c->info->dual_base;
+            c->info->outputs |= 1u;
+            line(c, "  @location(0) @blend_src(0) f0: vec4<%s>,", base_name(c->info->output_base[0]));
+            line(c, "  @location(0) @blend_src(1) f0b: vec4<%s>,", base_name(c->info->dual_base));
+         } else {
+            u_foreach_bit(loc, c->info->outputs)
+               line(c, "  @location(%u) f%u: vec4<%s>,", loc, loc, base_name(c->info->output_base[loc]));
+         }
          if (c->info->writes_depth)
             line(c, "  @builtin(frag_depth) depth: f32,");
          if (c->info->writes_sample_mask)
@@ -669,6 +707,13 @@ declare_io(struct ctx *c)
    }
    if (nir->info.stage == MESA_SHADER_VERTEX)
       c->info->varyings = c->vary;
+}
+
+/* A fragment shader's way out of main. */
+static const char *
+fs_return(struct ctx *c)
+{
+   return c->info->outputs || c->info->writes_depth || c->info->writes_sample_mask ? "return o;" : "return;";
 }
 
 /* Values. */
@@ -1079,8 +1124,8 @@ emit_output(struct ctx *c, nir_intrinsic_instr *intr)
          return;
       }
       const unsigned loc = sem.location - FRAG_RESULT_DATA0;
-      field = fmt(c, "f%u", loc);
-      base = c->info->output_base[loc];
+      field = sem.dual_source_blend_index ? "f0b" : fmt(c, "f%u", loc);
+      base = sem.dual_source_blend_index ? c->info->dual_base : c->info->output_base[loc];
    }
    u_foreach_bit(i, mask)
       line(c, "o.%s.%s = %s;", field, swz(first + i), as_base(c, src_comp(c, value, i), base, 1));
@@ -1181,9 +1226,10 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_layer_id:
       line(c, "t%u = 0u;", def->index);
       return;
+   /* Demoted invocations are known (wg_helper); the rasterizer's helpers aren't, WGSL having no built-in for them. */
    case nir_intrinsic_is_helper_invocation:
    case nir_intrinsic_load_helper_invocation:
-      line(c, "t%u = false;", def->index);
+      line(c, "t%u = wg_helper;", def->index);
       return;
    case nir_intrinsic_ddx: case nir_intrinsic_ddx_fine: case nir_intrinsic_ddx_coarse:
    case nir_intrinsic_ddy: case nir_intrinsic_ddy_fine: case nir_intrinsic_ddy_coarse: {
@@ -1224,11 +1270,11 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_shared:
    case nir_intrinsic_shared_atomic:
    case nir_intrinsic_shared_atomic_swap:
-      emit_word_access(c, intr, "shm", c->shm_atomic, false,
+      emit_word_access(c, intr, "shm", c->shm_atomic, c->shm_signed,
                        fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)));
       return;
    case nir_intrinsic_store_shared:
-      emit_word_access(c, intr, "shm", c->shm_atomic, false,
+      emit_word_access(c, intr, "shm", c->shm_atomic, c->shm_signed,
                        fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[1], 0), nir_intrinsic_base(intr)));
       return;
    case nir_intrinsic_load_scratch:
@@ -1259,13 +1305,19 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       }
       return;
    }
+   /* WGSL's discard demotes (the invocation goes on as a helper); a terminate also leaves the shader (vtn adds no
+    * jump after OpTerminateInvocation, and a loop whose only exit it was would never end). */
    case nir_intrinsic_demote:
-   case nir_intrinsic_terminate:
-      line(c, "discard;");
+      line(c, "discard;%s", c->uses_helper ? " wg_helper = true;" : "");
       return;
    case nir_intrinsic_demote_if:
+      line(c, "if (%s) { discard;%s }", src_comp(c, &intr->src[0], 0), c->uses_helper ? " wg_helper = true;" : "");
+      return;
+   case nir_intrinsic_terminate:
+      line(c, "discard; %s", fs_return(c));
+      return;
    case nir_intrinsic_terminate_if:
-      line(c, "if (%s) { discard; }", src_comp(c, &intr->src[0], 0));
+      line(c, "if (%s) { discard; %s }", src_comp(c, &intr->src[0], 0), fs_return(c));
       return;
    case nir_intrinsic_image_load: {
       const unsigned index = const_index(c, &intr->src[0]);
@@ -1296,8 +1348,11 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       const unsigned index = const_index(c, &intr->src[0]);
       const unsigned dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
       const char *name = res_name(c, index);
+      /* A cube array's size counts cubes, its 2D array's layers faces. */
+      const bool cubes = nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_CUBE && nir_intrinsic_image_array(intr);
       if (dim == WGSL_DIM_2D_ARRAY)
-         line(c, "t%u = vec3<u32>(textureDimensions(%s), textureNumLayers(%s))%s;", def->index, name, name,
+         line(c, "t%u = vec3<u32>(textureDimensions(%s), textureNumLayers(%s)%s)%s;", def->index, name, name,
+              cubes ? " / 6u" : "",
               def->num_components < 3 ? fmt(c, ".%s", comps(c, 0, def->num_components)) : "");
       else
          line(c, "t%u = textureDimensions(%s);", def->index, name);
@@ -1429,8 +1484,8 @@ emit_tex(struct ctx *c, nir_tex_instr *tex)
    case nir_texop_txl:
       if (cmp)
          e = fmt(c, "textureSampleCompareLevel(%s, %s", args, src_scalar_as(c, cmp, 0, WGSL_F32));
-      else if (depth)
-         e = fmt(c, "textureSampleLevel(%s, i32(%s)", args, src_scalar_as(c, lod, 0, WGSL_F32));
+      else if (depth) /* a whole level: Vulkan's nearest to the LOD (a linear mip filter's blend is lost) */
+         e = fmt(c, "textureSampleLevel(%s, i32(floor(%s + 0.5))", args, src_scalar_as(c, lod, 0, WGSL_F32));
       else
          e = fmt(c, "textureSampleLevel(%s, %s", args, src_scalar_as(c, lod, 0, WGSL_F32));
       break;
@@ -1483,7 +1538,7 @@ emit_jump(struct ctx *c, nir_jump_instr *jump)
    case nir_jump_return:
    case nir_jump_halt:
       if (c->nir->info.stage == MESA_SHADER_FRAGMENT && jump->type == nir_jump_halt)
-         line(c, "discard;");
+         line(c, "discard; %s", fs_return(c));
       else
          line(c, "return%s;", c->nir->info.stage == MESA_SHADER_COMPUTE ? "" : " o");
       break;
@@ -1591,10 +1646,11 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
             /* WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow (every value
              * here is a var, assigned wherever): the condition of an if around a barrier, or breaking out of a loop
              * that holds one, is passed through workgroupUniformLoad. The barrier after it keeps the next write of
-             * the same var from racing this read. */
+             * the same var from racing this read, so that one var serves every condition (WebGPU counts it in the
+             * workgroup's storage: the device advertises its limit less 16 bytes for it). */
             const unsigned n = c->uniform_conds++;
-            line(c, "wg_uc%u = select(0u, 1u, %s);", n, src_comp(c, &nif->condition, 0));
-            line(c, "let uc%u = workgroupUniformLoad(&wg_uc%u);", n, n);
+            line(c, "wg_uc = select(0u, 1u, %s);", src_comp(c, &nif->condition, 0));
+            line(c, "let uc%u = workgroupUniformLoad(&wg_uc);", n);
             line(c, "workgroupBarrier();");
             line(c, "if (uc%u != 0u) {", n);
          } else {
@@ -1633,7 +1689,7 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
 }
 
 char *
-wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, bool tier2,
+wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, unsigned features,
            struct wgsl_info *info, char *error, size_t error_size)
 {
    wgsl_finish(nir);
@@ -1647,7 +1703,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
       .error_size = error_size,
       .info = info,
       .fs = nir->info.stage == MESA_SHADER_VERTEX ? fs : NULL,
-      .tier2 = tier2,
+      .tier2 = features & WGSL_TIER2,
+      .dual_source = features & WGSL_DUAL_SOURCE,
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
@@ -1664,6 +1721,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
    line(&c, "diagnostic(off, derivative_uniformity);");
    if (info->clip_distances)
       line(&c, "enable clip_distances;");
+   if (info->dual_source)
+      line(&c, "enable dual_source_blending;");
    if (info->immediate_size)
       line(&c, "requires immediate_address_space;");
    /* Immediates can't be arrays: a struct of vec4s, copied into an array the shader indexes. */
@@ -1677,10 +1736,12 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
    declare_resources(&c);
    declare_io(&c);
    if (stage == MESA_SHADER_COMPUTE && nir->info.shared_size)
-      line(&c, "var<workgroup> shm: array<%s, %u>;", c.shm_atomic ? "atomic<u32>" : "u32",
+      line(&c, "var<workgroup> shm: array<%s, %u>;", !c.shm_atomic ? "u32" : c.shm_signed ? "atomic<i32>" : "atomic<u32>",
            DIV_ROUND_UP(nir->info.shared_size, 4));
    if (nir->scratch_size)
       line(&c, "var<private> scratch: array<u32, %u>;", DIV_ROUND_UP(nir->scratch_size, 4));
+   if (c.uses_helper)
+      line(&c, "var<private> wg_helper: bool;");
 
    const bool has_out = stage == MESA_SHADER_VERTEX ||
                         (stage == MESA_SHADER_FRAGMENT && (info->outputs || info->writes_depth || info->writes_sample_mask));
@@ -1720,12 +1781,14 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
    emit_cf_list(&c, &impl->body);
    if (stage == MESA_SHADER_VERTEX)
       line(&c, "o.pos.y = o.pos.y * wg_flip_y;");
+   if (stage == MESA_SHADER_VERTEX)
+      line(&c, "if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }");
    if (has_out)
       line(&c, "return o;");
    c.indent--;
    line(&c, "}");
-   for (unsigned i = 0; i < c.uniform_conds; i++)
-      line(&c, "var<workgroup> wg_uc%u: u32;", i);
+   if (c.uniform_conds)
+      line(&c, "var<workgroup> wg_uc: u32;");
 
    char *text = NULL;
    if (!c.failed)

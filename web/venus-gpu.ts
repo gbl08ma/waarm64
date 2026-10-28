@@ -9,7 +9,7 @@
 import type { ShaderCache } from './venus-cache.ts';
 
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
-const COPY_SRC = 4, COPY_DST = 8, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
+const COPY_SRC = 4, COPY_DST = 8, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -892,6 +892,10 @@ export class VenusGpu {
       }
       return;
     }
+    if (j.op === 'resolveDepth') {
+      this.resolveDepth(j);
+      return;
+    }
     if (j.op === 'resolve' && /int$/.test(fmt)) {
       this.warn(`a resolve of ${fmt}, which WebGPU can't resolve: skipped`);
       return;
@@ -964,6 +968,62 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       pass.draw(3);
       pass.end();
     }
+  }
+
+  /**
+   * A multisampled depth or stencil attachment's SAMPLE_ZERO resolve (WebGPU resolves colour only): a draw that writes
+   * each pixel's sample 0 as its depth (`frag_depth`), or, for stencil, which a shader can't write, the value cleared
+   * to 0 and then each bit set by a draw of its own (the bit's write mask, a reference of all ones) that keeps only the
+   * pixels whose sample 0 has it.
+   */
+  private resolveDepth(j: Json) {
+    const src = j.src as GPUTexture, dst = j.dst as GPUTexture;
+    const fmt = dst.format, stencil = j.aspect === 'stencil';
+    if (!(src.usage & TEXTURE_BINDING) || src.sampleCount < 2) {
+      this.warn(`a ${j.aspect} resolve of ${src.format} that can't be read: skipped`);
+      return;
+    }
+    const layout = (code: string, targetMask: number, bit = -1) => {
+      const key = `rdepth:${fmt}:${stencil}:${bit}`;
+      let pipeline = this.metaPipelines.get(key);
+      if (!pipeline) {
+        const m = this.device!.createShaderModule({ code });
+        const hasStencil = /stencil/.test(fmt), hasDepth = /depth/.test(fmt);
+        const face: GPUStencilFaceState = { compare: 'always', passOp: stencil ? 'replace' : 'keep' };
+        pipeline = this.device!.createRenderPipeline({
+          layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets: [] },
+          primitive: { topology: 'triangle-list' },
+          depthStencil: { format: fmt, ...(hasDepth ? { depthWriteEnabled: !stencil, depthCompare: 'always' as GPUCompareFunction } : {}),
+            ...(hasStencil ? { stencilFront: face, stencilBack: face, stencilWriteMask: targetMask } : {}) },
+        });
+        this.metaPipelines.set(key, pipeline);
+      }
+      return pipeline;
+    };
+    const vs = `@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  let q = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
+  return vec4<f32>(q.x * 2.0 - 1.0, 1.0 - q.y * 2.0, 0.0, 1.0);
+}`;
+    const view = src.createView({ dimension: '2d', aspect: stencil ? 'stencil-only' : 'depth-only', baseMipLevel: j.srcMip, mipLevelCount: 1, baseArrayLayer: j.srcLayer, arrayLayerCount: 1 });
+    const ds: GPURenderPassDepthStencilAttachment = { view: this.viewOf(dst, j.dstMip, j.dstLayer) };
+    if (/depth/.test(fmt)) Object.assign(ds, { depthLoadOp: 'load', depthStoreOp: 'store' });
+    if (/stencil/.test(fmt)) Object.assign(ds, stencil ? { stencilLoadOp: 'clear', stencilStoreOp: 'store', stencilClearValue: 0 } : { stencilLoadOp: 'load', stencilStoreOp: 'store' });
+    const pass = this.enc!.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds });
+    const draws = stencil ? [0, 1, 2, 3, 4, 5, 6, 7] : [-1];
+    for (const bit of draws) {
+      const pipeline = bit < 0
+        ? layout(`@group(0) @binding(0) var t: texture_depth_multisampled_2d;
+${vs}
+@fragment fn fs(@builtin(position) p: vec4<f32>) -> @builtin(frag_depth) f32 { return textureLoad(t, vec2<i32>(p.xy), 0); }`, 0)
+        : layout(`@group(0) @binding(0) var t: texture_multisampled_2d<u32>;
+${vs}
+@fragment fn fs(@builtin(position) p: vec4<f32>) { if ((textureLoad(t, vec2<i32>(p.xy), 0).x & ${1 << bit}u) == 0u) { discard; } }`, 1 << bit, bit);
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }] }));
+      if (stencil) pass.setStencilReference(0xff);
+      pass.draw(3);
+    }
+    pass.end();
   }
 
   /** A clear of a colour format WebGPU can't render to: its texel encoded (`encodeTexel`) into rows copied into the

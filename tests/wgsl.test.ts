@@ -197,3 +197,64 @@ test('built-ins WGSL has translate to its own, and a compare-exchange is strong 
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip: missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc'), timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const stage = (file: string, env = 'vulkan1.2') => {
+      const spv = join(tmp, `${basename(file)}.spv`);
+      const r = spawnSync('glslc', [`--target-env=${env}`, '-o', spv, join(root, file)], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const b = readFileSync(spv);
+      return translate({ name: file, stage: stageOf(file), words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) });
+    };
+    const ok = (file: string, env?: string) => {
+      const r = stage(file, env);
+      assert.equal(r.rc, 0, `${file}: ${r.text}`);
+      return r.text;
+    };
+    const dir = 'tests/venus/l4f';
+    // 3: dual-source blending as WGSL's @blend_src.
+    const dual = ok(`${dir}/dual.frag`);
+    assert.match(dual, /enable dual_source_blending;/);
+    assert.match(dual, /@location\(0\) @blend_src\(0\) f0: vec4<f32>,\s*@location\(0\) @blend_src\(1\) f0b: vec4<f32>,/);
+    // 4: a buffer the fragment stage only reads is read-only there, though the stage writes another.
+    const ssbo = ok(`${dir}/ssbo-read.frag`);
+    assert.match(ssbo, /@group\(0\) @binding\(0\) var<storage, read> r0_0/);
+    assert.match(ssbo, /texture_storage_2d<r32uint, write>/);
+    // 5: signed shared atomics on atomic<i32>; signed and unsigned ones on shared memory refused.
+    assert.match(ok(`${dir}/shared-signed.comp`), /var<workgroup> shm: array<atomic<i32>, 1>;/);
+    const mixed = stage(`${dir}/shared-mixed.comp`);
+    assert.equal(mixed.rc, 3, mixed.text.slice(0, 200));
+    assert.equal(mixed.text, 'signed and unsigned atomic min or max on one array');
+    // 11: a terminate (SPIR-V 1.6's discard) leaves the shader; a demoted invocation is a helper.
+    const term = ok(`${dir}/terminate.frag`, 'vulkan1.3');
+    assert.match(term, /discard; return( o)?;/);
+    const demote = ok(`${dir}/demote.frag`, 'vulkan1.3');
+    assert.match(demote, /discard; wg_helper = true;/);
+    assert.match(demote, /= wg_helper;/);
+    // 12: one workgroup variable for every uniform condition.
+    const conds = ok(`${dir}/uniform-conds.comp`);
+    assert.equal(conds.match(/var<workgroup> wg_uc/g)?.length, 1, conds);
+    assert.equal(conds.match(/workgroupUniformLoad\(&wg_uc\)/g)?.length, 2);
+    // 2: a cube array's size in cubes.
+    assert.match(ok(`${dir}/cube-array.comp`), /textureNumLayers\(r0_0\) \/ 6u\)/);
+    // 8: texture and sampler indexed apart: each of the 4 textures with each of the 2 samplers.
+    const sep = ok(`${dir}/separate.frag`);
+    assert.equal(sep.match(/textureSample\(/g)?.length, 8, sep);
+    // The inverted depth range's override in every vertex shader (the driver review's 12).
+    const vert = ok('tests/venus/driver.vert');
+    assert.match(vert, /override wg_flip_z: bool = false;/);
+    assert.match(vert, /if \(wg_flip_z\) \{ o\.pos\.z = o\.pos\.w - o\.pos\.z; \}/);
+    const modules = [ssbo, ok(`${dir}/shared-signed.comp`), term, demote, conds, ok(`${dir}/cube-array.comp`), sep, vert];
+    const errors = await compile(modules);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, modules.map(() => ''), 'WGSL Chromium rejected');
+    // @blend_src compiles where the adapter has dual-source-blending (the Mac's, not SwiftShader's).
+    const [dualErrors] = (await compile([dual]))!;
+    if (!/dual_source_blending/.test(dualErrors)) assert.equal(dualErrors, '', 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

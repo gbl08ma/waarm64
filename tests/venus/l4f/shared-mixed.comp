@@ -1,0 +1,12 @@
+#version 450
+// Signed and unsigned min on shared memory (one WGSL array): refused rather than one of them wrong.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) buffer Out { int v; uint u; } o;
+shared int s;
+shared uint t;
+void main() {
+  atomicMin(s, int(gl_LocalInvocationIndex) - 32);
+  atomicMin(t, gl_LocalInvocationIndex);
+  barrier();
+  if (gl_LocalInvocationIndex == 0) { o.v = s; o.u = t; }
+}

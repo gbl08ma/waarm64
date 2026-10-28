@@ -1,0 +1,6 @@
+#version 450
+// A cube array's storage image (finding 2): its size counts cubes, not faces.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, rgba8) uniform writeonly imageCubeArray img;
+layout(set = 0, binding = 1) buffer Out { ivec3 size; } o;
+void main() { o.size = imageSize(img); imageStore(img, ivec3(0, 0, 7), vec4(1)); }

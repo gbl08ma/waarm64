@@ -112,6 +112,8 @@ program_free(struct wg_program *p)
    wg_id_release(p->push_group);
    wg_id_release(p->layout);
    wg_id_release(p->compute);
+   if (p->owns_compute_module)
+      wg_id_release(p->compute_module);
    free(p);
 }
 
@@ -237,6 +239,7 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    v->push_group = 0;
    v->push_group_gen = 0;
    v->compute = 0;
+   v->owns_compute_module = false;
    v->mask = mask;
    for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
       if (!(mask & (1ull << k)))
@@ -502,7 +505,12 @@ static void
 shader_destroy(struct vk_device *dev, struct vk_shader *vk, const VkAllocationCallbacks *pAllocator)
 {
    struct wg_shader *s = container_of(vk, struct wg_shader, vk);
-   wg_id_release(s->module);
+   /* A compute program outlives this shader if another shares it, and makes its variants from this module: it keeps
+    * the module then (an id released here could name another object by a variant's make). */
+   if (s->program && s->module && s->program->compute_module == s->module && s->program->refs > 1)
+      s->program->owns_compute_module = true;
+   else
+      wg_id_release(s->module);
    wg_id_release(s->empty_fs);
    wg_program_unref(s->program);
    free(s->wgsl);
@@ -572,7 +580,10 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          }
          shaders[i] = s;
          char *text = wgsl_print(NULL, infos[i].nir, infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
-                                 wg_max_immediates, wg_features & WG_FEATURE_TIER2, &s->info, error,
+                                 wg_max_immediates,
+                                 ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
+                                    ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0),
+                                 &s->info, error,
                                  sizeof(error));
          if (!text) {
             ok = false;
@@ -596,6 +607,17 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
                if (x->kind == WGSL_STORAGE_TEXTURE && y->kind == WGSL_STORAGE_TEXTURE && x->group == y->group &&
                    x->binding == y->binding && x->access != y->access) {
                   snprintf(error, sizeof(error), "a storage image the stages access differently (group %u binding %u)",
+                           x->group, x->binding);
+                  ok = false;
+               }
+               /* Likewise a storage buffer one stage writes and another only reads (the translator declares it
+                * read-only where it isn't written): that is a vertex stage reading what the fragment stage writes,
+                * which WebGPU can't bind (no writable storage in vertex shaders). */
+               const bool xs = x->kind == WGSL_STORAGE || x->kind == WGSL_STORAGE_READ;
+               const bool ys = y->kind == WGSL_STORAGE || y->kind == WGSL_STORAGE_READ;
+               if (xs && ys && x->group == y->group && x->binding == y->binding && x->kind != y->kind) {
+                  snprintf(error, sizeof(error),
+                           "a storage buffer one stage writes and the vertex stage reads (group %u binding %u)",
                            x->group, x->binding);
                   ok = false;
                }
@@ -877,8 +899,9 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
       return (uint32_t)(uintptr_t)e->data;
 
    struct wg_json j = { 0 };
-   wg_json_printf(&j, "{\"layout\":%u,\"vertex\":{\"module\":%u,\"entryPoint\":\"main\",\"constants\":{\"wg_flip_y\":%d},"
-                  "\"buffers\":[", p->layout, k->vs->module, k->flip ? 1 : -1);
+   wg_json_printf(&j, "{\"layout\":%u,\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
+                  "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d},\"buffers\":[",
+                  p->layout, k->vs->module, k->flip ? 1 : -1, k->flip_z ? 1 : 0);
    /* A binding none of the shader's inputs reads is left out (else a draw would need its buffer). */
    const uint32_t inputs = k->vs->info.inputs;
    struct wg_vertex_slots vs;
