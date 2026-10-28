@@ -26,6 +26,8 @@
 #define WGSL_MAX_PAIRS 64
 /* The push constants' uniform buffer's binding in group 3 (WebGPU's bindings stay under 1000). */
 #define WGSL_PUSH_BINDING 998
+/* The slots a group's uniform buffers can be read as storage at (wgsl_layout.ubo_storage). */
+#define WGSL_UBO_STORAGE_WORDS 8
 
 /* A set layout as the compiler needs it: its bind group and first slot there, each binding's first slot in the set
  * (-1 for none) and element count. */
@@ -47,6 +49,9 @@ struct wgsl_layout {
    struct wgsl_set_layout sets[WGSL_MAX_SETS];
    /* The push constants' size in bytes (0: none). */
    uint32_t push_size;
+   /* Uniform buffers read as read-only storage buffers (VK3 L7.4: past WebGPU's uniform buffers a stage, the driver's
+    * `fold_uniforms`): by group, a bit for each WGSL slot (binding / 2) there. */
+   uint64_t ubo_storage[WGSL_MAX_GROUPS][WGSL_UBO_STORAGE_WORDS];
 };
 
 enum wgsl_resource_kind {

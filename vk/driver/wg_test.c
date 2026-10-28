@@ -1556,6 +1556,9 @@ wgt_fl_done(uint32_t i)
  *    pool destroyed as soon as the submit is made, and 32 blocks of 32 bytes allocated at once (one in the place of the
  *    pool's values, freed with its other arrays) filled 0xab (`wgt_misc_canary`): still 0xab once the fence signals (the L5-L6a review's finding 8: the completion
  *    wrote the query's value into the freed pool).
+ * 23: `cs` (many-ubo.comp: b[i] = u[i].k + the push constants' last word) with 13 uniform buffers (100 + i, at 256i
+ *     of one host-visible memory) and 128 bytes of push constants (past the immediates: the push buffer's binding
+ *     too), 5 pushed: 105 to 117 at [0, 52) (VK3 L7.4: past WebGPU's 12 uniform buffers a stage, some read as storage).
  * 19: as 13's copy, held for its wait, then a submit of nothing but a fence (vkQueueSubmit(queue, 0, NULL, fence), as
  *    Mesa's vkQueueWaitIdle): the fence unsignalled until the host's signal (`wgt_misc_signal`), and the copy 0x22 (the
  *    L5-L6a review's finding 1: such a submit went ahead of held ones, its fence saying they were done).
@@ -2224,6 +2227,79 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          CmdDispatchIndirect(cmd, in, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
+   } else if (scenario == 23) {
+      /* More uniform buffers than WebGPU binds a stage (VK3 L7.4): the device's maximum, 13 or more. */
+      PFN_vkGetPhysicalDeviceProperties GetProps =
+         (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
+      VkPhysicalDevice pdev;
+      uint32_t n = 1;
+      CHECK(EnumeratePhysicalDevices(instance, &n, &pdev));
+      VkPhysicalDeviceProperties props;
+      GetProps(pdev, &props);
+      if (props.limits.maxPerStageDescriptorUniformBuffers < 13) {
+         snprintf(error, sizeof(error), "maxPerStageDescriptorUniformBuffers %u",
+                  props.limits.maxPerStageDescriptorUniformBuffers);
+         return 1;
+      }
+      VkShaderModule m;
+      VkBuffer in;
+      uint32_t *w;
+      if (shader(cs, cs_words, &m) || buffer(4096, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &in, (void **)&w))
+         return 1;
+      for (uint32_t i = 0; i < 13; i++)
+         w[64 * i] = 100 + i;
+      const VkDescriptorSetLayoutBinding bindings[2] = {
+         { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 13, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+         { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 2, .pBindings = bindings };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl,
+                                               .pushConstantRangeCount = 1, .pPushConstantRanges = &range };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      VkPipeline pipeline;
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+      const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 13 },
+                                           { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 2, .pPoolSizes = ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      VkDescriptorBufferInfo bi[14];
+      for (uint32_t i = 0; i < 13; i++)
+         bi[i] = (VkDescriptorBufferInfo){ in, 256 * i, 16 };
+      bi[13] = (VkDescriptorBufferInfo){ out, 0, 64 };
+      const VkWriteDescriptorSet wr[2] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 13,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[0] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[13] },
+      };
+      UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+      uint32_t push[32] = { 0 };
+      push[31] = 5;
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                         NULL);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+      CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
+      CmdDispatch(cmd, 1, 1, 1);
    } else if (scenario == 12) {
       VkShaderModule m;
       if (shader(cs, cs_words, &m))

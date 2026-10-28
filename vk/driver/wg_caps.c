@@ -12,6 +12,9 @@
 
 struct wg_limits wg_limits;
 
+/* The storage buffers a stage gives uniform buffers past WebGPU's (wg_caps_properties). */
+#define WG_FOLDED_UBOS 2
+
 /* venus_init's: the device's features and limits (`count` words, as struct wg_limits): 0 if the count is another's. */
 int
 wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count)
@@ -194,7 +197,10 @@ wg_caps_properties(struct vk_properties *p)
 {
    const struct wg_limits *L = &wg_limits;
    const uint32_t sampled = L->max_sampled_textures, storage_tex = L->max_storage_textures;
-   const uint32_t ubo = L->max_uniform_buffers, ssbo = L->max_storage_buffers;
+   /* Uniform buffers past WebGPU's a stage (less the push buffer's binding) are read as storage (wg_shader.c
+    * `fold_uniforms`; VK3 L7.4, ANGLE's ES3 wants 13): WG_FOLDED_UBOS of the storage buffers are theirs. */
+   const uint32_t folded = L->max_storage_buffers >= 4 + WG_FOLDED_UBOS ? WG_FOLDED_UBOS : 0;
+   const uint32_t ubo = L->max_uniform_buffers - 1 + folded, ssbo = L->max_storage_buffers - folded;
    const uint32_t samples = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
    /* WebGPU's buffers are ranges of one GPUBuffer a memory: an allocation is at most a buffer (and a 32-bit size). */
    const uint64_t max_buffer = MIN2((uint64_t)L->max_buffer_size, 0xffffffffu);
@@ -231,7 +237,8 @@ wg_caps_properties(struct vk_properties *p)
    p->maxPerStageResources = sampled + storage_tex + ubo + ssbo + L->max_color_attachments;
    /* WebGPU counts per stage, Vulkan per layout: a layout whose bindings every stage sees gets one stage's. */
    p->maxDescriptorSetSamplers = L->max_samplers;
-   p->maxDescriptorSetUniformBuffers = ubo;
+   /* A pipeline's two stages' (uniform buffers past a stage's room go by stage: fold_uniforms). */
+   p->maxDescriptorSetUniformBuffers = 2 * ubo;
    p->maxDescriptorSetUniformBuffersDynamic = L->max_dynamic_uniform_buffers;
    p->maxDescriptorSetStorageBuffers = ssbo;
    p->maxDescriptorSetStorageBuffersDynamic = L->max_dynamic_storage_buffers;

@@ -58,7 +58,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    }
    const uint32_t all = slots + plane_slots;
    const size_t size = sizeof(struct wg_descriptor_set_layout) + bindings * (sizeof(int32_t) + sizeof(uint32_t) +
-                       sizeof(VkDescriptorType)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
+                       sizeof(VkDescriptorType) + sizeof(VkShaderStageFlags)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
                        (plane_slots ? bindings * sizeof(int32_t) + all * (sizeof(void *) + sizeof(int32_t)) : 0) + 32;
    struct wg_descriptor_set_layout *l = vk_descriptor_set_layout_zalloc(&dev->vk, size, info);
    if (!l)
@@ -77,6 +77,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    l->first = (int32_t *)p, p += bindings * sizeof(int32_t);
    l->count = (uint32_t *)p, p += bindings * sizeof(uint32_t);
    l->type = (VkDescriptorType *)p, p += bindings * sizeof(VkDescriptorType);
+   l->stages = (VkShaderStageFlags *)p, p += bindings * sizeof(VkShaderStageFlags);
    l->dynamic = (int16_t *)p;
    l->binding_count = bindings;
    for (uint32_t b = 0; b < bindings; b++)
@@ -96,6 +97,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
       l->first[b->binding] = slot;
       l->count[b->binding] = b->descriptorCount;
       l->type[b->binding] = b->descriptorType;
+      l->stages[b->binding] = b->stageFlags;
       for (uint32_t e = 0; e < b->descriptorCount; e++) {
          l->dynamic[slot + e] = is_dynamic(b->descriptorType) ? (int16_t)dynamic++ : -1;
          if (b->pImmutableSamplers && (b->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
@@ -119,6 +121,8 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
       _mesa_blake3_update(&hash, &b->binding, sizeof(b->binding));
       _mesa_blake3_update(&hash, &b->descriptorType, sizeof(b->descriptorType));
       _mesa_blake3_update(&hash, &b->descriptorCount, sizeof(b->descriptorCount));
+      /* Which uniform buffers are read as storage goes by the stages that see them (wg_shader.c `fold_uniforms`). */
+      _mesa_blake3_update(&hash, &b->stageFlags, sizeof(b->stageFlags));
    }
    free(sorted);
    l->slot_count = plane_slot;

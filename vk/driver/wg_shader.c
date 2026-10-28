@@ -595,6 +595,51 @@ shader_destroy(struct vk_device *dev, struct vk_shader *vk, const VkAllocationCa
    vk_shader_free(dev, pAllocator, &s->vk);
 }
 
+/* Uniform buffers past what WebGPU binds a stage (VK3 L7.4: ANGLE's ES3 wants 12 besides its own): read as read-only
+ * storage (wgsl_nir.c `lower_ubo_storage`). A stage's uniform bindings are its uniform buffers, a texel buffer's
+ * parameters each and the push buffer's (counted always: whether a stage reads push constants past the immediates
+ * isn't known by the layout). The pipeline layout decides, by the stages each binding's flags name, so that every
+ * stage that sees a buffer reads it the same way: a uniform buffer past its stage's room, in set and binding order, is
+ * storage in all of them (dynamic ones never: they take the room first, and WebGPU's dynamic storage buffers are fewer).
+ * wg_caps.c reports the uniform buffers WG_FOLDED_UBOS more, less the push buffer's, and the storage buffers
+ * WG_FOLDED_UBOS fewer. */
+static void
+fold_uniforms(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layouts)
+{
+   static const VkShaderStageFlags stages[] = { VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                VK_SHADER_STAGE_COMPUTE_BIT };
+   for (uint32_t st = 0; st < ARRAY_SIZE(stages); st++) {
+      int32_t room = (int32_t)wg_limits.max_uniform_buffers - 1;
+      for (int pass = 0; pass < 2; pass++) {
+         for (uint32_t s = 0; s < out->set_count; s++) {
+            if (!layouts[s])
+               continue;
+            const struct wg_descriptor_set_layout *l = container_of(layouts[s], struct wg_descriptor_set_layout, vk);
+            for (uint32_t b = 0; b < l->binding_count; b++) {
+               if (l->first[b] < 0 || !(l->stages[b] & stages[st]))
+                  continue;
+               const VkDescriptorType t = l->type[b];
+               if (pass == 0) {
+                  if (t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER ||
+                      t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
+                     room -= l->count[b];
+                  continue;
+               }
+               if (t != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                  continue;
+               for (uint32_t e = 0; e < l->count[b]; e++) {
+                  if (room-- > 0)
+                     continue;
+                  const uint32_t slot = out->sets[s].base + l->first[b] + e;
+                  if (slot < 64 * WGSL_UBO_STORAGE_WORDS)
+                     out->ubo_storage[out->sets[s].group][slot / 64] |= 1ull << (slot % 64);
+               }
+            }
+         }
+      }
+   }
+}
+
 /* A set layout as the compiler sees it. */
 static void
 layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layouts, uint32_t count,
@@ -612,6 +657,7 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
                                                .first = l->first, .count = l->count, .ycbcr = l->ycbcr,
                                                .planes = l->planes };
    }
+   fold_uniforms(out, layouts);
 }
 
 static VkResult

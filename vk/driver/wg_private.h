@@ -297,6 +297,7 @@ struct wg_descriptor_set_layout {
    int32_t *first;
    uint32_t *count;
    VkDescriptorType *type;  /* by binding */
+   VkShaderStageFlags *stages; /* by binding */
    int16_t *dynamic;        /* by slot: its index among the dynamic offsets, or -1 */
    struct wg_sampler **immutable; /* by slot, or NULL */
    /* YCbCr (VK3 L7.2): by binding, the slot its elements' other planes start at (wgsl.h; -1: none), and by slot, the

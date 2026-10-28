@@ -798,6 +798,28 @@ wgsl_lower_ycbcr(nir_shader *nir, const struct wgsl_layout *layout)
    return progress;
 }
 
+/* A uniform buffer the layout folds into storage (wgsl_layout.ubo_storage: past WebGPU's uniform buffers a stage, VK3
+ * L7.4) read as a read-only storage buffer: its loads become SSBO loads of the same binding, which the printer declares
+ * `var<storage, read>` and the driver's layout entry `read-only-storage`. */
+static bool
+lower_ubo_storage(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   const struct wgsl_layout *layout = data;
+   if (intr->intrinsic != nir_intrinsic_load_ubo || !nir_src_is_const(intr->src[0]))
+      return false;
+   const unsigned index = nir_src_as_uint(intr->src[0]), group = index >> 16, slot = (index & 0xffff) / 2;
+   if (group >= WGSL_MAX_GROUPS || slot >= 64 * WGSL_UBO_STORAGE_WORDS ||
+       !(layout->ubo_storage[group][slot / 64] & (1ull << (slot % 64))))
+      return false;
+   b->cursor = nir_before_instr(&intr->instr);
+   nir_def *v = nir_load_ssbo(b, intr->def.num_components, intr->def.bit_size, intr->src[0].ssa, intr->src[1].ssa,
+                              .access = ACCESS_NON_WRITEABLE | ACCESS_CAN_REORDER,
+                              .align_mul = nir_intrinsic_align_mul(intr),
+                              .align_offset = nir_intrinsic_align_offset(intr));
+   nir_def_replace(&intr->def, v);
+   return true;
+}
+
 static void
 optimize_cb(nir_shader *nir, void *data)
 {
@@ -873,6 +895,7 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_uniform | nir_var_image, NULL);
    lower_16bit(nir);
    optimize(nir);
+   NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_ubo_storage, nir_metadata_control_flow, (void *)layout);
    return true;
 }
 

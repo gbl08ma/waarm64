@@ -37,6 +37,8 @@
 # sample_position, image_write_sample and write_sample_mask, and multisample_interpolation's sample and centroid
 # consistency and sample_qualifier_distinct_values; and every sixth depth_stencil_resolve samples_4 case of SAMPLE_ZERO
 # resolves that passes (s8_uint's stencil resolves fail: docs/backlog.md), at the end.
+# VK3 L7.4: ANGLE's ES3 row: more than 12 uniform buffers a stage (past WebGPU's, read as storage): every
+# descriptor_limits uniform_buffers case of compute and fragment shaders up to the device's 13, at the end.
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -4461,3 +4463,24 @@ dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d
 dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint.depth_zero_stencil_zero_testing_stencil
 dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint_separate_layouts.depth_zero_stencil_zero_unused_resolve_testing_depth
 dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.x8_d24_unorm_pack32.depth_zero_stencil_zero_unused_resolve_testing_depth
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_11
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_12
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_13
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_3
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_4
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_5
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_6
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_7
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_8
+dEQP-VK.pipeline.monolithic.descriptor_limits.compute_shader.uniform_buffers_9
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_10
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_11
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_12
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_13
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_3
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_4
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_5
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_6
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_7
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_8
+dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_9
