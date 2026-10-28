@@ -1,0 +1,17 @@
+#version 450
+// tests/venus-driver.test.ts (misc: writtenShared; VK3 L7a, the binding review's finding 3): two pipelines of this
+// shader on one set, X and Y of one host-visible memory: mode 0 copies X into Y (X read only), mode 1 writes both
+// (vk/driver/wg_test.c's scenario 26). Mode 1's writes of X must come back though mode 0's variant has its group's layout.
+layout(local_size_x = 4) in;
+layout(constant_id = 0) const uint mode = 0;
+layout(set = 0, binding = 0) buffer X { uint a[]; } x;
+layout(set = 0, binding = 1) buffer Y { uint a[]; } y;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  if (mode == 0u) {
+    y.a[i] = x.a[i];
+  } else {
+    x.a[i] = 7u;
+    y.a[i] = 9u;
+  }
+}

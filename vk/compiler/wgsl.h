@@ -169,6 +169,8 @@ struct wgsl_print_options {
    uint32_t max_immediates;
    /* WebGPU's maxComputeWorkgroupStorageSize: what shared memory and the translator's own workgroup word may take. */
    uint32_t max_workgroup_storage;
+   /* WebGPU's maxUniformBufferBindingSize: a uniform block's declared bytes at most (0: 65536). */
+   uint32_t max_uniform_size;
    /* The device's WGSL_* (WGSL_TIER2: read-write storage images of more formats; WGSL_DUAL_SOURCE: @blend_src). */
    unsigned features;
 };

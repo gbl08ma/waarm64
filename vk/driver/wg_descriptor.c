@@ -306,10 +306,13 @@ sync_planes(struct wg_descriptor_set *set, const struct wg_descriptor *d)
    }
 }
 
+/* A binding with immutable samplers keeps them whatever a write's `sampler` says (Vulkan ignores it there; VK3 L7a, the
+ * binding review's finding 7: a YCbCr binding's conversion is compiled in with its immutable sampler). */
 static void
-write_one(struct wg_descriptor *d, VkDescriptorType type, const VkDescriptorImageInfo *image,
-          const VkDescriptorBufferInfo *buffer, const VkBufferView *texel)
+write_one(struct wg_descriptor_set *set, struct wg_descriptor *d, VkDescriptorType type,
+          const VkDescriptorImageInfo *image, const VkDescriptorBufferInfo *buffer, const VkBufferView *texel)
 {
+   const bool immutable = set->layout->immutable[d - set->slots] != NULL;
    d->type = type;
    switch (type) {
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -317,11 +320,11 @@ write_one(struct wg_descriptor *d, VkDescriptorType type, const VkDescriptorImag
       d->texel = texel ? wg_buffer_view_from_handle(*texel) : NULL;
       break;
    case VK_DESCRIPTOR_TYPE_SAMPLER:
-      if (image->sampler)
+      if (image->sampler && !immutable)
          d->sampler = wg_sampler_from_handle(image->sampler);
       break;
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-      if (image->sampler)
+      if (image->sampler && !immutable)
          d->sampler = wg_sampler_from_handle(image->sampler);
       FALLTHROUGH;
    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
@@ -348,7 +351,7 @@ wg_descriptor_write(struct wg_descriptor_set *set, const VkWriteDescriptorSet *w
    for (uint32_t i = 0; i < w->descriptorCount; i++) {
       struct wg_descriptor *d = slot(set, w->dstBinding, w->dstArrayElement + i);
       if (d)
-         write_one(d, w->descriptorType, w->pImageInfo ? &w->pImageInfo[i] : NULL,
+         write_one(set, d, w->descriptorType, w->pImageInfo ? &w->pImageInfo[i] : NULL,
                    w->pBufferInfo ? &w->pBufferInfo[i] : NULL, w->pTexelBufferView ? &w->pTexelBufferView[i] : NULL);
       sync_planes(set, d);
    }
@@ -385,7 +388,7 @@ wg_descriptor_write_template(struct wg_descriptor_set *set, const struct vk_desc
          struct wg_descriptor *d = slot(set, e->binding, e->array_element + k);
          const void *p = (const uint8_t *)data + e->offset + k * e->stride;
          if (d)
-            write_one(d, e->type, p, p, p);
+            write_one(set, d, e->type, p, p, p);
          sync_planes(set, d);
       }
    }

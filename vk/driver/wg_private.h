@@ -75,12 +75,15 @@ struct wg_limits {
       max_compute_invocations_per_workgroup, max_compute_workgroup_size_x, max_compute_workgroup_size_y,
       max_compute_workgroup_size_z, max_compute_workgroups_per_dimension, max_immediate_size,
       max_storage_buffers_in_fragment_stage, max_storage_textures_in_fragment_stage,
+      max_storage_buffers_in_vertex_stage, max_storage_textures_in_vertex_stage, max_bindings_per_bind_group,
       /* Not a limit: the adapter's maker as a PCI vendor ID (web/venus-gpu.ts `VENDORS`; 0 for one it doesn't know). */
       vendor_id,
       /* Not limits: the adapter's subgroup sizes (GPUAdapterInfo's; 0 without `subgroups`). */
       subgroup_min_size, subgroup_max_size;
 };
 extern struct wg_limits wg_limits;
+/* The bytes a memory's GPUBuffer has past its end: a uniform block's largest (wg_device.c `wg_memory_buffer`). */
+#define WG_MEMORY_PAD ((uint64_t)(wg_limits.max_uniform_buffer_binding_size & ~3u))
 
 /* What the device advertises, from the features and limits (wg_caps.c); wg_caps_init sets them (venus_init's). */
 int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
@@ -90,6 +93,17 @@ uint32_t wg_subgroup_size(void);
 void wg_caps_extensions(struct vk_device_extension_table *e);
 void wg_caps_features(struct vk_features *f);
 void wg_caps_properties(struct vk_properties *p);
+struct wg_program;
+struct vk_descriptor_set_layout;
+/* Whether a program's bindings fit WebGPU's limits by stage and by layout (wg_caps.c, the one place that counts the
+ * bindings WebGPU takes for what Vulkan binds, which the advertised limits follow), with `xfb_storage` storage buffers
+ * more in the compute stage (a capture's); else false, with the cause in `error`. */
+bool wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, char *error,
+                     size_t error_size);
+/* The storage buffers and uniform buffers a captured vertex stage's compute pass takes besides the stage's
+ * (web/venus-gpu.ts `xfbPipeline`). */
+#define WG_XFB_STORAGE 2
+#define WG_XFB_UNIFORMS 1
 
 extern uint32_t wg_features, wg_max_immediates;
 
@@ -386,8 +400,15 @@ struct wg_program {
    /* Variants of the program for what the shader didn't type (wg_program_variant): textures declared filterable
     * float bound to depth or unfilterable views, and a dispatch's read-only storage buffers bound from a memory it
     * writes through another, by a mask of those resources; a base's list, through `variants`. */
-   uint64_t mask;
+   uint64_t mask[2];
    struct wg_program *variants;
+   struct wg_program *base;  /* a variant's program */
+   /* A variant's split samplers (wg_program_variant): (group, texture's binding, sampler's binding), the texture
+    * sampled through the sampler's twin at the binding before it; its render modules with them (0: the stage's own). */
+   uint32_t split_count;
+   uint32_t splits[8][3];
+   uint32_t vs_module, fs_module;
+   bool stage_modules_made;
    uint32_t compute;        /* a compute pipeline */
    struct hash_table *pipelines;
    /* What identifies the program across shaders (wg_shader.c `program_link`): its data and its stages' WGSL. Stages
@@ -419,7 +440,8 @@ const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
  * samplers they're sampled with as non-filtering, and whose read-only storage buffers in it as writable storage; made
  * at its first use, kept with the program. */
-struct wg_program *wg_program_variant(struct wg_program *p, uint64_t mask);
+struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask);
+void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs);
 struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
 
 /* The state a render pipeline is made with (wg_cmd.c fills it at each draw; zeroed whole so it hashes as bytes). */

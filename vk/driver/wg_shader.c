@@ -128,6 +128,8 @@ program_free(struct wg_program *p)
    wg_id_release(p->compute);
    if (p->owns_compute_module)
       wg_id_release(p->compute_module);
+   wg_id_release(p->vs_module);
+   wg_id_release(p->fs_module);
    free(p->compute_wgsl);
    free(p);
 }
@@ -196,10 +198,14 @@ bgl_uid(const struct wg_program *p, uint32_t g, const char *desc)
       uids = _mesa_hash_table_create(NULL, _mesa_hash_string, _mesa_key_string_equal);
    struct wg_json key = { 0 };
    wg_json_printf(&key, "%s", desc);
+   /* And the storage a group's shaders write: a bind group's replay registers their readback (wg_cmd.c `bind_group`),
+    * so a group of a widened variant, whose layout says "storage" of what it only reads, isn't a writer's (VK3 L7a). */
    for (uint32_t k = 0; k < p->resource_count; k++)
       if (p->resources[k].group == g && p->resources[k].kind == WGSL_UNIFORM)
          wg_json_printf(&key, " %u:%u", p->resources[k].binding,
                         p->dynamic[k] == WG_DYNAMIC_PUSH ? p->push_ubo_size : p->resources[k].size);
+      else if (p->resources[k].group == g && p->resources[k].kind == WGSL_STORAGE && p->resources[k].written)
+         wg_json_printf(&key, " w%u", p->resources[k].binding);
    struct hash_entry *e = _mesa_hash_table_search(uids, key.data);
    if (e) {
       wg_json_free(&key);
@@ -265,11 +271,127 @@ program_layouts(struct wg_program *p)
    p->layout = wg_create_json(WG_KIND_LAYOUT, &j);
 }
 
+/* A module's WGSL as a variant binds it (wgsl_print.c declares each `@group(g) @binding(b) var rG_B…` and samples as
+ * `rG_T, rG_S, …`): widened storage buffers `read_write` (WebGPU wants a binding's access in the module to be its layout
+ * entry's), and each split sampler's unfilterable textures sampled through its twin at the binding before it. NULL: no
+ * change. */
+static char *
+variant_text(const struct wg_program *p, const struct wg_program *v, const uint64_t *mask, const char *wgsl)
+{
+   if (!wgsl)
+      return NULL;
+   char *text = strdup(wgsl);
+   bool changed = false;
+   for (uint32_t k = 0; k < MIN2(p->resource_count, WGSL_MAX_RESOURCES); k++) {
+      if (!(mask[k / 64] & (1ull << (k % 64))) || p->resources[k].kind != WGSL_STORAGE_READ)
+         continue;
+      char decl[96];
+      snprintf(decl, sizeof(decl), "@group(%u) @binding(%u) var<storage, read> ", p->resources[k].group,
+               p->resources[k].binding);
+      char *at = strstr(text, decl);
+      if (!at)
+         continue;
+      const size_t head = at - text + strlen(decl) - strlen("read> ");
+      char *t = malloc(strlen(text) + 8);
+      memcpy(t, text, head);
+      strcpy(t + head, "read_write> ");
+      strcat(t, at + strlen(decl));
+      free(text);
+      text = t;
+      changed = true;
+   }
+   for (uint32_t i = 0; i < v->split_count; i++) {
+      const uint32_t g = v->splits[i][0], tb = v->splits[i][1], sb = v->splits[i][2];
+      char from[64], to[64], decl[96], twin[96];
+      snprintf(from, sizeof(from), "r%u_%u, r%u_%u,", g, tb, g, sb);
+      snprintf(to, sizeof(to), "r%u_%u, r%u_%u,", g, tb, g, sb - 1);
+      snprintf(decl, sizeof(decl), "@group(%u) @binding(%u) var r%u_%u: sampler;\n", g, sb, g, sb);
+      snprintf(twin, sizeof(twin), "@group(%u) @binding(%u) var r%u_%u: sampler;\n", g, sb - 1, g, sb - 1);
+      char *at = strstr(text, decl);
+      if (!at)
+         continue;
+      /* The twin's declaration after the sampler's (once), then every sampling of the texture with the sampler (the
+       * name a whole word: `r0_2` isn't the end of `r10_2`). */
+      struct wg_json out = { 0 };
+      const char *q = at + strlen(decl);
+      if (strstr(text, twin))
+         wg_json_printf(&out, "%.*s", (int)(q - text), text);
+      else
+         wg_json_printf(&out, "%.*s%s", (int)(q - text), text, twin);
+      for (;;) {
+         const char *f = strstr(q, from);
+         while (f && (f[-1] == '_' || (f[-1] >= '0' && f[-1] <= '9') || (f[-1] >= 'a' && f[-1] <= 'z') ||
+                      (f[-1] >= 'A' && f[-1] <= 'Z')))
+            f = strstr(f + 1, from);
+         if (!f) {
+            wg_json_printf(&out, "%s", q);
+            break;
+         }
+         wg_json_printf(&out, "%.*s%s", (int)(f - q), q, to);
+         q = f + strlen(from);
+      }
+      free(text);
+      text = strdup(out.data);
+      wg_json_free(&out);
+      changed = true;
+   }
+   if (!changed) {
+      free(text);
+      return NULL;
+   }
+   return text;
+}
+
+/* A variant's module of `wgsl` (0: the stage's own serves it). */
+static uint32_t
+variant_module(const struct wg_program *p, const struct wg_program *v, const uint64_t *mask, const char *wgsl)
+{
+   char *text = variant_text(p, v, mask, wgsl);
+   if (!text)
+      return 0;
+   const uint32_t m = wg_id();
+   gpu_shader(m, text, strlen(text));
+   free(text);
+   return m;
+}
+
+/* A variant's render modules (wg_render_pipeline), made at its first render pipeline from its stages' WGSL. */
+void
+wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs)
+{
+   if (!v->split_count || v->stage_modules_made)
+      return;
+   v->stage_modules_made = true;
+   v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl) : 0;
+   v->fs_module = fs ? variant_module(v->base, v, v->mask, fs->wgsl) : 0;
+}
+
+/* `twin` into `v`'s resources before index `at` (a split sampler's twin, at the binding before it). */
+static void
+insert_resource(struct wg_program *v, uint32_t at, const struct wgsl_resource *twin)
+{
+   for (uint32_t i = v->resource_count; i > at; i--) {
+      v->resources[i] = v->resources[i - 1];
+      v->dynamic[i] = v->dynamic[i - 1];
+      v->res_set[i] = v->res_set[i - 1];
+      v->vis[i] = v->vis[i - 1];
+   }
+   v->resources[at] = *twin;
+   v->dynamic[at] = -1;
+   v->resource_count++;
+}
+
+static uint32_t
+res_index(const struct wgsl_resource *r)
+{
+   return (uint32_t)r->group << 16 | r->binding;
+}
+
 struct wg_program *
-wg_program_variant(struct wg_program *p, uint64_t mask)
+wg_program_variant(struct wg_program *p, const uint64_t *mask)
 {
    for (struct wg_program *v = p->variants; v; v = v->variants)
-      if (v->mask == mask)
+      if (v->mask[0] == mask[0] && v->mask[1] == mask[1])
          return v;
    struct wg_program *v = malloc(sizeof(*v));
    memcpy(v, p, sizeof(*v));
@@ -282,10 +404,15 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
    v->compute = 0;
    v->compute_wgsl = NULL;
    v->owns_compute_module = false;
-   v->mask = mask;
+   v->base = p;
+   v->split_count = 0;
+   v->vs_module = v->fs_module = 0;
+   v->stage_modules_made = false;
+   memcpy(v->mask, mask, sizeof(v->mask));
    bool widened = false;
-   for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
-      if (!(mask & (1ull << k)))
+#define MASKED(k) (mask[(k) / 64] & (1ull << ((k) % 64)))
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      if (!MASKED(k))
          continue;
       /* A read-only storage buffer beside a writable one of its memory: "storage" (wg_cmd.c `program_for`). */
       if (v->resources[k].kind == WGSL_STORAGE_READ) {
@@ -294,44 +421,64 @@ wg_program_variant(struct wg_program *p, uint64_t mask)
          continue;
       }
       v->resources[k].sample = WGSL_SAMPLE_UNFILTERABLE;
-      /* Its samplers: non-filtering (the bind group gives them the sampler's nearest twin). */
-      const uint32_t index = (uint32_t)v->resources[k].group << 16 | v->resources[k].binding;
-      for (uint32_t i = 0; i < p->pair_count; i++) {
-         if (p->pairs[i][0] != index)
-            continue;
-         for (uint32_t r = 0; r < v->resource_count; r++)
-            if (((uint32_t)v->resources[r].group << 16 | v->resources[r].binding) == p->pairs[i][1] &&
-                v->resources[r].kind == WGSL_SAMPLER)
-               v->resources[r].nonfiltering = true;
-      }
    }
-   program_layouts(v);
-   /* WebGPU wants a binding's access in the module to be its layout entry's: widened bindings' read_write in a module
-    * of the variant's own, from the program's WGSL (wgsl_print.c declares each `@group(g) @binding(b) var<storage,
-    * read>`). */
-   if (widened && p->compute_wgsl) {
-      char *text = strdup(p->compute_wgsl);
-      for (uint32_t k = 0; k < MIN2(p->resource_count, 64); k++) {
-         if (!(mask & (1ull << k)) || p->resources[k].kind != WGSL_STORAGE_READ)
-            continue;
-         char decl[96];
-         snprintf(decl, sizeof(decl), "@group(%u) @binding(%u) var<storage, read> ", p->resources[k].group,
-                  p->resources[k].binding);
-         char *at = strstr(text, decl);
-         if (!at)
-            continue;
-         const size_t head = at - text + strlen(decl) - strlen("read> ");
-         char *t = malloc(strlen(text) + 8);
-         memcpy(t, text, head);
-         strcpy(t + head, "read_write> ");
-         strcat(t, at + strlen(decl));
-         free(text);
-         text = t;
+   /* An unfilterable texture's samplers: non-filtering (the bind group gives them the sampler's nearest twin), or,
+    * where a sampler also samples a filterable texture (VK3 L7a, the binding review's finding 2: HLSL's shared
+    * samplers), split: its nearest twin at the binding before it (a separate sampler's slot leaves it free) for the
+    * unfilterable textures, the sampler itself for the rest. */
+   for (uint32_t r = 0; r < p->resource_count; r++) {
+      if (p->resources[r].kind != WGSL_SAMPLER)
+         continue;
+      const uint32_t sidx = res_index(&p->resources[r]);
+      bool unfilterable = false, filterable = false;
+      for (uint32_t i = 0; i < p->pair_count; i++)
+         for (uint32_t k = 0; p->pairs[i][1] == sidx && k < p->resource_count; k++)
+            if (res_index(&p->resources[k]) == p->pairs[i][0] && p->resources[k].kind == WGSL_TEXTURE) {
+               if (MASKED(k))
+                  unfilterable = true;
+               else if (p->resources[k].sample == WGSL_SAMPLE_FLOAT && !p->resources[k].multisampled)
+                  filterable = true;
+            }
+      if (!unfilterable)
+         continue;
+      const uint32_t b = p->resources[r].binding;
+      /* A separate sampler is at its slot's odd binding, the even one free (a combined image sampler's texture). */
+      const bool free = (b & 1) && (r == 0 || p->resources[r - 1].group != p->resources[r].group ||
+                                    p->resources[r - 1].binding != b - 1);
+      uint32_t at = 0;
+      while (at < v->resource_count && res_index(&v->resources[at]) != sidx)
+         at++;
+      if (!filterable || !free || v->resource_count == WGSL_MAX_RESOURCES) {
+         v->resources[at].nonfiltering = true;
+         continue;
       }
-      v->compute_module = wg_id();
-      v->owns_compute_module = true;
-      gpu_shader(v->compute_module, text, strlen(text));
-      free(text);
+      uint32_t added = 0;
+      for (uint32_t i = 0; i < p->pair_count; i++)
+         for (uint32_t k = 0; p->pairs[i][1] == sidx && k < p->resource_count; k++)
+            if (res_index(&p->resources[k]) == p->pairs[i][0] && MASKED(k) &&
+                v->split_count < ARRAY_SIZE(v->splits)) {
+               v->splits[v->split_count][0] = p->resources[r].group;
+               v->splits[v->split_count][1] = p->resources[k].binding;
+               v->splits[v->split_count++][2] = b;
+               added++;
+            }
+      if (!added) {
+         v->resources[at].nonfiltering = true;
+         continue;
+      }
+      struct wgsl_resource twin = p->resources[r];
+      twin.binding = b - 1;
+      twin.nonfiltering = true;
+      insert_resource(v, at, &twin);
+   }
+#undef MASKED
+   program_layouts(v);
+   if ((widened || v->split_count) && p->compute_wgsl) {
+      const uint32_t m = variant_module(p, v, mask, p->compute_wgsl);
+      if (m) {
+         v->compute_module = m;
+         v->owns_compute_module = true;
+      }
    }
    if (p->compute_module) {
       struct wg_json j = { 0 };
@@ -711,6 +858,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             .fs = infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
             .max_immediates = wg_max_immediates,
             .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
+            .max_uniform_size = wg_limits.max_uniform_buffer_binding_size,
             .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
                         ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
                         (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
@@ -753,6 +901,33 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
                   ok = false;
                }
             }
+   /* The program, if its bindings fit WebGPU's limits (wg_caps.c `wg_bindings_fit`: else the pipeline is refused,
+    * saying why, never an invalid submit; VK3 L7a). A captured vertex stage's compute pass that doesn't fit, or has
+    * no bind group left (the push buffer's or sets 3 and up take the fourth), drops the capture instead. */
+   struct wg_program *made = NULL;
+   if (ok) {
+      made = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
+      struct wg_shader *xvs = NULL;
+      for (uint32_t i = 0; i < count; i++)
+         if (infos[i].stage == MESA_SHADER_VERTEX && wg_shader_xfb(shaders[i]))
+            xvs = shaders[i];
+      char why[256] = "";
+      const bool fits = wg_bindings_fit(made, infos[0].set_layouts, why, sizeof(why));
+      if (xvs && (!fits || made->group_count >= WGSL_MAX_GROUPS)) {
+         if (fits)
+            snprintf(why, sizeof(why), "its compute pass needs a fifth bind group (the push buffer's or sets 3 and up "
+                                       "take the fourth)");
+         fprintf(stderr, "wg: a vertex stage's transform feedback refused: %s\n", why);
+         memset(xvs->info.xfb_stride, 0, sizeof(xvs->info.xfb_stride));
+         free(made);
+         made = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
+      }
+      if (!wg_bindings_fit(made, infos[0].set_layouts, error, sizeof(error))) {
+         free(made);
+         made = NULL;
+         ok = false;
+      }
+   }
    for (uint32_t i = 0; i < count; i++)
       ralloc_free(infos[i].nir);
    if (!ok) {
@@ -780,7 +955,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 
    /* A program of the same link already made (its other stages loaded from a cache, or the same pipeline made
     * again) is shared: a draw needs its vertex and fragment shaders on one program. */
-   struct wg_program *p = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
+   struct wg_program *p = made;
    program_link(p, shaders, count);
    struct wg_program *same = program_find(p->link);
    if (same) {
@@ -1028,11 +1203,12 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    struct hash_entry *e = _mesa_hash_table_search(p->pipelines, k);
    if (e)
       return (uint32_t)(uintptr_t)e->data;
+   wg_variant_modules(p, k->vs, k->fs);
 
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"layout\":%u,\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
                   "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d},\"buffers\":[",
-                  p->layout, k->vs->module, k->flip ? 1 : -1, k->flip_z ? 1 : 0);
+                  p->layout, p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1, k->flip_z ? 1 : 0);
    /* A binding none of the shader's inputs reads is left out (else a draw would need its buffer). */
    const uint32_t inputs = k->vs->info.inputs;
    struct wg_vertex_slots vs;
@@ -1089,7 +1265,8 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    wg_json_printf(&j, ",\"multisample\":{\"count\":%u,\"mask\":%u,\"alphaToCoverageEnabled\":%s}", MAX2(k->samples, 1),
                   k->sample_mask, k->alpha_to_coverage ? "true" : "false");
    if (k->fs) {
-      wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",", k->fs->module);
+      wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
+                     p->fs_module ? p->fs_module : k->fs->module);
       /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`). */
       if (k->fs->info.per_sample)
          wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u},", k->samples);

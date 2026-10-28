@@ -813,8 +813,9 @@ resource_memory(const struct wg_cmd_buffer *cmd, uint32_t point, const struct wg
 static struct wg_program *
 program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
-   uint64_t mask = 0;
-   const uint32_t n = MIN2(p->resource_count, 64);
+   /* By resource index, every one of a program's (VK3 L7a, the binding review's finding 4: the first 64 were). */
+   uint64_t mask[2] = { 0 };
+   const uint32_t n = p->resource_count;
    for (uint32_t k = 0; k < n; k++) {
       const struct wgsl_resource *r = &p->resources[k];
       const int s = p->res_set[k];
@@ -822,7 +823,7 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
          const struct wg_device_memory *mem = resource_memory(cmd, point, p, k);
          for (uint32_t j = 0; mem && j < n; j++)
             if (p->resources[j].kind == WGSL_STORAGE && resource_memory(cmd, point, p, j) == mem) {
-               mask |= 1ull << k;
+               mask[k / 64] |= 1ull << (k % 64);
                break;
             }
          continue;
@@ -833,9 +834,9 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       const uint32_t slot = r->binding / 2 - p->set_base[s];
       const struct wg_image_view *view = set && slot < set->layout->slot_count ? set->slots[slot].view : NULL;
       if (view && !wg_format_filterable(view->fmt))
-         mask |= 1ull << k;
+         mask[k / 64] |= 1ull << (k % 64);
    }
-   return mask ? wg_program_variant(p, mask) : p;
+   return mask[0] | mask[1] ? wg_program_variant(p, mask) : p;
 }
 
 /* Whether a draw may go ahead (false: it draws nothing), its state recorded. */
@@ -2255,9 +2256,10 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
             continue;
          const VkDeviceSize at = d->buffer->offset + d->offset;
          VkDeviceSize size = vk_buffer_range(&d->buffer->vk, d->offset, d->range);
-         /* A uniform block the shader declares larger than the range bound (std140 rounds up): within the memory. */
+         /* A uniform block the shader declares larger than the range bound (std140 rounds up, or a block declared
+          * past it): the memory's GPUBuffer has WG_MEMORY_PAD bytes past its end for it, the block at most that. */
          if (res->kind == WGSL_UNIFORM)
-            size = MIN2(MAX2(size, res->size), d->buffer->mem->size - at);
+            size = MIN2(MAX2(size, res->size), d->buffer->mem->size + WG_MEMORY_PAD - at);
          /* WebGPU binds storage in whole words; a buffer of an odd size bound whole loses its last bytes' word. */
          else if (size > 4)
             size &= ~3ull;

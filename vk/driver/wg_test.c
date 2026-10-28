@@ -1862,6 +1862,279 @@ misc_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayo
    CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &b);
 }
 
+/*
+ * VK3 L7a (the binding model's limits and identities: the out-of-context reviews after L7), wgt_misc's scenarios 24 to
+ * 29, each a compute pipeline of `cs` on one set layout of compute bindings, into `out` (filled 0xee):
+ * 24: texel-many.comp (8 storage buffers, at 256i of `out`, and 3 uniform texel buffers of R32_UINT, 100, 200, 300):
+ *     WebGPU's storage buffers 11, past SwiftShader's 10 (the L6b-L7.3 review's finding 2): refused at pipeline
+ *     creation, `out` untouched; or, where the adapter has 11, (100, 200, 300)[i % 3] + i at 256i.
+ * 25: dyn-ubo.comp with as many dynamic uniform buffers as the device advertises (100 + i at 256i of one memory; binding 1
+ *     dynamic only where it advertises 8) and 128 bytes of push constants, 5 pushed: 105 to 112 at [0, 32) (the L7.4-L7.5
+ *     review's finding 5: the push buffer was a ninth dynamic uniform buffer).
+ * 26: spec-mode.comp as two pipelines on one set, X at [0, 16) and Y at [512, 528) of `out` (X 1, 2, 3, 4 first):
+ *     mode 0 (Y = X), then mode 1 (X = 7, Y = 9): 7s and 9s (the binding review's finding 3: mode 1's group was taken
+ *     for mode 0's variant's, and its writes of X never read back).
+ * 27: sampled.comp mode 0: a combined image sampler whose immutable sampler is LINEAR written with a NEAREST one: 50 at
+ *     [0, 4) (finding 7).
+ * 28: sampled.comp mode 2: a uniform block of 4 KiB over a 1 KiB buffer of its own memory (41 at its start) and one of
+ *     128 KiB bound 64 KiB of a 192 KiB buffer (42 at word 1): 41, 42 at [0, 8) (finding 5).
+ * 29: sampled.comp mode 1: the texture and a D32 view (cleared 0.25) sampled through one separate LINEAR sampler: 50 and
+ *     25 at [0, 8) (finding 2: the depth view's nearest twin of the sampler filtered the texture too).
+ */
+static int
+l7a_image(VkFormat format, VkImageAspectFlags aspect, VkImage *image, VkImageView *view)
+{
+   if (misc_image(format, VK_IMAGE_TYPE_2D, 1,
+                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, image))
+      return 1;
+   const VkImageViewCreateInfo vi = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = *image, .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = format, .subresourceRange = { aspect, 0, 1, 0, 1 },
+   };
+   CHECK(CreateImageView(dev, &vi, NULL, view));
+   return 0;
+}
+
+static void
+l7a_barrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to)
+{
+   const VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                    .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                    .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT,
+                                    .oldLayout = from, .newLayout = to, .image = image,
+                                    .subresourceRange = { aspect, 0, 1, 0, 1 } };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                      VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
+                      &b);
+}
+
+static int
+l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   PFN_vkCreateBufferView CreateBufferView = (PFN_vkCreateBufferView)GetDeviceProcAddr(dev, "vkCreateBufferView");
+   PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+      (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+   PFN_vkGetPhysicalDeviceProperties GetProps =
+      (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   CHECK(EnumeratePhysicalDevices(instance, &n, &pdev));
+   VkPhysicalDeviceProperties props;
+   GetProps(pdev, &props);
+   const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+
+   VkDescriptorSetLayoutBinding b[8];
+   uint32_t nb = 0;
+   VkSampler linear, nearest;
+   VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_LINEAR,
+                              .minFilter = VK_FILTER_LINEAR, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                              .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                              .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE };
+   CHECK(CreateSampler(dev, &si, NULL, &linear));
+   si.magFilter = si.minFilter = VK_FILTER_NEAREST;
+   CHECK(CreateSampler(dev, &si, NULL, &nearest));
+   const uint32_t dyn = props.limits.maxDescriptorSetUniformBuffersDynamic < 8 ? props.limits.maxDescriptorSetUniformBuffersDynamic : 8;
+   uint32_t mode = 0;
+   if (scenario == 24) {
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] =
+         (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 3, VK_SHADER_STAGE_COMPUTE_BIT };
+   } else if (scenario == 25) {
+      if (dyn < 7) {
+         snprintf(error, sizeof(error), "maxDescriptorSetUniformBuffersDynamic %u", dyn);
+         return 1;
+      }
+      b[nb++] =
+         (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 7, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){
+         1, dyn >= 8 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+         VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+   } else if (scenario == 26) {
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+   } else {
+      mode = scenario == 27 ? 0 : scenario == 29 ? 1 : 2;
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                                VK_SHADER_STAGE_COMPUTE_BIT, &linear };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 3, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+   }
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = nb, .pBindings = b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl, .pushConstantRangeCount = 1,
+                                            .pPushConstantRanges = &range };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkPipeline pipelines[2];
+   for (uint32_t i = 0; i < (scenario == 26 ? 2u : 1u); i++) {
+      const uint32_t k = scenario == 26 ? i : mode;
+      const VkSpecializationMapEntry entry = { 0, 0, 4 };
+      const VkSpecializationInfo spec = { 1, &entry, 4, &k };
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main", .pSpecializationInfo = &spec },
+      };
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipelines[i]));
+   }
+   const VkDescriptorPoolSize ps[6] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 4 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 8 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4 },
+                                        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 },
+                                        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4 } };
+   const VkDescriptorPoolSize ps2 = { VK_DESCRIPTOR_TYPE_SAMPLER, 2 };
+   VkDescriptorPoolSize all[7];
+   memcpy(all, ps, sizeof(ps));
+   all[6] = ps2;
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 7, .pPoolSizes = all };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT |
+                                                                                            VK_ACCESS_SHADER_WRITE_BIT,
+                                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+   uint32_t push[32] = { 0 };
+   uint32_t offsets[8] = { 0 }, offset_count = 0;
+
+   if (scenario == 24) {
+      VkBuffer src;
+      uint32_t *w;
+      if (buffer(1024, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&w))
+         return 1;
+      VkBufferView views[3];
+      for (uint32_t i = 0; i < 3; i++) {
+         w[64 * i] = 100 * (i + 1);
+         const VkBufferViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO, .buffer = src,
+                                             .format = VK_FORMAT_R32_UINT, .offset = 256 * i, .range = 16 };
+         CHECK(CreateBufferView(dev, &vi, NULL, &views[i]));
+      }
+      VkDescriptorBufferInfo bi[8];
+      for (uint32_t i = 0; i < 8; i++)
+         bi[i] = (VkDescriptorBufferInfo){ out, 256 * i, 16 };
+      const VkWriteDescriptorSet wr[2] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 8,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = bi },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 3,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, .pTexelBufferView = views },
+      };
+      UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   } else if (scenario == 25) {
+      VkBuffer in;
+      uint32_t *w;
+      if (buffer(4096, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &in, (void **)&w))
+         return 1;
+      VkDescriptorBufferInfo bi[9];
+      for (uint32_t i = 0; i < 8; i++) {
+         w[64 * i] = 100 + i;
+         bi[i] = (VkDescriptorBufferInfo){ in, 256 * i, 16 };
+      }
+      bi[8] = (VkDescriptorBufferInfo){ out, 0, 64 };
+      const VkWriteDescriptorSet wr[3] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 7,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, .pBufferInfo = bi },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+           .descriptorType = b[1].descriptorType, .pBufferInfo = &bi[7] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 2, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[8] },
+      };
+      UpdateDescriptorSets(dev, 3, wr, 0, NULL);
+      offset_count = dyn >= 8 ? 8 : 7;
+      push[31] = 5;
+   } else if (scenario == 26) {
+      const VkDescriptorBufferInfo bi[2] = { { out, 0, 16 }, { out, 512, 16 } };
+      const VkWriteDescriptorSet wr = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set,
+                                        .descriptorCount = 2, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                        .pBufferInfo = bi };
+      UpdateDescriptorSets(dev, 1, &wr, 0, NULL);
+      const uint32_t x[4] = { 1, 2, 3, 4 };
+      CmdUpdateBuffer(cmd, out, 0, sizeof(x), x);
+   } else {
+      /* The texture (left half 0, right half 255) and the depth view (cleared 0.25). */
+      VkImage tex, depth;
+      VkImageView tex_view, depth_view;
+      VkBuffer staging;
+      uint8_t *s;
+      if (l7a_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, &tex, &tex_view) ||
+          l7a_image(VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &depth_view) ||
+          buffer(64, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &staging, (void **)&s))
+         return 1;
+      for (uint32_t i = 0; i < 64; i++)
+         s[i] = (i / 4) % 4 >= 2 ? 255 : 0;
+      l7a_barrier(cmd, tex, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      const VkBufferImageCopy up = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                     .imageExtent = { 4, 4, 1 } };
+      CmdCopyBufferToImage(cmd, staging, tex, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &up);
+      l7a_barrier(cmd, tex, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      l7a_barrier(cmd, depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      const VkClearDepthStencilValue quarter = { 0.25f, 0 };
+      const VkImageSubresourceRange dr = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+      CmdClearDepthStencilImage(cmd, depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &quarter, 1, &dr);
+      l7a_barrier(cmd, depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      /* The uniform blocks' buffers, each of its own memory. */
+      VkBuffer small, big;
+      uint32_t *ws, *wb;
+      if (buffer(1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &small, (void **)&ws) ||
+          buffer(3 * 65536, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &big, (void **)&wb))
+         return 1;
+      ws[0] = 41;
+      wb[1] = 42;
+      const VkImageLayout ro = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      const VkDescriptorImageInfo ii[4] = { { nearest, tex_view, ro }, { VK_NULL_HANDLE, tex_view, ro },
+                                            { VK_NULL_HANDLE, depth_view, ro }, { linear, VK_NULL_HANDLE, ro } };
+      const VkDescriptorBufferInfo bi[3] = { { small, 0, VK_WHOLE_SIZE }, { big, 0, 65536 }, { out, 0, 64 } };
+      const VkWriteDescriptorSet wr[7] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii[0] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .pImageInfo = &ii[1] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 2, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .pImageInfo = &ii[2] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 3, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER, .pImageInfo = &ii[3] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 4, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[0] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 5, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[1] },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 6, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[2] },
+      };
+      UpdateDescriptorSets(dev, 7, wr, 0, NULL);
+   }
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                      NULL);
+   for (uint32_t i = 0; i < (scenario == 26 ? 2u : 1u); i++) {
+      if (i)
+         CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb,
+                            0, NULL, 0, NULL);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[i]);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, offset_count, offsets);
+      CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
+      CmdDispatch(cmd, 1, 1, 1);
+   }
+   return 0;
+}
+
 EXPORT int
 wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
 {
@@ -2484,6 +2757,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          CmdDispatchIndirect(cmd, in, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
+   } else if (scenario >= 24 && scenario <= 29) {
+      if (l7a_misc(scenario, cs, cs_words, cmd, out))
+         return 1;
    } else if (scenario == 23) {
       /* More uniform buffers than WebGPU binds a stage (VK3 L7.4): the device's maximum, 13 or more. */
       PFN_vkGetPhysicalDeviceProperties GetProps =

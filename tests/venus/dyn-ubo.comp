@@ -1,0 +1,13 @@
+#version 450
+// tests/venus-driver.test.ts (misc: dynamicUniforms; VK3 L7a, the L7.4-L7.5 review's finding 5): as many dynamic
+// uniform buffers as the device advertises (7 at binding 0, binding 1 dynamic where it advertises 8) and push constants
+// past the immediates, whose push buffer is a dynamic uniform binding of its own (vk/driver/wg_test.c's scenario 25).
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform U { uint k; } u[7];
+layout(set = 0, binding = 1) uniform V { uint k; } v;
+layout(set = 0, binding = 2) buffer Out { uint b[]; } o;
+layout(push_constant) uniform P { uint pad[31]; uint add; } pc;
+void main() {
+  for (int i = 0; i < 7; i++) o.b[i] = u[i].k + pc.add;
+  o.b[7] = v.k + pc.add;
+}

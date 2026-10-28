@@ -254,7 +254,7 @@ for (const [scenario, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo' } as const;
+const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -290,6 +290,13 @@ for (const [scenario, what] of [
   ['ycbcr', 'a disjoint NV12 image uploaded plane by plane and sampled through a YCbCr conversion'],
   // L7.4: ANGLE's ES3 row.
   ['manyUniforms', '13 uniform buffers and push constants past the immediates in one stage'],
+  // L7a (the reviews after L7: the binding model's limits and identities).
+  ['texelStorage', 'storage buffers and texel buffers past WebGPU\'s storage buffers are refused at pipeline creation, not submitted'],
+  ['dynamicUniforms', 'as many dynamic uniform buffers as advertised beside the push buffer'],
+  ['writtenShared', 'a pipeline\'s writes come back after another\'s widened variant bound the same set'],
+  ['immutableSampler', 'a combined image sampler written with another sampler keeps its immutable one'],
+  ['bigUniform', 'uniform blocks declared past their memory and past maxUniformBufferRange'],
+  ['sharedSampler', 'a sampler that samples a depth view and a texture filters the texture'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -299,7 +306,8 @@ for (const [scenario, what] of [
     const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${src}.spv`), join(root, `tests/venus/${src}`)], { encoding: 'utf8' });
     assert.equal(c.status, 0, c.stderr);
     const page = await browser.newPage();
-    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    const logs: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') { logs.push(m.text()); console.log(`page: ${m.text().slice(0, 2000)}`); } });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
     const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s.scenario, `/target/vk/test/${s.src}.spv`), { scenario, src });
@@ -308,6 +316,13 @@ for (const [scenario, what] of [
     assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
     assert.deepEqual(r.errors, [], 'WebGPU errors');
     const checks = r.checks as Record<string, number>;
+    if (scenario === 'texelStorage') {
+      // Refused, saying why (nothing dispatched), or, on an adapter with room, run.
+      const refused = logs.some((l) => /didn't translate: .*storage buffers.*texel buffers/.test(l));
+      assert.equal(refused ? checks.untouched : checks.ran, -1, `${refused ? 'refused, but written' : 'not refused, nor run'} (${JSON.stringify(r.got)})`);
+      delete checks.untouched;
+      delete checks.ran;
+    }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).

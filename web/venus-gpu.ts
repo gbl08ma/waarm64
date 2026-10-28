@@ -106,6 +106,7 @@ export const LIMITS: [string, number][] = [
   ['maxComputeInvocationsPerWorkgroup', 256], ['maxComputeWorkgroupSizeX', 256], ['maxComputeWorkgroupSizeY', 256],
   ['maxComputeWorkgroupSizeZ', 64], ['maxComputeWorkgroupsPerDimension', 65535], ['maxImmediateSize', 0],
   ['maxStorageBuffersInFragmentStage', 8], ['maxStorageTexturesInFragmentStage', 4],
+  ['maxStorageBuffersInVertexStage', 8], ['maxStorageTexturesInVertexStage', 4], ['maxBindingsPerBindGroup', 1000],
   // Not a limit: the maker's PCI vendor ID (`VENDORS`), 0 for one this list doesn't know.
   ['vendorID', 0],
   // Not limits: the adapter's subgroup sizes (`GPUAdapterInfo`; 0 without `subgroups`).
@@ -117,8 +118,8 @@ export function gpuLimits(caps: GpuCaps | undefined) {
   const l = (caps?.limits ?? {}) as Record<string, number | undefined>;
   // Immediates only where the browser has `setImmediates`, and at most the 128 bytes of Vulkan's push constants.
   const immediates = typeof GPURenderPassEncoder !== 'undefined' && typeof (GPURenderPassEncoder.prototype as unknown as { setImmediates?: unknown }).setImmediates === 'function';
-  // A stage's storage in the fragment stage: the per-stage limit where the browser predates the split.
-  const fallback: Record<string, string> = { maxStorageBuffersInFragmentStage: 'maxStorageBuffersPerShaderStage', maxStorageTexturesInFragmentStage: 'maxStorageTexturesPerShaderStage' };
+  // A stage's storage in the fragment and vertex stages: the per-stage limit where the browser predates the split.
+  const fallback: Record<string, string> = { maxStorageBuffersInFragmentStage: 'maxStorageBuffersPerShaderStage', maxStorageTexturesInFragmentStage: 'maxStorageTexturesPerShaderStage', maxStorageBuffersInVertexStage: 'maxStorageBuffersPerShaderStage', maxStorageTexturesInVertexStage: 'maxStorageTexturesPerShaderStage' };
   return new Uint32Array(LIMITS.map(([k, d]) => {
     const v = k === 'maxImmediateSize' ? (immediates ? Math.min(128, l[k] ?? 0) : 0)
       : k === 'vendorID' ? VENDORS[caps?.adapterInfo?.vendor.toLowerCase() ?? ''] ?? 0

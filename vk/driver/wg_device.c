@@ -643,9 +643,11 @@ uint32_t
 wg_memory_buffer(struct wg_device_memory *mem)
 {
    if (!mem->gpu) {
-      /* MAP_READ can't go with other usages: readbacks go through staging buffers (gpu_readback). */
+      /* MAP_READ can't go with other usages: readbacks go through staging buffers (gpu_readback). WG_MEMORY_PAD
+       * bytes past the memory's end: a uniform binding is widened to the block its shader declares (std140 rounds up,
+       * a block may be declared past the range bound), which may reach past the memory (VK3 L7a). */
       struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)mem->size,
+      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)(mem->size + WG_MEMORY_PAD),
                      4 | 8 | 16 | 32 | 64 | 128 | 256 | 512);
       mem->gpu = wg_create_json(WG_KIND_BUFFER, &j);
       mem->dirty = mem->host;

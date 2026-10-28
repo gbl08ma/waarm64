@@ -36,6 +36,7 @@ struct ctx {
    struct wgsl_info *info;
    const struct wgsl_varyings *fs;
    bool tier2; /* texture-formats-tier2: read-write storage for more formats */
+   uint32_t max_uniform_size; /* a uniform block's declared bytes at most (maxUniformBufferBindingSize) */
    bool dual_source; /* dual-source-blending */
    bool subgroups;   /* subgroups (wgsl_lower's subgroups of the adapter's size); else of one invocation */
    bool f16;         /* shader-f16 */
@@ -724,7 +725,9 @@ declare_resources(struct ctx *c)
       const char *at = fmt(c, "@group(%u) @binding(%u)", r->group, r->binding);
       switch (r->kind) {
       case WGSL_UNIFORM:
-         r->size = MAX2(align(r->size, 16), 16);
+         /* Vulkan limits the range bound, not the block: a block past WebGPU's largest uniform binding is declared
+          * that large (an index past it reads what WGSL's bounds give; VK3 L7a, the binding review's finding 5). */
+         r->size = MIN2(MAX2(align(r->size, 16), 16), c->max_uniform_size);
          line(c, "%s var<uniform> %s: array<vec4<u32>, %u>;", at, name, r->size / 16);
          break;
       case WGSL_STORAGE:
@@ -2265,6 +2268,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       .info = info,
       .fs = nir->info.stage == MESA_SHADER_VERTEX ? fs : NULL,
       .tier2 = features & WGSL_TIER2,
+      .max_uniform_size = o->max_uniform_size ? o->max_uniform_size & ~15u : 65536,
       .dual_source = features & WGSL_DUAL_SOURCE,
       .subgroups = features & WGSL_SUBGROUPS,
       .f16 = features & WGSL_F16,
