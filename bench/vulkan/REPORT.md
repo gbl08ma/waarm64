@@ -1479,6 +1479,52 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7a: the binding model's limits and identities (the reviews after L7)
+
+2026-10-28. The dev VM's SwiftShader (Chromium 153.0.8010.52) for the driver's tests and dEQP-VK; the desktop guest
+(Arch, Chromium 153, ANGLE) for ANGLE's probe. The findings: `origin/review/venus-after-l7` (`VENUS-BINDING-REVIEW.md`
+whole; `VENUS-L74-L75-REVIEW.md` 3, 5, 8) and `origin/review/venus-l6b-l73` (`VENUS-L6B-L73-REVIEW.md` 2). Each was
+checked real and given a test that failed first; JSON in `results/vk3/l7a/`.
+
+- **One count of the bindings WebGPU takes** (`wg_caps.c` "The bindings WebGPU takes", vk/README.md "Bindings past
+  WebGPU's"): a program's WebGPU bindings by stage and by layout, the hidden ones named (the push buffer, texel
+  buffers' words and parameters, folded uniform buffers, YCbCr planes, input attachments, a capture's). The
+  advertised limits follow it where they can: `maxDescriptorSetUniformBuffersDynamic` 8 → 7 (the push buffer's),
+  `minUniformBufferOffsetAlignment` the larger of uniform and storage (256 both on SwiftShader and the M4), storage
+  buffers and images every stage's least (vertex and fragment limits too), `maxMemoryAllocationSize` 64 KiB less.
+  What can't be advertised apart (texel buffers beside full storage, input attachments beside 16 textures, more
+  folded uniform buffers than two, bindings past 1,000 or on the push buffer's) is refused at pipeline creation
+  (`wg_bindings_fit`), saying why, never an invalid submit. dEQP-VK's list (4,672) passes unchanged: nothing it
+  runs became NotSupported.
+- **The findings**, binding review: 1 (a capture's compute pass past the storage count: now three bindings whatever
+  its buffers, the index and vertex ranges copied into one, the capture refused at creation if the stage's
+  bindings and its own don't fit, or the program has four groups); 2 (a sampler shared by an unfilterable and a
+  filterable texture: split, its nearest twin at its slot's even binding, in modules of the variant's own); 3
+  (widened variants sharing a writer's layout uid: the uid tells written storage); 4 (variants' 64-resource masks:
+  128; pairs past the cap fail the stage, 64 → 128); 5 (uniform blocks declared past their memory or range: declared
+  at most 64 KiB, each memory's GPUBuffer 64 KiB longer, which fixes the backlog's dynamic-offset form too); 6
+  (input attachments: counted, refused); 7 (immutable samplers overwritten by writes: kept); 8 (bindings near 998: a
+  guard in the count, out of reach within the limits). L7.4–L7.5: 3 (the same as 1, with the vertex ranges trimmed
+  to what a non-indexed draw reaches and checked against the binding size), 5 (the advertised dynamic count), 8 (the
+  alignment). L6b–L7.3: 2 (texel buffers: counted, refused).
+- **Tests** (`tests/venus-driver.test.ts` misc `texelStorage`, `dynamicUniforms`, `writtenShared`,
+  `immutableSampler`, `bigUniform`, `sharedSampler`, transform feedback `xfbMany`, fits `inputAttachments`;
+  `tests/wgsl.test.ts` "texture-sampler pairs past what the translator records"): each failed at 6ff7f272 as its
+  finding said (11 storage buffers, 9 dynamic uniform buffers, a 128 KiB uniform binding, 12 storage buffers in the
+  capture: WebGPU errors; X's 7s not read back; the nearest filter; 144 pairs translated). The count planted out
+  (`wg_bindings_fit` returning true) fails `texelStorage` and `inputAttachments` again. Not tested: a draw of more
+  than 64 resources and the split sampler in a render pipeline (backlog "Bindings past WebGPU's"); the alignment
+  and the 998 guard (no adapter differs).
+- **ANGLE's 205 for 156** (`angle-es3.json`; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"
+  PAGE=bench/vulkan/angle/es3.html ARMS='--use-angle=vulkan --enable-features=Vulkan|--use-angle=vulkan' node
+  bench/vulkan/dawn-frames.ts guest`): still 205 with Chromium's Vulkan, 156 without (flat and capture right in
+  both). Not the folding: 205 is 156 sRGB-encoded exactly (0.6118 → 0.8046). A debug build's log
+  (`angle-es3-vulkan-views.log`) shows Chromium's canvas image `R8G8B8A8_SRGB`, mutable (SRGB, UNORM), and ANGLE's
+  only attachment view of it SRGB, into which its 4-sample UNORM target is resolved. Filed (backlog "ANGLE with
+  Chromium's own Vulkan device too").
+- **CI** (the code at 20e9dae4, docs after it): `scripts/ci.sh` OK (465 s); `scripts/ci-deqp-vk.sh` OK (848 s: the
+  4,672-case list in 590 s, YCbCr's 773 in 89 s, the replays).
+
 ## VK3 L7.5: vkd3d's row backed (draw parameters); vkd3d makes a Direct3D 12 device at feature level 11_0 on Venus
 
 2026-10-28. The dev VM's SwiftShader (Chromium 153.0.8010.52) for the driver's tests and dEQP-VK (vulkan-cts-1.4.7.0's

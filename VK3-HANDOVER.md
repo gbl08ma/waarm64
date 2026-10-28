@@ -6,18 +6,23 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7.5)
+## State (2026-10-28, after L7a)
 
-- **vkd3d's row backed and advertised:** `shaderDrawParameters` as words of the push buffer at byte 128 (a vertex stage
-  reading them takes its push constants from the push buffer); direct draws write theirs in their place, an indirect
-  draw's are copied from its arguments into a place of its own before its pass (no break). dEQP-VK's list 4,599 →
-  4,672 (REPORT.md "VK3 L7.5"); `draw_index` needs `multiDrawIndirect` (not advertised).
-- **The program:** Arch's vkd3d 1.19 makes a D3D12 device at 11_0 in the desktop guest (it stopped at the extension
-  before); vkd3d's own d3d12 tests (built in a container, `bench/vulkan/vkd3d.ts`) draw right where they need nothing
-  else; what 11_0 lacks and the failures' causes: backlog "vkd3d on Venus".
-- Next: the out-of-context reviews of what VK3 changed (after L7), then L8.
+- **One count of the bindings WebGPU takes** (`wg_caps.c` `wg_bindings_fit`; vk/README.md "Bindings past WebGPU's"):
+  the advertised limits follow it (`maxDescriptorSetUniformBuffersDynamic` 7, uniform alignment the larger, storage
+  every stage's least); a pipeline past WebGPU's limits within them is refused at creation, saying why. dEQP-VK's
+  list unchanged (4,672, none NotSupported); REPORT.md "VK3 L7a".
+- All L7a findings fixed with tests failing first but the binding review's 8 (a guard) and L7.4–L7.5's 8 (one line),
+  untested: no adapter differs. Not covered by a test: a draw of > 64 resources, the split sampler in a render
+  pipeline (backlog "Bindings past WebGPU's").
+- **ANGLE's 205**: not the folding; 156 sRGB-encoded (ANGLE resolves into the SRGB view of Chromium's SRGB canvas
+  image). Filed with the next step (backlog "ANGLE with Chromium's own Vulkan device too").
+- Next: L7b.
 
-## Where VK3 stands (2026-10-28, after L7.5; next the reviews after L7)
+## Where VK3 stands (2026-10-28, after L7a; next L7b)
+
+- **L7.5:** vkd3d's row backed (draw parameters in the push buffer at byte 128); vkd3d 1.19 makes an 11_0 device in
+  the desktop guest, its own draw tests pass; dEQP-VK's list 4,599 → 4,672.
 
 - **L7.4:** ANGLE's ES3 row backed (13 uniform buffers a stage, the last vertex provoking, transform feedback); the
   guest's Chromium with `--use-angle=vulkan` gives WebGL 2 on Venus; dEQP-VK's list 4,424 → 4,599.
@@ -144,7 +149,8 @@ docs and the backlog; git keeps the old handovers.
 - [x] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed: L6b–L7.3
   (`origin/review/venus-l6b-l73`, 5 findings), L7.4–L7.5 and the binding model whole (`origin/review/venus-after-l7`,
   `VENUS-L74-L75-REVIEW.md` 9, `VENUS-BINDING-REVIEW.md` 8 new). All taken, in two fix loops:
-  - [ ] L7a: **the binding model's limits and identities.** All of VENUS-BINDING-REVIEW.md (xfb's dispatch past the
+  - [x] L7a: **the binding model's limits and identities.** **Done:** one count, the limits from it, refusals;
+    every finding fixed or guarded; ANGLE's 205 an sRGB view, filed. All of VENUS-BINDING-REVIEW.md (xfb's dispatch past the
     storage-buffer count and binding size: the submit lost, not the capture; one sampler's nearest twin for both
     textures; widened compute variants sharing a layout identity, writes not read back; the 64-resource caps; oversized
     uniform blocks; input attachments uncounted; immutable samplers overridden; slot numbers near 998/1000); L7.4–L7.5's

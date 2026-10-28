@@ -1,0 +1,106 @@
+[0.5] WebGL2: ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) | 153.0.8010.52
+[page log] venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback
+[29.0] running
+[33.5] info 4782error: package 'xorg-xwayland' was not found chromium 153.0.8010.36-1 mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1
+[63.0] vulkan deviceName = Virtio-GPU Venus (webpc WebGPU); sampleRateShading = true; shaderStorageBufferArrayDynamicIndexing = true; shaderStorageImageArrayDynamicIndexing = true; shaderUniformBufferArrayDynamicIndexing = true;
+[page warning] venus: DBGL7A image 0xf0e99a90 fmt 43 samples 1 flags 8 usage 97 list 2:43,37
+[page warning] venus: DBGL7A view 0xf0e99e20 of 0xf0e99a90 fmt 37 (image 43) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf0e99f00 of 0xf0e99a90 fmt 43 (image 43) vf 43 usage 17
+[page warning] venus: DBGL7A view 0xf0d89d70 of 0xf0e99a90 fmt 37 (image 43) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf0e99be0 of 0xf0e99a90 fmt 43 (image 43) vf 43 usage 17
+[page warning] venus: DBGL7A view 0xf0e8a760 of 0xf0e99a90 fmt 43 (image 43) vf 43 usage 97
+[page warning] venus: DBGL7A attach 0xf0e99a90 v 0xf0e8a760 view rgba8unorm-srgb img 43 resolve - mode 0
+[page warning] venus: DBGL7A image 0xf0e8aec0 fmt 37 samples 4 flags 8 usage 97 list 2:37,43
+[page warning] venus: DBGL7A image 0xf169ccb0 fmt 129 samples 4 flags 0 usage 27 list -1:-1,-1
+[page warning] venus: DBGL7A attach 0xf0e99a90 v 0xf0e8a760 view rgba8unorm-srgb img 43 resolve - mode 0
+[page warning] venus: DBGL7A image 0xf169ce00 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf169cf50 of 0xf169ce00 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf1ea1030 of 0xf169ce00 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A image 0xf1ea1960 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf1ea1ae0 of 0xf1ea1960 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf1ea1bc0 of 0xf1ea1960 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A image 0xf206ee50 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf20a3c10 of 0xf206ee50 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20a3cf0 of 0xf206ee50 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A image 0xf2062ae0 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf204e9f0 of 0xf2062ae0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf204ead0 of 0xf2062ae0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A image 0xf202bdc0 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf202bf40 of 0xf202bdc0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf203f040 of 0xf202bdc0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A image 0xf203f350 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf2069790 of 0xf203f350 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf2069870 of 0xf203f350 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20fb990 of 0xf2062ae0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20fba70 of 0xf206ee50 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20fbb50 of 0xf202bdc0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20fbc30 of 0xf169ce00 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20fbd10 of 0xf203f350 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A attach 0xf169ce00 v 0xf169cf50 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf1ea1960 v 0xf1ea1ae0 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf169ce00 v 0xf169cf50 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1fb4fd0 r8unorm -> 0xf2001e10 r8unorm
+[page warning] venus: DBGL7A attach 0xf206ee50 v 0xf20a3c10 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf206ee50 v 0xf20a3c10 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf2062ae0 v 0xf204e9f0 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf202bdc0 v 0xf202bf40 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf203f350 v 0xf2069790 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf1ea1960 v 0xf1ea1ae0 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf203f350 v 0xf2069790 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf207ba50 r8unorm -> 0xf2049670 r8unorm
+[page warning] venus: DBGL7A image 0xf20f64e0 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf20fb530 of 0xf20f64e0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20fcff0 of 0xf20f64e0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A image 0xf20f6ad0 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf20f6c50 of 0xf20f6ad0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20f6d30 of 0xf20f6ad0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf2096bd0 of 0xf20f6ad0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf2096cb0 of 0xf20f64e0 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A resolve 0xf207ba50 r8unorm -> 0xf2049670 r8unorm
+[page warning] venus: DBGL7A attach 0xf20f64e0 v 0xf20fb530 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf1ea1960 v 0xf1ea1ae0 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf20f64e0 v 0xf20fb530 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A resolve 0xf1fb4fd0 r8unorm -> 0xf2001e10 r8unorm
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf20f6ad0 v 0xf20f6c50 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A image 0xf2096740 fmt 44 samples 1 flags 0 usage 97 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf2097300 of 0xf2096740 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf20973e0 of 0xf2096740 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A resolve 0xf1ea1620 r8unorm -> 0xf1ea1310 r8unorm
+[page warning] venus: DBGL7A attach 0xf2096740 v 0xf2097300 view bgra8unorm img 44 resolve - mode 0
+[page warning] venus: DBGL7A view 0xf221de10 of 0xf2096740 fmt 44 (image 44) vf 44 usage 97
+[page warning] venus: DBGL7A view 0xf209b410 of 0xf0e8aec0 fmt 37 (image 37) vf 37 usage 97
+[page warning] venus: DBGL7A view 0xf221df40 of 0xf169ccb0 fmt 129 (image 129) vf 129 usage 27
+[page warning] venus: DBGL7A attach 0xf0e8aec0 v 0xf209b410 view rgba8unorm img 37 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf0e99a90 v 0xf0e8a760 view rgba8unorm-srgb img 43 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf0e8aec0 v 0xf209b410 view rgba8unorm img 37 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf0e8aec0 v 0xf209b410 view rgba8unorm img 37 resolve - mode 0
+[page warning] venus: DBGL7A attach 0xf0e99a90 v 0xf0e8a760 view rgba8unorm-srgb img 43 resolve - mode 0
+[page warning] venus: DBGL7A image 0xf227f3d0 fmt 43 samples 1 flags 8 usage 97 list 2:43,37
+[page warning] venus: DBGL7A view 0xf22b8d30 of 0xf227f3d0 fmt 37 (image 43) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf2274760 of 0xf227f3d0 fmt 43 (image 43) vf 43 usage 17
+[page warning] venus: DBGL7A view 0xf0e8aac0 of 0xf227f3d0 fmt 37 (image 43) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf22966f0 of 0xf227f3d0 fmt 43 (image 43) vf 43 usage 17
+[page warning] venus: DBGL7A view 0xf2048410 of 0xf227f3d0 fmt 43 (image 43) vf 43 usage 97
+[page warning] venus: DBGL7A attach 0xf227f3d0 v 0xf2048410 view rgba8unorm-srgb img 43 resolve - mode 0
+[page warning] venus: DBGL7A image 0xf22830b0 fmt 37 samples 1 flags 0 usage 17 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf221dd30 of 0xf22830b0 fmt 37 (image 37) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf22b8950 of 0xf22830b0 fmt 37 (image 37) vf 37 usage 17
+[page warning] venus: DBGL7A image 0xf20fb5e0 fmt 37 samples 1 flags 0 usage 17 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf2097750 of 0xf20fb5e0 fmt 37 (image 37) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf2097880 of 0xf20fb5e0 fmt 37 (image 37) vf 37 usage 17
+[page warning] venus: DBGL7A image 0xf20fbb90 fmt 37 samples 1 flags 0 usage 17 list -1:-1,-1
+[page warning] venus: DBGL7A view 0xf221dd30 of 0xf20fbb90 fmt 37 (image 37) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf20fb450 of 0xf20fbb90 fmt 37 (image 37) vf 37 usage 17
+[page warning] venus: DBGL7A view 0xf2097750 of 0xf20fbb90 fmt 37 (image 37) vf 37 usage 17
+[90.1] arm {"flags":"--use-angle=vulkan --enable-features=Vulkan","log":"\"dawn: adapter ANGLE (Google, Vulkan 1.3.296 (Virtio-GPU Venus (webpc WebGPU) (0x00000000)), venus) | WebGL 2.0 (OpenGL ES 3.0 Chromium)\" \"dawn: limits 12,12,24,128\" \"dawn: flat 0,0,255,255\" \"dawn: xfb 0,0,7,1,1,2,7,1,2,4,7,1,3,6,7,1\" \"dawn: ubo 205,0,0,255\" \"dawn: glerror 0\" \"dawn: done\"","gpuLog":"t zcr_alpha_compositing_v1.      1 WARNING:ui/ozone/platform/wayland/host/org_gnome_mutter_idle_monitor.cc:87] org.gnome.Mutter.IdleMonitor D-Bus service does not exist      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to zwp_pointer_gestures_v1 version 1 but version 3 is available.      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to zwp_linux_dmabuf_v1 version 4 but version 5 is available.      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to wp_cursor_shape_manager_v1 version 1 but version 2 is available.      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to wl_shm version 1 but version 2 is available.      1 WARNING:ui/gl/angle_platform_impl.cc:42] vk_renderer.cpp:5617 (initFeatures): Unknown GPU architecture      1 WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.      1 WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.      1 WARNING:chrome/browser/signin/account_con
+[page warning] venus: vkr: destroying context 11 (Chromium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[page warning] venus: vkr: destroying context 9 (chromium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+exit=0

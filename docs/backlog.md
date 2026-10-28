@@ -658,7 +658,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **ANGLE with Chromium's own Vulkan device too** (`--use-angle=vulkan --enable-features=Vulkan` in the desktop
     guest; bench/vulkan/angle/es3.html through `PAGE=… bench/vulkan/dawn-frames.ts guest`, results/vk3/l74/): its 24
     uniform blocks' sum draws 205, not 156 as with `--use-angle=vulkan` alone and on GL (the flat varying and the
-    capture right in all three). Not looked into: where ANGLE's device and its uniform buffers differ there.
+    capture right in all three). Not the uniform buffers (VK3 L7a, bench/vulkan/REPORT.md "VK3 L7a"): 205 is 156
+    sRGB-encoded exactly. There Chromium gives WebGL an `R8G8B8A8_SRGB` mutable image (format list SRGB, UNORM), and
+    ANGLE's only attachment view of it is the SRGB one, which the multisampled UNORM target is resolved into
+    (`results/vk3/l7a/angle-es3-vulkan-views.log`, a debug build's). Next: why ANGLE renders the resolve through the
+    sRGB view there (Chromium's SharedImage format with Vulkan, ANGLE's sRGB write control), against ANGLE on lavapipe
+    through Venus's advertised set (bench/vulkan/profiles/run.sh).
   - **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers); a layout's
     texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
     the 2 the storage count gives up (refused at the pipeline's creation since VK3 L7a, saying why).
