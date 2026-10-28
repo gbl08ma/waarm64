@@ -105,7 +105,10 @@ re-discovering" and each state's.
   the page starts using it, and the page falls back to the readback way.
 - §4's emulated rows go in §4's order, each with its dEQP-VK groups added to `tests/deqp/vk.txt` as its gate and the
   render-pass rule applied. GTK4's row (YCbCr, modifiers) goes last of the rows VK3 takes, and only once GTK4's
-  black frames are understood.
+  black frames are understood. **Reordered by the user (2026-10-28):** Chromium's own Vulkan device needs YCbCr
+  (VK3 L7.1), so YCbCr conversion comes right after Dawn's row, behind an opt-in switch (L7.2); then GTK4 (its black
+  frames, modifiers, its bar; YCbCr on by default only once GTK4 meets it, L7.3); then ANGLE's ES3 (L7.4) and vkd3d's
+  draw parameters (L7.5).
 
 ## The plan (loops; the supervisor may reorder by what each loop finds)
 
