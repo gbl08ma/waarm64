@@ -1509,6 +1509,7 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
 - **So Dawn did not run on Venus**, and no frames were compared. The remainder is the guest's (Chromium exporting
   opaque fds the device doesn't offer; Venus answering with a descriptor it doesn't own): docs/backlog.md "Dawn in the
   guest's Chromium on Venus".
+- **CI:** `scripts/ci.sh` OK (453 s); `scripts/ci-deqp-vk.sh` OK (734 s).
 
 ## VK3 L7.1: Dawn's row (indexed descriptor arrays, sample-rate shading); Dawn in the guest's Chromium not yet
 
