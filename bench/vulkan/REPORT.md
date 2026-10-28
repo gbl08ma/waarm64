@@ -1479,6 +1479,37 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7.1b: the semaphore vkr never made; Dawn on Venus still not
+
+2026-10-28, the dev VM (SwiftShader, Chromium 153; the desktop guest's Chromium 153.0.8010.36, Mesa 26.2.5); JSON in
+`results/vk3/l71b/`.
+
+- **Reproduced** with `?gpu=vkycbcr` (new, opt-in: `samplerYcbcrConversion` advertised, not translated; off by default
+  until GTK4's row) and the guest's Chromium as L7.1's `guest4` ran it (`--headless=new --enable-unsafe-webgpu
+  --enable-features=Vulkan --use-angle=swiftshader`; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"`
+  for the page's own WebGPU, without which Venus has no device and draws nothing): `before.json`, vkr's `failed to look
+  up object 287 of type 5`, the CS error, the context lost.
+- **The cause:** Chromium's own Vulkan device creates a semaphore with `VkExportSemaphoreCreateInfo` of **opaque fds**
+  (`handleTypes` 1). Venus offers semaphores only as sync files (its external-semaphore properties for opaque fds are
+  0: `semfd.txt`) and backs sync-file ones in the guest, but passes any other export to the host, and creates
+  semaphores asynchronously (the result never comes back). The driver's semaphores are Mesa's runtime's on
+  `wg_sync_type` (sync files only), so `vk_common_CreateSemaphore` refused it (`VK_ERROR_INVALID_EXTERNAL_HANDLE`),
+  vkr never had the object, and the next submit naming it was a fatal decoder error.
+- **The fix:** `wg_CreateSemaphore` drops the export's handle types other than sync files and makes the semaphore
+  (none can be exported through Venus anyway: the guest never asks the host for a semaphore's fd). Its test
+  (`tests/venus-renderer.test.ts`, Node: semaphores made with exports of none, sync files, opaque fds, both, a
+  timeline's opaque fds) failed first (a mask of 3 for 31: only none and sync files made) and fails with the fix planted out; the caps
+  test checks YCbCr is off by default and on with the switch.
+- **After it** (`after.json`): no vkr error, but the guest's GPU process dies on `Crashing due to FD ownership
+  violation` (exit code 133) and comes back without Vulkan; Dawn takes SwiftShader again (its five samples drawn, as
+  L7.1's). `semfd.ts` (ctypes in the guest) shows why that's likely: the guest's Venus hands back **fd 0** for
+  `vkGetSemaphoreFdKHR` of an opaque fd (VK_SUCCESS), then -1 (its `vn_GetSemaphoreFdKHR` assumes sync files; a
+  device-only semaphore's union reads as fd 0). Chromium then owns stdin. `arms.json`: the same with
+  `--disable-gpu-compositing`; `--use-gl=disabled` has no adapter at all.
+- **So Dawn did not run on Venus**, and no frames were compared. The remainder is the guest's (Chromium exporting
+  opaque fds the device doesn't offer; Venus answering with a descriptor it doesn't own): docs/backlog.md "Dawn in the
+  guest's Chromium on Venus".
+
 ## VK3 L7.1: Dawn's row (indexed descriptor arrays, sample-rate shading); Dawn in the guest's Chromium not yet
 
 2026-10-28, the dev VM (SwiftShader, Chromium 153); JSON in `results/vk3/l71/`.
@@ -1561,6 +1592,9 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   `naga-wasm.ts`; D: `coverage.ts`, `programs.sh`), `micro.ts` and `micro/` (C, E, F), `guest.ts` and `images/vulkan/build.sh` (arm 4), `server.ts`
   (the pages without Vite), `summary.ts`, `tools/ppmdiff.py`.
 - `tools/venus-oracle/` (B), `tools/vulkan-tools/` (GFXReconstruct, the Profiles layer), `profiles/` (A).
+- VK3 L7.1–L7.1b: `dawn-frames.ts` and `dawn/samples.html` (Dawn's samples in the guest's Chromium against the dev VM's;
+  `LOGBEFORE=<pattern>`: the guest Chromium's log up to a line), `semfd.ts` and `semfd.py` (Venus's opaque-fd semaphores in
+  the guest, through ctypes).
 - VK3 L4d: `mpv-frames.ts` keeps its page grabs (`<tag>-page.ppm`) and takes `REGRAB=<s>` (the screen again that much later,
   mpv held as long; through `sway-mac.sh`, `green.sh` and nvidia.sh's `mpv` step too).
 - VK3 L4: `upload-race.ts` (orderings libplacebo's advanced path leans on, in WebGPU alone; `mac-costs.sh` with

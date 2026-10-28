@@ -90,6 +90,8 @@ if (mode === 'compare') {
       await s.page.waitForTimeout(3000);
       const run: Record<string, unknown> = { flags, log: lines.trim() };
       run.gpuLog = (await s.run(`grep -v CONSOLE /tmp/chromium${k}.log | grep -v -i -E 'dbus|mailbox' | sed 's/^\\[[0-9:/.]*//' | cut -c1-200 | sort | uniq -c | sort -rn | head -30`)).trim();
+      // LOGBEFORE=<pattern>: the log's 40 lines up to the first that matches it too, in order (what came before a crash).
+      if (process.env.LOGBEFORE) run.logBefore = (await s.run(`grep -v -E 'CONSOLE|mailbox' /tmp/chromium${k}.log | grep -m1 -B40 -E '${process.env.LOGBEFORE}' | sed 's/^\\[[0-9:/.]*//' | cut -c1-200`)).trim();
       // The screen as the page draws it: each scene's 2D canvas (the readback in the guest), and the WebGPU canvas.
       const g = await s.page.evaluate(async () => {
         const x = await (window as unknown as { __webpcGrab: () => Promise<{ width: number; height: number; pixels: Uint8Array }> }).__webpcGrab();

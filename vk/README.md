@@ -218,6 +218,8 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
 - **YCbCr conversions aren't advertised** (VK2 L7's choice, by measurement): advertised and not honoured, GTK4's
   Vulkan renderer (`GSK_RENDERER=vulkan`) drew black or near-empty frames for more CPU than its GL one (REPORT.md "VK2
   L7"); without them GTK4 stays on GL, its default here anyway (forced onto Vulkan it aborts on its own assertion).
+  `?gpu=vkycbcr` advertises `samplerYcbcrConversion` anyway, for experiments only (VK3 L7.1b: Chromium's own Vulkan
+  device refuses a device without it); never by default until GTK4's row (VK3 L7.4).
   The modifiers stay: Venus's WSI needs them.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
@@ -340,6 +342,12 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   The render stats' `venus` carries a submit's parts too: the worker's encoding, `queue.submit`'s call, its writes,
   passes and draws, and the done of the submits with a pass.
 - **Shared images** (Venus's WSI): see "Presentation".
+- **Semaphores' exports** (VK3 L7.1b): a semaphore is made whatever handle types its `VkExportSemaphoreCreateInfo`
+  names; those other than sync files are dropped (`wg_CreateSemaphore`). Venus's guest driver creates semaphores
+  asynchronously and backs sync-file ones itself, so a semaphore vkr's create refused would be a handle vkr never had,
+  and the guest's next submit naming it killed its context ("failed to look up object … of type 5"). Chromium's own
+  Vulkan device exports opaque fds though Venus offers none (its properties say 0): the guest's Mesa then hands back
+  fd 0, then -1 (`bench/vulkan/semfd.ts`; docs/backlog.md "Dawn in the guest's Chromium on Venus").
 - **Waits before their signal** (VK3 L6a): syncs are advertised as waiting before their signal, so Mesa's runtime
   hands every submit to the driver at once (no submit thread: vkr has one); a submit with a timeline wait that isn't
   met, by the value or by a submit already replayed that will signal it, is held, with every later submit of its

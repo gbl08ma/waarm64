@@ -58,6 +58,8 @@ enum wg_feature {
                                         * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
+   WG_FEATURE_YCBCR = 1 << 30, /* not the adapter's: `?gpu=vkycbcr` advertises samplerYcbcrConversion, not translated
+                                * (experiments only, VK3 L7.1b: Chromium's own Vulkan device wants it) */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 

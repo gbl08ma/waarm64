@@ -6,20 +6,21 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7.1)
+## State (2026-10-28, after L7.1b)
 
-- **Dawn's row backed and advertised:** the four `shader*ArrayDynamicIndexing` (buffers and storage images as textures':
-  a tree of ifs) and `sampleRateShading` (per sample where the pipeline asks; `gl_FragCoord` at the sample: WGSL's
-  `position` stays the pixel's centre). dEQP-VK's list 4,251 → 4,424 (REPORT.md "VK3 L7.1"); ci.sh and ci-deqp-vk.sh pass.
-- **The program not yet (L7.1's remainder):** the guest's Chromium never gives Dawn Venus. It needs
-  `--enable-features=Vulkan`, whose own Vulkan device wants `samplerYcbcrConversion` (L7.4's); with it advertised in an
-  experiment, Chromium's Vulkan context dies on Venus (vkr: a submit names a semaphore it never made: type 5), and on
-  Wayland it has no window (no Xwayland; `--headless=new` the other way). `bench/vulkan/dawn-frames.ts guest`
-  reproduces it; its frames method is checked (guest SwiftShader = dev VM's, byte for byte). Backlog "Dawn in the
-  guest's Chromium on Venus".
-- **Open:** s8_uint's SAMPLE_ZERO stencil resolves read 0 (backlog); `interpolateAt*` untranslated.
+- **The semaphore found and fixed:** Chromium's own Vulkan device exports semaphores as opaque fds, which Venus doesn't
+  offer; the guest passes that export to the host and creates asynchronously, the driver (sync files only) refused it,
+  and vkr never had the object. `wg_CreateSemaphore` now drops the other handle types (test failing first, planted
+  back). `?gpu=vkycbcr` advertises YCbCr for experiments (off by default; the caps test holds it). REPORT.md "VK3 L7.1b".
+- **Dawn still not on Venus:** the guest's Venus then hands back fd 0 for the opaque fd (`bench/vulkan/semfd.ts`), and
+  Chromium's GPU process dies on "FD ownership violation". The rest is the guest's (Chromium or Mesa): backlog "Dawn in
+  the guest's Chromium on Venus". Open still: s8_uint's SAMPLE_ZERO stencil resolves, `interpolateAt*`.
 
-## Where VK3 stands (2026-10-28, after L7.1; next L7.2, or the remainder's semaphore first)
+## Where VK3 stands (2026-10-28, after L7.1b; next L7.2)
+
+- **L7.1:** Dawn's row backed and advertised (the four `shader*ArrayDynamicIndexing`, `sampleRateShading`, `gl_FragCoord`
+  at the sample); dEQP-VK's list 4,251 → 4,424. The program (Dawn in the guest's Chromium) needs YCbCr (L7.4), the guest
+  side above, and a window (no Xwayland; `--headless=new` starts).
 
 - **L6c:** vkQuake's frame 5 back at L5's counts (L5b's compute SSBOs `read_write` made a usage-scope conflict: a
   read-only SSBO is now writable only beside a write of its memory); page-venus runs in ci-deqp-vk.sh and fails on any
@@ -104,7 +105,8 @@ docs and the backlog; git keeps the old handovers.
     SAMPLE_ZERO `depth_stencil_resolve` ones. **Remainder:** the program (Dawn in the guest's Chromium) needs
     YCbCr (L7.4's), Chromium's Vulkan context alive on Venus (the semaphore vkr never made) and a window (Xwayland in
     the image, or headless): backlog "Dawn in the guest's Chromium on Venus".
-  - [ ] L7.1b (the supervisor, 2026-10-28): the remainder's semaphore. A submit naming a semaphore vkr never made is a
+  - [x] L7.1b (the supervisor, 2026-10-28): the remainder's semaphore. **Done:** opaque-fd exports the driver refused
+    (now dropped); Dawn not yet on Venus (the guest's Venus hands back fd 0 for them: backlog). The brief: A submit naming a semaphore vkr never made is a
     driver or vkr defect whatever brings it: reproduce it (Chromium's Vulkan device in the guest, YCbCr advertised
     **only behind an opt-in switch**, never by default: YCbCr by default stays L7.4's, since GTK4 would take Vulkan and
     draw black), find which object type or external-semaphore path the driver doesn't make, fix it with a test failing
@@ -142,6 +144,11 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
 
+- (L7.1b) "failed to look up object … of type N" from vkr: suspect a create the driver refused. Venus's guest makes
+  most objects asynchronously and never sees the error; a temporary `wg_Create<Object>` wrapper that prints the result
+  and the pNext chain's sTypes (stderr reaches the page's log) found it in one run. dawn-frames.ts guest needs
+  `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"` on the dev VM, or the page's Venus has no WebGPU
+  device and the guest's Chromium never reaches it; L7.1's crashing arm is `--headless=new … --use-angle=swiftshader`.
 - (L7.1) WGSL's `@builtin(position)` is the pixel's centre even when the fragment shader runs per sample (Tint on
   SwiftShader): Vulkan's `FragCoord` is at the sample, so dEQP-VK's min_sample_shading (`fract(gl_FragCoord.xy)`)
   saw one colour a pixel until the translator added the sample's offset. Chromium's Dawn takes a system Vulkan device

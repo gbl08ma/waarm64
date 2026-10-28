@@ -178,7 +178,10 @@ wg_caps_features(struct vk_features *f)
       .extendedDynamicState2 = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
       /* No YCbCr conversions until they're translated (VK3): GTK4's Vulkan renderer then stays off and GTK draws on GL
-       * (VK2 L7 measured it on Venus with them advertised and not honoured: black or near-empty frames, more CPU). */
+       * (VK2 L7 measured it on Venus with them advertised and not honoured: black or near-empty frames, more CPU).
+       * `?gpu=vkycbcr` advertises them anyway, for experiments (Chromium's own Vulkan device refuses a device
+       * without them: VK3 L7.1b). */
+      .samplerYcbcrConversion = HAS(YCBCR),
    };
 }
 

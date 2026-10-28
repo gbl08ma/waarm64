@@ -27,6 +27,7 @@ const char *wgt_error(void);
 int wgt_import(uint32_t res);
 const uint8_t *wgt_imported(void);
 const uint32_t *wgt_caps(void);
+int wgt_semaphores(void);
 int wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant);
 int wgt_draw_done(void);
 int wgt_two_init(uint8_t *window, uint32_t size);
@@ -603,7 +604,7 @@ wgt_imported(void)
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[24];
+   static uint32_t out[25];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -678,8 +679,42 @@ wgt_caps(void)
          missing |= 1u << k;
    }
    out[i++] = missing;
+   VkPhysicalDeviceVulkan11Features f11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+   VkPhysicalDeviceFeatures2 g = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f11 };
+   features2(pdev, &g);
+   out[i++] = f11.samplerYcbcrConversion;
    destroy(inst, NULL);
    return out;
+}
+
+/* Semaphores made with an export of each set of handle types (VK3 L7.1b: Venus's guest creates them asynchronously, so
+ * one the driver refuses is a handle vkr never has): a bit each, in the order below, for those made. */
+EXPORT int
+wgt_semaphores(void)
+{
+   if (!dev && init())
+      return -1;
+   PFN_vkCreateSemaphore CreateSemaphore = (PFN_vkCreateSemaphore)GetDeviceProcAddr(dev, "vkCreateSemaphore");
+   PFN_vkDestroySemaphore DestroySemaphore = (PFN_vkDestroySemaphore)GetDeviceProcAddr(dev, "vkDestroySemaphore");
+   const VkExternalSemaphoreHandleTypeFlags types[] = {
+      0, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
+      VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT | VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,
+      VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, /* a timeline semaphore's */
+   };
+   int made = 0;
+   for (uint32_t k = 0; k < sizeof(types) / sizeof(types[0]); k++) {
+      const VkSemaphoreTypeCreateInfo type = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                               .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE, .initialValue = 3 };
+      const VkExportSemaphoreCreateInfo export = { .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+                                                   .pNext = k == 4 ? &type : NULL, .handleTypes = types[k] };
+      const VkSemaphoreCreateInfo sci = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &export };
+      VkSemaphore sem;
+      if (CreateSemaphore(dev, &sci, NULL, &sem) == VK_SUCCESS) {
+         made |= 1 << k;
+         DestroySemaphore(dev, sem, NULL);
+      }
+   }
+   return made;
 }
 
 /* bench/vulkan/costs.ts (VK2's costs: a pipeline's, a submit's): after wgt_run, one submit drawing its quad into its

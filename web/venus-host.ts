@@ -55,7 +55,13 @@ export type VenusOptions = { syncPipelines?: boolean;
   nudgeMs?: number; gpuTime?: boolean;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
-  hold?: readonly string[]; heldFormats?: boolean };
+  hold?: readonly string[]; heldFormats?: boolean;
+  /** `?gpu=vkycbcr`: advertise `samplerYcbcrConversion` though the translator doesn't do conversions (experiments only,
+   * VK3 L7.1b: Chromium's own Vulkan device refuses a device without it; GTK4 would take Vulkan and draw black). */
+  ycbcr?: boolean };
+
+/** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */
+const YCBCR = 1 << 30;
 
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
@@ -145,7 +151,7 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = []) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = [], ycbcr = false) {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
@@ -159,7 +165,7 @@ export class VenusRenderer {
     const limits = gpuLimits(caps);
     const at = this.ex.venus_alloc(limits.byteLength);
     new Uint32Array(memory.buffer, at, limits.length).set(limits);
-    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold), at, limits.length, window.at, window.bytes);
+    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold) | (ycbcr ? YCBCR : 0), at, limits.length, window.at, window.bytes);
     this.ex.venus_free(at);
     if (!ok) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
@@ -187,7 +193,7 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])]);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.

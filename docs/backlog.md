@@ -604,15 +604,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
     Venus's copy. Nothing makes the guest wait for a picture before it samples the import (`vaSyncSurface` waits for
     nothing): a draw queued before the picture lands samples the texture's earlier bytes (vk/README.md "Imports").
-- **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1"). The device
-  has what Dawn's backend needs (the indexed arrays, sample-rate shading), but Chromium's Dawn takes a system Vulkan
-  device only with `--enable-features=Vulkan`, and then Chromium's own Vulkan device needs (1) `samplerYcbcrConversion`
-  (`vulkan_device_queue.cc` refuses a device without it: GTK4's row, VK3 L7.4), (2) its context alive on Venus: with
-  YCbCr advertised in an experiment, a submit named a semaphore vkr never made (`failed to look up object … of type 5`,
-  the context lost, the GPU process crashed and came back without Vulkan; likely an external semaphore type the driver
-  doesn't create), and (3) a window: Chromium calls Wayland incompatible with Vulkan, and the desktop image has no
-  Xwayland (`--headless=new` is the other way, its frames out through the page's log). `bench/vulkan/dawn-frames.ts
-  guest` runs the samples (ARMS: the flags; CR_ENV: the environment) and compares them with the dev VM's.
+- **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1", "VK3 L7.1b").
+  The device has what Dawn's backend needs (the indexed arrays, sample-rate shading), but Chromium's Dawn takes a
+  system Vulkan device only with `--enable-features=Vulkan`, and then Chromium's own Vulkan device needs
+  (1) `samplerYcbcrConversion` (`vulkan_device_queue.cc` refuses a device without it: GTK4's row, VK3 L7.4;
+  `?gpu=vkycbcr` advertises it for experiments), (2) **opaque-fd semaphores**: it exports them though Venus offers
+  only sync files (its properties for opaque fds say 0). The host refused to make them and the context died (fixed in
+  L7.1b: the driver drops the export's other types); now the guest's Mesa (26.2.5, `vn_GetSemaphoreFdKHR`, asserts
+  compiled out) hands back fd 0, then -1 (`bench/vulkan/semfd.ts`), and Chromium's GPU process dies on "FD ownership
+  violation", likely of that fd 0 (no symbols; also with `--disable-gpu-compositing`; `--use-gl=disabled` gives no
+  adapter at all). A way through would be on the guest's side: Chromium exporting what the device offers (sync files),
+  or Venus backing opaque-fd semaphores (a Mesa change); an upstream report for the fd 0 at least (an error, not a
+  descriptor it doesn't own). (3) A window: Chromium calls Wayland incompatible with Vulkan, and the desktop image has no Xwayland;
+  `--headless=new` starts (its frames would come out through the page's log). `bench/vulkan/dawn-frames.ts guest` runs
+  the samples (ARMS: the flags; CR_ENV: the environment; LOGBEFORE: the log up to a line) and compares them with the
+  dev VM's; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan" GPU_KNOBS=vkycbcr` for the host's side.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of

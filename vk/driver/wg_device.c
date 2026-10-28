@@ -480,6 +480,34 @@ wg_GetPhysicalDeviceExternalFenceProperties(VkPhysicalDevice physicalDevice,
    pProps->externalFenceFeatures = 0;
 }
 
+/* Semaphores are the runtime's (wg_sync_type: binary and timeline, sync files). An export of any other handle type
+ * is dropped rather than refused: Venus's guest driver creates its semaphores asynchronously, so a semaphore vkr's
+ * vkCreateSemaphore refused would never exist, and the guest's next submit naming it would kill its context ("failed
+ * to look up object … of type 5"). Venus offers its programs only sync files (what it backs in the guest), but
+ * Chromium's own Vulkan device asks for opaque fds all the same (VK3 L7.1b); none can be exported through Venus anyway. */
+VKAPI_ATTR VkResult VKAPI_CALL
+wg_CreateSemaphore(VkDevice _device, const VkSemaphoreCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
+                   VkSemaphore *pSemaphore)
+{
+   const VkExportSemaphoreCreateInfo *export = vk_find_struct_const(pCreateInfo->pNext, EXPORT_SEMAPHORE_CREATE_INFO);
+   const VkExternalSemaphoreHandleTypeFlags ours = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+   if (!export || !(export->handleTypes & ~ours))
+      return vk_common_CreateSemaphore(_device, pCreateInfo, pAllocator, pSemaphore);
+   /* The same chain with the export's other types taken out (what the runtime reads: the type and the export). */
+   const VkSemaphoreTypeCreateInfo *type = vk_find_struct_const(pCreateInfo->pNext, SEMAPHORE_TYPE_CREATE_INFO);
+   VkSemaphoreTypeCreateInfo type_copy;
+   VkExportSemaphoreCreateInfo export_copy = { .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+                                               .handleTypes = export->handleTypes & ours };
+   VkSemaphoreCreateInfo info = *pCreateInfo;
+   info.pNext = export_copy.handleTypes ? &export_copy : NULL;
+   if (type) {
+      type_copy = *type;
+      type_copy.pNext = info.pNext;
+      info.pNext = &type_copy;
+   }
+   return vk_common_CreateSemaphore(_device, &info, pAllocator, pSemaphore);
+}
+
 /* The device. */
 
 VKAPI_ATTR VkResult VKAPI_CALL
