@@ -16,7 +16,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
-  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
+  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
 };
 
@@ -326,7 +326,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'drawParams' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -375,6 +375,14 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
       if (ex.wgt_flat(flat[scenario], fv, fvn, ff, ffn)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draw');
       at = ex.wgt_pixels() >>> 0;
+    } else if (scenario === 'drawParams') {
+      // VK3 L7.5: four draws' parameters (wg_test.c's wgt_draw_params), first instances in indirect draws where the
+      // adapter has them.
+      const [dv, dvn] = put(await words('/target/vk/test/draw-params.vert.spv')), [ff, ffn] = put(await words('/target/vk/test/flat.frag.spv'));
+      new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
+      if (ex.wgt_draw_params(dv, dvn, ff, ffn, adapter.features.has('indirect-first-instance') ? 1 : 0)) return { error: text(ex.wgt_error() >>> 0), errors };
+      await wait(() => ex.wgt_draw_done(), 'the draws');
+      at = ex.wgt_pixels() >>> 0;
     } else if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
       if (scenario === 'link' ? ex.wgt_link() : ex.wgt_variant(variant[scenario])) return { error: text(ex.wgt_error() >>> 0), errors };
@@ -391,8 +399,9 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     const pixels = { topLeft: px(16, 8), bottomLeft: px(16, 56), topRight: px(48, 8), bottomRight: px(48, 56) };
     // clearQuery's occlusion values (wgt_pass_query).
     const query = scenario === 'clearQuery' ? [...new BigUint64Array(memory.buffer, ex.wgt_pass_query() >>> 0, 3)].map(Number) : undefined;
+    const firstInstance = adapter.features.has('indirect-first-instance');
     device.destroy();
-    return { pixels, errors, query, draws };
+    return { pixels, errors, query, draws, firstInstance };
   } catch (e) {
     return { error: String(e), errors };
   }

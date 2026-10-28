@@ -33,7 +33,7 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert']]) {
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -196,6 +196,9 @@ for (const [scenario, what, want] of [
   ['flatLast', 'an indexed triangle list whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['flatFanLast', 'a fan whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['flatFanFirst', 'a fan whose first vertex provokes (Vulkan\'s: each triangle\'s second vertex of the fan)', { topLeft: red, bottomLeft: yellow, topRight: blue, bottomRight: blue }],
+  // L7.5: draw parameters (each quad's base vertex, base instance, 200 + its draw's index; indirect first instances
+  // 0 where the adapter has none: checked below).
+  ['drawParams', 'the base vertex, base instance and draw index of direct, indexed and indirect draws in one pass', { topLeft: [10, 20, 200, 255], bottomLeft: [30, 40, 200, 255] }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -211,6 +214,11 @@ for (const [scenario, what, want] of [
     assert.deepEqual(r.errors, [], 'WebGPU errors');
     const pixels = r.pixels as Record<string, number[]>;
     for (const [k, v] of Object.entries(want)) assert.deepEqual(pixels[k], v, `${k}: ${JSON.stringify(pixels)}`);
+    if (scenario === 'drawParams') {
+      const fi = r.firstInstance as boolean;
+      assert.deepEqual(pixels.topRight, [50, fi ? 60 : 0, 200, 255], `topRight: ${JSON.stringify(pixels)}`);
+      assert.deepEqual(pixels.bottomRight, [70, fi ? 80 : 0, 200, 255], `bottomRight: ${JSON.stringify(pixels)}`);
+    }
     if (scenario === 'facesUnused' || scenario === 'facesSplit') assert.equal(r.draws, scenario === 'facesUnused' ? 1 : 2, 'the quad\'s draws');
     if (scenario === 'clearQuery') {
       const [clear, both, quad] = r.query as number[];

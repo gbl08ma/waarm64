@@ -130,6 +130,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * vertex buffers (web/venus-gpu.ts `runXfb`; VK3 L7.4, ANGLE's ES3). One stream, no queries, no draws by the
        * captured count. */
       .EXT_transform_feedback = true,
+      /* Draw parameters: the push buffer's words past the push constants, each draw's written in its place there,
+       * an indirect draw's copied from its arguments before its render pass (wg_cmd.c `prepasses`; VK3 L7.5, vkd3d). */
+      .KHR_shader_draw_parameters = true,
       /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
        * bytes), texel buffers (EXT_texel_buffer_alignment). */
    };
@@ -198,6 +201,7 @@ wg_caps_features(struct vk_features *f)
       .ycbcrImageArrays = HAS(YCBCR),
       .provokingVertexLast = true,
       .transformFeedback = true,
+      .shaderDrawParameters = true,
    };
 }
 

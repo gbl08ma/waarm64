@@ -113,6 +113,13 @@ parameters and its dynamic uniform buffers (never folded: WebGPU's dynamic stora
 set and binding order, are storage (the set layouts' hash carries the stage flags, the shaders' keys with it).
 `maxDescriptorSetUniformBuffers` is twice the stage's, a pipeline's two stages counting apart.
 
+**Draw parameters** (VK3 L7.5, `shaderDrawParameters`, vkd3d's row): WGSL has no built-ins for SPIR-V's `BaseVertex`,
+`BaseInstance` and `DrawIndex` (its `vertex_index` and `instance_index` include the bases, as Vulkan's `VertexIndex`
+and `InstanceIndex` do, so those stay WGSL's). A vertex stage that reads them reads three words of the push buffer
+at byte 128 (`WGSL_DRAW_PARAMS`, past Vulkan's 128 bytes of push constants: `pc[8u][0u]` to `[2u]`), so its push
+constants are in the push buffer too, never immediates (an indirect draw's parameters are written on the GPU); the
+driver knows such a program by its push buffer's size past 128 ("Commands").
+
 **Transform feedback** (VK3 L7.4, `VK_EXT_transform_feedback`): a vertex stage's body is a function of its own,
 `wg_vs(vid, iid, i)`, which the entry point calls before it flips y and z; where the runtime gathered `nir->xfb_info`,
 `nir_io_add_intrinsic_xfb_info` puts each output's buffer and offset on its store (after constant folding, which moves
@@ -204,7 +211,7 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 dynamic indexing of every descriptor array and sample-rate shading (VK3 L7.1, Dawn's row of plan §4: Dawn's Vulkan
 backend refuses a device without the four `shader*ArrayDynamicIndexing` features, and its core WebGPU wants
 `sampleRateShading`; "The shader path"); ANGLE's row (VK3 L7.4): the last vertex provoking, transform feedback and
-uniform buffers past WebGPU's ("The shader path", "Commands");
+uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5): draw parameters;
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
@@ -369,6 +376,16 @@ uniform buffers past WebGPU's ("The shader path", "Commands");
   the draw is an indexed list draw of its ticket's indices (`gpu_draw_ticket`). Non-indexed fans take the device's fan
   indices, (i + 1, i + 2, 0) for triangle i (Vulkan's order; they used to be (0, i + 1, i + 2), each triangle provoked
   by the fan's centre). Indirect draws so are drawn as they are, warned once.
+- **Draw parameters** (VK3 L7.5): a draw whose vertex stage reads them (its program's push buffer past 128 bytes,
+  "The shader path") has its base vertex (the first vertex, or an indexed draw's vertex offset), first instance and
+  draw index in its place of the push buffer after the push constants; a draw whose parameters differ from its place's
+  takes a new place (256 bytes, and group 3 bound again at its offset: a draw each where the bases change). An indirect
+  draw's place is its own, given before its render pass begins (`prepasses`, the render-pass rule: a copy, no break)
+  with a copy of its arguments' base vertex and first instance (8 bytes from offset 8, or 12 for an indexed one) into
+  it on the GPU, after the commands before the pass and after the queue's write of the push buffer; its draw index the
+  CPU's. The draw index is 0 but in a multi-draw indirect, which isn't advertised (`multiDrawIndirect`: dEQP-VK's
+  `shader_draw_parameters.draw_index` cases are not supported). A draw the capture records alone (transform feedback
+  with rasterization discarded) keeps the last draw's parameters.
 - **Transform feedback** (VK3 L7.4; one stream, `transformFeedbackQueries` and `transformFeedbackDraw` off): Vulkan
   reads no vertex captured in a render pass before the pass ends, and a capture's begin and end are inside one, so the
   capture runs after its pass (`gpu_xfb`'s jobs, run at the worker's pass end, `runXfb`): no break, no pre-pass. A

@@ -661,6 +661,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers); a layout's
     texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
     the 2 the storage count gives up.
+- **vkd3d on Venus** (VK3 L7.5; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK3 L7.5"). With draw parameters, Arch's
+  vkd3d 1.19 makes a Direct3D 12 device at feature level 11_0 in the desktop guest (without them it stops at
+  `VK_KHR_shader_draw_parameters`); 11_1 and up are refused. What vkd3d says 11_0 lacks (it makes the device anyway):
+  `maxPushConstantsSize` (D3D's 256 bytes of root constants; Vulkan's 128 here), `viewportBoundsRange`,
+  `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 here), dual-source blending (SwiftShader's
+  adapter only), geometry and tessellation shaders, `multiDrawIndirect`, `multiViewport`, `occlusionQueryPrecise`,
+  pipeline statistics queries, cull distances, `shaderImageGatherExtended`, `shaderStorageImageWriteWithoutFormat`
+  (vkd3d's UAV-clear pipelines then don't translate: "a storage image of format PIPE_FORMAT_NONE", 10 at device creation),
+  vertex attribute divisors, sampler min/max reduction. vkd3d's own tests (tests/d3d12, built by
+  `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
+  test_root_constants pass; test_vertex_id fails 39 of 89 (stream output of indirect draws: "ANGLE's row's gaps"; and a
+  capture of a program of four bind groups, which a vertex stage reading draw parameters makes likelier, since they
+  bring the push buffer's group 3), test_instance_id 84 of 372 (instance step rates of 0 and 2: divisors; a 1-byte
+  vertex stride WebGPU refuses, which invalidates the pipeline and its submit; whether its indirect rows fail apart
+  from those: not looked into), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
+  "The Vulkan driver's gaps"). The next steps by promise: the indirect rows of test_instance_id, a run of the whole
+  d3d12 suite for a ranked list, multi-draw indirect (the driver already loops over a draw count, each draw with its
+  own parameters' place), and a real program (vkd3d's demos need an X window: none in the guests). The draw
+  parameters' cost (a push-buffer place and a bind of group 3 a draw whose bases change) isn't measured on a program.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of

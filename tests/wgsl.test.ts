@@ -821,3 +821,22 @@ test('a vertex stage captured by transform feedback copies each output into its 
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('a vertex stage\'s draw parameters are read from the push buffer past the push constants, which go there with them (VK3 L7.5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/l7/draw-params.vert');
+    assert.equal(r.rc, 0, r.text);
+    // The push buffer (16 bytes of push constants would be immediates without them), 144 bytes: the parameters at
+    // byte 128 (wgsl.h's WGSL_DRAW_PARAMS), the base vertex, the base instance and the draw's index.
+    assert.match(r.text, /@group\(3\) @binding\(998\)/);
+    assert.doesNotMatch(r.text, /var<immediate>/);
+    for (const c of [0, 1, 2]) assert.match(r.text, new RegExp(`= pc\\[8u\\]\\[${c}u\\];`), `the parameter in word ${32 + c}`);
+    const errors = await compile([r.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

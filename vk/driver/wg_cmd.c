@@ -167,8 +167,10 @@ emit(struct wg_cmd_buffer *cmd, enum op op, const void *data, uint32_t size)
 {
    const uint32_t padded = align(size, 8);
    struct op_head *h = util_dynarray_grow_bytes(&cmd->cmds, 1, sizeof(*h) + padded);
+   /* An indirect draw may take two places of the push buffer: its render pass's for its draw parameters (`prepasses`)
+    * and one of its own. */
    if ((op >= OP_DRAW && op <= OP_DISPATCH_INDIRECT) || op == OP_PROVOKE || op == OP_XFB)
-      cmd->draws++;
+      cmd->draws += op == OP_DRAW_INDIRECT ? 2 : 1;
    *h = (struct op_head){ .op = op, .size = padded };
    void *payload = h + 1;
    if (data)
@@ -1865,6 +1867,14 @@ struct replay {
    uint32_t qspares; /* the pass's spare slots taken */
    struct util_dynarray pass_queries;
    uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
+   /* Draw parameters (VK3 L7.5): the next draw's (base vertex, base instance, draw index) and, for an indirect draw,
+    * the place `prepasses` copied its arguments' into (UINT32_MAX: none); those the current place holds, where
+    * `dp_valid`; the render pass's indirect draws' places, in their order (uint32_t), the next one `dp_next`. */
+   uint32_t draw_dp[3], draw_place;
+   uint32_t dp[3];
+   bool dp_valid;
+   struct util_dynarray dp_places;
+   uint32_t dp_next;
 };
 
 enum { RD_PIPELINE = 1, RD_DYN = 2, RD_GROUPS = 4, RD_VB = 8, RD_IB = 16, RD_PUSH = 32, RD_ALL = 63 };
@@ -2004,8 +2014,13 @@ pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop)
  * each OP_PROVOKE's indices, numbered in the pass's order, which its replay draws by the same numbers. Vulkan's
  * barriers inside a render pass reach no index buffer, so what a draw reads is what the commands before the pass left
  * (VK3 L7.4). Returns how many. */
+static uint32_t push_buffer(struct wg_device *dev);
+static uint32_t push_place(struct wg_device *dev);
+static bool draw_params(const struct wg_program *p);
+
 static uint32_t
-prepasses(const uint8_t *p, const uint8_t *end, uint32_t ticket, bool top)
+prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, const uint8_t *end, uint32_t ticket,
+          bool top)
 {
    while (p < end) {
       const struct op_head *h = (const void *)p;
@@ -2017,9 +2032,26 @@ prepasses(const uint8_t *p, const uint8_t *end, uint32_t ticket, bool top)
          const struct op_provoke *o = d;
          gpu_provoke(ticket++, o->buffer, o->offset, o->size, o->wide, o->mode, o->restart, o->first, o->count,
                      o->prims);
+      } else if (h->op == OP_PIPELINE) {
+         *prog = ((const struct op_pipeline *)d)->program;
+      } else if (h->op == OP_DRAW_INDIRECT) {
+         /* An indirect draw whose vertex stage reads its draw parameters: a place of the push buffer of its own, its
+          * arguments' base vertex and first instance copied there (the push buffer is written before the submit's
+          * commands), its draw index written with the place. */
+         const struct op_indirect *a = d;
+         for (uint32_t i = 0; i < a->count; i++) {
+            uint32_t at = UINT32_MAX;
+            if (*prog && draw_params(*prog) && a->buffer) {
+               at = push_place(r->dev);
+               gpu_copy_bb(a->buffer, a->offset + (double)i * a->stride + (a->indexed ? 12 : 8), push_buffer(r->dev),
+                           at + WGSL_DRAW_PARAMS, 8);
+               memcpy(r->dev->push_data + at + WGSL_DRAW_PARAMS + 8, (uint32_t[2]){ i, 0 }, 8);
+            }
+            util_dynarray_append_typed(&r->dp_places, uint32_t, at);
+         }
       } else if (h->op == OP_EXEC) {
          const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
-         ticket = prepasses(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, ticket, false);
+         ticket = prepasses(r, prog, sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, ticket, false);
       }
    }
    return ticket;
@@ -2105,6 +2137,31 @@ push_reserve(struct wg_device *dev, uint64_t bytes)
       dev->push_data = NULL;
       push_buffer(dev);
    }
+}
+
+/* A place of the push buffer for one draw's or dispatch's push constants (and draw parameters): WebGPU's dynamic
+ * uniform offsets are 256 bytes apart, and a place holds at most 144 bytes. */
+static uint32_t
+push_place(struct wg_device *dev)
+{
+   push_buffer(dev);
+   if (dev->push_used + 256 > dev->push_size) {
+      static bool told;
+      if (!told)
+         fprintf(stderr, "wg: a submit's push constants overflow the push buffer\n");
+      told = true;
+      dev->push_used = 0;
+   }
+   const uint32_t at = dev->push_used;
+   dev->push_used += 256;
+   return at;
+}
+
+/* Whether a program's vertex stage reads its draw parameters (the push buffer's words at WGSL_DRAW_PARAMS). */
+static bool
+draw_params(const struct wg_program *p)
+{
+   return p->push_ubo_size > WGSL_DRAW_PARAMS;
 }
 
 /* A resource's descriptor in an op_bind's sets, or NULL. */
@@ -2273,6 +2330,16 @@ found:
 }
 
 
+/* The next draw's parameters (apply writes them where its vertex stage reads them). */
+static void
+set_draw_params(struct replay *r, int32_t base_vertex, uint32_t base_instance, uint32_t draw_index, uint32_t place)
+{
+   r->draw_dp[0] = (uint32_t)base_vertex;
+   r->draw_dp[1] = base_instance;
+   r->draw_dp[2] = draw_index;
+   r->draw_place = place;
+}
+
 static void
 apply(struct replay *r, uint32_t point)
 {
@@ -2301,23 +2368,22 @@ apply(struct replay *r, uint32_t point)
       gpu_set_pipeline(r->compute);
    }
    /* Push constants past the immediates: this draw's in a new place of the push buffer, its group's last dynamic
-    * offset (the push buffer's binding is group 3's last). */
+    * offset (the push buffer's binding is group 3's last). With the draw's parameters past them where its vertex
+    * stage reads them (VK3 L7.5): a new place where they change, an indirect draw's the one `prepasses` copied its
+    * arguments' into. */
    const struct wg_program *p = r->program[point];
    if (p && p->push_ubo_size && p->group_count == WGSL_MAX_GROUPS) {
-      if ((r->dirty & (RD_PUSH | RD_PIPELINE)) || r->push_offset == UINT32_MAX) {
+      const bool params = point == 0 && draw_params(p);
+      const bool moved = params && (!r->dp_valid || r->draw_place != UINT32_MAX || memcmp(r->dp, r->draw_dp, sizeof(r->dp)));
+      if ((r->dirty & (RD_PUSH | RD_PIPELINE)) || r->push_offset == UINT32_MAX || moved) {
          struct wg_device *dev = r->dev;
-         push_buffer(dev);
-         const uint32_t size = align(p->push_ubo_size, 16);
-         if (dev->push_used + size > dev->push_size) {
-            static bool told;
-            if (!told)
-               fprintf(stderr, "wg: a submit's push constants overflow the push buffer\n");
-            told = true;
-            dev->push_used = 0;
-         }
-         r->push_offset = dev->push_used;
-         memcpy(dev->push_data + r->push_offset, r->push, MIN2(size, sizeof(r->push)));
-         dev->push_used = align(dev->push_used + size, 256);
+         const bool placed = params && r->draw_place != UINT32_MAX;
+         r->push_offset = placed ? r->draw_place : push_place(dev);
+         memcpy(dev->push_data + r->push_offset, r->push, MIN2(align(p->push_ubo_size, 16), WGSL_DRAW_PARAMS));
+         if (params && !placed)
+            memcpy(dev->push_data + r->push_offset + WGSL_DRAW_PARAMS, (uint32_t[4]){ r->draw_dp[0], r->draw_dp[1], r->draw_dp[2], 0 }, 16);
+         memcpy(r->dp, r->draw_dp, sizeof(r->dp));
+         r->dp_valid = params && !placed;
          r->dirty |= RD_GROUPS;
       }
       const uint32_t n = r->groups[point][WGSL_MAX_GROUPS - 1].n;
@@ -2425,7 +2491,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          bool stop = false;
          r->qpool = pass_query_pool(p, end, &stop);
          r->qspares = 0;
-         prepasses(p, end, 0, true);
+         util_dynarray_clear(&r->dp_places);
+         r->dp_next = 0;
+         const struct wg_program *prog = r->program[0];
+         prepasses(r, &prog, p, end, 0, true);
          r->tickets = 0;
          if (r->qpool) {
             struct wg_json j = { 0 };
@@ -2526,6 +2595,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const uint32_t *a = d;
          if (r->pass != RENDER)
             break;
+         set_draw_params(r, a[2], a[3], 0, UINT32_MAX);
          apply(r, 0);
          gpu_draw(a[0], a[1], a[2], a[3]);
          break;
@@ -2534,6 +2604,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_draw_indexed *a = d;
          if (r->pass != RENDER)
             break;
+         set_draw_params(r, a->base, a->first_instance, 0, UINT32_MAX);
          apply(r, 0);
          gpu_draw_indexed(a->count, a->instances, a->first, a->base, a->first_instance);
          break;
@@ -2553,6 +2624,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_provoke *o = d;
          if (r->pass != RENDER)
             break;
+         set_draw_params(r, o->base, o->first_instance, 0, UINT32_MAX);
          apply(r, 0);
          gpu_draw_ticket(r->tickets++, o->instances, o->base, o->first_instance);
          r->dirty |= RD_IB;
@@ -2562,9 +2634,19 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_indirect *a = d;
          if (r->pass != RENDER)
             break;
-         apply(r, 0);
-         for (uint32_t i = 0; i < a->count; i++)
+         for (uint32_t i = 0; i < a->count; i++) {
+            const uint32_t at = r->dp_next < util_dynarray_num_elements(&r->dp_places, uint32_t)
+                                   ? *util_dynarray_element(&r->dp_places, uint32_t, r->dp_next++) : UINT32_MAX;
+            if (at == UINT32_MAX && r->program[0] && draw_params(r->program[0])) {
+               static bool warned;
+               if (!warned)
+                  fprintf(stderr, "wg: an indirect draw's parameters weren't copied before its pass: drawn with 0\n");
+               warned = true;
+            }
+            set_draw_params(r, 0, 0, i, at);
+            apply(r, 0);
             gpu_draw_indirect(a->buffer, a->offset + (double)i * a->stride, a->indexed);
+         }
          break;
       }
       case OP_DISPATCH:
@@ -3031,7 +3113,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
       wg_memory_buffer(image->mem);
    gpu_encoder();
    linear_images(dev, true, NULL);
-   struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX };
+   struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX, .draw_place = UINT32_MAX };
    uint64_t draws = 0;
    for (uint32_t i = 0; i < cmd_count; i++)
       draws += container_of(cmds[i], struct wg_cmd_buffer, vk)->draws;
@@ -3052,6 +3134,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    util_dynarray_foreach (&s->queries, struct query_readback, q)
       q->slot = gpu_readback(q->pool->buf, q->lo * 8.0, (q->hi - q->lo) * 8);
    util_dynarray_fini(&r.pass_queries);
+   util_dynarray_fini(&r.dp_places);
    /* Ordered after the earlier submits' work and before this one's (queue.writeBuffer). */
    if (dev->push_used)
       gpu_write(dev->push_buffer, 0, dev->push_data, dev->push_used);

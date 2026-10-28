@@ -44,7 +44,7 @@ struct ctx {
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
-   bool shm_atomic, shm_signed, shm_unsigned, uses_helper, uses_frag_coord, uses_front_face, uses_sample_id, uses_sample_mask_in;
+   bool shm_atomic, shm_signed, shm_unsigned, uses_helper, uses_frag_coord, uses_front_face, uses_draw_params, uses_sample_id, uses_sample_mask_in;
    uint32_t ubo_sizes_unused;
    /* Fragment inputs and vertex outputs, by location (VARYING_SLOT_VAR0 + n). */
    struct wgsl_varyings vary;
@@ -566,6 +566,15 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       break;
    case nir_intrinsic_load_front_face:
       c->uses_front_face = true;
+      break;
+   /* Draw parameters (VK3 L7.5): words of the push buffer past the push constants (WGSL_DRAW_PARAMS), which WGSL has
+    * no built-ins for (its vertex_index and instance_index include the bases, as Vulkan's VertexIndex and
+    * InstanceIndex do). */
+   case nir_intrinsic_load_first_vertex:
+   case nir_intrinsic_load_base_instance:
+   case nir_intrinsic_load_draw_id:
+      c->uses_draw_params = true;
+      c->info->immediate_size = MAX2(c->info->immediate_size, WGSL_DRAW_PARAMS + 16);
       break;
    case nir_intrinsic_load_sample_id:
    case nir_intrinsic_load_sample_pos:
@@ -1664,6 +1673,12 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_instance_id:
       line(c, "t%u = iid;", def->index);
       return;
+   case nir_intrinsic_load_first_vertex:
+   case nir_intrinsic_load_base_instance:
+   case nir_intrinsic_load_draw_id:
+      line(c, "t%u = pc[%uu][%uu];", def->index, WGSL_DRAW_PARAMS / 16,
+           intr->intrinsic == nir_intrinsic_load_first_vertex ? 0 : intr->intrinsic == nir_intrinsic_load_base_instance ? 1 : 2);
+      return;
    case nir_intrinsic_load_frag_coord:
       line(c, "t%u = bitcast<vec4<u32>>(%s)%s;", def->index,
            c->nir->info.fs.uses_sample_shading ? "vec4<f32>(floor(i.pos.xy) + wg_sample_pos(sid), i.pos.zw)" : "i.pos",
@@ -2283,8 +2298,9 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
          c.uc_save = true;
       }
    }
-   /* Push constants past the immediates: a uniform buffer of the driver's, bound at a dynamic offset per draw. */
-   if (info->immediate_size > max_immediates) {
+   /* Push constants past the immediates: a uniform buffer of the driver's, bound at a dynamic offset per draw; with
+    * the draw parameters there too, which the driver's copies write for indirect draws (immediates can't be). */
+   if (info->immediate_size > max_immediates || c.uses_draw_params) {
       struct res_use *r = resource(&c, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_PUSH_BINDING, WGSL_UNIFORM);
       r->r.size = info->immediate_size;
       info->push_ubo_size = info->immediate_size;

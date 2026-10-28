@@ -45,6 +45,7 @@ int wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words);
 uint8_t *wgt_xfb_map(void);
 int wgt_xfb_done(void);
 int wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
+int wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t first_instance);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
 int wgt_pass_done(void);
@@ -734,6 +735,8 @@ static VkShaderModule draw_fs;
 static VkPipeline last;
 /* wgt_flat's: a draw of these vertices, not indexed (0: the quad's six indices). */
 static uint32_t draw_vertices;
+/* wgt_draw_params's: its commands in place of the draw (`in_pass`), and before the pass. */
+static void (*draw_custom)(VkCommandBuffer cmd, bool in_pass);
 
 static int draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline given);
 
@@ -791,6 +794,8 @@ draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline gi
    CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
    const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
    CHECK(BeginCommandBuffer(cmd, &begin));
+   if (draw_custom)
+      draw_custom(cmd, false);
    const VkClearValue clears[2] = { { .color = { .float32 = { 0, 0, 1, 1 } } }, { .depthStencil = { 1, 0 } } };
    const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = scene.rp,
                                        .framebuffer = scene.fb, .renderArea = { { 0, 0 }, { scene.w, scene.h } },
@@ -808,7 +813,9 @@ draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline gi
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.layout, 0, 1, &scene.set, 1, &offset);
    const float right[4] = { 0.5f, 0, 0, 0 };
    CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
-   if (draw_vertices)
+   if (draw_custom)
+      draw_custom(cmd, true);
+   else if (draw_vertices)
       CmdDraw(cmd, draw_vertices, 1, 0, 0);
    else
       CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
@@ -968,6 +975,90 @@ wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
    draw_vertices = scenario > 0 ? 4 : 0;
    const int r = draw_with(NULL, 0, 0, p);
    draw_vertices = 0;
+   return r;
+}
+
+/*
+ * Draw parameters (VK3 L7.5, shaderDrawParameters), after wgt_run: `vs` (draw-params.vert: a quad by its vertices'
+ * index less the base vertex, its flat colour the draw's parameters) and `fs` (flat.frag) in four draws of one pass,
+ * a quarter each, copied into wgt_pixels; wgt_draw_done says when. Top left: vkCmdDraw from vertex 10, instance 20;
+ * bottom left: vkCmdDrawIndexed (indices 0 to 5) at vertex offset 30, instance 40; top right: vkCmdDrawIndirect of
+ * host-written arguments (vertex 50, instance 60); bottom right: vkCmdDrawIndexedIndirect of arguments written by
+ * vkCmdUpdateBuffer before the pass (vertex offset 70, instance 80, or 0 without drawIndirectFirstInstance:
+ * `first_instance`). Push constants place the quads, the first two's the same (the shader moves the second down).
+ */
+static struct {
+   VkBuffer indices, args;
+   uint32_t *map;
+   uint32_t first_instance;
+} dp;
+
+static void
+draw_params_record(VkCommandBuffer cmd, bool in_pass)
+{
+   static PFN_vkCmdUpdateBuffer CmdUpdateBuffer;
+   static PFN_vkCmdDrawIndirect CmdDrawIndirect;
+   static PFN_vkCmdDrawIndexedIndirect CmdDrawIndexedIndirect;
+   if (!CmdUpdateBuffer) {
+      CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+      CmdDrawIndirect = (PFN_vkCmdDrawIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndirect");
+      CmdDrawIndexedIndirect = (PFN_vkCmdDrawIndexedIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndexedIndirect");
+   }
+   if (!in_pass) {
+      const uint32_t indexed[5] = { 6, 1, 0, 70, dp.first_instance };
+      CmdUpdateBuffer(cmd, dp.args, 64, sizeof(indexed), indexed);
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, 0, 1, &mb, 0, NULL,
+                         0, NULL);
+      return;
+   }
+   const float off[4][4] = { { -1, -1 }, { 0 }, { 0.05f, -1 }, { 0.05f, 0.05f } };
+   CmdBindIndexBuffer(cmd, dp.indices, 0, VK_INDEX_TYPE_UINT16);
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+   CmdDraw(cmd, 6, 1, 10, 20);
+   /* The same push constants: the shader moves the quad down by its base vertex. */
+   CmdDrawIndexed(cmd, 6, 1, 0, 30, 40);
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[2]);
+   CmdDrawIndirect(cmd, dp.args, 0, 1, 16);
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[3]);
+   CmdDrawIndexedIndirect(cmd, dp.args, 64, 1, 20);
+}
+
+EXPORT int
+wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t first_instance)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   VkPipelineShaderStageCreateInfo stages[2] = { scene.stages[0], scene.stages[1] };
+   stages[1].pSpecializationInfo = NULL;
+   if (shader(vs, vs_words, &stages[0].module) || shader(fs, fs_words, &stages[1].module))
+      return 1;
+   gpi.pStages = stages;
+   VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+   rs.cullMode = VK_CULL_MODE_NONE;
+   gpi.pRasterizationState = &rs;
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   if (!dp.indices) {
+      uint16_t *idx;
+      if (buffer(16, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &dp.indices, (void **)&idx) ||
+          buffer(256, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &dp.args,
+                 (void **)&dp.map))
+         return 1;
+      for (uint16_t i = 0; i < 6; i++)
+         idx[i] = i;
+   }
+   memset(dp.map, 0, 256);
+   const uint32_t plain[4] = { 6, 1, 50, first_instance ? 60 : 0 };
+   memcpy(dp.map, plain, sizeof(plain));
+   dp.first_instance = first_instance ? 80 : 0;
+   draw_custom = draw_params_record;
+   const int r = draw_with(NULL, 0, 0, p);
+   draw_custom = NULL;
    return r;
 }
 
