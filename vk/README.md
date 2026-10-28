@@ -17,6 +17,7 @@ node --test tests/venus-share.test.ts      # presentation: a WebGPU texture into
                                            # (imports, the reverse: tests/venus-driver.test.ts's second test)
 node --test tests/page-venus.test.ts       # vkcube on the page, and the captures' frames (images/debian-vulkan/build.sh, images/vkframes/build.sh)
 scripts/ci-deqp-vk.sh                      # dEQP-VK's pass list on the page (images/deqp/build.sh vk)
+node bench/vulkan/dawn-frames.ts guest     # WebGPU samples in the desktop guest's Chromium (Dawn; not yet on Venus: docs/backlog.md)
 ```
 
 ## The build

@@ -1479,6 +1479,54 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7.1: Dawn's row (indexed descriptor arrays, sample-rate shading); Dawn in the guest's Chromium not yet
+
+2026-10-28, the dev VM (SwiftShader, Chromium 153); JSON in `results/vk3/l71/`.
+
+- **The features, advertised once backed.** Dawn's Vulkan backend refuses a device without the four
+  `shader*ArrayDynamicIndexing` features (`PhysicalDeviceVk.cpp`: robustBufferAccess, BC or ETC2+ASTC, the four,
+  fragmentStoresAndAtomics, fullDrawIndexUint32), and its core level wants `sampleRateShading` (else compatibility
+  only). Arrays of buffers and storage images indexed dynamically are now a tree of ifs over their elements, as
+  textures' were; sample-rate shading runs a fragment stage per sample (inputs at their sample, `sample_index` read,
+  `gl_FragCoord`/`gl_SamplePosition` at Vulkan's standard locations by an override of the sample count): vk/README.md
+  "The shader path". `tests/wgsl.test.ts` has a test for each (both failing first); a planted bug in each (every
+  element's access at element 0; the pipeline's sample shading dropped) fails them and 6 of 6 dEQP-VK cases
+  (`deqp-planted.json`).
+- **dEQP-VK** (`deqp-candidates.json`, `deqp-sample-shading.json`): of 338 candidates, 163 passed at first; the
+  min_sample_shading cases failed until `gl_FragCoord` was moved to the sample (WGSL's `position` is the pixel's
+  centre at the sample rate too: "less unique colors than requested"), then all 54 that run of the sample-shading
+  groups pass. The list grows **4,251 → 4,424**: `glsl.opaque_type_indexing`'s ubo and ssbo (compute, fragment: all
+  24) and a third of its sampler group, `multisample.min_sample_shading*`, `multisample_shader_builtin`,
+  `multisample_interpolation`'s consistency groups (samples_4), and every sixth SAMPLE_ZERO `depth_stencil_resolve`
+  case that passes (38 of the 44 sampled that run; the 6 others are s8_uint's stencil resolves: filed). Not taken: `interpolateAt*` (not translated),
+  integer cube textures sampled with a sampler (zeros), samples other than 4.
+- **The row's cost:** none where a program uses neither: the tree costs a shader that indexes an array dynamically a
+  compare per level (an array of n elements, log2 n ifs and n copies of the access), and sample-rate shading costs
+  what per-sample shading costs, only where a pipeline asks for it (a minimum over one sample a pixel, or the shader
+  reads the sample).
+- **The program: Dawn in the guest's Chromium, not yet** (`dawn-frames.ts`, `dawn/samples.html`: five WebGPU samples
+  drawn once and read back in the page, shown on 2D canvases and grabbed from the page's screen; the WebGPU canvas
+  too). The method holds: the desktop guest's Chromium on its own SwiftShader draws all five **byte for byte** as the
+  dev VM's Chromium does (`compare-guest-swiftshader.json`, 0 bytes off). But its Dawn never takes Venus:
+  - without `--enable-features=Vulkan` Chromium's Dawn offers only its SwiftShader (`guest1.json`, `guest2.json`,
+    `--disable-gpu-sandbox` too);
+  - with it, Chromium's own Vulkan device refuses Venus: `samplerYcbcrConversion is not supported`
+    (`gpu/vulkan/vulkan_device_queue.cc`), and on Wayland Chromium warns that `--ozone-platform=wayland` isn't
+    compatible with Vulkan (no window came up; the image has no Xwayland for `--ozone-platform=x11`);
+  - with YCbCr advertised in an experiment build (not committed: `guest3.json`, `guest4.json`), Chromium starts on
+    Wayland and in `--headless=new`, but its GPU process's Vulkan context dies on Venus: vkr logs `failed to look up
+    object … of type 5` (a semaphore) in a submit, `early bail due to fatal decoder state`, the GPU process crashes
+    and comes back without Vulkan, and Dawn takes SwiftShader again.
+  So the program needs more than Dawn's row: YCbCr conversions advertised (GTK4's row, L7.4's), Chromium's Vulkan
+  context alive on Venus (the semaphore it submits that the host never made: likely an external semaphore type the
+  driver doesn't create), and a window (Xwayland in the desktop image, or `--headless=new`, whose frames would come
+  out through the page's log). Filed as L7.1's remainder (VK3-HANDOVER.md, docs/backlog.md).
+- **CI:** `scripts/ci.sh` OK (526 s); `scripts/ci-deqp-vk.sh` OK (736 s: all 4,424 of the list pass in 565 s, the
+  replays 171 s).
+- **The reference**: the dev VM's Chromium wouldn't take lavapipe through the Profiles layer either (its Dawn offers
+  its SwiftShader; with `--enable-features=Vulkan`, ANGLE and Skia on the profile's Vulkan fail first), so the frames'
+  reference is Dawn on the dev VM's SwiftShader (WebGPU, not through Vulkan).
+
 ## VK3 L6c: vkQuake's first frame, the out-of-context review of L5-L6a
 
 2026-10-28, the dev VM (SwiftShader, Chromium 153); JSON in `results/vk3/l6c/`.

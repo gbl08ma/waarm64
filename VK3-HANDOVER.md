@@ -6,18 +6,25 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L6c)
+## State (2026-10-28, after L7.1)
 
-- **vkQuake's frame 5:** broken by L5b (96a0142f), not the table: every compute SSBO `read_write` made its dispatch's
-  uniform and read-only SSBO of one memory a usage-scope conflict, the submit dropped. Now a read-only SSBO is bound
-  writable only where the dispatch writes its memory elsewhere (a program variant, its own module): frames 5/15/30 at
-  15,438/15,352/15,449 (1.7%), as at L5. `ci-deqp-vk.sh` now also runs page-venus (the replays), which fails on any
-  WebGPU error the page logged (REPORT.md "VK3 L6c").
-- **The L5–L6a review's 8 findings:** all real, all fixed with tests (the residue of 2 and 7 filed: backlog "Usage
-  scopes", vk/README.md "Commands"). dEQP-VK's list unchanged (4,251).
-- **Open:** the usage-scope residue (uniform/indirect beside written storage of one memory; render passes).
+- **Dawn's row backed and advertised:** the four `shader*ArrayDynamicIndexing` (buffers and storage images as textures':
+  a tree of ifs) and `sampleRateShading` (per sample where the pipeline asks; `gl_FragCoord` at the sample: WGSL's
+  `position` stays the pixel's centre). dEQP-VK's list 4,251 → 4,424 (REPORT.md "VK3 L7.1"); ci.sh and ci-deqp-vk.sh pass.
+- **The program not yet (L7.1's remainder):** the guest's Chromium never gives Dawn Venus. It needs
+  `--enable-features=Vulkan`, whose own Vulkan device wants `samplerYcbcrConversion` (L7.4's); with it advertised in an
+  experiment, Chromium's Vulkan context dies on Venus (vkr: a submit names a semaphore it never made: type 5), and on
+  Wayland it has no window (no Xwayland; `--headless=new` the other way). `bench/vulkan/dawn-frames.ts guest`
+  reproduces it; its frames method is checked (guest SwiftShader = dev VM's, byte for byte). Backlog "Dawn in the
+  guest's Chromium on Venus".
+- **Open:** s8_uint's SAMPLE_ZERO stencil resolves read 0 (backlog); `interpolateAt*` untranslated.
 
-## Where VK3 stands (2026-10-28, after L6c; next L7)
+## Where VK3 stands (2026-10-28, after L7.1; next L7.2, or the remainder's semaphore first)
+
+- **L6c:** vkQuake's frame 5 back at L5's counts (L5b's compute SSBOs `read_write` made a usage-scope conflict: a
+  read-only SSBO is now writable only beside a write of its memory); page-venus runs in ci-deqp-vk.sh and fails on any
+  WebGPU error; the L5–L6a review's 8 findings fixed. Open: the usage-scope residue (uniform/indirect beside written
+  storage of one memory; render passes).
 
 - **L6b:** texel buffers, the depth/stencil copies WebGPU refuses, bind group layouts' uids by content; dEQP-VK's list
   3,972 → 4,251 (on the M4: 3,547 pass, 7 fail, 697 subgroups not supported). Filed: texel buffers past the storage
@@ -93,10 +100,10 @@ docs and the backlog; git keeps the old handovers.
 - [x] L6c: vkQuake's frame 5 (L5b's compute SSBOs `read_write`: a dispatch's read-only SSBO now writable only beside a
   write of its memory; page-venus in ci-deqp-vk.sh); the review of L5–L6a's 8 findings fixed, each with its test.
 - [ ] L7: §4's emulated rows in order, a loop a row (dotted: the review fix loops after L7 are L7a, L7b, …):
-  - [ ] L7.1: Dawn's row: dynamically indexed descriptor arrays, sample-rate shading; the program Dawn in a guest
-    Chromium (its WebGPU samples' frames against lavapipe). With `sampleRateShading`, dEQP-VK's
-    `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to the list (L4f's resolves are
-    checked by `tests/venus-driver.test.ts` only).
+  - [x] L7.1: Dawn's row: dynamically indexed descriptor arrays, sample-rate shading, their dEQP-VK cases and the
+    SAMPLE_ZERO `depth_stencil_resolve` ones. **Remainder:** the program (Dawn in the guest's Chromium) needs
+    YCbCr (L7.4's), Chromium's Vulkan context alive on Venus (the semaphore vkr never made) and a window (Xwayland in
+    the image, or headless): backlog "Dawn in the guest's Chromium on Venus".
   - [ ] L7.2: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
   - [ ] L7.3: vkd3d's draw parameters.
   - [ ] L7.4: GTK4's YCbCr with modifiers, only once GTK4's black frames are understood.
@@ -130,6 +137,13 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
 
+- (L7.1) WGSL's `@builtin(position)` is the pixel's centre even when the fragment shader runs per sample (Tint on
+  SwiftShader): Vulkan's `FragCoord` is at the sample, so dEQP-VK's min_sample_shading (`fract(gl_FragCoord.xy)`)
+  saw one colour a pixel until the translator added the sample's offset. Chromium's Dawn takes a system Vulkan device
+  only with `--enable-features=Vulkan` (else its SwiftShader, in the guest and on the dev VM alike), and that turns on
+  Chromium's own Vulkan device, which refuses one without `samplerYcbcrConversion`; on the dev VM the Profiles layer
+  over lavapipe can't stand in (ANGLE and Skia fail on the profile's Vulkan first). Guest Chromium logs: `--enable-
+  logging=stderr`, console lines as `"dawn: …"`; `VK_LOADER_DEBUG` through `CR_ENV`.
 - (L6c) Dawn refuses a `storage` layout entry for a shader's `var<storage, read>` (an invalid pipeline): widening a
   binding's layout takes a module with it `read_write` too. A vkQuake replay with a frame far off: look first for
   `venus-gpu: WebGPU:` warnings in the run's results.json (an invalid command drops the whole submit). Heap canaries

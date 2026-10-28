@@ -604,6 +604,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
     Venus's copy. Nothing makes the guest wait for a picture before it samples the import (`vaSyncSurface` waits for
     nothing): a draw queued before the picture lands samples the texture's earlier bytes (vk/README.md "Imports").
+- **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1"). The device
+  has what Dawn's backend needs (the indexed arrays, sample-rate shading), but Chromium's Dawn takes a system Vulkan
+  device only with `--enable-features=Vulkan`, and then Chromium's own Vulkan device needs (1) `samplerYcbcrConversion`
+  (`vulkan_device_queue.cc` refuses a device without it: GTK4's row, VK3 L7.4), (2) its context alive on Venus: with
+  YCbCr advertised in an experiment, a submit named a semaphore vkr never made (`failed to look up object … of type 5`,
+  the context lost, the GPU process crashed and came back without Vulkan; likely an external semaphore type the driver
+  doesn't create), and (3) a window: Chromium calls Wayland incompatible with Vulkan, and the desktop image has no
+  Xwayland (`--headless=new` is the other way, its frames out through the page's log). `bench/vulkan/dawn-frames.ts
+  guest` runs the samples (ARMS: the flags; CR_ENV: the environment) and compares them with the dev VM's.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of

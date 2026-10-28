@@ -1,0 +1,41 @@
+{
+ "ref": "google swiftshader",
+ "guest": "google swiftshader core true",
+ "scenes": {
+  "triangle": {
+   "bytes": 196608,
+   "off24": 0,
+   "share": 0,
+   "max": 0,
+   "mean": 0
+  },
+  "msaa": {
+   "bytes": 196608,
+   "off24": 0,
+   "share": 0,
+   "max": 0,
+   "mean": 0
+  },
+  "cube": {
+   "bytes": 196608,
+   "off24": 0,
+   "share": 0,
+   "max": 0,
+   "mean": 0
+  },
+  "compute": {
+   "bytes": 196608,
+   "off24": 0,
+   "share": 0,
+   "max": 0,
+   "mean": 0
+  },
+  "samplerate": {
+   "bytes": 196608,
+   "off24": 0,
+   "share": 0,
+   "max": 0,
+   "mean": 0
+  }
+ }
+}
