@@ -103,6 +103,24 @@ written. Uniform texel buffers take every plain RGB format whose channels don't 
 texels too), storage ones formats of whole words (a texel's words are written whole, so invocations never share one);
 no atomics (image atomics are refused).
 
+**Uniform buffers past WebGPU's** (VK3 L7.4, ANGLE's ES3): the device reports `maxPerStageDescriptorUniformBuffers`
+two past WebGPU's less the push buffer's binding (13 of 12) and the storage buffers two fewer; a uniform buffer past
+its stage's room is read as a read-only storage buffer (`lower_ubo_storage` in wgsl_nir.c turns its loads into SSBO
+loads, so it is `var<storage, read>` and its layout entry `read-only-storage`). The pipeline layout decides
+(wg_shader.c `fold_uniforms`), by the stages each binding's flags name, so every stage that sees a buffer reads it the
+same way: a stage's room is WebGPU's uniform buffers less one for the push buffer (counted always), its texel buffers'
+parameters and its dynamic uniform buffers (never folded: WebGPU's dynamic storage buffers are fewer); the rest, in
+set and binding order, are storage (the set layouts' hash carries the stage flags, the shaders' keys with it).
+`maxDescriptorSetUniformBuffers` is twice the stage's, a pipeline's two stages counting apart.
+
+**Transform feedback** (VK3 L7.4, `VK_EXT_transform_feedback`): a vertex stage's body is a function of its own,
+`wg_vs(vid, iid, i)`, which the entry point calls before it flips y and z; where the runtime gathered `nir->xfb_info`,
+`nir_io_add_intrinsic_xfb_info` puts each output's buffer and offset on its store (after constant folding, which moves
+a matrix's or array's slot offset into its location: the pass matches by location), and the printer copies each
+captured component's bits into `var<private> wg_xo`, the vertex's record (each buffer's from `xfb_base[b]`, its stride
+and written words in `wgsl_info`). The driver's compute pass ("The driver") calls `wg_vs` and writes the record out.
+32-bit outputs only, records up to 512 bytes.
+
 **Subgroups** (VK3 L5): with WebGPU's `subgroups` and an adapter whose subgroups have one size (`wg_subgroup_size`:
 SwiftShader's 4, Apple's and NVIDIA's 32; WGSL can't choose one, so an adapter whose sizes vary keeps subgroups of one
 invocation), `wgsl_lower` lowers for that size (`nir_lower_subgroups`, ballots of 4 × 32 bits) and the printer uses
@@ -185,7 +203,8 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
 dynamic indexing of every descriptor array and sample-rate shading (VK3 L7.1, Dawn's row of plan §4: Dawn's Vulkan
 backend refuses a device without the four `shader*ArrayDynamicIndexing` features, and its core WebGPU wants
-`sampleRateShading`; "The shader path");
+`sampleRateShading`; "The shader path"); ANGLE's row (VK3 L7.4): the last vertex provoking, transform feedback and
+uniform buffers past WebGPU's ("The shader path", "Commands");
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
@@ -338,6 +357,34 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   WebGPU can't resolve (integer formats) is skipped with a warning, since one invalid command invalidates the whole submit. Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
+- **Draws through indices of their own** (VK3 L7.4): the provoking vertex's last (`VK_EXT_provoking_vertex`,
+  `provokingVertexLast`, per pipeline: ANGLE's ES3, GL's convention) where the fragment shader reads a flat input
+  (WebGPU's flat interpolation takes the first vertex), and indexed fans (WebGPU has none). Such a draw is an
+  `OP_PROVOKE`: before its render pass begins (the render-pass rule, plan §4: `prepasses` scans the pass's commands,
+  secondaries' too, numbering them as tickets), the worker's compute pass writes the draw's primitives as a list of
+  32-bit indices, each one's vertices rotated so that Vulkan's provoking vertex comes first and the winding kept
+  (`provoke`: triangle lists, strips and fans, line lists and strips; a strip or fan with primitive restart walked by
+  one invocation, the rest of its primitives degenerate), into a scratch buffer of the worker's whose places start
+  again at each encoder (the queue's order keeps an earlier submit's reads before a later one's writes); in the pass
+  the draw is an indexed list draw of its ticket's indices (`gpu_draw_ticket`). Non-indexed fans take the device's fan
+  indices, (i + 1, i + 2, 0) for triangle i (Vulkan's order; they used to be (0, i + 1, i + 2), each triangle provoked
+  by the fan's centre). Indirect draws so are drawn as they are, warned once.
+- **Transform feedback** (VK3 L7.4; one stream, `transformFeedbackQueries` and `transformFeedbackDraw` off): Vulkan
+  reads no vertex captured in a render pass before the pass ends, and a capture's begin and end are inside one, so the
+  capture runs after its pass (`gpu_xfb`'s jobs, run at the worker's pass end, `runXfb`): no break, no pre-pass. A
+  begin copies each bound buffer's range into a buffer of the worker's (a dispatch then never binds a guest memory
+  writable beside its other uses) and its counters into the capture's state (bytes written a buffer); a draw runs the
+  vertex stage as compute (`xfbPipeline`: the module's WGSL with a vertex fetch made from its render pipeline's vertex
+  buffers, each WebGPU vertex format decoded from storage words, `vertexDecode`, and a loop over the draw's primitives'
+  vertices in Vulkan's order, as many whole primitives as every buffer has room for) on the bind groups, vertex
+  buffers and immediates the worker last set in the pass (the vertex stage's resources are visible to compute too:
+  `program_create`), its own group after the program's (so a program of four groups isn't captured, warned); then one
+  invocation advances the state; an end copies the ranges back and the state into its counters. A draw that
+  rasterizes nothing (rasterizer discard, both faces culled) records its state for the capture alone (`xfb_record`).
+  Host-visible buffers and counters are read back after the submit.
+- **Attachment-less passes** (VK3 L7.4: transform feedback's passes have none): WebGPU's passes need an attachment, so
+  such a pass gets one of the device's (an R8 texture of the render area's size, kept by size, `dummy_attachment`),
+  which no pipeline writes.
 - **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
   devices at once, a 17th fails to be made). The worker calls `venus_complete(serial)` in submit order once the work is done and its staging
   buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
@@ -371,7 +418,7 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   them before it reuses its command streams, so holding them held the guest before it could send the host's signal
   (`synchronization*.timeline_semaphore.wait.host_wait_before_signal` hung the guest so); such a submit signals early,
   as every submit did before.
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, border colours and mirror-once, triangle fans, component
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, border colours and mirror-once, component
   swizzles, sampling 3D images through 2D views, integer textures sampled with a sampler, copies
   between formats, multi-view.
 

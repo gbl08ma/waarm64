@@ -517,7 +517,8 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   and features read at the renderer's start (vk/README.md "The driver"; VK2 L7), less what the translator can't do yet,
   formats as WebGPU has them, plus what Venus's WSI shares through (dma-buf memory with the LINEAR modifier, foreign
   queue transfers, sync-file semaphores); YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2, by default since
-  L7.3; `?gpu=vkycbcr=off` holds them); GTK4 stays on GL (it takes Vulkan only with a modifier other than LINEAR). vkcube on
+  L7.3; `?gpu=vkycbcr=off` holds them); ANGLE's ES3 row (VK3 L7.4: the last vertex provoking, transform feedback, 13
+  uniform buffers a stage); GTK4 stays on GL (it takes Vulkan only with a modifier other than LINEAR). vkcube on
   sway (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) runs ~50 frames/s on 2 vCPUs on SwiftShader's WebGPU
   (`tests/page-venus.test.ts`); in VK1, with the null driver, on the desktop guest's sway (GLES, virgl) vkcube and
   GTK4's Vulkan renderer presented through dma-bufs at the display's 60 (bench/vulkan/apps-load.ts,

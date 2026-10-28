@@ -13,7 +13,8 @@ import { createServer } from 'node:http';
 import { chromium } from 'playwright-core';
 
 const root = new URL('../..', import.meta.url).pathname;
-const SAMPLES = readFileSync(`${root}bench/vulkan/dawn/samples.html`, 'utf8');
+// PAGE=<file>: another page in place of the samples (VK3 L7.4: bench/vulkan/angle/es3.html, ANGLE's ES3 row).
+const SAMPLES = readFileSync(process.env.PAGE ?? `${root}bench/vulkan/dawn/samples.html`, 'utf8');
 const SCENES = ['triangle', 'msaa', 'cube', 'compute', 'samplerate'];
 const S = 256;
 type Frames = { adapter: string | null; errors: string[]; scenes: Record<string, number[]>; chromium?: string; presented?: number[] };

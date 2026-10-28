@@ -639,6 +639,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `--headless=new` starts (its frames would come out through the page's log). `bench/vulkan/dawn-frames.ts guest` runs
   the samples (ARMS: the flags; CR_ENV: the environment; LOGBEFORE: the log up to a line) and compares them with the
   dev VM's; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"` for the host's side.
+- **ANGLE's row's gaps** (VK3 L7.4; vk/README.md "The shader path", "Commands"), each for when a program or dEQP-VK
+  needs it:
+  - **Transform feedback**: queries (`transformFeedbackQueries`: `VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT`, ES3's
+    `TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN` through ANGLE; the advance dispatch knows the primitives written and
+    needed, a query's two values would be its sums), `vkCmdDrawIndirectByteCountEXT` (`transformFeedbackDraw`),
+    indirect draws captured, primitive restart in a captured draw (captured without restarts, warned), streams past 0,
+    `transformFeedbackPreservesProvokingVertex` (the records in Vulkan's order whatever the provoking vertex:
+    `rasterization.provoking_vertex.transform_feedback.*` not supported), 16-bit outputs, records past 512 bytes, a
+    program of four bind groups (the capture's own takes one: push constants past the immediates in group 3 with sets
+    0 to 2 used; warned), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
+    distance reads 0). Each captured draw is a compute pass of its own and a copy of each bound range in and out per
+    capture: fine for dEQP's sizes, not measured on a real program.
+  - **The provoking vertex**: indirect draws whose last vertex provokes (drawn as they are, warned; a pass would write
+    their indices and arguments), adjacency topologies (not supported), and a compute pass and a scratch range per such
+    draw (ANGLE draws with flat varyings only where a shader has them: not measured).
+  - **ANGLE with Chromium's own Vulkan device too** (`--use-angle=vulkan --enable-features=Vulkan` in the desktop
+    guest; bench/vulkan/angle/es3.html through `PAGE=… bench/vulkan/dawn-frames.ts guest`, results/vk3/l74/): its 24
+    uniform blocks' sum draws 205, not 156 as with `--use-angle=vulkan` alone and on GL (the flat varying and the
+    capture right in all three). Not looked into: where ANGLE's device and its uniform buffers differ there.
+  - **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers); a layout's
+    texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
+    the 2 the storage count gives up.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of
@@ -667,8 +689,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
     `textureQueryLod` (9), image atomics, interpolation at an offset or a sample (`interpolateAt*`: `multisample_interpolation`'s offset and `sample_interpolate_at_*` groups); integer cube textures sampled with a sampler (`glsl.opaque_type_indexing.sampler.*.compute.isamplercube` read zeros: `lower_int_sample` skips cubes); derivatives in non-uniform control flow
-    (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
-    immediates (the push buffer is a 13th). From the out-of-context review of the translator (VK3 L4f left them):
+    (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
     shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,
     `textureSampleCompareLevel` only level 0: a mipmapped shadow map sampled at a LOD is sampled at level 0, silently;
     an emulation would `textureLoad` the level's texels and compare and filter them in the shader, which needs the
@@ -690,9 +711,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     program's "GPU time" under Venus, VK0's scene's included, is the replay's span, not the GPU's (VK3 L2b; the worker's
     `?gpu=vkgputime` measures the GPU's).
   - **Rendering**: stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
-    and back primitives is lost where they overlap (not seen in dEQP-VK); indexed triangle fans (non-indexed ones draw through the device's fan
-    indices), depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and
-    multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), 34 of
+    and back primitives is lost where they overlap (not seen in dEQP-VK); depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and
+    multi-view, depth and stencil blits, 34 of
     `renderpasses.*.load_store_op_none`'s 149 supported cases (VK3 L6a, after DONT_CARE stores over a partial render
     area were made stores: WebGPU's discard is the whole attachment's): the 20 `stencil_s8_uint_*` and the colour-only
     ones whose fragment shader writes `gl_FragDepth` without a depth aspect (Vulkan drops the write, WebGPU refuses the
