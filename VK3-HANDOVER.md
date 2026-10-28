@@ -52,10 +52,14 @@ docs and the backlog; git keeps the old handovers.
   sampler arrays, compute variants made from a freed module id, semaphore waits never honoured, depth/stencil
   resolves dropped, query availability, `vkCmdDispatchBase`, inverted depth ranges, `CONSTANT_ALPHA`, shadow
   sampling's LOD, helper invocations and `terminateInvocation`, `workgroupUniformLoad`'s workgroup memory,
-  multisample counts, fans; and the user's call on what's advertised but not done (dual-source blending: implement
-  `@blend_src` or stop advertising; 1.3's required features). Each fixed with its test failing first, or filed in the
-  backlog with why. At its end the two files go (their findings in docs/backlog.md), and an out-of-context review of
-  what L4f changed.
+  multisample counts, fans. **The user's calls (2026-10-28):** dual-source blending: implement `@blend_src` (WGSL's
+  `dual_source_blending`) and keep advertising it where the adapter has the feature; if it can't pass
+  `pipeline.*.blend.dual_source.*`, stop advertising it in that commit. API 1.3: **keep it**; its missing required
+  features (multiview, inline uniform blocks, BDA, R32 storage atomics, texel buffers) are gaps the rest of VK3 and VK4
+  fill as they go, not defects to hide: take the cheap ones in L4f if they fit, else file them (backlog "The Vulkan
+  driver's gaps"). Each finding fixed with its test failing first, or filed in the backlog (or this handover's plan, if
+  a later loop of VK3 takes it) with why. At its end the two review files are deleted (their open findings in
+  docs/backlog.md or here), and an out-of-context review of what L4f changed.
 - [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`: see
   backlog for what L4c-F refused).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries, texel buffers, depth/stencil copies,
@@ -64,6 +68,8 @@ docs and the backlog; git keeps the old handovers.
   vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
+- [ ] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed; the findings worth taking in VK3
+  become subloops L7a, L7b, …; then L8.
 - [ ] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, ci-debian.sh and
   ci-machines.sh, an out-of-context review of what VK3 changed).
 
