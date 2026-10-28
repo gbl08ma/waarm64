@@ -92,10 +92,14 @@ docs and the backlog; git keeps the old handovers.
   bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`).
 - [x] L6c: vkQuake's frame 5 (L5b's compute SSBOs `read_write`: a dispatch's read-only SSBO now writable only beside a
   write of its memory; page-venus in ci-deqp-vk.sh); the review of L5–L6a's 8 findings fixed, each with its test.
-- [ ] L7: §4's emulated rows in order (Dawn's: indexed descriptor arrays, sample-rate shading; ANGLE's ES3: provoking
-  vertex, >12 UBOs, transform feedback; vkd3d's draw parameters; GTK4's YCbCr with modifiers last). Likely several loops.
-  With `sampleRateShading`, dEQP-VK's `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to
-  the list (L4f's resolves are checked by `tests/venus-driver.test.ts` only).
+- [ ] L7: §4's emulated rows in order, a loop a row (dotted: the review fix loops after L7 are L7a, L7b, …):
+  - [ ] L7.1: Dawn's row: dynamically indexed descriptor arrays, sample-rate shading; the program Dawn in a guest
+    Chromium (its WebGPU samples' frames against lavapipe). With `sampleRateShading`, dEQP-VK's
+    `depth_stencil_resolve` groups become runnable: add their SAMPLE_ZERO cases to the list (L4f's resolves are
+    checked by `tests/venus-driver.test.ts` only).
+  - [ ] L7.2: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
+  - [ ] L7.3: vkd3d's draw parameters.
+  - [ ] L7.4: GTK4's YCbCr with modifiers, only once GTK4's black frames are understood.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
 - [ ] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed; the findings worth taking in VK3
