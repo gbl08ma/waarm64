@@ -104,6 +104,11 @@ docs and the backlog; git keeps the old handovers.
     SAMPLE_ZERO `depth_stencil_resolve` ones. **Remainder:** the program (Dawn in the guest's Chromium) needs
     YCbCr (L7.4's), Chromium's Vulkan context alive on Venus (the semaphore vkr never made) and a window (Xwayland in
     the image, or headless): backlog "Dawn in the guest's Chromium on Venus".
+  - [ ] L7.1b (the supervisor, 2026-10-28): the remainder's semaphore. A submit naming a semaphore vkr never made is a
+    driver or vkr defect whatever brings it: reproduce it (Chromium's Vulkan device in the guest, YCbCr advertised
+    **only behind an opt-in switch**, never by default: YCbCr by default stays L7.4's, since GTK4 would take Vulkan and
+    draw black), find which object type or external-semaphore path the driver doesn't make, fix it with a test failing
+    first. Time-boxed ~3 h; if Dawn then runs on Venus (`--headless=new`), its samples against the dev VM's frames.
   - [ ] L7.2: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
   - [ ] L7.3: vkd3d's draw parameters.
   - [ ] L7.4: GTK4's YCbCr with modifiers, only once GTK4's black frames are understood.
