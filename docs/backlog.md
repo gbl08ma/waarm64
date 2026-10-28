@@ -647,10 +647,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     indirect draws captured, primitive restart in a captured draw (captured without restarts, warned), streams past 0,
     `transformFeedbackPreservesProvokingVertex` (the records in Vulkan's order whatever the provoking vertex:
     `rasterization.provoking_vertex.transform_feedback.*` not supported), 16-bit outputs, records past 512 bytes, a
-    program of four bind groups (the capture's own takes one: push constants past the immediates in group 3 with sets
-    0 to 2 used; warned), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
-    distance reads 0). Each captured draw is a compute pass of its own and a copy of each bound range in and out per
-    capture: fine for dEQP's sizes, not measured on a real program.
+    program of four bind groups (the capture's own takes one: push constants past the immediates or draw parameters in
+    group 3 with sets 0 to 2 used; the capture refused at the pipeline's creation since VK3 L7a), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
+    distance reads 0). Each captured draw is a compute pass of its own with a copy of its index and vertex ranges (VK3 L7a: one storage
+    binding for them all), and a copy of each bound range in and out per capture: fine for dEQP's sizes, not measured
+    on a real program.
   - **The provoking vertex**: indirect draws whose last vertex provokes (drawn as they are, warned; a pass would write
     their indices and arguments), adjacency topologies (not supported), and a compute pass and a scratch range per such
     draw (ANGLE draws with flat varyings only where a shader has them: not measured).
@@ -660,7 +661,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     capture right in all three). Not looked into: where ANGLE's device and its uniform buffers differ there.
   - **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers); a layout's
     texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
-    the 2 the storage count gives up.
+    the 2 the storage count gives up (refused at the pipeline's creation since VK3 L7a, saying why).
 - **vkd3d on Venus** (VK3 L7.5; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK3 L7.5"). With draw parameters, Arch's
   vkd3d 1.19 makes a Direct3D 12 device at feature level 11_0 in the desktop guest (without them it stops at
   `VK_KHR_shader_draw_parameters`); 11_1 and up are refused. What vkd3d says 11_0 lacks (it makes the device anyway):
@@ -748,9 +749,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`); a storage buffer the fragment
     stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); indirect fans
     drawn as lists, without the fan-index conversion, and non-indexed fans past 65,536 vertices dropped without a
-    warning (the driver review's "smaller gaps"); uniform bindings widened to the shader's block size (std140 rounds
-    up) within the memory but not past a dynamic offset: such a binding near a memory's end makes `setBindGroup`
-    invalid (the review's same list and the translator review's note on UBOs at a memory's end); views of a mutable
+    warning (the driver review's "smaller gaps"); views of a mutable
     image in a format other than its sRGB twin (WebGPU's `viewFormats`; the image-format query refuses a format list
     that names one, but an image made without a list gets an invalid view, warned: `image.mutable.*` isn't in the
     direct set; ffmpeg's and libplacebo's filters and DXVK alias formats this way; a fix would copy into a texture of
@@ -813,10 +812,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     its 179 cases added to the pass list, on the renderer of before as on the new one): something the renderer keeps
     across cases (its arena's use or fragmentation?); they're out of `tests/deqp/vk.txt` until it's found.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
-    decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader), which Vulkan counts with
-    sampled or storage images, so a stage with many storage buffers and texel buffers fails its layout (2
-    `binding_model.descriptor_copy` cases: "The number of storage buffers (13) in the Compute stage exceeds the
-    maximum"); a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
+    decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader) and a uniform buffer,
+    which Vulkan counts with sampled or storage images, so a stage with many storage buffers and texel buffers is
+    refused at its pipeline's creation (VK3 L7a, vk/README.md "Bindings past WebGPU's"; 2
+    `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage); their parameters as one uniform
+    buffer a group (written with the set) would give the uniform buffers back, their words would still be storage; a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
     then, or else a usage-scope conflict) is refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
     cases: "Writable storage buffer binding aliasing", the dispatch dropped; "Usage scopes" below has the same root);
     `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` aren't advertised though texel buffers don't need a
@@ -837,6 +837,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     looked into: linear 3D blits of `r32_sfloat`/`r32g32_sfloat` (unfilterable without `float32-filterable`), a
     4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255),
     `push_constant.graphics_pipeline.overwrite`.
+  - **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
+    what Vulkan counts with it is refused when a pipeline is made, saying why: a fragment stage's input attachments
+    beside 16 sampled images (Vulkan counts them apart, WebGPU as textures; the device keeps Vulkan's 16 and 4: ANGLE's
+    ES3 wants 16 texture units), texel buffers beside a full count of storage buffers (above), more folded uniform
+    buffers than the advertised two (folding goes by the layout: a stage that sees another's folded buffers),
+    binding numbers past WebGPU's 1,000 or on the push buffer's 998 (sets 3 and up share group 3: out of reach within
+    the advertised limits, a guard). `maxDescriptorSetUniformBuffersDynamic` is 7 where WebGPU has 8 (under Vulkan's
+    minimum of 8, like the descriptor-set limits that are a stage's: the push buffer is a dynamic uniform buffer of its
+    own); a push buffer made a dynamic storage buffer where the layout has 8 would give it back. A captured vertex
+    stage with four groups (the push buffer's, as with draw parameters, or sets 3 and up) loses its capture (refused
+    at creation): the capture's three bindings in one of the program's groups would do it. Not covered by a test of
+    its own: a draw of more than 64 resources (variants' masks were 64 bits: the masks are 128 now, a render harness
+    with that many bindings would check it) and the split sampler in a render pipeline (`wg_variant_modules`; the
+    compute path is `tests/venus-driver.test.ts` "sharedSampler").
   - **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
     ~1M draws with push constants past the immediates still wraps, with a warning).
 

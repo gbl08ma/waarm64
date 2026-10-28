@@ -205,7 +205,7 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 
 - **What it advertises follows the browser's WebGPU device** (`wg_caps.c`, VK2 L7): the GPU worker asks the adapter
   for every limit and optional feature the driver uses (web/venus-gpu.ts `deviceRequest`), and `venus_init` gets the
-  device's (`gpuFeatures`: a bit a feature; `gpuLimits`: 31 limits as `struct wg_limits`, WebGPU's defaults where the
+  device's (`gpuFeatures`: a bit a feature; `gpuLimits`: 34 limits as `struct wg_limits`, WebGPU's defaults where the
   browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows of plan §4:
   image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
 dynamic indexing of every descriptor array and sample-rate shading (VK3 L7.1, Dawn's row of plan §4: Dawn's Vulkan
@@ -389,16 +389,45 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
 - **Transform feedback** (VK3 L7.4; one stream, `transformFeedbackQueries` and `transformFeedbackDraw` off): Vulkan
   reads no vertex captured in a render pass before the pass ends, and a capture's begin and end are inside one, so the
   capture runs after its pass (`gpu_xfb`'s jobs, run at the worker's pass end, `runXfb`): no break, no pre-pass. A
-  begin copies each bound buffer's range into a buffer of the worker's (a dispatch then never binds a guest memory
-  writable beside its other uses) and its counters into the capture's state (bytes written a buffer); a draw runs the
+  begin copies its counters (bytes written a buffer) and each bound buffer's range into one buffer of the worker's (a
+  dispatch then never binds a guest memory writable beside its other uses); a draw copies its index range and each
+  vertex binding's reachable range (past its last vertex or instance where it isn't indexed) into another, so the
+  capture's group is three bindings whatever its buffers (VK3 L7a, the binding review's finding 1: one a buffer and a
+  vertex binding went past WebGPU's storage buffers a stage, and lost the submit); a draw runs the
   vertex stage as compute (`xfbPipeline`: the module's WGSL with a vertex fetch made from its render pipeline's vertex
   buffers, each WebGPU vertex format decoded from storage words, `vertexDecode`, and a loop over the draw's primitives'
   vertices in Vulkan's order, as many whole primitives as every buffer has room for) on the bind groups, vertex
   buffers and immediates the worker last set in the pass (the vertex stage's resources are visible to compute too:
-  `program_create`), its own group after the program's (so a program of four groups isn't captured, warned); then one
+  `program_create`), its own group after the program's (so a program of four groups isn't captured: refused at the
+  pipeline's creation, as one whose stage's bindings and the capture's don't fit, "Bindings past WebGPU's"); then one
   invocation advances the state; an end copies the ranges back and the state into its counters. A draw that
   rasterizes nothing (rasterizer discard, both faces culled) records its state for the capture alone (`xfb_record`).
   Host-visible buffers and counters are read back after the submit.
+- **Bindings past WebGPU's** (VK3 L7a, the reviews after L7; `wg_caps.c` "The bindings WebGPU takes", the one place
+  that counts them): besides a descriptor's own binding, WebGPU binds the push buffer (a uniform buffer every stage
+  counts, dynamic in its layout), a texel buffer's two (a storage buffer and a uniform buffer, where Vulkan counts an
+  image), uniform buffers past a stage's room as storage, a YCbCr binding's other planes and an input attachment as
+  textures, a capture's compute pass's three, and a split sampler's twin (below). The device advertises what fits
+  whatever the program: each stage's uniform buffers less the push buffer's, its dynamic uniform buffers less one
+  (`maxDescriptorSetUniformBuffersDynamic` 7 of WebGPU's 8: with draw parameters the push buffer was a ninth),
+  storage buffers less the folded ones, every stage's least (the vertex and fragment stages' own limits too), the
+  uniform offset alignment the larger of the uniform and storage ones (a folded buffer is bound at it). What can't be
+  advertised apart from what Vulkan counts with it (texel buffers beside a full count of storage buffers, input
+  attachments beside 16 sampled images, more folded uniform buffers than the advertised two, binding numbers past
+  WebGPU's or on the push buffer's) is counted when a pipeline is made (`wg_bindings_fit`, after `program_create`):
+  a program that doesn't fit is refused, its stages drawing and dispatching nothing, the cause said ("wg: a shader
+  didn't translate: the compute stage binds 11 storage buffers, past WebGPU's 10 (of them: 3 texel buffers'
+  words)"), never an invalid submit (a `try/catch` can't catch WebGPU's validation, which is asynchronous). A
+  captured vertex stage whose capture doesn't fit keeps its draw and loses its capture, said too. Variants
+  (`wg_program_variant`) see all of a program's resources (a mask of 128); a sampler that samples an unfilterable
+  texture and a filterable one is split (VK3 L7a, the binding review's finding 2: its nearest twin made every
+  texture it sampled nearest): its twin at the even binding of its slot (a separate sampler's is free) for the
+  unfilterable ones, in modules of the variant's own (render stages' too, `wg_variant_modules`); and a group's
+  layout uid tells the storage its shaders write (a widened variant's group isn't a writer's, whose readback its
+  replay registers). A uniform block is declared at most `maxUniformBufferBindingSize` and bound widened to it, and
+  a memory's GPUBuffer has that many bytes past its end for it (`WG_MEMORY_PAD`, `maxMemoryAllocationSize` that
+  much less): a block declared past its buffer's memory or its range is valid. A binding with immutable samplers
+  keeps them whatever a write passes.
 - **Attachment-less passes** (VK3 L7.4: transform feedback's passes have none): WebGPU's passes need an attachment, so
   such a pass gets one of the device's (an R8 texture of the render area's size, kept by size, `dummy_attachment`),
   which no pipeline writes.
