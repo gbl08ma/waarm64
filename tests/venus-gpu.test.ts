@@ -240,3 +240,63 @@ test('a storage texture a pass may write counts as written (VK3 L4c-F: presentat
   assert.equal(gpu.texture(1)?.written, 1, 'the texture bound for writing');
   assert.equal(gpu.texture(2)?.written, 0, 'the texture bound read-only');
 });
+
+// VK3 L8a (the track-end review's finding 2): a draw's index range is what it reads, not the rest of a big buffer.
+function bindingDevice() {
+  class Buf extends (globalThis as unknown as { GPUBuffer: typeof FakeBuffer }).GPUBuffer { size: number; constructor(size: number) { super(); this.size = size; } }
+  const groups: GPUBindGroupEntry[][] = [], copies: number[][] = [], warnings: string[] = [];
+  const pass = { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {}, setImmediates() {} };
+  const device = {
+    limits: { maxStorageBufferBindingSize: 128 << 20, minStorageBufferOffsetAlignment: 256 },
+    addEventListener() {},
+    pushErrorScope() {},
+    popErrorScope: () => Promise.resolve(null),
+    createBuffer: (d: { size: number }) => new Buf(d.size),
+    createShaderModule: () => ({ getCompilationInfo: () => Promise.resolve({ messages: [] }) }),
+    createBindGroupLayout: () => ({}),
+    createPipelineLayout: () => ({}),
+    createComputePipeline: () => ({ getBindGroupLayout: () => ({}) }),
+    createBindGroup: (d: { entries: GPUBindGroupEntry[] }) => { groups.push(d.entries); return {}; },
+    createCommandEncoder: () => ({
+      beginComputePass: () => pass,
+      copyBufferToBuffer: (_a: unknown, from: number, _b: unknown, at: number, size: number) => copies.push([from, at, size]),
+      clearBuffer() {},
+      finish: () => ({}),
+    }),
+    queue: { submit() {}, writeBuffer() {}, onSubmittedWorkDone: () => Promise.resolve() },
+  } as unknown as GPUDevice;
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const gpu = new VenusGpu(device, memory, () => {}, () => []);
+  (gpu as unknown as { warn(s: string): void }).warn = (s: string) => warnings.push(s);
+  const wg = gpu.imports() as Record<string, (...a: number[]) => number | void>;
+  const u8 = new Uint8Array(memory.buffer);
+  const put = (s: string) => { const b = new TextEncoder().encode(s); u8.set(b, 0); return [0, b.length] as const; };
+  return { gpu, wg, put, groups, copies, warnings, Buf };
+}
+
+test('the provoking-vertex pass binds the indices its draw reads, not the bound range to a big buffer\'s end', () => {
+  const { wg, put, groups } = bindingDevice();
+  // A 1 GiB index buffer bound whole; a triangle list of 6 16-bit indices from index 1000.
+  wg.gpu_create(0, 1, ...put(`{"size":${1 << 30},"usage":${16 | 128}}`));
+  wg.gpu_encoder();
+  wg.gpu_provoke(0, 1, 0, 1 << 30, 0, 0, 0, 1000, 6, 2);
+  const src = groups[0][0].resource as GPUBufferBinding;
+  // From the 256-aligned start of index 1000 (byte 2000: 1792) to its last index's end (2012), in words.
+  assert.equal(src.offset, 1792);
+  assert.equal(src.size, 2012 - 1792);
+});
+
+test('a captured indexed draw copies the indices it reads, so a big index buffer doesn\'t skip the capture', () => {
+  const { gpu, warnings, copies, Buf } = bindingDevice();
+  const ib = new Buf(1 << 30);
+  const x = { stride: [16, 0, 0, 0], base: [], words: [], bgls: [], immediateSize: 0, code: 'fn wg_vs', buffers: [],
+    pipelines: { main: {}, advance: {}, layout: {}, slots: [], captured: [0] } };
+  const session = { bufs: [{ guest: new Buf(4096), at: 0, size: 4096, word: 4 }], out: new Buf(8192) };
+  const g = gpu as unknown as { enc: unknown; device: GPUDevice; xfbDraw(s: object, j: object): void };
+  g.enc = g.device.createCommandEncoder();
+  // 3 16-bit indices from index 10 of a buffer bound whole.
+  g.xfbDraw(session, { xfb: x, topology: 3, count: 3, instances: 1, wide: 0, ib, offset: 0, size: 1 << 30, first: 10, base: 0, firstInstance: 0, vb: [], groups: [] });
+  assert.deepEqual(warnings, []);
+  // The indices' copy into the draw's inputs: bytes [20, 26) as two words.
+  assert.deepEqual(copies[0], [20, 0, 8]);
+});

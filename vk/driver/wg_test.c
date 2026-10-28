@@ -57,6 +57,7 @@ int wgt_misc_done(void);
 int wgt_misc_signal(void);
 int wgt_misc_pool_refs(void);
 int wgt_fits(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
+int wgt_samples(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 /* wg_cmd.c: the pending submits' references to a query pool (destroyed or not). */
 int wg_submits_pool_refs(const void *pool);
 
@@ -2154,6 +2155,8 @@ misc_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayo
  *     128 KiB bound 64 KiB of a 192 KiB buffer (42 at word 1): 41, 42 at [0, 8) (finding 5).
  * 29: sampled.comp mode 1: the texture and a D32 view (cleared 0.25) sampled through one separate LINEAR sampler: 50 and
  *     25 at [0, 8) (finding 2: the depth view's nearest twin of the sampler filtered the texture too).
+ * 32: as 27, binding 0 then copied (vkUpdateDescriptorSets' copies) from a set whose combined image sampler isn't
+ *     immutable, NEAREST: still 50 (VK3 L8a, the track-end review's finding 4: copies overwrote immutable samplers).
  */
 static int
 l7a_image(VkFormat format, VkImageAspectFlags aspect, VkImage *image, VkImageView *view)
@@ -2232,7 +2235,7 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
       b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
    } else {
-      mode = scenario == 27 ? 0 : scenario == 29 ? 1 : 2;
+      mode = scenario == 27 || scenario == 32 ? 0 : scenario == 29 ? 1 : 2;
       b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
                                                 VK_SHADER_STAGE_COMPUTE_BIT, &linear };
       b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT };
@@ -2394,6 +2397,33 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[2] },
       };
       UpdateDescriptorSets(dev, 7, wr, 0, NULL);
+      if (scenario == 32) {
+         /* A set of a layout without immutable samplers, its combined image sampler NEAREST, copied over binding 0. */
+         const VkDescriptorSetLayoutBinding mb0 = { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                                    VK_SHADER_STAGE_COMPUTE_BIT };
+         const VkDescriptorSetLayoutCreateInfo mli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                       .bindingCount = 1, .pBindings = &mb0 };
+         VkDescriptorSetLayout mutable_layout;
+         CHECK(CreateDescriptorSetLayout(dev, &mli, NULL, &mutable_layout));
+         const VkDescriptorPoolSize mps = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+         const VkDescriptorPoolCreateInfo mpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                                                  .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &mps };
+         VkDescriptorPool mpool;
+         CHECK(CreateDescriptorPool(dev, &mpi, NULL, &mpool));
+         const VkDescriptorSetAllocateInfo mai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                   .descriptorPool = mpool, .descriptorSetCount = 1,
+                                                   .pSetLayouts = &mutable_layout };
+         VkDescriptorSet from;
+         CHECK(AllocateDescriptorSets(dev, &mai, &from));
+         const VkWriteDescriptorSet mw = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = from,
+                                           .dstBinding = 0, .descriptorCount = 1,
+                                           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                           .pImageInfo = &ii[0] };
+         const VkCopyDescriptorSet copy = { .sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET, .srcSet = from,
+                                            .dstSet = set, .descriptorCount = 1 };
+         UpdateDescriptorSets(dev, 1, &mw, 0, NULL);
+         UpdateDescriptorSets(dev, 0, NULL, 1, &copy);
+      }
    }
    CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
                       NULL);
@@ -2406,6 +2436,81 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
       CmdDispatch(cmd, 1, 1, 1);
    }
+   return 0;
+}
+
+/*
+ * VK3 L8a (the track-end review's finding 1: WebGPU copies neither a buffer into itself nor a subresource into itself),
+ * wgt_misc's scenarios 30 and 31, into `out` (filled 0xee):
+ * 30: buffer copies within one VkDeviceMemory: A [0, 1024) and B [1024, 2048) of one device-local memory, A's [0, 16)
+ *     updated to 1, 2, 3, 4 and copied into B, B's copied to `out` [0, 16); A's [256, 272) updated to 5 to 8, copied to
+ *     A's [512, 528) (one buffer's disjoint ranges), that to `out` [256, 272); `out`'s own [1024, 1040) updated to 9
+ *     to 12 and copied to its [2048, 2064).
+ * 31: a 4×4 RGBA8 image (texel i 0xff000000 | i), in GENERAL: its (0, 0) 2×2 copied to (2, 2) and blitted (NEAREST, the
+ *     same size) to (2, 0) of the same subresource; the image at [0, 64).
+ */
+static int
+l8a_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdCopyBuffer CmdCopyBuffer = (PFN_vkCmdCopyBuffer)GetDeviceProcAddr(dev, "vkCmdCopyBuffer");
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   PFN_vkCmdBlitImage CmdBlitImage = (PFN_vkCmdBlitImage)GetDeviceProcAddr(dev, "vkCmdBlitImage");
+   const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+   const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT };
+#define L8A_BARRIER()                                                                                                 \
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, NULL, 0, NULL)
+   if (scenario == 30) {
+      VkBuffer a, b;
+      const VkBufferCreateInfo bi = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = 1024, .usage = both };
+      CHECK(CreateBuffer(dev, &bi, NULL, &a));
+      CHECK(CreateBuffer(dev, &bi, NULL, &b));
+      VkMemoryRequirements req;
+      GetBufferMemoryRequirements(dev, a, &req);
+      req.size = 4096;
+      VkDeviceMemory mem;
+      if (memory_for(req, false, &mem, NULL))
+         return 1;
+      CHECK(BindBufferMemory(dev, a, mem, 0));
+      CHECK(BindBufferMemory(dev, b, mem, 1024));
+      const uint32_t x[4] = { 1, 2, 3, 4 }, y[4] = { 5, 6, 7, 8 }, z[4] = { 9, 10, 11, 12 };
+      CmdUpdateBuffer(cmd, a, 0, 16, x);
+      CmdUpdateBuffer(cmd, a, 256, 16, y);
+      CmdUpdateBuffer(cmd, out, 1024, 16, z);
+      L8A_BARRIER();
+      CmdCopyBuffer(cmd, a, b, 1, &(VkBufferCopy){ 0, 0, 16 });
+      CmdCopyBuffer(cmd, a, a, 1, &(VkBufferCopy){ 256, 512, 16 });
+      CmdCopyBuffer(cmd, out, out, 1, &(VkBufferCopy){ 1024, 2048, 16 });
+      L8A_BARRIER();
+      CmdCopyBuffer(cmd, b, out, 1, &(VkBufferCopy){ 0, 0, 16 });
+      CmdCopyBuffer(cmd, a, out, 1, &(VkBufferCopy){ 512, 256, 16 });
+      return 0;
+   }
+   VkImage img;
+   VkBuffer src;
+   uint32_t *s;
+   if (misc_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, 1,
+                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &img) ||
+       buffer(64, both, true, &src, (void **)&s))
+      return 1;
+   for (uint32_t i = 0; i < 16; i++)
+      s[i] = 0xff000000u | i;
+   const VkImageSubresourceLayers layer = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+   misc_barrier(cmd, img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+   CmdCopyBufferToImage(cmd, src, img, VK_IMAGE_LAYOUT_GENERAL, 1,
+                        &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   misc_barrier(cmd, img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+   const VkImageCopy copy = { .srcSubresource = layer, .dstSubresource = layer, .dstOffset = { 2, 2, 0 },
+                              .extent = { 2, 2, 1 } };
+   CmdCopyImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, img, VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
+   const VkImageBlit blit = { .srcSubresource = layer, .srcOffsets = { { 0, 0, 0 }, { 2, 2, 1 } },
+                              .dstSubresource = layer, .dstOffsets = { { 2, 0, 0 }, { 4, 2, 1 } } };
+   CmdBlitImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, img, VK_IMAGE_LAYOUT_GENERAL, 1, &blit, VK_FILTER_NEAREST);
+   misc_barrier(cmd, img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+   CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                        &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+#undef L8A_BARRIER
    return 0;
 }
 
@@ -2480,6 +2585,133 @@ wgt_fits(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
    };
    VkPipeline p;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   return 0;
+}
+
+/*
+ * VK3 L8a (the track-end review's finding 3): passes without attachments at the pipeline's rasterizationSamples (4) by
+ * dynamic rendering, `vs` and `fs` l8a/samples.*: a triangle over a 4×4 render area whose fragment shader, run per
+ * sample, sets its sample's bit and counts itself, into a host-visible buffer (`wgt_misc_map`, 4 KiB, zeroed; when
+ * `wgt_misc_done`): 0 drawn in the pass, at [0, 8); 1 drawn by a secondary command buffer whose inheritance says 4
+ * samples and no attachments, at [256, 264). Each: 0xf and 64.
+ */
+EXPORT int
+wgt_samples(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words)
+{
+   if (!dev && init())
+      return 1;
+   PFN_vkCmdBeginRendering BeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering EndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   PFN_vkCmdExecuteCommands ExecuteCommands = (PFN_vkCmdExecuteCommands)GetDeviceProcAddr(dev, "vkCmdExecuteCommands");
+   VkShaderModule vm, fm;
+   if (shader(vs, vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   VkBuffer out;
+   if (buffer(4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &out,
+              (void **)&misc.map))
+      return 1;
+   const VkDescriptorSetLayoutBinding b = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT };
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = 1, .pBindings = &b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 2,
+                                            .poolSizeCount = 1, .pPoolSizes = &ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetLayout two[2] = { dsl, dsl };
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 2, .pSetLayouts = two };
+   VkDescriptorSet sets[2];
+   CHECK(AllocateDescriptorSets(dev, &dai, sets));
+   const VkDescriptorBufferInfo bi[2] = { { out, 0, 256 }, { out, 256, 256 } };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[0] },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[1], .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[1] },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm,
+        .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = fm, .pName = "main" },
+   };
+   const VkPipelineVertexInputStateCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport viewport = { 0, 0, 4, 4, 0, 1 };
+   const VkRect2D scissor = { { 0, 0 }, { 4, 4 } };
+   const VkPipelineViewportStateCreateInfo vp = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+                                                  .viewportCount = 1, .pViewports = &viewport, .scissorCount = 1,
+                                                  .pScissors = &scissor };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_4_BIT };
+   const VkPipelineRenderingCreateInfo pri = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &pri, .stageCount = 2, .pStages = stages,
+      .pVertexInputState = &vi, .pInputAssemblyState = &ia, .pViewportState = &vp, .pRasterizationState = &rs,
+      .pMultisampleState = &ms, .layout = layout,
+   };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   if (!misc.fence) {
+      const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fi, NULL, &misc.fence));
+   } else {
+      CHECK(ResetFences(dev, 1, &misc.fence));
+   }
+   VkCommandPool pool;
+   const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+   CHECK(CreateCommandPool(dev, &cpo, NULL, &pool));
+   VkCommandBuffer cmd, second;
+   VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = pool,
+                                       .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1 };
+   CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+   cbi.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+   CHECK(AllocateCommandBuffers(dev, &cbi, &second));
+   /* The secondary: its pass's attachments none, its samples 4. */
+   const VkCommandBufferInheritanceRenderingInfo inr = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO, .rasterizationSamples = VK_SAMPLE_COUNT_4_BIT };
+   const VkCommandBufferInheritanceInfo inh = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, .pNext = &inr };
+   const VkCommandBufferBeginInfo sbegin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                             .flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+                                             .pInheritanceInfo = &inh };
+   CHECK(BeginCommandBuffer(second, &sbegin));
+   CmdBindPipeline(second, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdBindDescriptorSets(second, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[1], 0, NULL);
+   CmdDraw(second, 3, 1, 0, 0);
+   CHECK(EndCommandBuffer(second));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(cmd, &begin));
+   CmdFillBuffer(cmd, out, 0, VK_WHOLE_SIZE, 0);
+   const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                      NULL);
+   VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { 4, 4 } },
+                          .layerCount = 1 };
+   BeginRendering(cmd, &ri);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[0], 0, NULL);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   EndRendering(cmd);
+   ri.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
+   BeginRendering(cmd, &ri);
+   ExecuteCommands(cmd, 1, &second);
+   EndRendering(cmd);
+   CHECK(EndCommandBuffer(cmd));
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, misc.fence));
    return 0;
 }
 
@@ -3105,8 +3337,11 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          CmdDispatchIndirect(cmd, in, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
-   } else if (scenario >= 24 && scenario <= 29) {
+   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32) {
       if (l7a_misc(scenario, cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 30 || scenario == 31) {
+      if (l8a_misc(scenario, cmd, out))
          return 1;
    } else if (scenario == 23) {
       /* More uniform buffers than WebGPU binds a stage (VK3 L7.4): the device's maximum, 13 or more. */

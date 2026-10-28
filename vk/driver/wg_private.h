@@ -201,7 +201,7 @@ struct wg_device {
    uint8_t *push_data;
    uint32_t push_used, push_size, push_gen;
    uint32_t fan_indices;   /* wg_fan_indices */
-   /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size. */
+   /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size and samples. */
    struct wg_dummy *dummies[16];
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
 };
@@ -520,7 +520,7 @@ struct wg_op_ib {
 /* An attachment for passes without any (wg_cmd.c `dummy_attachment`): its ids released at its last reference's end,
  * the device's (while it keeps it) and each command buffer's that names it. */
 struct wg_dummy {
-   uint32_t width, height, texture, view, refs;
+   uint32_t width, height, samples, texture, view, refs;
 };
 void wg_dummy_unref(struct wg_dummy *d);
 
@@ -558,6 +558,9 @@ struct wg_cmd_buffer {
       bool suspending;
       uint32_t samples;
       uint32_t dummy; /* the device's attachment's index + 1, in a pass without any (0: none) */
+      /* Its view's id in the recorded pass (ten digits at that byte of `cmds`), until the pass's first draw gives its
+       * samples (dummy_samples; 0: not this command buffer's pass, or given). */
+      size_t dummy_at;
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */
    struct wg_pipeline_key last_key;

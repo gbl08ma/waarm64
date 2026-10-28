@@ -643,7 +643,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     group 3 with sets 0 to 2 used; the capture refused at the pipeline's creation since VK3 L7a), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
     distance reads 0). Each captured draw is a compute pass of its own with a copy of its index and vertex ranges (VK3 L7a: one storage
     binding for them all), and a copy of each bound range in and out per capture: fine for dEQP's sizes, not measured
-    on a real program.
+    on a real program. An indexed or indirect captured draw copies its vertex bindings whole from their offsets (an
+    indirect one its index range too: the CPU knows neither the indices nor the count), so one past
+    `maxStorageBufferBindingSize` (a big shared vertex buffer bound whole) is skipped with a warning (VK3 L8a, the
+    track-end review's finding 2, which fixed a direct draw's index range); bounding them would take the indices'
+    range from a compute pass first, or a capture that reads the vertex buffers through bindings of their own.
   - **The provoking vertex**: indirect draws whose last vertex provokes (drawn as they are, warned; a pass would write
     their indices and arguments), adjacency topologies (not supported), and a compute pass and a scratch range per such
     draw (ANGLE draws with flat varyings only where a shader has them: not measured).
@@ -693,6 +697,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     between formats (Vulkan's size-compatible copies:
     compressed ↔ uncompressed, a 32-bit format into another: a compute copy), integer resolves (a draw of sample 0).
     GFXReconstruct's trimmed captures restore their depth images this way (vkQuake's first replayed frame).
+    `depthStencilTT`'s native path for whole subresources is never taken: it tests the textures' usage against the
+    buffer usages' `COPY_SRC`/`COPY_DST` (4 and 8, a texture's `TEXTURE_BINDING` and `STORAGE_BINDING`), so whole depth
+    and stencil image copies go through the worker's passes too (right, slower; found in VK3 L8a). Taking it needs the
+    texture usages and an aspect of `all` (WebGPU's rule for depth-stencil copies).
   - **Formats**: ASTC and ETC2 on SwiftShader fail sampling and copy tests in numbers (`texture.compressed`,
     `texture.filtering.3d`, `.2d_array`: not looked into; the Mac's results are the ones to read first); 3D images
     sampled through 2D views (`2D_ARRAY_COMPATIBLE`); D24 depth tests fail by one unit (depth24plus's precision);

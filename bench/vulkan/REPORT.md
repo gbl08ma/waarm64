@@ -799,6 +799,7 @@ between them. Each loop's section below has its numbers; JSON in `results/vk3/<l
 | L7.4 | ANGLE's ES3 row (13 uniform buffers a stage, the last vertex provoking, transform feedback, attachment-less passes): WebGL 2 on Venus in the guest's Chromium | `l74/` |
 | L7.5 | vkd3d's row (draw parameters): vkd3d 1.19 makes a feature level 11_0 device | `l75/` |
 | L7a, L7b | the reviews after L7: one count of the bindings WebGPU takes, the advertised limits from it, a pipeline past them refused saying why; the rest (odd 16-bit index ranges, indirect draws captured, `interpolateAt*`, …) | `l7a/`, (L7b: tests) |
+| L8a | the track-end review: copies and blits within one buffer or subresource (WebGPU refuses them), the provoking vertex's and a capture's index ranges bounded to the draw's, attachment-less passes at the pipelines' samples (secondaries in them too), descriptor copies keeping immutable samplers; its 5th wrong (Vulkan forbids xfb across a suspend) | (tests) |
 
 dEQP-VK's pass list grew from VK2's 1,463 cases to **4,690** (`tests/deqp/vk.txt`), with **773** more for YCbCr
 (`tests/deqp/vk-ycbcr.txt`), all passing on SwiftShader in CI (below).
@@ -1563,6 +1564,51 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   filtering difference). Not cheap to fix blind: filed (docs/backlog.md "The Vulkan driver's gaps"); the cases stay in
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
+
+## VK3 L8a: the track-end review's findings
+
+2026-10-28. The dev VM's SwiftShader (Chromium 153.0.8010.52) for the driver's tests and dEQP-VK. The findings:
+`origin/review/venus-vk3` (`VENUS-VK3-REVIEW.md`, of 3f8aa595..dedd54e6). Each was checked against the code; four were
+real and fixed, each with a test that failed first; one (5) is wrong: Vulkan forbids it. Advertised: nothing changed
+(`framebufferNoAttachmentsSampleCounts` stays 1 and 4, Vulkan's required minimum, now honoured).
+
+- **1, high** (a 4-aligned `vkCmdCopyBuffer` within one VkDeviceMemory is a same-buffer `copyBufferToBuffer`): real
+  ("Source and destination are the same buffer", the submit lost). The worker copies within one GPUBuffer through a
+  temporary buffer (`copyWithin`). The other paths checked: unaligned copies, fills, updates, readbacks, buffer ↔ image
+  and the depth and stencil paths go through temporaries or distinct objects already; but **image copies and blits
+  within one subresource** had the same hazard ("Copy source and destination are overlapping layer ranges"; a blit
+  samples the subresource it renders to): an image copy whose source and destination subresources overlap goes through
+  a temporary texture of the region (`copyTextureWithin`), and such a blit samples a copy of its source subresource.
+  Resolves can't name one image twice. Tests `misc: buffer copies between two buffers of one memory, within one buffer,
+  and within the result itself`, `misc: a copy and a blit within one subresource of an image` (both: WebGPU errors,
+  the submit invalid).
+- **2** (the provoking-vertex pass binds the index buffer to its bound range's end; xfb's index range likewise): real.
+  The provoke pass binds from the 256-aligned start of the draw's first index to its last index's end; a direct
+  captured draw copies its indices only (an indirect one still takes its range whole: its count is on the GPU). Tests
+  in `tests/venus-gpu.test.ts` on a stand-in device (a 1 GiB index buffer bound whole: the binding was 1,073,740,032
+  bytes, the capture skipped with a warning). Left filed (backlog "ANGLE's row's gaps"): an indexed or indirect captured
+  draw still copies its vertex bindings whole, and so is skipped past `maxStorageBufferBindingSize`.
+- **3** (attachment-less passes rasterize at 1 sample with 4 advertised): real, and a secondary command buffer in such a
+  pass was worse: its pipelines had no colour target where the pass had the device's ("No attachment was specified",
+  the submit lost). The pass is recorded with a 1-sample attachment of the device's, its view's id in ten digits; its
+  first draw puts in one of the pipeline's `rasterizationSamples` (or `vkCmdExecuteCommands` the secondary's inherited
+  samples), and a secondary inheriting no attachments has the device's attachment where the pass has it. Test
+  `samples: passes without attachments at 4 samples, drawn in the pass and by a secondary command buffer` (a fragment
+  shader per sample setting its `gl_SampleID`'s bit and counting itself: 0xf and 64; the pass's draw gave 1 and 16 with
+  the fix planted out).
+- **4** (descriptor copies overwrite immutable samplers): real; a copy keeps the destination's immutable sampler. Test
+  `misc: a combined image sampler copied over one with an immutable sampler keeps the immutable one` (sampled.comp read
+  100, NEAREST, for LINEAR's 50).
+- **5** (transform feedback across a suspended and resumed render pass): **wrong**. A suspending pass ends with
+  `vkCmdEndRendering`, and `VUID-vkCmdEndRendering-None-06781` (and `-vkCmdEndRendering2KHR-None-10612`,
+  `-vkCmdEndRenderPass-None-02351`, `-vkCmdNextSubpass-None-02349`) say it "must not be recorded when transform feedback
+  is active" (`/usr/share/vulkan/registry/validusage.json`, 1.4.363): a capture can't span the parts. Nothing to fix.
+- **Found beside them** (filed, backlog "Copies WebGPU refuses"): `depthStencilTT`'s native path for whole depth and
+  stencil subresources is never taken (it tests texture usages against the buffer usages' constants), so they go through
+  the worker's passes: right, slower.
+- **CI** (this code, alone): `scripts/ci.sh` OK (528 s; a first run's one failure was `page-usb.test.ts`'s USB tab, a
+  checkbox click not taking, which passed 3 of 3 alone and in the rerun); `scripts/ci-deqp-vk.sh` OK (848 s: the 4,690-case
+  list in 589 s, YCbCr's 773 in 88 s, the replays). Nothing newly NotSupported.
 
 ## VK3 L7b: the reviews' remaining findings (L7.4–L7.5's and L6b–L7.3's)
 

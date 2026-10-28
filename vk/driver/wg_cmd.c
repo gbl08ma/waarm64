@@ -310,6 +310,16 @@ wg_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginI
       cmd->pass.depth = inh->depthAttachmentFormat;
       cmd->pass.stencil = inh->stencilAttachmentFormat;
       cmd->pass.samples = inh->rasterizationSamples ? inh->rasterizationSamples : 1;
+      /* A pass without attachments: the device's in the place wg_CmdBeginRendering gives it (VK3 L8a). */
+      bool any = inh->depthAttachmentFormat || inh->stencilAttachmentFormat;
+      for (uint32_t i = 0; i < cmd->pass.color_count; i++)
+         any |= cmd->pass.colors[i] != VK_FORMAT_UNDEFINED;
+      if (!any) {
+         if (cmd->pass.color_count == 8)
+            cmd->pass.color_count = 7;
+         cmd->pass.colors[cmd->pass.color_count] = VK_FORMAT_R8_UNORM;
+         cmd->pass.dummy = ++cmd->pass.color_count;
+      }
    }
    return VK_SUCCESS;
 }
@@ -494,17 +504,19 @@ stencil_read_only(VkImageLayout l)
 }
 
 /* An attachment for a pass that has none (Vulkan's attachment-less passes; WebGPU's need one): an R8 texture of the
- * render area's size, the device's, kept by size (VK3 L7.4: transform feedback's passes have none). Its pipelines
- * write nothing to it (record_draw). The command buffer keeps a reference to it while its passes name it (VK3 L7b, the
- * review of L7.4-L7.5's finding 4: one the device let go of was released under a recorded pass, its id another's). */
+ * render area's size and the pipelines' samples, the device's, kept by both (VK3 L7.4: transform feedback's passes have
+ * none). Its pipelines write nothing to it (record_draw). The command buffer keeps a reference to it while its passes
+ * name it (VK3 L7b, the review of L7.4-L7.5's finding 4: one the device let go of was released under a recorded pass,
+ * its id another's). */
 static uint32_t
-dummy_attachment(struct wg_cmd_buffer *cmd, uint32_t width, uint32_t height)
+dummy_attachment(struct wg_cmd_buffer *cmd, uint32_t width, uint32_t height, uint32_t samples)
 {
    struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
    struct wg_dummy *d = NULL;
    uint32_t free_slot = 0;
    for (uint32_t i = 0; i < 16 && !d; i++) {
-      if (dev->dummies[i] && dev->dummies[i]->width == width && dev->dummies[i]->height == height)
+      if (dev->dummies[i] && dev->dummies[i]->width == width && dev->dummies[i]->height == height &&
+          dev->dummies[i]->samples == samples)
          d = dev->dummies[i];
       else if (!dev->dummies[i] && !free_slot)
          free_slot = i + 1;
@@ -515,11 +527,12 @@ dummy_attachment(struct wg_cmd_buffer *cmd, uint32_t width, uint32_t height)
       d = calloc(1, sizeof(*d));
       d->refs = 1;
       struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"size\":[%u,%u],\"format\":\"r8unorm\",\"usage\":16}", width, height); /* RENDER_ATTACHMENT */
+      wg_json_printf(&j, "{\"size\":[%u,%u],\"format\":\"r8unorm\",\"sampleCount\":%u,\"usage\":16}", width, height,
+                     samples); /* RENDER_ATTACHMENT */
       d->texture = wg_create_json(WG_KIND_TEXTURE, &j);
       wg_json_printf(&j, "{\"texture\":%u}", d->texture);
       d->view = wg_create_json(WG_KIND_VIEW, &j);
-      d->width = width, d->height = height;
+      d->width = width, d->height = height, d->samples = samples;
       dev->dummies[i] = d;
    }
    bool held = false;
@@ -530,6 +543,25 @@ dummy_attachment(struct wg_cmd_buffer *cmd, uint32_t width, uint32_t height)
       util_dynarray_append_typed(&cmd->dummies, struct wg_dummy *, d);
    }
    return d->view;
+}
+
+/* A pass without attachments rasterizes at its pipelines' rasterizationSamples (Vulkan: all its pipelines' alike, without
+ * variableMultisampleRate), known at its first draw (or a secondary's, by its inheritance): the recorded pass's dummy
+ * attachment replaced by one of that many samples (VK3 L8a, the track-end review's finding 3: it stayed at 1 with 4
+ * advertised in framebufferNoAttachmentsSampleCounts). */
+static void
+dummy_samples(struct wg_cmd_buffer *cmd, uint32_t samples)
+{
+   if (!cmd->pass.dummy_at)
+      return;
+   const size_t at = cmd->pass.dummy_at;
+   cmd->pass.dummy_at = 0;
+   if (samples <= 1)
+      return;
+   char digits[11];
+   snprintf(digits, sizeof(digits), "%10u", dummy_attachment(cmd, cmd->pass.width, cmd->pass.height, samples));
+   memcpy((char *)cmd->cmds.data + at, digits, 10);
+   cmd->pass.samples = samples;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -620,9 +652,12 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          any_clear = true;
       }
    }
+   size_t dummy_at = 0;
    if (dummy) {
-      wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"clear\",\"storeOp\":\"discard\",\"clearValue\":[0,0,0,0]}",
-                     cmd->pass.color_count ? "," : "", dummy_attachment(cmd, width, height));
+      /* Its view's id in ten digits (JSON's spaces before a short one), replaced at the first draw (dummy_samples). */
+      dummy_at = j.len + (cmd->pass.color_count ? 1 : 0) + strlen("{\"view\":");
+      wg_json_printf(&j, "%s{\"view\":%10u,\"loadOp\":\"clear\",\"storeOp\":\"discard\",\"clearValue\":[0,0,0,0]}",
+                     cmd->pass.color_count ? "," : "", dummy_attachment(cmd, width, height, 1));
       cmd->pass.colors[cmd->pass.color_count] = VK_FORMAT_R8_UNORM;
       cmd->pass.dummy = cmd->pass.color_count++;
       cmd->pass.dummy++;
@@ -686,6 +721,8 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
    wg_json_printf(&j, ",\"width\":%u,\"height\":%u}", width, height);
    wg_json_printf(&clears, "}");
    cmd->pass.width = width, cmd->pass.height = height;
+   if (dummy)
+      cmd->pass.dummy_at = cmd->cmds.size + sizeof(struct op_head) + dummy_at;
    emit_json(cmd, OP_PASS, &j);
    if (any_clear)
       emit_json(cmd, OP_CLEAR_RECTS, &clears);
@@ -992,6 +1029,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    /* WebGPU wants minDepth <= maxDepth: an inverted range (reverse-Z) is the range the right way round and the vertex
     * shader's z mirrored (w - z), which lands each depth where the inverted range would. */
    k.flip_z = dyn->vp.viewport_count && dyn->vp.viewports[0].minDepth > dyn->vp.viewports[0].maxDepth;
+   dummy_samples(cmd, dyn->ms.rasterization_samples);
    k.samples = cmd->pass.samples;
    k.sample_mask = dyn->ms.sample_mask == 0xffff ? 0xffffffffu : dyn->ms.sample_mask;
    k.alpha_to_coverage = dyn->ms.alpha_to_coverage_enable && k.samples > 1;
@@ -1824,6 +1862,8 @@ wg_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t count, const VkCom
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    for (uint32_t i = 0; i < count; i++) {
       struct wg_cmd_buffer *secondary = wg_cmd_buffer_from_handle(buffers[i]);
+      if (secondary->pass.active)
+         dummy_samples(cmd, secondary->pass.samples);
       emit(cmd, OP_EXEC, &secondary, sizeof(secondary));
       cmd->draws += secondary->draws;
    }

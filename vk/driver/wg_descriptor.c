@@ -370,8 +370,13 @@ wg_UpdateDescriptorSets(VkDevice _device, uint32_t writeCount, const VkWriteDesc
       for (uint32_t e = 0; e < copies[i].descriptorCount; e++) {
          const struct wg_descriptor *s = slot(src, copies[i].srcBinding, copies[i].srcArrayElement + e);
          struct wg_descriptor *d = slot(dst, copies[i].dstBinding, copies[i].dstArrayElement + e);
-         if (s && d)
+         if (s && d) {
+            /* An immutable sampler stays, as in writes (VK3 L8a, the track-end review's finding 4). */
+            struct wg_sampler *keep = dst->layout->immutable[d - dst->slots];
             *d = *s;
+            if (keep)
+               d->sampler = keep;
+         }
          sync_planes(dst, d);
       }
       dst->version++;

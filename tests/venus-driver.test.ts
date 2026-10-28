@@ -268,7 +268,7 @@ for (const [scenario, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled' } as const;
+const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -311,6 +311,10 @@ for (const [scenario, what] of [
   ['immutableSampler', 'a combined image sampler written with another sampler keeps its immutable one'],
   ['bigUniform', 'uniform blocks declared past their memory and past maxUniformBufferRange'],
   ['sharedSampler', 'a sampler that samples a depth view and a texture filters the texture'],
+  // L8a (the track-end review: findings 1 and 4).
+  ['sameMemoryCopy', 'buffer copies between two buffers of one memory, within one buffer, and within the result itself'],
+  ['sameImageCopy', 'a copy and a blit within one subresource of an image'],
+  ['immutableCopied', 'a combined image sampler copied over one with an immutable sampler keeps the immutable one'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -343,6 +347,29 @@ for (const [scenario, what] of [
     if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);
   });
 }
+
+// L8a (the track-end review's finding 3): a pass without attachments rasterizes at its pipelines' sample count.
+test('samples: passes without attachments at 4 samples, drawn in the pass and by a secondary command buffer', { skip, timeout: 60_000 }, async (t) => {
+  const out = join(root, 'target/vk/test');
+  mkdirSync(out, { recursive: true });
+  for (const f of ['samples.vert', 'samples.frag']) {
+    const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/l8a/${f}`)], { encoding: 'utf8' });
+    assert.equal(c.status, 0, c.stderr);
+  }
+  const page = await browser.newPage();
+  page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+  await page.goto(`${base}/tests/browser/venus-driver.html`);
+  await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+  const r = await page.evaluate(() => (window as unknown as { venus: { runSamples(v: string, f: string): Promise<Record<string, unknown>> } }).venus.runSamples('/target/vk/test/samples.vert.spv', '/target/vk/test/samples.frag.spv'));
+  await page.close();
+  if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+  assert.equal(r.error, undefined, String(r.error));
+  assert.deepEqual(r.errors, [], 'WebGPU errors');
+  // Every sample's bit, and 16 pixels' 4 samples each.
+  assert.deepEqual(r.pass, [0xf, 64], 'drawn in the pass');
+  assert.deepEqual(r.secondary, [0xf, 64], 'drawn by the secondary');
+  assert.equal(r.warnings, 0, 'the worker warned');
+});
 
 // L7a (the binding review's finding 6): pipelines past WebGPU's limits by what the device advertises, made but not
 // drawn: refused at their creation, saying why, with no WebGPU error.

@@ -6,19 +6,18 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L8: the track's end)
+## State (2026-10-28, after L8a)
 
-- **L8 done** (REPORT.md "VK3: the summary": each loop, the gate row by row, the numbers and their JSON, CI): the docs
-  (vk/README.md, docs/devices.md "Venus", docs/graphics.md, the backlog: closed NVIDIA entries pruned, two upstream
-  reports added), plan §6/§7 revised (docs/plans/graphics.md: VK3 done, VK4 proposed, three new risks), PLAN.md's
-  row, THIRD_PARTY.md's vkd3d row. `bench/vulkan/nvidia.sh page` covers the final run (below) and has a dry run;
-  `nvidia-bundle.sh` now carries the dEQP-VK guest and vkd3d's disk (~4.8 GB). CI, alone: ci.sh 532 s,
-  ci-deqp-vk.sh 846 s, ci-debian.sh 416 s, ci-machines.sh 168 s, all OK.
+- **L8a done** (REPORT.md "VK3 L8a"): the track-end review's 1–4 fixed, each with its test failing first (copies and
+  blits within one buffer or subresource through temporaries; the provoke pass's and a direct capture's index ranges
+  the draw's; attachment-less passes at the pipelines' samples, secondaries in them too; descriptor copies keep
+  immutable samplers); its 5 wrong (VUID-vkCmdEndRendering-None-06781: no xfb across a suspend). Nothing newly
+  advertised. CI, alone: ci.sh 528 s, ci-deqp-vk.sh 848 s, both OK.
+- **L8** (the track's end): REPORT.md "VK3: the summary", the docs, plan §6/§7, PLAN.md's row, `nvidia.sh page`.
 - **The gate:** met on SwiftShader and the M4 but for Dawn's program (the guest's Mesa: backlog); on NVIDIA as of
-  4fdc69fb but for 1 fish (parked by the user). L5–L7b haven't run on NVIDIA.
-- **Open:** (1) L8a, the fixes from the out-of-context review of what VK3 changed (below); (2) the user's final
-  NVIDIA run (the supervisor builds the bundle from a clean checkout after L8a). Then the track's kickoff and
-  handover leave the tree (the supervisor).
+  4fdc69fb but for 1 fish (parked by the user). L5–L8a haven't run on NVIDIA.
+- **Open: the user's NVIDIA run** (the supervisor builds the bundle from a clean checkout at L8a's commit). Then the
+  track's kickoff and handover leave the tree (the supervisor).
 
 ## Where VK3 stands
 
@@ -88,12 +87,13 @@ Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **th
 
 - [x] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, the four CI
   scripts). Left to the supervisor: an out-of-context review of what VK3 changed.
-  - [ ] L8a: **the track-end review's findings** (`git show origin/review/venus-vk3:VENUS-VK3-REVIEW.md`, of
+  - [x] L8a: **the track-end review's findings** (`git show origin/review/venus-vk3:VENUS-VK3-REVIEW.md`, of
     3f8aa595..dedd54e6, now 72d2f561): 1 (a 4-aligned `vkCmdCopyBuffer` within one VkDeviceMemory is a same-buffer
     `copyBufferToBuffer`, which WebGPU rejects, losing the submit: high), 2 (the provoking-vertex pass binds the index
     buffer to its end, past `maxStorageBufferBindingSize` on big buffers; xfb's index range skips the capture the same
     way), 3 (attachment-less passes rasterize at 1 sample with 4 advertised), 4 (descriptor copies overwrite immutable
-    samplers), 5 (xfb across a suspended/resumed pass: check the spec allows it; fix or file).
+    samplers), 5 (xfb across a suspended/resumed pass: check the spec allows it; fix or file). **Done:** 1–4 fixed with
+    tests, 5 wrong (Vulkan forbids it).
 
 ## What the next NVIDIA run must answer
 
@@ -111,7 +111,7 @@ in `bench/results/local/`, delete the tarball.) The last bundle is `target/vk3-n
 L4e").
 
 **The final run's questions** (each answered by a step; `results/summary.txt` gathers the verdicts):
-1. The gate again on L5–L7b's code: `present` (vkcube and mpv right on the page, every way), `mpv` (its bar),
+1. The gate again on L5–L8a's code: `present` (vkcube and mpv right on the page, every way), `mpv` (its bar),
    `scene` (1,000 fish and the toolkit against virgl; 1 fish parked), `replay`, `pipelines` (warm across a restart),
    `fence`, `trace`.
 2. (L5) Whether the page holds the adapter's subgroups there: the line `venus: the WebGPU device's subgroups are wrong

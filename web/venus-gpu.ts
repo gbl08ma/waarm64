@@ -9,7 +9,7 @@
 import type { ShaderCache } from './venus-cache.ts';
 
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
-const INDEX = 16, COPY_SRC = 4, COPY_DST = 8, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
+const INDEX = 16, COPY_SRC = 4, COPY_DST = 8, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -239,7 +239,7 @@ export class VenusGpu {
   /** The current render pass's attachments (for clears inside it). */
   private passAtts: { colors: (GPUTextureFormat | null)[]; depth?: GPUTextureFormat; samples: number; width: number; height: number } | undefined;
   /** Buffers to destroy once the encoder is submitted, and the readbacks' staging buffers by slot. */
-  private temps: GPUBuffer[] = [];
+  private temps: (GPUBuffer | GPUTexture)[] = [];
   private readonly slots = new Map<number, { buffer: GPUBuffer; size: number }>();
   private submitSlots: number[] = [];
   private nextSlot = 1;
@@ -274,7 +274,7 @@ export class VenusGpu {
   /** The open submit's commands while it is recorded to be held, the pipelines it waits for, its temporary buffers. */
   private rec: (() => void)[] | undefined;
   private recWaits: Later[] = [];
-  private recTemps: GPUBuffer[] = [];
+  private recTemps: (GPUBuffer | GPUTexture)[] = [];
   /** Submits (and the queue work after them) held until their pipelines are ready, in order (`drain`). */
   private readonly held: Batch[] = [];
   private draining = false;
@@ -426,6 +426,7 @@ export class VenusGpu {
         const a = buf(src), b = buf(dst);
         // WebGPU copies 4-aligned offsets and sizes; Vulkan any (VK3 L4c-F): the others by a compute pass.
         if ((so | dO | size) & 3) later(() => self.copyUnaligned(a, so, b, dO, size));
+        else if (a === b) later(() => self.copyWithin(a, so, dO, size));
         else later(() => self.enc!.copyBufferToBuffer(a, so, b, dO, size));
       },
       gpu_copy_bt(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
@@ -448,6 +449,7 @@ export class VenusGpu {
         later(() => {
           self.touched.add(D);
           if (/^depth|^stencil/.test(S.format) && !self.depthStencilTT(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect)) return;
+          if (S === D && sm === dm && (S.dimension === '3d' || (sz < dz + depth && dz < sz + depth))) return self.copyTextureWithin(S, sm, sx, sy, sz, dx, dy, dz, w, h, depth, aspect);
           self.enc!.copyTextureToTexture(self.texCopy(S, sm, sx, sy, sz, aspect), self.texCopy(D, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
         });
       },
@@ -693,7 +695,7 @@ export class VenusGpu {
 
   /** The open encoder submitted (its temporary buffers destroyed); resolves when its work is done and its readbacks
    * mapped, with the time then. */
-  private submitNow(slots: number[], temps: GPUBuffer[]): Promise<number> {
+  private submitNow(slots: number[], temps: (GPUBuffer | GPUTexture)[]): Promise<number> {
     const d = this.device!;
     if (this.pass) this.endPass();
     const timing = this.timing, passes = this.encPasses;
@@ -1258,6 +1260,17 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     const [sz0, sz1] = (j.srcZ ?? [0, 1]) as number[], [dz0, dz1] = (j.dstZ ?? [0, 1]) as number[];
     const sd = (j.srcDepth ?? 1) as number;
     const dst3d = tex.dimension === '3d';
+    // A blit within one subresource (Vulkan's regions apart) samples a copy of it: WebGPU won't sample a subresource it
+    // renders to (VK3 L8a, the track-end review's finding 1).
+    let srcView = this.viewOf(j.src, j.srcMip, j.srcLayer);
+    if (j.src === j.dst && j.srcMip === j.dstMip && (src3d || j.srcLayer === j.dstLayer)) {
+      const S = j.src as GPUTexture, mip = j.srcMip as number;
+      const size = { width: Math.max(1, S.width >> mip), height: Math.max(1, S.height >> mip), depthOrArrayLayers: src3d ? Math.max(1, S.depthOrArrayLayers >> mip) : 1 };
+      const temp = this.device!.createTexture({ size, format: S.format, dimension: S.dimension, usage: TEXTURE_BINDING | TEX_COPY_DST });
+      this.temps.push(temp);
+      enc.copyTextureToTexture({ texture: S, mipLevel: mip, origin: { x: 0, y: 0, z: src3d ? 0 : j.srcLayer } }, { texture: temp }, size);
+      srcView = temp.createView({ dimension: src3d ? '3d' : '2d' });
+    }
     const slices = dst3d ? [...Array(Math.abs(dz1 - dz0)).keys()].map((i) => Math.min(dz0, dz1) + i) : [j.dstLayer as number];
     for (const slice of slices) {
       const at = dst3d ? slice : dz0;
@@ -1266,7 +1279,7 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       const uniform = this.device!.createBuffer({ size: 48, usage: UNIFORM | COPY_DST });
       enc.copyBufferToBuffer(u, 0, uniform, 0, 48);
       this.temps.push(uniform);
-      const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: this.viewOf(j.src, j.srcMip, j.srcLayer) }];
+      const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: srcView }];
       if (linear) entries.push({ binding: 2, resource: this.sampler() });
       const group = this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
       const pass = enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, slice), loadOp: 'load', storeOp: 'store' }] });
@@ -1465,7 +1478,9 @@ ${vs}
     let ibFirst = 0;
     if (wide !== 2 && job.ib) {
       const el = wide ? 4 : 2, first = indirect ? 0 : (job.first as number), start = (job.offset as number) + first * el;
-      ibFirst = (take(job.ib as GPUBuffer, start, Math.max((job.size as number) - first * el, count * el)) / el - first) >>> 0;
+      // A direct draw's indices only (VK3 L8a, the track-end review's finding 2: the bound range's rest went past
+      // maxStorageBufferBindingSize, and the capture was skipped); an indirect one's whole, its count on the GPU.
+      ibFirst = (take(job.ib as GPUBuffer, start, indirect ? (job.size as number) : count * el) / el - first) >>> 0;
     }
     for (const slot of p.slots) {
       const v = (job.vb as ({ b: GPUBuffer; offset: number; size: number } | undefined)[])[slot];
@@ -1699,13 +1714,14 @@ var<workgroup> wl: array<u32, 256>;
     }
     const per = mode >= 4 ? 2 : 3, bytes = prims * per * 4;
     const [out, at] = this.scratch(STORAGE | INDEX, bytes);
-    // The source's binding from a 256-aligned offset (minStorageBufferOffsetAlignment is at most 256), in words: its
-    // end rounded up (a 16-bit range may end on a half-word: VK3 L7b, the review of L7.4-L7.5's finding 1), within
-    // the memory's buffer (4-aligned, wg_memory_buffer).
+    // The source's binding from a 256-aligned offset (minStorageBufferOffsetAlignment is at most 256) to the draw's
+    // last index, in words: its end rounded up (a 16-bit range may end on a half-word: VK3 L7b, the review of
+    // L7.4-L7.5's finding 1), within the memory's buffer (4-aligned, wg_memory_buffer). Not the bound range's end
+    // (`size`): a big buffer's went past maxStorageBufferBindingSize (VK3 L8a, the track-end review's finding 2).
     let source: GPUBufferBinding, el0 = first;
     if (src && wide !== 2) {
       const el = wide ? 4 : 2, start = offset + first * el, from = start - (start % 256);
-      const end = Math.min(src.size, Math.ceil((offset + Math.max(size, (first + count) * el)) / 4) * 4);
+      const end = Math.min(src.size, Math.ceil((start + count * el) / 4) * 4);
       source = { buffer: src, offset: from, size: Math.max(4, end - from) };
       el0 = (start - from) / el;
     } else {
@@ -1725,6 +1741,25 @@ var<workgroup> wl: array<u32, 256>;
     pass.dispatchWorkgroups(restart ? 1 : Math.min(65535, Math.ceil(prims / 64)));
     pass.end();
     this.tickets[ticket] = { buffer: out, offset: at, size: bytes };
+  }
+
+  /** A copy between two ranges of one GPUBuffer (two VkBuffers of one VkDeviceMemory, or one's disjoint ranges), which
+   * WebGPU refuses (VK3 L8a, the track-end review's finding 1: the submit was lost): through a temporary buffer. */
+  private copyWithin(b: GPUBuffer, so: number, dO: number, size: number) {
+    const temp = this.device!.createBuffer({ size, usage: COPY_SRC | COPY_DST });
+    this.temps.push(temp);
+    this.enc!.copyBufferToBuffer(b, so, temp, 0, size);
+    this.enc!.copyBufferToBuffer(temp, 0, b, dO, size);
+  }
+
+  /** A copy within one subresource of a texture (Vulkan's regions apart; WebGPU refuses overlapping subresources: VK3
+   * L8a, the track-end review's finding 1): through a temporary texture of the region's size. */
+  private copyTextureWithin(t: GPUTexture, mip: number, sx: number, sy: number, sz: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number) {
+    const temp = this.device!.createTexture({ size: { width: w, height: h, depthOrArrayLayers: depth }, format: t.format, dimension: t.dimension, usage: TEX_COPY_SRC | TEX_COPY_DST });
+    this.temps.push(temp);
+    const size = { width: w, height: h, depthOrArrayLayers: depth };
+    this.enc!.copyTextureToTexture(this.texCopy(t, mip, sx, sy, sz, aspect), this.texCopy(temp, 0, 0, 0, 0, aspect), size);
+    this.enc!.copyTextureToTexture(this.texCopy(temp, 0, 0, 0, 0, aspect), this.texCopy(t, mip, dx, dy, dz, aspect), size);
   }
 
   private copyUnaligned(src: GPUBuffer, so: number, dst: GPUBuffer, dO: number, size: number) {

@@ -354,7 +354,11 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   offset or size not 4-aligned) go through a compute pass of the worker's: the source's words copied to a temporary
   buffer, then each destination word the copy touches written, its other bytes kept; on the GPU in the encoder's
   order, so device-local sources and what earlier commands wrote are copied too (VK3 L4c-F; they used to be copied
-  from the CPU's bytes at the destination's unaligned offset, which invalidated the submit). An image clear of a
+  from the CPU's bytes at the destination's unaligned offset, which invalidated the submit). A copy within one
+  GPUBuffer (two VkBuffers of one memory, or one's disjoint ranges: WebGPU refuses a buffer as its own source) goes
+  through a temporary buffer, and a copy or blit within one subresource of an image (WebGPU refuses overlapping
+  subresources, and sampling one it renders to) copies the region, or the blit's whole source subresource, into a
+  temporary texture first (VK3 L8a; the invalid copy lost the submit). An image clear of a
   format WebGPU can't render to (`rgb9e5ufloat`, the snorm8 formats without tier1, `rg11b10ufloat` without its
   feature) is its clear colour encoded in the worker (`encodeTexel`) and copied in; a 3D image's clear covers every
   slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F). Buffer ↔ image copies whose rows
@@ -380,7 +384,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   256 invocations, a part each, each from the run its part's predecessors leave (VK3 L7b: one walked it all, long
   enough at millions of indices for the browser's GPU watchdog), a primitive where Vulkan's ends, degenerate where a
   restart leaves none; a 16-bit range bound rounded up to a word, VK3 L7b: rounded down, it lost an odd range's last
-  index), into a scratch buffer of the worker's whose places start
+  index; the range the draw reads only, VK3 L8a: to the bound range's end, a big buffer's went past
+  `maxStorageBufferBindingSize`), into a scratch buffer of the worker's whose places start
   again at each encoder (the queue's order keeps an earlier submit's reads before a later one's writes); in the pass
   the draw is an indexed list draw of its ticket's indices (`gpu_draw_ticket`). Non-indexed fans take the device's fan
   indices, (i + 1, i + 2, 0) for triangle i (Vulkan's order; they used to be (0, i + 1, i + 2), each triangle provoked
@@ -399,7 +404,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   reads no vertex captured in a render pass before the pass ends, and a capture's begin and end are inside one, so the
   capture runs after its pass (`gpu_xfb`'s jobs, run at the worker's pass end, `runXfb`): no break, no pre-pass. A
   begin copies its counters (bytes written a buffer) and each bound buffer's range into one buffer of the worker's (a
-  dispatch then never binds a guest memory writable beside its other uses); a draw copies its index range and each
+  dispatch then never binds a guest memory writable beside its other uses); a draw copies its index range (a direct
+  draw's indices only, VK3 L8a: the bound range's rest of a big buffer went past `maxStorageBufferBindingSize`) and each
   vertex binding's reachable range (past its last vertex or instance where it isn't indexed) into another, so the
   capture's group is three bindings whatever its buffers (VK3 L7a, the binding review's finding 1: one a buffer and a
   vertex binding went past WebGPU's storage buffers a stage, and lost the submit); a draw runs the
@@ -438,11 +444,16 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   replay registers). A uniform block is declared at most `maxUniformBufferBindingSize` and bound widened to it, and
   a memory's GPUBuffer has that many bytes past its end for it (`WG_MEMORY_PAD`, `maxMemoryAllocationSize` that
   much less): a block declared past its buffer's memory or its range is valid. A binding with immutable samplers
-  keeps them whatever a write passes.
+  keeps them whatever a write passes or a copy brings (VK3 L8a: copies overwrote them).
 - **Attachment-less passes** (VK3 L7.4: transform feedback's passes have none): WebGPU's passes need an attachment, so
-  such a pass gets one of the device's (an R8 texture of the render area's size, kept by size, `dummy_attachment`),
-  which no pipeline writes; at the place of the last of eight null colour attachments (VK3 L7b: a ninth overran
-  `pass.colors`). It is counted (`wg_dummy`): the device keeps 16 by size, and each command buffer whose passes name
+  such a pass gets one of the device's (an R8 texture of the render area's size, kept by size and samples,
+  `dummy_attachment`), which no pipeline writes; at the place of the last of eight null colour attachments (VK3 L7b: a
+  ninth overran `pass.colors`). Its samples are the pipelines' `rasterizationSamples` (`framebufferNoAttachmentsSampleCounts`
+  1 and 4, Vulkan's minimum; all of a pass's pipelines alike without `variableMultisampleRate`): the pass is recorded
+  with a 1-sample one, its view's id in ten digits, and the pass's first draw, or a secondary's inherited samples at
+  `vkCmdExecuteCommands`, puts in one of its samples (`dummy_samples`; VK3 L8a: it stayed at 1, so per-sample shading,
+  `gl_SampleID` and sample counts were a pixel's). A secondary inheriting no attachments has the device's in the same
+  place. It is counted (`wg_dummy`): the device keeps 16 by size and samples, and each command buffer whose passes name
   one holds it until it is reset or freed (VK3 L7b: a 17th size released one under a recorded pass, its id another's).
 - **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
   devices at once, a 17th fails to be made). The worker calls `venus_complete(serial)` in submit order once the work is done and its staging
