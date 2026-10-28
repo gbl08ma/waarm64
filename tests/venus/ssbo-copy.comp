@@ -1,0 +1,6 @@
+#version 450
+// tests/venus-driver.test.ts (misc: storageAliased): a buffer read and one written, bound from one memory.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) readonly buffer In { uint a[]; } i;
+layout(set = 0, binding = 1) buffer Out { uint b[]; } o;
+void main() { o.b[gl_LocalInvocationIndex] = i.a[gl_LocalInvocationIndex] * 2u + 1u; }

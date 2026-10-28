@@ -52,6 +52,11 @@ struct ctx {
     * holds a barrier. */
    unsigned uniform_conds;
    bool in_barrier_loop;
+   /* Where a uniform condition goes: shared memory's spare word or a var of its own (`uc`), or shared memory's first
+    * word, saved and restored around it where shared memory leaves no room (`uc_save`); `uc_none`: nowhere. */
+   const char *uc;
+   bool uc_save, uc_none;
+   unsigned shm_words;
 };
 
 static void
@@ -397,10 +402,11 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       const unsigned src = intr->intrinsic == nir_intrinsic_store_ssbo ? 1 : 0;
       const bool writes = intr->intrinsic != nir_intrinsic_load_ssbo && intr->intrinsic != nir_intrinsic_get_ssbo_size;
       struct res_use *r = resource(c, const_index(c, &intr->src[src]), WGSL_STORAGE_READ);
-      /* Read-write only where this stage writes it: a buffer one stage reads and another writes is read-only in the
-       * reader (a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's). */
+      /* Read-write where this stage writes it (a buffer one stage reads and another writes is read-only in the reader:
+       * a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's); wgsl_print
+       * widens the rest in compute stages. */
       if (writes)
-         r->r.kind = WGSL_STORAGE;
+         r->r.kind = WGSL_STORAGE, r->r.written = true;
       /* A 16-bit store is two atomics on its word (emit_half_access). */
       if (intr->intrinsic == nir_intrinsic_store_ssbo && intr->src[0].ssa->bit_size == 16)
          r->r.atomic = true;
@@ -1977,12 +1983,27 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
             /* WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow (every value
              * here is a var, assigned wherever): the condition of an if around a barrier, or breaking out of a loop
              * that holds one, is passed through workgroupUniformLoad. The barrier after it keeps the next write of
-             * the same var from racing this read, so that one var serves every condition (WebGPU counts it in the
-             * workgroup's storage: the device advertises its limit less 16 bytes for it). */
+             * the same var from racing this read, so that one var serves every condition. WebGPU counts each workgroup
+             * var rounded up to 16 bytes: the var is shared memory's spare word where it has one (wgsl_print), else one
+             * of its own where the workgroup's storage has room, else shared memory's first word, saved and restored. */
             const unsigned n = c->uniform_conds++;
-            line(c, "wg_uc = select(0u, 1u, %s);", src_comp(c, &nif->condition, 0));
-            line(c, "let uc%u = workgroupUniformLoad(&wg_uc);", n);
-            line(c, "workgroupBarrier();");
+            if (c->uc_none) {
+               failf(c, "a uniform condition with shared memory of atomics filling the workgroup's storage");
+            } else if (c->uc_save) {
+               /* Shared memory takes the workgroup's storage whole: its first word holds the condition meanwhile, every
+                * access to it before done and after its restore (each invocation writes the same values). */
+               line(c, "workgroupBarrier();");
+               line(c, "let ucs%u = shm[0];", n);
+               line(c, "workgroupBarrier();");
+               line(c, "shm[0] = select(0u, 1u, %s);", src_comp(c, &nif->condition, 0));
+               line(c, "let uc%u = workgroupUniformLoad(&shm[0]);", n);
+               line(c, "shm[0] = ucs%u;", n);
+               line(c, "workgroupBarrier();");
+            } else {
+               line(c, "%s = select(0u, 1u, %s);", c->uc, src_comp(c, &nif->condition, 0));
+               line(c, "let uc%u = workgroupUniformLoad(&%s);", n, c->uc);
+               line(c, "workgroupBarrier();");
+            }
             line(c, "if (uc%u != 0u) {", n);
          } else {
             line(c, "if (%s) {", src_comp(c, &nif->condition, 0));
@@ -2020,9 +2041,12 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
 }
 
 char *
-wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, unsigned features,
-           struct wgsl_info *info, char *error, size_t error_size)
+wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info, char *error,
+           size_t error_size)
 {
+   const struct wgsl_varyings *fs = o->fs;
+   const uint32_t max_immediates = o->max_immediates;
+   const unsigned features = o->features;
    wgsl_finish(nir);
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_index_ssa_defs(impl);
@@ -2042,6 +2066,30 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
    gather(&c, impl);
+   /* WebGPU's usage scopes see one GPUBuffer per VkDeviceMemory (the driver's), in which "storage" and
+    * "read-only-storage" can't meet: two buffers of one memory, one read and one written, would make a dispatch
+    * invalid. So a compute stage's storage buffers are all read_write, written or not. A fragment stage's stay
+    * read-only where it doesn't write them: its scope is the whole render pass, where vertex stages read storage
+    * read-only (WebGPU has no other there), so read_write would trade one conflict for a commoner one (VK3 L5b: dEQP-VK's
+    * `memory.pipeline_barrier.graphics.host_write_storage_buffer` reads one buffer in both stages' draws). */
+   if (nir->info.stage == MESA_SHADER_COMPUTE)
+      for (unsigned i = 0; i < c.res_count; i++)
+         if (c.res[i].r.kind == WGSL_STORAGE_READ)
+            c.res[i].r.kind = WGSL_STORAGE;
+   /* The uniform conditions' word (emit_cf_list). */
+   c.shm_words = DIV_ROUND_UP(nir->info.shared_size, 4);
+   if (nir->info.stage == MESA_SHADER_COMPUTE) {
+      if (c.shm_words && !c.shm_atomic && c.shm_words % 4) {
+         c.uc = fmt(&c, "shm[%u]", c.shm_words);
+         c.shm_words++;
+      } else if (align(c.shm_words * 4, 16) + 16 <= o->max_workgroup_storage) {
+         c.uc = "wg_uc";
+      } else if (!c.shm_atomic) {
+         c.uc_save = true;
+      } else {
+         c.uc_none = true;
+      }
+   }
    /* Push constants past the immediates: a uniform buffer of the driver's, bound at a dynamic offset per draw. */
    if (info->immediate_size > max_immediates) {
       struct res_use *r = resource(&c, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_PUSH_BINDING, WGSL_UNIFORM);
@@ -2079,7 +2127,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
    declare_io(&c);
    if (stage == MESA_SHADER_COMPUTE && nir->info.shared_size)
       line(&c, "var<workgroup> shm: array<%s, %u>;", !c.shm_atomic ? "u32" : c.shm_signed ? "atomic<i32>" : "atomic<u32>",
-           DIV_ROUND_UP(nir->info.shared_size, 4));
+           c.shm_words);
    if (nir->scratch_size)
       line(&c, "var<private> scratch: array<u32, %u>;", DIV_ROUND_UP(nir->scratch_size, 4));
    if (c.uses_helper)
@@ -2135,7 +2183,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
       line(&c, "return o;");
    c.indent--;
    line(&c, "}");
-   if (c.uniform_conds)
+   if (c.uniform_conds && c.uc && !strcmp(c.uc, "wg_uc"))
       line(&c, "var<workgroup> wg_uc: u32;");
 
    char *text = NULL;

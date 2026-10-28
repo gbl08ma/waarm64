@@ -70,6 +70,8 @@ struct wgsl_resource {
    uint8_t sample;        /* textures: enum wgsl_sample */
    bool multisampled;
    bool atomic;           /* storage buffers: declared of atomics */
+   bool written;          /* storage buffers: the stage writes it (what the driver reads back of host-visible memory;
+                           * the kind is the declared access, read_write in every compute stage: wgsl_print.c) */
    bool nonfiltering;     /* samplers: bound as non-filtering (the driver's, for unfilterable views) */
    uint8_t access;        /* storage textures */
    uint16_t format;       /* storage textures: enum pipe_format */
@@ -128,16 +130,26 @@ bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subg
 /* Links a vertex and a fragment shader's varyings (both lowered): nir_opt_varyings, as KosmicKrisp links. */
 void wgsl_link(nir_shader *vs, nir_shader *fs);
 
-/* Prints a lowered shader; a vertex shader's outputs follow `fs` (its fragment shader's inputs; NULL: as written).
- * Push constants past `max_immediates` bytes are read from the uniform buffer; `features`: the device's WGSL_*
- * (WGSL_TIER2: read-write storage images of more formats; WGSL_DUAL_SOURCE: @blend_src). Returns ralloc'd text owned by `mem_ctx`, or
- * NULL with `error`. */
 #define WGSL_TIER2       (1u << 0) /* texture-formats-tier2 */
 #define WGSL_DUAL_SOURCE (1u << 1) /* dual-source-blending */
 #define WGSL_SUBGROUPS   (1u << 2) /* subgroups (as wgsl_lower's subgroup_size over 1) */
 #define WGSL_F16         (1u << 3) /* shader-f16 */
-char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, unsigned features,
-                 struct wgsl_info *info, char *error, size_t error_size);
+
+/* What a stage is printed for besides itself. */
+struct wgsl_print_options {
+   /* Vertex: its fragment shader's inputs, which its outputs follow (NULL: as written). */
+   const struct wgsl_varyings *fs;
+   /* Push constants past these bytes are read from the uniform buffer. */
+   uint32_t max_immediates;
+   /* WebGPU's maxComputeWorkgroupStorageSize: what shared memory and the translator's own workgroup word may take. */
+   uint32_t max_workgroup_storage;
+   /* The device's WGSL_* (WGSL_TIER2: read-write storage images of more formats; WGSL_DUAL_SOURCE: @blend_src). */
+   unsigned features;
+};
+
+/* Prints a lowered shader. Returns ralloc'd text owned by `mem_ctx`, or NULL with `error`. */
+char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *options, struct wgsl_info *info,
+                 char *error, size_t error_size);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);

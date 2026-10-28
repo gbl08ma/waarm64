@@ -1,0 +1,14 @@
+#version 450
+// As shared-full.comp with one word less: the condition takes shared memory's spare word (WebGPU rounds each
+// workgroup var up to 16 bytes).
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) buffer O { uint v[]; } o;
+shared uint s[4095];
+void main() {
+  for (uint i = gl_LocalInvocationIndex; i < 4095u; i += 64u) s[i] = i * 3u;
+  barrier();
+  if (o.v[0] == 0u) {
+    barrier();
+    o.v[1u + gl_LocalInvocationIndex] = s[4094u - gl_LocalInvocationIndex * 64u];
+  }
+}

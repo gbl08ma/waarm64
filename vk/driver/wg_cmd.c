@@ -482,6 +482,7 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
       }
    }
    partial = area.offset.x || area.offset.y || area.extent.width < width || area.extent.height < height;
+   cmd->pass.area = area;
    /* A pass that suspends or resumes (VK_RENDERING_SUSPENDING_BIT, RESUMING_BIT) is part of one render pass instance
     * with its neighbours: only its first part loads or clears, only its last part stores or discards. */
    const bool resumed = info->flags & VK_RENDERING_RESUMING_BIT, suspending = info->flags & VK_RENDERING_SUSPENDING_BIT;
@@ -550,9 +551,11 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          wg_json_printf(&j, ",\"depthReadOnly\":true");
       } else if (flags & WG_FMT_DEPTH) {
          const bool clear = dv && !resumed && d->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
+         /* Vulkan resolves before the store op; the worker's resolve reads the attachment after the pass: stored. */
          wg_json_printf(&j, ",\"depthLoadOp\":\"%s\",\"depthStoreOp\":\"%s\",\"depthClearValue\":%.9g",
                         dv ? load_op(d->loadOp, partial, resumed) : "load",
-                        dv ? store_op(d->storeOp, suspending) : "store", dv ? CLAMP(d->clearValue.depthStencil.depth, 0, 1) : 1.0);
+                        dv && !cmd->pass.resolve_src[0] ? store_op(d->storeOp, suspending) : "store",
+                        dv ? CLAMP(d->clearValue.depthStencil.depth, 0, 1) : 1.0);
          if (partial && clear) {
             wg_json_printf(&clears, ",\"depth\":%.9g", d->clearValue.depthStencil.depth);
             any_clear = true;
@@ -564,7 +567,8 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          const bool clear = sv && !resumed && s->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
          wg_json_printf(&j, ",\"stencilLoadOp\":\"%s\",\"stencilStoreOp\":\"%s\",\"stencilClearValue\":%u",
                         sv ? load_op(s->loadOp, partial, resumed) : "load",
-                        sv ? store_op(s->storeOp, suspending) : "store", sv ? s->clearValue.depthStencil.stencil : 0);
+                        sv && !cmd->pass.resolve_src[1] ? store_op(s->storeOp, suspending) : "store",
+                        sv ? s->clearValue.depthStencil.stencil : 0);
          if (partial && clear) {
             wg_json_printf(&clears, ",\"stencil\":%u", s->clearValue.depthStencil.stencil);
             any_clear = true;
@@ -600,10 +604,13 @@ end_rendering(struct wg_cmd_buffer *cmd)
       const struct wg_image *si = container_of(src->vk.image, struct wg_image, vk);
       const struct wg_image *di = container_of(dst->vk.image, struct wg_image, vk);
       struct wg_json j = { 0 };
+      /* Within the render area only (WebGPU has no multisampled arrays: one layer). */
+      const VkRect2D *ra = &cmd->pass.area;
       wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
-                     "\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,\"dstLayer\":%u}",
+                     "\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,\"dstLayer\":%u,\"area\":[%d,%d,%u,%u]}",
                      a ? "stencil" : "depth", di->fmt->name, si->tex, src->vk.base_mip_level, src->vk.base_array_layer,
-                     di->tex, dst->vk.base_mip_level, dst->vk.base_array_layer);
+                     di->tex, dst->vk.base_mip_level, dst->vk.base_array_layer, ra->offset.x, ra->offset.y,
+                     ra->extent.width, ra->extent.height);
       meta(cmd, &j);
    }
 }
@@ -1648,7 +1655,7 @@ found:
          continue;
       const uint32_t dynamic = p->dynamic[k] >= 0 && n < b->offset_count ? b->offsets[n] : 0;
       n += p->dynamic[k] != -1;
-      if (res->kind != WGSL_STORAGE)
+      if (res->kind != WGSL_STORAGE || !res->written)
          continue;
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       if (d && d->buffer && d->buffer->mem && d->buffer->mem->host)

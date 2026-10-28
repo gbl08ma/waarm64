@@ -673,6 +673,26 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the view's format, or alias through a storage buffer). Depth and stencil resolves (SAMPLE_ZERO, VK3 L4f) are
     checked by `tests/venus-driver.test.ts` only: dEQP-VK's `depth_stencil_resolve` groups need `sampleRateShading`
     (L7's row); MIN, MAX and AVERAGE aren't advertised.
+  - **Usage scopes** (VK3 L5b, after the out-of-context review of L4f's finding 2): the driver binds every buffer of a
+    `VkDeviceMemory` from one GPUBuffer, and WebGPU refuses a writable usage beside any other of the same GPUBuffer in
+    one usage scope (a dispatch; a whole render pass). A compute stage's storage buffers are all `read_write` for that
+    (vk/README.md "The shader path"), but a dispatch that reads a uniform buffer and writes a storage buffer of one
+    memory, and a render pass where any read usage (a vertex, index or uniform buffer, storage a stage only reads)
+    shares a memory with storage a fragment stage writes, still fail validation (the dispatch or the pass dropped, a
+    WebGPU error). Fragment stages' unwritten buffers stay `read`: made `read_write`, they broke
+    `memory.pipeline_barrier.graphics.host_write_storage_buffer` (one buffer read by a vertex and a fragment stage in
+    one pass), the commoner case. Sub-allocating programs (VMA, DXVK, most engines) meet it once their compute or fragment shaders write
+    storage. A fix would give such a binding a GPUBuffer of its own over the same bytes (a copy in before the scope and
+    none out, for read-only usages), or one GPUBuffer per `VkBuffer` with copies between those that alias.
+  - **Sample counts Vulkan wants but WebGPU lacks** (the review of L4f's finding 3): `framebufferColorSampleCounts` is
+    1|4 (Vulkan's minimum) though `R32G32B32A32_SFLOAT` and `R32G32_SFLOAT` colour attachments have 1 sample (WebGPU
+    multisamples neither): `api.info.image_format_properties.*` checks the superset; an emulation (a 4-layer texture
+    resolved by a draw) or nothing. An image made for sampling only reports 1 sample, which falls short of
+    `sampledImageColorSampleCounts` (1|4) for formats WebGPU multisamples (its textures are multisampled only as render
+    attachments: the driver would add that usage). A multisampled image of more than one layer is accepted but invalid
+    in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
+    limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
+    integer formats allow.
   - **Synchronization**: a submit that waits on a timeline value nothing has signalled yet runs at once
     (`wg_sync_wait_many` answers every wait "pending", so Mesa's runtime hands the submit straight to the driver; the
     driver review's finding 8). A fix would hold such a submit in the driver until its wait's value is signalled
@@ -690,7 +710,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     conversion's rounding.
   - **Compute**: `compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.*` crash deqp-vk (`.1` alone;
     `.16` and `.4` pass alone but crashed it in the long list, VK3 L4f: out of `tests/deqp/vk.txt`); not looked into
-    (the device's workgroup storage, advertised 16 bytes under WebGPU's since L4f, is the suspect to rule out first).
+    (L4f's suspect, the device's workgroup storage advertised 16 bytes under WebGPU's, is gone since L5b: rerun them).
   - **Memory**: 3 `memory.binding.aliasing` cases and two `memory` crashes (vkr's `vkFreeMemory resulted in CS
     error`), not looked into (VK3 L4f's rerun, after the driver review's fix of a linear image's freed memory: the
     other `memory.binding` failures of L5's samples pass, the crashes stay). `memory.allocation.random.*` and

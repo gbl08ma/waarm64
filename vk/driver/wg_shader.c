@@ -274,6 +274,7 @@ resource_merge(struct wgsl_resource *m, const struct wgsl_resource *r)
 {
    if (r->kind == WGSL_STORAGE)
       m->kind = WGSL_STORAGE;
+   m->written |= r->written;
    if (r->kind == WGSL_STORAGE_TEXTURE)
       m->access |= r->access;
    m->size = MAX2(m->size, r->size);
@@ -361,7 +362,7 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
    X(push_ubo_size) X(vis) X(pair_count) X(pairs)
 #define RESOURCE_FIELDS(X)                                                                                             \
-   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(nonfiltering) X(access) X(format) X(size)
+   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(written) X(nonfiltering) X(access) X(format) X(size)
 
 static void
 program_write(struct blob *b, const struct wg_program *p)
@@ -579,14 +580,15 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             break;
          }
          shaders[i] = s;
-         char *text = wgsl_print(NULL, infos[i].nir, infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
-                                 wg_max_immediates,
-                                 ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
-                                    ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
-                                    (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) |
-                                    ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
-                                 &s->info, error,
-                                 sizeof(error));
+         const struct wgsl_print_options options = {
+            .fs = infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
+            .max_immediates = wg_max_immediates,
+            .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
+            .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
+                        ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
+                        (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
+         };
+         char *text = wgsl_print(NULL, infos[i].nir, &options, &s->info, error, sizeof(error));
          if (!text) {
             ok = false;
             break;
@@ -613,8 +615,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
                   ok = false;
                }
                /* Likewise a storage buffer one stage writes and another only reads (the translator declares it
-                * read-only where it isn't written): that is a vertex stage reading what the fragment stage writes,
-                * which WebGPU can't bind (no writable storage in vertex shaders). */
+                * read-only where it isn't written, but in compute): that is a vertex stage reading what the fragment
+                * stage writes, which WebGPU can't bind (no writable storage in vertex shaders). */
                const bool xs = x->kind == WGSL_STORAGE || x->kind == WGSL_STORAGE_READ;
                const bool ys = y->kind == WGSL_STORAGE || y->kind == WGSL_STORAGE_READ;
                if (xs && ys && x->group == y->group && x->binding == y->binding && x->kind != y->kind) {

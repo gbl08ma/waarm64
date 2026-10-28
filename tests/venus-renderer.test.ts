@@ -57,11 +57,11 @@ test("what the driver advertises follows the WebGPU device's features and limits
     const { v, memory } = await renderer(c, options);
     const at = (v.raw.wgt_caps as () => number)() >>> 0;
     assert.ok(at, 'wgt_caps failed');
-    const w = new Uint32Array(memory.buffer, at, 23);
+    const w = new Uint32Array(memory.buffer, at, 24);
     return {
       dim2D: w[0], invocations: w[1], sizeX: w[2], storageImages: w[3], sampledImages: w[4], storageRange: w[5], subgroupSize: w[6],
       subgroupOps: w[7], bc: w[8], extendedFormats: w[9], depthClamp: w[10], r16float: w[11], r16unorm: w[12], rg11b10: w[13], r32float: w[14], vendor: w[15],
-      cacheUuid: w[16], rgba32Samples: w[17], rgba8Samples: w[18], r32uintSamples: w[19], integerSamples: w[20], sharedMemory: w[21], dualSource: w[22],
+      cacheUuid: w[16], rgba32Samples: w[17], rgba8Samples: w[18], r32uintSamples: w[19], integerSamples: w[20], sharedMemory: w[21], dualSource: w[22], integerMissing: w[23],
     };
   };
   const SAMPLED = 0x1, STORAGE = 0x2, COLOR = 0x80, BLEND = 0x100, FILTER = 0x1000;
@@ -83,10 +83,13 @@ test("what the driver advertises follows the WebGPU device's features and limits
   // review of the translator, finding 9).
   assert.equal(new Set([mac.cacheUuid, swiftshader.cacheUuid, none.cacheUuid]).size, 3, 'pipelineCacheUUID ignores the caps');
   // The out-of-context review of the translator: multisampling as WebGPU has it (none for the 32-bit integer formats
-  // and the float ones of two or four channels; 8- and 16-bit integers as the others), workgroup memory less the
-  // translator's 16 bytes, dual-source blending where the adapter has it (the Mac's).
-  assert.deepEqual([mac.rgba32Samples, mac.rgba8Samples, mac.r32uintSamples, mac.integerSamples], [1, 5, 1, 5]);
-  assert.deepEqual([mac.sharedMemory, none.sharedMemory], [32768 - 16, 16384 - 16]);
+  // and the float ones of two or four channels; 8- and 16-bit integers as the others), dual-source blending where the
+  // adapter has it (the Mac's). The review of L4f (findings 3, 4): framebufferIntegerColorSampleCounts no more than
+  // every integer colour attachment's (1: the 32-bit ones have no multisampling), and the adapter's workgroup memory
+  // whole (Vulkan's minimum is 16384).
+  assert.deepEqual([mac.rgba32Samples, mac.rgba8Samples, mac.r32uintSamples, mac.integerSamples], [1, 5, 1, 1]);
+  assert.deepEqual([mac.integerMissing, swiftshader.integerMissing, none.integerMissing], [0, 0, 0]);
+  assert.deepEqual([mac.sharedMemory, none.sharedMemory], [32768, 16384]);
   assert.deepEqual([mac.dualSource, swiftshader.dualSource, none.dualSource], [1, 0, 0]);
   // Subgroups of one invocation, basic operations only (the translator has none of WebGPU's yet).
   assert.deepEqual([mac.subgroupSize, mac.subgroupOps], [1, 1]);

@@ -236,8 +236,9 @@ wg_caps_properties(struct vk_properties *p)
    p->maxFragmentDualSrcAttachments = HAS(DUAL_SOURCE) ? 1 : 0;
    p->maxFragmentCombinedOutputResources =
       L->max_color_attachments + L->max_storage_buffers_in_fragment_stage + L->max_storage_textures_in_fragment_stage;
-   /* Less the translator's one workgroup var of its own (wgsl_print.c's wg_uc: 16 bytes as WebGPU counts it). */
-   p->maxComputeSharedMemorySize = L->max_compute_workgroup_storage_size - 16;
+   /* Whole: the translator's word for uniform conditions takes shared memory's slack, or room left beside it, or else
+    * shared memory's first word for the while (wgsl_print.c). */
+   p->maxComputeSharedMemorySize = L->max_compute_workgroup_storage_size;
    for (int i = 0; i < 3; i++)
       p->maxComputeWorkGroupCount[i] = L->max_compute_workgroups_per_dimension;
    p->maxComputeWorkGroupInvocations = L->max_compute_invocations_per_workgroup;
@@ -273,7 +274,7 @@ wg_caps_properties(struct vk_properties *p)
    p->framebufferNoAttachmentsSampleCounts = samples;
    p->maxColorAttachments = L->max_color_attachments;
    p->sampledImageColorSampleCounts = samples;
-   p->sampledImageIntegerSampleCounts = samples;
+   p->sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT; /* as framebufferIntegerColorSampleCounts (below) */
    p->sampledImageDepthSampleCounts = samples;
    p->sampledImageStencilSampleCounts = samples;
    p->storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT;
@@ -314,8 +315,9 @@ wg_caps_properties(struct vk_properties *p)
 
    p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
    p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-   /* As the image formats' (WebGPU multisamples its 8-, 16- and 32-bit single-channel integer formats). */
-   p->framebufferIntegerColorSampleCounts = samples;
+   /* Every integer colour attachment's: WebGPU doesn't multisample r32uint, r32sint and the 32-bit ones of two or four
+    * channels (wg_device.c's image formats), and Vulkan wants each format's sample counts to hold these. */
+   p->framebufferIntegerColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
    p->maxTimelineSemaphoreValueDifference = 2147483647;
    p->storageTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->uniformTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;

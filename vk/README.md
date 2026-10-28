@@ -62,16 +62,22 @@ can't be arrays, copied into an array the shader indexes), or, past the device's
 Vulkan's minimum is 128), a uniform buffer of the driver's at `@group(3) @binding(998)`, bound at a dynamic offset a
 draw; a compute shader's `if` around a barrier, or breaking out of a loop that holds one, takes its condition through
 `workgroupUniformLoad` (WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow, every
-value being a `var`; a barrier after it keeps the next write from racing the read, so one workgroup var, `wg_uc`, serves
-every condition, and the device advertises WebGPU's workgroup storage less its 16 bytes); a vertex shader's outputs are typed and interpolated as its
+value being a `var`; a barrier after it keeps the next write from racing the read, so one word serves every condition:
+shared memory's spare word where it has one (WebGPU counts each workgroup var rounded up to 16 bytes), else a var of
+its own, `wg_uc`, where the workgroup's storage has room, else shared memory's first word, saved and restored between
+barriers; shared memory of atomics filling the storage is refused; the device advertises WebGPU's workgroup storage
+whole, VK3 L5b); a vertex shader's outputs are typed and interpolated as its
 fragment shader reads them, its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport) and its z
 mirrored (`w - z`) by `wg_flip_z` for an inverted depth range (WebGPU wants `minDepth <= maxDepth`: the range is set the
 right way round);
 `packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
 compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). Location
 0's second source (`index = 1`) is WGSL's `@blend_src(1)` (`enable dual_source_blending`, where the device has it); a
-storage buffer is `read_write` only in a stage that writes it (else `read`: a vertex stage can then read what the
-fragment stage only reads); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
+storage buffer is `read_write` in a compute stage whether it writes it or not, since the driver binds every buffer of a
+`VkDeviceMemory` from one GPUBuffer and WebGPU's usage scopes refuse "storage" beside "read-only-storage" in it (a
+dispatch's; VK3 L5b), and in other stages only where they write it (else `read`: a vertex stage can then read what the
+fragment stage only reads, and a render pass's draws, whose scope is the whole pass, agree with its vertex stages',
+which WebGPU has read-only); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
 array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max is refused; a texture
 and a sampler array indexed apart get an `if` tree each (every texture with every sampler); a terminate
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
@@ -239,8 +245,10 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); a depth or
   stencil attachment in a read-only layout is WebGPU's `depthReadOnly`/`stencilReadOnly` (so the pass may sample it; its
   pipelines then write neither); blits, resolves and image clears as the worker's draws, depth and stencil resolves too
-  (SAMPLE_ZERO, the modes advertised, at the end of the pass instance: a draw writing sample 0 as `frag_depth`, and for
-  stencil, which no shader writes, eight draws, one a bit, each keeping the pixels whose sample 0 has it; VK3 L4f);
+  (SAMPLE_ZERO, the modes advertised, at the end of the pass instance, within its render area: a draw writing sample 0
+  as `frag_depth`, and for stencil, which no shader writes, a draw zeroing it and eight draws, one a bit, each keeping
+  the pixels whose sample 0 has it; VK3 L4f; the attachment is stored whatever its store op, since Vulkan resolves
+  before the store op and the draws read it after the pass: L5b);
   `CONSTANT_ALPHA` colour factors as WebGPU's one constant set to the constant's alpha (a draw mixing it with
   `CONSTANT_COLOR` in its colour can't be expressed: warned, the colour kept);
   pipelines as WebGPU takes them: an indexed strip always has its index format, depth bias only for polygons, and a

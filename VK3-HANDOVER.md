@@ -6,19 +6,23 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L5)
+## State (2026-10-28, after L5b)
 
-- **Done:** WGSL's subgroups where the adapter's have one size (compute and fragment; ids from `local_invocation_index`),
-  16-bit storage everywhere, `shaderFloat16` with `shader-f16`, tier2's read-write formats tested; a scratch addressing
-  bug older than L5 fixed (vk/README.md "The shader path"; REPORT.md "VK3 L5").
-- **dEQP-VK:** the list 2,333 → 3,261 (723 subgroup, 205 16-bit-storage cases; SwiftShader: 1,865 of 1,865 subgroup
-  and 205 of 205 16-bit cases that ran pass). The Mac: f16 226 of 233, tier1/2 storage 27 of 27 that ran.
-- **The Mac's subgroups are held:** Chromium's Metal hoists a lone ballot out of an `if` (89 of 503 cases failed); the
-  GPU worker checks it at Venus's start (`subgroupsRight`) and falls back to subgroups of one. Backlog: report it, try a
-  translator workaround. **NVIDIA:** the same check decides there, unseen (below).
+- **Done:** the review of L4f's six findings (`origin/review/venus-l4f`, kept), each with its test failing first and
+  planted back: depth/stencil resolves stored whatever the store op and kept to the render area (multisampled layers:
+  WebGPU has none, so moot); a compute stage's storage buffers all `read_write` (fragment stages' too broke a dEQP-VK
+  case: a pass's vertex stages read storage read-only, so unwritten fragment buffers stay `read`); the integer
+  sample-count limits 1;
+  `maxComputeSharedMemorySize` WebGPU's whole (the uniform conditions' word in shared memory's slack, beside it, or saved
+  and restored); terminate and demote run, not only compiled. Filed: the usage-scope conflicts left (UBO, vertex/index
+  buffers beside written storage in one memory) and the float formats' sample counts (backlog).
+- **dEQP-VK:** the list holds (3,261 pass; ci.sh and ci-deqp-vk.sh green). **Next:** L6.
 
-## Where VK3 stands (2026-10-28, after L4f; next L5b, then L6)
+## Where VK3 stands (2026-10-28, after L5b; next L6)
 
+- **L5:** WGSL's subgroups where the adapter's have one size (held on the Mac: Chromium's Metal hoists a lone ballot out
+  of an `if`; the worker's `subgroupsRight` check falls back to subgroups of one), 16-bit storage, `shaderFloat16`,
+  tier2's read-write formats; dEQP-VK's list 2,333 → 3,261 (REPORT.md "VK3 L5").
 - **L4f:** the out-of-context reviews' remaining findings fixed (14) or filed (backlog "The Vulkan driver's gaps");
   dual-source blending implemented and advertised, API 1.3 kept; dEQP-VK's list 1,807 → 2,333.
 - **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
@@ -64,12 +68,12 @@ docs and the backlog; git keeps the old handovers.
   gaps filed. The review files deleted. The out-of-context review of what L4f changed is the supervisor's.
 - [x] L5: the translator's adapter features: subgroups (held on the Mac by a run-time check), 16-bit storage,
   `shaderFloat16`, tier2's read-write formats; left: `shaderInt16`, 16-bit I/O, the Metal ballot workaround (backlog).
-- [ ] L5b: the out-of-context review of L4f's changes (`origin/review/venus-l4f`, `VENUS-L4F-REVIEW.md` there; 6
+- [x] L5b: the out-of-context review of L4f's changes (`origin/review/venus-l4f`, `VENUS-L4F-REVIEW.md` there; 6
   findings, all taken): a `DONT_CARE` multisampled depth/stencil discarded before its resolve reads it; SSBOs a stage
   doesn't write now `read-only-storage`, a usage-scope conflict beside a writable one in the same memory's GPUBuffer;
   `framebuffer(Integer)ColorSampleCounts` past what the 32-bit formats report; `maxComputeSharedMemorySize` 16368 under
   Vulkan's 16384 minimum; the depth resolve's `renderArea` and layers; the tests that defend 3 and 4 or match text only.
-  Each with its test failing first.
+  Each with its test failing first. Done: all six fixed (the resolve's layers moot), the usage scopes left filed.
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries with their availability and strided
   copies (the driver review's 10), texel buffers, depth/stencil copies, dEQP-VK on the Mac's GPU (`sway-mac.sh vk`
   runs it since L4f: `SCRIPT=deqp-run.ts CASES=… bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`); the 34

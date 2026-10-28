@@ -1029,10 +1029,10 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
   }
 
   /**
-   * A multisampled depth or stencil attachment's SAMPLE_ZERO resolve (WebGPU resolves colour only): a draw that writes
-   * each pixel's sample 0 as its depth (`frag_depth`), or, for stencil, which a shader can't write, the value cleared
-   * to 0 and then each bit set by a draw of its own (the bit's write mask, a reference of all ones) that keeps only the
-   * pixels whose sample 0 has it.
+   * A multisampled depth or stencil attachment's SAMPLE_ZERO resolve (WebGPU resolves colour only) within the render
+   * area (`area`, a scissor): a draw that writes each pixel's sample 0 as its depth (`frag_depth`), or, for stencil,
+   * which a shader can't write, the value zeroed by a draw (a reference of 0 replacing every bit) and then each bit set
+   * by a draw of its own (the bit's write mask, a reference of all ones) that keeps only the pixels whose sample 0 has it.
    */
   private resolveDepth(j: Json) {
     const src = j.src as GPUTexture, dst = j.dst as GPUTexture;
@@ -1065,20 +1065,31 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     const view = src.createView({ dimension: '2d', aspect: stencil ? 'stencil-only' : 'depth-only', baseMipLevel: j.srcMip, mipLevelCount: 1, baseArrayLayer: j.srcLayer, arrayLayerCount: 1 });
     const ds: GPURenderPassDepthStencilAttachment = { view: this.viewOf(dst, j.dstMip, j.dstLayer) };
     if (/depth/.test(fmt)) Object.assign(ds, { depthLoadOp: 'load', depthStoreOp: 'store' });
-    if (/stencil/.test(fmt)) Object.assign(ds, stencil ? { stencilLoadOp: 'clear', stencilStoreOp: 'store', stencilClearValue: 0 } : { stencilLoadOp: 'load', stencilStoreOp: 'store' });
+    if (/stencil/.test(fmt)) Object.assign(ds, { stencilLoadOp: 'load', stencilStoreOp: 'store' });
+    // The render area within the destination's level.
+    const w = Math.max(1, dst.width >> (j.dstMip as number)), h = Math.max(1, dst.height >> (j.dstMip as number));
+    const [ax, ay, aw, ah] = (j.area ?? [0, 0, w, h]) as number[];
+    const x0 = Math.min(Math.max(ax, 0), w), y0 = Math.min(Math.max(ay, 0), h);
+    const x1 = Math.min(Math.max(ax + aw, x0), w), y1 = Math.min(Math.max(ay + ah, y0), h);
+    if (x0 === x1 || y0 === y1) return;
     const pass = this.enc!.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds });
-    const draws = stencil ? [0, 1, 2, 3, 4, 5, 6, 7] : [-1];
+    pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+    const draws = stencil ? [-2, 0, 1, 2, 3, 4, 5, 6, 7] : [-1];
     for (const bit of draws) {
-      const pipeline = bit < 0
+      const pipeline = bit === -1
         ? layout(`@group(0) @binding(0) var t: texture_depth_multisampled_2d;
 ${vs}
 @fragment fn fs(@builtin(position) p: vec4<f32>) -> @builtin(frag_depth) f32 { return textureLoad(t, vec2<i32>(p.xy), 0); }`, 0)
-        : layout(`@group(0) @binding(0) var t: texture_multisampled_2d<u32>;
+        : bit === -2
+          ? layout(`@group(0) @binding(0) var t: texture_multisampled_2d<u32>;
+${vs}
+@fragment fn fs(@builtin(position) p: vec4<f32>) { _ = textureLoad(t, vec2<i32>(p.xy), 0); }`, 0xff, bit)
+          : layout(`@group(0) @binding(0) var t: texture_multisampled_2d<u32>;
 ${vs}
 @fragment fn fs(@builtin(position) p: vec4<f32>) { if ((textureLoad(t, vec2<i32>(p.xy), 0).x & ${1 << bit}u) == 0u) { discard; } }`, 1 << bit, bit);
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }] }));
-      if (stencil) pass.setStencilReference(0xff);
+      if (stencil) pass.setStencilReference(bit === -2 ? 0 : 0xff);
       pass.draw(3);
     }
     pass.end();

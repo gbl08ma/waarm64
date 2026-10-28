@@ -188,6 +188,55 @@ async function runCompute(code: string, buffers: { binding: number; init?: Uint8
   }
 }
 
+/**
+ * Draws a translated fragment shader over a 4×4 rgba8unorm target cleared to blue in headless Chromium's WebGPU, its
+ * location 0 input (vec4) the pixel centre's (u, v, 0, 1) with v down; the target's bytes, or undefined without an adapter.
+ */
+async function runFragment(code: string) {
+  const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+    args: (process.env.CHROMIUM_ARGS ?? '--enable-unsafe-webgpu --enable-features=Vulkan').split(' ').filter(Boolean) });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+    const r = await page.evaluate(async (code) => {
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter) return undefined;
+      const device = await adapter.requestDevice();
+      const errors: string[] = [];
+      device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+      const fs = device.createShaderModule({ code });
+      errors.push(...(await fs.getCompilationInfo()).messages.filter((m) => m.type === 'error').map((m) => `${m.lineNum}:${m.linePos} ${m.message}`));
+      const vs = device.createShaderModule({ code: `struct V { @builtin(position) p: vec4<f32>, @location(0) c: vec4<f32> }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> V {
+  let q = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
+  return V(vec4<f32>(q.x * 2.0 - 1.0, 1.0 - q.y * 2.0, 0.0, 1.0), vec4<f32>(q, 0.0, 1.0));
+}` });
+      const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module: vs, entryPoint: 'vs' },
+        fragment: { module: fs, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] }, primitive: { topology: 'triangle-list' } });
+      const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: 0x10 | 0x1 /* RENDER_ATTACHMENT | COPY_SRC */ });
+      const read = device.createBuffer({ size: 256 * 4, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 1, 1] }] });
+      pass.setPipeline(pipeline);
+      pass.draw(3);
+      pass.end();
+      enc.copyTextureToBuffer({ texture: target }, { buffer: read, bytesPerRow: 256 }, [4, 4]);
+      device.queue.submit([enc.finish()]);
+      await read.mapAsync(1 /* GPUMapMode.READ */);
+      const rows = new Uint8Array(read.getMappedRange());
+      const pixels: number[][] = [];
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) pixels.push([...rows.subarray(y * 256 + x * 4, y * 256 + x * 4 + 4)]);
+      return { errors, pixels };
+    }, code);
+    return r;
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
 /** An IEEE half's bits as a number, and a number to a half's bits rounded to the nearest even. */
 function fromHalf(h: number) {
   const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023;
@@ -478,6 +527,64 @@ test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratc
     // 16-bit floats compile where the adapter has shader-f16 (the Mac's, not SwiftShader's).
     const [errors] = (await compile([f16.text]))!;
     if (!/f16/.test(errors)) assert.equal(errors, '', 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('the out-of-context review of L4f: a compute stage\'s storage buffers read_write, the uniform conditions\' word in the workgroup\'s storage, terminate and demote run (VK3 L5b)', { skip: noGlslc, timeout: 180_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const ok = (file: string, env?: string) => {
+      const r = glslStage(translate, tmp, file, {}, env);
+      assert.equal(r.rc, 0, `${file}: ${r.text}`);
+      return r.text;
+    };
+    // 2: a compute stage's buffers are read_write, the one it declares readonly too: "storage" and "read-only-storage"
+    // can't meet in one GPUBuffer (one per memory) in a dispatch.
+    const copy = ok('tests/venus/ssbo-copy.comp');
+    assert.match(copy, /@group\(0\) @binding\(0\) var<storage, read_write> r0_0/);
+    assert.match(copy, /@group\(0\) @binding\(2\) var<storage, read_write> r0_2/);
+    // A fragment stage's buffers it only reads stay read-only, readonly or not (its scope is the render pass, where
+    // vertex stages read storage read-only: dEQP-VK's memory.pipeline_barrier.graphics.host_write_storage_buffer).
+    const frag = ok('tests/venus/l5b/storage-frag.frag');
+    assert.match(frag, /@group\(0\) @binding\(0\) var<storage, read> r0_0/);
+    assert.match(frag, /@group\(0\) @binding\(2\) var<storage, read> r0_2/);
+    assert.match(frag, /@group\(0\) @binding\(4\) var<storage, read_write> r0_4/);
+    // 4: the uniform condition's word where shared memory fills the workgroup's storage: shared memory's spare word, or
+    // its first word saved and restored; then each runs right within WebGPU's default 16384 bytes.
+    const slack = ok('tests/venus/l5b/shared-slack.comp');
+    assert.match(slack, /var<workgroup> shm: array<u32, 4096>;/);
+    assert.match(slack, /workgroupUniformLoad\(&shm\[4095\]\)/);
+    assert.doesNotMatch(slack, /wg_uc/);
+    const full = ok('tests/venus/l5b/shared-full.comp');
+    assert.match(full, /var<workgroup> shm: array<u32, 4096>;/);
+    assert.match(full, /let ucs0 = shm\[0\];/);
+    assert.doesNotMatch(full, /wg_uc/);
+    for (const [code, top] of [[slack, 4094], [full, 4095]] as const) {
+      const res = await runCompute(code, [{ binding: 0, size: 65 * 4 }]);
+      if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+      assert.deepEqual(res.errors, []);
+      const v = new Uint32Array(res.out[0].buffer);
+      const bad = [...Array(64).keys()].filter((k) => v[1 + k] !== (top - k * 64) * 3);
+      assert.deepEqual(bad.slice(0, 8), [], `${bad.length} wrong, v[1] = ${v[1]}`);
+    }
+    // 6: a terminated invocation writes nothing and leaves its loop (else the draw never ends); a demoted one writes
+    // nothing, and the others aren't helpers.
+    const blue = [0, 0, 255, 255];
+    const term = await runFragment(ok('tests/venus/l5b/terminate-run.frag', 'vulkan1.3'));
+    assert.ok(term);
+    assert.deepEqual(term.errors, []);
+    for (let i = 0; i < 16; i++) {
+      const x = i & 3, y = i >> 2, px: number[] = term.pixels[i];
+      if (x >= 2) assert.deepEqual(px, blue, `terminate: pixel ${x},${y}`);
+      else assert.ok(Math.abs(px[0] - ((x + 0.5) / 4) * 255) <= 1 && Math.abs(px[1] - ((y + 0.5) / 4) * 255) <= 1 && px[2] === 0 && px[3] === 255, `terminate: pixel ${x},${y}: ${px}`);
+    }
+    const demote = await runFragment(ok('tests/venus/l4f/demote.frag', 'vulkan1.3'));
+    assert.ok(demote);
+    assert.deepEqual(demote.errors, []);
+    for (let i = 0; i < 16; i++) assert.deepEqual(demote.pixels[i], i >> 2 >= 2 ? blue : [0, 0, 0, 0], `demote: pixel ${i & 3},${i >> 2}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

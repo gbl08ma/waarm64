@@ -220,19 +220,23 @@ for (const [scenario, what] of [
   ['freedModule', 'a compute program\'s variant made after the shader that made the program was destroyed'],
   // L4f (the reviews' depth and stencil resolves: the translator's 10, the driver's 9).
   ['depthResolve', 'a multisampled depth and stencil attachment resolved at the pass\'s end'],
+  // L5b (the out-of-context review of L4f: findings 1, 5, 2).
+  ['depthResolveDiscard', 'a depth and stencil resolve of an attachment whose store op is DONT_CARE'],
+  ['depthResolveArea', 'a depth and stencil resolve over part of the attachment'],
+  ['storageAliased', 'a storage buffer read and one written, bound from one memory, in one dispatch'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
     const out = join(root, 'target/vk/test');
     mkdirSync(out, { recursive: true });
-    const src = scenario === 'freedModule' ? 'depth-read.comp' : 'push.comp';
+    const src = scenario === 'freedModule' ? 'depth-read.comp' : scenario === 'storageAliased' ? 'ssbo-copy.comp' : 'push.comp';
     const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${src}.spv`), join(root, `tests/venus/${src}`)], { encoding: 'utf8' });
     assert.equal(c.status, 0, c.stderr);
     const page = await browser.newPage();
     page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, `/target/vk/test/${s === 'freedModule' ? 'depth-read' : 'push'}.comp.spv`), scenario);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, `/target/vk/test/${s === 'freedModule' ? 'depth-read' : s === 'storageAliased' ? 'ssbo-copy' : 'push'}.comp.spv`), scenario);
     await page.close();
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
