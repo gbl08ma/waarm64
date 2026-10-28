@@ -29,11 +29,17 @@
 
 /* A set layout as the compiler needs it: its bind group and first slot there, each binding's first slot in the set
  * (-1 for none) and element count. */
+struct vk_ycbcr_conversion_state;
 struct wgsl_set_layout {
    uint32_t group, base;
    uint32_t binding_count;
    const int32_t *first; /* by binding number */
    const uint32_t *count;
+   /* YCbCr conversions (VK3 L7.2; NULL tables: none): by slot, a combined image-sampler's immutable sampler's
+    * conversion (NULL: none); by binding, the slot its elements' other planes start at (plane p > 0 of element e at
+    * slot planes[b] + 2e + p - 1; -1: none). A multi-planar image's planes are textures of their own. */
+   const struct vk_ycbcr_conversion_state *const *ycbcr;
+   const int32_t *planes;
 };
 
 struct wgsl_layout {
@@ -128,6 +134,11 @@ void wgsl_preprocess(nir_shader *nir);
 bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_size, char *error,
                 size_t error_size);
 
+/* Before wgsl_lower: sampling through an immutable sampler with a YCbCr conversion as one sample of each plane and
+ * the conversion's swizzle, range and model (Mesa's nir_vk_lower_ycbcr_tex, implicit chroma reconstruction: a cosited
+ * chroma sample's coordinate moved half a chroma texel, the plane's sampler filtering it). */
+bool wgsl_lower_ycbcr(nir_shader *nir, const struct wgsl_layout *layout); /* wgsl_lower runs it first */
+
 /* Links a vertex and a fragment shader's varyings (both lowered): nir_opt_varyings, as KosmicKrisp links. */
 void wgsl_link(nir_shader *vs, nir_shader *fs);
 
@@ -155,6 +166,8 @@ char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);
 void wgsl_test_device(unsigned features, unsigned subgroup_size);
+void wgsl_test_ycbcr(int set, unsigned binding, unsigned format, unsigned model, unsigned range, unsigned x_offset,
+                     unsigned y_offset, unsigned filter);
 int wgsl_test_translate(const uint32_t *words, size_t nwords, int stage);
 const char *wgsl_test_result(void);
 const struct wgsl_info *wgsl_test_info(void);

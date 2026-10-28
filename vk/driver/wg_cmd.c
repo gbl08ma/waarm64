@@ -1199,8 +1199,10 @@ static void
 copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct wg_image *image,
         const VkBufferImageCopy2 *r)
 {
-   const struct wg_texture_format *f = image->fmt;
    const VkImageAspectFlags aspect = r->imageSubresource.aspectMask;
+   /* A multi-planar image's plane (VK3 L7.2): its own texture, the region in its texels. */
+   const struct wg_image_plane *plane = &image->planes[wg_image_plane(image, aspect)];
+   const struct wg_texture_format *f = plane->fmt;
    uint32_t bytes = f->bytes;
    uint32_t a = 0;
    if ((f->flags & WG_FMT_DEPTH) && (f->flags & WG_FMT_STENCIL)) {
@@ -1222,7 +1224,7 @@ copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct 
    for (uint32_t l = 0; l < layers; l++) {
       const VkDeviceSize offset = buffer->offset + r->bufferOffset + (VkDeviceSize)l * bpr * rows;
       struct op_copy_bt c = {
-         .buffer = buffer_gpu(buffer), .bpr = bpr, .rows = rows, .tex = image->tex, .mip = r->imageSubresource.mipLevel,
+         .buffer = buffer_gpu(buffer), .bpr = bpr, .rows = rows, .tex = plane->tex, .mip = r->imageSubresource.mipLevel,
          .x = r->imageOffset.x, .y = r->imageOffset.y, .z = is3d ? r->imageOffset.z : r->imageSubresource.baseArrayLayer + l,
          .w = DIV_ROUND_UP(e.width, f->bw) * f->bw, .h = DIV_ROUND_UP(e.height, f->bh) * f->bh, .d = depth, .aspect = a, .block_h = f->bh, .offset = offset,
       };
@@ -1267,13 +1269,16 @@ wg_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *info)
       const bool s3 = src->vk.image_type == VK_IMAGE_TYPE_3D, d3 = dst->vk.image_type == VK_IMAGE_TYPE_3D;
       const uint32_t layers = s3 ? r->extent.depth : vk_image_subresource_layer_count(&src->vk, &r->srcSubresource);
       const VkImageAspectFlags aspect = r->srcSubresource.aspectMask;
+      /* Planes of multi-planar images (VK3 L7.2): their own textures. */
+      const struct wg_image_plane *sp = &src->planes[wg_image_plane(src, aspect)];
+      const struct wg_image_plane *dp = &dst->planes[wg_image_plane(dst, r->dstSubresource.aspectMask)];
       emit(cmd, OP_COPY_TT,
-           &(struct op_copy_tt){ .src = src->tex, .src_mip = r->srcSubresource.mipLevel, .sx = r->srcOffset.x,
+           &(struct op_copy_tt){ .src = sp->tex, .src_mip = r->srcSubresource.mipLevel, .sx = r->srcOffset.x,
                                  .sy = r->srcOffset.y, .sz = s3 ? r->srcOffset.z : r->srcSubresource.baseArrayLayer,
-                                 .dst = dst->tex, .dst_mip = r->dstSubresource.mipLevel, .dx = r->dstOffset.x,
+                                 .dst = dp->tex, .dst_mip = r->dstSubresource.mipLevel, .dx = r->dstOffset.x,
                                  .dy = r->dstOffset.y, .dz = d3 ? r->dstOffset.z : r->dstSubresource.baseArrayLayer,
-                                 .w = DIV_ROUND_UP(r->extent.width, src->fmt->bw) * src->fmt->bw,
-                                 .h = DIV_ROUND_UP(r->extent.height, src->fmt->bh) * src->fmt->bh,
+                                 .w = DIV_ROUND_UP(r->extent.width, sp->fmt->bw) * sp->fmt->bw,
+                                 .h = DIV_ROUND_UP(r->extent.height, sp->fmt->bh) * sp->fmt->bh,
                                  .d = layers,
                                  .aspect = (src->fmt->flags & WG_FMT_DEPTH) && (src->fmt->flags & WG_FMT_STENCIL)
                                               ? (aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : aspect == VK_IMAGE_ASPECT_DEPTH_BIT ? 1 : 0)
@@ -1914,7 +1919,9 @@ bind_group(struct replay *r, const struct op_bind *b, bool *transient)
          if (!d->view)
             continue;
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
-                        res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage : d->view->view);
+                        res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage
+                        : d->plane && d->plane < d->view->plane_count       ? d->view->planes[d->plane]
+                                                                            : d->view->view);
          break;
       }
       first = false;

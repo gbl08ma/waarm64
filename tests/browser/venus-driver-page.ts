@@ -382,7 +382,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -390,13 +390,14 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  // `ycbcr`: the device with `?gpu=vkycbcr`'s YCbCr conversions (VK3 L7.2).
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, undefined, undefined, { ycbcr: scenario === 'ycbcr' });
   const ex = v.raw as unknown as Test;
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   if (scenario === 'emptyAfterHeld') {
     // The fence of the submit behind the held copy: unsignalled while the copy waits for the host.
@@ -515,6 +516,18 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
     const h = new Uint16Array(want.buffer, 2048, 64);
     for (let i = 0; i < 16; i++) h.set([half(i), half(-0.5 * i), half(0.25), half(1 + i)], 4 * i);
     Object.assign(checks, { fetched: [0, 1024, want], sizes: [1024, 1040, want], stored: [2048, 2176, want], rest: [2176, 4096, want] });
+  } else if (scenario === 'ycbcr') {
+    // What ycbcr.comp samples of the NV12 image (wg_test.c's scenario 22): BT.709, narrow range, chroma at the
+    // midpoint (each 2×2 block's), as floats; within 0.02 of the spec's matrices (the bytes then taken as they came).
+    const Y = Array.from({ length: 16 }, (_, i) => 16 + i * 13), C = [[60, 200], [128, 128], [200, 60], [90, 170]];
+    const f = new Float32Array(got.buffer, got.byteOffset, 64), w = new Float32Array(want.buffer, 0, 64);
+    for (let i = 0; i < 16; i++) {
+      const x = i & 3, y = i >> 2, c = C[(y >> 1) * 2 + (x >> 1)];
+      const yy = (Y[i] - 16) / 219, pb = (c[0] - 128) / 224, pr = (c[1] - 128) / 224;
+      const rgb = [yy + 1.5748 * pr, yy - 0.13397432 / 0.7152 * pb - 0.33480248 / 0.7152 * pr, yy + 1.8556 * pb, 1];
+      for (let k = 0; k < 4; k++) w[4 * i + k] = Math.abs(f[4 * i + k] - rgb[k]) < 0.02 ? f[4 * i + k] : rgb[k];
+    }
+    Object.assign(checks, { converted: [0, 256, want], rest: [256, 4096, want] });
   } else if (scenario === 'waitBeforeSignal') {
     want.fill(0x22, 0, 64);
     Object.assign(checks, { copied: [0, 4096, want] });

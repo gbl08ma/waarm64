@@ -609,7 +609,8 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
          continue;
       const struct wg_descriptor_set_layout *l = container_of(layouts[s], struct wg_descriptor_set_layout, vk);
       out->sets[s] = (struct wgsl_set_layout){ .group = group[s], .base = base[s], .binding_count = l->binding_count,
-                                               .first = l->first, .count = l->count };
+                                               .first = l->first, .count = l->count, .ycbcr = l->ycbcr,
+                                               .planes = l->planes };
    }
 }
 

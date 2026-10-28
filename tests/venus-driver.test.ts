@@ -218,7 +218,7 @@ for (const [scenario, what, want] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo' } as const;
+const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -250,6 +250,8 @@ for (const [scenario, what] of [
   ['emptyAfterHeld', 'a submit of a fence alone behind a held submit signals after it'],
   ['queryAfterDispatch', 'an occlusion query begun and ended outside a render pass around dispatches'],
   ['poolFreed', 'a query pool destroyed while its submit is pending isn\'t written by its completion'],
+  // L7.2: YCbCr conversions (`?gpu=vkycbcr`).
+  ['ycbcr', 'a disjoint NV12 image uploaded plane by plane and sampled through a YCbCr conversion'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

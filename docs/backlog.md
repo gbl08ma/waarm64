@@ -529,8 +529,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
   size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in
   compute and fragment shaders only, `gl_SubgroupID` assumes subgroups are runs of `local_invocation_index` (true on
-  SwiftShader and Metal; unchecked on NVIDIA), and a subgroup-scoped barrier is dropped; YCbCr conversions (GTK4's
-  Vulkan renderer: VK3's row; GTK4 forced onto Vulkan aborts on its own assertion without them); 8- and 64-bit types,
+  SwiftShader and Metal; unchecked on NVIDIA), and a subgroup-scoped barrier is dropped; 8- and 64-bit types,
   16-bit integer arithmetic (`shaderInt16`: the lowering to 32 bits exists, the advertising and its dEQP-VK groups
   don't) and 16-bit inputs and outputs (`storageInputOutput16`: varyings are vec4s of 32-bit types). **Subgroups on
   the Mac are held** (VK3 L5, bench/vulkan/REPORT.md "VK3 L5"): Chromium 153's Metal path hoists a ballot that is an
@@ -544,6 +543,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   tree). The per-stage
   descriptor limits are WebGPU's whole, though the push buffer takes a dynamic uniform buffer of group 3 when push
   constants pass the immediates: a pipeline at the limit would fail.
+- **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; opt-in, `?gpu=vkycbcr`, until GTK4's row decides
+  the default): only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats
+  (tier1's) are unfilterable, so P010 and the 10-, 12- and 16-bit formats would need a nearest-only offer or filtering
+  in the shader; no single-plane 422 formats (YUY2: WebGPU has none, they would be decoded from words); optimal tiling
+  only (a linear image can't be sampled here anyway); no explicit chroma reconstruction nor a chroma filter apart from
+  the sampler's (Mesa's implicit reconstruction, which dEQP-VK's conversion cases pass); planes aren't attachments or
+  storage images. Failing (out of `tests/deqp/vk-ycbcr.txt`): **a plane viewed in another format of its class**
+  (r8_uint of an r8unorm plane: WebGPU's views differ only in sRGB-ness; 66 `plane_view.image_view.*compatible_format*`,
+  the view invalid and its submit dropped) and **an image aliasing a plane's memory** (48 `plane_view.memory_alias`:
+  images are textures of their own, never their memory's bytes).
 - **GTK4 on Venus drew black or near-empty frames** (VK2 L7, with YCbCr advertised: `bench/gpu/gtk4-load.ts`
   `RENDERERS=vulkan`, frames' window black, fishbowl one icon at 6 frames/s): not looked into; VK3's YCbCr row starts
   there.
@@ -607,8 +616,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1", "VK3 L7.1b").
   The device has what Dawn's backend needs (the indexed arrays, sample-rate shading), but Chromium's Dawn takes a
   system Vulkan device only with `--enable-features=Vulkan`, and then Chromium's own Vulkan device needs
-  (1) `samplerYcbcrConversion` (`vulkan_device_queue.cc` refuses a device without it: GTK4's row, VK3 L7.4;
-  `?gpu=vkycbcr` advertises it for experiments), (2) **opaque-fd semaphores**: it exports them though Venus offers
+  (1) `samplerYcbcrConversion` (`vulkan_device_queue.cc` refuses a device without it; backed since VK3 L7.2, behind
+  `?gpu=vkycbcr` until GTK4's row decides the default), (2) **opaque-fd semaphores**: it exports them though Venus offers
   only sync files (its properties for opaque fds say 0). The host refused to make them and the context died (fixed in
   L7.1b: the driver drops the export's other types); now the guest's Mesa (26.2.5, `vn_GetSemaphoreFdKHR`, asserts
   compiled out) hands back fd 0, then -1 (`bench/vulkan/semfd.ts`), and Chromium's GPU process dies on "FD ownership

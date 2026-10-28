@@ -56,8 +56,8 @@ export type VenusOptions = { syncPipelines?: boolean;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
   hold?: readonly string[]; heldFormats?: boolean;
-  /** `?gpu=vkycbcr`: advertise `samplerYcbcrConversion` though the translator doesn't do conversions (experiments only,
-   * VK3 L7.1b: Chromium's own Vulkan device refuses a device without it; GTK4 would take Vulkan and draw black). */
+  /** `?gpu=vkycbcr`: YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2; vk/README.md "The driver"), opt-in
+   * until GTK4's row decides the default (GTK4 would take Vulkan; Chromium's own Vulkan device wants them, L7.1b). */
   ycbcr?: boolean };
 
 /** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */

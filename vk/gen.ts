@@ -169,7 +169,7 @@ for (let i = 0; i < nativeFlags.length; i++) {
   if (!keep(a)) continue;
   nflags.push(a.startsWith('-I') ? `-I${resolve(`${W}/build-mesa`, a.slice(2))}` : a);
 }
-const nlibs = ['src/compiler/spirv/libvtn.a', 'src/compiler/nir/libnir.a', 'src/compiler/libcompiler.a', 'src/util/libmesa_util.a',
+const nlibs = ['src/vulkan/runtime/libvulkan_runtime.a', 'src/vulkan/util/libvulkan_util.a', 'src/compiler/spirv/libvtn.a', 'src/compiler/nir/libnir.a', 'src/compiler/libcompiler.a', 'src/util/libmesa_util.a',
   'src/c11/impl/libmesa_util_c11.a', 'src/util/blake3/libblake3.a'].map((l) => `${W}/build-mesa/${l}`);
 writeFileSync(`${W}/native.ninja`, [
   'rule cc', `  command = cc ${nflags.map(shq).join(' ').replace(/\$/g, '$$$$')} -I${HERE}/compiler -O1 -g -fsanitize=address -fno-omit-frame-pointer $in ${nlibs.join(' ')} -lSPIRV-Tools -lzstd -lz -ldl -lstdc++ -lm -lpthread -o $out`,

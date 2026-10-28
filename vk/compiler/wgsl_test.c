@@ -11,6 +11,8 @@
 #include "nir.h"
 #include "spirv/nir_spirv.h"
 #include "util/ralloc.h"
+#include "vk_format.h"
+#include "vk_ycbcr_conversion.h"
 
 #include "wgsl.h"
 
@@ -28,8 +30,14 @@ debug_callback(void *priv, enum nir_spirv_debug_level level, size_t offset, cons
 }
 
 #define MAX_BINDINGS 64
+#define MAX_SLOTS 256
 static int32_t firsts[WGSL_MAX_SETS][MAX_BINDINGS];
 static uint32_t counts[WGSL_MAX_SETS][MAX_BINDINGS];
+/* wgsl_test_ycbcr's: a binding whose elements are sampled through a YCbCr conversion, and its planes' slots. */
+static int test_ycbcr_set = -1, test_ycbcr_binding;
+static struct vk_ycbcr_conversion_state test_ycbcr;
+static const struct vk_ycbcr_conversion_state *ycbcrs[WGSL_MAX_SETS][MAX_SLOTS];
+static int32_t planes[WGSL_MAX_SETS][MAX_BINDINGS];
 
 static void
 layout_of(nir_shader *nir, struct wgsl_layout *layout)
@@ -44,7 +52,10 @@ layout_of(nir_shader *nir, struct wgsl_layout *layout)
       const unsigned n = glsl_type_is_array(var->type) ? glsl_get_aoa_size(var->type) : 1;
       counts[set][binding] = MAX2(counts[set][binding], MAX2(n, 1));
    }
-   /* Sets 3 and up share group 3, one after another (as the driver lays them out). */
+   /* Sets 3 and up share group 3, one after another (as the driver lays them out); a YCbCr binding's other planes
+    * after the set's slots, two an element (as wg_descriptor.c lays them out). */
+   memset(ycbcrs, 0, sizeof(ycbcrs));
+   memset(planes, 0xff, sizeof(planes));
    uint32_t base = 0;
    for (unsigned s = 0; s < WGSL_MAX_SETS; s++) {
       int32_t slot = 0;
@@ -54,9 +65,17 @@ layout_of(nir_shader *nir, struct wgsl_layout *layout)
          firsts[s][b] = slot;
          slot += counts[s][b];
       }
+      const bool ycbcr = test_ycbcr_set == (int)s && counts[s][test_ycbcr_binding];
+      if (ycbcr) {
+         planes[s][test_ycbcr_binding] = slot;
+         for (uint32_t e = 0; e < counts[s][test_ycbcr_binding]; e++)
+            ycbcrs[s][firsts[s][test_ycbcr_binding] + e] = &test_ycbcr;
+         slot += 2 * counts[s][test_ycbcr_binding];
+      }
       const uint32_t group = MIN2(s, WGSL_MAX_GROUPS - 1);
       layout->sets[s] = (struct wgsl_set_layout){ .group = group, .base = group == WGSL_MAX_GROUPS - 1 ? base : 0,
-                                                  .binding_count = MAX_BINDINGS, .first = firsts[s], .count = counts[s] };
+                                                  .binding_count = MAX_BINDINGS, .first = firsts[s], .count = counts[s],
+                                                  .ycbcr = ycbcr ? ycbcrs[s] : NULL, .planes = ycbcr ? planes[s] : NULL };
       if (group == WGSL_MAX_GROUPS - 1)
          base += slot;
    }
@@ -80,6 +99,29 @@ wgsl_test_device(unsigned features, unsigned subgroup_size)
 {
    test_features = features;
    test_subgroup_size = subgroup_size;
+}
+
+/* The next translations' (set, binding) sampled through a YCbCr conversion of these (VkFormat, the model, the range, the
+ * chroma offsets x and y, the chroma filter; set -1: none), as an immutable sampler's in its set layout. */
+EXPORT void
+wgsl_test_ycbcr(int set, unsigned binding, unsigned format, unsigned model, unsigned range, unsigned x_offset,
+                unsigned y_offset, unsigned filter)
+{
+   test_ycbcr_set = set;
+   test_ycbcr_binding = binding < MAX_BINDINGS ? binding : 0;
+   test_ycbcr = (struct vk_ycbcr_conversion_state){
+      .format = (VkFormat)format, .ycbcr_model = (VkSamplerYcbcrModelConversion)model,
+      .ycbcr_range = (VkSamplerYcbcrRange)range, .chroma_offsets = { (VkChromaLocation)x_offset, (VkChromaLocation)y_offset },
+      .chroma_filter = (VkFilter)filter,
+   };
+   /* As vk_common_CreateSamplerYcbcrConversion sets it. */
+   const struct vk_format_ycbcr_info *info = vk_format_get_ycbcr_info(test_ycbcr.format);
+   bool subsampled = false;
+   for (uint32_t p = 0; info && p < info->n_planes; p++)
+      subsampled |= info->planes[p].has_chroma &&
+                    (info->planes[p].denominator_scales[0] > 1 || info->planes[p].denominator_scales[1] > 1);
+   test_ycbcr.chroma_reconstruction = subsampled && (x_offset == VK_CHROMA_LOCATION_COSITED_EVEN ||
+                                                     y_offset == VK_CHROMA_LOCATION_COSITED_EVEN);
 }
 
 /* Translates a stage (0 vertex, 4 fragment, 5 compute: mesa_shader_stage): 0, or the phase that failed (1

@@ -9,7 +9,9 @@
 #include "util/mesa-blake3.h"
 #include "vk_descriptor_update_template.h"
 #include "vk_descriptors.h"
+#include "vk_format.h"
 #include "vk_util.h"
+#include "vk_ycbcr_conversion.h"
 
 #include "wg_private.h"
 
@@ -19,22 +21,59 @@ is_dynamic(VkDescriptorType t)
    return t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 }
 
-/* One allocation: the layout, then its tables (the runtime frees it whole when its last reference goes). */
+/* An immutable sampler's YCbCr conversion of a multi-planar format (VK3 L7.2), or NULL. */
+static const struct vk_ycbcr_conversion_state *
+sampler_ycbcr(VkSampler handle)
+{
+   VK_FROM_HANDLE(wg_sampler, sampler, handle);
+   if (!sampler || !sampler->vk.ycbcr_conversion)
+      return NULL;
+   const struct vk_format_ycbcr_info *info = vk_format_get_ycbcr_info(sampler->vk.ycbcr_conversion->state.format);
+   return info && info->n_planes > 1 ? &sampler->vk.ycbcr_conversion->state : NULL;
+}
+
+/* A binding of combined image-samplers with a YCbCr conversion among its immutable samplers. */
+static bool
+binding_ycbcr(const VkDescriptorSetLayoutBinding *b)
+{
+   if (b->descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || !b->pImmutableSamplers)
+      return false;
+   for (uint32_t e = 0; e < b->descriptorCount; e++)
+      if (sampler_ycbcr(b->pImmutableSamplers[e]))
+         return true;
+   return false;
+}
+
+/* One allocation: the layout, then its tables (the runtime frees it whole when its last reference goes). A binding
+ * with YCbCr conversions has two slots more an element, after the others: its views' other planes (wgsl.h). */
 static struct wg_descriptor_set_layout *
 layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info)
 {
-   uint32_t bindings = 0, slots = 0;
+   uint32_t bindings = 0, slots = 0, plane_slots = 0;
    for (uint32_t i = 0; i < info->bindingCount; i++) {
       bindings = MAX2(bindings, info->pBindings[i].binding + 1);
       slots += info->pBindings[i].descriptorCount;
+      if (binding_ycbcr(&info->pBindings[i]))
+         plane_slots += 2 * info->pBindings[i].descriptorCount;
    }
+   const uint32_t all = slots + plane_slots;
    const size_t size = sizeof(struct wg_descriptor_set_layout) + bindings * (sizeof(int32_t) + sizeof(uint32_t) +
-                       sizeof(VkDescriptorType)) + slots * (sizeof(int16_t) + sizeof(struct wg_sampler *)) + 16;
+                       sizeof(VkDescriptorType)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
+                       (plane_slots ? bindings * sizeof(int32_t) + all * (sizeof(void *) + sizeof(int32_t)) : 0) + 32;
    struct wg_descriptor_set_layout *l = vk_descriptor_set_layout_zalloc(&dev->vk, size, info);
    if (!l)
       return NULL;
    uint8_t *p = (uint8_t *)(l + 1);
-   l->immutable = (struct wg_sampler **)p, p += slots * sizeof(struct wg_sampler *);
+   l->immutable = (struct wg_sampler **)p, p += all * sizeof(struct wg_sampler *);
+   if (plane_slots) {
+      l->ycbcr = (const struct vk_ycbcr_conversion_state **)p, p += all * sizeof(void *);
+      l->owner = (int32_t *)p, p += all * sizeof(int32_t);
+      l->planes = (int32_t *)p, p += bindings * sizeof(int32_t);
+      for (uint32_t k = 0; k < all; k++)
+         l->owner[k] = -1;
+      for (uint32_t b = 0; b < bindings; b++)
+         l->planes[b] = -1;
+   }
    l->first = (int32_t *)p, p += bindings * sizeof(int32_t);
    l->count = (uint32_t *)p, p += bindings * sizeof(uint32_t);
    l->type = (VkDescriptorType *)p, p += bindings * sizeof(VkDescriptorType);
@@ -51,7 +90,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    }
    struct mesa_blake3 hash;
    _mesa_blake3_init(&hash);
-   uint32_t slot = 0, dynamic = 0;
+   uint32_t slot = 0, dynamic = 0, plane_slot = slots;
    for (uint32_t i = 0; i < info->bindingCount; i++) {
       const VkDescriptorSetLayoutBinding *b = &sorted[i];
       l->first[b->binding] = slot;
@@ -63,13 +102,26 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
                                        b->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER))
             l->immutable[slot + e] = wg_sampler_from_handle(b->pImmutableSamplers[e]);
       }
+      if (plane_slots && binding_ycbcr(b)) {
+         l->planes[b->binding] = plane_slot;
+         for (uint32_t e = 0; e < b->descriptorCount; e++) {
+            const struct vk_ycbcr_conversion_state *y = sampler_ycbcr(b->pImmutableSamplers[e]);
+            l->ycbcr[slot + e] = y;
+            l->owner[plane_slot + 2 * e] = l->owner[plane_slot + 2 * e + 1] = slot + e;
+            l->dynamic[plane_slot + 2 * e] = l->dynamic[plane_slot + 2 * e + 1] = -1;
+            /* The shaders' keys (the runtime hashes set layouts): a conversion is compiled in. */
+            const struct vk_ycbcr_conversion_state none = { 0 };
+            _mesa_blake3_update(&hash, y ? y : &none, sizeof(none));
+         }
+         plane_slot += 2 * b->descriptorCount;
+      }
       slot += b->descriptorCount;
       _mesa_blake3_update(&hash, &b->binding, sizeof(b->binding));
       _mesa_blake3_update(&hash, &b->descriptorType, sizeof(b->descriptorType));
       _mesa_blake3_update(&hash, &b->descriptorCount, sizeof(b->descriptorCount));
    }
    free(sorted);
-   l->slot_count = slot;
+   l->slot_count = plane_slot;
    l->dynamic_count = dynamic;
    l->vk.dynamic_descriptor_count = dynamic;
    _mesa_blake3_final(&hash, l->vk.blake3);
@@ -172,6 +224,10 @@ wg_descriptor_set_create(struct wg_device *dev, struct wg_descriptor_set_layout 
          struct wg_descriptor *d = &set->slots[layout->first[b] + e];
          d->type = layout->type[b];
          d->sampler = layout->immutable[layout->first[b] + e];
+         if (layout->planes && layout->planes[b] >= 0)
+            for (uint32_t p = 0; p < 2; p++)
+               set->slots[layout->planes[b] + 2 * e + p] =
+                  (struct wg_descriptor){ .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .plane = (uint8_t)(p + 1) };
       }
    return set;
 }
@@ -229,6 +285,23 @@ slot(struct wg_descriptor_set *set, uint32_t binding, uint32_t element)
    return binding < l->binding_count ? &set->slots[l->first[binding] + element] : NULL;
 }
 
+/* A YCbCr binding's element written: its planes' slots bind its view's other planes (VK3 L7.2). */
+static void
+sync_planes(struct wg_descriptor_set *set, const struct wg_descriptor *d)
+{
+   const struct wg_descriptor_set_layout *l = set->layout;
+   if (!l->planes || !d)
+      return;
+   const uint32_t k = d - set->slots;
+   for (uint32_t b = 0; b < l->binding_count; b++) {
+      if (l->planes[b] < 0 || k < (uint32_t)l->first[b] || k >= l->first[b] + l->count[b])
+         continue;
+      for (uint32_t p = 0; p < 2; p++)
+         set->slots[l->planes[b] + 2 * (k - l->first[b]) + p].view = d->view;
+      return;
+   }
+}
+
 static void
 write_one(struct wg_descriptor *d, VkDescriptorType type, const VkDescriptorImageInfo *image,
           const VkDescriptorBufferInfo *buffer, const VkBufferView *texel)
@@ -273,6 +346,7 @@ wg_descriptor_write(struct wg_descriptor_set *set, const VkWriteDescriptorSet *w
       if (d)
          write_one(d, w->descriptorType, w->pImageInfo ? &w->pImageInfo[i] : NULL,
                    w->pBufferInfo ? &w->pBufferInfo[i] : NULL, w->pTexelBufferView ? &w->pTexelBufferView[i] : NULL);
+      sync_planes(set, d);
    }
    set->version++;
 }
@@ -291,6 +365,7 @@ wg_UpdateDescriptorSets(VkDevice _device, uint32_t writeCount, const VkWriteDesc
          struct wg_descriptor *d = slot(dst, copies[i].dstBinding, copies[i].dstArrayElement + e);
          if (s && d)
             *d = *s;
+         sync_planes(dst, d);
       }
       dst->version++;
    }
@@ -307,6 +382,7 @@ wg_descriptor_write_template(struct wg_descriptor_set *set, const struct vk_desc
          const void *p = (const uint8_t *)data + e->offset + k * e->stride;
          if (d)
             write_one(d, e->type, p, p, p);
+         sync_planes(set, d);
       }
    }
    set->version++;

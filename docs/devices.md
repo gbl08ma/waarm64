@@ -516,7 +516,8 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   adapter it keeps the objects and draws nothing). What it advertises follows the browser's WebGPU device, its limits
   and features read at the renderer's start (vk/README.md "The driver"; VK2 L7), less what the translator can't do yet,
   formats as WebGPU has them, plus what Venus's WSI shares through (dma-buf memory with the LINEAR modifier, foreign
-  queue transfers, sync-file semaphores); no YCbCr conversions, so GTK4 stays on GL. vkcube on
+  queue transfers, sync-file semaphores); YCbCr conversions and the 8-bit multi-planar formats only with `?gpu=vkycbcr` (VK3 L7.2), so
+  by default GTK4 stays on GL. vkcube on
   sway (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) runs ~50 frames/s on 2 vCPUs on SwiftShader's WebGPU
   (`tests/page-venus.test.ts`); in VK1, with the null driver, on the desktop guest's sway (GLES, virgl) vkcube and
   GTK4's Vulkan renderer presented through dma-bufs at the display's 60 (bench/vulkan/apps-load.ts,

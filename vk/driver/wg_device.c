@@ -320,7 +320,7 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
          VkDrmFormatModifierPropertiesListEXT *p = (void *)ext;
          VK_OUTARRAY_MAKE_TYPED(VkDrmFormatModifierPropertiesEXT, out, p->pDrmFormatModifierProperties,
                                 &p->drmFormatModifierCount);
-         if (optimal) {
+         if (optimal && !wg_ycbcr_format(format)) {
             vk_outarray_append_typed(VkDrmFormatModifierPropertiesEXT, &out, m) {
                *m = (VkDrmFormatModifierPropertiesEXT){
                   .drmFormatModifier = 0,
@@ -335,7 +335,7 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
          VkDrmFormatModifierPropertiesList2EXT *p = (void *)ext;
          VK_OUTARRAY_MAKE_TYPED(VkDrmFormatModifierProperties2EXT, out, p->pDrmFormatModifierProperties,
                                 &p->drmFormatModifierCount);
-         if (optimal) {
+         if (optimal && !wg_ycbcr_format(format)) {
             vk_outarray_append_typed(VkDrmFormatModifierProperties2EXT, &out, m) {
                *m = (VkDrmFormatModifierProperties2EXT){
                   .drmFormatModifier = 0,
@@ -408,6 +408,13 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
+   /* A multi-planar image (VK3 L7.2): 2D, one level, one sample (EXT_ycbcr_image_arrays: layers). */
+   const struct vk_format_ycbcr_info *ycbcr = wg_ycbcr_format(info->format);
+   if (ycbcr && (info->type != VK_IMAGE_TYPE_2D || info->tiling != VK_IMAGE_TILING_OPTIMAL ||
+                 (info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT))) {
+      pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+   }
    const uint32_t dim = info->type == VK_IMAGE_TYPE_1D ? p->maxImageDimension1D
                        : info->type == VK_IMAGE_TYPE_2D ? p->maxImageDimension2D
                                                         : p->maxImageDimension3D;
@@ -415,7 +422,7 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
                                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
    pProps->imageFormatProperties = (VkImageFormatProperties){
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
-      .maxMipLevels = util_logbase2(dim) + 1,
+      .maxMipLevels = ycbcr ? 1 : util_logbase2(dim) + 1,
       .maxArrayLayers = info->type == VK_IMAGE_TYPE_3D ? 1 : p->maxImageArrayLayers,
       /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage, and none of the 32-bit
        * integer formats nor the float ones of two or four channels. */
@@ -440,7 +447,8 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
                                      VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
          };
       } else if (ext->sType == VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES) {
-         ((VkSamplerYcbcrConversionImageFormatProperties *)ext)->combinedImageSamplerDescriptorCount = 1;
+         ((VkSamplerYcbcrConversionImageFormatProperties *)ext)->combinedImageSamplerDescriptorCount =
+            ycbcr ? ycbcr->n_planes : 1;
       }
    }
    return VK_SUCCESS;
@@ -845,6 +853,33 @@ wg_image_layout(const struct vk_image *image, uint32_t level, uint32_t layer, Vk
    return at;
 }
 
+/* A multi-planar image's planes (VK3 L7.2): each plane's format and extent (its format's subsampling), and its bytes
+ * after the plane before it, laid out as a 2D image of the plane's format (rows 256-byte aligned). Returns the count. */
+static uint32_t
+wg_image_planes(const struct vk_image *image, struct wg_image_plane *planes)
+{
+   const struct vk_format_ycbcr_info *info = vk_format_get_ycbcr_info(image->format);
+   VkDeviceSize at = 0;
+   for (uint32_t p = 0; p < info->n_planes; p++) {
+      const struct wg_texture_format *f = wg_texture_format(info->planes[p].format);
+      const uint32_t w = DIV_ROUND_UP(image->extent.width, info->planes[p].denominator_scales[0]);
+      const uint32_t h = DIV_ROUND_UP(image->extent.height, info->planes[p].denominator_scales[1]);
+      const VkDeviceSize size = align64((VkDeviceSize)w * f->bytes, 256) * h * image->array_layers;
+      planes[p] = (struct wg_image_plane){ .fmt = f, .extent = { w, h }, .offset = at, .size = size };
+      at = align64(at + size, 4096);
+   }
+   return info->n_planes;
+}
+
+uint32_t
+wg_image_plane(const struct wg_image *image, VkImageAspectFlags aspect)
+{
+   if (image->plane_count < 2)
+      return 0;
+   return (aspect & (VK_IMAGE_ASPECT_PLANE_2_BIT | VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT)) ? 2
+          : (aspect & (VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT)) ? 1 : 0;
+}
+
 /* The texture an image is: every usage its Vulkan usage needs (transfers as copies, but clears and blits draw into
  * it, and a blit's source is sampled), with its format's sRGB twin as a view format when views may differ. */
 static const char *
@@ -859,10 +894,10 @@ wg_dimension(const struct vk_image *image)
 }
 
 static uint32_t
-wg_texture_create(struct wg_image *image)
+wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e)
 {
    const struct vk_image *vi = &image->vk;
-   const uint32_t flags = image->fmt->flags;
+   const uint32_t flags = fmt->flags;
    const bool one_d = !strcmp(wg_dimension(vi), "1d");
    uint32_t usage = 0;
    if (vi->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
@@ -897,18 +932,17 @@ wg_texture_create(struct wg_image *image)
    if (shared && vi->samples == 1 && !(flags & WG_FMT_NOCOPY))
       usage |= 2;
    /* WebGPU wants a compressed texture's size in whole blocks (Vulkan doesn't): rounded up, and copies with it. */
-   const VkExtent3D e = vi->extent;
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"size\":[%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
                   "\"format\":\"%s\",\"usage\":%u,\"viewFormats\":[",
-                  DIV_ROUND_UP(e.width, image->fmt->bw) * image->fmt->bw, DIV_ROUND_UP(e.height, image->fmt->bh) * image->fmt->bh,
+                  DIV_ROUND_UP(e.width, fmt->bw) * fmt->bw, DIV_ROUND_UP(e.height, fmt->bh) * fmt->bh,
                   vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
-                  vi->samples, wg_dimension(vi), image->fmt->name, usage);
+                  vi->samples, wg_dimension(vi), fmt->name, usage);
    if ((vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || shared) {
-      const VkFormat twin = vk_format_is_srgb(vi->format)
-                               ? vk_format_srgb_to_linear(vi->format)
-                               : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(vi->format)));
-      const struct wg_texture_format *t = twin != vi->format ? wg_texture_format(twin) : NULL;
+      const VkFormat twin = vk_format_is_srgb(fmt->vk)
+                               ? vk_format_srgb_to_linear(fmt->vk)
+                               : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(fmt->vk)));
+      const struct wg_texture_format *t = twin != fmt->vk ? wg_texture_format(twin) : NULL;
       if (t)
          wg_json_printf(&j, "\"%s\"", t->name);
    }
@@ -927,12 +961,29 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
    /* A modifier's image is LINEAR, the one modifier offered (GetImageDrmFormatModifierPropertiesEXT). */
    image->size = wg_image_layout(&image->vk, 0, 0, NULL);
    image->fmt = wg_texture_format(image->vk.format);
+   image->plane_count = 1;
+   if (!image->fmt && wg_ycbcr_format(image->vk.format)) {
+      image->plane_count = wg_image_planes(&image->vk, image->planes);
+      image->fmt = image->planes[0].fmt;
+      image->size = image->planes[image->plane_count - 1].offset + image->planes[image->plane_count - 1].size;
+   }
    if (!image->fmt) {
       vk_image_destroy(&dev->vk, pAllocator, &image->vk);
       return vk_error(dev, VK_ERROR_FORMAT_NOT_SUPPORTED);
    }
    image->shared = image->vk.external_handle_types || image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-   image->tex = wg_texture_create(image);
+   if (image->plane_count > 1) {
+      for (uint32_t p = 0; p < image->plane_count; p++)
+         image->planes[p].tex = wg_texture_create(image, image->planes[p].fmt,
+                                                  (VkExtent3D){ image->planes[p].extent.width,
+                                                                image->planes[p].extent.height, 1 });
+      image->tex = image->planes[0].tex;
+   } else {
+      image->tex = wg_texture_create(image, image->fmt, image->vk.extent);
+      image->planes[0] = (struct wg_image_plane){ .tex = image->tex, .fmt = image->fmt,
+                                                  .extent = { image->vk.extent.width, image->vk.extent.height },
+                                                  .size = image->size };
+   }
    *pImage = wg_image_to_handle(image);
    return VK_SUCCESS;
 }
@@ -957,6 +1008,8 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
    if (image->imported)
       gpu_texture_import(image->tex, 0);
    wg_id_release(image->tex);
+   for (uint32_t p = 1; p < image->plane_count; p++)
+      wg_id_release(image->planes[p].tex);
    vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
 
@@ -965,6 +1018,12 @@ wg_GetImageMemoryRequirements2(VkDevice _device, const VkImageMemoryRequirements
                                VkMemoryRequirements2 *reqs)
 {
    VK_FROM_HANDLE(wg_image, image, info->image);
+   /* A disjoint image's plane: its own bytes. */
+   const VkImagePlaneMemoryRequirementsInfo *plane = vk_find_struct_const(info->pNext, IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO);
+   if (plane && image->plane_count > 1) {
+      wg_requirements(reqs, image->planes[wg_image_plane(image, plane->planeAspect)].size, 4096);
+      return;
+   }
    wg_requirements(reqs, MAX2(image->size, 1), wg_image_dma_buf(&image->vk) ? 1 : 4096);
 }
 
@@ -975,6 +1034,16 @@ wg_GetDeviceImageMemoryRequirements(VkDevice _device, const VkDeviceImageMemoryR
    VK_FROM_HANDLE(wg_device, dev, _device);
    struct vk_image image;
    vk_image_init(&dev->vk, &image, info->pCreateInfo);
+   if (!wg_texture_format(image.format) && wg_ycbcr_format(image.format)) {
+      struct wg_image_plane planes[3];
+      const uint32_t n = wg_image_planes(&image, planes);
+      const uint32_t p = (image.create_flags & VK_IMAGE_CREATE_DISJOINT_BIT)
+                            ? (info->planeAspect & VK_IMAGE_ASPECT_PLANE_2_BIT ? 2 : info->planeAspect & VK_IMAGE_ASPECT_PLANE_1_BIT ? 1 : 0)
+                            : UINT32_MAX;
+      wg_requirements(reqs, p < n ? planes[p].size : planes[n - 1].offset + planes[n - 1].size, 4096);
+      vk_image_finish(&image);
+      return;
+   }
    wg_requirements(reqs, MAX2(wg_image_layout(&image, 0, 0, NULL), 1),
                    wg_image_dma_buf(&image) ? 1 : 4096);
    vk_image_finish(&image);
@@ -1001,6 +1070,24 @@ wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInf
    for (uint32_t i = 0; i < count; i++) {
       VK_FROM_HANDLE(wg_image, image, infos[i].image);
       VK_FROM_HANDLE(wg_device_memory, mem, infos[i].memory);
+      /* A disjoint image's plane (VK3 L7.2): only where its bytes are. */
+      const VkBindImagePlaneMemoryInfo *plane = vk_find_struct_const(infos[i].pNext, BIND_IMAGE_PLANE_MEMORY_INFO);
+      if (image->plane_count > 1) {
+         for (uint32_t p = 0; p < image->plane_count; p++) {
+            if (plane && p != wg_image_plane(image, plane->planeAspect))
+               continue;
+            image->planes[p].mem = mem;
+            image->planes[p].mem_offset = infos[i].memoryOffset + (plane ? 0 : image->planes[p].offset);
+         }
+         if (!plane || wg_image_plane(image, plane->planeAspect) == 0) {
+            image->mem = mem;
+            image->offset = infos[i].memoryOffset;
+         }
+         const VkBindMemoryStatus *status = vk_find_struct_const(infos[i].pNext, BIND_MEMORY_STATUS);
+         if (status)
+            *status->pResult = VK_SUCCESS;
+         continue;
+      }
       image->mem = mem;
       image->offset = infos[i].memoryOffset;
       if (image->vk.tiling == VK_IMAGE_TILING_LINEAR && mem->host && image->vk.samples == 1 && !image->shared &&
@@ -1029,12 +1116,27 @@ wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t laye
    wg_image_layout(image, level, layer, out);
 }
 
+/* A multi-planar image's plane's layer, as its bytes are laid out (wg_image_planes). */
+static void
+plane_layout(const struct wg_image *image, const VkImageSubresource *sub, VkSubresourceLayout *out)
+{
+   const struct wg_image_plane *plane = &image->planes[wg_image_plane(image, sub->aspectMask)];
+   const VkDeviceSize row = align64((VkDeviceSize)plane->extent.width * plane->fmt->bytes, 256);
+   const VkDeviceSize slice = row * plane->extent.height;
+   const VkDeviceSize base = (image->vk.create_flags & VK_IMAGE_CREATE_DISJOINT_BIT) ? 0 : plane->offset;
+   *out = (VkSubresourceLayout){ .offset = base + slice * sub->arrayLayer, .size = slice, .rowPitch = row,
+                                 .arrayPitch = slice, .depthPitch = slice };
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_GetImageSubresourceLayout(VkDevice _device, VkImage _image, const VkImageSubresource *sub,
                              VkSubresourceLayout *layout)
 {
    VK_FROM_HANDLE(wg_image, image, _image);
-   wg_image_layout(&image->vk, sub->mipLevel, sub->arrayLayer, layout);
+   if (image->plane_count > 1)
+      plane_layout(image, sub, layout);
+   else
+      wg_image_layout(&image->vk, sub->mipLevel, sub->arrayLayer, layout);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1042,8 +1144,11 @@ wg_GetImageSubresourceLayout2(VkDevice _device, VkImage _image, const VkImageSub
                               VkSubresourceLayout2 *layout)
 {
    VK_FROM_HANDLE(wg_image, image, _image);
-   wg_image_layout(&image->vk, sub->imageSubresource.mipLevel, sub->imageSubresource.arrayLayer,
-                   &layout->subresourceLayout);
+   if (image->plane_count > 1)
+      plane_layout(image, &sub->imageSubresource, &layout->subresourceLayout);
+   else
+      wg_image_layout(&image->vk, sub->imageSubresource.mipLevel, sub->imageSubresource.arrayLayer,
+                      &layout->subresourceLayout);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -1064,7 +1169,7 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
    view->fmt = wg_texture_format(view->vk.view_format);
-   if (!view_format_ok(image->vk.format, view->vk.view_format) &&
+   if (!view_format_ok(image->vk.format, view->vk.view_format) && image->plane_count < 2 &&
        !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !vk_format_is_compressed(image->vk.format)) {
       static bool warned;
       if (!warned)
@@ -1092,6 +1197,30 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
    struct wg_json j = { 0 };
+   /* A multi-planar image's (VK3 L7.2): a view of one plane (a format compatible with the plane's), or of every plane,
+    * each in its plane's format, which a sampler's YCbCr conversion samples together. Only sampled and copied. */
+   if (image->plane_count > 1) {
+      const VkImageAspectFlags a = view->vk.aspects;
+      const bool one = a == VK_IMAGE_ASPECT_PLANE_0_BIT || a == VK_IMAGE_ASPECT_PLANE_1_BIT ||
+                       a == VK_IMAGE_ASPECT_PLANE_2_BIT;
+      const uint32_t first = one ? wg_image_plane(image, a) : 0;
+      view->plane_count = one ? 1 : image->plane_count;
+      for (uint32_t p = 0; p < view->plane_count; p++) {
+         const struct wg_image_plane *plane = &image->planes[first + p];
+         const struct wg_texture_format *vf = one ? wg_texture_format(view->vk.view_format) : NULL;
+         const struct wg_texture_format *f = vf ? vf : plane->fmt;
+         wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"%s\",\"baseMipLevel\":0,"
+                        "\"mipLevelCount\":1,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
+                        plane->tex, f->name, dim, view->vk.base_array_layer, view->vk.layer_count);
+         view->planes[p] = wg_create_json(WG_KIND_VIEW, &j);
+      }
+      view->fmt = one && wg_texture_format(view->vk.view_format) ? wg_texture_format(view->vk.view_format)
+                                                                 : image->planes[first].fmt;
+      view->view = view->planes[0];
+      view->slice = -1;
+      *pView = wg_image_view_to_handle(view);
+      return VK_SUCCESS;
+   }
    /* An aspect's view takes the aspect's format: left to WebGPU. */
    wg_json_printf(&j, "{\"texture\":%u,", image->tex);
    if (!strcmp(aspect, "all"))
@@ -1142,6 +1271,8 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    wg_id_release(view->view);
    wg_id_release(view->storage);
    wg_id_release(view->att);
+   for (uint32_t p = 1; p < view->plane_count; p++)
+      wg_id_release(view->planes[p]);
    vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);
 }
 

@@ -58,8 +58,8 @@ enum wg_feature {
                                         * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
-   WG_FEATURE_YCBCR = 1 << 30, /* not the adapter's: `?gpu=vkycbcr` advertises samplerYcbcrConversion, not translated
-                                * (experiments only, VK3 L7.1b: Chromium's own Vulkan device wants it) */
+   WG_FEATURE_YCBCR = 1 << 30, /* not the adapter's: `?gpu=vkycbcr` (VK3 L7.1b, L7.2): samplerYcbcrConversion and the
+                                * multi-planar formats (wg_ycbcr_format), off by default until GTK4's row */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 
@@ -127,6 +127,10 @@ struct wg_texture_format {
 };
 
 void wg_format_init(uint32_t features);
+struct vk_format_ycbcr_info;
+/* A multi-planar format the device offers (with WG_FEATURE_YCBCR: every plane a format WebGPU samples and filters),
+ * or NULL. */
+const struct vk_format_ycbcr_info *wg_ycbcr_format(VkFormat format);
 const struct wg_texture_format *wg_texture_format(VkFormat format);
 bool wg_format_filterable(const struct wg_texture_format *f);
 const char *wg_vertex_format(VkFormat format);
@@ -235,7 +239,21 @@ struct wg_image {
    bool linear_host;
    struct list_head linear_link;
    bool imported;   /* bound to imported memory: its texture is another renderer's resource's (gpu_texture_import) */
+   /* A multi-planar format's planes (VK3 L7.2), each a texture of its own (plane 0's are `tex` and `fmt` above), and
+    * where its bytes are: in the image's (`offset` past the image's own), or, disjoint, in a memory bound to the plane.
+    * 1 for every other format. */
+   uint32_t plane_count;
+   struct wg_image_plane {
+      uint32_t tex;
+      const struct wg_texture_format *fmt;
+      VkExtent2D extent;          /* level 0's, in the plane's texels */
+      VkDeviceSize offset, size;  /* in the image's bytes */
+      struct wg_device_memory *mem;
+      VkDeviceSize mem_offset;
+   } planes[3];
 };
+/* The plane an aspect names (PLANE_n, or 0). */
+uint32_t wg_image_plane(const struct wg_image *image, VkImageAspectFlags aspect);
 /* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
 void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);
 
@@ -248,6 +266,10 @@ struct wg_image_view {
                       * views); 0: `view` serves */
    uint32_t att;
    int32_t slice;   /* a 3D image's: the attachment is its level's 3D view, drawn into at this depth slice (else -1) */
+   /* A multi-planar view's planes (VK3 L7.2: each plane's texture's, plane 0's `view`); a sampler's YCbCr conversion
+    * samples each (wgsl_lower_ycbcr). */
+   uint32_t plane_count;
+   uint32_t planes[3];
 };
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
@@ -277,10 +299,17 @@ struct wg_descriptor_set_layout {
    VkDescriptorType *type;  /* by binding */
    int16_t *dynamic;        /* by slot: its index among the dynamic offsets, or -1 */
    struct wg_sampler **immutable; /* by slot, or NULL */
+   /* YCbCr (VK3 L7.2): by binding, the slot its elements' other planes start at (wgsl.h; -1: none), and by slot, the
+    * immutable sampler's conversion (NULL: none) and, for a plane slot, the element's slot (-1: not a plane's). The
+    * tables are NULL in a layout without conversions. */
+   int32_t *planes;
+   const struct vk_ycbcr_conversion_state **ycbcr;
+   int32_t *owner;
 };
 
 struct wg_descriptor {
    VkDescriptorType type;
+   uint8_t plane;           /* a plane slot's: the element's view's plane it binds (wg_descriptor_set_layout.owner) */
    struct wg_buffer *buffer;
    VkDeviceSize offset, range;
    struct wg_image_view *view;

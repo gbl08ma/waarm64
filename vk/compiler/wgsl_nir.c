@@ -11,6 +11,8 @@
 #include "nir_builder.h"
 #include "nir_builtin_builder.h"
 #include "spirv/nir_spirv.h"
+#include "vk_nir_convert_ycbcr.h"
+#include "vk_ycbcr_conversion.h"
 
 #include "wgsl.h"
 
@@ -216,6 +218,8 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
    if (instr->type == nir_instr_type_tex) {
       nir_tex_instr *tex = nir_instr_as_tex(instr);
       bool progress = false;
+      int tex_set = -1, tex_binding = 0;
+      unsigned tex_el = 0;
       for (unsigned i = 0; i < tex->num_srcs; i++) {
          const bool sampler = tex->src[i].src_type == nir_tex_src_sampler_deref;
          if (!sampler && tex->src[i].src_type != nir_tex_src_texture_deref)
@@ -228,13 +232,30 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
          if (base < 0)
             return false;
          const unsigned index = base + 2 * el + sampler;
-         if (sampler)
+         if (sampler) {
             tex->sampler_index = index;
-         else
+         } else {
             tex->texture_index = index;
+            tex_set = var->data.descriptor_set, tex_binding = var->data.binding, tex_el = el;
+         }
          nir_tex_instr_remove_src(tex, i);
          i--;
          progress = true;
+      }
+      /* A plane past the first (wgsl_lower_ycbcr's samples): its own texture, at the binding's plane slots. */
+      const int pi = nir_tex_instr_src_index(tex, nir_tex_src_plane);
+      if (pi >= 0) {
+         const unsigned plane = nir_src_as_uint(tex->src[pi].src);
+         nir_tex_instr_remove_src(tex, pi);
+         progress = true;
+         if (plane > 0) {
+            const struct wgsl_set_layout *l = tex_set >= 0 ? &s->layout->sets[tex_set] : NULL;
+            if (!l || !l->planes || l->planes[tex_binding] < 0) {
+               fail(s, "a plane of an image without planes", MAX2(tex_set, 0), tex_binding);
+               return false;
+            }
+            tex->texture_index = l->group << 16 | (l->base + l->planes[tex_binding] + 2 * tex_el + plane - 1) * 2;
+         }
       }
       return progress;
    }
@@ -752,6 +773,31 @@ optimize(nir_shader *nir)
    } while (progress);
 }
 
+static const struct vk_ycbcr_conversion_state *
+ycbcr_lookup(const void *data, uint32_t set, uint32_t binding, uint32_t element)
+{
+   const struct wgsl_layout *layout = data;
+   if (set >= layout->set_count)
+      return NULL;
+   const struct wgsl_set_layout *l = &layout->sets[set];
+   if (!l->ycbcr || binding >= l->binding_count || l->first[binding] < 0 || element >= l->count[binding])
+      return NULL;
+   return l->ycbcr[l->first[binding] + element];
+}
+
+bool
+wgsl_lower_ycbcr(nir_shader *nir, const struct wgsl_layout *layout)
+{
+   bool any = false;
+   for (uint32_t s = 0; s < layout->set_count; s++)
+      any |= layout->sets[s].ycbcr != NULL;
+   if (!any)
+      return false;
+   bool progress = false;
+   NIR_PASS(progress, nir, nir_vk_lower_ycbcr_tex, ycbcr_lookup, layout);
+   return progress;
+}
+
 static void
 optimize_cb(nir_shader *nir, void *data)
 {
@@ -763,6 +809,7 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
 {
    struct lower_state s = { .layout = layout, .error = error, .error_size = error_size };
    error[0] = 0;
+   wgsl_lower_ycbcr(nir, layout);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_1d_tex, nir_metadata_control_flow, NULL);
    NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_1d_image, nir_metadata_control_flow, NULL);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_int_sample, nir_metadata_control_flow, NULL);

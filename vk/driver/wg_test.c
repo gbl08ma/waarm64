@@ -604,7 +604,7 @@ wgt_imported(void)
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[25];
+   static uint32_t out[26];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -683,6 +683,10 @@ wgt_caps(void)
    VkPhysicalDeviceFeatures2 g = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f11 };
    features2(pdev, &g);
    out[i++] = f11.samplerYcbcrConversion;
+   /* NV12's optimal features (VK3 L7.2: the multi-planar formats with the conversions only). */
+   VkFormatProperties nv12;
+   formats(pdev, VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, &nv12);
+   out[i++] = nv12.optimalTilingFeatures;
    destroy(inst, NULL);
    return out;
 }
@@ -1955,6 +1959,140 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
             CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
             CmdDispatch(cmd, 1, 1, 1);
          }
+   } else if (scenario == 22) {
+      /* VK3 L7.2: a disjoint NV12 image (G8_B8R8_2PLANE_420, 4×4), its planes in memories of their own and uploaded
+       * apart, sampled at each texel's centre through an immutable sampler with a YCbCr conversion (BT.709, narrow,
+       * chroma at the midpoint, nearest): the result's 16 vec4s at `out`'s start (tests/venus/l7/ycbcr.comp). */
+      PFN_vkCreateSamplerYcbcrConversion CreateConversion =
+         (PFN_vkCreateSamplerYcbcrConversion)GetDeviceProcAddr(dev, "vkCreateSamplerYcbcrConversion");
+      PFN_vkGetImageMemoryRequirements2 GetImageMemoryRequirements2 =
+         (PFN_vkGetImageMemoryRequirements2)GetDeviceProcAddr(dev, "vkGetImageMemoryRequirements2");
+      PFN_vkBindImageMemory2 BindImageMemory2 = (PFN_vkBindImageMemory2)GetDeviceProcAddr(dev, "vkBindImageMemory2");
+      const VkFormat nv12 = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+      VkShaderModule m;
+      VkBuffer src;
+      uint8_t *sb;
+      if (shader(cs, cs_words, &m) || buffer(4096, both, true, &src, (void **)&sb))
+         return 1;
+      for (uint32_t i = 0; i < 16; i++)
+         sb[i] = (uint8_t)(16 + i * 13);
+      const uint8_t chroma[8] = { 60, 200, 128, 128, 200, 60, 90, 170 };
+      memcpy(sb + 256, chroma, 8);
+      const VkSamplerYcbcrConversionCreateInfo yci = {
+         .sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO, .format = nv12,
+         .ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709, .ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_NARROW,
+         .xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT, .yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT,
+         .chromaFilter = VK_FILTER_NEAREST,
+      };
+      VkSamplerYcbcrConversion conv;
+      CHECK(CreateConversion(dev, &yci, NULL, &conv));
+      const VkSamplerYcbcrConversionInfo with = { .sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO,
+                                                  .conversion = conv };
+      const VkSamplerCreateInfo sci = {
+         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .pNext = &with, .magFilter = VK_FILTER_NEAREST,
+         .minFilter = VK_FILTER_NEAREST, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      };
+      VkSampler sampler;
+      CHECK(CreateSampler(dev, &sci, NULL, &sampler));
+      const VkImageCreateInfo ici = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = VK_IMAGE_CREATE_DISJOINT_BIT,
+         .imageType = VK_IMAGE_TYPE_2D, .format = nv12, .extent = { 4, 4, 1 }, .mipLevels = 1, .arrayLayers = 1,
+         .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+         .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+      };
+      VkImage img;
+      CHECK(CreateImage(dev, &ici, NULL, &img));
+      VkBindImageMemoryInfo binds[2];
+      VkBindImagePlaneMemoryInfo planes[2];
+      for (uint32_t p = 0; p < 2; p++) {
+         const VkImageAspectFlagBits aspect = p ? VK_IMAGE_ASPECT_PLANE_1_BIT : VK_IMAGE_ASPECT_PLANE_0_BIT;
+         const VkImagePlaneMemoryRequirementsInfo pri = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO, .planeAspect = aspect };
+         const VkImageMemoryRequirementsInfo2 ri = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+                                                     .pNext = &pri, .image = img };
+         VkMemoryRequirements2 req = { .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
+         GetImageMemoryRequirements2(dev, &ri, &req);
+         VkDeviceMemory mem;
+         if (memory_for(req.memoryRequirements, false, &mem, NULL))
+            return 1;
+         planes[p] = (VkBindImagePlaneMemoryInfo){ .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO,
+                                                   .planeAspect = aspect };
+         binds[p] = (VkBindImageMemoryInfo){ .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO, .pNext = &planes[p],
+                                             .image = img, .memory = mem };
+      }
+      CHECK(BindImageMemory2(dev, 2, binds));
+      const VkImageViewCreateInfo vci = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .pNext = &with, .image = img,
+         .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = nv12, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+      };
+      VkImageView view;
+      CHECK(CreateImageView(dev, &vci, NULL, &view));
+      const VkImageMemoryBarrier tb = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .image = img,
+                                        .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
+                         &tb);
+      const VkBufferImageCopy regions[2] = {
+         { .bufferOffset = 0, .imageSubresource = { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, .imageExtent = { 4, 4, 1 } },
+         { .bufferOffset = 256, .imageSubresource = { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, .imageExtent = { 2, 2, 1 } },
+      };
+      CmdCopyBufferToImage(cmd, src, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, regions);
+      const VkImageMemoryBarrier sbar = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                          .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                          .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .image = img,
+                                          .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL,
+                         1, &sbar);
+      const VkDescriptorSetLayoutBinding bindings[2] = {
+         { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, &sampler },
+         { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 2, .pBindings = bindings };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      VkPipeline pipeline;
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+      const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 },
+                                           { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 2, .pPoolSizes = ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      const VkDescriptorImageInfo ii = { .imageView = view, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+      const VkDescriptorBufferInfo bi = { out, 0, 256 };
+      const VkWriteDescriptorSet w[2] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+      };
+      UpdateDescriptorSets(dev, 2, w, 0, NULL);
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                         NULL);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+      CmdDispatch(cmd, 1, 1, 1);
    } else if (scenario == 14) {
       PFN_vkCreateBufferView CreateBufferView = (PFN_vkCreateBufferView)GetDeviceProcAddr(dev, "vkCreateBufferView");
       VkShaderModule m;

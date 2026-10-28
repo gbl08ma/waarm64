@@ -57,11 +57,11 @@ test("what the driver advertises follows the WebGPU device's features and limits
     const { v, memory } = await renderer(c, options);
     const at = (v.raw.wgt_caps as () => number)() >>> 0;
     assert.ok(at, 'wgt_caps failed');
-    const w = new Uint32Array(memory.buffer, at, 25);
+    const w = new Uint32Array(memory.buffer, at, 26);
     return {
       dim2D: w[0], invocations: w[1], sizeX: w[2], storageImages: w[3], sampledImages: w[4], storageRange: w[5], subgroupSize: w[6],
       subgroupOps: w[7], bc: w[8], extendedFormats: w[9], depthClamp: w[10], r16float: w[11], r16unorm: w[12], rg11b10: w[13], r32float: w[14], vendor: w[15],
-      cacheUuid: w[16], rgba32Samples: w[17], rgba8Samples: w[18], r32uintSamples: w[19], integerSamples: w[20], sharedMemory: w[21], dualSource: w[22], integerMissing: w[23], ycbcr: w[24],
+      cacheUuid: w[16], rgba32Samples: w[17], rgba8Samples: w[18], r32uintSamples: w[19], integerSamples: w[20], sharedMemory: w[21], dualSource: w[22], integerMissing: w[23], ycbcr: w[24], nv12: w[25],
     };
   };
   const SAMPLED = 0x1, STORAGE = 0x2, COLOR = 0x80, BLEND = 0x100, FILTER = 0x1000;
@@ -115,10 +115,13 @@ test("what the driver advertises follows the WebGPU device's features and limits
   const one = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { hold: ['tier1-storage'] });
   assert.equal(one.r16float & STORAGE, 0);
   assert.equal(one.r32float & BLEND, BLEND);
-  // YCbCr conversions aren't translated: advertised only with `?gpu=vkycbcr` (experiments: VK3 L7.1b), never by
-  // default (GTK4 would take Vulkan and draw black).
-  assert.deepEqual([mac.ycbcr, all.ycbcr, none.ycbcr], [0, 0, 0]);
-  assert.equal((await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { ycbcr: true })).ycbcr, 1);
+  // YCbCr conversions and the multi-planar formats only with `?gpu=vkycbcr` (VK3 L7.1b, L7.2), never by default until
+  // GTK4's row (GTK4 would take Vulkan and draw black).
+  assert.deepEqual([mac.ycbcr, all.ycbcr, none.ycbcr, mac.nv12, all.nv12], [0, 0, 0, 0, 0]);
+  const on = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { ycbcr: true });
+  assert.equal(on.ycbcr, 1);
+  const SAMPLED_IMAGE = 0x1, MIDPOINT = 0x20000, DISJOINT = 0x400000;
+  assert.equal(on.nv12 & (SAMPLED_IMAGE | MIDPOINT | DISJOINT), SAMPLED_IMAGE | MIDPOINT | DISJOINT);
 });
 
 test('a semaphore is made whatever handle types its export names', { skip }, async () => {

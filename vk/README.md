@@ -190,7 +190,7 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
   translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, interpolation at an offset,
-  inline uniform blocks, YCbCr conversions; subgroups of one invocation with the basic
+  inline uniform blocks, YCbCr conversions but with `?gpu=vkycbcr` (below); subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of every kind of descriptor (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
@@ -215,12 +215,22 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   async present, "The guest's Mesa" below; REPORT.md "VK3 L4d", "VK3 L4e"). `?gpu=vkformats=held` holds them again
   (libplacebo then has no FBOs and mpv renders as in VK2 L6: "Failed creating FBO texture", its VA-API frames byte for
   byte its software ones); `?gpu=vkhold=<feature>` holds one (`tier1-storage` is tier1's storage alone).
-- **YCbCr conversions aren't advertised** (VK2 L7's choice, by measurement): advertised and not honoured, GTK4's
-  Vulkan renderer (`GSK_RENDERER=vulkan`) drew black or near-empty frames for more CPU than its GL one (REPORT.md "VK2
-  L7"); without them GTK4 stays on GL, its default here anyway (forced onto Vulkan it aborts on its own assertion).
-  `?gpu=vkycbcr` advertises `samplerYcbcrConversion` anyway, for experiments only (VK3 L7.1b: Chromium's own Vulkan
-  device refuses a device without it); never by default until GTK4's row (VK3 L7.4).
-  The modifiers stay: Venus's WSI needs them.
+- **YCbCr conversions** (VK3 L7.2), only with `?gpu=vkycbcr` (`WG_FEATURE_YCBCR`): by default GTK4's Vulkan
+  renderer stays off and GTK draws on GL (VK2 L7: on Venus it drew black or near-empty frames for more CPU), and GTK4's
+  row (L7.3) decides the default; Chromium's own Vulkan device refuses a device without them (L7.1b). With it:
+  `samplerYcbcrConversion`, `KHR_sampler_ycbcr_conversion`, `EXT_ycbcr_image_arrays`, and the multi-planar formats
+  whose planes WebGPU samples and filters (`wg_ycbcr_format`: the 8-bit 2- and 3-plane 420, 422 and 444), optimal
+  tiling, with sampling, linear filtering, transfers, midpoint and cosited chroma, a linear chroma filter and
+  disjoint planes. A multi-planar image is a texture per plane (`wg_image.planes`: its format and subsampled extent,
+  its bytes after the plane before, or in a memory of its own when disjoint); copies and views of a plane aspect use
+  its texture, and a view of the whole image is a view of each plane. A set layout binding whose immutable samplers
+  have a conversion gets two slots more an element after the set's others (its view's other planes, mirrored at each
+  write: `wg_descriptor_set_layout.planes`, `owner`), and its conversions go into the layout's hash (the shaders'
+  keys). The translator runs Mesa's `nir_vk_lower_ycbcr_tex` first (`wgsl_lower_ycbcr`): a sample through such a
+  sampler becomes one sample of each plane (a cosited chroma's coordinate moved half a chroma texel, the sampler
+  filtering it: implicit reconstruction), the plane's swizzle, the conversion's mapping, range and model; a plane past
+  the first is the binding's plane slot. Gaps: docs/backlog.md "YCbCr's gaps". The modifiers stay: Venus's WSI needs
+  them.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
   be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it; a 1D one 2D),

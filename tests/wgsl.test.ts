@@ -53,8 +53,14 @@ function stages(tmp: string): Stage[] {
 type Exports = {
   _initialize(): void; wgsl_test_init(): void; wgsl_test_translate(words: number, n: number, stage: number): number;
   wgsl_test_device(features: number, subgroupSize: number): void;
+  wgsl_test_ycbcr(set: number, binding: number, format: number, model: number, range: number, x: number, y: number, filter: number): void;
   wgsl_test_result(): number; venus_alloc(n: number): number; venus_free(p: number): void;
 };
+
+/** What a stage is translated for: the device's WGSL features, its subgroups' size, and (VK3 L7.2) a binding sampled
+ * through a YCbCr conversion (VkFormat, VkSamplerYcbcrModelConversion, VkSamplerYcbcrRange, VkChromaLocation x and y,
+ * the chroma VkFilter), as an immutable sampler in its set layout. */
+type Device = { features?: number; subgroupSize?: number; ycbcr?: { set: number; binding: number; format: number; model: number; range: number; x: number; y: number; filter: number } };
 
 /** The module's translator, on a memory like the VM's memory 0 (its arena at the top). */
 async function translator() {
@@ -90,8 +96,10 @@ async function translator() {
   };
   // The device translated for (vk/compiler/wgsl.h's WGSL_* features; the subgroups' size): dual-source-blending and
   // subgroups of one unless a stage says otherwise.
-  return (s: Stage, device: { features?: number; subgroupSize?: number } = {}) => {
+  return (s: Stage, device: Device = {}) => {
     ex.wgsl_test_device(device.features ?? WGSL.DUAL_SOURCE, device.subgroupSize ?? 1);
+    const y = device.ycbcr;
+    ex.wgsl_test_ycbcr(y ? y.set : -1, y?.binding ?? 0, y?.format ?? 0, y?.model ?? 0, y?.range ?? 0, y?.x ?? 0, y?.y ?? 0, y?.filter ?? 0);
     const p = ex.venus_alloc(s.words.byteLength) >>> 0;
     new Uint8Array(memory.buffer, p, s.words.byteLength).set(new Uint8Array(s.words.buffer, s.words.byteOffset, s.words.byteLength));
     const t0 = performance.now();
@@ -405,7 +413,7 @@ test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip
 });
 
 /** A GLSL stage of tests/venus/ compiled with glslc and translated for `device`. */
-function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: string, file: string, device: { features?: number; subgroupSize?: number } = {}, env = 'vulkan1.2', defines: string[] = []) {
+function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: string, file: string, device: Device = {}, env = 'vulkan1.2', defines: string[] = []) {
   const spv = join(tmp, `${basename(file)}.spv`);
   const r = spawnSync('glslc', [`--target-env=${env}`, ...defines.map((d) => `-D${d}`), '-o', spv, join(root, file)], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
@@ -681,6 +689,118 @@ test('a fragment stage at the sample rate reads its inputs at their sample and W
     const errors = await compile([shading.text, id.text]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Runs a translated compute shader (one workgroup) over textures in headless Chromium's WebGPU: each texture made of
+ * its bytes at its WGSL binding, a sampler (`filter`) at `sampler`, a storage buffer of `size` bytes at `out`, read back.
+ */
+async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; data: number[] }[], sampler: { binding: number; filter: string }, out: { binding: number; size: number }) {
+  const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+    args: (process.env.CHROMIUM_ARGS ?? '--enable-unsafe-webgpu --enable-features=Vulkan').split(' ').filter(Boolean) });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+    const r = await page.evaluate(async ({ code, textures, sampler, out }) => {
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter) return undefined;
+      const device = await adapter.requestDevice();
+      const errors: string[] = [];
+      device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+      const module = device.createShaderModule({ code });
+      errors.push(...(await module.getCompilationInfo()).messages.filter((m) => m.type === 'error').map((m) => `${m.lineNum}:${m.linePos} ${m.message}`));
+      if (errors.length) return { errors, out: [] as number[] };
+      const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+      const entries: GPUBindGroupEntry[] = textures.map((t) => {
+        const tex = device.createTexture({ size: [t.w, t.h], format: t.format as GPUTextureFormat, usage: 0x2 | 0x4 /* COPY_DST | TEXTURE_BINDING */ });
+        const bpp = t.data.length / (t.w * t.h);
+        device.queue.writeTexture({ texture: tex }, new Uint8Array(t.data), { bytesPerRow: t.w * bpp }, [t.w, t.h]);
+        return { binding: t.binding, resource: tex.createView() };
+      });
+      entries.push({ binding: sampler.binding, resource: device.createSampler({ magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode }) });
+      const buffer = device.createBuffer({ size: out.size, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
+      entries.push({ binding: out.binding, resource: { buffer } });
+      const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(1);
+      pass.end();
+      const read = device.createBuffer({ size: out.size, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
+      enc.copyBufferToBuffer(buffer, 0, read, 0, out.size);
+      device.queue.submit([enc.finish()]);
+      await read.mapAsync(1 /* GPUMapMode.READ */);
+      return { errors, out: [...new Uint8Array(read.getMappedRange())] };
+    }, { code, textures, sampler, out });
+    return r && { ...r, out: new Float32Array(new Uint8Array(r.out).buffer) };
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
+test('a combined image-sampler with a YCbCr conversion samples each plane and converts (VK3 L7.2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // VK_FORMAT_G8_B8R8_2PLANE_420_UNORM (NV12), BT.709, narrow range; chroma at the midpoint, nearest, or cosited
+    // horizontally, linear.
+    const NV12 = 1000156003, YCBCR_709 = 2, NARROW = 1, COSITED = 0, MIDPOINT = 1, NEAREST = 0, LINEAR = 1;
+    const file = 'tests/venus/ycbcr.comp';
+    const ycbcr = { set: 0, binding: 0, format: NV12, model: YCBCR_709, range: NARROW };
+    const mid = glslStage(translate, tmp, file, { ycbcr: { ...ycbcr, x: MIDPOINT, y: MIDPOINT, filter: NEAREST } });
+    assert.equal(mid.rc, 0, mid.text);
+    // Slots: img 0 (its texture binding 0, its sampler 1), the buffer 1 (binding 2), img's second plane 2 (binding 4).
+    assert.match(mid.text, /@group\(0\) @binding\(0\) var r0_0: texture_2d<f32>;/);
+    assert.match(mid.text, /@group\(0\) @binding\(4\) var r0_4: texture_2d<f32>;/);
+    const cosited = glslStage(translate, tmp, file, { ycbcr: { ...ycbcr, x: COSITED, y: MIDPOINT, filter: LINEAR } });
+    assert.equal(cosited.rc, 0, cosited.text);
+    // Without the conversion: one texture.
+    const plain = glslStage(translate, tmp, file);
+    assert.equal(plain.rc, 0, plain.text);
+    assert.doesNotMatch(plain.text, /@binding\(4\)/);
+
+    // Luma 4×4, chroma (Cb, Cr) 2×2.
+    const Y = Array.from({ length: 16 }, (_, i) => 16 + i * 13);
+    const C = [[60, 200], [128, 128], [200, 60], [90, 170]];
+    const run = (code: string, filter: string) => runSampled(code, [{ binding: 0, format: 'r8unorm', w: 4, h: 4, data: Y },
+      { binding: 4, format: 'rg8unorm', w: 2, h: 2, data: C.flat() }], { binding: 1, filter }, { binding: 2, size: 256 });
+    // BT.709 narrow range of 8-bit values (the spec's "Narrow range" and "BT.709" sections).
+    const rgb = (y: number, cb: number, cr: number) => {
+      const yy = (y - 16) / 219, pb = (cb - 128) / 224, pr = (cr - 128) / 224;
+      return [yy + 1.5748 * pr, yy - 0.13397432 / 0.7152 * pb - 0.33480248 / 0.7152 * pr, yy + 1.8556 * pb, 1];
+    };
+    const lerp = (a: number[], b: number[], f: number) => a.map((v, k) => v + (b[k] - v) * f);
+    const check = (got: Float32Array, want: (x: number, y: number) => number[], what: string) => {
+      const bad: string[] = [];
+      for (let i = 0; i < 16; i++) {
+        const w = want(i & 3, i >> 2), g = [...got.subarray(4 * i, 4 * i + 4)];
+        if (g.some((v, k) => !(Math.abs(v - w[k]) < 0.02))) bad.push(`(${i & 3}, ${i >> 2}): ${g.map((v) => v.toFixed(3))}, not ${w.map((v) => v.toFixed(3))}`);
+      }
+      assert.deepEqual(bad.slice(0, 4), [], `${what}: ${bad.length} of 16 wrong`);
+    };
+    const a = await run(mid.text, 'nearest');
+    if (!a) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(a.errors, []);
+    check(a.out, (x, y) => { const c = C[(y >> 1) * 2 + (x >> 1)]; return rgb(Y[y * 4 + x], c[0], c[1]); }, 'midpoint, nearest');
+    // Cosited horizontally: an even column's chroma is its texel's, an odd one's halfway to the next (clamped).
+    const b = await run(cosited.text, 'linear');
+    assert.ok(b);
+    assert.deepEqual(b.errors, []);
+    check(b.out, (x, y) => {
+      const row = (y >> 1) * 2, c0 = C[row + (x >> 1)], c1 = C[row + Math.min((x >> 1) + (x & 1), 1)];
+      // Vertically at the midpoint, linear: rows 0 and 3 at their chroma row; 1 and 2 a quarter towards the other.
+      const r2 = y === 1 ? 2 : y === 2 ? 0 : row, f = y === 1 || y === 2 ? 0.25 : 0;
+      const d0 = C[r2 + (x >> 1)], d1 = C[r2 + Math.min((x >> 1) + (x & 1), 1)];
+      const c = lerp(lerp(c0, c1, (x & 1) * 0.5), lerp(d0, d1, (x & 1) * 0.5), f);
+      return rgb(Y[y * 4 + x], c[0], c[1]);
+    }, 'cosited, linear');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

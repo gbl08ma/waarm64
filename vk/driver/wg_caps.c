@@ -117,8 +117,11 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * conversions integer code: wgsl_nir.c `lower_16bit`). */
       .KHR_shader_float16_int8 = HAS(F16),
       .KHR_16bit_storage = true,
+      /* YCbCr conversions and the multi-planar formats (VK3 L7.2; `?gpu=vkycbcr`, off by default until GTK4's row). */
+      .KHR_sampler_ycbcr_conversion = HAS(YCBCR),
+      .EXT_ycbcr_image_arrays = HAS(YCBCR),
       /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
-       * bytes), texel buffers (EXT_texel_buffer_alignment), YCbCr conversions (KHR_sampler_ycbcr_conversion). */
+       * bytes), texel buffers (EXT_texel_buffer_alignment). */
    };
 }
 
@@ -177,11 +180,12 @@ wg_caps_features(struct vk_features *f)
       .extendedDynamicState = true,
       .extendedDynamicState2 = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
-      /* No YCbCr conversions until they're translated (VK3): GTK4's Vulkan renderer then stays off and GTK draws on GL
-       * (VK2 L7 measured it on Venus with them advertised and not honoured: black or near-empty frames, more CPU).
-       * `?gpu=vkycbcr` advertises them anyway, for experiments (Chromium's own Vulkan device refuses a device
-       * without them: VK3 L7.1b). */
+      /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr) only with
+       * `?gpu=vkycbcr`: by default GTK4's Vulkan renderer stays off and GTK draws on GL (VK2 L7: GTK4 on Venus drew
+       * black or near-empty frames for more CPU); GTK4's row (L7.3) decides the default. Chromium's own Vulkan device
+       * refuses a device without them (VK3 L7.1b). */
       .samplerYcbcrConversion = HAS(YCBCR),
+      .ycbcrImageArrays = HAS(YCBCR),
    };
 }
 

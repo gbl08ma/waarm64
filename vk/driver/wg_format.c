@@ -249,6 +249,20 @@ wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *stora
    return true;
 }
 
+const struct vk_format_ycbcr_info *
+wg_ycbcr_format(VkFormat format)
+{
+   const struct vk_format_ycbcr_info *info = (wg_features & WG_FEATURE_YCBCR) ? vk_format_get_ycbcr_info(format) : NULL;
+   if (!info || info->n_planes < 2)
+      return NULL;
+   for (uint32_t p = 0; p < info->n_planes; p++) {
+      const struct wg_texture_format *f = wg_texture_format(info->planes[p].format);
+      if (!f || !(f->flags & WG_FMT_SAMPLE) || !wg_format_filterable(f) || (f->flags & WG_FMT_NOCOPY))
+         return NULL;
+   }
+   return info;
+}
+
 /* What the device reports of a format: optimal tiling from WebGPU's capabilities, linear tiling only copies (a linear
  * image is a texture like any other, but the guest can't sample what it maps), buffers vertex input and texel buffers
  * (wg_texel_buffer_layout). */
@@ -279,6 +293,16 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
    *linear = f && f->bw == 1 && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL))
                 ? o & (VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
                 : 0;
+   /* A multi-planar format (VK3 L7.2): its planes sampled through a YCbCr conversion and copied, optimal tiling only;
+    * implicit chroma reconstruction (no explicit, no filter of the chroma's own: the sampler's filters it), planes
+    * bound apart. */
+   if (wg_ycbcr_format(format)) {
+      *optimal = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+                 VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                 VK_FORMAT_FEATURE_MIDPOINT_CHROMA_SAMPLES_BIT | VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT |
+                 VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT | VK_FORMAT_FEATURE_DISJOINT_BIT;
+      *linear = 0;
+   }
    *buffer = wg_vertex_format(format) ? VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT : 0;
    uint32_t x, p1[3];
    bool storage;
