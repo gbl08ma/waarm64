@@ -51,7 +51,7 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
 `vk/compiler/` (wgsl.h has the model): SPIR-V → NIR (`spirv_to_nir`, buffers as index and offset, no physical
 pointers) → `wgsl_preprocess` (KosmicKrisp's pass list: inlining, splitting, outputs through temporaries, input
 attachments as 2D textures, scalarized ALU) → `wgsl_lower` against a layout (1D textures and images as 2D ones of one
-row; arrays of textures indexed dynamically as a binary tree of ifs over their elements; descriptors to slots: slot s
+row; arrays of textures, buffers and storage images indexed dynamically as a binary tree of ifs over their elements, an access copied into each leaf, an index past the array reading its last element (buffers' and images' since VK3 L7.1); descriptors to slots: slot s
 of a set is WGSL `@binding(2(base + s))` of its group, a combined image-sampler's sampler `2(base + s) + 1`, where set
 n is group n but sets 3 and up share group 3 one after another, WebGPU having 4 bind groups; I/O to locations;
 explicit memory; NIR's optimization loop) → `wgsl_link` for a vertex and fragment pair (`nir_opt_varyings`) → `wgsl_print`, out of SSA. The
@@ -111,7 +111,18 @@ the program keeps can't be seen): ballots, votes, `subgroupBroadcastFirst`, a re
 swaps, elect, and the reductions and add or mul scans WGSL has; NIR lowers the rest (masks, ballot queries, equality
 votes, clustered reductions, the other scans, quad votes). A bool goes through them as 0 or 1. WGSL has no subgroup
 ids: `gl_SubgroupID` is `local_invocation_index / subgroup_size` and `gl_NumSubgroups` from the workgroup's size
-(subgroups taken as runs of the index, as on SwiftShader and Metal). Subgroups are in compute and fragment shaders only
+(subgroups taken as runs of the index, as on SwiftShader and Metal). **Sample-rate shading** (VK3 L7.1, `sampleRateShading`): a fragment stage runs per sample where its pipeline asks for
+more than one invocation a pixel (`sampleShadingEnable`, its minimum times the samples over 1: WebGPU has no minimum,
+so per sample), or where it reads `gl_SampleID` or `gl_SamplePosition` or has an input per sample (Vulkan's minimum of
+1). Then every input not at the centroid is `@interpolate(…, sample)` (the vertex stage's outputs follow), the entry
+point reads `@builtin(sample_index)` (WGSL runs a fragment shader per sample where it reads it, inputs or not), and
+`gl_FragCoord.xy` is the pixel's corner plus the sample's position (WGSL's `position` is the pixel's centre; Vulkan's
+`FragCoord` is at the sample), as is `gl_SamplePosition`: Vulkan's standard locations by the pipeline's sample count
+(`override wg_samples`, the render pipeline's constant). The pipeline's state reaches the WGSL through `hash_state`
+(the shaders' keys), so a stage made for both kinds of pipeline is two. Interpolation at an offset or a sample
+(`interpolateAt*`) still fails the stage.
+
+Subgroups are in compute and fragment shaders only
 (WGSL's), and a subgroup-scoped barrier does nothing. Without them, the basic operations of subgroups of one invocation.
 
 **16-bit values** (VK3 L5): kept in a u32's low half. 16-bit storage (buffers, uniform buffers, push constants; every
@@ -123,8 +134,7 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, dynamically indexed buffers and
-images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
+16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
 its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
@@ -172,13 +182,16 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   device's (`gpuFeatures`: a bit a feature; `gpuLimits`: 31 limits as `struct wg_limits`, WebGPU's defaults where the
   browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows of plan §4:
   image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
+dynamic indexing of every descriptor array and sample-rate shading (VK3 L7.1, Dawn's row of plan §4: Dawn's Vulkan
+backend refuses a device without the four `shader*ArrayDynamicIndexing` features, and its core WebGPU wants
+`sampleRateShading`; "The shader path");
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
-  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, dynamically indexed buffers and
-  images, inline uniform blocks, YCbCr conversions; subgroups of one invocation with the basic
+  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, interpolation at an offset,
+  inline uniform blocks, YCbCr conversions; subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
-  as `WGSL_MAX_SETS`), dynamically indexed arrays of sampled images (`if` trees), formats from WebGPU's tables
+  as `WGSL_MAX_SETS`), dynamically indexed arrays of every kind of descriptor (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
   `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers

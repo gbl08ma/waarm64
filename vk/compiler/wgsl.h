@@ -102,6 +102,7 @@ struct wgsl_info {
    uint32_t outputs;
    uint8_t output_base[8];
    bool writes_depth, writes_sample_mask, discards;
+   bool per_sample;             /* fragment: at the sample rate, declares `override wg_samples` (the pipeline's) */
    bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
    uint8_t dual_base;           /* its WGSL type */
    bool clip_distances;         /* uses `clip_distances` (vertex) */
@@ -123,7 +124,7 @@ void wgsl_preprocess(nir_shader *nir);
 
 /* The lowering against a layout: descriptors to slots, I/O to slots, explicit memory, subgroup operations for subgroups
  * of `subgroup_size` (1: of one invocation, without WGSL's subgroups), optimization, out of SSA.
- * Fails (false, with `error`) for what WGSL can't express (dynamically indexed descriptors, 64-bit values). */
+ * Fails (false, with `error`) for what WGSL can't express (descriptors reached through pointers, 64-bit values). */
 bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_size, char *error,
                 size_t error_size);
 

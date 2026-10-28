@@ -65,6 +65,8 @@ layout_of(nir_shader *nir, struct wgsl_layout *layout)
 /* The test's device (tests/wgsl.test.ts): dual-source-blending (its device has it where the adapter does), no
  * texture-formats-tier2, subgroups of one; wgsl_test_device changes it. */
 static unsigned test_features = WGSL_DUAL_SOURCE, test_subgroup_size = 1;
+/* A test's flag beside the features: the fragment stage of a pipeline with sample shading. */
+#define WGSL_TEST_SAMPLE_SHADING (1u << 16)
 
 EXPORT void
 wgsl_test_init(void)
@@ -97,6 +99,9 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
       return 1;
    }
    wgsl_preprocess(nir);
+   /* As a pipeline with sampleShadingEnable makes its fragment stage (wg_shader.c `sample_shading`). */
+   if (stage == MESA_SHADER_FRAGMENT && (test_features & WGSL_TEST_SAMPLE_SHADING))
+      nir->info.fs.uses_sample_shading = true;
    struct wgsl_layout layout;
    layout_of(nir, &layout);
    if (!wgsl_lower(nir, &layout, test_subgroup_size, error, sizeof(error))) {
@@ -106,7 +111,7 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
    }
    /* WebGPU's default workgroup storage. */
    const struct wgsl_print_options print = { .max_immediates = 64, .max_workgroup_storage = 16384,
-                                             .features = test_features };
+                                             .features = test_features & ~WGSL_TEST_SAMPLE_SHADING };
    char *text = wgsl_print(NULL, nir, &print, &info, error, sizeof(error));
    ralloc_free(nir);
    if (!text) {

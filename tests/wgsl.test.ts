@@ -104,6 +104,8 @@ async function translator() {
 
 /** vk/compiler/wgsl.h's features. */
 const WGSL = { TIER2: 1, DUAL_SOURCE: 2, SUBGROUPS: 4, F16: 8 };
+/** vk/compiler/wgsl_test.c's flag: the fragment stage of a pipeline with sampleShadingEnable. */
+const TEST_SAMPLE_SHADING = 1 << 16;
 
 /** Compiles WGSL modules in headless Chromium's WebGPU: each module's errors (empty: none), or undefined without an adapter. */
 async function compile(modules: string[]) {
@@ -156,7 +158,7 @@ async function runCompute(code: string, buffers: { binding: number; init?: Uint8
       const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
       const made = buffers.map((b) => {
         const size = b.init ? b.init.length : b.size!;
-        const buffer = device.createBuffer({ size, usage: 0x80 | 0x4 | 0x8 /* STORAGE | COPY_SRC | COPY_DST */ });
+        const buffer = device.createBuffer({ size, usage: 0x80 | 0x40 | 0x4 | 0x8 /* STORAGE | UNIFORM | COPY_SRC | COPY_DST */ });
         if (b.init) device.queue.writeBuffer(buffer, 0, new Uint8Array(b.init));
         return { buffer, size };
       });
@@ -403,9 +405,9 @@ test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip
 });
 
 /** A GLSL stage of tests/venus/ compiled with glslc and translated for `device`. */
-function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: string, file: string, device: { features?: number; subgroupSize?: number } = {}, env = 'vulkan1.2') {
+function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: string, file: string, device: { features?: number; subgroupSize?: number } = {}, env = 'vulkan1.2', defines: string[] = []) {
   const spv = join(tmp, `${basename(file)}.spv`);
-  const r = spawnSync('glslc', [`--target-env=${env}`, '-o', spv, join(root, file)], { encoding: 'utf8' });
+  const r = spawnSync('glslc', [`--target-env=${env}`, ...defines.map((d) => `-D${d}`), '-o', spv, join(root, file)], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const b = readFileSync(spv);
   return translate({ name: file, stage: stageOf(file), words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) }, device);
@@ -610,6 +612,75 @@ test('the out-of-context review of L4f: a compute stage\'s readonly storage buff
     assert.ok(demote);
     assert.deepEqual(demote.errors, []);
     for (let i = 0; i < 16; i++) assert.deepEqual(demote.pixels[i], i >> 2 >= 2 ? blue : [0, 0, 0, 0], `demote: pixel ${i & 3},${i >> 2}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('arrays of uniform and storage buffers and of storage images indexed dynamically are chosen from, and run right (VK3 L7.1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const buf = glslStage(translate, tmp, 'tests/venus/l7/dyn-buffers.comp');
+    assert.equal(buf.rc, 0, buf.text);
+    // Each element a binding of its own (slots: sel 0, d 1-3, outs 4-5, u 6-7).
+    for (const b of [2, 4, 6]) assert.match(buf.text, new RegExp(`@group\\(0\\) @binding\\(${b}\\) var<storage, read> r0_${b}:`));
+    for (const b of [8, 10]) assert.match(buf.text, new RegExp(`@group\\(0\\) @binding\\(${b}\\) var<storage, read_write> r0_${b}:`));
+    for (const b of [12, 14]) assert.match(buf.text, new RegExp(`@group\\(0\\) @binding\\(${b}\\) var<uniform> r0_${b}:`));
+    const img = glslStage(translate, tmp, 'tests/venus/l7/dyn-images.comp');
+    assert.equal(img.rc, 0, img.text);
+    for (const b of [2, 4, 6]) assert.match(img.text, new RegExp(`@group\\(0\\) @binding\\(${b}\\) var r0_${b}: texture_storage_2d<r32uint, read_write>;`));
+    const errors = await compile([buf.text, img.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
+
+    // Run the buffers': each invocation's elements by its data, the runtime array's length of the chosen one.
+    const sel = new Uint32Array(64).map((_, i) => (i * 7 + (i >> 3)) % 3);
+    const words = (n: number, f: (i: number) => number) => new Uint8Array(new Uint32Array(n).map((_, i) => f(i)).buffer);
+    const uni = (m: number) => words(16, (w) => (w & 3) === 0 ? 100 * m + (w >> 2) : 0xdead);
+    const res = await runCompute(buf.text, [{ binding: 0, init: new Uint8Array(sel.buffer) },
+      ...[0, 1, 2].map((k) => ({ binding: 2 + 2 * k, init: words(64 + 16 * k, (i) => k * 1000 + i) })),
+      { binding: 8, size: 65 * 4 }, { binding: 10, size: 65 * 4 }, { binding: 12, init: uni(0) }, { binding: 14, init: uni(1) }]);
+    assert.ok(res);
+    assert.deepEqual(res.errors, []);
+    const outs = [res.out[4], res.out[5]].map((o) => new Uint32Array(o.buffer));
+    const bad: string[] = [];
+    const cnt = [0, 0];
+    for (let i = 0; i < 64; i++) {
+      const k = sel[i], j = i & 1;
+      cnt[j] += k + 1;
+      const want = (k * 1000 + i) * 10 + 64 + 16 * k + 100 * (k & 1) + (i & 3);
+      if (outs[j][1 + i] !== want) bad.push(`o[${j}][${i}]: ${outs[j][1 + i]}, not ${want}`);
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+    assert.deepEqual([outs[0][0], outs[1][0]], cnt, 'the atomics');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a fragment stage at the sample rate reads its inputs at their sample and WGSL\'s sample_index (VK3 L7.1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const file = 'tests/venus/l7/sample-shading.frag';
+    const at = (text: string, loc: number) => text.match(new RegExp(`@location\\(${loc}\\) (@interpolate\\([^)]*\\))`))?.[1];
+    const per = (text: string) => [at(text, 0), at(text, 1), at(text, 2), at(text, 3), /@builtin\(sample_index\) sid: u32/.test(text)];
+    const want = ['@interpolate(perspective, sample)', '@interpolate(perspective, centroid)', '@interpolate(flat)', '@interpolate(linear, sample)', true];
+    // Per pixel by default.
+    const pixel = glslStage(translate, tmp, file);
+    assert.equal(pixel.rc, 0, pixel.text);
+    assert.deepEqual(per(pixel.text), ['@interpolate(perspective, center)', '@interpolate(perspective, centroid)', '@interpolate(flat)', '@interpolate(linear, center)', false]);
+    // The pipeline's sample shading, and a read of gl_SampleID (Vulkan: the minimum at 1).
+    const shading = glslStage(translate, tmp, file, { features: WGSL.DUAL_SOURCE | TEST_SAMPLE_SHADING });
+    assert.equal(shading.rc, 0, shading.text);
+    assert.deepEqual(per(shading.text), want);
+    const id = glslStage(translate, tmp, file, {}, 'vulkan1.2', ['SAMPLE_ID']);
+    assert.equal(id.rc, 0, id.text);
+    assert.deepEqual(per(id.text), want);
+    const errors = await compile([shading.text, id.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

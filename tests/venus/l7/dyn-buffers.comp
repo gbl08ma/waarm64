@@ -1,0 +1,15 @@
+#version 450
+// Arrays of uniform and storage buffers indexed dynamically (VK3 L7.1): each invocation picks its elements from data.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) buffer Sel { uint idx[64]; } sel;
+layout(set = 0, binding = 1) readonly buffer Data { uint v[]; } d[3];
+layout(set = 0, binding = 2) buffer Out { uint cnt; uint o[64]; } outs[2];
+layout(set = 0, binding = 3) uniform U { uvec4 k[4]; } u[2];
+
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  uint k = sel.idx[i];
+  uint j = i & 1u;
+  outs[j].o[i] = d[k].v[i] * 10u + uint(d[k].v.length()) + u[k & 1u].k[i & 3u].x;
+  atomicAdd(outs[j].cnt, k + 1u);
+}

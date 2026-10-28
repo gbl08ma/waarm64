@@ -496,9 +496,13 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
             c->vary.interp[loc] = mode == INTERP_MODE_NOPERSPECTIVE ? WGSL_INTERP_LINEAR
                                   : mode == INTERP_MODE_FLAT       ? WGSL_INTERP_FLAT
                                                                    : WGSL_INTERP_PERSPECTIVE;
+            /* Shading at the sample rate (the pipeline's sampleShadingEnable, or the shader reads its sample's id or
+             * declares an input per sample: VK3 L7.1), every input not at the centroid is at its sample. */
             c->vary.sampling[loc] = bary->intrinsic == nir_intrinsic_load_barycentric_centroid ? WGSL_SAMPLING_CENTROID
-                                    : bary->intrinsic == nir_intrinsic_load_barycentric_sample ? WGSL_SAMPLING_SAMPLE
-                                                                                                : WGSL_SAMPLING_CENTER;
+                                    : bary->intrinsic == nir_intrinsic_load_barycentric_sample ||
+                                          nir->info.fs.uses_sample_shading
+                                       ? WGSL_SAMPLING_SAMPLE
+                                       : WGSL_SAMPLING_CENTER;
             if (bary->intrinsic == nir_intrinsic_load_barycentric_at_offset ||
                 bary->intrinsic == nir_intrinsic_load_barycentric_at_sample)
                failf(c, "interpolation at an offset or sample");
@@ -548,6 +552,7 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       c->uses_front_face = true;
       break;
    case nir_intrinsic_load_sample_id:
+   case nir_intrinsic_load_sample_pos:
       c->uses_sample_id = true;
       break;
    case nir_intrinsic_load_sample_mask_in:
@@ -866,6 +871,18 @@ declare_io(struct ctx *c)
          u_foreach_bit(loc, c->vary.mask)
             line(c, "  @location(%u) %s v%u: vec4<%s>,", loc, interp_attr(c, c->vary.interp[loc], c->vary.sampling[loc]),
                  loc, base_name(c->vary.base[loc]));
+         line(c, "}");
+      }
+      /* At the sample rate, a sample's position (gl_SamplePosition; gl_FragCoord is at it, as Vulkan has it, where
+       * WGSL's position is the pixel's centre): Vulkan's standard locations, by the pipeline's sample count (the
+       * driver's override). */
+      if (nir->info.fs.uses_sample_shading) {
+         c->info->per_sample = true;
+         line(c, "override wg_samples: u32 = 1u;");
+         line(c, "fn wg_sample_pos(s: u32) -> vec2<f32> {");
+         line(c, "  if (wg_samples != 4u) { return vec2<f32>(0.5, 0.5); }");
+         line(c, "  return array<vec2<f32>, 4>(vec2<f32>(0.375, 0.125), vec2<f32>(0.875, 0.375), vec2<f32>(0.125, 0.625), "
+                 "vec2<f32>(0.625, 0.875))[s & 3u];");
          line(c, "}");
       }
       if (c->info->outputs || c->info->writes_depth || c->info->writes_sample_mask) {
@@ -1623,7 +1640,12 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       line(c, "t%u = iid;", def->index);
       return;
    case nir_intrinsic_load_frag_coord:
-      line(c, "t%u = bitcast<vec4<u32>>(i.pos)%s;", def->index, def->num_components < 4 ? fmt(c, ".%s", comps(c, 0, def->num_components)) : "");
+      line(c, "t%u = bitcast<vec4<u32>>(%s)%s;", def->index,
+           c->nir->info.fs.uses_sample_shading ? "vec4<f32>(floor(i.pos.xy) + wg_sample_pos(sid), i.pos.zw)" : "i.pos",
+           def->num_components < 4 ? fmt(c, ".%s", comps(c, 0, def->num_components)) : "");
+      return;
+   case nir_intrinsic_load_sample_pos:
+      line(c, "t%u = bitcast<vec2<u32>>(wg_sample_pos(sid));", def->index);
       return;
    case nir_intrinsic_load_front_face:
       line(c, "t%u = ff;", def->index);
@@ -2277,7 +2299,9 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       const char *params = (c.vary.mask || c.uses_frag_coord) ? "i: In" : "";
       if (c.uses_front_face)
          params = fmt(&c, "%s%s@builtin(front_facing) ff: bool", params, *params ? ", " : "");
-      if (c.uses_sample_id)
+      /* At the sample rate (a fragment shader without inputs too: WGSL runs a fragment shader per sample where it
+       * reads sample_index). */
+      if (c.uses_sample_id || nir->info.fs.uses_sample_shading)
          params = fmt(&c, "%s%s@builtin(sample_index) sid: u32", params, *params ? ", " : "");
       if (c.uses_sample_mask_in)
          params = fmt(&c, "%s%s@builtin(sample_mask) smask: u32", params, *params ? ", " : "");

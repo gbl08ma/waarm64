@@ -608,6 +608,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of
   `tests/deqp/vk.txt`; the counts below are of the samples):
+  - **Stencil8's resolves**: a multisampled `S8_UINT` attachment's SAMPLE_ZERO stencil resolve reads 0 at the
+    resolved pixels (and writes outside the render area with a sample mask:
+    `depth_stencil_resolve.*.samples_4.s8_uint.*stencil*`, VK3 L7.1's samples, all 6 that ran); depth24plus-stencil8's
+    and depth32float-stencil8's pass.
   - **Copies WebGPU refuses**, skipped with a warning (the worker's `depthStencilCopy`; depth's done by the worker's
     draws and compute passes since VK3 L6b, stencil's by a whole subresource's copy and a draw a bit, D24's copies
     advertised with them): depth16unorm's part and offsets (its texels are half words: 1
@@ -627,7 +631,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
-    `textureQueryLod` (9), dynamically indexed buffers and storage images, image atomics, interpolation at an offset; derivatives in non-uniform control flow
+    `textureQueryLod` (9), image atomics, interpolation at an offset or a sample (`interpolateAt*`: `multisample_interpolation`'s offset and `sample_interpolate_at_*` groups); integer cube textures sampled with a sampler (`glsl.opaque_type_indexing.sampler.*.compute.isamplercube` read zeros: `lower_int_sample` skips cubes); derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
     immediates (the push buffer is a 13th). From the out-of-context review of the translator (VK3 L4f left them):
     shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,

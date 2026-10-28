@@ -45,12 +45,26 @@ wg_preprocess_nir(struct vk_physical_device *pdev, nir_shader *nir, const struct
    wgsl_preprocess(nir);
 }
 
+/* Whether a pipeline's fragment shader runs at the sample rate (sampleShadingEnable, VK3 L7.1): where its minimum
+ * asks for more than one invocation a pixel (with the sample count dynamic, any minimum). WebGPU has no minimum: a
+ * fragment shader runs per pixel or per sample (WGSL's inputs at their sample), so it runs per sample. */
+static bool
+sample_shading(const struct vk_graphics_pipeline_state *state)
+{
+   if (!state || !state->ms || !state->ms->sample_shading_enable)
+      return false;
+   const uint32_t n = state->ms->rasterization_samples;
+   return n ? state->ms->min_sample_shading * n > 1.0f : state->ms->min_sample_shading > 0.0f;
+}
+
 static void
 wg_hash_state(struct vk_physical_device *pdev, const struct vk_graphics_pipeline_state *state,
               const struct vk_features *features, VkShaderStageFlags stages, blake3_hash out)
 {
-   /* Nothing of the state reaches the WGSL: render pipelines take it at draw time. */
+   /* Of the state only sample shading reaches the WGSL (its inputs' sampling: the vertex stage's outputs follow
+    * them); render pipelines take the rest at draw time. */
    memset(out, 0, sizeof(blake3_hash));
+   out[0] = (stages & (VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT)) && sample_shading(state);
 }
 
 /* Programs. */
@@ -614,6 +628,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       for (uint32_t r = 0; r < infos[i].push_constant_range_count; r++)
          push = MAX2(push, infos[i].push_constant_ranges[r].offset + infos[i].push_constant_ranges[r].size);
       layout_of(&layout, infos[i].set_layouts, infos[i].set_layout_count, push);
+      if (infos[i].stage == MESA_SHADER_FRAGMENT && sample_shading(state))
+         infos[i].nir->info.fs.uses_sample_shading = true;
       if (!wgsl_lower(infos[i].nir, &layout, wg_subgroup_size(), error, sizeof(error))) {
          ok = false;
          break;
@@ -1025,7 +1041,11 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    wg_json_printf(&j, ",\"multisample\":{\"count\":%u,\"mask\":%u,\"alphaToCoverageEnabled\":%s}", MAX2(k->samples, 1),
                   k->sample_mask, k->alpha_to_coverage ? "true" : "false");
    if (k->fs) {
-      wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",\"targets\":[", k->fs->module);
+      wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",", k->fs->module);
+      /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`). */
+      if (k->fs->info.per_sample)
+         wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u},", k->samples);
+      wg_json_printf(&j, "\"targets\":[");
       for (uint32_t i = 0; i < k->color_count; i++) {
          const struct wg_texture_format *f = k->colors[i] ? wg_texture_format(k->colors[i]) : NULL;
          if (!f) {

@@ -142,8 +142,14 @@ wg_caps_features(struct vk_features *f)
       .fragmentStoresAndAtomics = true,
       .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE),
       .shaderClipDistance = HAS(CLIP_DISTANCES),
-      /* A tree of ifs over the elements (wgsl_nir.c); other arrays only with constant indices. */
+      /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
+       * backend requires all four). */
+      .shaderUniformBufferArrayDynamicIndexing = true,
       .shaderSampledImageArrayDynamicIndexing = true,
+      .shaderStorageBufferArrayDynamicIndexing = true,
+      .shaderStorageImageArrayDynamicIndexing = true,
+      /* Fragment shaders per sample (WGSL's inputs at their sample, wgsl_print.c; VK3 L7.1: Dawn's core needs it). */
+      .sampleRateShading = true,
       .imagelessFramebuffer = true,
       .uniformBufferStandardLayout = true,
       .shaderSubgroupExtendedTypes = true,
@@ -246,6 +252,10 @@ wg_caps_properties(struct vk_properties *p)
    p->maxComputeWorkGroupSize[1] = L->max_compute_workgroup_size_y;
    p->maxComputeWorkGroupSize[2] = L->max_compute_workgroup_size_z;
    p->subPixelPrecisionBits = 4;
+   /* Vulkan's minimums with sampleRateShading (interpolation at an offset isn't translated: docs/backlog.md). */
+   p->minInterpolationOffset = -0.5f;
+   p->maxInterpolationOffset = 0.4375f;
+   p->subPixelInterpolationOffsetBits = 4;
    p->subTexelPrecisionBits = 4;
    p->mipmapPrecisionBits = 4;
    p->maxDrawIndexedIndexValue = 0xffffffffu;

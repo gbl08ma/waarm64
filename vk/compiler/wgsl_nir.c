@@ -155,7 +155,7 @@ wgsl_preprocess(nir_shader *nir)
 
 /* Descriptors to slots. A buffer's descriptor is vec2(index, 0) with index = group << 16 | WGSL binding; a texture's or
  * sampler's index goes in the tex instruction's texture_index / sampler_index, an image's in its intrinsic's first
- * source, the same way. Array elements must be constants by then (no dynamic indexing is advertised). */
+ * source, the same way. Array elements are constants by then (arrays indexed dynamically are chosen from first). */
 struct lower_state {
    const struct wgsl_layout *layout;
    char *error;
@@ -481,6 +481,118 @@ lower_dynamic_tex_index(nir_builder *b, nir_tex_instr *tex, void *data)
    return true;
 }
 
+/* Arrays of buffers and storage images indexed dynamically (VK3 L7.1: shaderUniformBufferArrayDynamicIndexing,
+ * shaderStorageBufferArrayDynamicIndexing, shaderStorageImageArrayDynamicIndexing; Dawn's Vulkan backend requires
+ * them): as textures', each element a binding of its own and the access chosen by the index, a binary tree of ifs with
+ * a copy of the access per element. An index past the array reads its last element. */
+struct dyn_access {
+   nir_intrinsic_instr *intr;
+   /* A buffer's: the resource index whose array index isn't constant, the descriptor loaded from it and the cast that
+    * starts the access's deref chain. An image's: the array deref whose index isn't constant. */
+   nir_intrinsic_instr *ri, *desc;
+   nir_deref_instr *cast, *array;
+};
+
+/* The access's deref chain from `d` up to its cast, rebuilt over `desc` (a buffer's element's descriptor). */
+static nir_deref_instr *
+clone_buffer_chain(nir_builder *b, nir_deref_instr *d, const struct dyn_access *a, nir_def *desc)
+{
+   nir_deref_instr *copy = nir_instr_as_deref(nir_instr_clone(b->shader, &d->instr));
+   /* The clone's sources aren't in use lists until it's inserted: set, not rewritten. */
+   copy->parent = nir_src_for_ssa(d == a->cast ? desc : &clone_buffer_chain(b, nir_deref_instr_parent(d), a, desc)->def);
+   nir_builder_instr_insert(b, &copy->instr);
+   return copy;
+}
+
+static nir_def *
+emit_access(nir_builder *b, const struct dyn_access *a, nir_def *index, unsigned lo, unsigned hi)
+{
+   nir_intrinsic_instr *intr = a->intr;
+   if (hi - lo == 1) {
+      nir_deref_instr *d;
+      if (a->ri) {
+         nir_intrinsic_instr *ri = nir_instr_as_intrinsic(nir_instr_clone(b->shader, &a->ri->instr));
+         ri->src[0] = nir_src_for_ssa(nir_imm_int(b, lo));
+         nir_builder_instr_insert(b, &ri->instr);
+         nir_intrinsic_instr *desc = nir_instr_as_intrinsic(nir_instr_clone(b->shader, &a->desc->instr));
+         desc->src[0] = nir_src_for_ssa(&ri->def);
+         nir_builder_instr_insert(b, &desc->instr);
+         d = clone_buffer_chain(b, nir_src_as_deref(intr->src[0]), a, &desc->def);
+      } else {
+         d = nir_build_deref_array_imm(b, nir_deref_instr_parent(a->array), lo);
+      }
+      nir_intrinsic_instr *copy = nir_instr_as_intrinsic(nir_instr_clone(b->shader, &intr->instr));
+      copy->src[0] = nir_src_for_ssa(&d->def);
+      nir_builder_instr_insert(b, &copy->instr);
+      return nir_intrinsic_infos[intr->intrinsic].has_dest ? &copy->def : NULL;
+   }
+   const unsigned mid = (lo + hi) / 2;
+   nir_push_if(b, nir_ult_imm(b, index, mid));
+   nir_def *x = emit_access(b, a, index, lo, mid);
+   nir_push_else(b, NULL);
+   nir_def *y = emit_access(b, a, index, mid, hi);
+   nir_pop_if(b, NULL);
+   return x ? nir_if_phi(b, x, y) : NULL;
+}
+
+static bool
+lower_dynamic_access_index(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   const struct wgsl_layout *layout = data;
+   struct dyn_access a = { .intr = intr };
+   unsigned n;
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_deref:
+   case nir_intrinsic_store_deref:
+   case nir_intrinsic_deref_atomic:
+   case nir_intrinsic_deref_atomic_swap:
+   case nir_intrinsic_deref_buffer_array_length: {
+      nir_deref_instr *d = nir_src_as_deref(intr->src[0]);
+      if (!nir_deref_mode_is_one_of(d, nir_var_mem_ubo | nir_var_mem_ssbo))
+         return false;
+      while (d && d->deref_type != nir_deref_type_cast)
+         d = d->deref_type == nir_deref_type_var ? NULL : nir_deref_instr_parent(d);
+      a.cast = d;
+      a.desc = d ? nir_src_as_intrinsic(d->parent) : NULL;
+      if (!a.desc || a.desc->intrinsic != nir_intrinsic_load_vulkan_descriptor)
+         return false;
+      a.ri = nir_src_as_intrinsic(a.desc->src[0]);
+      if (!a.ri || a.ri->intrinsic != nir_intrinsic_vulkan_resource_index || nir_src_is_const(a.ri->src[0]))
+         return false;
+      const unsigned set = nir_intrinsic_desc_set(a.ri), binding = nir_intrinsic_binding(a.ri);
+      if (set >= layout->set_count || binding >= layout->sets[set].binding_count)
+         return false;
+      n = layout->sets[set].count[binding];
+      break;
+   }
+   case nir_intrinsic_image_deref_load:
+   case nir_intrinsic_image_deref_store:
+   case nir_intrinsic_image_deref_size:
+   case nir_intrinsic_image_deref_samples:
+   case nir_intrinsic_image_deref_levels: {
+      nir_deref_instr *d = nir_src_as_deref(intr->src[0]);
+      if (d->deref_type != nir_deref_type_array || nir_src_is_const(d->arr.index) ||
+          nir_deref_instr_parent(d)->deref_type != nir_deref_type_var)
+         return false;
+      a.array = d;
+      n = glsl_get_length(nir_deref_instr_parent(d)->type);
+      break;
+   }
+   default:
+      return false;
+   }
+   if (!n)
+      return false;
+   b->cursor = nir_before_instr(&intr->instr);
+   nir_def *index = nir_umin(b, a.ri ? a.ri->src[0].ssa : a.array->arr.index.ssa, nir_imm_int(b, n - 1));
+   nir_def *res = emit_access(b, &a, index, 0, n);
+   if (res)
+      nir_def_replace(&intr->def, res);
+   else
+      nir_instr_remove(&intr->instr);
+   return true;
+}
+
 /* Point size has no WGSL counterpart (points are a pixel), nor do primitive and viewport indices out of a vertex
  * shader: their writes go. */
 static bool
@@ -669,6 +781,13 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    };
    NIR_PASS(_, nir, nir_lower_tex, &tex);
 
+   /* Buffers and storage images of arrays indexed dynamically, chosen from (before explicit I/O: their deref chains
+    * name their arrays). */
+   NIR_PASS(_, nir, nir_opt_constant_folding);
+   for (bool more = true; more;) {
+      more = false;
+      NIR_PASS(more, nir, nir_shader_intrinsics_pass, lower_dynamic_access_index, nir_metadata_none, (void *)layout);
+   }
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_push_const, nir_address_format_32bit_offset);
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo | nir_var_mem_ssbo, nir_address_format_32bit_index_offset);
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
