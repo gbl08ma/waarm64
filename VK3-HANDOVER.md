@@ -6,19 +6,23 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7.3)
+## State (2026-10-28, after L7.4)
 
-- **GTK4's black frames understood:** L4c-D's partial render-area CLEAR (its clear rect's colour nested, so zeros) had
-  made them; planted back on the M4 it gives VK2 L7's picture exactly. Since then GSK on Vulkan draws right.
-- **YCbCr on by default** (`?gpu=vkycbcr=off` holds it): without it GTK 4.24 aborted every GTK4 program on a machine
-  with Vulkan (it asserts YCbCr beside the dma-buf extensions); with it GTK still takes GL by itself (only a modifier
-  other than LINEAR makes it take Vulkan). Checked on SwiftShader and the M4.
-- **GSK on Vulkan (forced) misses GTK4's bar:** iconscroll 9 frames/s against GL's 28–29, fishbowl collapsed once in
-  four to 1 icon at 20 frames/s, both waiting with the guest ~11% busy (~1,900 wake-ups a second); fishbowl otherwise
-  cheaper than GL, frames +0.1–0.25 ms. Filed: backlog "GSK's Vulkan renderer on Venus misses GTK4's bar".
-- Next: L7.4 (ANGLE's ES3).
+- **ANGLE's ES3 row backed and advertised:** 13 uniform buffers a stage (those past WebGPU's room read as read-only
+  storage, by the layout's stage flags; storage buffers 2 fewer), the last vertex provoking (a draw's indices rotated
+  by a compute pass hoisted before its pass; indexed fans the same way), transform feedback (the vertex stage run as
+  compute after its pass on the draw's bind groups and vertex buffers; attachment-less passes get the device's
+  attachment). dEQP-VK's list 4,424 → 4,599 (REPORT.md "VK3 L7.4").
+- **The program:** the guest's Chromium with `--use-angle=vulkan` gives WebGL 2 (ES 3.0) on Venus, its flat varying,
+  capture and 24 uniform blocks matching ANGLE on GL; with `--enable-features=Vulkan` too the blocks' sum is wrong
+  (filed: backlog "ANGLE's row's gaps", with xfb's queries, indirect captures, clip distances).
+- Next: L7.5 (vkd3d's draw parameters).
 
-## Where VK3 stands (2026-10-28, after L7.3; next L7.4)
+## Where VK3 stands (2026-10-28, after L7.4; next L7.5)
+
+- **L7.3:** GTK4's black frames were L4c-D's partial CLEAR (fixed since); YCbCr on by default (GTK 4.24 aborted
+  without it; it still takes GL); GSK on Vulkan (forced) misses GTK4's bar (iconscroll 9 frames/s against GL's 28):
+  backlog "GSK's Vulkan renderer on Venus misses GTK4's bar".
 
 - **L7.2:** YCbCr conversions backed (the 8-bit 2- and 3-plane formats, a texture a plane, Mesa's
   `nir_vk_lower_ycbcr_tex` in the translator); 773 dEQP-VK cases in `tests/deqp/vk-ycbcr.txt` (failing: plane views of
@@ -130,7 +134,8 @@ docs and the backlog; git keeps the old handovers.
   - [x] L7.3: GTK4: its black frames understood, dma-buf modifiers, its bar (REPORT.md G); YCbCr on by default only
     once GTK4 meets it, else GTK4 stays on GL and YCbCr opt-in. **Done:** the black was L4c-D's partial CLEAR; YCbCr on
     by default (GTK4 aborted without it, and takes GL with it); GSK on Vulkan misses the bar (iconscroll), filed.
-  - [ ] L7.4: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
+  - [x] L7.4: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback. **Done:** all three
+    backed; ANGLE gives WebGL 2 on Venus in the guest's Chromium (`--use-angle=vulkan`).
   - [ ] L7.5: vkd3d's draw parameters.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
@@ -161,6 +166,14 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 ## Things worth not re-discovering
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
+
+- (L7.4) A pass with no attachments makes WebGPU drop the whole submit ("Render pass has no attachments"): every dEQP-VK
+  transform feedback case has one. dEQP-VK cases outside vk-main.txt's groups run by exact name through `CASES=`
+  (the mustpass files are in the `localhost/webpc-deqp-vk` image: `podman run --rm localhost/webpc-deqp-vk cat
+  /cts/external/vulkancts/mustpass/main/vk-default/transform-feedback.txt`). `vk/build.sh`'s output can look clean
+  when the wasm link failed: check `grep ' error:' target/vk/wasm-build.log` (or its exit status) before a test run.
+  `nir_io_add_intrinsic_xfb_info` needs constant folding first (arrays' and matrices' slots). The guest's ANGLE
+  probe: `PAGE=bench/vulkan/angle/es3.html ARMS='--use-angle=vulkan' node bench/vulkan/dawn-frames.ts guest`.
 
 - (L7.3) GTK picks its renderer by `GSK_DEBUG=renderer` lines ("Not using Vulkan: …"); gtk4-load.ts keeps them (`took`)
   and `RENDERERS=default` leaves GSK_RENDERER unset. GTK's sources at the guest's tag (`git clone --depth 1 --branch

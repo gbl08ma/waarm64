@@ -1479,6 +1479,49 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7.4: ANGLE's ES3 row backed (the provoking vertex, 13 uniform buffers, transform feedback); ANGLE gives WebGL 2 on Venus
+
+2026-10-28. The dev VM's SwiftShader (Chromium 153) for the driver's tests and dEQP-VK (VK-GL-CTS vulkan-cts-1.4.7.0's
+deqp-vk in the Arch guest, `bench/gpu/deqp-run.ts vk` with `CASES=`); the desktop guest (Arch Linux, Chromium
+153.0.8010.36, Mesa 26.2.5) for the program. JSON in `results/vk3/l74/`.
+
+- **More than 12 uniform buffers a stage.** `maxPerStageDescriptorUniformBuffers` 12 → 13 (WebGPU's 12, less one for
+  the push buffer, plus 2 of the storage buffers: `maxPerStageDescriptorStorageBuffers` 10 → 8 on SwiftShader and the
+  Mac); a uniform buffer past its stage's room, by the pipeline layout's stage flags, is read as read-only storage. A
+  shader with 12 uniform blocks and push constants past the immediates used to be refused by WebGPU (backlog; it is
+  the driver test's `manyUniforms` with 13). dEQP-VK: every `descriptor_limits.{compute,fragment}_shader.uniform_buffers_N`
+  up to 13 passes (`deqp-ubo.json`: 22, 14 to 16 not supported).
+- **The provoking vertex** (`VK_EXT_provoking_vertex`, the last, per pipeline). A draw whose fragment shader reads a
+  flat input and whose last vertex provokes goes through a list of indices of its own, each primitive's rotated, made
+  by a compute pass hoisted before its render pass (the render-pass rule: no break); indexed fans the same way (WebGPU
+  has none: they used to draw as a list), and non-indexed fans' device indices now Vulkan's order (each triangle's
+  first vertex the fan's second, not its centre). dEQP-VK: every `rasterization.provoking_vertex.draw` case but
+  adjacency's passes (20; `deqp-pv.json`), and the list's 63 fan, strip and restart cases still pass (`deqp-ia.json`).
+- **Transform feedback** (`VK_EXT_transform_feedback`: one stream, no queries, no draws by the captured count). The
+  vertex stage's body is a function the WGSL's entry point calls; its captured outputs are copied into a private
+  record; after the render pass (Vulkan reads no captured vertex in the pass that wrote it: no break, no pre-pass) the
+  worker runs it as compute on the draw's bind groups and vertex buffers (a fetch generated from the render pipeline's
+  vertex layout) into copies of the bound ranges, whole primitives only, counters resumed and written. Attachment-less
+  passes (all of dEQP's captures) get an attachment of the device's: before, `Render pass has no attachments` dropped
+  their submits. dEQP-VK: 134 of 143 supported `transform_feedback.simple` (less queries, streams, indirect, multiview,
+  geometry, tessellation) and every-third `fuzz` vertex cases pass (`deqp-xfb.json`); the 9 failures are
+  `xfb_clipdistance_*` (the 8th distance reads 0: filed). The first run found arrays' and matrices' records at one
+  offset (`nir_io_add_intrinsic_xfb_info` matches by location, before constant folding moved their slots there).
+- **The program** (`angle-es3.json`; `PAGE=bench/vulkan/angle/es3.html node bench/vulkan/dawn-frames.ts guest`): the
+  guest's Chromium with `--use-angle=vulkan` now gives **WebGL 2.0 (OpenGL ES 3.0) on Venus** ("ANGLE (Google, Vulkan
+  1.3.296 (Virtio-GPU Venus (webpc WebGPU)))"; VK0 A had ES2 only). A flat varying from the last vertex, a transform
+  feedback capture of four points and 24 uniform blocks summed all match ANGLE on virgl's GL. With Chromium's own
+  Vulkan device on too (`--enable-features=Vulkan`) it starts (no crash this time) and the first two match, the
+  uniform blocks' sum doesn't (205 for 156: filed).
+- **The pass list** (`tests/deqp/vk.txt`): 4,424 → 4,599 (21 uniform-buffer, 20 provoking-vertex, 134 transform
+  feedback cases).
+- **Tests** (each failing with its bug planted back): `tests/venus-driver.test.ts` misc `manyUniforms`, passes
+  `flatLast`, `flatFanLast`, `flatFanFirst`, four `transform feedback:` cases; `tests/wgsl.test.ts` a captured block's
+  record. The link test's parse of pipeline cache data now steps to 4-aligned headers (a shader's data needn't end on
+  a word: the vertex stage's longer WGSL made one that didn't).
+- **CI** (the code at cde8ac0a/990483ac): `scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (828 s: the
+  4,599-case list in 570 s, YCbCr's 773 in 89 s, the replays).
+
 ## VK3 L7.3: GTK4's black frames were L4c-D's partial CLEAR; GTK4 takes GL anyway; YCbCr on by default (GTK4 aborted without it)
 
 2026-10-28. The desktop guest (Arch Linux, GTK 4.24.1, Mesa 26.2.5, sway 1.12 on GLES through virgl), 4 vCPUs, through
