@@ -6,17 +6,22 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7.1b)
+## State (2026-10-28, after L7.2)
 
-- **The semaphore found and fixed:** Chromium's own Vulkan device exports semaphores as opaque fds, which Venus doesn't
-  offer; the guest passes that export to the host and creates asynchronously, the driver (sync files only) refused it,
-  and vkr never had the object. `wg_CreateSemaphore` now drops the other handle types (test failing first, planted
-  back). `?gpu=vkycbcr` advertises YCbCr for experiments (off by default; the caps test holds it). REPORT.md "VK3 L7.1b".
-- **Dawn still not on Venus:** the guest's Venus then hands back fd 0 for the opaque fd (`bench/vulkan/semfd.ts`), and
-  Chromium's GPU process dies on "FD ownership violation". The rest is the guest's (Chromium or Mesa): backlog "Dawn in
-  the guest's Chromium on Venus". Open still: s8_uint's SAMPLE_ZERO stencil resolves, `interpolateAt*`.
+- **YCbCr backed, behind `?gpu=vkycbcr`** (off by default; the caps test holds it, NV12's features too): the 8-bit
+  2- and 3-plane formats as a texture per plane, disjoint planes, conversion samplers through Mesa's
+  `nir_vk_lower_ycbcr_tex` in the translator, plane slots in set layouts (vk/README.md "The driver"). Tests failing with
+  bugs planted: tests/wgsl.test.ts (the conversion run on two textures), tests/venus-driver.test.ts (a disjoint NV12).
+- **dEQP-VK:** of 3,209 ycbcr candidates 953 pass, 114 fail (plane views of another format, memory aliased by a plane's
+  image: backlog "YCbCr's gaps"); `tests/deqp/vk-ycbcr.txt` (773) runs in ci-deqp-vk.sh's second boot with the switch.
+- **The opaque-fd lead:** the guest's Venus offers sync-file semaphores only, hard-coded, and never asks the host for
+  the export or the fd: no host fix; a guest Mesa patch (export the syncobj as an opaque fd) is the way (backlog). Dawn
+  not run on Venus. Next: L7.3 (GTK4, which decides YCbCr's default).
 
-## Where VK3 stands (2026-10-28, after L7.1b; next L7.2)
+## Where VK3 stands (2026-10-28, after L7.2; next L7.3)
+
+- **L7.1b:** Chromium's opaque-fd semaphore exports, which the driver refused (vkr never had the object), now made; the
+  guest's Venus then hands back fd 0 and Chromium's GPU process dies ("FD ownership violation"): the guest's (L7.2).
 
 - **L7.1:** Dawn's row backed and advertised (the four `shader*ArrayDynamicIndexing`, `sampleRateShading`, `gl_FragCoord`
   at the sample); dEQP-VK's list 4,251 → 4,424. The program (Dawn in the guest's Chromium) needs YCbCr (L7.2), the guest
@@ -113,9 +118,10 @@ docs and the backlog; git keeps the old handovers.
     first. Time-boxed ~3 h; if Dawn then runs on Venus (`--headless=new`), its samples against the dev VM's frames.
   - **The rows reordered by the user (2026-10-28; VK3-KICKOFF.md "Decisions"):** Chromium's own Vulkan device needs
     YCbCr, so YCbCr comes next, behind `?gpu=vkycbcr`; GTK4 after it decides the default.
-  - [ ] L7.2: YCbCr conversion (`samplerYcbcrConversion`, its formats and multi-planar images) behind `?gpu=vkycbcr`,
+  - [x] L7.2: YCbCr conversion (`samplerYcbcrConversion`, its formats and multi-planar images) behind `?gpu=vkycbcr`,
     dEQP-VK's `ycbcr` groups as its gate. Time-boxed lead: the guest Venus's fd 0 for opaque-fd semaphore exports
-    (L7.1b), the way to Dawn's program.
+    (L7.1b), the way to Dawn's program. **Done:** the 8-bit multi-planar formats, 773 cases in vk-ycbcr.txt; the lead
+    is the guest's Mesa (filed).
   - [ ] L7.3: GTK4: its black frames understood, dma-buf modifiers, its bar (REPORT.md G); YCbCr on by default only
     once GTK4 meets it, else GTK4 stays on GL and YCbCr opt-in.
   - [ ] L7.4: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.

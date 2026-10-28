@@ -623,7 +623,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   compiled out) hands back fd 0, then -1 (`bench/vulkan/semfd.ts`), and Chromium's GPU process dies on "FD ownership
   violation", likely of that fd 0 (no symbols; also with `--disable-gpu-compositing`; `--use-gl=disabled` gives no
   adapter at all). A way through would be on the guest's side: Chromium exporting what the device offers (sync files),
-  or Venus backing opaque-fd semaphores (a Mesa change); an upstream report for the fd 0 at least (an error, not a
+  or Venus backing opaque-fd semaphores (a Mesa change: VK3 L7.2 found the guest's Venus offers sync files only,
+  hard-coded, and never passes the export or the fd request to the host, so neither vkr nor the driver can answer
+  it; the patch would offer `OPAQUE_FD` where the renderer has external sync and export the semaphore's DRM syncobj
+  as an opaque fd, `vn_renderer_sync_export_syncobj(…, false)`, in a patched Mesa in the guest images); an upstream report for the fd 0 at least (an error, not a
   descriptor it doesn't own). (3) A window: Chromium calls Wayland incompatible with Vulkan, and the desktop image has no Xwayland;
   `--headless=new` starts (its frames would come out through the page's log). `bench/vulkan/dawn-frames.ts guest` runs
   the samples (ARMS: the flags; CR_ENV: the environment; LOGBEFORE: the log up to a line) and compares them with the

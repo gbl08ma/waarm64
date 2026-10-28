@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # dEQP-VK on the page (docs/testing.md "dEQP-VK"): run it, besides scripts/ci.sh, when a change touches Vulkan: the
 # renderer's driver or translator (vk/), the GPU worker's WebGPU side (web/venus-gpu.ts), Venus's device; and at the end
-# of a Vulkan track. ~12 min: the direct set's pass list (tests/deqp/vk.txt), one guest boot; then the programs'
+# of a Vulkan track. ~13 min: the direct set's pass list (tests/deqp/vk.txt), one guest boot, and the YCbCr one
+# (tests/deqp/vk-ycbcr.txt) with ?gpu=vkycbcr, a second; then the programs'
 # captures replayed against lavapipe's frames (tests/page-venus.test.ts, also scripts/ci-debian.sh's: VK3 L6c, vkQuake's
 # first frame went 80% wrong over three loops that ran only this script). Needs the wasm core (scripts/ci.sh builds it),
 # the renderer (vk/build.sh), images/deqp/build.sh vk's dEQP-VK disk and guest (on demand, ~25 min once),

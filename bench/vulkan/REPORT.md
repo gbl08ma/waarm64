@@ -1479,6 +1479,39 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7.2: YCbCr conversions backed (behind `?gpu=vkycbcr`); opaque-fd semaphores are the guest's Mesa's
+
+2026-10-28, the dev VM (SwiftShader, Chromium 153; the dEQP-VK guest's Mesa 26.2.5); JSON in `results/vk3/l72/`.
+
+- **The feature** (vk/README.md "The driver", YCbCr conversions): with `?gpu=vkycbcr` the device has
+  `samplerYcbcrConversion`, `EXT_ycbcr_image_arrays` and the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444:
+  every plane a format WebGPU samples and filters), optimal tiling, with midpoint and cosited chroma, a linear chroma
+  filter and disjoint planes. A multi-planar image is a texture per plane; a binding whose immutable samplers convert
+  has slots for its views' other planes; the translator runs Mesa's `nir_vk_lower_ycbcr_tex` (implicit chroma
+  reconstruction) before its own lowering. Off by default (the caps test holds it, NV12's features too).
+- **Tests:** `tests/wgsl.test.ts` translates a compute shader with a conversion on its sampler (NV12, BT.709 narrow;
+  midpoint nearest and cosited linear) and runs it on two textures against the spec's matrices; it fails with the
+  lowering planted out. `tests/venus-driver.test.ts` "misc: a disjoint NV12 image…" uploads a disjoint NV12 image plane
+  by plane and samples it through the driver; it fails with the plane views planted out (chroma from the luma plane).
+- **dEQP-VK** (`deqp-candidates.json`, `.txt`): of the ycbcr groups' 3,209 cases of the 8-bit formats (optimal tiling,
+  compute and fragment, descriptor sets; filtering, misc, single_plane_copy.optimal), **953 pass, 114 fail, the rest
+  NotSupported** (other formats, linear tiling, explicit reconstruction, planes as attachments or storage). All of
+  conversion's 432 that run pass, format's 48, query's 48. The failures: views of a plane in another format of its
+  class (66: WebGPU's views differ only in sRGB-ness, so the view is invalid and its submit dropped) and images aliasing a
+  plane's memory (48: images are textures, not their memory's bytes): docs/backlog.md "YCbCr's gaps".
+  `tests/deqp/vk-ycbcr.txt` holds 773 of the passes (copy thinned to every second), run by ci-deqp-vk.sh with
+  `?gpu=vkycbcr` in a second boot (~1.5 min).
+- **The lead (time-boxed): opaque-fd semaphore export can't be made real on the host.** The guest's Venus
+  (`vn_physical_device.c`) offers semaphores as sync files only, hard-coded, whatever the renderer has; its
+  `vn_CreateSemaphore` backs only a sync-file export, and `vn_GetSemaphoreFdKHR` asserts a sync file (compiled out)
+  and returns the payload's union as an fd: the fd 0 L7.1b saw. Neither vkr nor our driver ever sees the export or
+  the fd request, so nothing on the host can answer it. A guest-side remedy would be a Mesa patch: offer
+  `OPAQUE_FD` beside `SYNC_FD` where the renderer has external sync, and export the semaphore's DRM syncobj as an
+  opaque syncobj fd (`vn_renderer_sync_export_syncobj(…, sync_file = false)`), which the kernel gives; that needs a
+  patched Mesa in the guest images (or Chromium exporting sync files). Not tried within the hour: filed
+  (docs/backlog.md "Dawn in the guest's Chromium on Venus"), so Dawn's samples weren't run on Venus.
+- **CI:** CIRESULTS
+
 ## VK3 L7.1b: the semaphore vkr never made; Dawn on Venus still not
 
 2026-10-28, the dev VM (SwiftShader, Chromium 153; the desktop guest's Chromium 153.0.8010.36, Mesa 26.2.5); JSON in
