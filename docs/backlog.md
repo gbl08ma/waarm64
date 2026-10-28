@@ -509,7 +509,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
   is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
   encoded by hand (or a recorded stream replayed through `venus_submit`).
-- **VK3's gate on NVIDIA: the user's final run** (bench/vulkan/REPORT.md "VK3: the summary"): what VK3 L5–L7b
+- **VK3's gate on NVIDIA: the user's final run** (bench/vulkan/REPORT.md "VK3: the summary"): what VK3 L5–L8a
   changed (the adapter's features, the driver's gaps, the emulated rows, the binding count) hasn't run on the user's
   RTX 3070; the last run there was 4fdc69fb's (after L4e). `bench/vulkan/nvidia.sh page` with a bundle of the track's
   last commit (`bench/vulkan/nvidia-bundle.sh`, ~4.8 GB) runs the gate again and, for the first time there, dEQP-VK's

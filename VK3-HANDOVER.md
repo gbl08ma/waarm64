@@ -6,18 +6,15 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L8a)
+## State (2026-10-28, after L8a: only the user's NVIDIA run is left)
 
-- **L8a done** (REPORT.md "VK3 L8a"): the track-end review's 1–4 fixed, each with its test failing first (copies and
-  blits within one buffer or subresource through temporaries; the provoke pass's and a direct capture's index ranges
-  the draw's; attachment-less passes at the pipelines' samples, secondaries in them too; descriptor copies keep
-  immutable samplers); its 5 wrong (VUID-vkCmdEndRendering-None-06781: no xfb across a suspend). Nothing newly
-  advertised. CI, alone: ci.sh 528 s, ci-deqp-vk.sh 848 s, both OK.
-- **L8** (the track's end): REPORT.md "VK3: the summary", the docs, plan §6/§7, PLAN.md's row, `nvidia.sh page`.
+- **Every loop is done** (L1–L8a; REPORT.md "VK3: the summary", each loop's section). L8a fixed the track-end review's
+  1–4 with tests (its 5 wrong). CI at c8087cb0, alone: ci.sh 528 s, ci-deqp-vk.sh 848 s; ci-debian.sh and
+  ci-machines.sh at L8 (scripts and docs since).
 - **The gate:** met on SwiftShader and the M4 but for Dawn's program (the guest's Mesa: backlog); on NVIDIA as of
   4fdc69fb but for 1 fish (parked by the user). L5–L8a haven't run on NVIDIA.
-- **Open: the user's NVIDIA run** (the supervisor builds the bundle from a clean checkout at L8a's commit). Then the
-  track's kickoff and handover leave the tree (the supervisor).
+- **Open: the user's final NVIDIA run** (another day, a fresh session): the bundle is built (c8087cb0); how to run it,
+  what it must answer and how to process its results and close the track: "The final NVIDIA run" below.
 
 ## Where VK3 stands
 
@@ -95,35 +92,72 @@ Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **th
     samplers), 5 (xfb across a suspended/resumed pass: check the spec allows it; fix or file). **Done:** 1–4 fixed with
     tests, 5 wrong (Vulkan forbids it).
 
-## What the next NVIDIA run must answer
+## The final NVIDIA run: running it and processing its results
 
-Each loop that needs an NVIDIA number extends `bench/vulkan/nvidia.sh` (one command, one results tarball, `results/`
-cleared at the start) and adds its question here. **The bundle** is built by the supervisor from a **clean** checkout
-at the commit, with no loop running: `scripts/build-wasm.sh`, `vk/build.sh`, then `bench/vulkan/nvidia-bundle.sh`
-(~3.4 GB) and `mv target/vk2-nvidia-bundle.tar target/vk3-nvidia-bundle-<commit>.tar`; check its `BUNDLE.txt` names the
-commit without "with uncommitted changes". On the desktop, in a checkout at the same commit:
+**This is all that's left of VK3.** The user runs it on another day; a fresh session processes the results and closes
+the track. Steps 1–2 are the user's, 3–6 the session's.
 
-    bench/vulkan/nvidia.sh page <the bundle> ~/webpc-vk2
+1. **The bundle** is on the dev VM: `~/Development/webpc/target/vk3-nvidia-bundle-c8087cb0.tar` (4.7 GiB, built
+   2026-10-28 from a clean checkout at c8087cb0 (L8a); its `BUNDLE.txt` says "from c8087cb0bf40", no uncommitted
+   changes). The commits after c8087cb0 change only docs (`.md` files). If the code changes before the
+   run, rebuild the bundle (below) or the results describe old code. **main's history was rewritten on 2026-10-28**
+   (an empty-tree commit removed, every hash after 221d16c8 changed): a desktop checkout from before needs
+   `git fetch && git reset --hard origin/main`.
+2. **On the desktop**, in a checkout at c8087cb0 or later, with the bundle copied there:
 
-(~75 min whole since L8; `VK2_STEPS="…"` runs some steps; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user puts
-in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvidia-<name>/`, leave traces over a few MB
-in `bench/results/local/`, delete the tarball.) The final run's bundle is `target/vk3-nvidia-bundle-c8087cb0.tar` (4.7 GiB, built 2026-10-28; the run is the
-user's, outstanding). The run before it was 2026-10-27, at 4fdc69fb (REPORT.md "VK3: the NVIDIA
-run after L4e"; its bundle deleted).
+       bench/vulkan/nvidia.sh page <the bundle> ~/webpc-vk2
 
-**The final run's questions** (each answered by a step; `results/summary.txt` gathers the verdicts):
-1. The gate again on L5–L8a's code: `present` (vkcube and mpv right on the page, every way), `mpv` (its bar),
-   `scene` (1,000 fish and the toolkit against virgl; 1 fish parked), `replay`, `pipelines` (warm across a restart),
-   `fence`, `trace`.
-2. (L5) Whether the page holds the adapter's subgroups there: the line `venus: the WebGPU device's subgroups are wrong
-   in divergent control flow` in any step's page log (summary.txt says "HELD" or "not held"); if not held, mpv's frames
-   (libplacebo's subgroup paths) and the dEQP-VK list's ~720 subgroup cases say whether real subgroups of 32 are right.
-3. (L8) dEQP-VK's two pass lists on NVIDIA (`deqp`: never run there; L6b's M4 run had 7 Metal-only failures).
-4. (L7.4, L7.5) The rows' programs there (`rows`: ANGLE's ES3 probe, flat 0.25, a capture, the uniform blocks' sum
-   156; vkd3d's tests).
+   ~75 min whole (`VK2_STEPS="deqp rows"` runs only the new steps, ~25 min; `VK2_STEPS="…"` any subset). It ends
+   with `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user copies into the repo's root on the dev VM.
+3. **Unpack** into `bench/results/local/vk3-nvidia-final/` and read `results/summary.txt` (a line per step: `done`
+   or `FAILED or timed out (exit N)`, plus the deqp, rows and subgroups verdicts) and `results/host.txt` (driver,
+   Chromium, BUNDLE.txt: check the commit is c8087cb0). A failed step: its `results/<step>.log`. The last processed
+   run is the model: REPORT.md "VK3: the NVIDIA run after L4e" (commit 40348847),
+   its JSON in `bench/vulkan/results/vk3/nvidia-l4e/`.
+4. **Answer each question** (below) against the run after L4e's numbers and the M4's, and write REPORT.md
+   "VK3: the final NVIDIA run" (placed right after "VK3: the summary"); update the summary's gate table (its NVIDIA
+   column and the closing paragraph: "outstanding" → what the run found). Commit the JSON and logs to
+   `bench/vulkan/results/vk3/nvidia-final/`; page grabs (PPMs), traces and anything over a few MB stay in
+   `bench/results/local/vk3-nvidia-final/`. Delete the tarball from the repo's root.
+5. **If something fails on NVIDIA:** reproduce it on SwiftShader or the M4 first (dEQP cases by name through `CASES=`,
+   "Things worth not re-discovering" below). A fix belongs to a short fix loop (L9, its test failing first, ci.sh and
+   ci-deqp-vk.sh; then the steps that failed again on NVIDIA in a new bundle, `VK2_STEPS=…`). What isn't VK3's to fix
+   (NVIDIA's driver, Chromium) goes to docs/backlog.md with the evidence. Ask the user before a loop that would take
+   more than a few hours: the track is otherwise done. The pass lists are shared by every adapter: an NVIDIA-only
+   failure is filed (as L6b's 7 Metal-only ones were), not taken off the list. Subgroups found wrong but not held:
+   that's a fix (the page's run-time check must hold them there too).
+6. **Close the track** in one commit, once the results are in (and any L9 is done): REPORT.md's summary says the
+   gate's outcome on NVIDIA; PLAN.md §3's VK3 row "done" without "but for the user's NVIDIA run"; docs/plans/graphics.md
+   §6's VK3 status the same; docs/backlog.md's entry "VK3's gate on NVIDIA: the user's final run" removed (its
+   leftovers filed as their own entries); vk/README.md, docs/devices.md "Venus" if the run changed what they say.
+   Then **delete VK3-KICKOFF.md and VK3-HANDOVER.md** in that commit (CLAUDE.md: git history keeps them;
+   REPORT.md's summary points at `git show <the commit before>:VK3-HANDOVER.md` for "Things worth not
+   re-discovering", as VK2's did). A docs-only commit needs no CI. Then ask the user whether VK4 starts (plan §6
+   proposes it); also still theirs: the hosted desktop disk (vmdisks.tny.im) to replace before the next deploy, and
+   whether to delete the `origin/review/venus-*` branches and the bundle.
 
-The whole run is ~75 min; `VK2_STEPS="deqp rows"` runs the new steps alone (~25 min). `VK2_DRY=1 VK0_ANY_ARCH=1
-bench/vulkan/nvidia.sh page - <dir>` prints each step's command without a bundle.
+**The questions** (each answered by a step; `results/summary.txt` gathers the verdicts):
+1. The gate again on L5–L8a's code, against the run after L4e (REPORT.md's summary table): `present` (vkcube and mpv
+   right on the page in every way: bitmap, canvas, readback, auto), `mpv` (0 dropped, the guest within 19–27% busy;
+   was 14 and 12%), `mpv-frames-*` (the advanced path taken, VA-API byte for byte software), `scene` (1,000 fish and
+   the toolkit cheaper a frame than virgl; was 5.7 against 8.7–8.9 and 3.05–3.19 against 6.81–7.43 ms; 1 fish parked
+   by the user, report it only), `replay` (within tolerance; vkQuake's known 1.67%), `pipelines` (warm across a
+   restart: 0 misses), `fence`, `trace` (as before: report differences).
+2. (L5) Whether the page held the adapter's subgroups: summary.txt's `subgroups:` line ("HELD" when any page log has
+   `venus: the WebGPU device's subgroups are wrong in divergent control flow`). If not held, the deqp step's ~720
+   subgroup cases and mpv's frames (libplacebo's subgroup paths) say whether NVIDIA's subgroups of 32 are right.
+3. (L8) dEQP-VK's two pass lists on NVIDIA (`deqp`: 4,690 and 773 YCbCr cases, never run there; L6b's M4 run had 7
+   Metal-only failures): each failure by name, grouped by cause.
+4. (L7.4, L7.5) The rows' programs (`rows`): ANGLE's ES3 probe in the guest's Chromium (on SwiftShader `flat
+   0,0,255,255`, a capture, `ubo 156`); vkd3d's tests (on SwiftShader a device at 11_0; test_draw_instanced,
+   test_draw_indexed_instanced and test_root_constants pass, test_vertex_id fails 39 of 89, test_instance_id 84 of
+   372: `results/vk3/l8/`). Same or better counts on NVIDIA.
+
+**Rebuilding the bundle** (only if the code changes first): from a **clean** checkout at the commit, with no loop
+running: `scripts/build-wasm.sh`, `vk/build.sh`, `bench/vulkan/nvidia-bundle.sh` (~4.8 GB; it needs
+`target/deqp/guest-vk.qcow2`, `target/deqp/deqp-vk.ext4` and `target/vkd3d/vkd3d.ext4`), then `mv
+target/vk2-nvidia-bundle.tar target/vk3-nvidia-bundle-<commit>.tar`; check its `BUNDLE.txt`. `VK2_DRY=1
+VK0_ANY_ARCH=1 bench/vulkan/nvidia.sh page - <dir>` prints each step's command without a bundle.
 
 ## Things worth not re-discovering
 

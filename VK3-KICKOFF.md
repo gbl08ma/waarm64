@@ -3,18 +3,14 @@ NVIDIA run; the user approved the content (2026-10-26).** Covers **VK3** of the 
 ([docs/plans/graphics.md](docs/plans/graphics.md) §6), M8's graphics track. Later phases get their own kickoffs.
 **Updated 2026-10-27, at the user's request, by VK3's first supervisor session** (halted after L4c, before L5) and again
 by the second (halted after L4e, before L5) so a new supervisor can pick up: the status below, the plan's marks, the
-lessons in "How VK3 runs".
+lessons in "How VK3 runs". **Updated 2026-10-28, at the user's request, by the third** (after L8a): the status below.
 
-## Status for a new supervisor (2026-10-27)
+## Status for a new supervisor (2026-10-28)
 
-Read `VK3-HANDOVER.md` first (lean: where VK3 stands, the plan, the next NVIDIA run's questions, findings worth not
-re-discovering); REPORT.md's "VK3 …" sections have the history. In short: steps 1–4 of the plan below are done, the
-user's NVIDIA runs processed (step 4's last blocker, a cold mpv's frozen window, was the guest's Mesa: the desktop
-image presents synchronously; the hosted disk still needs replacing before a deploy, the user's call); steps 5–8 are
-open; the user's third NVIDIA run (after L4e) confirmed step 4 there. **The user parked step 2's bar at 1 fish on NVIDIA** (not representative; likely
-the driver or the GPU's power states): the gate's scene clause is held at 1,000 fish and the toolkit unless the user
-reopens it. The two out-of-context reviews are done and their easier findings fixed (a cloud session, 2026-10-27);
-start with L4f (their remaining findings, step 4 below), then L5.
+Every loop of the plan below is done (L1–L8a, the track-end review's findings included): REPORT.md "VK3: the
+summary". **Only the user's final NVIDIA run is left**, and the track's close after it: `VK3-HANDOVER.md` "The final
+NVIDIA run" says how to run it (the bundle is built, at c8087cb0), what it must answer, how to process its results and
+how to close the track. The user decides whether VK4 starts. Earlier statuses: git history.
 
 Start **VK3: Venus right everywhere, then the emulated rows.** VK2 made Venus draw: the direct set translated onto
 WebGPU, frames to the screen through virgl, mpv on Vulkan at its bar, 1,463 dEQP-VK cases in CI (bench/vulkan/REPORT.md
