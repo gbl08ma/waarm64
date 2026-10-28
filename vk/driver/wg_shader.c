@@ -167,6 +167,33 @@ set_groups(struct vk_descriptor_set_layout *const *layouts, uint32_t count, uint
    }
 }
 
+/* A bind group layout's uid, which descriptor sets key the bind groups they keep by (wg_cmd.c): one for each content
+ * (its WebGPU description, and what a bind group of it takes besides: its uniform bindings' sizes, the push buffer's
+ * binding's), never reused. WebGPU takes a bind group with any layout of the same entries ("group-equivalent"), so
+ * pipelines whose layouts match share a set's bind groups (VK3 L6b: each pipeline's own layouts made the scene remake
+ * ~14 a frame, a set keeping groups for 4 layouts). */
+static uint32_t
+bgl_uid(const struct wg_program *p, uint32_t g, const char *desc)
+{
+   static struct hash_table *uids;
+   static uint32_t next;
+   if (!uids)
+      uids = _mesa_hash_table_create(NULL, _mesa_hash_string, _mesa_key_string_equal);
+   struct wg_json key = { 0 };
+   wg_json_printf(&key, "%s", desc);
+   for (uint32_t k = 0; k < p->resource_count; k++)
+      if (p->resources[k].group == g && p->resources[k].kind == WGSL_UNIFORM)
+         wg_json_printf(&key, " %u:%u", p->resources[k].binding,
+                        p->dynamic[k] == WG_DYNAMIC_PUSH ? p->push_ubo_size : p->resources[k].size);
+   struct hash_entry *e = _mesa_hash_table_search(uids, key.data);
+   if (e) {
+      wg_json_free(&key);
+      return (uint32_t)(uintptr_t)e->data;
+   }
+   _mesa_hash_table_insert(uids, key.data, (void *)(uintptr_t)++next);
+   return next;
+}
+
 /* A program's bind group layouts and pipeline layout, from its resources. */
 static void
 program_layouts(struct wg_program *p)
@@ -213,9 +240,8 @@ program_layouts(struct wg_program *p)
          }
       }
       wg_json_printf(&j, "]}");
-      static uint32_t uids;
+      p->bgl_uid[g] = bgl_uid(p, g, j.data);
       p->bgl[g] = wg_create_json(WG_KIND_BGL, &j);
-      p->bgl_uid[g] = ++uids;
    }
    wg_json_printf(&j, "{\"bindGroupLayouts\":[");
    for (uint32_t g = 0; g < p->group_count; g++)

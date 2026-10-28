@@ -1387,6 +1387,9 @@ wgt_fl_done(uint32_t i)
  *    at 0, 256, 512 and 768 (B8G8R8A8_UNORM, R16_SINT, A2B10G10R10_UINT_PACK32, R8G8B8_SNORM; 16 texels each), each
  *    invocation's four texels at [64i, 64i + 64) as integers, the views' sizes and a fetch past one at [1024, 1040),
  *    and writing a storage texel buffer (R16G16B16A16_SFLOAT, a view of the result at 2048) (L6b: texel buffers).
+ * 15: `cs` (spec-add.comp: b[i] += K) as six pipelines (K = 1 to 6, so six programs) on one set layout, each
+ *    dispatched three times in turn on one set: 0xeeeeeeee + 63 at [0, 16), and the set's bind group made once for
+ *    them all (L6b: bind groups kept by their layouts' content; a set keeps 4).
  * 13: 64 bytes copied from a host-visible buffer by a submit that waits on a timeline semaphore's value 1, which the
  *    host signals after writing the source (0x11, then 0x22): the copy sees 0x22 (the driver review's finding 8: a wait
  *    before its signal used to run at once).
@@ -1632,6 +1635,58 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
       CmdDispatch(cmd, 1, 1, 1);
       (void)c;
+   } else if (scenario == 15) {
+      VkShaderModule m;
+      if (shader(cs, cs_words, &m))
+         return 1;
+      const VkDescriptorSetLayoutBinding binding = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT,
+                                                     NULL };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                    .bindingCount = 1, .pBindings = &binding };
+      VkDescriptorSetLayout dsl;
+      CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .setLayoutCount = 1, .pSetLayouts = &dsl };
+      VkPipelineLayout layout;
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+      VkPipeline pipelines[6];
+      for (uint32_t k = 0; k < 6; k++) {
+         const uint32_t value = k + 1;
+         const VkSpecializationMapEntry entry = { 0, 0, 4 };
+         const VkSpecializationInfo spec = { 1, &entry, 4, &value };
+         const VkComputePipelineCreateInfo ci = {
+            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+            .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                       .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = m, .pName = "main",
+                       .pSpecializationInfo = &spec },
+         };
+         CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipelines[k]));
+      }
+      const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
+      const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                               .poolSizeCount = 1, .pPoolSizes = &ps };
+      VkDescriptorPool dp;
+      CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+      const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+      VkDescriptorSet set;
+      CHECK(AllocateDescriptorSets(dev, &dai, &set));
+      const VkDescriptorBufferInfo bi = { out, 0, 16 };
+      const VkWriteDescriptorSet w = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set,
+                                       .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                       .pBufferInfo = &bi };
+      UpdateDescriptorSets(dev, 1, &w, 0, NULL);
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                   .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+      for (uint32_t round = 0; round < 3; round++)
+         for (uint32_t k = 0; k < 6; k++) {
+            CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+            CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[k]);
+            CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+            CmdDispatch(cmd, 1, 1, 1);
+         }
    } else if (scenario == 14) {
       PFN_vkCreateBufferView CreateBufferView = (PFN_vkCreateBufferView)GetDeviceProcAddr(dev, "vkCreateBufferView");
       VkShaderModule m;

@@ -263,6 +263,7 @@ export async function openSession(o: SessionOptions) {
       // writeBuffers and their KB, its readbacks, passes and draws; the GPU's ms in its passes (`?gpu=vkgputime`); over
       // the steady seconds.
       perSubmit: ((n) => ({ encodeMs: ssum('encodeMs') / n, submitCallMs: ssum('submitCallMs') / n, uploads: ssum('uploads') / n, uploadKB: ssum('uploadBytes') / 1024 / n, readbacks: ssum('readbacks') / n, passes: ssum('passes') / n, draws: ssum('draws') / n,
+        bindGroups: ssum('bindGroups') / n,
         gpuMs: ssum('gpuTimed') ? ssum('gpuMs') / ssum('gpuTimed') : undefined,
         // The submits with a pass: their share and their ms to done (the others are fences' and uploads' alone).
         withPass: ssum('workDone') / Math.max(1, ssum('done')), withPassDoneMs: ssum('workDone') ? ssum('workDoneMs') / ssum('workDone') : undefined,

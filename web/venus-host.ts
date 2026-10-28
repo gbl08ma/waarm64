@@ -39,7 +39,9 @@ export type VenusPoll = 'timeout' | 'pump';
  */
 export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs: number; submits: number; done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number; fences: number; fenceMs: number; fenceMaxMs: number;
   /** A submit's parts (VK3 L2b, web/venus-gpu.ts `VenusGpuStats`): summed over the second's submits. */
-  encodeMs: number; submitCallMs: number; uploads: number; uploadBytes: number; readbacks: number; passes: number; draws: number; gpuTimed: number; gpuMs: number; workDone: number; workDoneMs: number };
+  encodeMs: number; submitCallMs: number; uploads: number; uploadBytes: number; readbacks: number; passes: number; draws: number; gpuTimed: number; gpuMs: number; workDone: number; workDoneMs: number;
+  /** Bind groups made (VK3 L6b: kept by their layouts' content since). */
+  bindGroups: number };
 
 /**
  * How the renderer's pipelines are made (`?gpu=vkpipelines=sync`: at once, as before VK3 L3, for A/B) and where its
@@ -349,7 +351,7 @@ export class VenusRenderer {
   times(): VenusTimes {
     const r = this.stats, g = this.gpu.stats;
     const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs,
-      encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs };
+      encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs, bindGroups: g.bindGroups };
     const last = this.lastTimes;
     this.lastTimes = now;
     r.gapMaxMs = g.doneMaxMs = r.fenceMaxMs = 0;

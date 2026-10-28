@@ -154,6 +154,6 @@ for (const st of settings) {
   const v = d.renderer?.venus;
   if (v) log(st.name, `venus: ${v.submits.toFixed(0)} submits/s done in ${v.doneMs.toFixed(2)} ms (max ${v.doneMaxMs.toFixed(1)}), then ${v.orderMs.toFixed(2)} ms in order (by second: ${v.doneMsBySecond.join(" ")}); ${v.polls.toFixed(0)} polls/s ${v.gapMs.toFixed(2)} ms apart (max ${v.gapMaxMs.toFixed(1)}); ${v.nudges.toFixed(0)} nudges/s; ${v.fences.toFixed(0)} fences/s retired in ${v.fenceMs.toFixed(2)} ms`);
   const p = v?.perSubmit;
-  if (p) log(st.name, `venus a submit: encode ${p.encodeMs.toFixed(3)} ms, queue.submit ${p.submitCallMs.toFixed(3)} ms, ${p.uploads.toFixed(1)} writes (${p.uploadKB.toFixed(1)} KB), ${p.readbacks.toFixed(2)} readbacks, ${p.passes.toFixed(2)} passes, ${p.draws.toFixed(0)} draws${p.gpuMs !== undefined ? `, GPU ${p.gpuMs.toFixed(3)} ms` : ''}; ${(100 * p.withPass).toFixed(0)}% have a pass, done in ${p.withPassDoneMs?.toFixed(2)} ms (by second: ${p.withPassDoneMsBySecond.join(' ')})`);
+  if (p) log(st.name, `venus a submit: encode ${p.encodeMs.toFixed(3)} ms, queue.submit ${p.submitCallMs.toFixed(3)} ms, ${p.uploads.toFixed(1)} writes (${p.uploadKB.toFixed(1)} KB), ${p.readbacks.toFixed(2)} readbacks, ${p.passes.toFixed(2)} passes, ${p.draws.toFixed(0)} draws, ${(p.bindGroups ?? 0).toFixed(2)} bind groups made${p.gpuMs !== undefined ? `, GPU ${p.gpuMs.toFixed(3)} ms` : ''}; ${(100 * p.withPass).toFixed(0)}% have a pass, done in ${p.withPassDoneMs?.toFixed(2)} ms (by second: ${p.withPassDoneMsBySecond.join(' ')})`);
 }
 await s.close();

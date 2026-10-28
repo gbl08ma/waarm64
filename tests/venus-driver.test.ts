@@ -228,19 +228,20 @@ for (const [scenario, what] of [
   ['waitBeforeSignal', 'a submit that waits on a timeline value the host signals after it runs after the signal'],
   // L6b: texel buffers.
   ['texelBuffer', 'uniform texel buffers of four layouts read and a storage texel buffer written'],
+  ['bindGroupsShared', 'six pipelines of equal set layouts in turn share a set\'s bind group'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
     const out = join(root, 'target/vk/test');
     mkdirSync(out, { recursive: true });
-    const src = scenario === 'freedModule' ? 'depth-read.comp' : scenario === 'storageAliased' ? 'ssbo-copy.comp' : scenario === 'texelBuffer' ? 'texel-buffer.comp' : 'push.comp';
+    const src = scenario === 'freedModule' ? 'depth-read.comp' : scenario === 'storageAliased' ? 'ssbo-copy.comp' : scenario === 'texelBuffer' ? 'texel-buffer.comp' : scenario === 'bindGroupsShared' ? 'spec-add.comp' : 'push.comp';
     const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${src}.spv`), join(root, `tests/venus/${src}`)], { encoding: 'utf8' });
     assert.equal(c.status, 0, c.stderr);
     const page = await browser.newPage();
     page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, `/target/vk/test/${s === 'freedModule' ? 'depth-read' : s === 'storageAliased' ? 'ssbo-copy' : s === 'texelBuffer' ? 'texel-buffer' : 'push'}.comp.spv`), scenario);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string): Promise<Record<string, unknown>> } }).venus.runMisc(s, `/target/vk/test/${s === 'freedModule' ? 'depth-read' : s === 'storageAliased' ? 'ssbo-copy' : s === 'texelBuffer' ? 'texel-buffer' : s === 'bindGroupsShared' ? 'spec-add' : 'push'}.comp.spv`), scenario);
     await page.close();
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
@@ -248,5 +249,7 @@ for (const [scenario, what] of [
     const checks = r.checks as Record<string, number>;
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
     assert.equal(r.warnings, 0, 'the worker warned');
+    // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).
+    if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);
   });
 }
