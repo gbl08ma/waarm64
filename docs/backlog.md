@@ -543,8 +543,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   tree). The per-stage
   descriptor limits are WebGPU's whole, though the push buffer takes a dynamic uniform buffer of group 3 when push
   constants pass the immediates: a pipeline at the limit would fail.
-- **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; opt-in, `?gpu=vkycbcr`, until GTK4's row decides
-  the default): only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats
+- **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; on by default since L7.3, `?gpu=vkycbcr=off`): only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats
   (tier1's) are unfilterable, so P010 and the 10-, 12- and 16-bit formats would need a nearest-only offer or filtering
   in the shader; no single-plane 422 formats (YUY2: WebGPU has none, they would be decoded from words); optimal tiling
   only (a linear image can't be sampled here anyway); no explicit chroma reconstruction nor a chroma filter apart from
@@ -553,9 +552,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (r8_uint of an r8unorm plane: WebGPU's views differ only in sRGB-ness; 66 `plane_view.image_view.*compatible_format*`,
   the view invalid and its submit dropped) and **an image aliasing a plane's memory** (48 `plane_view.memory_alias`:
   images are textures of their own, never their memory's bytes).
-- **GTK4 on Venus drew black or near-empty frames** (VK2 L7, with YCbCr advertised: `bench/gpu/gtk4-load.ts`
-  `RENDERERS=vulkan`, frames' window black, fishbowl one icon at 6 frames/s): not looked into; VK3's YCbCr row starts
-  there.
+- **GSK's Vulkan renderer on Venus misses GTK4's bar** (VK3 L7.3, bench/vulkan/REPORT.md "VK3 L7.3"; GTK takes GL by
+  default, so only `GSK_RENDERER=vulkan` meets it). Its frames are right since VK3 L4c-D (VK2 L7's black was a partial
+  render area's CLEAR clearing to zeros; reproduced by planting it back). On the M4: fishbowl holds more icons for less
+  of gtk4-demo's CPU than GL, frames costs about the same (2.0–2.1 against 1.8–1.9 ms a frame), but **iconscroll runs
+  at 9 frames/s against GL's 28–29** with the guest 11% busy: gtk4-demo waits, waking ~1,800 times a second (Venus's
+  guest yields in `vn_relax` while it waits on the ring), its submits 13 passes and 140 draws each, done in ~5 ms on
+  Metal, a fence back in 7 ms (max 140). And fishbowl fell once in four runs into a steady 1 icon at 20 frames/s (6.6
+  passes a submit at one icon, ~2,000 wake-ups a second; VK2 L7's "one icon at 6 frames/s"), the same waiting. Next:
+  which Venus calls gtk4-demo waits on each frame (a ring trace, or `VN_DEBUG` in the guest), and whether they are
+  synchronous calls (each a ring round trip at the pump's ~1 ms) or fence waits. Only once GSK on Vulkan meets the bar
+  is it worth offering GTK a modifier other than LINEAR (GTK takes Vulkan by default only then; sway on virgl would
+  have to import it).
 - **Venus's frames on the user's NVIDIA desktop: the fix awaits the user's run** (VK3 L1, bench/vulkan/REPORT.md "VK3
   L1"): the black came from the device reporting NVIDIA's vendor ID, for which Venus's guest driver (Mesa 26) takes
   Mesa's prime-blit path: the shared blob is a buffer, not the image, and nothing was copied (`shareRefreshes` 0 in
@@ -616,8 +624,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1", "VK3 L7.1b").
   The device has what Dawn's backend needs (the indexed arrays, sample-rate shading), but Chromium's Dawn takes a
   system Vulkan device only with `--enable-features=Vulkan`, and then Chromium's own Vulkan device needs
-  (1) `samplerYcbcrConversion` (`vulkan_device_queue.cc` refuses a device without it; backed since VK3 L7.2, behind
-  `?gpu=vkycbcr` until GTK4's row decides the default), (2) **opaque-fd semaphores**: it exports them though Venus offers
+  (1) `samplerYcbcrConversion` (`vulkan_device_queue.cc` refuses a device without it; backed since VK3 L7.2, by
+  default since L7.3), (2) **opaque-fd semaphores**: it exports them though Venus offers
   only sync files (its properties for opaque fds say 0). The host refused to make them and the context died (fixed in
   L7.1b: the driver drops the export's other types); now the guest's Mesa (26.2.5, `vn_GetSemaphoreFdKHR`, asserts
   compiled out) hands back fd 0, then -1 (`bench/vulkan/semfd.ts`), and Chromium's GPU process dies on "FD ownership
@@ -630,7 +638,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   descriptor it doesn't own). (3) A window: Chromium calls Wayland incompatible with Vulkan, and the desktop image has no Xwayland;
   `--headless=new` starts (its frames would come out through the page's log). `bench/vulkan/dawn-frames.ts guest` runs
   the samples (ARMS: the flags; CR_ENV: the environment; LOGBEFORE: the log up to a line) and compares them with the
-  dev VM's; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan" GPU_KNOBS=vkycbcr` for the host's side.
+  dev VM's; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"` for the host's side.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of

@@ -115,11 +115,12 @@ test("what the driver advertises follows the WebGPU device's features and limits
   const one = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { hold: ['tier1-storage'] });
   assert.equal(one.r16float & STORAGE, 0);
   assert.equal(one.r32float & BLEND, BLEND);
-  // YCbCr conversions and the multi-planar formats only with `?gpu=vkycbcr` (VK3 L7.1b, L7.2), never by default until
-  // GTK4's row (GTK4 would take Vulkan and draw black).
-  assert.deepEqual([mac.ycbcr, all.ycbcr, none.ycbcr, mac.nv12, all.nv12], [0, 0, 0, 0, 0]);
-  const on = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { ycbcr: true });
-  assert.equal(on.ycbcr, 1);
+  // YCbCr conversions and the multi-planar formats by default since VK3 L7.3 (GTK 4.24 asserts YCbCr on a device with
+  // dma-buf modifiers: without it every GTK4 program died on a machine with Vulkan); `?gpu=vkycbcr=off` holds them.
+  assert.deepEqual([mac.ycbcr, all.ycbcr, none.ycbcr], [1, 1, 1]);
+  const off = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { ycbcr: false });
+  assert.deepEqual([off.ycbcr, off.nv12], [0, 0]);
+  const on = all;
   const SAMPLED_IMAGE = 0x1, MIDPOINT = 0x20000, DISJOINT = 0x400000;
   assert.equal(on.nv12 & (SAMPLED_IMAGE | MIDPOINT | DISJOINT), SAMPLED_IMAGE | MIDPOINT | DISJOINT);
 });

@@ -48,8 +48,8 @@ only edits docs: `.md` files or code comments):
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2` or `gles3`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
 - **`scripts/ci-deqp-vk.sh`** (~13 min) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
-  every case expected to pass, one guest boot; then `tests/deqp/vk-ycbcr.txt` on a machine with `?gpu=vkycbcr`, a
-  second boot: YCbCr is opt-in, VK3 L7.2), then `page-venus` (the programs' captures against lavapipe's frames,
+  every case expected to pass, one guest boot; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
+  second boot), then `page-venus` (the programs' captures against lavapipe's frames,
   also ci-debian.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK); it must pass too when a change touches Vulkan (the renderer's driver
   and translator in `vk/`, `web/venus-gpu.ts`, Venus's device), and at the end of a Vulkan track. It needs
   `images/deqp/build.sh vk`'s disk and guest (VK-GL-CTS vulkan-cts-1.4.7.0's deqp-vk and Arch Linux with Venus's

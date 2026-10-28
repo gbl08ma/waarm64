@@ -8,7 +8,7 @@
 // their own frame rate on the screen.
 //   node bench/gpu/gtk4-load.ts <virgl|2d> <image.qcow2> [outdir]
 // DEMOS (default fishbowl,frames,iconscroll,themes,gears,shadertoy,image_scaling,listview_clocks,mask,path_fill),
-// RENDERERS (default gl; listed again, alternated rounds), WARM_S (15), PHASE_S (10); GTK_ENV adds environment (`WAYLAND_DEBUG=1`: a demo that dies
+// RENDERERS (default gl; `default` sets none, GTK's own choice; listed again, alternated rounds), WARM_S (15), PHASE_S (10); GTK_ENV adds environment (`WAYLAND_DEBUG=1`: a demo that dies
 // gets its last Wayland messages and sway's log in the results); PROFILE=1 samples the guest's PCs over each phase.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from './guest-session.ts';
@@ -46,17 +46,20 @@ for (const renderer of RENDERERS) {
     const tag = `${demo}-${renderer}${round > 1 ? `-${round}` : ''}`;
     await kill();
     // Started by sway (the user's session), its stderr kept.
-    await run(asUser(`swaymsg exec '${process.env.GTK_ENV ?? ''} GSK_RENDERER=${renderer} GSK_DEBUG=renderer gtk4-demo --run=${demo} > /tmp/gtk-${tag}.log 2>&1'`));
+    // `default`: no GSK_RENDERER, GTK's own choice (Vulkan first on Wayland where the device qualifies: VK3 L7.3).
+    await run(asUser(`swaymsg exec '${process.env.GTK_ENV ?? ''} ${renderer === 'default' ? '' : `GSK_RENDERER=${renderer}`} GSK_DEBUG=renderer gtk4-demo --run=${demo} > /tmp/gtk-${tag}.log 2>&1'`));
     await page.waitForTimeout(WARM_S * 1000);
     const alive = (await run('pgrep -x gtk4-demo | wc -l')).trim() !== '0';
     const r = await load(tag, PHASE_S, process.env.PROFILE ? s.sampler : undefined);
     // PROFILE=1: where the guest's time goes over the phase (the kernel's functions; guest-session.ts `symbolize`).
     const profile = process.env.PROFILE ? await s.symbolize(60) : undefined;
+    // Which renderer GTK took, and why not Vulkan (GSK_DEBUG=renderer).
+    const took = await runLines(`grep -E "Using renderer|Not using" /tmp/gtk-${tag}.log | sort | uniq -c | head -6`);
     const stderr = await runLines(`grep -v -E "session bus|Vulkan|vkEnumerate|highlight|^\\[" /tmp/gtk-${tag}.log | sort | uniq -c | sort -rn | head -12`);
     // A demo that died: its last Wayland requests (GTK_ENV=WAYLAND_DEBUG=1) and sway's log.
     const died = alive ? {} : { last: await runLines(`grep -E "^\\[" /tmp/gtk-${tag}.log | tail -12 | cut -c1-300`), sway: await runLines('tail -8 /tmp/sway.log | cut -c1-300') };
-    results[tag] = { alive, flushes: r.display.flushes, ...r, stderr, ...died, ...(profile ? { profile } : {}) };
-    log(tag, alive ? 'running' : 'EXITED', 'frames/s', r.display.flushes.toFixed(1), 'renderer', JSON.stringify(r.display.renderer ?? {}), stderr.join(' | '));
+    results[tag] = { alive, flushes: r.display.flushes, ...r, took, stderr, ...died, ...(profile ? { profile } : {}) };
+    log(tag, alive ? 'running' : 'EXITED', 'frames/s', r.display.flushes.toFixed(1), 'renderer', JSON.stringify(r.display.renderer ?? {}), took.join(' | '), stderr.join(' | '));
     save();
   }
 }

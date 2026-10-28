@@ -1479,6 +1479,60 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7.3: GTK4's black frames were L4c-D's partial CLEAR; GTK4 takes GL anyway; YCbCr on by default (GTK4 aborted without it)
+
+2026-10-28. The desktop guest (Arch Linux, GTK 4.24.1, Mesa 26.2.5, sway 1.12 on GLES through virgl), 4 vCPUs, through
+`bench/gpu/gtk4-load.ts` (each demo left 30 s, measured 10; `RENDERERS=default` now leaves GSK_RENDERER unset and the
+results keep GSK's "Using renderer"/"Not using" lines); the M4 (Chrome for Testing 153.0.8010.12, ANGLE and WebGPU on
+Metal, macOS 26.6.2) through `bench/gpu/sway-mac.sh`, and the dev VM's SwiftShader (Chromium 153). JSON and screenshots
+in `results/vk3/l73/`.
+
+- **The black frames are understood, and gone since VK3 L4c-D** (42a96e26). With YCbCr backed (`?gpu=vkycbcr`) and
+  GSK forced onto Vulkan, frames and fishbowl draw right on both hosts (`gtk4-ycbcr-mac.json`,
+  `gtk4-ycbcr-swiftshader.json`, `frames-vulkan-mac.png`). GSK redraws only the damaged part of its window, a render
+  area short of the attachment with a CLEAR load op: the driver clears that with a clear rect, whose colour it nested
+  one array too deep until L4c-D ("a partial render area's CLEAR cleared to zeros"), so the worker cleared to zeros.
+  **Planting the old nesting back** (`wg_cmd.c`'s clear rect) gives VK2 L7's picture exactly: the headerbar right
+  (outside the area), the content black, "Click to type" with no pill (`frames-vulkan-plant-clear-mac.png`,
+  `gtk4-plant-clear-mac.json`). The first suspect, dual-source blending refused by the translator before L4f (GSK
+  uses `SRC1_ALPHA` where the device has it), was ruled out the same way: planted back, frames still right
+  (`gtk4-plant-dualsource-mac.json`). The test that holds the fix is L4c-D's `passes: a resumed pass over part of the
+  attachment…` (its top-right quadrant is the clear rect's colour).
+- **"Near-empty" fishbowl is fishbowl adapting, not a drawing bug:** it drops icons while its frames are slow. One of
+  four fishbowl runs on Vulkan on the M4 settled at 1 icon and 20 frames/s (`fishbowl-vulkan-collapsed-mac.png`,
+  `gtk4-bar-mac-2.json`; VK2 L7's "one icon at 6 frames/s"), the others held 59 frames/s with 72–144 icons. Collapsed,
+  gtk4-demo woke ~1,950 times a second with the guest 11% busy and each submit had 6.6 passes at one icon: waiting, not
+  drawing (backlog "GSK's Vulkan renderer on Venus misses GTK4's bar").
+- **GTK4 doesn't take Vulkan by default, with or without YCbCr.** On Wayland GTK tries Vulkan first, but only on a
+  device with a dma-buf format other than LINEAR (`gdk_vulkan_init_dmabuf` advertises only modifiers other than LINEAR,
+  which it reads through mmap instead), and Venus's device has LINEAR alone: "Not using Vulkan: no dmabuf support",
+  GSK's GL renderer (`gtk4-default-swiftshader.json`, `gtk4-default-mac.json`). **Without YCbCr, though, every GTK4
+  program aborted at its start on a machine with Vulkan**: GTK 4.24 asserts YCbCr on a device with the dma-buf
+  extensions (`gdk_display_create_vulkan_device`: `features & GDK_VULKAN_FEATURE_YCBCR`), and since VK2 L7 dropped
+  YCbCr the device has had the extensions and not YCbCr (VK2 L7's "GL by default" was measured with YCbCr advertised
+  but not its extension: `vkCreateDevice` failed and GTK fell back to GL) (`gtk4-default-before-virgl-vulkan-swiftshader.json`, `gtk4-default-ycbcr-off-swiftshader.json`:
+  gtk4-demo exits; a machine without Vulkan takes GL: `gtk4-default-before-virgl-swiftshader.json`).
+- **So YCbCr is on by default** (`?gpu=vkycbcr=off` holds it): the kickoff's condition ("only once GTK4 meets its bar")
+  guarded against GTK4 taking Vulkan by default, which it doesn't; without it GTK4 can't start. Guest-visible
+  (pre-approved). The caps test now holds it on by default and off with the switch (failing first).
+- **GTK4's bar (G) on Vulkan, forced, against GL** (the M4, two rounds alternated, `gtk4-bar-mac-1.json`,
+  `gtk4-bar-mac-2.json`; gtk4-demo's CPU in ms a second, the guest's 4 vCPUs busy):
+
+| gtk4-demo | GL: frames/s, CPU, busy | Vulkan: frames/s, CPU, busy | |
+| --- | --- | --- | --- |
+| fishbowl (icons when shot) | 57.8, 834, 27% (105); 57.1, 422, 15% (92) | 59.4, 318, 13% (72); **20.0**, 338, 11% (1) | less CPU an icon; collapsed once |
+| frames | 59.5, 114 (1.91 ms a frame), 8%; 59.8, 109 (1.82), 8% | 59.8, 121 (2.02), 8%; 59.5, 123 (2.07), 8% | +0.1–0.25 ms a frame |
+| iconscroll | 29.3, 929, 29%; 27.8, 923, 28% | **8.9**, 375, 11%; **9.3**, 387, 11% | a third of GL's rate |
+
+  GSK on Vulkan misses the bar: iconscroll runs at a third of GL's rate with the guest mostly idle (gtk4-demo ~1,800
+  wake-ups a second, Venus's guest yielding in `vn_relax` on the ring; its frames' submits 13 passes and 140 draws,
+  done in ~5 ms on Metal, fences back in 7 ms on average and up to 140), and fishbowl can settle in the same slow state.
+  What's missing is filed (backlog "GSK's Vulkan renderer on Venus misses GTK4's bar"): which Venus calls a frame waits
+  on. GTK4 stays on GL, which it takes by itself; only once GSK on Vulkan meets the bar would a modifier other than
+  LINEAR be worth offering.
+- **dma-buf modifiers:** GTK4's draws need none (its swapchain is Venus's WSI's, LINEAR); its imports (video,
+  GtkGLArea's offload) would, and those are what makes GTK take Vulkan. Nothing to fix on the import side for the bar.
+
 ## VK3 L7.2: YCbCr conversions backed (behind `?gpu=vkycbcr`); opaque-fd semaphores are the guest's Mesa's
 
 2026-10-28, the dev VM (SwiftShader, Chromium 153; the dEQP-VK guest's Mesa 26.2.5); JSON in `results/vk3/l72/`.

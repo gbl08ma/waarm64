@@ -56,8 +56,10 @@ export type VenusOptions = { syncPipelines?: boolean;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
   hold?: readonly string[]; heldFormats?: boolean;
-  /** `?gpu=vkycbcr`: YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2; vk/README.md "The driver"), opt-in
-   * until GTK4's row decides the default (GTK4 would take Vulkan; Chromium's own Vulkan device wants them, L7.1b). */
+  /** YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2; vk/README.md "The driver"): on unless `false`
+   * (`?gpu=vkycbcr=off`). On by default since VK3 L7.3: GTK 4.24 asserts them on a device with dma-buf modifiers, so
+   * without them every GTK4 program died on a machine with Vulkan; with them GTK still takes GL (LINEAR alone isn't a
+   * dma-buf format to GTK's Vulkan renderer). Chromium's own Vulkan device wants them too (L7.1b). */
   ycbcr?: boolean };
 
 /** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */
@@ -193,7 +195,7 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.

@@ -2,7 +2,7 @@
 // that pass on the page today, every one expected to pass) through bench/gpu/deqp-run.ts, on the guest images/deqp/build.sh
 // vk makes (target/deqp/guest-vk.qcow2: Arch Linux with Venus's guest driver; deqp-vk on target/deqp/deqp-vk.ext4), a
 // machine with Vulkan on the page's WebGPU (SwiftShader's in the dev VM: `--enable-unsafe-webgpu`). One boot, ~10 min; then
-// tests/deqp/vk-ycbcr.txt on a machine with `?gpu=vkycbcr` (VK3 L7.2: YCbCr conversions, opt-in), a second boot, ~1.5 min.
+// tests/deqp/vk-ycbcr.txt (VK3 L7.2: YCbCr conversions, on by default since L7.3), a second boot, ~1.5 min.
 // Opt-in with WEBPC_DEQP_VK=1 (scripts/ci-deqp-vk.sh); skipped where the page has no WebGPU adapter.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -18,7 +18,7 @@ const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh
 // for good) fails the test in minutes, with the guest's serial log kept.
 const LIMIT_S = 600;
 
-/** Runs a pass list on the page (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr`); every case must pass. */
+/** Runs a pass list on the page (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr=off`); every case must pass. */
 function passList(t: { skip(m: string): void }, list: string, gpu?: string) {
   const cases = readFileSync(list, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
   const out = mkdtempSync(join(tmpdir(), 'webpc-deqp-vk-'));
@@ -48,7 +48,7 @@ test('dEQP-VK\'s pass list passes on the page', { skip, timeout: (LIMIT_S + 420)
   passList(t, join(root, 'tests/deqp/vk.txt'));
 });
 
-// VK3 L7.2: YCbCr conversions, opt-in (`?gpu=vkycbcr`) until GTK4's row decides the default: a second, small run.
-test('dEQP-VK\'s YCbCr pass list passes on the page with ?gpu=vkycbcr', { skip, timeout: (LIMIT_S + 420) * 1000 }, (t) => {
-  passList(t, join(root, 'tests/deqp/vk-ycbcr.txt'), 'virgl,vulkan,vkycbcr');
+// VK3 L7.2: YCbCr conversions (on by default since L7.3): a second, small run.
+test('dEQP-VK\'s YCbCr pass list passes on the page', { skip, timeout: (LIMIT_S + 420) * 1000 }, (t) => {
+  passList(t, join(root, 'tests/deqp/vk-ycbcr.txt'), 'virgl,vulkan');
 });

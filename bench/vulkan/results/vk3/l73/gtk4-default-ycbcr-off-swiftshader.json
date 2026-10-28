@@ -1,0 +1,639 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "warmS": 15,
+ "phaseS": 4,
+ "info": "7.2.11-arch1-1gtk4 1:4.24.1-1 gtk4-demos 1:4.24.1-1 sway 1:1.12-4 mesa 1:26.2.5-1",
+ "sway": "",
+ "frames-default": {
+  "alive": false,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 1,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sh",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 7,
+    "user": 7,
+    "sys": 0,
+    "threads": 2,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 4,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "xdg-desktop-por",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 7,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd-network",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 35,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:0-events",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 4,
+    "wait": 1
+   },
+   {
+    "process": "jbd2/vda2-8",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sh/sh",
+    "cpu": 11,
+    "user": 0,
+    "sys": 10,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 7,
+    "user": 5,
+    "sys": 0,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "runs": 35,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 5,
+   "requests": 4,
+   "commands": {
+    "SET_SCANOUT": 1,
+    "RESOURCE_FLUSH": 1,
+    "SUBMIT_3D": 2
+   },
+   "fences": {
+    "n": 2,
+    "meanMs": 0.2744999974966049,
+    "maxMs": 0.39499999582767487,
+    "heldMs": 0.5549999982118606,
+    "behindMs": 0,
+    "fullMs": 0,
+    "heldMax": 1,
+    "toGpuMs": 0.2267578125,
+    "toGpuMaxMs": 0.335205078125,
+    "backMs": 0.0607421875,
+    "backMaxMs": 0.089599609375
+   },
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.19900000095367432,
+   "draws": 1,
+   "renderer": {
+    "seconds": 5,
+    "busyMs": 0.24400000274181366,
+    "submitMs": 0.20399999916553496,
+    "drawMs": 0.02499999701976776,
+    "presents": 1,
+    "glDraws": 1,
+    "commands": 13,
+    "uploadKB": 123.671875,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "programs": 3,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    },
+    "venus": {
+     "polls": 0,
+     "gapMs": 0,
+     "gapMaxMs": 0,
+     "submits": 0,
+     "doneMs": 0,
+     "doneMaxMs": 0,
+     "orderMs": 0,
+     "nudges": 0,
+     "fences": 0,
+     "fenceMs": 0,
+     "fenceMaxMs": 0,
+     "doneMsBySecond": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "perSubmit": {
+      "encodeMs": 0,
+      "submitCallMs": 0,
+      "uploads": 0,
+      "uploadKB": 0,
+      "readbacks": 0,
+      "passes": 0,
+      "draws": 0,
+      "bindGroups": 0,
+      "withPass": 0,
+      "withPassDoneMsBySecond": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "vm": {
+    "seconds": 5.000920000001788,
+    "Msteps": 58.615034,
+    "irqs": 582,
+    "exceptions": {
+     "0x0": 4,
+     "0x15": 2575,
+     "0x20": 144,
+     "0x24": 678,
+     "0x25": 37
+    },
+    "tlbMisses": 154074,
+    "tlbFlushes": 1113,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 1.14068
+   }
+  },
+  "took": [],
+  "stderr": [
+   "1 Gdk:ERROR:../gtk/gdk/gdkvulkancontext.c:1801:gdk_display_create_vulkan_device: assertion failed: (features & GDK_VULKAN_FEATURE_YCBCR)",
+   "1 Bail out! Gdk:ERROR:../gtk/gdk/gdkvulkancontext.c:1801:gdk_display_create_vulkan_device: assertion failed: (features & GDK_VULKAN_FEATURE_YCBCR)",
+   "1 **",
+   "1 (gtk4-demo:544): Gdk-WARNING **: 13:02:01.303: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ],
+  "last": [],
+  "sway": [
+   "00:00:01.208 [ERROR] [wlr] [xwayland/server.c:473] Cannot find Xwayland binary \"/usr/bin/Xwayland\"",
+   "00:00:01.209 [ERROR] [sway/server.c:766] Failed to start Xwayland",
+   "00:00:01.209 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directory",
+   "Environment variable $DISPLAY not set, ignoring.",
+   "Environment variable $XDG_CURRENT_DESKTOP not set, ignoring."
+  ]
+ },
+ "frames-vulkan": {
+  "alive": false,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sh",
+    "cpu": 12,
+    "user": 0,
+    "sys": 12,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 7,
+    "user": 7,
+    "sys": 0,
+    "threads": 2,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "systemd-timesyn",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 5,
+    "wait": 0
+   },
+   {
+    "process": "systemd",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 4,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 29,
+    "wait": 0
+   },
+   {
+    "process": "psimon",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:2-events_power_efficient",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 6,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sh/sh",
+    "cpu": 11,
+    "user": 0,
+    "sys": 12,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 8,
+    "user": 7,
+    "sys": 2,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "systemd-resolve/systemd-resolve",
+    "cpu": 6,
+    "user": 0,
+    "sys": 2,
+    "runs": 5,
+    "wait": 0
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 4,
+    "user": 0,
+    "sys": 2,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "thread": "systemd-timesyn/systemd-timesyn",
+    "cpu": 3,
+    "user": 0,
+    "sys": 5,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "runs": 29,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 5,
+   "requests": 4,
+   "commands": {
+    "SET_SCANOUT": 1,
+    "RESOURCE_FLUSH": 1,
+    "SUBMIT_3D": 2
+   },
+   "fences": {
+    "n": 2,
+    "meanMs": 0.2625,
+    "maxMs": 0.3500000089406967,
+    "heldMs": 0.527999997138977,
+    "behindMs": 0,
+    "fullMs": 0,
+    "heldMax": 1,
+    "toGpuMs": 0.20322265625,
+    "toGpuMaxMs": 0.2802734375,
+    "backMs": 0.070751953125,
+    "backMaxMs": 0.119873046875
+   },
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.20400000512599945,
+   "draws": 1,
+   "renderer": {
+    "seconds": 5,
+    "busyMs": 0.24000000953674316,
+    "submitMs": 0.18800000548362733,
+    "drawMs": 0.032999998331069945,
+    "presents": 1,
+    "glDraws": 1,
+    "commands": 13,
+    "uploadKB": 123.671875,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "programs": 3,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    },
+    "venus": {
+     "polls": 0,
+     "gapMs": 0,
+     "gapMaxMs": 0,
+     "submits": 0,
+     "doneMs": 0,
+     "doneMaxMs": 0,
+     "orderMs": 0,
+     "nudges": 0,
+     "fences": 0,
+     "fenceMs": 0,
+     "fenceMaxMs": 0,
+     "doneMsBySecond": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "perSubmit": {
+      "encodeMs": 0,
+      "submitCallMs": 0,
+      "uploads": 0,
+      "uploadKB": 0,
+      "readbacks": 0,
+      "passes": 0,
+      "draws": 0,
+      "bindGroups": 0,
+      "withPass": 0,
+      "withPassDoneMsBySecond": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "vm": {
+    "seconds": 5.000234999999404,
+    "Msteps": 58.376042,
+    "irqs": 565,
+    "exceptions": {
+     "0x0": 4,
+     "0x15": 2830,
+     "0x20": 137,
+     "0x24": 657,
+     "0x25": 35
+    },
+    "tlbMisses": 32561,
+    "tlbFlushes": 1025,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.430009
+   }
+  },
+  "took": [],
+  "stderr": [
+   "1 Gdk:ERROR:../gtk/gdk/gdkvulkancontext.c:1801:gdk_display_create_vulkan_device: assertion failed: (features & GDK_VULKAN_FEATURE_YCBCR)",
+   "1 Bail out! Gdk:ERROR:../gtk/gdk/gdkvulkancontext.c:1801:gdk_display_create_vulkan_device: assertion failed: (features & GDK_VULKAN_FEATURE_YCBCR)",
+   "1 **",
+   "1 (gtk4-demo:801): Gdk-WARNING **: 13:02:35.774: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ],
+  "last": [],
+  "sway": [
+   "00:00:01.208 [ERROR] [wlr] [xwayland/server.c:473] Cannot find Xwayland binary \"/usr/bin/Xwayland\"",
+   "00:00:01.209 [ERROR] [sway/server.c:766] Failed to start Xwayland",
+   "00:00:01.209 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directory",
+   "Environment variable $DISPLAY not set, ignoring.",
+   "Environment variable $XDG_CURRENT_DESKTOP not set, ignoring."
+  ]
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus: vkr: destroying context 7 (gtk4-demo) with a valid instance": 2
+ }
+}

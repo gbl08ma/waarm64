@@ -232,8 +232,10 @@ screen than on the simple framebuffer (backlog).
   for 1 s, only if idle and between the size asked and twice it): the guest's behavior, and not a cost (the whole 3D
   driver stack in the guest's kernel is 1–1.5% of the vCPUs' samples).
 - **GTK4** tries Vulkan first (Mesa's virtio ICD, without Venus) and takes GSK's GL renderer on GLES 3.0. On a machine
-  with Vulkan it stays on GL too: the Venus device offers no YCbCr conversions, which GSK's Vulkan renderer requires
-  (VK2 L7: with them advertised and not honoured it drew black or near-empty frames; vk/README.md "The driver"). **Its graphics
+  with Vulkan it stays on GL too: GTK takes Vulkan only where the device offers a dma-buf modifier other than LINEAR,
+  and Venus's has LINEAR alone (VK3 L7.3; without YCbCr conversions, which the device has by default since then, GTK
+  4.24 aborted instead). Forced (`GSK_RENDERER=vulkan`) GSK's Vulkan renderer draws right but misses GTK4's bar
+  (bench/vulkan/REPORT.md "VK3 L7.3"; vk/README.md "The driver"). **Its graphics
   offload kills a GtkGLArea**: GTK hands the compositor the GL area's texture as a dmabuf, and Mesa's virgl backs a
   texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both ways
   (`COPY_TRANSFER_BOTH_DIRECTIONS`), so the dmabuf is smaller than stride × height and sway disconnects the client

@@ -190,7 +190,7 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
   translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, interpolation at an offset,
-  inline uniform blocks, YCbCr conversions but with `?gpu=vkycbcr` (below); subgroups of one invocation with the basic
+  inline uniform blocks, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of every kind of descriptor (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
@@ -215,9 +215,13 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
   async present, "The guest's Mesa" below; REPORT.md "VK3 L4d", "VK3 L4e"). `?gpu=vkformats=held` holds them again
   (libplacebo then has no FBOs and mpv renders as in VK2 L6: "Failed creating FBO texture", its VA-API frames byte for
   byte its software ones); `?gpu=vkhold=<feature>` holds one (`tier1-storage` is tier1's storage alone).
-- **YCbCr conversions** (VK3 L7.2), only with `?gpu=vkycbcr` (`WG_FEATURE_YCBCR`): by default GTK4's Vulkan
-  renderer stays off and GTK draws on GL (VK2 L7: on Venus it drew black or near-empty frames for more CPU), and GTK4's
-  row (L7.3) decides the default; Chromium's own Vulkan device refuses a device without them (L7.1b). With it:
+- **YCbCr conversions** (VK3 L7.2; `WG_FEATURE_YCBCR`), on by default since L7.3 (`?gpu=vkycbcr=off` holds them): GTK
+  4.24 asserts them on a device with dma-buf modifiers (`gdk_display_create_vulkan_device`), so without them every GTK4
+  program aborted at its start on a machine with Vulkan; with them GTK still takes GL by default, since it counts only
+  modifiers other than LINEAR as dma-buf formats its Vulkan renderer can import (`gdk_vulkan_init_dmabuf`: "Not using
+  Vulkan: no dmabuf support"), and Chromium's own Vulkan device refuses a device without them (L7.1b). GSK's Vulkan
+  renderer, forced (`GSK_RENDERER=vulkan`), draws right but misses GTK4's bar (bench/vulkan/REPORT.md "VK3 L7.3"). With
+  them:
   `samplerYcbcrConversion`, `KHR_sampler_ycbcr_conversion`, `EXT_ycbcr_image_arrays`, and the multi-planar formats
   whose planes WebGPU samples and filters (`wg_ycbcr_format`: the 8-bit 2- and 3-plane 420, 422 and 444), optimal
   tiling, with sampling, linear filtering, transfers, midpoint and cosited chroma, a linear chroma filter and

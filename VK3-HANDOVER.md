@@ -6,19 +6,24 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7.2)
+## State (2026-10-28, after L7.3)
 
-- **YCbCr backed, behind `?gpu=vkycbcr`** (off by default; the caps test holds it, NV12's features too): the 8-bit
-  2- and 3-plane formats as a texture per plane, disjoint planes, conversion samplers through Mesa's
-  `nir_vk_lower_ycbcr_tex` in the translator, plane slots in set layouts (vk/README.md "The driver"). Tests failing with
-  bugs planted: tests/wgsl.test.ts (the conversion run on two textures), tests/venus-driver.test.ts (a disjoint NV12).
-- **dEQP-VK:** of 3,209 ycbcr candidates 953 pass, 114 fail (plane views of another format, memory aliased by a plane's
-  image: backlog "YCbCr's gaps"); `tests/deqp/vk-ycbcr.txt` (773) runs in ci-deqp-vk.sh's second boot with the switch.
-- **The opaque-fd lead:** the guest's Venus offers sync-file semaphores only, hard-coded, and never asks the host for
-  the export or the fd: no host fix; a guest Mesa patch (export the syncobj as an opaque fd) is the way (backlog). Dawn
-  not run on Venus. Next: L7.3 (GTK4, which decides YCbCr's default).
+- **GTK4's black frames understood:** L4c-D's partial render-area CLEAR (its clear rect's colour nested, so zeros) had
+  made them; planted back on the M4 it gives VK2 L7's picture exactly. Since then GSK on Vulkan draws right.
+- **YCbCr on by default** (`?gpu=vkycbcr=off` holds it): without it GTK 4.24 aborted every GTK4 program on a machine
+  with Vulkan (it asserts YCbCr beside the dma-buf extensions); with it GTK still takes GL by itself (only a modifier
+  other than LINEAR makes it take Vulkan). Checked on SwiftShader and the M4.
+- **GSK on Vulkan (forced) misses GTK4's bar:** iconscroll 9 frames/s against GL's 28–29, fishbowl collapsed once in
+  four to 1 icon at 20 frames/s, both waiting with the guest ~11% busy (~1,900 wake-ups a second); fishbowl otherwise
+  cheaper than GL, frames +0.1–0.25 ms. Filed: backlog "GSK's Vulkan renderer on Venus misses GTK4's bar".
+- Next: L7.4 (ANGLE's ES3).
 
-## Where VK3 stands (2026-10-28, after L7.2; next L7.3)
+## Where VK3 stands (2026-10-28, after L7.3; next L7.4)
+
+- **L7.2:** YCbCr conversions backed (the 8-bit 2- and 3-plane formats, a texture a plane, Mesa's
+  `nir_vk_lower_ycbcr_tex` in the translator); 773 dEQP-VK cases in `tests/deqp/vk-ycbcr.txt` (failing: plane views of
+  another format, memory aliased by a plane: backlog "YCbCr's gaps"). Opaque-fd semaphores are the guest's Mesa's
+  (hard-coded sync files; a guest Mesa patch is the way: backlog).
 
 - **L7.1b:** Chromium's opaque-fd semaphore exports, which the driver refused (vkr never had the object), now made; the
   guest's Venus then hands back fd 0 and Chromium's GPU process dies ("FD ownership violation"): the guest's (L7.2).
@@ -122,8 +127,9 @@ docs and the backlog; git keeps the old handovers.
     dEQP-VK's `ycbcr` groups as its gate. Time-boxed lead: the guest Venus's fd 0 for opaque-fd semaphore exports
     (L7.1b), the way to Dawn's program. **Done:** the 8-bit multi-planar formats, 773 cases in vk-ycbcr.txt; the lead
     is the guest's Mesa (filed).
-  - [ ] L7.3: GTK4: its black frames understood, dma-buf modifiers, its bar (REPORT.md G); YCbCr on by default only
-    once GTK4 meets it, else GTK4 stays on GL and YCbCr opt-in.
+  - [x] L7.3: GTK4: its black frames understood, dma-buf modifiers, its bar (REPORT.md G); YCbCr on by default only
+    once GTK4 meets it, else GTK4 stays on GL and YCbCr opt-in. **Done:** the black was L4c-D's partial CLEAR; YCbCr on
+    by default (GTK4 aborted without it, and takes GL with it); GSK on Vulkan misses the bar (iconscroll), filed.
   - [ ] L7.4: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback.
   - [ ] L7.5: vkd3d's draw parameters.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
@@ -156,6 +162,11 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
 
+- (L7.3) GTK picks its renderer by `GSK_DEBUG=renderer` lines ("Not using Vulkan: …"); gtk4-load.ts keeps them (`took`)
+  and `RENDERERS=default` leaves GSK_RENDERER unset. GTK's sources at the guest's tag (`git clone --depth 1 --branch
+  4.24.1 https://gitlab.gnome.org/GNOME/gtk.git`) answer what its Vulkan renderer needs in minutes: `gdkvulkancontext.c`
+  (features, the YCbCr assert, dma-buf formats), `gsk/gskrenderer.c` (the order it tries). A fixed driver bug is
+  confirmed as a symptom's cause by planting it back (vk/build.sh rebuilds in ~12 s) and one sway-mac.sh run.
 - (L7.1b) "failed to look up object … of type N" from vkr: suspect a create the driver refused. Venus's guest makes
   most objects asynchronously and never sees the error; a temporary `wg_Create<Object>` wrapper that prints the result
   and the pNext chain's sTypes (stderr reaches the page's log) found it in one run. dawn-frames.ts guest needs
