@@ -141,8 +141,23 @@ docs and the backlog; git keeps the old handovers.
   - [x] L7.5: vkd3d's draw parameters. **Done:** backed and advertised; vkd3d makes an 11_0 device, its own draw tests pass.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
-- [ ] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed; the findings worth taking in VK3
-  become subloops L7a, L7b, …; then L8.
+- [x] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed: L6b–L7.3
+  (`origin/review/venus-l6b-l73`, 5 findings), L7.4–L7.5 and the binding model whole (`origin/review/venus-after-l7`,
+  `VENUS-L74-L75-REVIEW.md` 9, `VENUS-BINDING-REVIEW.md` 8 new). All taken, in two fix loops:
+  - [ ] L7a: **the binding model's limits and identities.** All of VENUS-BINDING-REVIEW.md (xfb's dispatch past the
+    storage-buffer count and binding size: the submit lost, not the capture; one sampler's nearest twin for both
+    textures; widened compute variants sharing a layout identity, writes not read back; the 64-resource caps; oversized
+    uniform blocks; input attachments uncounted; immutable samplers overridden; slot numbers near 998/1000); L7.4–L7.5's
+    3 (same as the first), 5 (draw parameters' push buffer as a 9th dynamic uniform) and 8 (storage alignment on
+    folded uniforms); L6b–L7.3's 2 (texel buffers' hidden bindings uncounted). The rule to land: one place that counts
+    every hidden binding a stage and a layout take against WebGPU's limits, the device's advertised limits derived
+    from it, and a refusal that names the cause instead of an invalid submit. ANGLE's 205-for-156 (L7.4, its 24
+    uniform blocks with `--enable-features=Vulkan`) re-checked here: the reviewer found the folding consistent.
+  - [ ] L7b: **the rest.** L7.4–L7.5's 1 (16-bit index ranges rounded down in `provoke()`: high), 2 (indirect draws
+    never captured), 4 (dummy attachments evicted under recorded buffers), 6 (`pass.colors[8]` overrun), 7 (strips with
+    restart on one GPU thread), 9 (tests); L6b–L7.3's 1 (`interpolateAt*` advertised, refused), 3 (mutable
+    multi-planar formats, plane views in other formats), 4 (multi-planar on imported memory), 5 (comments).
+
 - [ ] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, ci-debian.sh and
   ci-machines.sh, an out-of-context review of what VK3 changed).
 
