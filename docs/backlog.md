@@ -705,7 +705,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
     (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); dEQP-VK's `synchronization*.timeline_semaphore.
     wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
-    (WebGPU's vertex stage has no writable storage). `synchronization*.timeline_semaphore.device_host.*` (a host thread
+    (WebGPU's vertex stage has no writable storage; were it offered, a draw split by face for its stencil state, whose
+    vertex stage runs twice, would double its stores: vk/README.md "Commands"). A submit of signals alone behind held
+    ones is held too, but vkr's ring fences (VK3 L6c: the L5-L6a review's finding 1). `synchronization*.timeline_semaphore.device_host.*` (a host thread
     copying between iterations, signalled and waited on through the semaphore): 69 of 110 sampled pass since L6a (1
     before), the other 41 fail with "Memory contents don't match", not looked into.
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as

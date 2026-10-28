@@ -896,6 +896,11 @@ wgt_variant(uint32_t scenario)
  *    finding 4: the worker's clear draws were counted): 0 around a vkCmdClearAttachments of the left half, 1 around
  *    that clear, the quad and the clear again, 2 around the quad alone; their 64-bit values at wgt_pass_query: 0, and
  *    1's equal to 2's.
+ * 6: the colour image loaded with a D32S8 attachment (depth 1.0, stencil 0), wgt_run's quad (its texture, right half)
+ *    drawn by its pipeline made for dynamic rendering with culling off and the stencil test on, ALWAYS and KEEP on both
+ *    faces, the front's reference 1 and the back's 2 (VK3 L6c, the L5-L6a review's finding 7: one draw, since neither
+ *    face uses its reference, and a split one reorders the draw's primitives).
+ * 7: as 6 with EQUAL on both faces, the front's reference 0: the quad (front faces) drawn, in two draws.
  * All in one submit, the image then copied into wgt_pass_pixels (rows of 256 bytes); wgt_pass_done says when.
  */
 static struct {
@@ -971,6 +976,64 @@ wgt_pass(uint32_t scenario)
       CmdEndRendering(cmd);
    } else if (scenario == 1) {
       rendering(cmd, left, 0, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE, red);
+      CmdEndRendering(cmd);
+   } else if (scenario == 6 || scenario == 7) {
+      if (!scene.pipeline) {
+         snprintf(error, sizeof(error), "wgt_run first");
+         return 1;
+      }
+      static PFN_vkCmdBeginRendering CmdBeginRendering;
+      if (!CmdBeginRendering)
+         CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+      VkImage ds_image;
+      VkImageView dsv;
+      if (image(VK_FORMAT_D32_SFLOAT_S8_UINT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, &ds_image, &dsv))
+         return 1;
+      const VkFormat color = VK_FORMAT_R8G8B8A8_UNORM, dsf = VK_FORMAT_D32_SFLOAT_S8_UINT;
+      const VkPipelineRenderingCreateInfo pr = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                                                 .colorAttachmentCount = 1, .pColorAttachmentFormats = &color,
+                                                 .depthAttachmentFormat = dsf, .stencilAttachmentFormat = dsf };
+      VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+      gpi.pNext = &pr;
+      gpi.renderPass = VK_NULL_HANDLE;
+      gpi.pStages = scene.stages;
+      VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+      rs.cullMode = VK_CULL_MODE_NONE;
+      gpi.pRasterizationState = &rs;
+      VkPipelineDepthStencilStateCreateInfo dss = *gpi.pDepthStencilState;
+      dss.stencilTestEnable = VK_TRUE;
+      const VkCompareOp cmp = scenario == 6 ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_EQUAL;
+      dss.front = (VkStencilOpState){ VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, cmp, 0xff, 0xff,
+                                      scenario == 6 ? 1 : 0 };
+      dss.back = (VkStencilOpState){ VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, cmp, 0xff, 0xff, 2 };
+      gpi.pDepthStencilState = &dss;
+      VkPipeline sp;
+      CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &sp));
+      const VkRenderingAttachmentInfo c = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = lo.view,
+         .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE };
+      const VkRenderingAttachmentInfo d = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dsv,
+         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { 1.0f, 0 } } };
+      const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = full, .layerCount = 1,
+                                   .colorAttachmentCount = 1, .pColorAttachments = &c, .pDepthAttachment = &d,
+                                   .pStencilAttachment = &d };
+      CmdBeginRendering(cmd, &ri);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sp);
+      const VkViewport viewport = { 0, 0, 64, 64, 0, 1 };
+      CmdSetViewport(cmd, 0, 1, &viewport);
+      CmdSetScissor(cmd, 0, 1, &full);
+      const VkDeviceSize zero = 0;
+      CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+      CmdBindIndexBuffer(cmd, scene.indices, 0, VK_INDEX_TYPE_UINT16);
+      const uint32_t offset = 0;
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.layout, 0, 1, &scene.set, 1, &offset);
+      const float right[4] = { 0.5f, 0, 0, 0 };
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
+      CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
       CmdEndRendering(cmd);
    } else if (scenario == 4 || scenario == 5) {
       if (!scene.pipeline) {

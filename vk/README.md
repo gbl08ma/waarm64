@@ -272,10 +272,12 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   `CONSTANT_COLOR` in its colour can't be expressed: warned, the colour kept);
   pipelines as WebGPU takes them: an indexed strip always has its index format, depth bias only for polygons, and a
   pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten); stencil state per
-  face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces' differ, both faces
+  face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces both use one of them
+  with different values (a reference compared or replaced, a compare mask compared, a write mask written), both faces
   drawn, is two draws, its front faces with the front's (the back culled) and then its back faces with the back's, so
-  the order between its front and back primitives is lost where they overlap; with one face culled the other's is used
-  (VK3 L6a); occlusion queries on the GPU (VK3 L6a): a pool is a WebGPU query set and a buffer of each query's last value;
+  the order between its front and back primitives is lost where they overlap (stencil ops, blending, depth ties) and
+  its vertex stage runs twice; faces differing only in what they don't use draw once (VK3 L6c); with one face culled
+  the other's is used (VK3 L6a); occlusion queries on the GPU (VK3 L6a): a pool is a WebGPU query set and a buffer of each query's last value;
   a render pass whose commands begin a query takes the pool's set (the first pool's: a query of another pool, or one
   begun outside a pass, is reported as passing, warned once), its queries are resolved into the buffer at the pass's
   end (consecutive ones together, through the device's scratch buffer); a `vkCmdClearAttachments` inside a query (the

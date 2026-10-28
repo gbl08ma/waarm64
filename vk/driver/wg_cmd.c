@@ -781,10 +781,46 @@ has_faces(VkPrimitiveTopology t)
           t == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY || t == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
 }
 
+/* What a face's stencil state uses of its reference and masks: the reference where it compares or replaces, the
+ * compare mask where it compares, the write mask where an op writes. */
+static bool
+uses_reference(const struct vk_stencil_test_face_state *f)
+{
+   return (f->op.compare != VK_COMPARE_OP_NEVER && f->op.compare != VK_COMPARE_OP_ALWAYS) ||
+          f->op.fail == VK_STENCIL_OP_REPLACE || f->op.pass == VK_STENCIL_OP_REPLACE ||
+          f->op.depth_fail == VK_STENCIL_OP_REPLACE;
+}
+
+static bool
+uses_compare_mask(const struct vk_stencil_test_face_state *f)
+{
+   return f->op.compare != VK_COMPARE_OP_NEVER && f->op.compare != VK_COMPARE_OP_ALWAYS;
+}
+
+static bool
+uses_write_mask(const struct vk_stencil_test_face_state *f)
+{
+   return f->op.fail != VK_STENCIL_OP_KEEP || f->op.pass != VK_STENCIL_OP_KEEP || f->op.depth_fail != VK_STENCIL_OP_KEEP;
+}
+
+/* The one reference and pair of masks (WebGPU's) a draw of both faces takes: each from a face that uses it, the front
+ * where both do. */
+static void
+stencil_values(const struct vk_dynamic_graphics_state *dyn, uint32_t *ref, uint32_t *read, uint32_t *write)
+{
+   const struct vk_stencil_test_face_state *f = &dyn->ds.stencil.front, *b = &dyn->ds.stencil.back;
+   *ref = !uses_reference(f) && uses_reference(b) ? b->reference : f->reference;
+   *read = !uses_compare_mask(f) && uses_compare_mask(b) ? b->compare_mask : f->compare_mask;
+   *write = !uses_write_mask(f) && uses_write_mask(b) ? b->write_mask : f->write_mask;
+}
+
 /* How many draws a draw takes: WebGPU has one stencil reference and one pair of masks, Vulkan a set a face. A draw
- * whose faces' differ, with both faces drawn, is two: its front faces with the front's (the back culled), then its back
- * faces with the back's. Order between its front and back primitives is lost where they overlap (the stencil ops of
- * the later face then run last). */
+ * whose faces both use one of them with different values, with both faces drawn, is two: its front faces with the
+ * front's (the back culled), then its back faces with the back's. That reorders its primitives where front and back
+ * ones overlap: the later face's stencil ops run last, its colour blends over the other's, its depth wins ties under
+ * LESS_OR_EQUAL or EQUAL; and the vertex stage runs twice (harmless while vertexPipelineStoresAndAtomics is off: turning
+ * it on must not double a split draw's stores). Faces that differ only in what they don't use (a reference or compare
+ * mask under ALWAYS or NEVER, a write mask with every op KEEP) draw once (VK3 L6c, the L5-L6a review's finding 7). */
 static uint32_t
 draw_faces(struct wg_cmd_buffer *cmd)
 {
@@ -792,8 +828,9 @@ draw_faces(struct wg_cmd_buffer *cmd)
    const struct vk_stencil_test_face_state *f = &dyn->ds.stencil.front, *b = &dyn->ds.stencil.back;
    if (!cmd->pass.stencil || !dyn->ds.stencil.test_enable || dyn->rs.cull_mode || !has_faces(dyn->ia.primitive_topology))
       return 1;
-   return f->reference != b->reference || f->compare_mask != b->compare_mask ||
-                (!cmd->pass.stencil_ro && f->write_mask != b->write_mask)
+   return (f->reference != b->reference && uses_reference(f) && uses_reference(b)) ||
+                (f->compare_mask != b->compare_mask && uses_compare_mask(f) && uses_compare_mask(b)) ||
+                (!cmd->pass.stencil_ro && f->write_mask != b->write_mask && uses_write_mask(f) && uses_write_mask(b))
              ? 2
              : 1;
 }
@@ -825,10 +862,14 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
       k.strip_index = cmd->ib_type == VK_INDEX_TYPE_UINT32 ? 2 : 1;
    k.front_face = dyn->rs.front_face == VK_FRONT_FACE_CLOCKWISE;
    k.cull = face == 1 ? VK_CULL_MODE_BACK_BIT : face == 2 ? VK_CULL_MODE_FRONT_BIT : dyn->rs.cull_mode & 3;
-   /* The stencil's reference and masks: the back's for back faces alone (a split draw's, or front faces culled). */
-   const struct vk_stencil_test_face_state *sface =
-      face == 2 || (k.cull == VK_CULL_MODE_FRONT_BIT && has_faces(k.topology)) ? &dyn->ds.stencil.back
-                                                                               : &dyn->ds.stencil.front;
+   /* The stencil's reference and masks: the back's for back faces alone (a split draw's, or front faces culled), the
+    * front's for front faces alone, and for both those of the face that uses each (stencil_values). */
+   const bool back_only = face == 2 || (k.cull == VK_CULL_MODE_FRONT_BIT && has_faces(k.topology));
+   const bool front_only = face == 1 || (k.cull == VK_CULL_MODE_BACK_BIT && has_faces(k.topology));
+   const struct vk_stencil_test_face_state *sface = back_only ? &dyn->ds.stencil.back : &dyn->ds.stencil.front;
+   uint32_t s_ref = sface->reference, s_read = sface->compare_mask, s_write = sface->write_mask;
+   if (!back_only && !front_only)
+      stencil_values(dyn, &s_ref, &s_read, &s_write);
    /* Depth clamped, or not clipped (VK_EXT_depth_clip_enable): WebGPU's unclippedDepth (which clamps to the viewport's
     * range, as the attachment would anyway). */
    const bool clip = dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_TRUE ||
@@ -868,8 +909,8 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
          k.stencil[f][2] = faces[f]->op.depth_fail;
          k.stencil[f][3] = faces[f]->op.compare;
       }
-      k.stencil_read = sface->compare_mask;
-      k.stencil_write = cmd->pass.stencil_ro ? 0 : sface->write_mask;
+      k.stencil_read = s_read;
+      k.stencil_write = cmd->pass.stencil_ro ? 0 : s_write;
    }
    for (uint32_t i = 0; i < k.color_count; i++) {
       const struct vk_color_blend_attachment_state *a = &dyn->cb.attachments[i];
@@ -947,7 +988,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
          fprintf(stderr, "wg: a draw's colour blends with both the constant's colour and its alpha: its colour taken\n");
       warned = true;
    }
-   d.stencil_ref = sface->reference;
+   d.stencil_ref = s_ref;
    if (memcmp(&d, cmd->last_dyn, sizeof(d))) {
       emit(cmd, OP_DYN, &d, sizeof(d));
       memcpy(cmd->last_dyn, &d, sizeof(d));

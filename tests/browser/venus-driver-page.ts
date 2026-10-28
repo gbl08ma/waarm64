@@ -326,7 +326,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -347,17 +347,19 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
   try {
     if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: text(ex.wgt_error() >>> 0), errors };
     await wait(() => ex.wgt_done(), 'the scene');
-    const index = { none: 0, partial: 1, resume: 2, resumePartial: 3, readOnlyDepth: 4, clearQuery: 5 } as const;
+    const index = { none: 0, partial: 1, resume: 2, resumePartial: 3, readOnlyDepth: 4, clearQuery: 5, facesUnused: 6, facesSplit: 7 } as const;
     const variant = { strip: 0, vertexOnly: 1, lineBias: 2 } as const;
-    let at: number;
+    let at: number, draws = 0;
     if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
       if (scenario === 'link' ? ex.wgt_link() : ex.wgt_variant(variant[scenario])) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draw');
       at = ex.wgt_pixels() >>> 0;
     } else {
+      draws = v.gpu.stats.draws;
       if (ex.wgt_pass(index[scenario])) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_pass_done(), 'the passes');
+      draws = v.gpu.stats.draws - draws;
       at = ex.wgt_pass_pixels() >>> 0;
     }
     const px = (x: number, y: number) => [...new Uint8Array(memory.buffer, at + (y * 64 + x) * 4, 4)];
@@ -365,7 +367,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     // clearQuery's occlusion values (wgt_pass_query).
     const query = scenario === 'clearQuery' ? [...new BigUint64Array(memory.buffer, ex.wgt_pass_query() >>> 0, 3)].map(Number) : undefined;
     device.destroy();
-    return { pixels, errors, query };
+    return { pixels, errors, query, draws };
   } catch (e) {
     return { error: String(e), errors };
   }

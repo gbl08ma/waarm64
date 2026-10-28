@@ -189,6 +189,9 @@ for (const [scenario, what, want] of [
   ['readOnlyDepth', 'a depth attachment in a read-only layout sampled by the pass\'s draw', { topLeft: [191, 0, 0, 255], bottomLeft: [191, 0, 0, 255], topRight: blue, bottomRight: blue }],
   // L6c (the review of L5-L6a: finding 4): the worker's clear draws aren't counted by occlusion queries.
   ['clearQuery', 'occlusion queries count draws, not vkCmdClearAttachments', { topLeft: red, bottomLeft: red }],
+  // L6c (the review of L5-L6a: finding 7): a draw split by face only where its faces' stencil state conflicts.
+  ['facesUnused', 'faces whose stencil references differ but go unused draw once', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  ['facesSplit', 'faces whose stencil references both compare draw as two, front faces passing', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -204,6 +207,7 @@ for (const [scenario, what, want] of [
     assert.deepEqual(r.errors, [], 'WebGPU errors');
     const pixels = r.pixels as Record<string, number[]>;
     for (const [k, v] of Object.entries(want)) assert.deepEqual(pixels[k], v, `${k}: ${JSON.stringify(pixels)}`);
+    if (scenario === 'facesUnused' || scenario === 'facesSplit') assert.equal(r.draws, scenario === 'facesUnused' ? 1 : 2, 'the quad\'s draws');
     if (scenario === 'clearQuery') {
       const [clear, both, quad] = r.query as number[];
       assert.ok(quad > 0, `the quad's query: ${quad}`);
