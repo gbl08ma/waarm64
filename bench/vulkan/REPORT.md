@@ -1532,6 +1532,8 @@ in `results/vk3/l73/`.
   LINEAR be worth offering.
 - **dma-buf modifiers:** GTK4's draws need none (its swapchain is Venus's WSI's, LINEAR); its imports (video,
   GtkGLArea's offload) would, and those are what makes GTK take Vulkan. Nothing to fix on the import side for the bar.
+- **CI:** `scripts/ci.sh` OK (454 s); `scripts/ci-deqp-vk.sh` OK (829 s: tests/deqp/vk.txt now with YCbCr on,
+  vk-ycbcr.txt, page-venus); `scripts/ci-debian.sh` OK (417 s). steps.txt unmoved.
 
 ## VK3 L7.2: YCbCr conversions backed (behind `?gpu=vkycbcr`); opaque-fd semaphores are the guest's Mesa's
 
