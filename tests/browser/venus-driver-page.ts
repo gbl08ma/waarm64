@@ -378,7 +378,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -392,7 +392,7 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   for (let k = 0; k < 1000 && !ex.wgt_misc_done(); k++) await new Promise((r) => setTimeout(r, 10));
   if (!ex.wgt_misc_done()) return { error: 'the fence never signalled', errors, warnings: v.gpu.stats.errors };
@@ -448,6 +448,21 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   } else if (scenario === 'freedModule') {
     new Float32Array(want.buffer, 0, 1)[0] = 0.25;
     Object.assign(checks, { depth: [0, 4096, want] });
+  } else if (scenario === 'depthCopies') {
+    const f = (at: number, n: number) => new Float32Array(want.buffer, at, n);
+    const whole = f(0, 16).fill(1);
+    whole.set([0.25, 0.5], 5);
+    whole.set([0.75, 0.125], 9);
+    f(256, 4).set([0.25, 0.5, 0.75, 0.125]);
+    const d24 = new Uint32Array(want.buffer, 512, 16);
+    for (let i = 0; i < 16; i++) d24[i] = (i * 0x111111 + 7) & 0xffffff;
+    const b = f(1024, 16).fill(0);
+    b.set([0.25, 0.5], 0);
+    b.set([0.75, 0.125], 4);
+    want.fill(0x33, 2048, 2064);
+    want.set([0x5a, 0xa5], 2048 + 5);
+    want.set([0x01, 0xfe], 2048 + 9);
+    Object.assign(checks, { uploadPart: [0, 64, want], downloadPart: [64, 512, want], d24: [512, 1024, want], copyPart: [1024, 2048, want], stencilPart: [2048, 4096, want] });
   } else if (scenario === 'bindGroupsShared') {
     u32(want.subarray(0, 16)).fill(0xeeeeeeee + 63);
     Object.assign(checks, { added: [0, 4096, want] });

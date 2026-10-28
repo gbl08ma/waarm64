@@ -564,9 +564,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
   scene's pass ~0.9 ms of GPU (the M4's 0.41), a frame's `Queue::Submit` ~1.55 ms in the GPU process (REPORT.md "VK3:
   the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`). History below.
-- **Bind groups remade every frame** (VK3 L2c, unmeasured): a descriptor set keeps bind groups for 4 pipeline layouts
-  only, and every pipeline has layouts of its own, so the scene remakes ~14 a frame. A cache keyed by the layout's
-  shape (or layouts shared across pipelines with equal sets) would keep them; worth it where draws switch pipelines.
 - **Venus's ~4.5 ms fence floor on NVIDIA: the poller's part fixed** (VK3 L2, bench/vulkan/REPORT.md "VK3 L2"):
   found on the M4 and SwiftShader as two waits, both gone. The guest fences each frame through the virtqueue, and a
   fence retired only at the ring poller's next turn, a nested `setTimeout(0)` clamped to ~4.5 ms (the M4's scene at 1
@@ -611,10 +608,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
   crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of
   `tests/deqp/vk.txt`; the counts below are of the samples):
-  - **Copies WebGPU refuses**, skipped with a warning (the worker's `depthStencilCopy`): uploads into depth24plus's or
-    depth32float's depth (a draw writing `frag_depth` from the buffer would do it), any copy of depth24plus's depth
-    (D24 formats as depth32float, with a conversion of their buffer layout, or not advertised), copies of part of a
-    depth or stencil image, of multisampled images; copies between formats (Vulkan's size-compatible copies:
+  - **Copies WebGPU refuses**, skipped with a warning (the worker's `depthStencilCopy`; depth's done by the worker's
+    draws and compute passes since VK3 L6b, stencil's by a whole subresource's copy and a draw a bit, D24's copies
+    advertised with them): depth16unorm's part and offsets (its texels are half words: 1
+    `buffer_to_depthstencil.buffer_offset_d16_unorm_D`, its partial image copies), copies of multisampled images; copies
+    between formats (Vulkan's size-compatible copies:
     compressed ↔ uncompressed, a 32-bit format into another: a compute copy), integer resolves (a draw of sample 0).
     GFXReconstruct's trimmed captures restore their depth images this way (vkQuake's first replayed frame).
   - **Formats**: ASTC and ETC2 on SwiftShader fail sampling and copy tests in numbers (`texture.compressed`,
@@ -627,8 +625,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     a sampler (fetched at clamp-to-edge whatever the sampler's address mode: the address modes as a program variant
     would do the rest), LOD bias and min/max LOD clamps against WebGPU's.
   - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
-    WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals), texel buffers
-    (43 stages; vkQuake's palettization: storage buffers and the format's decode, a variant per bound format),
+    WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
     `textureQueryLod` (9), dynamically indexed buffers and storage images, image atomics, interpolation at an offset; derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
@@ -710,7 +707,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     before), the other 41 fail with "Memory contents don't match", not looked into.
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
     they go): multiview, inline uniform blocks, buffer device addresses, storage-image atomics on `R32_UINT`/`R32_SINT`
-    (the translator refuses image atomics), uniform and storage texel buffers (formats' mandatory buffer features), and
+    (the translator refuses image atomics), texel buffer atomics on `R32` (VK3 L6b offers the texel buffers themselves), and
     `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
     guarantees without checking them fails at pipeline or descriptor creation.
   - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%
@@ -727,6 +724,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `memory.mapping.suballocation.random.*` pass alone but crash deqp-vk after enough earlier cases (VK3 L4c-F: with
     its 179 cases added to the pass list, on the renderer of before as on the new one): something the renderer keeps
     across cases (its arena's use or fragmentation?); they're out of `tests/deqp/vk.txt` until it's found.
+  - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
+    decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader), which Vulkan counts with
+    sampled or storage images, so a stage with many storage buffers and texel buffers fails its layout (2
+    `binding_model.descriptor_copy` cases: "The number of storage buffers (13) in the Compute stage exceeds the
+    maximum"); a texel buffer whose range overlaps another writable binding of its memory in a dispatch (compute stages'
+    storage is `read_write`) is refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
+    cases: "Writable storage buffer binding aliasing", the dispatch dropped; "Usage scopes" below has the same root);
+    `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` aren't advertised though texel buffers don't need a
+    format (images do: 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases NotSupported; advertising them
+    for images needs the image's format at the bind); storage texel buffers of formats under a word (r8, rg8, r16) and
+    texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
   - **Storage images WebGPU gives one way** (VK3 L4c-F refuses them): a shader that loads and stores an image of a
     format WebGPU allows only read-only or write-only (every format but r32's without `texture-formats-tier2`, and
     rg8/rg16/rg32, the snorm and 16-bit unorm formats, `rgb10a2*`, `rg11b10ufloat` even with it) fails its stage, and

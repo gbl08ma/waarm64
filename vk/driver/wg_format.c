@@ -259,7 +259,8 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
    const struct wg_texture_format *f = wg_texture_format(format);
    VkFormatFeatureFlags o = 0;
    if (f) {
-      if (!(f->flags & WG_FMT_NOCOPY))
+      /* depth24plus's depth is copied by the worker's draws and compute passes (web/venus-gpu.ts `depthByShader`). */
+      if (!(f->flags & WG_FMT_NOCOPY) || (f->flags & WG_FMT_DEPTH))
          o |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
       if (f->flags & WG_FMT_SAMPLE)
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT;

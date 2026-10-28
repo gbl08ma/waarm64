@@ -245,6 +245,7 @@ export class VenusGpu {
   private chain: Promise<void> = Promise.resolve();
   private readonly metaPipelines = new Map<string, GPURenderPipeline>();
   private readonly metaComputes = new Map<string, GPUComputePipeline>();
+  private readonly metaModules = new Map<string, GPUShaderModule>();
   /** A bind group layout's bindings of storage textures a shader may write, and the textures a bind group binds
    * there: a pass that sets the group writes them (`touched`, for presentation). */
   private readonly writableBindings = new WeakMap<GPUBindGroupLayout, Set<number>>();
@@ -429,8 +430,9 @@ export class VenusGpu {
       gpu_copy_tt(src: number, sm: number, sx: number, sy: number, sz: number, dst: number, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number) {
         const S = self.get<GPUTexture>(src), D = self.get<GPUTexture>(dst);
         later(() => {
-          self.enc!.copyTextureToTexture(self.texCopy(S, sm, sx, sy, sz, aspect), self.texCopy(D, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
           self.touched.add(D);
+          if (/^depth|^stencil/.test(S.format) && !self.depthStencilTT(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect)) return;
+          self.enc!.copyTextureToTexture(self.texCopy(S, sm, sx, sy, sz, aspect), self.texCopy(D, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
         });
       },
       gpu_fill(b: number, offset: number, size: number, value: number) {
@@ -777,7 +779,15 @@ export class VenusGpu {
     const allowed = stencil || f === 'depth16unorm' || (!toTexture && f.startsWith('depth32float'));
     const row = w * bytes;
     const realign = bpr % 256 !== 0 && (rows > 1 || depth > 1);
-    if (!whole || !allowed || t.sampleCount > 1 || (realign && (row % 4 || bpr % 4 || offset % 4))) {
+    // What WebGPU won't copy of depth, by a draw or a compute pass (VK3 L6b); of stencil, part of a subresource read
+    // through a whole one's copy.
+    const native = whole && allowed && t.sampleCount === 1 && offset % 4 === 0 && !(realign && (row % 4 || bpr % 4));
+    if (!native && t.sampleCount === 1) {
+      if (!stencil && this.depthByShader(toTexture, b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
+      if (stencil && !toTexture && this.stencilPart(b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
+      if (stencil && toTexture && this.stencilByDraws(b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
+    }
+    if (!native) {
       this.warn(`a ${stencil ? 'stencil' : 'depth'} copy WebGPU can't make (${toTexture ? 'into' : 'from'} ${f}, ${w}x${h} at ${x},${y} of mip ${mip}): skipped`);
       return;
     }
@@ -804,6 +814,199 @@ export class VenusGpu {
       each((to, from) => enc.copyBufferToBuffer(temp, from, src, to, row));
     }
   }
+  /** A uniform buffer of these words, for one of the worker's passes (destroyed after the submit). */
+  private params(words: number[]) {
+    const u = this.device!.createBuffer({ size: Math.max(16, Math.ceil(words.length / 4) * 16), usage: UNIFORM, mappedAtCreation: true });
+    new Uint32Array(u.getMappedRange()).set(words);
+    u.unmap();
+    this.temps.push(u);
+    return u;
+  }
+
+  /**
+   * Depth WebGPU won't copy between a buffer and a texture (VK3 L6b): into depth32float's or depth24plus's depth, out of
+   * depth24plus's, part of a subresource. Into the texture a draw over the region writes `frag_depth` from the buffer's
+   * words (the other aspect loaded and stored); out of it a compute pass loads the depth into them. A D24 texel is a
+   * word's low 24 bits as unorm (Vulkan's X8_D24 layout; the X8 bits written 0), a D32 one the float's bits. False (the
+   * caller warns) where the words aren't 4-aligned or the texture lacks the usage.
+   */
+  private depthByShader(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number): boolean {
+    const d = this.device!, enc = this.enc!;
+    const f = t.format, d24 = f.startsWith('depth24plus') ? 1 : 0;
+    if (f === 'depth16unorm' || offset % 4 || bpr % 4 || !(t.usage & (toTexture ? RENDER_ATTACHMENT : TEXTURE_BINDING))) return false;
+    const rowsPer = Math.max(rows, h);
+    const from = offset & ~255, end = offset + ((layers - 1) * rowsPer + h - 1) * bpr + w * 4;
+    if (end - from > d.limits.maxStorageBufferBindingSize || end > b.size) return false;
+    const key = toTexture ? `depth-up:${f}` : 'depth-down';
+    const P = 'struct P { base: u32, pitch: u32, x: u32, y: u32, d24: u32, w: u32, h: u32, pad: u32 }';
+    if (toTexture) {
+      let pipeline = this.metaPipelines.get(key);
+      if (!pipeline) {
+        const m = d.createShaderModule({ code: `${P}
+@group(0) @binding(0) var<storage, read> s: array<u32>;
+@group(0) @binding(1) var<uniform> p: P;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return vec4<f32>(f32((i << 1u) & 2u) * 2.0 - 1.0, f32(i & 2u) * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) pos: vec4<f32>) -> @builtin(frag_depth) f32 {
+  let c = vec2<u32>(pos.xy) - vec2<u32>(p.x, p.y);
+  let v = s[p.base + c.y * p.pitch + c.x];
+  if (p.d24 != 0u) { return f32(v & 0xffffffu) / 16777215.0; }
+  return bitcast<f32>(v);
+}` });
+        pipeline = d.createRenderPipeline({ layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets: [] },
+          primitive: { topology: 'triangle-list' }, depthStencil: { format: f, depthWriteEnabled: true, depthCompare: 'always' } });
+        this.metaPipelines.set(key, pipeline);
+      }
+      const stencil = f.includes('stencil8');
+      for (let l = 0; l < layers; l++) {
+        const u = this.params([(offset - from) / 4 + l * rowsPer * bpr / 4, bpr / 4, x, y, d24, w, h, 0]);
+        const view = t.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: z + l, arrayLayerCount: 1 });
+        const pass = enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view, depthLoadOp: 'load', depthStoreOp: 'store', ...(stencil ? { stencilLoadOp: 'load', stencilStoreOp: 'store' } : {}) } });
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: b, offset: from, size: (end - from + 3) & ~3 } }, { binding: 1, resource: { buffer: u } }] }));
+        pass.setViewport(x, y, w, h, 0, 1);
+        pass.setScissorRect(x, y, w, h);
+        pass.draw(3);
+        pass.end();
+      }
+      return true;
+    }
+    let pipeline = this.metaComputes.get(key);
+    if (!pipeline) {
+      const m = d.createShaderModule({ code: `${P}
+@group(0) @binding(0) var t: texture_depth_2d;
+@group(0) @binding(1) var<storage, read_write> o: array<u32>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(8, 8) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= p.w || id.y >= p.h) { return; }
+  let v = textureLoad(t, vec2<i32>(id.xy + vec2<u32>(p.x, p.y)), 0);
+  var n = bitcast<u32>(v);
+  if (p.d24 != 0u) {
+    // The word whose upload (above) gives this depth: a division may be a unit off once rounded (SwiftShader's).
+    n = u32(round(clamp(v, 0.0, 1.0) * 16777215.0));
+    if (f32(n) / 16777215.0 != v) {
+      if (n > 0u && f32(n - 1u) / 16777215.0 == v) { n = n - 1u; } else if (f32(n + 1u) / 16777215.0 == v) { n = n + 1u; }
+    }
+  }
+  o[p.base + id.y * p.pitch + id.x] = n;
+}` });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set(key, pipeline);
+    }
+    for (let l = 0; l < layers; l++) {
+      const u = this.params([(offset - from) / 4 + l * rowsPer * bpr / 4, bpr / 4, x, y, d24, w, h, 0]);
+      const view = t.createView({ dimension: '2d', aspect: 'depth-only', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: z + l, arrayLayerCount: 1 });
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }, { binding: 1, resource: { buffer: b, offset: from, size: (end - from + 3) & ~3 } }, { binding: 2, resource: { buffer: u } }] }));
+      pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+      pass.end();
+    }
+    return true;
+  }
+
+  /** A copy between depth or stencil textures, which WebGPU makes only of whole subresources (VK3 L6b): true for the
+   * caller to make it; part of a depth one (or any of depth24plus) goes through a temporary buffer by the worker's passes (`depthByShader`),
+   * part of a stencil one the same way (`stencilPart`, `stencilByDraws`). */
+  private depthStencilTT(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, layers: number, aspect: number): boolean {
+    const whole = (t: GPUTexture, m: number, x: number, y: number) => x === 0 && y === 0 && w === Math.max(1, t.width >> m) && h === Math.max(1, t.height >> m);
+    // depth24plus's textures can't be copied at all (the driver makes them without the copy usages).
+    if (whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & COPY_SRC && D.usage & COPY_DST) return true;
+    const f = S.format, depthAspect = !f.startsWith('stencil') && aspect !== 2, stencilAspect = f.includes('stencil') && aspect !== 1;
+    let ok = S.sampleCount === 1 && D.sampleCount === 1;
+    if (ok && depthAspect) {
+      const pitch = Math.ceil(w * 4 / 256) * 256;
+      const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
+      this.temps.push(temp);
+      ok = this.depthByShader(false, temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers) && this.depthByShader(true, temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
+    }
+    if (ok && stencilAspect) {
+      const pitch = Math.ceil(w / 256) * 256;
+      const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
+      this.temps.push(temp);
+      ok = this.stencilPart(temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers) && this.stencilByDraws(temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
+    }
+    if (!ok) this.warn(`a copy of part of a ${f} texture WebGPU can't make (${w}x${h} at ${sx},${sy} into ${dx},${dy}): skipped`);
+    return false;
+  }
+
+  /**
+   * Bytes into part of a stencil subresource (VK3 L6b), which no shader can write: over the region a draw zeroes the
+   * stencil, then eight draws, one a bit, each discarding the texels whose byte lacks it and replacing that bit (its
+   * write mask) with 1. The depth aspect is loaded and kept. False where the texture can't be rendered to.
+   */
+  private stencilByDraws(b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number): boolean {
+    const d = this.device!, enc = this.enc!, f = t.format;
+    if (!(t.usage & RENDER_ATTACHMENT)) return false;
+    const rowsPer = Math.max(rows, h);
+    const from = offset & ~255, end = offset + ((layers - 1) * rowsPer + h - 1) * bpr + w;
+    if (end - from > d.limits.maxStorageBufferBindingSize || end > b.size) return false;
+    const pipelines: GPURenderPipeline[] = [];
+    for (let bit = 0; bit <= 8; bit++) {
+      const key = `stencil-up:${f}:${bit}`;
+      let pipeline = this.metaPipelines.get(key);
+      if (!pipeline) {
+        let m = this.metaModules.get('stencil-up');
+        if (!m) {
+          m = d.createShaderModule({ code: `struct P { base: u32, pitch: u32, x: u32, y: u32 }
+override bit: u32 = 8u;
+@group(0) @binding(0) var<storage, read> s: array<u32>;
+@group(0) @binding(1) var<uniform> p: P;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return vec4<f32>(f32((i << 1u) & 2u) * 2.0 - 1.0, f32(i & 2u) * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) pos: vec4<f32>) {
+  let c = vec2<u32>(pos.xy) - vec2<u32>(p.x, p.y);
+  let a = p.base + c.y * p.pitch + c.x;
+  if (bit < 8u && ((s[a >> 2u] >> ((a & 3u) * 8u + bit)) & 1u) == 0u) { discard; }
+}` });
+          this.metaModules.set('stencil-up', m);
+        }
+        const face: GPUStencilFaceState = { compare: 'always', passOp: bit < 8 ? 'replace' : 'zero' };
+        const hasDepth = f !== 'stencil8';
+        pipeline = d.createRenderPipeline({ layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets: [], constants: { bit } },
+          primitive: { topology: 'triangle-list' }, depthStencil: { format: f, ...(hasDepth ? { depthWriteEnabled: false, depthCompare: 'always' } : {}), stencilFront: face, stencilBack: face, stencilWriteMask: bit < 8 ? 1 << bit : 0xff } });
+        this.metaPipelines.set(key, pipeline);
+      }
+      pipelines.push(pipeline);
+    }
+    const depth = f !== 'stencil8';
+    for (let l = 0; l < layers; l++) {
+      const u = this.params([offset - from + l * rowsPer * bpr, bpr, x, y]);
+      const view = t.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: z + l, arrayLayerCount: 1 });
+      const pass = enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view, stencilLoadOp: 'load', stencilStoreOp: 'store', ...(depth ? { depthLoadOp: 'load', depthStoreOp: 'store' } : {}) } });
+      const group = d.createBindGroup({ layout: pipelines[8].getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: b, offset: from, size: (end - from + 3) & ~3 } }, { binding: 1, resource: { buffer: u } }] });
+      pass.setViewport(x, y, w, h, 0, 1);
+      pass.setScissorRect(x, y, w, h);
+      pass.setStencilReference(0xff);
+      for (const bit of [8, 0, 1, 2, 3, 4, 5, 6, 7]) {
+        pass.setPipeline(pipelines[bit]);
+        pass.setBindGroup(0, bit === 8 ? group : d.createBindGroup({ layout: pipelines[bit].getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: b, offset: from, size: (end - from + 3) & ~3 } }, { binding: 1, resource: { buffer: u } }] }));
+        pass.draw(3);
+      }
+      pass.end();
+    }
+    return true;
+  }
+
+  /** Part of a stencil subresource into a buffer (VK3 L6b): the whole subresource copied to a temporary buffer, then
+   * the region's rows out of it (unaligned rows by the worker's compute copy). */
+  private stencilPart(b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number): boolean {
+    const mw = Math.max(1, t.width >> mip), mh = Math.max(1, t.height >> mip);
+    const pitch = Math.ceil(mw / 256) * 256, rowsPer = Math.max(rows, h);
+    const temp = this.device!.createBuffer({ size: pitch * mh * layers, usage: COPY_SRC | COPY_DST | STORAGE });
+    this.temps.push(temp);
+    this.enc!.copyTextureToBuffer({ texture: t, mipLevel: mip, origin: { x: 0, y: 0, z }, aspect: 'stencil-only' }, { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: mh }, { width: mw, height: mh, depthOrArrayLayers: layers });
+    for (let l = 0; l < layers; l++)
+      for (let r = 0; r < h; r++) {
+        const so = (l * mh + y + r) * pitch + x, dO = offset + (l * rowsPer + r) * bpr;
+        if ((so | dO | w) & 3) this.copyUnaligned(temp, so, b, dO, w);
+        else this.enc!.copyBufferToBuffer(temp, so, b, dO, w);
+      }
+    return true;
+  }
+
   private texCopy(tex: GPUTexture, mip: number, x: number, y: number, z: number, aspect: number): GPUTexelCopyTextureInfo {
     return { texture: tex, mipLevel: mip, origin: { x, y, z }, aspect: aspect === 1 ? 'depth-only' : aspect === 2 ? 'stencil-only' : 'all' };
   }

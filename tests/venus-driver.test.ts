@@ -229,6 +229,7 @@ for (const [scenario, what] of [
   // L6b: texel buffers.
   ['texelBuffer', 'uniform texel buffers of four layouts read and a storage texel buffer written'],
   ['bindGroupsShared', 'six pipelines of equal set layouts in turn share a set\'s bind group'],
+  ['depthCopies', 'depth copies WebGPU won\'t make: into depth, out of depth24plus, part of a subresource'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

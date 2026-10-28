@@ -86,6 +86,18 @@ helpers); a cube or cube array storage image is its faces as a 2D array (the dri
 `2d-array` view of their own), its size counted in cubes; an explicit LOD on a depth texture without a comparison picks
 the nearest level.
 
+**Texel buffers** (VK3 L6b): a texel buffer at slot s is its view's words, a storage buffer of `u32` at the slot's
+binding (read-only but in compute stages, where storage is `read_write` as above, and written storage texel buffers),
+and its view's parameters, a uniform buffer of two vec4s at the next binding (made with the `VkBufferView`,
+`wg_texel_buffer_layout` in `wg_format.c`: the format's type, texel bytes and swizzle, each channel's width and first
+bit, the first texel's byte in the binding and the texel count). The format is the view's, so `texelFetch`,
+`imageLoad`, `imageStore` and the size queries print as calls of functions per binding (`wg_tb_load_g_b`,
+`wg_tb_store_g_b`, `wg_tb_size_g_b`) that decode and encode it from the parameters: unorm, snorm, uint, sint,
+uscaled, sscaled, 16- and 32-bit floats and the unsigned 11- and 10-bit ones; a texel past the count reads 0 and isn't
+written. Uniform texel buffers take every plain RGB format whose channels don't straddle a word (3-byte and 6-byte
+texels too), storage ones formats of whole words (a texel's words are written whole, so invocations never share one);
+no atomics (image atomics are refused).
+
 **Subgroups** (VK3 L5): with WebGPU's `subgroups` and an adapter whose subgroups have one size (`wg_subgroup_size`:
 SwiftShader's 4, Apple's and NVIDIA's 32; WGSL can't choose one, so an adapter whose sizes vary keeps subgroups of one
 invocation), `wgsl_lower` lowers for that size (`nir_lower_subgroups`, ballots of 4 × 32 bits) and the printer uses
@@ -107,7 +119,7 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, texel buffers, dynamically indexed buffers and
+16-bit inputs and outputs, dynamically indexed buffers and
 images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
@@ -118,11 +130,11 @@ writable storage in vertex shaders). A pipeline whose stage fails is still made,
 pipeline without waiting for its result, and a pipeline that failed would fail the guest's whole context.
 
 `tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
-`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 123 of 127
-translate (0.4 ms a stage at the median in Node, 25 ms GTK4's largest) and all 123 compile in Chromium; the four
-others are vkQuake's variants for a device with 16-bit floats (three, dumped through the Mac profile: translated for
+`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 124 of 127
+translate (0.47 ms a stage at the median in Node, 28 ms GTK4's largest) and all 124 compile in Chromium; the three
+others are vkQuake's variants for a device with 16-bit floats (dumped through the Mac profile: translated for
 SwiftShader, without `shader-f16`, one stops at its 16-bit arithmetic, the others at an image atomic and a texture
-offset that isn't a constant) and its screen effects' palettization (a texel buffer). It checks that Tint accepts the
+offset that isn't a constant; its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
 WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's runs of translated compute shaders
 (`runCompute`: subgroup operations against each subgroup's members, 16-bit storage, scratch arrays).
 **Subgroups on Metal** (Chromium 153 on the M4): a ballot that is an `if`'s only subgroup operation is computed with
@@ -160,13 +172,13 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
   translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, dynamically indexed buffers and
-  images, inline uniform blocks, texel buffers, YCbCr conversions; subgroups of one invocation with the basic
+  images, inline uniform blocks, YCbCr conversions; subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of sampled images (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
   `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers
-  only vertex input), samples 1 and 4 (1 for the 32-bit integer formats and the float ones of two or four
+  vertex input and texel buffers: "The shader path"), samples 1 and 4 (1 for the 32-bit integer formats and the float ones of two or four
   channels, which WebGPU doesn't multisample), views of a mutable image in its format's sRGB twin only (WebGPU's `viewFormats`: a format list naming
   another format is refused by the image-format query, and such a view warned of); plus the extensions
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
@@ -225,10 +237,13 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   the resources field by field (a struct's padding is indeterminate). Stages that still come with different programs
   (a cache whose entries disagree) draw with a program of both's bindings (`wg_program_merge`, said once on stderr),
   where a draw used to lose its fragment shader silently (VK3 L4c-D).
-- **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views and samplers; bind groups are made at a
-  replay, for the program's layout and the set's version (group 3's for its sets' uids and versions hashed), and kept
-  on the group's first set, keyed by the layout's uid (ids are reused: a stale bind group of a freed layout's id once
-  bound group 2's layout at index 3). Groups a set lets go are released after the submit is encoded. Push
+- **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views, texel buffer views and samplers; bind groups
+  are made at a replay, for the program's layout and the set's version (group 3's for its sets' uids and versions
+  hashed), and kept on the group's first set (4 at most), keyed by the layout's uid (ids are reused: a stale bind group
+  of a freed layout's id once bound group 2's layout at index 3). A layout's uid is one per content (its description
+  and its uniform bindings' sizes, `bgl_uid` in `wg_shader.c`; VK3 L6b): WebGPU takes a bind group with any
+  group-equivalent layout, so pipelines of equal layouts share a set's groups (VK0's scene made ~14 a frame when each
+  pipeline's layouts were their own, ~6 since: bench/vulkan/REPORT.md "VK3 L6b"). Groups a set lets go are released after the submit is encoded. Push
   descriptors are sets of the command buffer's own. Push constants past the immediates go to the device's push buffer
   (a uniform buffer written with `queue.writeBuffer` before each submit, ordered after the work before it), a
   256-byte-aligned place each time they change, its offset the last dynamic offset of group 3. Written once a submit,
@@ -274,9 +289,15 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   feature) is its clear colour encoded in the worker (`encodeTexel`) and copied in; a 3D image's clear covers every
   slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F). Buffer ↔ image copies whose rows
   aren't 256 bytes apart go a row of blocks at a time, but for depth and stencil, which WebGPU copies only whole
-  (the worker realigns their rows through a temporary buffer); what WebGPU can't copy at all (into depth32float's or
-  depth24plus's depth, of multisampled textures, part of a depth image) or resolve (integer formats) is skipped with a
-  warning, since one invalid command invalidates the whole submit. Barriers and events wait for nothing (WebGPU orders
+  (the worker realigns their rows through a temporary buffer); depth WebGPU won't copy (into depth32float's or
+  depth24plus's depth, out of depth24plus's, part of a subresource, and image copies of part of one or of depth24plus,
+  whose textures have no copy usages) goes through the worker's passes (VK3 L6b, web/venus-gpu.ts `depthByShader`):
+  into a texture a draw over the region writes `frag_depth` from the buffer's words, out of one a compute pass loads
+  the depth into them (D24 as a word's low 24 bits, Vulkan's X8_D24 layout; an image copy through a temporary buffer);
+  stencil WebGPU won't copy (part of a subresource, an offset not 4-aligned) is read out through a whole subresource's
+  copy and written by draws over the region, one zeroing it and one a bit (`stencilByDraws`: each discards the texels
+  whose byte lacks its bit and replaces that bit); what's left (multisampled textures, depth16unorm's part) or what
+  WebGPU can't resolve (integer formats) is skipped with a warning, since one invalid command invalidates the whole submit. Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
 - **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
@@ -306,8 +327,8 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   them before it reuses its command streams, so holding them held the guest before it could send the host's signal
   (`synchronization*.timeline_semaphore.wait.host_wait_before_signal` hung the guest so); such a submit signals early,
   as every submit did before.
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component
-  swizzles, sampling 3D images through 2D views, texel buffers, integer textures sampled with a sampler, copies
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, border colours and mirror-once, triangle fans, component
+  swizzles, sampling 3D images through 2D views, integer textures sampled with a sampler, copies
   between formats, multi-view.
 
 ## Pipelines made asynchronously

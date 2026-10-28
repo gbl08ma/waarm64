@@ -28,7 +28,9 @@
 # VK3 L6b: texel buffers (a storage buffer of the view's words and its format decoded in WGSL): the passing cases of
 # texture.texel_buffer, binding_model.descriptor_copy's texel buffers, every twelfth binding_model.shader_access texel
 # buffer case, memory.pipeline_barrier's texel buffers, every third api.buffer_view.access and every fourth
-# api.buffer_view.create case that passes (of every eighth), at the end.
+# api.buffer_view.create case that passes (of every eighth), at the end. Then depth and stencil copies WebGPU won't
+# make (the worker's draws and compute passes; D24's copies advertised): every api.copy_and_blit.core buffer-image
+# depth/stencil case and every fourth such image_to_image case that passes (81 of 544; 45 passed before), at the end.
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -4199,3 +4201,84 @@ dEQP-VK.texture.texel_buffer.uniform.snorm.r8-snorm
 dEQP-VK.texture.texel_buffer.uniform.snorm.r8g8-snorm
 dEQP-VK.texture.texel_buffer.uniform.snorm.r8g8b8-snorm
 dEQP-VK.texture.texel_buffer.uniform.snorm.r8g8b8a8-snorm
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d24_unorm_s8_uint_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d24_unorm_s8_uint_DS
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d24_unorm_s8_uint_D_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d24_unorm_s8_uint_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d24_unorm_s8_uint_SD
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d24_unorm_s8_uint_S_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_s8_uint_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_s8_uint_DS
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_s8_uint_D_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_s8_uint_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_s8_uint_SD
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_d32_sfloat_s8_uint_S_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_s8_uint_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.buffer_offset_x8_d24_unorm_pack32_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d16_unorm_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d24_unorm_s8_uint_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d24_unorm_s8_uint_DS
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d24_unorm_s8_uint_D_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d24_unorm_s8_uint_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d24_unorm_s8_uint_SD
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d24_unorm_s8_uint_S_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_s8_uint_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_s8_uint_DS
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_s8_uint_D_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_s8_uint_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_s8_uint_SD
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.d32_sfloat_s8_uint_S_D
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.s8_uint_S
+dEQP-VK.api.copy_and_blit.core.buffer_to_depthstencil.x8_d24_unorm_pack32_D
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_10x8_unorm_block_64x192
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_10x8_unorm_block_64x192_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_10x8_unorm_block_64x192_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_10x8_unorm_block_64x64
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_10x8_unorm_block_64x64_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_10x8_unorm_block_64x64_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_8x8_unorm_block_64x192
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_8x8_unorm_block_64x192_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_8x8_unorm_block_64x192_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_8x8_unorm_block_64x64
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_8x8_unorm_block_64x64_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_astc_8x8_unorm_block_64x64_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_10x8_unorm_block_64x192
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_10x8_unorm_block_64x192_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_10x8_unorm_block_64x192_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_10x8_unorm_block_64x64
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_10x8_unorm_block_64x64_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_10x8_unorm_block_64x64_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_8x8_unorm_block_64x192
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_8x8_unorm_block_64x192_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_8x8_unorm_block_64x192_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_8x8_unorm_block_64x64
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_8x8_unorm_block_64x64_2_layers
+dEQP-VK.api.copy_and_blit.core.image_to_buffer_general_layout.2d_images.mip_copies_astc_8x8_unorm_block_64x64_5_layers
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_10x8_srgb_block.astc_10x8_srgb_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_10x8_srgb_block.astc_10x8_unorm_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_10x8_unorm_block.astc_10x8_srgb_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_10x8_unorm_block.astc_10x8_unorm_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_8x8_srgb_block.astc_8x8_srgb_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_8x8_srgb_block.astc_8x8_unorm_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_8x8_unorm_block.astc_8x8_srgb_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_8x8_unorm_block.astc_8x8_unorm_block.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d24_unorm_s8_uint_d24_unorm_s8_uint.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d24_unorm_s8_uint_d24_unorm_s8_uint_depth_stencil_aspects.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d24_unorm_s8_uint_d24_unorm_s8_uint_separate_layouts.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d32_sfloat_d32_sfloat.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d32_sfloat_s8_uint_d32_sfloat_s8_uint.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d32_sfloat_s8_uint_d32_sfloat_s8_uint_depth_stencil_aspects.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.d32_sfloat_s8_uint_d32_sfloat_s8_uint_separate_layouts.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.s8_uint_s8_uint.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.depth_stencil.2d_to_2d.x8_d24_unorm_pack32_x8_d24_unorm_pack32.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.array.array_to_array_whole_mipmap_s8_uint
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src4x8192_dst4x8192.r16_sfloat.r16_sfloat.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src4x8192_dst4x8192.r32_sfloat.r32_sfloat.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src4x8192_dst4x8192.r32g32b32a32_uint.r32g32b32a32_uint.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src4x8192_dst4x8192.r8g8b8a8_unorm.r8g8b8a8_unorm.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src6x8192_dst6x8192.r16_sfloat.r16_sfloat.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src6x8192_dst6x8192.r32_sfloat.r32_sfloat.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src6x8192_dst6x8192.r32g32b32a32_uint.r32g32b32a32_uint.optimal_optimal
+dEQP-VK.api.copy_and_blit.core.image_to_image.dimensions.src6x8192_dst6x8192.r8g8b8a8_unorm.r8g8b8a8_unorm.optimal_optimal

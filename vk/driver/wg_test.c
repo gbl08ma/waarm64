@@ -1387,6 +1387,11 @@ wgt_fl_done(uint32_t i)
  *    at 0, 256, 512 and 768 (B8G8R8A8_UNORM, R16_SINT, A2B10G10R10_UINT_PACK32, R8G8B8_SNORM; 16 texels each), each
  *    invocation's four texels at [64i, 64i + 64) as integers, the views' sizes and a fetch past one at [1024, 1040),
  *    and writing a storage texel buffer (R16G16B16A16_SFLOAT, a view of the result at 2048) (L6b: texel buffers).
+ * 16: depth copies WebGPU won't make (L6b: the worker's draws and compute passes): a D32 image cleared to 1.0 with
+ *    (0.25, 0.5; 0.75, 0.125) uploaded at (1, 1), whole → [0, 64) and its (1, 1) 2×2 → [256, 272); an X8_D24 image
+ *    uploaded whole from words (i · 0x111111 + 7) & 0xffffff, whole → [512, 576); a D32 image cleared to 0 with the
+ *    first's (1, 1) 2×2 copied to its (0, 0), whole → [1024, 1088); an S8 image cleared to 0x33 with (0x5a, 0xa5;
+ *    0x01, 0xfe) uploaded at (1, 1), whole → [2048, 2064).
  * 15: `cs` (spec-add.comp: b[i] += K) as six pipelines (K = 1 to 6, so six programs) on one set layout, each
  *    dispatched three times in turn on one set: 0xeeeeeeee + 63 at [0, 16), and the set's bind group made once for
  *    them all (L6b: bind groups kept by their layouts' content; a set keeps 4).
@@ -1635,6 +1640,81 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
       CmdDispatch(cmd, 1, 1, 1);
       (void)c;
+   } else if (scenario == 16) {
+      PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+         (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+      PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+      const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+      VkImage d32, d32b, d24;
+      VkBuffer src;
+      uint8_t *sb;
+      if (misc_image(VK_FORMAT_D32_SFLOAT, VK_IMAGE_TYPE_2D, 1, usage, &d32) ||
+          misc_image(VK_FORMAT_D32_SFLOAT, VK_IMAGE_TYPE_2D, 1, usage, &d32b) ||
+          misc_image(VK_FORMAT_X8_D24_UNORM_PACK32, VK_IMAGE_TYPE_2D, 1, usage, &d24) ||
+          buffer(4096, both, true, &src, (void **)&sb))
+         return 1;
+      const float part[4] = { 0.25f, 0.5f, 0.75f, 0.125f };
+      memcpy(sb, part, sizeof(part));
+      for (uint32_t i = 0; i < 16; i++)
+         ((uint32_t *)(sb + 256))[i] = (i * 0x111111u + 7) & 0xffffff;
+      const VkImageSubresourceRange range = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+      const VkImageSubresourceLayers layer = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 };
+      VkImage all[3] = { d32, d32b, d24 };
+      for (uint32_t k = 0; k < 3; k++) {
+         const VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                          .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                          .newLayout = VK_IMAGE_LAYOUT_GENERAL, .image = all[k],
+                                          .subresourceRange = range };
+         CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL,
+                            1, &b);
+      }
+      CmdClearDepthStencilImage(cmd, d32, VK_IMAGE_LAYOUT_GENERAL, &(VkClearDepthStencilValue){ 1.0f, 0 }, 1, &range);
+      CmdClearDepthStencilImage(cmd, d32b, VK_IMAGE_LAYOUT_GENERAL, &(VkClearDepthStencilValue){ 0.0f, 0 }, 1, &range);
+      /* Into part of D32, and the whole of D24. */
+      CmdCopyBufferToImage(cmd, src, d32, VK_IMAGE_LAYOUT_GENERAL, 1,
+                           &(VkBufferImageCopy){ .bufferRowLength = 2, .imageSubresource = layer,
+                                                 .imageOffset = { 1, 1, 0 }, .imageExtent = { 2, 2, 1 } });
+      CmdCopyBufferToImage(cmd, src, d24, VK_IMAGE_LAYOUT_GENERAL, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 256, .imageSubresource = layer,
+                                                 .imageExtent = { 4, 4, 1 } });
+      /* D32's part into D32b's corner. */
+      CmdCopyImage(cmd, d32, VK_IMAGE_LAYOUT_GENERAL, d32b, VK_IMAGE_LAYOUT_GENERAL, 1,
+                   &(VkImageCopy){ .srcSubresource = layer, .srcOffset = { 1, 1, 0 }, .dstSubresource = layer,
+                                   .extent = { 2, 2, 1 } });
+      CmdCopyImageToBuffer(cmd, d32, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+      CmdCopyImageToBuffer(cmd, d32, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 256, .imageSubresource = layer,
+                                                 .imageOffset = { 1, 1, 0 }, .imageExtent = { 2, 2, 1 } });
+      CmdCopyImageToBuffer(cmd, d24, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 512, .imageSubresource = layer,
+                                                 .imageExtent = { 4, 4, 1 } });
+      CmdCopyImageToBuffer(cmd, d32b, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 1024, .imageSubresource = layer,
+                                                 .imageExtent = { 4, 4, 1 } });
+      /* Into part of a stencil image (the worker's draws, a bit each). */
+      VkImage s8;
+      if (misc_image(VK_FORMAT_S8_UINT, VK_IMAGE_TYPE_2D, 1, usage, &s8))
+         return 1;
+      const uint8_t bytes[4] = { 0x5a, 0xa5, 0x01, 0xfe };
+      memcpy(sb + 512, bytes, 4);
+      const VkImageSubresourceRange srange = { VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 };
+      const VkImageSubresourceLayers slayer = { VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1 };
+      const VkImageMemoryBarrier sb0 = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                         .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                         .image = s8, .subresourceRange = srange };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
+                         &sb0);
+      CmdClearDepthStencilImage(cmd, s8, VK_IMAGE_LAYOUT_GENERAL, &(VkClearDepthStencilValue){ 0, 0x33 }, 1, &srange);
+      CmdCopyBufferToImage(cmd, src, s8, VK_IMAGE_LAYOUT_GENERAL, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 512, .bufferRowLength = 2, .imageSubresource = slayer,
+                                                 .imageOffset = { 1, 1, 0 }, .imageExtent = { 2, 2, 1 } });
+      CmdCopyImageToBuffer(cmd, s8, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                           &(VkBufferImageCopy){ .bufferOffset = 2048, .imageSubresource = slayer,
+                                                 .imageExtent = { 4, 4, 1 } });
    } else if (scenario == 15) {
       VkShaderModule m;
       if (shader(cs, cs_words, &m))
