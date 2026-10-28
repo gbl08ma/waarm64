@@ -245,6 +245,7 @@ for (const [scenario, what] of [
   // L6c (the review of L5-L6a: finding 1).
   ['emptyAfterHeld', 'a submit of a fence alone behind a held submit signals after it'],
   ['queryAfterDispatch', 'an occlusion query begun and ended outside a render pass around dispatches'],
+  ['poolFreed', 'a query pool destroyed while its submit is pending isn\'t written by its completion'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

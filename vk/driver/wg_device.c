@@ -1256,6 +1256,8 @@ wg_DestroyQueryPool(VkDevice _device, VkQueryPool _pool, const VkAllocationCallb
    VK_FROM_HANDLE(wg_query_pool, pool, _pool);
    if (!pool)
       return;
+   /* Vulkan says its submits are done by now; were they not, their completion mustn't write into it. */
+   wg_submits_forget_pool(dev, pool);
    wg_id_release(pool->set);
    wg_id_release(pool->buf);
    free(pool->values), free(pool->avail), free(pool->ended);

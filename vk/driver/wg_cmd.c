@@ -2719,6 +2719,29 @@ wg_submits_forget(struct wg_device *dev, struct wg_device_memory *mem)
    }
 }
 
+void
+wg_submits_forget_pool(struct wg_device *dev, const struct wg_query_pool *pool)
+{
+   list_for_each_entry (struct wg_submit, s, &dev->pending, link)
+      util_dynarray_foreach (&s->queries, struct query_readback, q)
+         if (q->pool == pool)
+            q->pool = NULL;
+}
+
+/* For the driver's tests (wg_test.c). */
+int wg_submits_pool_refs(const void *pool);
+int
+wg_submits_pool_refs(const void *pool)
+{
+   int n = 0;
+   for (uint32_t i = 0; i < 16; i++)
+      if (devices[i])
+         list_for_each_entry (struct wg_submit, s, &devices[i]->pending, link)
+            util_dynarray_foreach (&s->queries, struct query_readback, q)
+               n += (const void *)q->pool == pool;
+   return n;
+}
+
 bool
 wg_device_register(struct wg_device *dev, bool add)
 {
@@ -2869,7 +2892,8 @@ complete(uint32_t serial)
                mark_range(dev, w->mem, w->offset, w->size);
          }
          util_dynarray_foreach (&s->queries, struct query_readback, q)
-            gpu_readback_copy(q->slot, &q->pool->values[q->lo], (q->hi - q->lo) * 8);
+            if (q->pool)
+               gpu_readback_copy(q->slot, &q->pool->values[q->lo], (q->hi - q->lo) * 8);
          wg_completed_serial = serial;
          util_dynarray_foreach (&s->signals, struct vk_sync_signal, sig)
             vk_sync_signal(&dev->vk, sig->sync, sig->signal_value);

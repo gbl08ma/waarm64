@@ -532,6 +532,8 @@ bool wg_device_register(struct wg_device *dev, bool add);
 void wg_device_drain(struct wg_device *dev);
 /* Forgets a memory in the pending submits' readbacks (it's being freed). */
 void wg_submits_forget(struct wg_device *dev, struct wg_device_memory *mem);
+/* A query pool destroyed while submits that read its queries back are pending: their values land nowhere. */
+void wg_submits_forget_pool(struct wg_device *dev, const struct wg_query_pool *pool);
 
 /* The bytes at `mem` + `offset` for a buffer's range, or NULL if its memory has none. */
 uint8_t *wg_buffer_data(struct wg_buffer *buffer, VkDeviceSize offset);

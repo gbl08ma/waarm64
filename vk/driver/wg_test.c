@@ -48,6 +48,9 @@ int wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words);
 uint8_t *wgt_misc_map(void);
 int wgt_misc_done(void);
 int wgt_misc_signal(void);
+int wgt_misc_pool_refs(void);
+/* wg_cmd.c: the pending submits' references to a query pool (destroyed or not). */
+int wg_submits_pool_refs(const void *pool);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -1447,6 +1450,10 @@ wgt_fl_done(uint32_t i)
  * 20: as 7 (4,096 bytes) inside an occlusion query begun and ended outside a render pass, its result copied to
  *    [1024, 1028): v[k] at [0, 16) and 1 there (passing; the L5-L6a review's finding 3: the query's write was recorded
  *    with the compute pass open, which invalidated the submit).
+ * 21: a render pass (a 4×4 RGBA8 image, cleared) with an occlusion query of a pool of four begun and ended in it, the
+ *    pool destroyed as soon as the submit is made, and 32 blocks of 32 bytes allocated at once (one in the place of the
+ *    pool's values, freed with its other arrays) filled 0xab (`wgt_misc_canary`): still 0xab once the fence signals (the L5-L6a review's finding 8: the completion
+ *    wrote the query's value into the freed pool).
  * 19: as 13's copy, held for its wait, then a submit of nothing but a fence (vkQueueSubmit(queue, 0, NULL, fence), as
  *    Mesa's vkQueueWaitIdle): the fence unsignalled until the host's signal (`wgt_misc_signal`), and the copy 0x22 (the
  *    L5-L6a review's finding 1: such a submit went ahead of held ones, its fence saying they were done).
@@ -1454,12 +1461,15 @@ wgt_fl_done(uint32_t i)
 static struct {
    VkFence fence;
    uint8_t *map;
+   int pool_refs;
 } misc;
 static struct {
    VkBuffer src;
    uint8_t *bytes;
    VkSemaphore sem;
 } misc13;
+
+static VkQueryPool misc21_pool;
 
 static int
 misc_image(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags usage, VkImage *out)
@@ -1588,6 +1598,33 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
       CmdCopyImageToBuffer(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
                            &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   } else if (scenario == 21) {
+      PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+      PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+      VkImage img;
+      if (misc_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &img))
+         return 1;
+      const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img,
+                                         .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM,
+                                         .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+      VkImageView view;
+      CHECK(CreateImageView(dev, &vi, NULL, &view));
+      const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                         .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = 4 };
+      CHECK(CreateQueryPool(dev, &qi, NULL, &misc21_pool));
+      CmdResetQueryPool(cmd, misc21_pool, 0, 4);
+      const VkRenderingAttachmentInfo att = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = view,
+         .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE };
+      const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { 4, 4 } },
+                                   .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &att };
+      CmdBeginRendering(cmd, &ri);
+      for (uint32_t k = 0; k < 4; k++) {
+         CmdBeginQuery(cmd, misc21_pool, k, 0);
+         CmdEndQuery(cmd, misc21_pool, k);
+      }
+      CmdEndRendering(cmd);
    } else if (scenario == 13 || scenario == 19) {
       if (buffer(4096, both, true, &misc13.src, (void **)&misc13.bytes))
          return 1;
@@ -2250,7 +2287,17 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
                                  .pCommandBuffers = &cmd };
    CHECK(QueueSubmit(queue, 1, &submit, misc.fence));
+   if (scenario == 21) {
+      DestroyQueryPool(dev, misc21_pool, NULL);
+      misc.pool_refs = wg_submits_pool_refs((const void *)(uintptr_t)misc21_pool);
+   }
    return 0;
+}
+
+EXPORT int
+wgt_misc_pool_refs(void)
+{
+   return misc.pool_refs;
 }
 
 EXPORT uint8_t *
