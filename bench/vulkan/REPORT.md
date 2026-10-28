@@ -1479,6 +1479,51 @@ M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sw
   the list, which CI runs on SwiftShader.
 - **The pass list** (`tests/deqp/vk.txt`): 3,972 → 4,251 (198 texel-buffer and 81 copy cases).
 
+## VK3 L7.5: vkd3d's row backed (draw parameters); vkd3d makes a Direct3D 12 device at feature level 11_0 on Venus
+
+2026-10-28. The dev VM's SwiftShader (Chromium 153.0.8010.52) for the driver's tests and dEQP-VK (vulkan-cts-1.4.7.0's
+deqp-vk in the Arch guest, `bench/gpu/deqp-run.ts vk` with `CASES=`); the desktop guest (Arch Linux, Mesa 26.2.5,
+vkd3d 1.19) for the program. JSON in `results/vk3/l75/`.
+
+- **Draw parameters** (`shaderDrawParameters`, `VK_KHR_shader_draw_parameters`). WGSL has no base-vertex, base-instance
+  or draw-index built-ins (its `vertex_index` and `instance_index` include the bases, as Vulkan's do). A vertex stage
+  that reads them reads three words of the push buffer at byte 128, past Vulkan's 128 bytes of push constants, and its
+  push constants go there with them. A direct draw writes its values into its place there, and takes a new place
+  only where they change. An indirect draw gets a place of its own before its render pass, and a copyBufferToBuffer of
+  its arguments' base vertex and first instance into that place (the render-pass rule: a copy, no pass break). That
+  costs no compute pass and no pre-pass shader. Immediates were the cheaper choice for direct draws, but they can't
+  take an indirect draw's GPU-written values, so one path serves both. The draw index is 0 except in multi-draw
+  indirect, which isn't advertised.
+- **dEQP-VK** (`deqp-draw-params.json`): 60 of 76 `draw.*shader_draw_parameters` cases pass (renderpass, dynamic
+  rendering primary and both secondary kinds; base vertex, base instance, their `_only` forms, direct, indexed and
+  indirect with and without first instances). The 16 `draw_index` cases are not supported without
+  `multiDrawIndirect`. The 2 api cases of the feature pass too. Of every tenth `draw.renderpass.instanced` case, 11
+  of 102 pass; the rest need divisors, buffer device addresses or multiview, and one indexed-indirect fan fails, which
+  is a gap filed in L7.4.
+- **The program** (`vkd3d.json`; `node bench/vulkan/vkd3d.ts disk`, then `TESTS=… node bench/vulkan/vkd3d.ts`): Arch's
+  vkd3d 1.19 and spirv-tools sit on a second disk and are installed at boot. Without draw parameters (the same build
+  with them turned off), `D3D12CreateDevice` fails at 11_0 ("Required device extension VK_KHR_shader_draw_parameters is
+  not supported", vr -7). **With them, it makes a device at 11_0**; 11_1, 12_0 and 12_1 are refused. vkd3d lists what
+  11_0 lacks and makes the device anyway: push constants (128 of 256 bytes), viewport bounds and sub-pixel bits, 13
+  uniform buffers a stage, geometry and tessellation, multi-draw indirect, multiple viewports, precise occlusion
+  queries, pipeline statistics, cull distances, extended gathers, storage image writes without a format (its UAV-clear
+  pipelines then don't translate), vertex attribute divisors and min/max reduction. vkd3d has no demos package, and
+  its demos need an X window, so the program is vkd3d's own Direct3D 12 test suite (tests/d3d12, built in an Arch
+  container, offscreen). test_draw_instanced (26 checks), test_draw_indexed_instanced (28) and test_root_constants
+  (80) pass. Three tests fail for causes outside this row, filed in docs/backlog.md "vkd3d on Venus":
+  - test_vertex_id: 39 of 89 checks fail. Its stream output of indirect draws isn't captured, and one program of four
+    bind groups isn't captured either.
+  - test_instance_id: 84 of 372 fail, from instance step rates (divisors) and a 1-byte vertex stride WebGPU refuses.
+  - test_clear_render_target_view: 16 of 280 fail, from views of other formats and 3D views.
+- **The pass list** (`tests/deqp/vk.txt`): 4,599 → 4,672 (62 draw-parameter cases, 11 instanced).
+- **Tests** (each failing first, and failing again with a bug planted back):
+  - `tests/wgsl.test.ts`: a vertex stage's parameters read from the push buffer at word 32, compiled by Tint.
+  - `tests/venus-driver.test.ts` passes `drawParams`: four draws in one pass (direct, indexed, indirect with
+    host-written arguments, indexed indirect with arguments written by `vkCmdUpdateBuffer` before the pass), the first
+    two with the same push constants. Planted: a place not renewed when only the parameters change, and the indirect
+    copy from the wrong word. Each fails the test.
+- **CI** (the code at b21e44d9, docs after it): `scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (847 s: the 4,672-case list in 590 s, YCbCr's 773 in 88 s, the replays).
+
 ## VK3 L7.4: ANGLE's ES3 row backed (the provoking vertex, 13 uniform buffers, transform feedback); ANGLE gives WebGL 2 on Venus
 
 2026-10-28. The dev VM's SwiftShader (Chromium 153) for the driver's tests and dEQP-VK (VK-GL-CTS vulkan-cts-1.4.7.0's

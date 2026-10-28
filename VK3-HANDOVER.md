@@ -6,19 +6,21 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7.4)
+## State (2026-10-28, after L7.5)
 
-- **ANGLE's ES3 row backed and advertised:** 13 uniform buffers a stage (those past WebGPU's room read as read-only
-  storage, by the layout's stage flags; storage buffers 2 fewer), the last vertex provoking (a draw's indices rotated
-  by a compute pass hoisted before its pass; indexed fans the same way), transform feedback (the vertex stage run as
-  compute after its pass on the draw's bind groups and vertex buffers; attachment-less passes get the device's
-  attachment). dEQP-VK's list 4,424 → 4,599 (REPORT.md "VK3 L7.4").
-- **The program:** the guest's Chromium with `--use-angle=vulkan` gives WebGL 2 (ES 3.0) on Venus, its flat varying,
-  capture and 24 uniform blocks matching ANGLE on GL; with `--enable-features=Vulkan` too the blocks' sum is wrong
-  (filed: backlog "ANGLE's row's gaps", with xfb's queries, indirect captures, clip distances).
-- Next: L7.5 (vkd3d's draw parameters).
+- **vkd3d's row backed and advertised:** `shaderDrawParameters` as words of the push buffer at byte 128 (a vertex stage
+  reading them takes its push constants from the push buffer); direct draws write theirs in their place, an indirect
+  draw's are copied from its arguments into a place of its own before its pass (no break). dEQP-VK's list 4,599 →
+  4,672 (REPORT.md "VK3 L7.5"); `draw_index` needs `multiDrawIndirect` (not advertised).
+- **The program:** Arch's vkd3d 1.19 makes a D3D12 device at 11_0 in the desktop guest (it stopped at the extension
+  before); vkd3d's own d3d12 tests (built in a container, `bench/vulkan/vkd3d.ts`) draw right where they need nothing
+  else; what 11_0 lacks and the failures' causes: backlog "vkd3d on Venus".
+- Next: the out-of-context reviews of what VK3 changed (after L7), then L8.
 
-## Where VK3 stands (2026-10-28, after L7.4; next L7.5)
+## Where VK3 stands (2026-10-28, after L7.5; next the reviews after L7)
+
+- **L7.4:** ANGLE's ES3 row backed (13 uniform buffers a stage, the last vertex provoking, transform feedback); the
+  guest's Chromium with `--use-angle=vulkan` gives WebGL 2 on Venus; dEQP-VK's list 4,424 → 4,599.
 
 - **L7.3:** GTK4's black frames were L4c-D's partial CLEAR (fixed since); YCbCr on by default (GTK 4.24 aborted
   without it; it still takes GL); GSK on Vulkan (forced) misses GTK4's bar (iconscroll 9 frames/s against GL's 28):
@@ -114,7 +116,7 @@ docs and the backlog; git keeps the old handovers.
   bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`).
 - [x] L6c: vkQuake's frame 5 (L5b's compute SSBOs `read_write`: a dispatch's read-only SSBO now writable only beside a
   write of its memory; page-venus in ci-deqp-vk.sh); the review of L5–L6a's 8 findings fixed, each with its test.
-- [ ] L7: §4's emulated rows in order, a loop a row (dotted: the review fix loops after L7 are L7a, L7b, …):
+- [x] L7: §4's emulated rows in order, a loop a row (dotted: the review fix loops after L7 are L7a, L7b, …):
   - [x] L7.1: Dawn's row: dynamically indexed descriptor arrays, sample-rate shading, their dEQP-VK cases and the
     SAMPLE_ZERO `depth_stencil_resolve` ones. **Remainder:** the program (Dawn in the guest's Chromium) needs
     YCbCr (L7.2's), Chromium's Vulkan context alive on Venus (the semaphore vkr never made) and a window (Xwayland in
@@ -136,7 +138,7 @@ docs and the backlog; git keeps the old handovers.
     by default (GTK4 aborted without it, and takes GL with it); GSK on Vulkan misses the bar (iconscroll), filed.
   - [x] L7.4: ANGLE's ES3: the provoking vertex, more than 12 uniform buffers, transform feedback. **Done:** all three
     backed; ANGLE gives WebGL 2 on Venus in the guest's Chromium (`--use-angle=vulkan`).
-  - [ ] L7.5: vkd3d's draw parameters.
+  - [x] L7.5: vkd3d's draw parameters. **Done:** backed and advertised; vkd3d makes an 11_0 device, its own draw tests pass.
 - [ ] Out-of-context reviews (CLAUDE.md, docs/testing.md): the translator's and the driver's done (2026-10-27, L4f
   takes their findings); one every ~3 loops after.
 - [ ] After L7 (the user, 2026-10-28): out-of-context reviews of what VK3 changed; the findings worth taking in VK3
@@ -166,6 +168,11 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 ## Things worth not re-discovering
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
+
+- (L7.5) A command's output through `s.run` comes back as the serial's last bytes: read a long guest log in parts
+  (`sed -n` slices, bench/vulkan/vkd3d.ts). Arch's arch-base container needs `pacman -Syu` before installing (its
+  database is stale: "failed to retrieve some files"). vkd3d's d3d12 tests take `VKD3D_TEST_FILTER` (a part of a test's
+  name) and run offscreen; Arch packages no vkd3d demos (they'd need an X window anyway).
 
 - (L7.4) A pass with no attachments makes WebGPU drop the whole submit ("Render pass has no attachments"): every dEQP-VK
   transform feedback case has one. dEQP-VK cases outside vk-main.txt's groups run by exact name through `CASES=`
