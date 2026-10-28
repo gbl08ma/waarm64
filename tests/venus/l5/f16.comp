@@ -1,0 +1,23 @@
+#version 450
+// VK3 L5: 16-bit floats (shaderFloat16) and 16-bit storage (tests/wgsl.test.ts).
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_16bit_storage : require
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer In { float16_t h[64]; f16vec2 h2[64]; uint16_t s[64]; int16_t si[64]; } i;
+layout(std430, binding = 1) buffer Out { float16_t h[64]; float f[64]; uint u[64]; int16_t si[64]; } o;
+layout(std140, binding = 2) uniform U { float16_t k; f16vec4 kv; } u;
+layout(push_constant) uniform P { float16_t p; } pc;
+shared float16_t sh[64];
+void main() {
+  uint n = gl_LocalInvocationIndex;
+  float16_t a = i.h[n], b = i.h2[n].y;
+  sh[n] = a * b + u.k;
+  barrier();
+  float16_t c = sh[(n + 1u) & 63u];
+  float16_t d = fma(a, b, c) / (abs(b) + float16_t(1.0)) + sqrt(abs(a)) + min(a, u.kv.z) + pc.p;
+  o.h[n] = d > a ? d : -c;
+  o.f[n] = float(d) + float(i.h2[n].x);
+  o.u[n] = uint(i.s[n]) + uint(int(i.si[n]));
+  o.si[n] = int16_t(int(i.si[n]) * 3);
+  o.h[(n + 2u) & 63u] = float16_t(o.f[n]);
+}

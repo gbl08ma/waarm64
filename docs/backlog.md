@@ -525,13 +525,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   storage line nor cleared from it, and its 32 MiB budget is fixed: the user wants it configurable (2026-10-26; the
   budget and the origin-wide scope are approved: entries are keyed by content, so one program on two machines shares
   them). (5) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
-- **What the device advertises, left for the translator** (VK2 L7, vk/README.md "The driver"): subgroups are of one
-  invocation with the basic operations (both adapters have WebGPU's `subgroups`: subgroup sizes and operations in
-  WGSL), `shaderFloat16` (the Mac's `shader-f16`), YCbCr conversions (GTK4's Vulkan renderer: VK3's row; GTK4 forced
-  onto Vulkan aborts on its own assertion without them), read-write storage for 8- and 16-bit formats where the adapter
-  has `texture-formats-tier2` (the translator prints `read_write` already; the format features don't say which formats
-  allow it). The per-stage descriptor limits are WebGPU's whole, though the push buffer takes a dynamic uniform
-  buffer of group 3 when push constants pass the immediates: a pipeline at the limit would fail.
+- **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path"): subgroups
+  are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
+  size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in
+  compute and fragment shaders only, `gl_SubgroupID` assumes subgroups are runs of `local_invocation_index` (true on
+  SwiftShader and Metal; unchecked on NVIDIA), and a subgroup-scoped barrier is dropped; YCbCr conversions (GTK4's
+  Vulkan renderer: VK3's row; GTK4 forced onto Vulkan aborts on its own assertion without them); 8- and 64-bit types,
+  16-bit integer arithmetic (`shaderInt16`: the lowering to 32 bits exists, the advertising and its dEQP-VK groups
+  don't) and 16-bit inputs and outputs (`storageInputOutput16`: varyings are vec4s of 32-bit types). **Subgroups on
+  the Mac are held** (VK3 L5, bench/vulkan/REPORT.md "VK3 L5"): Chromium 153's Metal path hoists a ballot that is an
+  `if`'s only subgroup operation out of the `if` (repro: `web/venus-gpu.ts` `subgroupsRight`'s kernel, 0xffffffff for
+  an odd invocation where 0xaaaaaaaa is right); with the check off, 89 of 503 sampled subgroup cases failed there
+  (`bench/vulkan/results/vk3/l5/mac-before-check.json`), arithmetic and f16 shuffles in graphics. To do: report it
+  to Chromium (Tint's MSL or Apple's compiler: unknown), and try a translator workaround (another subgroup operation
+  beside each ballot in an `if`), then lift the hold where the check passes. On the Mac with `shader-f16`, 226 of 233
+  sampled `spirv_assembly.*.float16` cases pass: 6 fail on 16-bit infinities and NaNs (WGSL lets a backend assume
+  none: values come back 0) and one graphics shuffle's WGSL nests ifs past Tint's 127 (an indexed f16 vector's `if`
+  tree). The per-stage
+  descriptor limits are WebGPU's whole, though the push buffer takes a dynamic uniform buffer of group 3 when push
+  constants pass the immediates: a pipeline at the limit would fail.
 - **GTK4 on Venus drew black or near-empty frames** (VK2 L7, with YCbCr advertised: `bench/gpu/gtk4-load.ts`
   `RENDERERS=vulkan`, frames' window black, fishbowl one icon at 6 frames/s): not looked into; VK3's YCbCr row starts
   there.
@@ -618,8 +630,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals), texel buffers
     (43 stages; vkQuake's palettization: storage buffers and the format's decode, a variant per bound format),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
-    subgroup invocation ids (12, `subgroups`), `textureQueryLod` (9), dynamically indexed buffers and storage images,
-    16-bit values (`shader-f16`), image atomics, interpolation at an offset; derivatives in non-uniform control flow
+    `textureQueryLod` (9), dynamically indexed buffers and storage images, image atomics, interpolation at an offset; derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`; a shader with 12 uniform blocks and push constants past the
     immediates (the push buffer is a 13th). From the out-of-context review of the translator (VK3 L4f left them):
     shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,
@@ -693,7 +704,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     own: the refusal is the translation failures' path). The formats stay advertised as `STORAGE_IMAGE`, since their
     write-only and read-only uses are right; a full fix would bind such an image as a storage buffer of its texels
     (the format's encode and decode in the shader, a copy in and out around the pass), or advertise per-use what can't
-    be advertised per-format. L5 takes `tier2` itself (its read-write formats are translated now).
+    be advertised per-format. With `texture-formats-tier2` tier2's formats are read-write (VK3 L5: checked on the
+    Mac).
   - **Transfers**: a resolve into a 3D image is skipped with a warning (WebGPU resolves into 2D views only). VK3
     L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left 13 failing, all failing before too, not
     looked into: linear 3D blits of `r32_sfloat`/`r32g32_sfloat` (unfilterable without `float32-filterable`), a

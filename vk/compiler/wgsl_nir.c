@@ -509,6 +509,108 @@ shared_var_info(const struct glsl_type *type, unsigned *size, unsigned *align)
    *size = comp * glsl_get_vector_elements(type), *align = comp;
 }
 
+/* Reductions and scans WGSL has (subgroupAdd and the like: wgsl_print.c), on scalars; the rest NIR lowers to shuffles. */
+static bool
+wgsl_reduction(nir_op op, bool scan)
+{
+   switch (op) {
+   case nir_op_iadd: case nir_op_fadd: case nir_op_imul: case nir_op_fmul:
+      return true;
+   case nir_op_imin: case nir_op_umin: case nir_op_fmin: case nir_op_imax: case nir_op_umax: case nir_op_fmax:
+   case nir_op_iand: case nir_op_ior: case nir_op_ixor:
+      return !scan;
+   default:
+      return false;
+   }
+}
+
+static bool
+lower_subgroups_filter(const nir_intrinsic_instr *intr, const void *data)
+{
+   const unsigned size = *(const unsigned *)data;
+   switch (intr->intrinsic) {
+   case nir_intrinsic_reduce: {
+      const unsigned cluster = nir_intrinsic_cluster_size(intr);
+      return intr->def.num_components > 1 || (cluster && cluster < size) ||
+             !wgsl_reduction(nir_intrinsic_reduction_op(intr), false);
+   }
+   case nir_intrinsic_inclusive_scan:
+   case nir_intrinsic_exclusive_scan:
+      return intr->def.num_components > 1 || !wgsl_reduction(nir_intrinsic_reduction_op(intr), true);
+   default:
+      return true;
+   }
+}
+
+/* Subgroup operations (VK3 L5): of `size` invocations, WGSL's (`subgroups`: ballots of 4 × 32 bits) where it is over
+ * 1, else of one invocation (the basic operations only). What WGSL has stays for the printer, on scalars: ballots, votes,
+ * broadcasts and shuffles (read_invocation as subgroupShuffle: WGSL's subgroupBroadcast wants a constant), quad
+ * broadcasts by a constant and swaps, elect, and the reductions and scans `wgsl_reduction` says; the rest is lowered
+ * (masks, ballot queries, equality votes, clustered reductions, the other scans, quad votes, dynamic quad broadcasts). */
+static void
+lower_subgroups(nir_shader *nir, unsigned size)
+{
+   const nir_lower_subgroups_options o = {
+      .filter = size > 1 ? lower_subgroups_filter : NULL,
+      .filter_data = &size,
+      .subgroup_size = size,
+      .ballot_bit_size = 32,
+      .ballot_components = size > 1 ? 4 : 1,
+      .lower_to_scalar = true,
+      .lower_vote_trivial = size == 1,
+      .lower_vote_feq = true,
+      .lower_vote_ieq = true,
+      .lower_vote_bool_eq = true,
+      .lower_subgroup_masks = true,
+      .lower_relative_shuffle = size == 1,
+      .lower_shuffle = size == 1,
+      .lower_quad = size == 1,
+      .lower_quad_broadcast_dynamic = true,
+      .lower_quad_vote = true,
+      .lower_elect = size == 1,
+      .lower_rotate_to_shuffle = true,
+      .lower_inverse_ballot = true,
+      .lower_reduce = true,
+      .lower_read_first_invocation = size == 1,
+   };
+   /* What a lowering makes (masks, ballot queries, shuffles of vectors) is lowered by the next round. */
+   for (unsigned i = 0; i < 4; i++) {
+      bool progress = false;
+      NIR_PASS(progress, nir, nir_lower_subgroups, &o);
+      if (!progress)
+         break;
+   }
+}
+
+/* 16-bit integers (16-bit storage's, and what NIR makes of 16-bit floats' bits) as 32-bit ones: WGSL has none. The
+ * printer keeps a 16-bit value in a u32's low half; conversions, moves and selects work on that as it is. */
+static unsigned
+lower_bit_size_cb(const nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_alu)
+      return 0;
+   const nir_alu_instr *alu = nir_instr_as_alu(instr);
+   const nir_op_info *info = &nir_op_infos[alu->op];
+   if (info->is_conversion || alu->op == nir_op_mov || alu->op == nir_op_bcsel || alu->op == nir_op_vec2 ||
+       alu->op == nir_op_vec3 || alu->op == nir_op_vec4 || alu->op == nir_op_pack_32_2x16_split ||
+       alu->op == nir_op_unpack_32_2x16_split_x || alu->op == nir_op_unpack_32_2x16_split_y)
+      return 0;
+   const unsigned bits = alu->def.bit_size == 1 ? alu->src[0].src.ssa->bit_size : alu->def.bit_size;
+   const nir_alu_type type = alu->def.bit_size == 1 ? info->input_types[0] : info->output_type;
+   if (bits != 8 && bits != 16)
+      return 0;
+   return nir_alu_type_get_base_type(type) == nir_type_float ? 0 : 32;
+}
+
+/* 16-bit values (VK3 L5): conversions to 16-bit floats as integer code (WGSL's own may round either way, and without
+ * shader-f16 there is none), 16-bit integer arithmetic at 32 bits. */
+static void
+lower_16bit(nir_shader *nir)
+{
+   NIR_PASS(_, nir, nir_lower_fp16_casts, nir_lower_fp16_all);
+   NIR_PASS(_, nir, nir_lower_bit_size, lower_bit_size_cb, NULL);
+}
+
 static void
 optimize(nir_shader *nir)
 {
@@ -545,7 +647,7 @@ optimize_cb(nir_shader *nir, void *data)
 }
 
 bool
-wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_t error_size)
+wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_size, char *error, size_t error_size)
 {
    struct lower_state s = { .layout = layout, .error = error, .error_size = error_size };
    error[0] = 0;
@@ -591,6 +693,7 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_
    NIR_PASS(_, nir, nir_lower_compute_system_values, &csv2);
    NIR_PASS(_, nir, nir_lower_global_vars_to_local);
    NIR_PASS(_, nir, nir_lower_int64);
+   lower_subgroups(nir, subgroup_size);
    optimize(nir);
 
    /* Descriptors once their indices are constants (an array of textures indexed dynamically chosen from). */
@@ -602,6 +705,7 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_
    if (s.failed)
       return false;
    NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_uniform | nir_var_image, NULL);
+   lower_16bit(nir);
    optimize(nir);
    return true;
 }
@@ -619,6 +723,8 @@ void
 wgsl_finish(nir_shader *nir)
 {
    optimize(nir);
+   /* The optimizations may fold 16-bit integer operations back. */
+   lower_16bit(nir);
    NIR_PASS(_, nir, nir_opt_shrink_stores, false);
    NIR_PASS(_, nir, nir_lower_load_const_to_scalar);
    NIR_PASS(_, nir, nir_convert_from_ssa, true, false);

@@ -550,7 +550,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       for (uint32_t r = 0; r < infos[i].push_constant_range_count; r++)
          push = MAX2(push, infos[i].push_constant_ranges[r].offset + infos[i].push_constant_ranges[r].size);
       layout_of(&layout, infos[i].set_layouts, infos[i].set_layout_count, push);
-      if (!wgsl_lower(infos[i].nir, &layout, error, sizeof(error))) {
+      if (!wgsl_lower(infos[i].nir, &layout, wg_subgroup_size(), error, sizeof(error))) {
          ok = false;
          break;
       }
@@ -582,7 +582,9 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          char *text = wgsl_print(NULL, infos[i].nir, infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
                                  wg_max_immediates,
                                  ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
-                                    ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0),
+                                    ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
+                                    (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) |
+                                    ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
                                  &s->info, error,
                                  sizeof(error));
          if (!text) {

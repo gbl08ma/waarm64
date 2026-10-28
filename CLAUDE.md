@@ -57,7 +57,7 @@ scripts/ci-debian.sh           # Debian on the page (~3.5 min): also for the pag
 scripts/ci-machines.sh         # machines as the unit on Debian (~3.5 min): also for stored machines, their disks (stored, blank, ramdisk, overlays), their snapshots, the Machines page, track ends
 scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, alone): also when a change touches sound (docs/testing.md)
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
-scripts/ci-deqp-vk.sh          # dEQP-VK's pass list on the page (~4 min): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus), Vulkan track ends; needs images/deqp/build.sh vk
+scripts/ci-deqp-vk.sh          # dEQP-VK's pass list on the page (~8 min): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus), Vulkan track ends; needs images/deqp/build.sh vk
 scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
 scripts/ci-fp.sh               # the FP suite in the guest (~3 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm

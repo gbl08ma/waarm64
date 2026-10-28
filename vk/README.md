@@ -78,8 +78,30 @@ and a sampler array indexed apart get an `if` tree each (every texture with ever
 `helperInvocationEXT()` and `gl_HelperInvocation` read (true only after a demote: WGSL can't see the rasterizer's
 helpers); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
 `2d-array` view of their own), its size counted in cubes; an explicit LOD on a depth texture without a comparison picks
-the nearest level. What
-WGSL can't express fails the stage with a reason: 16-bit values, texel buffers, dynamically indexed buffers and
+the nearest level.
+
+**Subgroups** (VK3 L5): with WebGPU's `subgroups` and an adapter whose subgroups have one size (`wg_subgroup_size`:
+SwiftShader's 4, Apple's and NVIDIA's 32; WGSL can't choose one, so an adapter whose sizes vary keeps subgroups of one
+invocation), `wgsl_lower` lowers for that size (`nir_lower_subgroups`, ballots of 4 × 32 bits) and the printer uses
+WGSL's built-ins (`enable subgroups`, `diagnostic(off, subgroup_uniformity)`: every value being a var, the uniformity
+the program keeps can't be seen): ballots, votes, `subgroupBroadcastFirst`, a read of one invocation as
+`subgroupShuffle` (WGSL's `subgroupBroadcast` wants a constant lane), the shuffles, quad broadcasts by a constant and
+swaps, elect, and the reductions and add or mul scans WGSL has; NIR lowers the rest (masks, ballot queries, equality
+votes, clustered reductions, the other scans, quad votes). A bool goes through them as 0 or 1. WGSL has no subgroup
+ids: `gl_SubgroupID` is `local_invocation_index / subgroup_size` and `gl_NumSubgroups` from the workgroup's size
+(subgroups taken as runs of the index, as on SwiftShader and Metal). Subgroups are in compute and fragment shaders only
+(WGSL's), and a subgroup-scoped barrier does nothing. Without them, the basic operations of subgroups of one invocation.
+
+**16-bit values** (VK3 L5): kept in a u32's low half. 16-bit storage (buffers, uniform buffers, push constants; every
+adapter) loads and stores halves of words, a store to a buffer or shared memory as an `atomicAnd` and an `atomicOr` on
+its word (the array declared atomic: another invocation may store the other half); conversions to 16-bit floats are
+NIR's integer code (`nir_lower_fp16_casts`: WGSL's own may round either way), from them `unpack2x16float`; 16-bit
+integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arithmetic (`shaderFloat16`) needs
+`shader-f16`: each value is viewed as `bitcast<vec2<f16>>(t).x`. A function-scope array NIR moves to scratch is
+addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
+element's last word of an array past 32 bytes indexed dynamically went past the array). What
+WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
+16-bit inputs and outputs, texel buffers, dynamically indexed buffers and
 images, integer textures sampled with a sampler, image atomics, interpolation at an offset, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
@@ -90,11 +112,17 @@ writable storage in vertex shaders). A pipeline whose stage fails is still made,
 pipeline without waiting for its result, and a pipeline that failed would fail the guest's whole context.
 
 `tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
-`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 122 of 127
-translate (0.4 ms a stage at the median in Node, 25 ms GTK4's largest) and all 122 compile in Chromium; the five
-others are vkQuake's variants for a device with 16-bit floats (four; dumped through the Mac profile, which has them)
-and its screen effects' palettization (a texel buffer). It
-checks that Tint accepts the WGSL, not what it computes: that is the driver's tests' and dEQP-VK's.
+`SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 123 of 127
+translate (0.4 ms a stage at the median in Node, 25 ms GTK4's largest) and all 123 compile in Chromium; the four
+others are vkQuake's variants for a device with 16-bit floats (three, dumped through the Mac profile: translated for
+SwiftShader, without `shader-f16`, one stops at its 16-bit arithmetic, the others at an image atomic and a texture
+offset that isn't a constant) and its screen effects' palettization (a texel buffer). It checks that Tint accepts the
+WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's runs of translated compute shaders
+(`runCompute`: subgroup operations against each subgroup's members, 16-bit storage, scratch arrays).
+**Subgroups on Metal** (Chromium 153 on the M4): a ballot that is an `if`'s only subgroup operation is computed with
+every invocation (hoisted out of the `if`), which failed 89 of the Mac's 503 sampled subgroup cases; the GPU worker
+checks that case at Venus's start (web/venus-gpu.ts `subgroupsRight`) and, where it's wrong, the device has subgroups
+of one invocation (bench/vulkan/REPORT.md "VK3 L5").
 
 ## The parts
 
@@ -123,9 +151,11 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows of plan §4:
   image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
-  `shaderStorageImageExtendedFormats` from the features. Less what the translator can't do (16-bit and 64-bit types,
-  dynamically indexed buffers and images, inline uniform blocks, texel buffers, YCbCr conversions; subgroups of one
-  invocation with the basic operations only), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
+  `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
+  stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
+  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, dynamically indexed buffers and
+  images, inline uniform blocks, texel buffers, YCbCr conversions; subgroups of one invocation with the basic
+  operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of sampled images (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and

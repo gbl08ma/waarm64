@@ -56,6 +56,8 @@ enum wg_feature {
    WG_FEATURE_BGRA8_STORAGE = 1 << 13, /* bgra8unorm-storage */
    WG_FEATURE_TIER1_STORAGE = 1 << 14, /* storage for tier1's formats: the worker sets it with texture-formats-tier1 unless
                                         * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
+   WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
+   WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 
@@ -72,12 +74,17 @@ struct wg_limits {
       max_compute_workgroup_size_z, max_compute_workgroups_per_dimension, max_immediate_size,
       max_storage_buffers_in_fragment_stage, max_storage_textures_in_fragment_stage,
       /* Not a limit: the adapter's maker as a PCI vendor ID (web/venus-gpu.ts `VENDORS`; 0 for one it doesn't know). */
-      vendor_id;
+      vendor_id,
+      /* Not limits: the adapter's subgroup sizes (GPUAdapterInfo's; 0 without `subgroups`). */
+      subgroup_min_size, subgroup_max_size;
 };
 extern struct wg_limits wg_limits;
 
 /* What the device advertises, from the features and limits (wg_caps.c); wg_caps_init sets them (venus_init's). */
 int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
+/* The subgroups' size the translator targets: the adapter's where it has `subgroups` of one size (WGSL has no control of
+ * it), else 1 (subgroups of one invocation, the basic operations only). */
+uint32_t wg_subgroup_size(void);
 void wg_caps_extensions(struct vk_device_extension_table *e);
 void wg_caps_features(struct vk_features *f);
 void wg_caps_properties(struct vk_properties *p);

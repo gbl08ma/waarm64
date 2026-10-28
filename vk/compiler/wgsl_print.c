@@ -35,6 +35,9 @@ struct ctx {
    const struct wgsl_varyings *fs;
    bool tier2; /* texture-formats-tier2: read-write storage for more formats */
    bool dual_source; /* dual-source-blending */
+   bool subgroups;   /* subgroups (wgsl_lower's subgroups of the adapter's size); else of one invocation */
+   bool f16;         /* shader-f16 */
+   bool uses_subgroup_ops, uses_sg_inv, uses_sg_size;
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
@@ -175,6 +178,32 @@ to_storage(struct ctx *c, const char *e, unsigned base, unsigned n)
    if (base == WGSL_U32)
       return e;
    return fmt(c, "bitcast<%s>(%s)", vec_of(c, "u32", n), e);
+}
+
+/* A 16-bit value is kept in a u32's low half (the high half zero). Its view as `base`: the half as an f16 (shader-f16's
+ * arithmetic), or as a 32-bit integer, zero- or sign-extended. */
+static const char *
+view16(struct ctx *c, const char *raw, unsigned base)
+{
+   if (base == WGSL_F32) {
+      if (!c->f16)
+         failf(c, "16-bit float arithmetic without the device's shader-f16");
+      return fmt(c, "bitcast<vec2<f16>>(%s).x", raw);
+   }
+   if (base == WGSL_I32)
+      return fmt(c, "(bitcast<i32>(%s << 16u) >> 16u)", raw);
+   return raw;
+}
+
+/* And back: an expression of `base` (f16, or an integer whose low 16 bits are the value) to storage. */
+static const char *
+store16(struct ctx *c, const char *e, unsigned base)
+{
+   if (base == WGSL_F32)
+      return fmt(c, "bitcast<u32>(vec2<f16>(%s, 0.0h))", e);
+   if (base == WGSL_I32)
+      return fmt(c, "(bitcast<u32>(%s) & 0xffffu)", e);
+   return fmt(c, "(%s & 0xffffu)", e);
 }
 
 static const char *
@@ -372,6 +401,9 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
        * reader (a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's). */
       if (writes)
          r->r.kind = WGSL_STORAGE;
+      /* A 16-bit store is two atomics on its word (emit_half_access). */
+      if (intr->intrinsic == nir_intrinsic_store_ssbo && intr->src[0].ssa->bit_size == 16)
+         r->r.atomic = true;
       if (intr->intrinsic == nir_intrinsic_ssbo_atomic || intr->intrinsic == nir_intrinsic_ssbo_atomic_swap) {
          r->r.atomic = true;
          atomic_sign(c, nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
@@ -382,6 +414,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_shared_atomic_swap:
       c->shm_atomic = true;
       atomic_sign(c, nir_intrinsic_atomic_op(intr), &c->shm_signed, &c->shm_unsigned);
+      break;
+   case nir_intrinsic_store_shared:
+      if (intr->src[0].ssa->bit_size == 16)
+         c->shm_atomic = true;
       break;
    case nir_intrinsic_image_load:
    case nir_intrinsic_image_store:
@@ -499,6 +535,43 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_helper_invocation:
       c->uses_helper = true;
       break;
+   case nir_intrinsic_load_subgroup_invocation:
+   case nir_intrinsic_load_subgroup_size:
+   case nir_intrinsic_load_subgroup_id:
+   case nir_intrinsic_load_num_subgroups:
+   case nir_intrinsic_ballot:
+   case nir_intrinsic_vote_any:
+   case nir_intrinsic_vote_all:
+   case nir_intrinsic_read_invocation:
+   case nir_intrinsic_read_first_invocation:
+   case nir_intrinsic_first_invocation:
+   case nir_intrinsic_shuffle:
+   case nir_intrinsic_shuffle_xor:
+   case nir_intrinsic_shuffle_up:
+   case nir_intrinsic_shuffle_down:
+   case nir_intrinsic_quad_broadcast:
+   case nir_intrinsic_quad_swap_horizontal:
+   case nir_intrinsic_quad_swap_vertical:
+   case nir_intrinsic_quad_swap_diagonal:
+   case nir_intrinsic_elect:
+   case nir_intrinsic_reduce:
+   case nir_intrinsic_inclusive_scan:
+   case nir_intrinsic_exclusive_scan:
+      if (!c->subgroups)
+         break;
+      /* WGSL has subgroups in compute and fragment shaders only (what the device advertises). */
+      if (nir->info.stage != MESA_SHADER_COMPUTE && nir->info.stage != MESA_SHADER_FRAGMENT)
+         failf(c, "subgroup operations in a %s shader", mesa_shader_stage_name(nir->info.stage));
+      if (intr->intrinsic == nir_intrinsic_load_subgroup_invocation)
+         c->uses_sg_inv = true;
+      else if (intr->intrinsic == nir_intrinsic_load_subgroup_size || intr->intrinsic == nir_intrinsic_load_subgroup_id ||
+               intr->intrinsic == nir_intrinsic_load_num_subgroups)
+         c->uses_sg_size = true;
+      else
+         c->uses_subgroup_ops = true;
+      if (intr->intrinsic == nir_intrinsic_first_invocation)
+         c->uses_sg_inv = true;
+      break;
    case nir_intrinsic_load_push_constant: {
       const unsigned end = nir_intrinsic_base(intr) + nir_intrinsic_range(intr);
       c->info->immediate_size = MAX2(c->info->immediate_size, align(end, 16));
@@ -554,7 +627,7 @@ gather(struct ctx *c, nir_function_impl *impl)
             gather_tex(c, nir_instr_as_tex(instr));
          else if (instr->type == nir_instr_type_alu) {
             nir_alu_instr *alu = nir_instr_as_alu(instr);
-            if (alu->def.bit_size != 1 && alu->def.bit_size != 32)
+            if (alu->def.bit_size != 1 && alu->def.bit_size != 16 && alu->def.bit_size != 32)
                failf(c, "%u-bit values (%s)", alu->def.bit_size, nir_op_infos[alu->op].name);
          }
       }
@@ -723,6 +796,8 @@ literal(struct ctx *c, nir_load_const_instr *lc, unsigned comp)
 {
    if (lc->def.bit_size == 1)
       return lc->value[comp].b ? "true" : "false";
+   if (lc->def.bit_size == 16)
+      return fmt(c, "0x%xu", lc->value[comp].u16);
    return fmt(c, "0x%xu", lc->value[comp].u32);
 }
 
@@ -753,7 +828,7 @@ predeclare_def(nir_def *def, void *data)
    struct ctx *c = data;
    if (!def_needs_var(nir_def_instr(def)))
       return true;
-   if (def->bit_size != 1 && def->bit_size != 32) {
+   if (def->bit_size != 1 && def->bit_size != 16 && def->bit_size != 32) {
       failf(c, "%u-bit values", def->bit_size);
       return true;
    }
@@ -788,6 +863,8 @@ alu_in(struct ctx *c, nir_alu_instr *alu, unsigned i, unsigned comp)
    const char *raw = src_comp(c, (nir_src *)&s->src, s->swizzle[comp]);
    if (s->src.ssa->bit_size == 1)
       return raw;
+   if (s->src.ssa->bit_size == 16)
+      return view16(c, raw, base_of(nir_op_infos[alu->op].input_types[i]));
    return as_base(c, raw, base_of(nir_op_infos[alu->op].input_types[i]), 1);
 }
 
@@ -796,6 +873,21 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
 {
    const nir_op op = alu->op;
    const unsigned n_in = nir_op_infos[op].num_inputs;
+   /* On 16-bit values' bits, without shader-f16's types. */
+   if (n_in > 0 && alu->src[0].src.ssa->bit_size == 16) {
+      const char *raw = src_comp(c, &alu->src[0].src, alu->src[0].swizzle[comp]);
+      switch (op) {
+      case nir_op_f2f32: return fmt(c, "bitcast<u32>(unpack2x16float(%s).x)", raw);
+      case nir_op_fisfinite: return fmt(c, "((%s & 0x7c00u) != 0x7c00u)", raw);
+      case nir_op_pack_32_2x16_split:
+         return fmt(c, "(%s | (%s << 16u))", raw, src_comp(c, &alu->src[1].src, alu->src[1].swizzle[comp]));
+      default: break;
+      }
+   }
+   if (op == nir_op_unpack_32_2x16_split_x || op == nir_op_unpack_32_2x16_split_y) {
+      const char *raw = src_comp(c, &alu->src[0].src, alu->src[0].swizzle[comp]);
+      return op == nir_op_unpack_32_2x16_split_x ? fmt(c, "(%s & 0xffffu)", raw) : fmt(c, "(%s >> 16u)", raw);
+   }
    const char *a = n_in > 0 ? alu_in(c, alu, 0, comp) : NULL;
    const char *b = n_in > 1 ? alu_in(c, alu, 1, comp) : NULL;
    const char *d = n_in > 2 ? alu_in(c, alu, 2, comp) : NULL;
@@ -857,12 +949,17 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
    case nir_op_fisfinite:
       e = fmt(c, "((bitcast<u32>(%s) & 0x7f800000u) != 0x7f800000u)", a);
       break;
-   case nir_op_f2i32: e = fmt(c, "i32(%s)", a); break;
-   case nir_op_f2u32: e = fmt(c, "u32(%s)", a); break;
+   case nir_op_f2i32: case nir_op_f2i16: e = fmt(c, "i32(%s)", a); break;
+   case nir_op_f2u32: case nir_op_f2u16: e = fmt(c, "u32(%s)", a); break;
    case nir_op_i2f32: case nir_op_u2f32: e = fmt(c, "f32(%s)", a); break;
-   case nir_op_f2f32: case nir_op_i2i32: case nir_op_u2u32: return a;
+   case nir_op_i2f16: case nir_op_u2f16: e = fmt(c, "f16(%s)", a); break;
+   case nir_op_f2f16: case nir_op_f2f16_rtne: e = fmt(c, "f16(%s)", a); break;
+   case nir_op_f2f32: return a;
+   /* 16 bits to 32 (the view extends them) and back (store16 keeps the low half). */
+   case nir_op_i2i32: case nir_op_u2u32: case nir_op_i2i16: case nir_op_u2u16: e = a; break;
    case nir_op_b2f32: return fmt(c, "select(0u, 0x3f800000u, %s)", a);
-   case nir_op_b2i32: return fmt(c, "select(0u, 1u, %s)", a);
+   case nir_op_b2f16: return fmt(c, "select(0u, 0x3c00u, %s)", a);
+   case nir_op_b2i32: case nir_op_b2i16: return fmt(c, "select(0u, 1u, %s)", a);
    case nir_op_b2b32: return fmt(c, "select(0u, 0xffffffffu, %s)", a);
    case nir_op_b2b1:
       return alu->src[0].src.ssa->bit_size == 1 ? a : fmt(c, "(%s != 0u)", a);
@@ -921,6 +1018,8 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
    /* Comparisons give bools; the rest their output type, stored as u32 (a bitcast of a u32 to u32 is allowed). */
    if (boolean)
       return e;
+   if (alu->def.bit_size == 16)
+      return store16(c, e, out);
    return to_storage(c, e, out, 1);
 }
 
@@ -987,11 +1086,61 @@ atomic_fn(struct ctx *c, nir_atomic_op op)
    }
 }
 
-/* Loads, stores and atomics on an array of words (`arr`, a WGSL array of u32, atomic<u32> or atomic<i32>). */
+/* 16-bit loads and stores (16-bit storage) on an array of words, at byte offset `byte`: a half of a word each. A store
+ * to memory other invocations see is an atomicAnd of its half and an atomicOr (the gather made the array atomic), so
+ * that a store to the word's other half by another invocation isn't lost. */
+static void
+emit_half_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool atomic, bool signed_atomic,
+                 const char *byte)
+{
+   const char *conv_in = signed_atomic ? "bitcast<i32>" : "";
+   const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
+   const bool load = intr->intrinsic == nir_intrinsic_load_ssbo || intr->intrinsic == nir_intrinsic_load_shared ||
+                     intr->intrinsic == nir_intrinsic_load_scratch;
+   if (load) {
+      const char *words[4];
+      for (unsigned i = 0; i < intr->def.num_components; i++) {
+         const char *b = fmt(c, "(%s + %uu)", byte, 2 * i);
+         const char *w = fmt(c, "%s[%s >> 2u]", arr, b);
+         if (atomic)
+            w = fmt(c, "%s(atomicLoad(&%s))", conv_out, w);
+         words[i] = fmt(c, "((%s >> ((%s & 2u) * 8u)) & 0xffffu)", w, b);
+      }
+      assign_words(c, &intr->def, words);
+      return;
+   }
+   if (intr->intrinsic != nir_intrinsic_store_ssbo && intr->intrinsic != nir_intrinsic_store_shared &&
+       intr->intrinsic != nir_intrinsic_store_scratch) {
+      failf(c, "16-bit atomics");
+      return;
+   }
+   nir_src *value = &intr->src[0];
+   u_foreach_bit(i, nir_intrinsic_write_mask(intr)) {
+      const char *b = fmt(c, "(%s + %uu)", byte, 2 * i);
+      const char *w = fmt(c, "%s[%s >> 2u]", arr, b);
+      const char *sh = fmt(c, "((%s & 2u) * 8u)", b);
+      const char *v = fmt(c, "((%s & 0xffffu) << %s)", src_comp(c, value, i), sh);
+      if (atomic) {
+         line(c, "atomicAnd(&%s, %s(~(0xffffu << %s)));", w, conv_in, sh);
+         line(c, "atomicOr(&%s, %s(%s));", w, conv_in, v);
+      } else {
+         line(c, "%s = (%s & ~(0xffffu << %s)) | %s;", w, w, sh, v);
+      }
+   }
+}
+
+/* Loads, stores and atomics on an array of words (`arr`, a WGSL array of u32, atomic<u32> or atomic<i32>), at word
+ * `word` (byte offset `byte`). */
 static void
 emit_word_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool atomic, bool signed_atomic,
-                 const char *word)
+                 const char *byte)
 {
+   const unsigned bits = nir_intrinsic_infos[intr->intrinsic].has_dest ? intr->def.bit_size : intr->src[0].ssa->bit_size;
+   if (bits == 16) {
+      emit_half_access(c, intr, arr, atomic, signed_atomic, byte);
+      return;
+   }
+   const char *word = fmt(c, "(%s >> 2u)", byte);
    const char *conv_in = signed_atomic ? "bitcast<i32>" : "";
    const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
    switch (intr->intrinsic) {
@@ -1153,6 +1302,174 @@ emit_input(struct ctx *c, nir_intrinsic_instr *intr)
    line(c, "t%u = %s;", intr->def.index, to_storage(c, e, base, n));
 }
 
+/* Subgroup operations (wgsl_nir.c `lower_subgroups` leaves these, on scalars): WGSL's own. A value goes as its storage
+ * (u32 bits, exact through shuffles and broadcasts; a bool as 0 or 1, WGSL's subgroup built-ins taking no bools), a
+ * reduction or scan as its operation's type. Without WGSL's subgroups, subgroups of one invocation. */
+static const char *
+subgroup_value(struct ctx *c, nir_src *src, unsigned base)
+{
+   if (src->ssa->bit_size == 1)
+      return fmt(c, "select(0u, 1u, %s)", src_comp(c, src, 0));
+   if (src->ssa->bit_size == 16)
+      return view16(c, src_comp(c, src, 0), base);
+   return as_base(c, src_comp(c, src, 0), base, 1);
+}
+
+static unsigned
+workgroup_invocations(struct ctx *c)
+{
+   if (c->nir->info.stage != MESA_SHADER_COMPUTE) {
+      failf(c, "subgroup ids in a %s shader", mesa_shader_stage_name(c->nir->info.stage));
+      return 1;
+   }
+   return c->nir->info.workgroup_size[0] * c->nir->info.workgroup_size[1] * c->nir->info.workgroup_size[2];
+}
+
+static void
+emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
+{
+   nir_def *def = &intr->def;
+   const bool boolean = def->bit_size == 1;
+   if (!c->subgroups) {
+      /* Of one invocation (wgsl_nir.c lowers what else the basic operations bring). */
+      switch (intr->intrinsic) {
+      case nir_intrinsic_load_subgroup_invocation:
+      case nir_intrinsic_first_invocation:
+         line(c, "t%u = 0u;", def->index);
+         return;
+      case nir_intrinsic_load_subgroup_size:
+         line(c, "t%u = 1u;", def->index);
+         return;
+      case nir_intrinsic_load_subgroup_id:
+         line(c, "t%u = lidx;", def->index);
+         return;
+      case nir_intrinsic_load_num_subgroups:
+         line(c, "t%u = %uu;", def->index, workgroup_invocations(c));
+         return;
+      case nir_intrinsic_elect:
+         line(c, "t%u = true;", def->index);
+         return;
+      case nir_intrinsic_ballot:
+         line(c, "t%u = select(0u, 1u, %s);", def->index, src_comp(c, &intr->src[0], 0));
+         return;
+      default:
+         failf(c, "the subgroup operation %s without the device's subgroups", nir_intrinsic_infos[intr->intrinsic].name);
+         return;
+      }
+   }
+   unsigned base = WGSL_U32;
+   const char *fn = NULL, *e = NULL;
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_subgroup_invocation:
+      line(c, "t%u = sg_inv;", def->index);
+      return;
+   case nir_intrinsic_load_subgroup_size:
+      line(c, "t%u = sg_size;", def->index);
+      return;
+   /* WGSL has no subgroup ids: subgroups are taken to be runs of local_invocation_index (as on SwiftShader and Metal). */
+   case nir_intrinsic_load_subgroup_id:
+      line(c, "t%u = lidx / sg_size;", def->index);
+      return;
+   case nir_intrinsic_load_num_subgroups:
+      line(c, "t%u = (%uu + sg_size - 1u) / sg_size;", def->index, workgroup_invocations(c));
+      return;
+   case nir_intrinsic_ballot:
+      if (def->num_components != 4)
+         failf(c, "a ballot of %u components", def->num_components);
+      line(c, "t%u = subgroupBallot(%s);", def->index, src_comp(c, &intr->src[0], 0));
+      return;
+   case nir_intrinsic_vote_any:
+      line(c, "t%u = subgroupAny(%s);", def->index, src_comp(c, &intr->src[0], 0));
+      return;
+   case nir_intrinsic_vote_all:
+      line(c, "t%u = subgroupAll(%s);", def->index, src_comp(c, &intr->src[0], 0));
+      return;
+   case nir_intrinsic_elect:
+      line(c, "t%u = subgroupElect();", def->index);
+      return;
+   case nir_intrinsic_first_invocation:
+      line(c, "t%u = subgroupBroadcastFirst(sg_inv);", def->index);
+      return;
+   case nir_intrinsic_read_first_invocation:
+      e = fmt(c, "subgroupBroadcastFirst(%s)", subgroup_value(c, &intr->src[0], base));
+      break;
+   case nir_intrinsic_read_invocation: fn = "subgroupShuffle"; break;
+   case nir_intrinsic_shuffle: fn = "subgroupShuffle"; break;
+   case nir_intrinsic_shuffle_xor: fn = "subgroupShuffleXor"; break;
+   case nir_intrinsic_shuffle_up: fn = "subgroupShuffleUp"; break;
+   case nir_intrinsic_shuffle_down: fn = "subgroupShuffleDown"; break;
+   case nir_intrinsic_quad_broadcast:
+      /* WGSL's id is a const-expression (a dynamic one is lowered to shuffles). */
+      e = fmt(c, "quadBroadcast(%s, %uu)", subgroup_value(c, &intr->src[0], base), const_index(c, &intr->src[1]));
+      break;
+   case nir_intrinsic_quad_swap_horizontal:
+      e = fmt(c, "quadSwapX(%s)", subgroup_value(c, &intr->src[0], base));
+      break;
+   case nir_intrinsic_quad_swap_vertical:
+      e = fmt(c, "quadSwapY(%s)", subgroup_value(c, &intr->src[0], base));
+      break;
+   case nir_intrinsic_quad_swap_diagonal:
+      e = fmt(c, "quadSwapDiagonal(%s)", subgroup_value(c, &intr->src[0], base));
+      break;
+   case nir_intrinsic_reduce:
+   case nir_intrinsic_inclusive_scan:
+   case nir_intrinsic_exclusive_scan: {
+      const nir_op op = nir_intrinsic_reduction_op(intr);
+      const char *name;
+      switch (op) {
+      case nir_op_iadd: name = "Add"; break;
+      case nir_op_fadd: name = "Add"; base = WGSL_F32; break;
+      case nir_op_imul: name = "Mul"; break;
+      case nir_op_fmul: name = "Mul"; base = WGSL_F32; break;
+      case nir_op_imin: name = "Min"; base = WGSL_I32; break;
+      case nir_op_umin: name = "Min"; break;
+      case nir_op_fmin: name = "Min"; base = WGSL_F32; break;
+      case nir_op_imax: name = "Max"; base = WGSL_I32; break;
+      case nir_op_umax: name = "Max"; break;
+      case nir_op_fmax: name = "Max"; base = WGSL_F32; break;
+      case nir_op_iand: name = "And"; break;
+      case nir_op_ior: name = "Or"; break;
+      case nir_op_ixor: name = "Xor"; break;
+      default:
+         failf(c, "the subgroup reduction %s", nir_op_infos[op].name);
+         return;
+      }
+      const char *kind = intr->intrinsic == nir_intrinsic_inclusive_scan   ? "Inclusive"
+                         : intr->intrinsic == nir_intrinsic_exclusive_scan ? "Exclusive"
+                                                                           : "";
+      e = fmt(c, "subgroup%s%s(%s)", kind, name, subgroup_value(c, &intr->src[0], base));
+      break;
+   }
+   default:
+      failf(c, "the intrinsic %s", nir_intrinsic_infos[intr->intrinsic].name);
+      return;
+   }
+   if (fn)
+      e = fmt(c, "%s(%s, %s)", fn, subgroup_value(c, &intr->src[0], base), src_comp(c, &intr->src[1], 0));
+   if (def->num_components != 1)
+      failf(c, "a subgroup operation on vectors");
+   line(c, "t%u = %s;", def->index, boolean ? fmt(c, "(%s != 0u)", e) : def->bit_size == 16 ? store16(c, e, base)
+                                                                                         : to_storage(c, e, base, 1));
+}
+
+/* A load from an array of vec4<u32> (a uniform buffer, the push constants) at byte offset `byte`: words, or halves of
+ * them (16-bit storage). */
+static void
+emit_vec4_load(struct ctx *c, nir_def *def, const char *arr, const char *byte)
+{
+   const char *words[4];
+   for (unsigned i = 0; i < def->num_components; i++) {
+      if (def->bit_size == 16) {
+         const char *b = fmt(c, "(%s + %uu)", byte, 2 * i);
+         words[i] = fmt(c, "((%s[%s >> 4u][(%s >> 2u) & 3u] >> ((%s & 2u) * 8u)) & 0xffffu)", arr, b, b, b);
+      } else {
+         const char *w = fmt(c, "(%s >> 2u)", byte);
+         words[i] = fmt(c, "%s[(%s + %uu) >> 2u][(%s + %uu) & 3u]", arr, w, i, w, i);
+      }
+   }
+   assign_words(c, def, words);
+}
+
 static void
 emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
 {
@@ -1243,11 +1560,7 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    }
    case nir_intrinsic_load_ubo: {
       const char *arr = res_name(c, const_index(c, &intr->src[0]));
-      const char *w = fmt(c, "(%s >> 2u)", src_comp(c, &intr->src[1], 0));
-      const char *words[4];
-      for (unsigned i = 0; i < def->num_components; i++)
-         words[i] = fmt(c, "%s[(%s + %uu) >> 2u][(%s + %uu) & 3u]", arr, w, i, w, i);
-      assign_words(c, def, words);
+      emit_vec4_load(c, def, arr, src_comp(c, &intr->src[1], 0));
       return;
    }
    case nir_intrinsic_load_ssbo:
@@ -1255,13 +1568,13 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_ssbo_atomic_swap: {
       struct res_use *r = find_res(c, const_index(c, &intr->src[0]));
       emit_word_access(c, intr, res_name(c, const_index(c, &intr->src[0])), r->r.atomic, r->signed_atomic,
-                       fmt(c, "(%s >> 2u)", src_comp(c, &intr->src[1], 0)));
+                       src_comp(c, &intr->src[1], 0));
       return;
    }
    case nir_intrinsic_store_ssbo: {
       struct res_use *r = find_res(c, const_index(c, &intr->src[1]));
       emit_word_access(c, intr, res_name(c, const_index(c, &intr->src[1])), r->r.atomic, r->signed_atomic,
-                       fmt(c, "(%s >> 2u)", src_comp(c, &intr->src[2], 0)));
+                       src_comp(c, &intr->src[2], 0));
       return;
    }
    case nir_intrinsic_get_ssbo_size:
@@ -1271,28 +1584,22 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_shared_atomic:
    case nir_intrinsic_shared_atomic_swap:
       emit_word_access(c, intr, "shm", c->shm_atomic, c->shm_signed,
-                       fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)));
+                       fmt(c, "(%s + %uu)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)));
       return;
    case nir_intrinsic_store_shared:
       emit_word_access(c, intr, "shm", c->shm_atomic, c->shm_signed,
-                       fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[1], 0), nir_intrinsic_base(intr)));
+                       fmt(c, "(%s + %uu)", src_comp(c, &intr->src[1], 0), nir_intrinsic_base(intr)));
       return;
+   /* Scratch has no base (NIR's load_scratch and store_scratch: their offset is the whole address). */
    case nir_intrinsic_load_scratch:
-      emit_word_access(c, intr, "scratch", false, false,
-                       fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)));
+      emit_word_access(c, intr, "scratch", false, false, src_comp(c, &intr->src[0], 0));
       return;
    case nir_intrinsic_store_scratch:
-      emit_word_access(c, intr, "scratch", false, false,
-                       fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[1], 0), nir_intrinsic_base(intr)));
+      emit_word_access(c, intr, "scratch", false, false, src_comp(c, &intr->src[1], 0));
       return;
-   case nir_intrinsic_load_push_constant: {
-      const char *w = fmt(c, "((%s + %uu) >> 2u)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr));
-      const char *words[4];
-      for (unsigned i = 0; i < def->num_components; i++)
-         words[i] = fmt(c, "pc[(%s + %uu) >> 2u][(%s + %uu) & 3u]", w, i, w, i);
-      assign_words(c, def, words);
+   case nir_intrinsic_load_push_constant:
+      emit_vec4_load(c, def, "pc", fmt(c, "(%s + %uu)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)));
       return;
-   }
    case nir_intrinsic_barrier: {
       const mesa_scope exec = nir_intrinsic_execution_scope(intr);
       const nir_variable_mode modes = nir_intrinsic_memory_modes(intr);
@@ -1318,6 +1625,30 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       return;
    case nir_intrinsic_terminate_if:
       line(c, "if (%s) { discard; %s }", src_comp(c, &intr->src[0], 0), fs_return(c));
+      return;
+   case nir_intrinsic_load_subgroup_invocation:
+   case nir_intrinsic_load_subgroup_size:
+   case nir_intrinsic_load_subgroup_id:
+   case nir_intrinsic_load_num_subgroups:
+   case nir_intrinsic_ballot:
+   case nir_intrinsic_vote_any:
+   case nir_intrinsic_vote_all:
+   case nir_intrinsic_read_invocation:
+   case nir_intrinsic_read_first_invocation:
+   case nir_intrinsic_first_invocation:
+   case nir_intrinsic_shuffle:
+   case nir_intrinsic_shuffle_xor:
+   case nir_intrinsic_shuffle_up:
+   case nir_intrinsic_shuffle_down:
+   case nir_intrinsic_quad_broadcast:
+   case nir_intrinsic_quad_swap_horizontal:
+   case nir_intrinsic_quad_swap_vertical:
+   case nir_intrinsic_quad_swap_diagonal:
+   case nir_intrinsic_elect:
+   case nir_intrinsic_reduce:
+   case nir_intrinsic_inclusive_scan:
+   case nir_intrinsic_exclusive_scan:
+      emit_subgroup(c, intr);
       return;
    case nir_intrinsic_image_load: {
       const unsigned index = const_index(c, &intr->src[0]);
@@ -1705,6 +2036,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
       .fs = nir->info.stage == MESA_SHADER_VERTEX ? fs : NULL,
       .tier2 = features & WGSL_TIER2,
       .dual_source = features & WGSL_DUAL_SOURCE,
+      .subgroups = features & WGSL_SUBGROUPS,
+      .f16 = features & WGSL_F16,
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
@@ -1719,6 +2052,15 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
 
    const mesa_shader_stage stage = nir->info.stage;
    line(&c, "diagnostic(off, derivative_uniformity);");
+   const bool subgroups = c.uses_subgroup_ops || c.uses_sg_inv || c.uses_sg_size;
+   /* Every value being a var, WGSL's uniformity analysis can't see Vulkan's (a subgroup operation's control flow and
+    * its uniform operands are the program's to keep). */
+   if (c.f16)
+      line(&c, "enable f16;");
+   if (subgroups)
+      line(&c, "enable subgroups;");
+   if (c.uses_subgroup_ops)
+      line(&c, "diagnostic(off, subgroup_uniformity);");
    if (info->clip_distances)
       line(&c, "enable clip_distances;");
    if (info->dual_source)
@@ -1756,6 +2098,10 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
          params = fmt(&c, "%s%s@builtin(sample_index) sid: u32", params, *params ? ", " : "");
       if (c.uses_sample_mask_in)
          params = fmt(&c, "%s%s@builtin(sample_mask) smask: u32", params, *params ? ", " : "");
+      if (c.uses_sg_inv)
+         params = fmt(&c, "%s%s@builtin(subgroup_invocation_id) sg_inv: u32", params, *params ? ", " : "");
+      if (c.uses_sg_size)
+         params = fmt(&c, "%s%s@builtin(subgroup_size) sg_size: u32", params, *params ? ", " : "");
       line(&c, "%s@fragment fn main(%s)%s {", nir->info.fs.early_fragment_tests ? "" : "", params,
            has_out ? " -> Out" : "");
    } else if (stage == MESA_SHADER_COMPUTE) {
@@ -1763,8 +2109,10 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint3
          info->workgroup[i] = nir->info.workgroup_size[i];
       line(&c, "@compute @workgroup_size(%u, %u, %u) fn main(@builtin(local_invocation_id) lid: vec3<u32>, "
                "@builtin(global_invocation_id) gid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>, "
-               "@builtin(num_workgroups) nwg: vec3<u32>, @builtin(local_invocation_index) lidx: u32) {",
-           info->workgroup[0], info->workgroup[1], info->workgroup[2]);
+               "@builtin(num_workgroups) nwg: vec3<u32>, @builtin(local_invocation_index) lidx: u32%s%s) {",
+           info->workgroup[0], info->workgroup[1], info->workgroup[2],
+           c.uses_sg_inv ? ", @builtin(subgroup_invocation_id) sg_inv: u32" : "",
+           c.uses_sg_size ? ", @builtin(subgroup_size) sg_size: u32" : "");
    } else {
       failf(&c, "the %s stage", mesa_shader_stage_name(stage));
    }

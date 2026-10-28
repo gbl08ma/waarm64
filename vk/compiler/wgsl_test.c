@@ -62,10 +62,22 @@ layout_of(nir_shader *nir, struct wgsl_layout *layout)
    }
 }
 
+/* The test's device (tests/wgsl.test.ts): dual-source-blending (its device has it where the adapter does), no
+ * texture-formats-tier2, subgroups of one; wgsl_test_device changes it. */
+static unsigned test_features = WGSL_DUAL_SOURCE, test_subgroup_size = 1;
+
 EXPORT void
 wgsl_test_init(void)
 {
    glsl_type_singleton_init_or_ref();
+}
+
+/* The WGSL_* features the next translations print for, and the subgroups' size they lower for. */
+EXPORT void
+wgsl_test_device(unsigned features, unsigned subgroup_size)
+{
+   test_features = features;
+   test_subgroup_size = subgroup_size;
 }
 
 /* Translates a stage (0 vertex, 4 fragment, 5 compute: mesa_shader_stage): 0, or the phase that failed (1
@@ -87,14 +99,12 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
    wgsl_preprocess(nir);
    struct wgsl_layout layout;
    layout_of(nir, &layout);
-   if (!wgsl_lower(nir, &layout, error, sizeof(error))) {
+   if (!wgsl_lower(nir, &layout, test_subgroup_size, error, sizeof(error))) {
       result = ralloc_strdup(NULL, error);
       ralloc_free(nir);
       return 2;
    }
-   /* As the test's device (tests/wgsl.test.ts): no texture-formats-tier2, dual-source-blending (its device has it where
-    * the adapter does). */
-   char *text = wgsl_print(NULL, nir, NULL, 64, WGSL_DUAL_SOURCE, &info, error, sizeof(error));
+   char *text = wgsl_print(NULL, nir, NULL, 64, test_features, &info, error, sizeof(error));
    ralloc_free(nir);
    if (!text) {
       result = ralloc_strdup(NULL, error);
@@ -124,6 +134,11 @@ main(int argc, char **argv)
    if (argc < 3)
       return 2;
    wgsl_test_init();
+   /* WGSL_DEVICE=<features>,<subgroup size>: wgsl_test_device's. */
+   const char *device = getenv("WGSL_DEVICE");
+   unsigned features, size;
+   if (device && sscanf(device, "%u,%u", &features, &size) == 2)
+      wgsl_test_device(features, size);
    FILE *f = fopen(argv[2], "rb");
    if (!f)
       return 2;

@@ -1403,6 +1403,36 @@ the fence's shapes within 0.02 ms (a lone pass done 2.24 ms, nudged 1.18, queued
 rounds): 1 fish Venus 2.47, 2.59 against virgl 1.54, 1.50 (parked by the user); 1,000 fish 5.71, 5.70 against 8.85,
 8.68; toolkit 3.19, 3.05 against 6.81, 7.43.
 
+## VK3 L5: the translator's adapter features — WGSL's subgroups, 16-bit storage, f16, tier2's read-write formats
+
+**2026-10-28.** JSON in `results/vk3/l5/`. dEQP-VK on the dev VM's SwiftShader (Chromium 153.0.8010.52) and on the M4
+(Metal, Chrome for Testing 153.0.8010.12) through `bench/gpu/sway-mac.sh` (`VIRGL_GPU=virgl,vulkan`: without it the
+script's default machine has no Vulkan and deqp-vk exits at once with no statuses).
+
+- **Subgroups** (`swiftshader-subgroups.json`): every 32-bit compute and graphics case of `dEQP-VK.subgroups`
+  (3,248; vertex-only, mesh, ray tracing and 8-, 16- and 64-bit types left out): **1,865 pass, 0 fail**, 1,383 not
+  supported (required sizes other than SwiftShader's 4, other stages, extensions not offered). The first run's 26
+  failures were `gl_SubgroupID`/`gl_NumSubgroups` (not translated: now from `local_invocation_index`) and three vec4
+  broadcasts that found a **scratch bug older than L5**: the printer added `nir_intrinsic_base` to scratch offsets,
+  which scratch intrinsics don't have (it read their alignment, 4): an array past 32 bytes indexed dynamically lost
+  its last word. Before L5, subgroups were of one invocation with the basic operations; a stage using more failed.
+- **On the M4, subgroups are wrong in divergent control flow** (`mac-before-check.json`): 89 of 503 sampled
+  subgroup cases failed (arithmetic in compute and graphics, f16 shuffles in graphics). Narrowed with translated
+  kernels run on the Mac's WebGPU: a ballot that is an `if`'s only subgroup operation returns every invocation's bits
+  (0xffffffff where 0xaaaaaaaa is right), while the same `if` with an add beside it is right. The GPU worker now runs
+  that kernel at Venus's start (`subgroupsRight`) and holds `subgroups` where it fails: on the M4 the device has
+  subgroups of one invocation again (`mac.json`: the subgroup cases not supported); SwiftShader passes it.
+- **16-bit storage** (`swiftshader-16bit-storage.json`, every adapter): every third `spirv_assembly.*.16bit_storage`
+  case without 64-bit or I/O types, **205 of 205 that ran pass** (148 not supported: other stages).
+- **16-bit floats** (`mac.json`, the M4's `shader-f16`): of 391 sampled `spirv_assembly.*.float16` cases, 226 pass,
+  7 fail (6 on 16-bit infinities and NaNs, which come back 0: WGSL lets a backend assume none; one graphics vector
+  shuffle whose WGSL nests ifs past Tint's limit of 127), 158 not supported.
+- **tier2's read-write formats** (`mac.json`): 27 of 54 `image.load_store.with_format.2d.*` cases of tier1's and
+  tier2's formats pass, 27 not supported; `tests/wgsl.test.ts` checks tier2's formats print `read_write` and the
+  others are still refused, and Tint on the Mac compiles them.
+- **The pass list** (`tests/deqp/vk.txt`): 2,333 → 3,261 (723 subgroup cases, the large groups thinned to every
+  third, and the 205 16-bit-storage ones; the Mac-only cases stay out: CI's adapter is SwiftShader).
+
 ## Tools
 
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the

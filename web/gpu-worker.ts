@@ -6,7 +6,7 @@
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withVideo } from './virgl-caps.ts';
 import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type VenusCall, type WorkerCall } from './virgl-host.ts';
-import { deviceRequest, type VenusGpuStats } from './venus-gpu.ts';
+import { deviceRequest, subgroupsRight, type VenusGpuStats } from './venus-gpu.ts';
 import { VenusRenderer, type VenusPoll, type VenusTimes } from './venus-host.ts';
 import { idbBackend, ShaderCache } from './venus-cache.ts';
 import { VenusImport } from './venus-import.ts';
@@ -145,7 +145,11 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         // What the device advertises follows the device's features and limits and the adapter's maker.
         // Its shaders of earlier runs (web/venus-cache.ts): IndexedDB, the origin's, for this build of the renderer.
         const cache = vkNoCache || typeof indexedDB === 'undefined' ? undefined : (id: string) => ShaderCache.open(id, { backend: idbBackend() });
-        venus = await VenusRenderer.create(module, init.memory, init.window, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined, vkPoll, { syncPipelines: vkSyncPipelines, pipelineDelayMs: vkPipeDelayMs, cache, nudgeMs: vkNudgeMs, gpuTime: vkGpuTime, hold: vkHold, heldFormats: vkHeldFormats });
+        // Subgroups only where they're right in divergent control flow (web/venus-gpu.ts `subgroupsRight`).
+        const subgroups = device ? await subgroupsRight(device) : true;
+        if (!subgroups) console.warn('venus: the WebGPU device\'s subgroups are wrong in divergent control flow: subgroups of one invocation');
+        const hold = subgroups ? vkHold : [...(vkHold ?? []), 'subgroups'];
+        venus = await VenusRenderer.create(module, init.memory, init.window, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined, vkPoll, { syncPipelines: vkSyncPipelines, pipelineDelayMs: vkPipeDelayMs, cache, nudgeMs: vkNudgeMs, gpuTime: vkGpuTime, hold, heldFormats: vkHeldFormats });
         venus.onRetire = () => fenced.release();
         const v = venus;
         if (device && adapter) {

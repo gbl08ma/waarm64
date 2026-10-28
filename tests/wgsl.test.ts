@@ -17,8 +17,9 @@ import { chromium } from 'playwright-core';
 const root = new URL('..', import.meta.url).pathname;
 const MODULE = join(root, 'target/vk/venus.wasm');
 
-/** Why a stage may not translate: what the direct set doesn't offer. */
-const OUTSIDE = /16-bit values|outside the layout \(set [4-9]|texel buffers|dynamically indexed/;
+/** Why a stage may not translate: what the direct set doesn't offer, and the translator's known gaps (docs/backlog.md
+ * "The Vulkan driver's gaps": vkQuake's variants for 16-bit floats, translated since VK3 L5, reach these). */
+const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|texel buffers|dynamically indexed|^image atomics$|^a texture offset that isn't a constant$/;
 
 type Stage = { name: string; stage: number; words: Uint32Array };
 
@@ -51,6 +52,7 @@ function stages(tmp: string): Stage[] {
 
 type Exports = {
   _initialize(): void; wgsl_test_init(): void; wgsl_test_translate(words: number, n: number, stage: number): number;
+  wgsl_test_device(features: number, subgroupSize: number): void;
   wgsl_test_result(): number; venus_alloc(n: number): number; venus_free(p: number): void;
 };
 
@@ -86,7 +88,10 @@ async function translator() {
     while (u8[end]) end++;
     return new TextDecoder().decode(u8.slice(p, end));
   };
-  return (s: Stage) => {
+  // The device translated for (vk/compiler/wgsl.h's WGSL_* features; the subgroups' size): dual-source-blending and
+  // subgroups of one unless a stage says otherwise.
+  return (s: Stage, device: { features?: number; subgroupSize?: number } = {}) => {
+    ex.wgsl_test_device(device.features ?? WGSL.DUAL_SOURCE, device.subgroupSize ?? 1);
     const p = ex.venus_alloc(s.words.byteLength) >>> 0;
     new Uint8Array(memory.buffer, p, s.words.byteLength).set(new Uint8Array(s.words.buffer, s.words.byteOffset, s.words.byteLength));
     const t0 = performance.now();
@@ -96,6 +101,9 @@ async function translator() {
     return { rc, text: text(ex.wgsl_test_result() >>> 0), ms };
   };
 }
+
+/** vk/compiler/wgsl.h's features. */
+const WGSL = { TIER2: 1, DUAL_SOURCE: 2, SUBGROUPS: 4, F16: 8 };
 
 /** Compiles WGSL modules in headless Chromium's WebGPU: each module's errors (empty: none), or undefined without an adapter. */
 async function compile(modules: string[]) {
@@ -109,7 +117,7 @@ async function compile(modules: string[]) {
     return await page.evaluate(async (modules) => {
       const adapter = await navigator.gpu?.requestAdapter();
       if (!adapter) return undefined;
-      const want = ['clip-distances', 'dual-source-blending', 'shader-f16'].filter((f) => adapter.features.has(f)) as GPUFeatureName[];
+      const want = ['clip-distances', 'dual-source-blending', 'shader-f16', 'subgroups', 'texture-formats-tier1', 'texture-formats-tier2'].filter((f) => adapter.features.has(f)) as GPUFeatureName[];
       const device = await adapter.requestDevice({ requiredFeatures: want, requiredLimits: { maxImmediateSize: Math.min(64, (adapter.limits as unknown as Record<string, number>).maxImmediateSize ?? 0) } as Record<string, number> });
       const out: string[] = [];
       for (const code of modules) {
@@ -123,6 +131,78 @@ async function compile(modules: string[]) {
     await browser.close();
     server.close();
   }
+}
+
+/**
+ * Runs a translated compute shader (one workgroup) in headless Chromium's WebGPU: its storage buffers by WGSL binding,
+ * each made of `init`'s bytes or `size` zeros, read back after the dispatch. Undefined without an adapter, or without
+ * the features `need` names (the adapter's, and its subgroups' sizes, returned too).
+ */
+async function runCompute(code: string, buffers: { binding: number; init?: Uint8Array; size?: number }[], need: string[] = []) {
+  const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+    args: (process.env.CHROMIUM_ARGS ?? '--enable-unsafe-webgpu --enable-features=Vulkan').split(' ').filter(Boolean) });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+    const r = await page.evaluate(async ({ code, buffers, need }) => {
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter || need.some((f) => !adapter.features.has(f))) return undefined;
+      const device = await adapter.requestDevice({ requiredFeatures: need as GPUFeatureName[] });
+      const module = device.createShaderModule({ code });
+      const errors = (await module.getCompilationInfo()).messages.filter((m) => m.type === 'error').map((m) => `${m.lineNum}:${m.linePos} ${m.message}`);
+      if (errors.length) return { errors, out: [] as number[][], min: 0, max: 0 };
+      const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+      const made = buffers.map((b) => {
+        const size = b.init ? b.init.length : b.size!;
+        const buffer = device.createBuffer({ size, usage: 0x80 | 0x4 | 0x8 /* STORAGE | COPY_SRC | COPY_DST */ });
+        if (b.init) device.queue.writeBuffer(buffer, 0, new Uint8Array(b.init));
+        return { buffer, size };
+      });
+      const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: buffers.map((b, i) => ({ binding: b.binding, resource: { buffer: made[i].buffer } })) });
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(1);
+      pass.end();
+      const reads = made.map((m) => {
+        const read = device.createBuffer({ size: m.size, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
+        enc.copyBufferToBuffer(m.buffer, 0, read, 0, m.size);
+        return read;
+      });
+      device.queue.submit([enc.finish()]);
+      const out: number[][] = [];
+      for (const read of reads) {
+        await read.mapAsync(1 /* GPUMapMode.READ */);
+        out.push([...new Uint8Array(read.getMappedRange())]);
+      }
+      const info = adapter.info as unknown as { subgroupMinSize?: number; subgroupMaxSize?: number };
+      return { errors, out, min: info.subgroupMinSize ?? 0, max: info.subgroupMaxSize ?? 0 };
+    }, { code, buffers: buffers.map((b) => ({ binding: b.binding, init: b.init && [...b.init], size: b.size })) as unknown as { binding: number; init?: Uint8Array; size?: number }[], need });
+    return r && { ...r, out: r.out.map((o) => new Uint8Array(o)) };
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
+/** An IEEE half's bits as a number, and a number to a half's bits rounded to the nearest even. */
+function fromHalf(h: number) {
+  const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023;
+  return e === 0 ? s * m * 2 ** -24 : e === 31 ? (m ? NaN : s * Infinity) : s * (1 + m / 1024) * 2 ** (e - 15);
+}
+function toHalf(x: number) {
+  if (Number.isNaN(x)) return 0x7e00;
+  const sign = x < 0 || Object.is(x, -0) ? 0x8000 : 0, a = Math.abs(x);
+  // The largest finite half at most `a` (the positive halves' values grow with their bits), then the nearer of it and
+  // the next (Infinity counting as 65536 there), a tie to the even one.
+  let lo = 0, hi = 0x7bff;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (fromHalf(mid) <= a) lo = mid; else hi = mid - 1; }
+  const below = fromHalf(lo), above = lo === 0x7bff ? 65536 : fromHalf(lo + 1);
+  const up = a - below > above - a || (a - below === above - a && (lo & 1) === 1);
+  return sign | (up ? lo + 1 : lo);
 }
 
 const missing = !existsSync(MODULE) ? 'SKIPPED: run vk/build.sh' : false;
@@ -154,12 +234,12 @@ test('a storage image loaded and stored is read_write where WebGPU allows it, an
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
     const translate = await translator();
-    const stage = (format: string) => {
+    const stage = (format: string, features?: number) => {
       const spv = join(tmp, `${format}.spv`);
       const r = spawnSync('glslc', ['--target-env=vulkan1.2', `-DSTORAGE_RW_FORMAT=${format}`, '-fshader-stage=comp', '-o', spv, join(root, 'tests/venus/storage-rw.comp')], { encoding: 'utf8' });
       assert.equal(r.status, 0, r.stderr);
       const b = readFileSync(spv);
-      return translate({ name: format, stage: 5, words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) });
+      return translate({ name: format, stage: 5, words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) }, { features });
     };
     const ok = stage('r32f');
     assert.equal(ok.rc, 0, ok.text);
@@ -169,9 +249,23 @@ test('a storage image loaded and stored is read_write where WebGPU allows it, an
       assert.equal(r.rc, 3, `${format} translated: ${r.text.slice(0, 200)}`);
       assert.equal(r.text, `a read_write storage image of format ${name}`);
     }
-    const errors = await compile([ok.text]);
+    // With texture-formats-tier2 (VK3 L5): tier2's formats read_write, the others still refused.
+    const t2: string[] = [];
+    for (const [format, name] of [['rgba8', 'rgba8unorm'], ['r16f', 'r16float'], ['rgba16f', 'rgba16float'], ['r8', 'r8unorm'], ['rgba32f', 'rgba32float']]) {
+      const r = stage(format, WGSL.TIER2);
+      assert.equal(r.rc, 0, `${format}: ${r.text.slice(0, 200)}`);
+      assert.match(r.text, new RegExp(`texture_storage_2d<${name}, read_write>`));
+      t2.push(r.text);
+    }
+    for (const [format, name] of [['rg16f', 'rg16float'], ['rg32f', 'rg32float'], ['rgba8_snorm', 'rgba8snorm']]) {
+      const r = stage(format, WGSL.TIER2);
+      assert.equal(r.text, `a read_write storage image of format ${name}`);
+    }
+    const errors = await compile([ok.text, ...t2]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
-    assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+    assert.deepEqual(errors[0], '', 'WGSL Chromium rejected');
+    // Tier2's compile where the adapter has it (the Mac's; SwiftShader refuses read_write of those formats).
+    for (const e of errors.slice(1)) if (!/read_write|access|storage/.test(e)) assert.equal(e, '', 'WGSL Chromium rejected');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -254,6 +348,136 @@ test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip
     // @blend_src compiles where the adapter has dual-source-blending (the Mac's, not SwiftShader's).
     const [dualErrors] = (await compile([dual]))!;
     if (!/dual_source_blending/.test(dualErrors)) assert.equal(dualErrors, '', 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+/** A GLSL stage of tests/venus/ compiled with glslc and translated for `device`. */
+function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: string, file: string, device: { features?: number; subgroupSize?: number } = {}, env = 'vulkan1.2') {
+  const spv = join(tmp, `${basename(file)}.spv`);
+  const r = spawnSync('glslc', [`--target-env=${env}`, '-o', spv, join(root, file)], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const b = readFileSync(spv);
+  return translate({ name: file, stage: stageOf(file), words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) }, device);
+}
+
+const noGlslc = missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc');
+
+test('subgroup operations are WGSL\'s where the device has subgroups of one size, and run right (VK3 L5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // Every family the device advertises, each of WGSL's built-ins where WGSL has one.
+    const all = glslStage(translate, tmp, 'tests/venus/l5/subgroups.comp', { features: WGSL.DUAL_SOURCE | WGSL.SUBGROUPS, subgroupSize: 4 });
+    assert.equal(all.rc, 0, all.text);
+    assert.match(all.text, /enable subgroups;\ndiagnostic\(off, subgroup_uniformity\);/);
+    assert.match(all.text, /@builtin\(subgroup_invocation_id\) sg_inv: u32/);
+    // Subgroup ids as runs of local_invocation_index.
+    assert.match(all.text, /= lidx \/ sg_size;/);
+    assert.match(all.text, /= \(64u \+ sg_size - 1u\) \/ sg_size;/);
+    for (const f of ['subgroupBallot', 'subgroupAll', 'subgroupAny', 'subgroupElect', 'subgroupBroadcastFirst', 'subgroupAdd', 'subgroupMul', 'subgroupMin', 'subgroupMax',
+      'subgroupAnd', 'subgroupOr', 'subgroupXor', 'subgroupInclusiveAdd', 'subgroupExclusiveMul', 'subgroupShuffle', 'subgroupShuffleXor', 'subgroupShuffleUp',
+      'subgroupShuffleDown', 'quadBroadcast', 'quadSwapX', 'quadSwapY', 'quadSwapDiagonal']) assert.match(all.text, new RegExp(`\\b${f}\\(`), f);
+    // WGSL's subgroupBroadcast wants a constant lane: a read of one invocation is a shuffle.
+    assert.doesNotMatch(all.text, /subgroupBroadcast\(/);
+    // Without the device's subgroups (or with sizes that vary), subgroups of one: the basic operations, no more.
+    const one = glslStage(translate, tmp, 'tests/venus/l5/subgroups.comp');
+    assert.equal(one.rc, 3, one.text.slice(0, 200));
+    assert.match(one.text, /^the subgroup operation \w+ without the device's subgroups$/);
+    const errors = await compile([all.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    if (!/subgroups/.test(errors[0])) assert.equal(errors[0], '', 'WGSL Chromium rejected');
+
+    // Run: each invocation's results against its subgroup's (members by their first invocation, in their order).
+    const run = async (size: number) => {
+      const r = glslStage(translate, tmp, 'tests/venus/l5/subgroups-run.comp', { features: WGSL.SUBGROUPS, subgroupSize: size });
+      assert.equal(r.rc, 0, r.text);
+      return runCompute(r.text, [{ binding: 0, size: 64 * 16 * 4 }], ['subgroups']);
+    };
+    let res = await run(4);
+    if (!res) return t.skip('SKIPPED: the adapter has no subgroups');
+    if (res.min !== res.max) return t.skip(`SKIPPED: the adapter's subgroups vary in size (${res.min}-${res.max})`);
+    if (res.min !== 4) res = (await run(res.min))!;
+    assert.deepEqual(res.errors, []);
+    const o = new Uint32Array(res.out[0].buffer);
+    const at = (n: number, k: number) => o[n * 16 + k];
+    const groups = new Map<number, number[]>();
+    for (let n = 0; n < 64; n++) groups.set(at(n, 2), [...(groups.get(at(n, 2)) ?? []), n]);
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const g = groups.get(at(n, 2))!.sort((a, b) => at(a, 0) - at(b, 0));
+      const inv = at(n, 0), size = at(n, 1), lane = (i: number) => g.find((m) => at(m, 0) === i)!;
+      const want = [inv, res.min, g[0], g.reduce((a, b) => a + b, 0), g.filter((m) => at(m, 0) <= inv).reduce((a, b) => a + b, 0),
+        g.filter((m) => at(m, 0) < inv).reduce((a, m) => Math.max(a, m * 7 % 5), 0), g.filter((m) => m & 1).length,
+        lane(inv ^ 1), inv >= 1 ? lane(inv - 1) : undefined, lane(inv & ~1) + lane(inv | 1), lane(inv ^ 1), lane((inv & ~3) | 3),
+        (Math.min(...g) - 40) >>> 0, inv, 1 + (inv === 0 ? 2 : 0), lane(size - 1 - inv)];
+      want.forEach((w, k) => { if (w !== undefined && at(n, k) !== w) bad.push(`invocation ${n} result ${k}: ${at(n, k)}, not ${w}`); });
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratch arrays (VK3 L5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // 16-bit storage: halves of words, a buffer with 16-bit stores atomic (two invocations store a word's halves),
+    // conversions without f16.
+    const st = glslStage(translate, tmp, 'tests/venus/l5/storage16.comp');
+    assert.equal(st.rc, 0, st.text);
+    assert.doesNotMatch(st.text, /enable f16|f16/);
+    assert.match(st.text, /var<storage, read_write> r0_2: array<atomic<u32>>;/);
+    assert.match(st.text, /unpack2x16float\(/);
+    // 16-bit floats only with shader-f16, as f16 views of a word's low half.
+    const f16 = glslStage(translate, tmp, 'tests/venus/l5/f16.comp', { features: WGSL.DUAL_SOURCE | WGSL.F16 });
+    assert.equal(f16.rc, 0, f16.text);
+    assert.match(f16.text, /enable f16;/);
+    assert.match(f16.text, /bitcast<vec2<f16>>\(t\d+\)\.x/);
+    const no16 = glslStage(translate, tmp, 'tests/venus/l5/f16.comp');
+    assert.equal(no16.rc, 3, no16.text.slice(0, 200));
+    assert.equal(no16.text, '16-bit float arithmetic without the device\'s shader-f16');
+
+    // Run 16-bit storage: In { float16_t h[64]; f16vec2 h2[64]; uint16_t s[64]; int16_t si[64]; },
+    // Out { float16_t h[64]; float f[64]; uint u[64]; int16_t si[64]; }.
+    const input = new DataView(new ArrayBuffer(640));
+    const halves = (n: number) => [toHalf(Math.fround((n - 30) * 1.37)), toHalf(n * 1e-6), toHalf(65000 - n * 50 + 0.25)];
+    for (let n = 0; n < 64; n++) {
+      const [a, b, c] = halves(n);
+      input.setUint16(2 * n, a, true);
+      input.setUint16(128 + 4 * n, b, true);
+      input.setUint16(128 + 4 * n + 2, c, true);
+      input.setUint16(384 + 2 * n, 65535 - n * 1000 % 65536, true);
+      input.setInt16(512 + 2 * n, -32768 + n * 1031, true);
+    }
+    const res = await runCompute(st.text, [{ binding: 0, init: new Uint8Array(input.buffer) }, { binding: 2, size: 768 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const out = new DataView(res.out[1].buffer);
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const [a, , c] = halves(n);
+      const x = Math.fround(Math.fround(fromHalf(a) * 2) + fromHalf(c));
+      const si = input.getInt16(512 + 2 * n, true);
+      const want: [string, number, number][] = [['h', out.getUint16(2 * n, true), toHalf(x)], ['f', out.getFloat32(128 + 4 * n, true), x],
+        ['u', out.getUint32(384 + 4 * n, true), (input.getUint16(384 + 2 * n, true) + si) >>> 0], ['si', out.getInt16(640 + 2 * n, true), (si * 3) << 16 >> 16]];
+      for (const [k, got, w] of want) if (got !== w && !(Number.isNaN(got) && Number.isNaN(w))) bad.push(`${k}[${n}]: ${got}, not ${w}`);
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+    // A function-scope array in scratch: its offset is the whole address (scratch has no base: the printer read the
+    // alignment there, and the last element's last word went past the array).
+    const sc = glslStage(translate, tmp, 'tests/venus/l5/scratch.comp');
+    assert.equal(sc.rc, 0, sc.text);
+    const scr = (await runCompute(sc.text, [{ binding: 0, size: 64 * 16 }]))!;
+    assert.deepEqual(scr.errors, []);
+    const so = new Uint32Array(scr.out[0].buffer);
+    const wrong = [...so].map((v, k) => [k, v, (k >> 2) * 16 + (((k >> 2) + 3) & 3) * 4 + (k & 3)]).filter(([, v, w]) => v !== w);
+    assert.deepEqual(wrong.slice(0, 4), [], `of ${wrong.length}`);
+    // 16-bit floats compile where the adapter has shader-f16 (the Mac's, not SwiftShader's).
+    const [errors] = (await compile([f16.text]))!;
+    if (!/f16/.test(errors)) assert.equal(errors, '', 'WGSL Chromium rejected');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

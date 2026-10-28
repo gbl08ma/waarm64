@@ -119,9 +119,11 @@ void wgsl_spirv_options(struct spirv_to_nir_options *out);
 /* After spirv_to_nir: the generic lowering, before anything pipeline-specific (KosmicKrisp's msl_preprocess_nir). */
 void wgsl_preprocess(nir_shader *nir);
 
-/* The lowering against a layout: descriptors to slots, I/O to slots, explicit memory, optimization, out of SSA.
+/* The lowering against a layout: descriptors to slots, I/O to slots, explicit memory, subgroup operations for subgroups
+ * of `subgroup_size` (1: of one invocation, without WGSL's subgroups), optimization, out of SSA.
  * Fails (false, with `error`) for what WGSL can't express (dynamically indexed descriptors, 64-bit values). */
-bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, char *error, size_t error_size);
+bool wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_size, char *error,
+                size_t error_size);
 
 /* Links a vertex and a fragment shader's varyings (both lowered): nir_opt_varyings, as KosmicKrisp links. */
 void wgsl_link(nir_shader *vs, nir_shader *fs);
@@ -132,11 +134,14 @@ void wgsl_link(nir_shader *vs, nir_shader *fs);
  * NULL with `error`. */
 #define WGSL_TIER2       (1u << 0) /* texture-formats-tier2 */
 #define WGSL_DUAL_SOURCE (1u << 1) /* dual-source-blending */
+#define WGSL_SUBGROUPS   (1u << 2) /* subgroups (as wgsl_lower's subgroup_size over 1) */
+#define WGSL_F16         (1u << 3) /* shader-f16 */
 char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_varyings *fs, uint32_t max_immediates, unsigned features,
                  struct wgsl_info *info, char *error, size_t error_size);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);
+void wgsl_test_device(unsigned features, unsigned subgroup_size);
 int wgsl_test_translate(const uint32_t *words, size_t nwords, int stage);
 const char *wgsl_test_result(void);
 const struct wgsl_info *wgsl_test_info(void);

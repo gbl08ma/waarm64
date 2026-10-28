@@ -6,21 +6,21 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L4f)
+## State (2026-10-28, after L5)
 
-- **Done:** the reviews' remaining findings: 14 fixed (cube storage views, dual-source `@blend_src`, read-only depth
-  attachments, signed shared atomics, separately indexed texture/sampler arrays, terminate and demoted helpers, one
-  uniform-condition var, inverted depth ranges, `CONSTANT_ALPHA`, depth/stencil resolves, a compute variant's freed
-  module, sample counts, mutable format lists, a depth LOD's rounding), the rest filed (backlog "The Vulkan driver's gaps").
-- **dEQP-VK:** the list 1,807 → 2,333 (533 in: 65 old failures the cloud's fixes turned, L4f's, and its samples'
-  passes; 7 out: 4 multisampled 32-bit formats now NotSupported as WebGPU has them, an early-fragment case that passed
-  only while depth resolves were dropped, 2 crash-prone; backlog). The Mac's dual-source samples 0 → 45 of 49.
-- **Not shown:** the review's finding 4 (an SSBO read in one stage, written in another) didn't reproduce:
-  `nir_opt_access` marks the reader's loads non-writeable; the translator now types by writes anyway, and refuses a
-  buffer the fragment stage writes and the vertex stage reads. Resolves can't run dEQP until `sampleRateShading` (L7).
+- **Done:** WGSL's subgroups where the adapter's have one size (compute and fragment; ids from `local_invocation_index`),
+  16-bit storage everywhere, `shaderFloat16` with `shader-f16`, tier2's read-write formats tested; a scratch addressing
+  bug older than L5 fixed (vk/README.md "The shader path"; REPORT.md "VK3 L5").
+- **dEQP-VK:** the list 2,333 → 3,261 (723 subgroup, 205 16-bit-storage cases; SwiftShader: 1,865 of 1,865 subgroup
+  and 205 of 205 16-bit cases that ran pass). The Mac: f16 226 of 233, tier1/2 storage 27 of 27 that ran.
+- **The Mac's subgroups are held:** Chromium's Metal hoists a lone ballot out of an `if` (89 of 503 cases failed); the
+  GPU worker checks it at Venus's start (`subgroupsRight`) and falls back to subgroups of one. Backlog: report it, try a
+  translator workaround. **NVIDIA:** the same check decides there, unseen (below).
 
-## Where VK3 stands (2026-10-27, after L4e and the out-of-context reviews; next L4f, then L5)
+## Where VK3 stands (2026-10-28, after L4f; next L6)
 
+- **L4f:** the out-of-context reviews' remaining findings fixed (14) or filed (backlog "The Vulkan driver's gaps");
+  dual-source blending implemented and advertised, API 1.3 kept; dEQP-VK's list 1,807 → 2,333.
 - **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
   pollers' clamped timers, Dawn's late done), L3 (async pipelines; translated shaders kept across runs, 32 MiB, the
   origin's: approved by the user, the budget to become configurable), L3b (ci-machines.sh green), L4c (a fresh static
@@ -52,7 +52,7 @@ docs and the backlog; git keeps the old handovers.
   (invalid); a linear image's freed memory reached by every submit (heap use after free); dynamic storage offsets read
   back at 0; odd-sized storage bindings; `packHalf2x16`/`unpackHalf2x16` refused; a weak compare-exchange;
   `pipelineCacheUUID` blind to the caps; L4f the rest (above).
-- **Next:** L5.
+- **Next:** L6.
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -62,8 +62,8 @@ docs and the backlog; git keeps the old handovers.
   docs/backlog.md "The Vulkan driver's gaps"; dual-source blending implemented and kept advertised (the user's call:
   it passes the Mac's `dual_source` samples but where a draw mixes the constant's colour and alpha); API 1.3 kept, its
   gaps filed. The review files deleted. The out-of-context review of what L4f changed is the supervisor's.
-- [ ] L5: the translator's missing adapter features (`subgroups`, `shader-f16`, read-write storage with `tier2`: see
-  backlog for what L4c-F refused).
+- [x] L5: the translator's adapter features: subgroups (held on the Mac by a run-time check), 16-bit storage,
+  `shaderFloat16`, tier2's read-write formats; left: `shaderInt16`, 16-bit I/O, the Metal ballot workaround (backlog).
 - [ ] L6: the driver's gaps from dEQP-VK (per-face stencil, occlusion queries with their availability and strided
   copies (the driver review's 10), texel buffers, depth/stencil copies, dEQP-VK on the Mac's GPU (`sway-mac.sh vk`
   runs it since L4f: `SCRIPT=deqp-run.ts CASES=… bench/gpu/sway-mac.sh vk target/deqp/guest-vk.qcow2 <name>`); the 34
@@ -95,13 +95,17 @@ in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvid
 in `bench/results/local/`, delete the tarball.) The last bundle is `target/vk3-nvidia-bundle-4fdc69fb.tar` (run 2026-10-27: REPORT.md "VK3: the NVIDIA run after
 L4e").
 
-**Open for the next run:** nothing yet. The next loop that needs an NVIDIA number adds its step to nvidia.sh and its
-question here.
+**Open for the next run:** (L5) whether the page's log on NVIDIA says `venus: the WebGPU device's subgroups are wrong
+in divergent control flow` (the device then has subgroups of one, as before L5) or not (real subgroups of 32: mpv's
+libplacebo takes its subgroup paths; check its frames are still right). Any step's page log answers it.
 
 ## Things worth not re-discovering
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
 
+- (L5) `bench/gpu/sway-mac.sh` with `SCRIPT=deqp-run.ts` needs `VIRGL_GPU=virgl,vulkan` for dEQP-VK (its default
+  machine has no Vulkan: deqp-vk exits at once, no statuses). A translated WGSL kernel runs on the Mac's WebGPU in
+  seconds through a small Playwright script there (REPORT.md "VK3 L5"): the fastest way to narrow a Metal-only failure.
 - (L4e) A Vulkan window frozen with its app unable to exit, host fences fine: look at the guest's present path first.
   Mesa 26's Venus presents on a thread (`vn_wsi[q,i]`) and drops a present after one that failed (OUT_OF_DATE from a
   retired swapchain); `VN_PERF=no_async_present` is the A/B. A `vo` thread in `drm_syncobj_array_wait_timeout` with no

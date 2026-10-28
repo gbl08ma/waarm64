@@ -29,6 +29,18 @@ wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count)
 
 #define HAS(f) (!!(wg_features & WG_FEATURE_##f))
 
+/* WGSL's subgroups have the adapter's size, which a shader can't choose: real subgroups only where the adapter has one
+ * size (SwiftShader's 4, Apple's and NVIDIA's 32), that a ballot's 128 bits hold. Elsewhere (sizes that vary, as on
+ * Intel's and AMD's) subgroups of one invocation, as before WGSL had subgroups (VK3 L5). */
+uint32_t
+wg_subgroup_size(void)
+{
+   const uint32_t lo = wg_limits.subgroup_min_size, hi = wg_limits.subgroup_max_size;
+   if (!HAS(SUBGROUPS) || lo != hi || lo < 4 || lo > 128 || (lo & (lo - 1)))
+      return 1;
+   return lo;
+}
+
 void
 wg_caps_extensions(struct vk_device_extension_table *e)
 {
@@ -91,7 +103,7 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_private_data = true,
       .EXT_shader_demote_to_helper_invocation = true,
       .EXT_tooling_info = true,
-      /* Subgroups of one invocation (the translator has no subgroup operations yet): sized, so 1.3's control. */
+      /* Subgroups of one size (wg_subgroup_size), so 1.3's control. */
       .EXT_subgroup_size_control = true,
       .EXT_depth_clip_enable = HAS(DEPTH_CLIP),
       /* Host-side only. */
@@ -101,7 +113,11 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
       .KHR_shader_relaxed_extended_instruction = true,
-      /* Not translated: 16-bit types (KHR_shader_float16_int8), inline uniform blocks (a bind group holds buffers, not
+      /* 16-bit floats with WebGPU's shader-f16 (no 8-bit integers); 16-bit storage everywhere (halves of words, its
+       * conversions integer code: wgsl_nir.c `lower_16bit`). */
+      .KHR_shader_float16_int8 = HAS(F16),
+      .KHR_16bit_storage = true,
+      /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
        * bytes), texel buffers (EXT_texel_buffer_alignment), YCbCr conversions (KHR_sampler_ycbcr_conversion). */
    };
 }
@@ -131,6 +147,10 @@ wg_caps_features(struct vk_features *f)
       .imagelessFramebuffer = true,
       .uniformBufferStandardLayout = true,
       .shaderSubgroupExtendedTypes = true,
+      .shaderFloat16 = HAS(F16),
+      .storageBuffer16BitAccess = true,
+      .uniformAndStorageBuffer16BitAccess = true,
+      .storagePushConstant16 = true,
       .separateDepthStencilLayouts = true,
       .hostQueryReset = true,
       .timelineSemaphore = true,
@@ -270,11 +290,22 @@ wg_caps_properties(struct vk_properties *p)
    p->optimalBufferCopyRowPitchAlignment = 256;
    p->nonCoherentAtomSize = 64;
 
-   /* Subgroups of one invocation: the basic operations only, until the translator maps WebGPU's `subgroups`. */
-   p->subgroupSize = 1;
+   /* WGSL's subgroups where the adapter's are of one size, in the stages WGSL has them (compute and fragment), with
+    * the operations WGSL has or NIR lowers to them (wgsl_nir.c `lower_subgroups`); else subgroups of one invocation
+    * with the basic operations. */
+   const uint32_t sg = wg_subgroup_size();
+   p->subgroupSize = sg;
    p->subgroupSupportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
    p->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
-   p->minSubgroupSize = p->maxSubgroupSize = 1;
+   if (sg > 1) {
+      p->subgroupSupportedStages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+      p->subgroupSupportedOperations |= VK_SUBGROUP_FEATURE_VOTE_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
+                                        VK_SUBGROUP_FEATURE_BALLOT_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
+                                        VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT | VK_SUBGROUP_FEATURE_CLUSTERED_BIT |
+                                        VK_SUBGROUP_FEATURE_QUAD_BIT;
+   }
+   p->subgroupQuadOperationsInAllStages = false;
+   p->minSubgroupSize = p->maxSubgroupSize = sg;
    p->maxComputeWorkgroupSubgroups = L->max_compute_invocations_per_workgroup;
    p->requiredSubgroupSizeStages = VK_SHADER_STAGE_COMPUTE_BIT;
    p->maxPerSetDescriptors = 1024;
