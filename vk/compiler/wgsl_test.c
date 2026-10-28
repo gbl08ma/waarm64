@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "nir.h"
+#include "nir_xfb_info.h"
 #include "spirv/nir_spirv.h"
 #include "util/ralloc.h"
 #include "vk_format.h"
@@ -139,6 +140,15 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
    if (!nir) {
       result = ralloc_strdup(NULL, error[0] ? error : "spirv_to_nir failed");
       return 1;
+   }
+   /* As the runtime's vk_spirv_to_nir: a vertex stage's transform feedback gathered from its variables. */
+   if (stage == MESA_SHADER_VERTEX) {
+      NIR_PASS(_, nir, nir_lower_variable_initializers, nir_var_function_temp);
+      NIR_PASS(_, nir, nir_lower_returns);
+      NIR_PASS(_, nir, nir_inline_functions);
+      NIR_PASS(_, nir, nir_split_var_copies);
+      NIR_PASS(_, nir, nir_split_per_member_structs);
+      nir_shader_gather_xfb_info(nir);
    }
    wgsl_preprocess(nir);
    /* As a pipeline with sampleShadingEnable makes its fragment stage (wg_shader.c `sample_shading`). */

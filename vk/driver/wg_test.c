@@ -41,6 +41,9 @@ int wgt_fl_submit(uint32_t i);
 int wgt_fl_done(uint32_t i);
 int wgt_link(void);
 int wgt_variant(uint32_t scenario);
+int wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words);
+uint8_t *wgt_xfb_map(void);
+int wgt_xfb_done(void);
 int wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
@@ -178,9 +181,9 @@ init(void)
                                         .pQueuePriorities = &priority };
    /* wgt_import's: dma-buf memory and the LINEAR modifier. */
    const char *exts[] = { "VK_KHR_external_memory_fd", "VK_EXT_external_memory_dma_buf",
-                          "VK_EXT_image_drm_format_modifier", "VK_EXT_provoking_vertex" };
+                          "VK_EXT_image_drm_format_modifier", "VK_EXT_provoking_vertex", "VK_EXT_transform_feedback" };
    const VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,
-                                   .pQueueCreateInfos = &qi, .enabledExtensionCount = 4,
+                                   .pQueueCreateInfos = &qi, .enabledExtensionCount = 5,
                                    .ppEnabledExtensionNames = exts };
    CHECK(CreateDevice(pdev, &di, NULL, &dev));
 #define DLOAD(name) name = (PFN_vk##name)GetDeviceProcAddr(dev, "vk" #name)
@@ -874,7 +877,8 @@ wgt_link(void)
             changed++;
          }
       }
-      at += size;
+      /* The next object's header 4-aligned (blob_write_uint32 aligns): a shader's data needn't end on a word. */
+      at = (at + size + 3) & ~3u;
    }
    if (changed != 1) {
       snprintf(error, sizeof(error), "%u vertex shaders in a pipeline cache's %u objects", changed, count);
@@ -965,6 +969,120 @@ wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
    const int r = draw_with(NULL, 0, 0, p);
    draw_vertices = 0;
    return r;
+}
+
+/*
+ * Transform feedback (VK3 L7.4, VK_EXT_transform_feedback), after wgt_run: `vs` (xfb.vert: each vertex's position and
+ * (u, v, gl_VertexIndex, 7) captured, 32 bytes a vertex) on the scene's vertices, rasterizer discard on, in the scene's
+ * render pass, into a host-visible buffer (`wgt_xfb_map`, 4 KiB filled 0xee, the capture bound at 0), its counter at
+ * 2048 (wgt_xfb_done says when):
+ * 0: a triangle list of vertices 0 to 5 (the binding 1024 bytes): their 6 records, the counter 192;
+ * 1: as 0, the binding 160 bytes: the first triangle's 3 (a whole primitive or none), the counter 96;
+ * 2: a strip of vertices 0 to 3 (indexed 0 1 2 3 through the scene's index buffer... not: drawn as is): triangles
+ *    (0, 1, 2) and (1, 3, 2) in Vulkan's order, the counter 192;
+ * 3: as 0 in two draws (vertices 0 to 2, then 3 to 5) with the capture ended and begun again between them, the second
+ *    resuming from the counter: the same.
+ */
+static struct {
+   VkFence fence;
+   uint8_t *map;
+} xfb;
+
+EXPORT int
+wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   PFN_vkCmdBindTransformFeedbackBuffersEXT Bind =
+      (PFN_vkCmdBindTransformFeedbackBuffersEXT)GetDeviceProcAddr(dev, "vkCmdBindTransformFeedbackBuffersEXT");
+   PFN_vkCmdBeginTransformFeedbackEXT Begin =
+      (PFN_vkCmdBeginTransformFeedbackEXT)GetDeviceProcAddr(dev, "vkCmdBeginTransformFeedbackEXT");
+   PFN_vkCmdEndTransformFeedbackEXT End =
+      (PFN_vkCmdEndTransformFeedbackEXT)GetDeviceProcAddr(dev, "vkCmdEndTransformFeedbackEXT");
+   if (!Bind || !Begin || !End) {
+      snprintf(error, sizeof(error), "no transform feedback entry points");
+      return 1;
+   }
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   VkPipelineShaderStageCreateInfo stage = scene.stages[0];
+   if (shader(vs, vs_words, &stage.module))
+      return 1;
+   gpi.pStages = &stage;
+   gpi.stageCount = 1;
+   VkPipelineInputAssemblyStateCreateInfo ias = *gpi.pInputAssemblyState;
+   VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+   rs.rasterizerDiscardEnable = VK_TRUE;
+   ias.topology = scenario == 2 ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+   gpi.pInputAssemblyState = &ias;
+   gpi.pRasterizationState = &rs;
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   VkBuffer out;
+   if (buffer(4096, VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT |
+                       VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+              true, &out, (void **)&xfb.map))
+      return 1;
+   memset(xfb.map, 0xee, 4096);
+   if (!xfb.fence) {
+      const VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fi, NULL, &xfb.fence));
+   } else {
+      CHECK(ResetFences(dev, 1, &xfb.fence));
+   }
+   VkCommandPool pool;
+   const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+   CHECK(CreateCommandPool(dev, &cpo, NULL, &pool));
+   VkCommandBuffer cmd;
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                             .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                             .commandBufferCount = 1 };
+   CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(cmd, &begin));
+   const VkClearValue clears[2] = { { .color = { .float32 = { 0, 0, 1, 1 } } }, { .depthStencil = { 1, 0 } } };
+   const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = scene.rp,
+                                       .framebuffer = scene.fb, .renderArea = { { 0, 0 }, { scene.w, scene.h } },
+                                       .clearValueCount = 2, .pClearValues = clears };
+   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   const VkViewport viewport = { 0, 0, scene.w, scene.h, 0, 1 };
+   const VkRect2D scissor = { { 0, 0 }, { scene.w, scene.h } };
+   CmdSetViewport(cmd, 0, 1, &viewport);
+   CmdSetScissor(cmd, 0, 1, &scissor);
+   const VkDeviceSize zero = 0, size = scenario == 1 ? 160 : 1024, counter_at = 2048;
+   CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+   Bind(cmd, 0, 1, &out, &zero, &size);
+   if (scenario == 3) {
+      Begin(cmd, 0, 0, NULL, NULL);
+      CmdDraw(cmd, 3, 1, 0, 0);
+      End(cmd, 0, 1, &out, &counter_at);
+      Begin(cmd, 0, 1, &out, &counter_at);
+      CmdDraw(cmd, 3, 1, 3, 0);
+   } else {
+      Begin(cmd, 0, 0, NULL, NULL);
+      CmdDraw(cmd, scenario == 2 ? 4 : 6, 1, 0, 0);
+   }
+   End(cmd, 0, 1, &out, &counter_at);
+   CmdEndRenderPass(cmd);
+   CHECK(EndCommandBuffer(cmd));
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
+                                 .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, xfb.fence));
+   return 0;
+}
+
+EXPORT uint8_t *
+wgt_xfb_map(void)
+{
+   return xfb.map;
+}
+
+EXPORT int
+wgt_xfb_done(void)
+{
+   return xfb.fence && GetFenceStatus(dev, xfb.fence) == VK_SUCCESS;
 }
 
 /*

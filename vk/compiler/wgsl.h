@@ -119,6 +119,11 @@ struct wgsl_info {
    bool clip_distances;         /* uses `clip_distances` (vertex) */
    uint8_t clip_distance_count;
    uint16_t workgroup[3];
+   /* Vertex, with transform feedback (VK3 L7.4): each captured vertex's words in `wg_xo` (a private array the outputs
+    * are copied into, wg_vs's), buffer b's record from word xfb_base[b], its stride xfb_stride[b] bytes (0: not
+    * captured) and the words of it written (xfb_words[b], a bit a word): the driver's compute pass writes them. */
+   uint16_t xfb_stride[4], xfb_base[4];
+   uint32_t xfb_words[4][4];
    struct wgsl_varyings varyings; /* fragment: what it reads; vertex: what it writes */
    /* The textures sampled with each sampler, as (texture, sampler) pairs of group << 16 | binding. */
    uint32_t pair_count;

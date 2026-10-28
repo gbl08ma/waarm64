@@ -16,7 +16,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
-  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
+  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
 };
 
@@ -326,7 +326,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -351,6 +351,24 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     const variant = { strip: 0, vertexOnly: 1, lineBias: 2 } as const;
     const flat = { flatLast: 0, flatFanLast: 1, flatFanFirst: 2 } as const;
     let at: number, draws = 0;
+    if (scenario === 'xfbList' || scenario === 'xfbOverflow' || scenario === 'xfbStrip' || scenario === 'xfbResume') {
+      // wgt_xfb's records: each vertex's (x, y, z, 1) and (u, v, its index, 7), from the scene's vertices (wg_test.c).
+      const quad = [[-1.5, -1, 0.5, 0, 0], [-0.5, -1, 0.5, 1, 0], [-0.5, 1, 0.5, 1, 1], [-1.5, 1, 0.5, 0, 1], [-1, -1, 0.75, 0, 0], [1, -1, 0.75, 0, 0]];
+      const order = scenario === 'xfbOverflow' ? [0, 1, 2] : scenario === 'xfbStrip' ? [0, 1, 2, 1, 3, 2] : [0, 1, 2, 3, 4, 5];
+      const want = new Uint8Array(4096).fill(0xee);
+      const f = new Float32Array(want.buffer, 0, order.length * 8);
+      order.forEach((v, k) => f.set([quad[v][0], quad[v][1], quad[v][2], 1, quad[v][3], quad[v][4], v, 7], 8 * k));
+      new Uint32Array(want.buffer, 2048, 1)[0] = order.length * 32;
+      const [xv, xvn] = put(await words('/target/vk/test/xfb.vert.spv'));
+      const xi = { xfbList: 0, xfbOverflow: 1, xfbStrip: 2, xfbResume: 3 }[scenario];
+      if (ex.wgt_xfb(xi, xv, xvn)) return { error: text(ex.wgt_error() >>> 0), errors };
+      await wait(() => ex.wgt_xfb_done(), 'the capture');
+      const got = new Uint8Array(memory.buffer, ex.wgt_xfb_map() >>> 0, 4096).slice();
+      let differs = -1;
+      for (let i = 0; i < 4096; i++) if (got[i] !== want[i]) { differs = i; break; }
+      device.destroy();
+      return { differs, got: [...new Float32Array(got.buffer, 0, 48)], counter: new Uint32Array(got.buffer, 2048, 1)[0], errors, warnings: v.gpu.stats.errors };
+    }
     if (scenario === 'flatLast' || scenario === 'flatFanLast' || scenario === 'flatFanFirst') {
       const [fv, fvn] = put(await words('/target/vk/test/flat.vert.spv')), [ff, ffn] = put(await words('/target/vk/test/flat.frag.spv'));
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);

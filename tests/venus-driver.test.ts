@@ -33,7 +33,7 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag']]) {
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -217,6 +217,30 @@ for (const [scenario, what, want] of [
       assert.ok(quad > 0, `the quad's query: ${quad}`);
       assert.deepEqual([clear, both], [0, quad], 'a clear alone, and clears around the quad');
     }
+  });
+}
+
+// L7.4: transform feedback (the vertex stage run as compute at the render pass's end; wg_test.c's wgt_xfb).
+for (const [scenario, what] of [
+  ['xfbList', 'a triangle list\'s vertices captured, its counter written'],
+  ['xfbOverflow', 'a capture past its buffer keeps whole primitives only'],
+  ['xfbStrip', 'a triangle strip captured in Vulkan\'s order of each triangle\'s vertices'],
+  ['xfbResume', 'a capture ended and begun again resumes from its counter'],
+] as const) {
+  test(`transform feedback: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    // After the first test, which compiled the shaders.
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runPass(spirv: object, s: string): Promise<Record<string, unknown>> } }).venus.runPass({
+      vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv' }, s), scenario);
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, String(r.error));
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    assert.equal(r.differs, -1, `the capture differs from byte ${r.differs}: ${JSON.stringify(r.got)}, counter ${r.counter}`);
+    assert.equal(r.warnings, 0, 'the worker warned');
   });
 }
 

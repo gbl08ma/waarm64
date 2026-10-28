@@ -86,6 +86,12 @@ WG_IMPORT(gpu_draw_indirect) void gpu_draw_indirect(uint32_t buffer, double offs
 WG_IMPORT(gpu_provoke) void gpu_provoke(uint32_t ticket, uint32_t buffer, double offset, double size, uint32_t wide,
                                         uint32_t mode, uint32_t restart, uint32_t first, uint32_t count,
                                         uint32_t prims);
+/* Transform feedback (VK3 L7.4), in a render pass, done at its end (WebGPU runs no compute in a pass, and Vulkan reads
+ * no captured vertex inside the pass that wrote it): JSON {op: "begin", buffers: [[buffer, offset, size] or null ×4],
+ * counters: [[buffer, offset] or null ×4]}, {op: "draw", topology, wide (0, 1: 16-, 32-bit indices; 2: none), ib,
+ * offset, size, count, instances, first, base, firstInstance} (the vertex stage run as compute on the draw's bind groups,
+ * vertex buffers and immediates, as the worker last set them), {op: "end", counters}. */
+WG_IMPORT(gpu_xfb) void gpu_xfb(const char *json, uint32_t len);
 /* In the pass: the ticket's indices drawn (an indexed draw, the index buffer the driver's to set again after). */
 WG_IMPORT(gpu_draw_ticket) void gpu_draw_ticket(uint32_t ticket, uint32_t instances, int32_t base,
                                                 uint32_t first_instance);

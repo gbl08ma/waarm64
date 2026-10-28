@@ -869,6 +869,14 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_function_temp, glsl_get_natural_size_align_bytes);
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out, type_size_vec4,
             nir_lower_io_lower_64bit_to_32 | nir_lower_io_use_interpolated_input_intrinsics);
+   /* Transform feedback's outputs (the runtime gathered nir->xfb_info from the variables): on the stores, which keeps
+    * them through linking (nir_opt_varyings) and tells the printer what each captures (VK3 L7.4). */
+   if (nir->xfb_info && nir->info.stage == MESA_SHADER_VERTEX) {
+      /* Each store at its own slot first (constant folding moves an array's or matrix's offset into its location),
+       * which the pass matches the outputs by. */
+      NIR_PASS(_, nir, nir_opt_constant_folding);
+      NIR_PASS(_, nir, nir_io_add_intrinsic_xfb_info);
+   }
    NIR_PASS(_, nir, nir_opt_dce);
    NIR_PASS(_, nir, nir_lower_variable_initializers, ~nir_var_function_temp);
    NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_in | nir_var_shader_out | nir_var_system_value, NULL);

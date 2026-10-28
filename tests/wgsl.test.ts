@@ -805,3 +805,19 @@ test('a combined image-sampler with a YCbCr conversion samples each plane and co
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('a vertex stage captured by transform feedback copies each output into its record, a matrix\'s columns and an array\'s elements at their offsets (VK3 L7.4)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/l7/xfb-block.vert');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /var<private> wg_xo: array<u32, 12>;/);
+    // The body a function of its own, which the driver's transform feedback pass calls.
+    assert.match(r.text, /fn wg_vs\(vid: u32, iid: u32, i: In\) \{/);
+    const words = [...r.text.matchAll(/wg_xo\[(\d+)u\] = /g)].map((m) => Number(m[1]));
+    assert.deepEqual(words.sort((a, b) => a - b), [0, 1, 2, 3, 4, 5], 'the record\'s words written');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

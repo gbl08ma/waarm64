@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "nir.h"
+#include "nir_xfb_info.h"
 #include "util/format/u_format.h"
 #include "util/ralloc.h"
 #include "util/string_buffer.h"
@@ -48,6 +49,7 @@ struct ctx {
    /* Fragment inputs and vertex outputs, by location (VARYING_SLOT_VAR0 + n). */
    struct wgsl_varyings vary;
    uint32_t vs_writes;           /* vertex: VAR locations written */
+   bool xfb;                     /* vertex: outputs captured by transform feedback (`wg_xo`) */
    uint8_t vs_write_base[32];
    uint8_t input_comps[32];
    /* Compute: ifs whose condition goes through workgroupUniformLoad (below), and whether the loop being printed
@@ -512,6 +514,20 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_store_output: {
       const nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
       if (nir->info.stage == MESA_SHADER_VERTEX) {
+         /* Transform feedback: the words of each buffer's record this store writes (io_xfb's runs of components). */
+         if (c->xfb) {
+            const nir_io_xfb x = nir_intrinsic_io_xfb(intr);
+            const unsigned first = nir_intrinsic_component(intr), mask = nir_intrinsic_write_mask(intr);
+            for (unsigned k = 0; k < 4; k++)
+               for (unsigned n = 0; n < x.out[k].num_components; n++)
+                  if (k + n >= first && (mask & (1u << (k + n - first)))) {
+                     const unsigned w = x.out[k].offset + n;
+                     if (w >= 128 || intr->src[0].ssa->bit_size != 32)
+                        failf(c, "a transform feedback output past 512 bytes or not 32-bit");
+                     else
+                        c->info->xfb_words[x.out[k].buffer][w / 32] |= 1u << (w % 32);
+                  }
+         }
          if (sem.location >= VARYING_SLOT_VAR0 && sem.location < VARYING_SLOT_VAR0 + 32) {
             const unsigned loc = sem.location - VARYING_SLOT_VAR0;
             c->vs_writes |= 1u << loc;
@@ -1378,6 +1394,15 @@ emit_output(struct ctx *c, nir_intrinsic_instr *intr)
       failf(c, "an indirect output");
    const char *field = NULL;
    unsigned base = WGSL_F32;
+   /* Transform feedback: the captured components' bits into the vertex's record (gl_Position's before wg_flip_y). */
+   if (c->xfb) {
+      const nir_io_xfb x = nir_intrinsic_io_xfb(intr);
+      for (unsigned k = 0; k < 4; k++)
+         for (unsigned n = 0; n < x.out[k].num_components; n++)
+            if (k + n >= first && (mask & (1u << (k + n - first))))
+               line(c, "wg_xo[%uu] = %s;", c->info->xfb_base[x.out[k].buffer] + x.out[k].offset + n,
+                    src_comp(c, value, k + n - first));
+   }
    if (c->nir->info.stage == MESA_SHADER_VERTEX) {
       if (sem.location == VARYING_SLOT_POS) {
          field = "pos";
@@ -2035,7 +2060,7 @@ emit_jump(struct ctx *c, nir_jump_instr *jump)
       if (c->nir->info.stage == MESA_SHADER_FRAGMENT && jump->type == nir_jump_halt)
          line(c, "discard; %s", fs_return(c));
       else
-         line(c, "return%s;", c->nir->info.stage == MESA_SHADER_COMPUTE ? "" : " o");
+         line(c, "return%s;", c->nir->info.stage == MESA_SHADER_FRAGMENT ? " o" : "");
       break;
    default:
       failf(c, "a jump of type %d", jump->type);
@@ -2231,6 +2256,18 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
+   /* Transform feedback (VK3 L7.4): each captured buffer's record in `wg_xo`, one after another. */
+   if (nir->info.stage == MESA_SHADER_VERTEX && nir->xfb_info) {
+      unsigned words = 0;
+      for (unsigned b = 0; b < 4; b++) {
+         if (!(nir->xfb_info->buffers_written & (1u << b)))
+            continue;
+         info->xfb_stride[b] = nir->xfb_info->buffers[b].stride;
+         info->xfb_base[b] = words;
+         words += DIV_ROUND_UP(info->xfb_stride[b], 4);
+      }
+      c.xfb = words > 0;
+   }
    gather(&c, impl);
    /* A storage buffer this stage doesn't write is read-only, in every stage: the driver binds it as writable storage
     * where a dispatch writes its memory through another binding (WebGPU's usage scopes: wg_cmd.c `program_for`). */
@@ -2289,12 +2326,25 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       line(&c, "var<private> scratch: array<u32, %u>;", DIV_ROUND_UP(nir->scratch_size, 4));
    if (c.uses_helper)
       line(&c, "var<private> wg_helper: bool;");
+   if (c.xfb) {
+      unsigned words = 0;
+      for (unsigned b = 0; b < 4; b++)
+         words = MAX2(words, info->xfb_base[b] + DIV_ROUND_UP(info->xfb_stride[b], 4));
+      line(&c, "var<private> wg_xo: array<u32, %u>;", words);
+   }
 
    const bool has_out = stage == MESA_SHADER_VERTEX ||
                         (stage == MESA_SHADER_FRAGMENT && (info->outputs || info->writes_depth || info->writes_sample_mask));
    if (stage == MESA_SHADER_VERTEX) {
+      /* The body a function of its own, which the driver's transform feedback pass calls too (VK3 L7.4). */
       line(&c, "@vertex fn main(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32%s) -> Out {",
            info->inputs ? ", i: In" : "");
+      line(&c, "  wg_vs(vid, iid%s);", info->inputs ? ", i" : "");
+      line(&c, "  o.pos.y = o.pos.y * wg_flip_y;");
+      line(&c, "  if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }");
+      line(&c, "  return o;");
+      line(&c, "}");
+      line(&c, "fn wg_vs(vid: u32, iid: u32%s) {", info->inputs ? ", i: In" : "");
    } else if (stage == MESA_SHADER_FRAGMENT) {
       const char *params = (c.vary.mask || c.uses_frag_coord) ? "i: In" : "";
       if (c.uses_front_face)
@@ -2334,11 +2384,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       line(&c, "let pc = r%u_%u;", WGSL_MAX_GROUPS - 1, WGSL_PUSH_BINDING);
    predeclare(&c, impl);
    emit_cf_list(&c, &impl->body);
-   if (stage == MESA_SHADER_VERTEX)
-      line(&c, "o.pos.y = o.pos.y * wg_flip_y;");
-   if (stage == MESA_SHADER_VERTEX)
-      line(&c, "if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }");
-   if (has_out)
+   if (has_out && stage != MESA_SHADER_VERTEX)
       line(&c, "return o;");
    c.indent--;
    line(&c, "}");

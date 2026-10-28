@@ -585,6 +585,10 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    vk_queue_finish(&dev->queue.vk);
    wg_id_release(dev->push_buffer);
    wg_id_release(dev->fan_indices);
+   for (uint32_t i = 0; i < 16; i++) {
+      wg_id_release(dev->dummies[i].view);
+      wg_id_release(dev->dummies[i].texture);
+   }
    wg_id_release(dev->query_scratch);
    free(dev->push_data);
    free(dev->pages);

@@ -187,10 +187,16 @@ struct wg_device {
    uint8_t *push_data;
    uint32_t push_used, push_size, push_gen;
    uint32_t fan_indices;   /* wg_fan_indices */
+   /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size. */
+   struct {
+      uint32_t width, height, texture, view;
+   } dummies[16];
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 #define WG_FAN_VERTICES 65536
+/* Whether a vertex shader's outputs are captured by transform feedback (wgsl_info.xfb_stride). */
+#define wg_shader_xfb(s) ((s)->info.xfb_stride[0] | (s)->info.xfb_stride[1] | (s)->info.xfb_stride[2] | (s)->info.xfb_stride[3])
 /* gpu_provoke's modes: each primitive's vertices rotated so that the one Vulkan provokes comes first (their order, and so
  * the winding, kept): the last vertex's of triangle lists, strips and fans and of line lists and strips, the first's of
  * indexed fans (WebGPU has no fans: their non-indexed draws take the device's fan indices). */
@@ -522,6 +528,7 @@ struct wg_cmd_buffer {
       VkRect2D area; /* the render area (depth and stencil resolves keep to it) */
       bool suspending;
       uint32_t samples;
+      uint32_t dummy; /* the device's attachment's index + 1, in a pass without any (0: none) */
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */
    struct wg_pipeline_key last_key;
@@ -538,6 +545,13 @@ struct wg_cmd_buffer {
    struct wg_op_ib last_ib;
    struct wg_shader *last_compute;
    struct wg_program *last_program[2];
+   /* Transform feedback (VK3 L7.4): the bound buffers, and whether it's active (between its begin and end). */
+   struct {
+      struct wg_buffer *buffer;
+      VkDeviceSize offset, size;
+   } xfb[4];
+   bool xfb_active;
+   bool xfb_record; /* record_draw records a draw's state even where it rasterizes nothing (its capture needs it) */
 };
 
 VK_DEFINE_HANDLE_CASTS(wg_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTANCE)

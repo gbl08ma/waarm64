@@ -126,6 +126,10 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* The last vertex provoking: a draw whose fragment shader reads a flat input goes through indices of its own,
        * each primitive's rotated (wg_cmd.c `provoke`; VK3 L7.4, ANGLE's ES3: GL's convention). */
       .EXT_provoking_vertex = true,
+      /* Transform feedback: the vertex stage run as compute at its render pass's end, on the draw's bind groups and
+       * vertex buffers (web/venus-gpu.ts `runXfb`; VK3 L7.4, ANGLE's ES3). One stream, no queries, no draws by the
+       * captured count. */
+      .EXT_transform_feedback = true,
       /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
        * bytes), texel buffers (EXT_texel_buffer_alignment). */
    };
@@ -193,6 +197,7 @@ wg_caps_features(struct vk_features *f)
       .samplerYcbcrConversion = HAS(YCBCR),
       .ycbcrImageArrays = HAS(YCBCR),
       .provokingVertexLast = true,
+      .transformFeedback = true,
    };
 }
 
@@ -350,4 +355,10 @@ wg_caps_properties(struct vk_properties *p)
    p->storageTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->uniformTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->provokingVertexModePerPipeline = true;
+   p->maxTransformFeedbackStreams = 1;
+   p->maxTransformFeedbackBuffers = 4;
+   p->maxTransformFeedbackBufferSize = L->max_storage_buffer_binding_size;
+   p->maxTransformFeedbackStreamDataSize = 512;
+   p->maxTransformFeedbackBufferDataSize = 512;
+   p->maxTransformFeedbackBufferDataStride = 512;
 }

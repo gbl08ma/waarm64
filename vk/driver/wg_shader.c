@@ -368,7 +368,8 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    uint8_t vis[WGSL_MAX_RESOURCES] = { 0 };
    for (uint32_t s = 0; s < count; s++) {
       const struct wgsl_info *info = &shaders[s]->info;
-      const uint8_t stage = shaders[s]->vk.stage == MESA_SHADER_VERTEX ? 1
+      /* A vertex stage captured by transform feedback runs as compute too, on the draw's bind groups (VK3 L7.4). */
+      const uint8_t stage = shaders[s]->vk.stage == MESA_SHADER_VERTEX ? (wg_shader_xfb(shaders[s]) ? 1 | 4 : 1)
                             : shaders[s]->vk.stage == MESA_SHADER_FRAGMENT ? 2
                                                                             : 4;
       p->immediate_size = MAX2(p->immediate_size, info->immediate_size);
@@ -801,7 +802,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 /* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
  * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
  * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
-#define WG_SHADER_FORMAT 2
+#define WG_SHADER_FORMAT 3
 
 static bool
 wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)
@@ -1136,6 +1137,21 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
          }
          wg_json_printf(&j, "]}");
       }
+   }
+   /* Transform feedback (the worker's, not WebGPU's): the vertex stage's records (wgsl.h) and the program's layouts,
+    * for the compute pass that runs it on the draw's bind groups (web/venus-gpu.ts `xfbPipeline`). */
+   if (wg_shader_xfb(k->vs)) {
+      const struct wgsl_info *x = &k->vs->info;
+      wg_json_printf(&j, ",\"xfb\":{\"stride\":[%u,%u,%u,%u],\"base\":[%u,%u,%u,%u],\"words\":[", x->xfb_stride[0],
+                     x->xfb_stride[1], x->xfb_stride[2], x->xfb_stride[3], x->xfb_base[0], x->xfb_base[1],
+                     x->xfb_base[2], x->xfb_base[3]);
+      for (uint32_t b = 0; b < 4; b++)
+         wg_json_printf(&j, "%s[%u,%u,%u,%u]", b ? "," : "", x->xfb_words[b][0], x->xfb_words[b][1],
+                        x->xfb_words[b][2], x->xfb_words[b][3]);
+      wg_json_printf(&j, "],\"bgls\":[");
+      for (uint32_t g = 0; g < p->group_count; g++)
+         wg_json_printf(&j, "%s%u", g ? "," : "", p->bgl[g]);
+      wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);
    }
    wg_json_printf(&j, "}");
    const uint32_t id = wg_create_json(WG_KIND_RENDER, &j);
