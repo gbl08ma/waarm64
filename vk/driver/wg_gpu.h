@@ -78,6 +78,17 @@ WG_IMPORT(gpu_draw) void gpu_draw(uint32_t vertices, uint32_t instances, uint32_
 WG_IMPORT(gpu_draw_indexed) void gpu_draw_indexed(uint32_t indices, uint32_t instances, uint32_t first, int32_t base,
                                                   uint32_t first_instance);
 WG_IMPORT(gpu_draw_indirect) void gpu_draw_indirect(uint32_t buffer, double offset, uint32_t indexed);
+/* Before a render pass (wg_cmd.c `prepasses`, VK3 L7.4): a draw's primitives as a list of 32-bit indices of their own,
+ * each primitive's vertices rotated to put its provoking vertex first (WebGPU's flat interpolation takes the first);
+ * `ticket` numbers it within the pass. Read: `count` indices of `buffer` (16-bit, 32-bit by `wide` 0 or 1; 2: none, the
+ * vertices 0 to count - 1) from element `first` at `offset`; `mode` WG_PROVOKE_*; `restart`: strips and fans restart at
+ * the format's largest index; `prims` primitives written (degenerate ones past a restart's). */
+WG_IMPORT(gpu_provoke) void gpu_provoke(uint32_t ticket, uint32_t buffer, double offset, double size, uint32_t wide,
+                                        uint32_t mode, uint32_t restart, uint32_t first, uint32_t count,
+                                        uint32_t prims);
+/* In the pass: the ticket's indices drawn (an indexed draw, the index buffer the driver's to set again after). */
+WG_IMPORT(gpu_draw_ticket) void gpu_draw_ticket(uint32_t ticket, uint32_t instances, int32_t base,
+                                                uint32_t first_instance);
 WG_IMPORT(gpu_dispatch) void gpu_dispatch(uint32_t x, uint32_t y, uint32_t z);
 WG_IMPORT(gpu_dispatch_indirect) void gpu_dispatch_indirect(uint32_t buffer, double offset);
 /* Inside a render pass: rectangles of the current attachments cleared (JSON {rects: [[x,y,w,h]], colors: [[i, r,g,b,a]],

@@ -41,6 +41,7 @@ int wgt_fl_submit(uint32_t i);
 int wgt_fl_done(uint32_t i);
 int wgt_link(void);
 int wgt_variant(uint32_t scenario);
+int wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
 int wgt_pass_done(void);
@@ -177,9 +178,9 @@ init(void)
                                         .pQueuePriorities = &priority };
    /* wgt_import's: dma-buf memory and the LINEAR modifier. */
    const char *exts[] = { "VK_KHR_external_memory_fd", "VK_EXT_external_memory_dma_buf",
-                          "VK_EXT_image_drm_format_modifier" };
+                          "VK_EXT_image_drm_format_modifier", "VK_EXT_provoking_vertex" };
    const VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,
-                                   .pQueueCreateInfos = &qi, .enabledExtensionCount = 3,
+                                   .pQueueCreateInfos = &qi, .enabledExtensionCount = 4,
                                    .ppEnabledExtensionNames = exts };
    CHECK(CreateDevice(pdev, &di, NULL, &dev));
 #define DLOAD(name) name = (PFN_vk##name)GetDeviceProcAddr(dev, "vk" #name)
@@ -728,6 +729,8 @@ wgt_semaphores(void)
 static VkFence draw_fence;
 static VkShaderModule draw_fs;
 static VkPipeline last;
+/* wgt_flat's: a draw of these vertices, not indexed (0: the quad's six indices). */
+static uint32_t draw_vertices;
 
 static int draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline given);
 
@@ -802,7 +805,10 @@ draw_with(const uint32_t *fs, uint32_t fs_words, uint32_t variant, VkPipeline gi
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, scene.layout, 0, 1, &scene.set, 1, &offset);
    const float right[4] = { 0.5f, 0, 0, 0 };
    CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
-   CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+   if (draw_vertices)
+      CmdDraw(cmd, draw_vertices, 1, 0, 0);
+   else
+      CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
    CmdEndRenderPass(cmd);
    if (given) {
       const VkBufferImageCopy down = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
@@ -917,6 +923,48 @@ wgt_variant(uint32_t scenario)
    VkPipeline p;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
    return draw_with(NULL, 0, 0, p);
+}
+
+/*
+ * The provoking vertex (VK3 L7.4, VK_EXT_provoking_vertex), after wgt_run: wgt_draw's quad with `vs` and `fs`
+ * (flat.vert, flat.frag: each vertex's uv as a flat colour; its triangles (0, 1, 2), the top right of its half, and
+ * (0, 2, 3), the bottom left), copied into wgt_pixels; wgt_draw_done says when.
+ * 0: indexed, the last vertex provoking: v2's (1, 1) top left, v3's (0, 1) bottom left;
+ * 1: its four vertices as a fan, not indexed, the last vertex provoking (triangles (1, 2, 0), (2, 3, 0)): as 0;
+ * 2: as 1, the first vertex provoking: v1's (1, 0) top left, v2's (1, 1) bottom left.
+ */
+EXPORT int
+wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   VkPipelineShaderStageCreateInfo stages[2] = { scene.stages[0], scene.stages[1] };
+   stages[1].pSpecializationInfo = NULL;
+   if (shader(vs, vs_words, &stages[0].module) || shader(fs, fs_words, &stages[1].module))
+      return 1;
+   gpi.pStages = stages;
+   VkPipelineInputAssemblyStateCreateInfo ias = *gpi.pInputAssemblyState;
+   VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+   const VkPipelineRasterizationProvokingVertexStateCreateInfoEXT pv = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT,
+      .provokingVertexMode = scenario < 2 ? VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT
+                                          : VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT,
+   };
+   rs.pNext = &pv;
+   rs.cullMode = VK_CULL_MODE_NONE;
+   if (scenario > 0)
+      ias.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+   gpi.pInputAssemblyState = &ias;
+   gpi.pRasterizationState = &rs;
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   draw_vertices = scenario > 0 ? 4 : 0;
+   const int r = draw_with(NULL, 0, 0, p);
+   draw_vertices = 0;
+   return r;
 }
 
 /*

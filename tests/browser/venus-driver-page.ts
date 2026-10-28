@@ -16,7 +16,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
-  wgt_link(): number; wgt_variant(scenario: number): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
+  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
 };
 
@@ -326,7 +326,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -349,8 +349,15 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     await wait(() => ex.wgt_done(), 'the scene');
     const index = { none: 0, partial: 1, resume: 2, resumePartial: 3, readOnlyDepth: 4, clearQuery: 5, facesUnused: 6, facesSplit: 7 } as const;
     const variant = { strip: 0, vertexOnly: 1, lineBias: 2 } as const;
+    const flat = { flatLast: 0, flatFanLast: 1, flatFanFirst: 2 } as const;
     let at: number, draws = 0;
-    if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {
+    if (scenario === 'flatLast' || scenario === 'flatFanLast' || scenario === 'flatFanFirst') {
+      const [fv, fvn] = put(await words('/target/vk/test/flat.vert.spv')), [ff, ffn] = put(await words('/target/vk/test/flat.frag.spv'));
+      new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
+      if (ex.wgt_flat(flat[scenario], fv, fvn, ff, ffn)) return { error: text(ex.wgt_error() >>> 0), errors };
+      await wait(() => ex.wgt_draw_done(), 'the draw');
+      at = ex.wgt_pixels() >>> 0;
+    } else if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
       if (scenario === 'link' ? ex.wgt_link() : ex.wgt_variant(variant[scenario])) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draw');

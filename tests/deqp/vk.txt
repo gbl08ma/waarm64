@@ -38,7 +38,9 @@
 # consistency and sample_qualifier_distinct_values; and every sixth depth_stencil_resolve samples_4 case of SAMPLE_ZERO
 # resolves that passes (s8_uint's stencil resolves fail: docs/backlog.md), at the end.
 # VK3 L7.4: ANGLE's ES3 row: more than 12 uniform buffers a stage (past WebGPU's, read as storage): every
-# descriptor_limits uniform_buffers case of compute and fragment shaders up to the device's 13, at the end.
+# descriptor_limits uniform_buffers case of compute and fragment shaders up to the device's 13, at the end. Then the provoking vertex
+# (its last, through indices of the draw's own made before the pass; indexed fans the same way): every
+# rasterization.provoking_vertex.draw case but adjacency's (not supported), and an indexed fan, at the end.
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -4484,3 +4486,23 @@ dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_6
 dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_7
 dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_8
 dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.uniform_buffers_9
+dEQP-VK.draw.dynamic_rendering.partial_secondary_cmd_buff.instanced.draw_indexed_vk_primitive_topology_triangle_fan
+dEQP-VK.rasterization.provoking_vertex.draw.default.line_list
+dEQP-VK.rasterization.provoking_vertex.draw.default.triangle_fan
+dEQP-VK.rasterization.provoking_vertex.draw.default.triangle_list
+dEQP-VK.rasterization.provoking_vertex.draw.default.triangle_strip
+dEQP-VK.rasterization.provoking_vertex.draw.first.line_list
+dEQP-VK.rasterization.provoking_vertex.draw.first.line_strip
+dEQP-VK.rasterization.provoking_vertex.draw.first.triangle_fan
+dEQP-VK.rasterization.provoking_vertex.draw.first.triangle_list
+dEQP-VK.rasterization.provoking_vertex.draw.first.triangle_strip
+dEQP-VK.rasterization.provoking_vertex.draw.last.line_list
+dEQP-VK.rasterization.provoking_vertex.draw.last.line_strip
+dEQP-VK.rasterization.provoking_vertex.draw.last.triangle_fan
+dEQP-VK.rasterization.provoking_vertex.draw.last.triangle_list
+dEQP-VK.rasterization.provoking_vertex.draw.last.triangle_strip
+dEQP-VK.rasterization.provoking_vertex.draw.per_pipeline.line_list
+dEQP-VK.rasterization.provoking_vertex.draw.per_pipeline.line_strip
+dEQP-VK.rasterization.provoking_vertex.draw.per_pipeline.triangle_fan
+dEQP-VK.rasterization.provoking_vertex.draw.per_pipeline.triangle_list
+dEQP-VK.rasterization.provoking_vertex.draw.per_pipeline.triangle_strip

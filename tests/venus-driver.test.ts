@@ -33,7 +33,7 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag']]) {
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -192,6 +192,10 @@ for (const [scenario, what, want] of [
   // L6c (the review of L5-L6a: finding 7): a draw split by face only where its faces' stencil state conflicts.
   ['facesUnused', 'faces whose stencil references differ but go unused draw once', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['facesSplit', 'faces whose stencil references both compare draw as two, front faces passing', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  // L7.4: the provoking vertex (each triangle's flat colour, the quad's vertices' uv: its triangles (0, 1, 2) top left, (0, 2, 3) bottom left).
+  ['flatLast', 'an indexed triangle list whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  ['flatFanLast', 'a fan whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
+  ['flatFanFirst', 'a fan whose first vertex provokes (Vulkan\'s: each triangle\'s second vertex of the fan)', { topLeft: red, bottomLeft: yellow, topRight: blue, bottomRight: blue }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.

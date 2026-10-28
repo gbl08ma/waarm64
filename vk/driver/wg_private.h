@@ -191,6 +191,11 @@ struct wg_device {
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 #define WG_FAN_VERTICES 65536
+/* gpu_provoke's modes: each primitive's vertices rotated so that the one Vulkan provokes comes first (their order, and so
+ * the winding, kept): the last vertex's of triangle lists, strips and fans and of line lists and strips, the first's of
+ * indexed fans (WebGPU has no fans: their non-indexed draws take the device's fan indices). */
+enum { WG_PROVOKE_TRI_LIST, WG_PROVOKE_TRI_STRIP, WG_PROVOKE_FAN_LAST, WG_PROVOKE_FAN_FIRST, WG_PROVOKE_LINE_LIST,
+       WG_PROVOKE_LINE_STRIP };
 uint32_t wg_fan_indices(struct wg_device *dev);
 
 /* Memory: a GPU buffer (made at the first buffer bound to it, with every buffer usage: buffers alias by offset), and

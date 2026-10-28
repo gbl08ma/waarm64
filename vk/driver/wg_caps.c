@@ -123,6 +123,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* YCbCr conversions and the multi-planar formats (VK3 L7.2; `?gpu=vkycbcr`, off by default until GTK4's row). */
       .KHR_sampler_ycbcr_conversion = HAS(YCBCR),
       .EXT_ycbcr_image_arrays = HAS(YCBCR),
+      /* The last vertex provoking: a draw whose fragment shader reads a flat input goes through indices of its own,
+       * each primitive's rotated (wg_cmd.c `provoke`; VK3 L7.4, ANGLE's ES3: GL's convention). */
+      .EXT_provoking_vertex = true,
       /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
        * bytes), texel buffers (EXT_texel_buffer_alignment). */
    };
@@ -189,6 +192,7 @@ wg_caps_features(struct vk_features *f)
        * refuses a device without them (VK3 L7.1b). */
       .samplerYcbcrConversion = HAS(YCBCR),
       .ycbcrImageArrays = HAS(YCBCR),
+      .provokingVertexLast = true,
    };
 }
 
@@ -345,4 +349,5 @@ wg_caps_properties(struct vk_properties *p)
    p->maxTimelineSemaphoreValueDifference = 2147483647;
    p->storageTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->uniformTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
+   p->provokingVertexModePerPipeline = true;
 }

@@ -9,7 +9,7 @@
 import type { ShaderCache } from './venus-cache.ts';
 
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
-const COPY_SRC = 4, COPY_DST = 8, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
+const INDEX = 16, COPY_SRC = 4, COPY_DST = 8, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -245,6 +245,12 @@ export class VenusGpu {
   private chain: Promise<void> = Promise.resolve();
   private readonly metaPipelines = new Map<string, GPURenderPipeline>();
   private readonly metaComputes = new Map<string, GPUComputePipeline>();
+  /** The render pass's draws through indices of their own (`gpu_provoke`), by ticket; and the scratch buffers they and
+   * their parameters take places in, from the start at each encoder (the queue's order keeps an earlier submit's reads
+   * of a place before a later one's writes). */
+  private readonly tickets: ({ buffer: GPUBuffer; offset: number; size: number } | undefined)[] = [];
+  private readonly scratches = new Map<number, { buffer: GPUBuffer; at: number }>();
+  private dummyStorage: GPUBuffer | undefined;
   private readonly metaModules = new Map<string, GPUShaderModule>();
   /** A bind group layout's bindings of storage textures a shader may write, and the textures a bind group binds
    * there: a pass that sets the group writes them (`touched`, for presentation). */
@@ -402,6 +408,7 @@ export class VenusGpu {
         }
         later(() => {
           self.enc = d.createCommandEncoder();
+          for (const s of self.scratches.values()) s.at = 0;
           if (self.gpuTime) self.timing = self.timings.pop() ?? new Timing(d);
         });
       },
@@ -536,6 +543,19 @@ export class VenusGpu {
         later(() => {
           if (indexed) rp().drawIndexedIndirect(B, offset);
           else rp().drawIndirect(B, offset);
+        });
+      },
+      gpu_provoke(ticket: number, b: number, offset: number, size: number, wide: number, mode: number, restart: number, first: number, count: number, prims: number) {
+        const B = b ? buf(b) : undefined;
+        later(() => self.provoke(ticket, B, offset, size, wide, mode, restart, first, count, prims));
+      },
+      gpu_draw_ticket(ticket: number, inst: number, base: number, firstInst: number) {
+        self.stats.draws++;
+        later(() => {
+          const t = self.tickets[ticket];
+          if (!t) return;
+          rp().setIndexBuffer(t.buffer, 'uint32', t.offset, t.size);
+          rp().drawIndexed(t.size / 4, inst, 0, base, firstInst);
         });
       },
       gpu_dispatch(x: number, y: number, z: number) { later(() => cp().dispatchWorkgroups(x, y, z)); },
@@ -1323,6 +1343,105 @@ ${vs}
    * temporary buffer, then a compute pass that writes each destination word the copy touches, keeping its bytes outside
    * the copy. On the GPU, in the encoder's order: the source's bytes are what earlier commands wrote.
    */
+  /** `bytes` at a 256-aligned place of the scratch buffer of `usage`, grown (the old one destroyed after the submit). */
+  private scratch(usage: number, bytes: number): [GPUBuffer, number] {
+    const need = (bytes + 255) & ~255;
+    let s = this.scratches.get(usage);
+    if (!s || s.at + need > s.buffer.size) {
+      if (s) this.temps.push(s.buffer);
+      s = { buffer: this.device!.createBuffer({ size: Math.max(1 << 16, 2 * need, s ? 2 * s.buffer.size : 0), usage }), at: 0 };
+      this.scratches.set(usage, s);
+    }
+    const at = s.at;
+    s.at += need;
+    return [s.buffer, at];
+  }
+
+  /**
+   * A draw's primitives as a list of 32-bit indices, each one's vertices rotated so that Vulkan's provoking vertex comes
+   * first (WebGPU's flat interpolation takes the first), in a compute pass before the render pass (wg_gpu.h
+   * `gpu_provoke`, VK3 L7.4): `mode` WG_PROVOKE_* (triangle list, strip, fan's last, fan's first, line list, strip).
+   * With `restart`, one invocation walks the strip or fan and pads what a restart leaves with degenerate primitives.
+   */
+  private provoke(ticket: number, src: GPUBuffer | undefined, offset: number, size: number, wide: number, mode: number, restart: number, first: number, count: number, prims: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('provoke');
+    if (!pipeline) {
+      const code = `struct P { mode: u32, wide: u32, first: u32, prims: u32, restart: u32, count: u32, pad0: u32, pad1: u32 }
+@group(0) @binding(0) var<storage, read> s: array<u32>;
+@group(0) @binding(1) var<storage, read_write> o: array<u32>;
+@group(0) @binding(2) var<uniform> p: P;
+fn ix(i: u32) -> u32 {
+  if (p.wide == 2u) { return i; }
+  let k = p.first + i;
+  if (p.wide == 1u) { return s[k]; }
+  return (s[k >> 1u] >> ((k & 1u) * 16u)) & 0xffffu;
+}
+fn tri(g: u32, a: u32, b: u32, c: u32) { o[3u * g] = a; o[3u * g + 1u] = b; o[3u * g + 2u] = c; }
+fn line(g: u32, a: u32, b: u32) { o[2u * g] = a; o[2u * g + 1u] = b; }
+// Triangle j of a strip (its vertices a, b, x) or a fan (c, b, x), its provoking vertex first, the winding kept.
+fn joined(g: u32, j: u32, c: u32, a: u32, b: u32, x: u32) {
+  if (p.mode == 1u) { if ((j & 1u) == 0u) { tri(g, x, a, b); } else { tri(g, x, b, a); } }
+  else if (p.mode == 2u) { tri(g, x, c, b); }
+  else { tri(g, b, x, c); }
+}
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) n: vec3<u32>) {
+  if (p.restart != 0u) {
+    if (id.x != 0u) { return; }
+    let r = select(0xffffu, 0xffffffffu, p.wide == 1u);
+    var g = 0u; var run = 0u; var c = 0u; var a = 0u; var b = 0u;
+    for (var i = 0u; i < p.count && g < p.prims; i++) {
+      let x = ix(i);
+      if (x == r) { run = 0u; continue; }
+      if (run == 0u) { c = x; }
+      if (p.mode == 5u) { if (run >= 1u) { line(g, x, b); g++; } }
+      else if (run >= 2u) { joined(g, run - 2u, c, a, b, x); g++; }
+      a = b; b = x; run++;
+    }
+    for (; g < p.prims; g++) { if (p.mode == 5u) { line(g, b, b); } else { tri(g, b, b, b); } }
+    return;
+  }
+  for (var g = id.x; g < p.prims; g += n.x * 64u) {
+    switch p.mode {
+      case 0u: { tri(g, ix(3u * g + 2u), ix(3u * g), ix(3u * g + 1u)); }
+      case 4u: { line(g, ix(2u * g + 1u), ix(2u * g)); }
+      case 5u: { line(g, ix(g + 1u), ix(g)); }
+      default: { joined(g, g, ix(0u), ix(g), ix(g + 1u), ix(g + 2u)); }
+    }
+  }
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('provoke', pipeline);
+    }
+    const per = mode >= 4 ? 2 : 3, bytes = prims * per * 4;
+    const [out, at] = this.scratch(STORAGE | INDEX, bytes);
+    // The source's binding from a 256-aligned offset (minStorageBufferOffsetAlignment is at most 256), in words.
+    let source: GPUBufferBinding, el0 = first;
+    if (src && wide !== 2) {
+      const el = wide ? 4 : 2, start = offset + first * el, from = start - (start % 256);
+      const end = Math.min(src.size, offset + Math.max(size, (first + count) * el)) & ~3;
+      source = { buffer: src, offset: from, size: Math.max(4, end - from) };
+      el0 = (start - from) / el;
+    } else {
+      this.dummyStorage ??= d.createBuffer({ size: 16, usage: STORAGE });
+      source = { buffer: this.dummyStorage };
+    }
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 32);
+    d.queue.writeBuffer(u, uat, new Uint32Array([mode, wide, el0, prims, restart, count, 0, 0]));
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: source },
+      { binding: 1, resource: { buffer: out, offset: at, size: bytes } },
+      { binding: 2, resource: { buffer: u, offset: uat, size: 32 } },
+    ] });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(restart ? 1 : Math.min(65535, Math.ceil(prims / 64)));
+    pass.end();
+    this.tickets[ticket] = { buffer: out, offset: at, size: bytes };
+  }
+
   private copyUnaligned(src: GPUBuffer, so: number, dst: GPUBuffer, dO: number, size: number) {
     const d = this.device!, enc = this.enc!;
     let pipeline = this.metaComputes.get('copy');
@@ -1535,5 +1654,5 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
-  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
+  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
   'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

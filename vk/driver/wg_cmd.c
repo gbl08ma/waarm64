@@ -53,6 +53,7 @@ enum op {
    OP_COPY_QUERY,      /* struct op_copy_query */
    OP_EVENT,           /* struct op_event */
    OP_EXEC,            /* struct wg_cmd_buffer * */
+   OP_PROVOKE,         /* struct op_provoke */
 };
 
 struct op_head {
@@ -94,6 +95,16 @@ struct op_draw_indexed {
 struct op_indirect {
    uint32_t buffer, indexed, count, stride;
    double offset;
+};
+
+/* A draw through indices of its own, made before its render pass (gpu_provoke: the provoking vertex, indexed fans). */
+struct op_provoke {
+   uint32_t buffer;              /* the index buffer (0 for a draw without one) */
+   uint8_t wide, mode, restart;  /* gpu_provoke's */
+   uint32_t first, count, prims, instances;
+   int32_t base;
+   uint32_t first_instance;
+   double offset, size;
 };
 
 struct op_copy_bb {
@@ -835,9 +846,10 @@ draw_faces(struct wg_cmd_buffer *cmd)
              : 1;
 }
 
-/* `face`: 0 the whole draw, 1 its front faces, 2 its back faces (draw_faces). */
+/* `face`: 0 the whole draw, 1 its front faces, 2 its back faces (draw_faces); `provoke`: a WG_PROVOKE_* mode for a draw
+ * through indices of its own (a list then, its index buffer the replay's), or -1. */
 static bool
-record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
+record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
 {
    struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX], *fs = cmd->shaders[MESA_SHADER_FRAGMENT];
    const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
@@ -856,6 +868,10 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
    k.vs = vs;
    k.fs = fs && fs->program ? fs : NULL;
    k.topology = dyn->ia.primitive_topology;
+   if (provoke >= 0) {
+      k.topology = provoke >= WG_PROVOKE_LINE_LIST ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+      indexed = false;
+   }
    /* WebGPU takes no indexed strip without its index format, and always restarts it at the format's largest index:
     * with restart off in Vulkan, that index is a vertex (rare: it is the largest possible). */
    if (indexed && (k.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || k.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP))
@@ -1026,15 +1042,78 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
    return true;
 }
 
+/* Whether the fragment shader reads a flat input (the provoking vertex's value). */
+static bool
+reads_flat(const struct wg_cmd_buffer *cmd)
+{
+   const struct wg_shader *fs = cmd->shaders[MESA_SHADER_FRAGMENT];
+   if (!fs || !fs->program)
+      return false;
+   u_foreach_bit(l, fs->info.varyings.mask)
+      if (fs->info.varyings.interp[l] == WGSL_INTERP_FLAT)
+         return true;
+   return false;
+}
+
+/* The WG_PROVOKE_* mode a draw takes indices of its own in (-1: none): its provoking vertex the last
+ * (VK_EXT_provoking_vertex, VK3 L7.4) where its fragment shader reads a flat input (WebGPU's flat interpolation takes
+ * the first vertex), and indexed fans (WebGPU has no fans). */
+static int
+provoke_mode(const struct wg_cmd_buffer *cmd, bool indexed)
+{
+   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+   const bool last = dyn->rs.provoking_vertex == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT && reads_flat(cmd);
+   switch (dyn->ia.primitive_topology) {
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+      return last ? WG_PROVOKE_FAN_LAST : indexed ? WG_PROVOKE_FAN_FIRST : -1;
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: return last ? WG_PROVOKE_TRI_LIST : -1;
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP: return last ? WG_PROVOKE_TRI_STRIP : -1;
+   case VK_PRIMITIVE_TOPOLOGY_LINE_LIST: return last ? WG_PROVOKE_LINE_LIST : -1;
+   case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP: return last ? WG_PROVOKE_LINE_STRIP : -1;
+   default: return -1;
+   }
+}
+
+/* A draw of `count` vertices or indices through indices of its own (OP_PROVOKE), in `mode`. */
+static void
+provoke(struct wg_cmd_buffer *cmd, int mode, bool indexed, uint32_t face, uint32_t count, uint32_t instances,
+        uint32_t first, int32_t base, uint32_t first_instance)
+{
+   const uint32_t per = mode >= WG_PROVOKE_LINE_LIST ? 2 : 3;
+   const uint32_t prims = mode == WG_PROVOKE_TRI_LIST || mode == WG_PROVOKE_LINE_LIST ? count / per
+                          : count >= per - 1 ? count - (per - 1) : 0;
+   if (!prims || !record_draw(cmd, indexed, face, mode))
+      return;
+   struct op_provoke o = { .wide = 2, .mode = mode, .first = indexed ? first : 0, .count = count, .prims = prims,
+                           .instances = instances, .base = indexed ? base : (int32_t)first,
+                           .first_instance = first_instance };
+   if (indexed) {
+      o.buffer = buffer_gpu(cmd->ib);
+      if (!o.buffer)
+         return;
+      o.wide = cmd->ib_type == VK_INDEX_TYPE_UINT32;
+      o.restart = cmd->vk.dynamic_graphics_state.ia.primitive_restart_enable && mode != WG_PROVOKE_TRI_LIST &&
+                  mode != WG_PROVOKE_LINE_LIST;
+      o.offset = cmd->ib->offset + cmd->ib_offset;
+      o.size = cmd->ib_size;
+   }
+   emit(cmd, OP_PROVOKE, &o, sizeof(o));
+}
+
 static void
 draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t first, uint32_t first_instance,
      uint32_t face)
 {
-   if (!record_draw(cmd, false, face))
+   const int mode = provoke_mode(cmd, false);
+   if (mode >= 0) {
+      provoke(cmd, mode, false, face, vertices, instances, first, 0, first_instance);
+      return;
+   }
+   if (!record_draw(cmd, false, face, -1))
       return;
    if (cmd->vk.dynamic_graphics_state.ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN) {
-      /* A fan (WebGPU has none) as a triangle list through the device's fan indices (0, 1, 2, 0, 2, 3, ...), from the
-       * first vertex as the base. */
+      /* A fan (WebGPU has none) as a triangle list through the device's fan indices (1, 2, 0, 2, 3, 0, ...: each
+       * triangle's first vertex Vulkan's provoking one), from the first vertex as the base. */
       struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
       if (vertices < 3 || vertices > WG_FAN_VERTICES)
          return;
@@ -1075,8 +1154,13 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
    if (!indices || !instances)
       return;
    const uint32_t faces = draw_faces(cmd);
+   const int mode = provoke_mode(cmd, true);
    for (uint32_t i = 0; i < faces; i++) {
-      if (!record_draw(cmd, true, face_of(faces, i)))
+      if (mode >= 0) {
+         provoke(cmd, mode, true, face_of(faces, i), indices, instances, first, base, first_instance);
+         continue;
+      }
+      if (!record_draw(cmd, true, face_of(faces, i), -1))
          return;
       emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance },
            sizeof(struct op_draw_indexed));
@@ -1092,8 +1176,14 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
    if (!count)
       return;
    const uint32_t faces = draw_faces(cmd);
+   if (provoke_mode(cmd, indexed) >= 0) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: an indirect draw whose provoking vertex is the last, or an indexed fan: drawn as is\n");
+      warned = true;
+   }
    for (uint32_t i = 0; i < faces; i++) {
-      if (!record_draw(cmd, indexed, face_of(faces, i)))
+      if (!record_draw(cmd, indexed, face_of(faces, i), -1))
          return;
       emit(cmd, OP_DRAW_INDIRECT,
            &(struct op_indirect){ .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count,
@@ -1592,6 +1682,7 @@ struct replay {
    uint32_t qactive;
    uint32_t qspares; /* the pass's spare slots taken */
    struct util_dynarray pass_queries;
+   uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
 };
 
 enum { RD_PIPELINE = 1, RD_DYN = 2, RD_GROUPS = 4, RD_VB = 8, RD_IB = 16, RD_PUSH = 32, RD_ALL = 63 };
@@ -1726,6 +1817,32 @@ pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop)
    return NULL;
 }
 
+/* The compute passes a render pass's draws need, made before it begins (docs/plans/graphics.md §4's render-pass rule:
+ * WebGPU runs no compute inside a render pass, and a break per draw costs a frame its attachments' store and load):
+ * each OP_PROVOKE's indices, numbered in the pass's order, which its replay draws by the same numbers. Vulkan's
+ * barriers inside a render pass reach no index buffer, so what a draw reads is what the commands before the pass left
+ * (VK3 L7.4). Returns how many. */
+static uint32_t
+prepasses(const uint8_t *p, const uint8_t *end, uint32_t ticket, bool top)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      const void *d = h + 1;
+      p += sizeof(*h) + h->size;
+      if (top && (h->op == OP_PASS || h->op == OP_PASS_END))
+         break;
+      if (h->op == OP_PROVOKE) {
+         const struct op_provoke *o = d;
+         gpu_provoke(ticket++, o->buffer, o->offset, o->size, o->wide, o->mode, o->restart, o->first, o->count,
+                     o->prims);
+      } else if (h->op == OP_EXEC) {
+         const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
+         ticket = prepasses(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, ticket, false);
+      }
+   }
+   return ticket;
+}
+
 /* A query ended at this point of the queue: available to later copies, and to the host once its submit completes
  * (an occlusion query's value read back then). */
 static void
@@ -1749,7 +1866,8 @@ query_ended(struct replay *r, struct wg_query_pool *pool, uint32_t index)
  * a group a set no longer keeps may still be the replay's current one (its id mustn't be reused before then). */
 static struct util_dynarray released_groups;
 
-/* The device's fan indices: (0, i, i + 1) for each triangle of a fan of up to WG_FAN_VERTICES vertices. */
+/* The device's fan indices: (i + 1, i + 2, 0) for each triangle i of a fan of up to WG_FAN_VERTICES vertices (Vulkan's
+ * order, its provoking vertex first). */
 uint32_t
 wg_fan_indices(struct wg_device *dev)
 {
@@ -1759,7 +1877,7 @@ wg_fan_indices(struct wg_device *dev)
       dev->fan_indices = wg_create_json(WG_KIND_BUFFER, &j);
       uint32_t *idx = malloc((WG_FAN_VERTICES - 2) * 12);
       for (uint32_t i = 0; i < WG_FAN_VERTICES - 2; i++)
-         idx[3 * i] = 0, idx[3 * i + 1] = i + 1, idx[3 * i + 2] = i + 2;
+         idx[3 * i] = i + 1, idx[3 * i + 1] = i + 2, idx[3 * i + 2] = 0;
       gpu_write(dev->fan_indices, 0, idx, (WG_FAN_VERTICES - 2) * 12);
       free(idx);
    }
@@ -2125,6 +2243,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          bool stop = false;
          r->qpool = pass_query_pool(p, end, &stop);
          r->qspares = 0;
+         prepasses(p, end, 0, true);
+         r->tickets = 0;
          if (r->qpool) {
             struct wg_json j = { 0 };
             wg_json_printf(&j, "{\"occlusionQuerySet\":%u,%s", r->qpool->set, json + 1);
@@ -2234,6 +2354,15 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             break;
          apply(r, 0);
          gpu_draw_indexed(a->count, a->instances, a->first, a->base, a->first_instance);
+         break;
+      }
+      case OP_PROVOKE: {
+         const struct op_provoke *o = d;
+         if (r->pass != RENDER)
+            break;
+         apply(r, 0);
+         gpu_draw_ticket(r->tickets++, o->instances, o->base, o->first_instance);
+         r->dirty |= RD_IB;
          break;
       }
       case OP_DRAW_INDIRECT: {
