@@ -3,7 +3,7 @@
 The host side of Vulkan through Venus ([docs/plans/graphics.md](../docs/plans/graphics.md) route (b);
 [docs/devices.md](../docs/devices.md) "Venus"): virglrenderer's Venus decoder (`vkr`) over a Vulkan driver of ours
 on Mesa's common Vulkan runtime, with Mesa's `spirv_to_nir`, NIR and our NIR → WGSL backend, built as one wasm module,
-`target/vk/venus.wasm` (11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli: most of the raw size is NIR's tables), which the GPU worker
+`target/vk/venus.wasm` (12.05 MiB, 1.24 MiB gzipped, 0.74 MiB with brotli: most of the raw size is NIR's tables), which the GPU worker
 instantiates on the VM's memory 0 (web/venus-host.ts).
 
 ```sh
@@ -699,5 +699,5 @@ or the page's `?gpu=vulkan` asks; only then does the GPU worker fetch the module
 static copy as a hashed asset with its licences beside it (`VENUS-LICENSES.txt`, made by vk/build.sh from
 `vk/LICENSES.head`, the sources' licence files and `vk/LLVM-exception.txt`); `npm start` and `npm run dist --
 --no-vulkan` include it only when built (vk/build.sh isn't part of their preparation: it builds Mesa and
-virglrenderer natively first). The module is 11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli (bench/vulkan/REPORT.md "VK2: the module, a
-pipeline, a submit").
+virglrenderer natively first). The module is 12.05 MiB, 1.24 MiB gzipped, 0.74 MiB with brotli (bench/vulkan/REPORT.md "VK3: the summary"; how
+it's measured: "VK2: the module, a pipeline, a submit").

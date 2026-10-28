@@ -771,6 +771,91 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK3: the summary — Venus right on NVIDIA, the adapter's features and §4's emulated rows, the user's NVIDIA run outstanding
+
+**2026-10-28, at the track's end (L8).** VK3 ran 2026-10-26 to 10-28 as loops under a supervisor
+(`VK3-KICKOFF.md`, `VK3-HANDOVER.md` in git history), three of the user's NVIDIA runs and eight out-of-context reviews
+between them. Each loop's section below has its numbers; JSON in `results/vk3/<loop>/`. Hosts: the dev VM's SwiftShader
+(Chromium 153.0.8010.52), the M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) and the user's RTX 3070
+(NVIDIA 615.71.09, Arch's Chromium 153.0.8010.52; Dawn on Vulkan, ANGLE on NVIDIA's GL).
+
+**What each loop landed:**
+
+| loop | landed | JSON |
+| --- | --- | --- |
+| L1 | NVIDIA's black frames: the device's NVIDIA vendor ID sent Venus's guest WSI down Mesa's prime blit (frames into a buffer that isn't shared); NVIDIA reported as an unknown maker; a GPU way checked against a readback at its first copies, dropped for the next way if wrong | `l1/` |
+| L2 | the fence's floor: the ring poller off a clamped nested `setTimeout(0)` (4.4 ms on Linux, 6 on the Mac) onto `Atomics.waitAsync`, empty submits nudging Dawn's slow look; the fence's breakdown in the render stats | `l2/` |
+| L2b | the tools for NVIDIA's 1 fish (`vkgputime`, `vknudge`, frame-shaped submits, a trace); "the GPU works ~0.3 ms" was the CPU's clock at replay | `l2b/` |
+| L3 | pipelines made asynchronously (a submit held for its pipelines), translated shaders kept across runs in IndexedDB (32 MiB, the origin's) | `l3/` |
+| L4–L4c | the M4's green VA-API chroma under libplacebo's advanced path: narrowed by experiment (L4), found by a static review (a window page lost between Venus devices) and fixed with eleven more of its findings (L4c) | `l4/`, `l4b/`, `l4c/` |
+| L4d–L4e | a cold first mpv's frozen window: Mesa 26's async present drops a present after one that failed; the desktop image presents synchronously (`VN_PERF=no_async_present`); the advanced path on by default | `l4d/`, `l4e/` |
+| L4f, L5b | the out-of-context reviews' remaining findings (translator, driver; then L4f's own): fixed with tests or filed; dual-source blending implemented; API 1.3 kept, its gaps filed | (handover, backlog) |
+| L5 | WGSL's subgroups (held where the page's check finds them wrong: the M4), 16-bit storage, `shaderFloat16`, tier2's read-write formats | `l5/` |
+| L6a | per-face stencil, occlusion queries on the GPU, timeline waits before their signal | (handover) |
+| L6b | texel buffers, the depth and stencil copies WebGPU refuses, bind groups kept across submits; dEQP-VK on the M4 (3,547 pass, 7 fail, the rest subgroups held) | `l6b/` |
+| L6c | vkQuake's first frame (L5b's writable compute SSBOs made a usage-scope conflict); the replays in ci-deqp-vk.sh; the L5–L6a review's 8 findings | `l6c/` |
+| L7.1, L7.1b | Dawn's row (indexed descriptor arrays of every kind, sample-rate shading); opaque-fd semaphores made; Dawn in the guest's Chromium still not on Venus (the guest's Mesa) | `l71/`, `l71b/` |
+| L7.2, L7.3 | YCbCr conversions (8-bit multi-planar formats), on by default since GTK 4.24 aborts without them; GTK4's black frames were L4c-D's partial clear; GTK4 takes GL by itself | `l72/`, `l73/` |
+| L7.4 | ANGLE's ES3 row (13 uniform buffers a stage, the last vertex provoking, transform feedback, attachment-less passes): WebGL 2 on Venus in the guest's Chromium | `l74/` |
+| L7.5 | vkd3d's row (draw parameters): vkd3d 1.19 makes a feature level 11_0 device | `l75/` |
+| L7a, L7b | the reviews after L7: one count of the bindings WebGPU takes, the advertised limits from it, a pipeline past them refused saying why; the rest (odd 16-bit index ranges, indirect draws captured, `interpolateAt*`, …) | `l7a/`, (L7b: tests) |
+
+dEQP-VK's pass list grew from VK2's 1,463 cases to **4,690** (`tests/deqp/vk.txt`), with **773** more for YCbCr
+(`tests/deqp/vk-ycbcr.txt`), all passing on SwiftShader in CI (below).
+
+**The gate, row by row** (VK3-KICKOFF.md "The gate", in git history):
+
+| gate item | SwiftShader and the M4 | the user's NVIDIA desktop |
+| --- | --- | --- |
+| vkcube and mpv on Vulkan visible and right on the page's screen | **met**: every way right on the M4 (`l1/mac-ways.json`; a broken bitmap way dropped for canvas, `l1/mac-bitmap-broken.json`), readback on SwiftShader (`l1/swiftshader-nvidia-sh.json`) | **met** at 5b9654ac and 4fdc69fb: vkcube and mpv right in every way, the page on bitmap (`nvidia/present/`, `nvidia-l4e/present/`) |
+| mpv meets its bar (no drops, the guest ≤ 19–27% busy) | **met** on the M4: 0 dropped, 14 and 13% busy, synchronous presents and the advanced path on (`l4e/mpv-mac-sync.json`) | **met** at 4fdc69fb: 0 dropped, 14 and 12% (`nvidia-l4e/mpv/`) |
+| VK0's scene no dearer a frame than virgl at every size | **met**: M4 1 fish 0.85–0.88 against 0.87–0.96 ms, 1,000 fish 2.50–2.55 against 4.55–4.61, toolkit 0.81 against 3.27–3.46 (`l2/scene-mac-*`; L6b's bind groups the same or lower, `l6b/bind-groups/`); SwiftShader 10.0 against 10.4–13.1 at 1 fish (`l2/scene-swiftshader-*`) | **1,000 fish and the toolkit met** (5.7 against 8.7–8.9 ms; 3.05–3.19 against 6.81–7.43: `nvidia-l4e/scene-*`); **1 fish not** (2.5 against 1.5), parked by the user: the scene clause is held at 1,000 fish and the toolkit |
+| the programs' replays within their tolerances | **met**: vkcube, vkmark's 13 scenes, vkQuake (1.7%, tolerance 3%) in `ci-deqp-vk.sh` on SwiftShader (below; `l6c/vkquake-fix.json`); the M4's as in VK2 (`../vk2/l5/`) | **met** at 4fdc69fb (`nvidia-l4e/replay/`) |
+| each emulated row: its dEQP-VK groups in the pass list | **met**: Dawn's 173 cases (L7.1) and `interpolateAt*`'s 18 (L7b), ANGLE's ES3 175 (L7.4), vkd3d's 73 (L7.5), YCbCr's 773 (L7.2) | at 4fdc69fb none of them existed: the next run's `deqp` step |
+| each emulated row: the program it brings runs right | ANGLE's ES3 in the guest's Chromium: right against ANGLE on virgl's GL (`l74/angle-es3.json`; 205 for 156 with Chromium's own Vulkan device too, an sRGB view: filed); vkd3d: a device at 11_0, its draw tests pass, three tests fail on filed gaps (`l75/vkd3d.json`); **Dawn's program not run** (the guest's Mesa hands back fd 0 for opaque-fd semaphores: backlog); GTK4 takes GL by itself, GSK on Vulkan (forced) right but under GTK4's bar (`l73/`). Not as replays against lavapipe: the programs' own checks | the next run's `rows` step |
+| pipelines: a second run pays no compile its first paid | **met** for the translation on both (vkQuake 271 → 12 ms on SwiftShader, 228 → 9 on the M4; across a restart 11 ms on the M4, `l3/`); the browser's compile kept across a restart on Metal (vkQuake's 17 ready in 18 ms), not on SwiftShader | **met** at f55eacd7 and 4fdc69fb: warm across a restart 25 ms, 0 misses, Chromium's pipelines ready in 74 ms (`nvidia-l2b/pipelines-*`, `nvidia-l4e/pipelines-*`) |
+
+So the gate is met on SwiftShader and the M4 but for Dawn's program, and on NVIDIA at 4fdc69fb (after L4e) but for 1
+fish (parked); **L5–L7b's changes (the adapter's features, the driver's gaps, the emulated rows, the binding count)
+haven't run on NVIDIA**: the user's final run (`bench/vulkan/nvidia.sh page`, below) is outstanding.
+
+**The numbers the kickoff asked for:**
+- *The fence's breakdown:* on the M4 and SwiftShader in "VK3 L2" (`l2/`: the guest's fence 4.32 → 1.05 ms at 1 fish
+  on the M4; a submit's fence 3.1 → 1.0 ms on SwiftShader); on NVIDIA in "VK3: the NVIDIA run after L2" and "after
+  L2b" (`nvidia/fence.json`, `nvidia-l2b/fence.json`: a trivial submit done in 0.15 ms, a lone real pass 2.2 ms late,
+  1.2 nudged, at once while submits keep coming; the scene's pass 0.87–0.89 ms of GPU against the M4's 0.41).
+- *Pipelines cold and warm:* "VK3 L3" (`l3/m4/`, `l3/swiftshader/`) and NVIDIA's in "after L2b" (`nvidia-l2b/pipelines-*`:
+  16 new pipelines one by one 1.94–1.99 s with WebGL stalled throughout, made at once 0.51–0.54 s).
+- *Each row's cost:* none where a program uses none of a row's features: what a row adds is a program variant, a
+  compute pass or a copy only on the draws that ask for it (L7.1's tree of ifs, a compare a level, only in a shader
+  indexing an array dynamically; L7.4's provoking-vertex index pass and transform feedback's capture pass per such
+  draw, hoisted before or run after its render pass, never a break; L7.5's three words of the push buffer and a copy
+  per indirect draw that reads them; L7.2's planes, only where a sampler converts). Measured on programs that use
+  none of them: VK0's scene through L4c's loops and L6b's bind groups (`l4c/*-scene-1000-*`, `l6b/bind-groups/`:
+  rounds overlapping or lower). **Not measured on a program that uses them** (ANGLE's flat varyings and captures,
+  vkd3d's draws): backlog "ANGLE's row's gaps", "vkd3d on Venus".
+- *The module* (`target/vk/venus.wasm` at the track's end): 12,633,715 bytes (12.05 MiB), 1.24 MiB with gzip -9,
+  0.74 MiB with brotli (VK2's: 11.9, 1.18, 0.69).
+
+**The final NVIDIA run** (VK3-HANDOVER.md "What the next NVIDIA run must answer", in git history): `bench/vulkan/nvidia.sh page
+<bundle> ~/webpc-vk2`, the bundle built by `bench/vulkan/nvidia-bundle.sh` at the track's last commit (now ~4.8 GB:
+the dEQP-VK guest and vkd3d's disk joined it). Its steps: `present`, `replay`, `fence`, `scene`, `trace`,
+`pipelines` and `mpv` as in the run of 4fdc69fb, on L5–L7b's code; then, new in L8, `deqp` (both pass lists on the
+RTX 3070: dEQP-VK has never run on NVIDIA) and `rows` (ANGLE's ES3 probe and vkd3d's tests in the desktop guest);
+`results/summary.txt` gives each step's verdict and **whether the page held the adapter's subgroups** (L5's question:
+the line `venus: the WebGPU device's subgroups are wrong in divergent control flow` in any step's page log, or real
+subgroups of 32, then mpv's frames and the list's ~720 subgroup cases say whether they're right). ~75 min whole.
+`VK2_DRY=1 VK0_ANY_ARCH=1 bench/vulkan/nvidia.sh page - <dir>` prints every step's command without a bundle. The new
+steps' commands and summaries ran on the dev VM's SwiftShader (`results/vk3/l8/`): ANGLE's probe on Venus `flat
+0,0,255,255`, the capture and `ubo 156` as before; vkd3d a device at 11_0 (11_1 and up refused), test_draw_instanced,
+test_draw_indexed_instanced and test_root_constants pass, test_vertex_id still fails 39 of 89 (so L7b's indirect
+captures weren't its cause alone) and test_instance_id 84 of 372; a 28-case slice of the list through `deqp-run.ts`
+all pass.
+
+**CI at the track's end** (the code at dedd54e6, this loop's changes being scripts and docs; one at a time, alone):
+`scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (846 s: the 4,690-case list in 588 s, YCbCr's 773 in 89 s,
+the replays 169 s); `scripts/ci-debian.sh` OK (416 s); `scripts/ci-machines.sh` OK (168 s). steps.txt unmoved.
+
 ## VK3 L1: NVIDIA's black frames — the vendor ID, not the bitmap way
 
 **2026-10-26.** Why what Venus presented on the user's NVIDIA desktop was black ("VK2: the NVIDIA run"), found without

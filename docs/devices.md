@@ -474,7 +474,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 
-#### Venus (Vulkan, VK1, VK2)
+#### Venus (Vulkan, VK1–VK3)
 - `{type: 'gpu', …, virgl: true, venus: true}` (`GpuOptions.venus`, off by default: a per-machine choice; without it
   the device is exactly the virgl one, bytes and steps unmoved). Adds features `RESOURCE_UUID` (2), `RESOURCE_BLOB` (3)
   and `CONTEXT_INIT` (4), a third capset, VENUS (ID 4, version 0, 160 bytes: `GpuOptions.venusCaps`, the renderer's
@@ -516,9 +516,13 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   adapter it keeps the objects and draws nothing). What it advertises follows the browser's WebGPU device, its limits
   and features read at the renderer's start (vk/README.md "The driver"; VK2 L7), less what the translator can't do yet,
   formats as WebGPU has them, plus what Venus's WSI shares through (dma-buf memory with the LINEAR modifier, foreign
-  queue transfers, sync-file semaphores); YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2, by default since
+  queue transfers, sync-file semaphores); the adapter's subgroups (held where the page's check at Venus's start finds
+  them wrong in divergent control flow, VK3 L5), 16-bit storage and floats, tier2's read-write formats; texel buffers,
+  per-face stencil and occlusion queries (VK3 L6); Dawn's row (VK3 L7.1: dynamically indexed descriptor arrays,
+  sample-rate shading); YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2, by default since
   L7.3; `?gpu=vkycbcr=off` holds them); ANGLE's ES3 row (VK3 L7.4: the last vertex provoking, transform feedback, 13
-  uniform buffers a stage); vkd3d's row (VK3 L7.5: draw parameters); GTK4 stays on GL (it takes Vulkan only with a modifier other than LINEAR). vkcube on
+  uniform buffers a stage); vkd3d's row (VK3 L7.5: draw parameters); the binding limits from one count of what WebGPU
+  takes, a pipeline past them refused at creation (VK3 L7a); GTK4 stays on GL (it takes Vulkan only with a modifier other than LINEAR). vkcube on
   sway (headless, pixman, `MESA_VK_WSI_DEBUG=sw`) runs ~50 frames/s on 2 vCPUs on SwiftShader's WebGPU
   (`tests/page-venus.test.ts`); in VK1, with the null driver, on the desktop guest's sway (GLES, virgl) vkcube and
   GTK4's Vulkan renderer presented through dma-bufs at the display's 60 (bench/vulkan/apps-load.ts,

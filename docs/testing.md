@@ -665,8 +665,8 @@ closes the port on every way out; `tests/devices.test.ts` closes in that window.
 ## Out-of-context reviews
 
 Loops review their own work with a context full of their own theory; a fresh reader finds what they miss (VK3,
-2026-10-27: one static review of the path of a VA-API picture under Venus found 14 real defects: VK3-HANDOVER.md
-"The green"). So, besides the tests:
+2026-10-27: one static review of the path of a VA-API picture under Venus found 14 real defects: bench/vulkan/REPORT.md
+"VK3 L4b–L4c"). So, besides the tests:
 - **When:** at each track's end, over the code the track changed (before its final CI); mid-track every ~3 loops,
   or after a loop that adds a subsystem (a new path through the driver, the worker, the core), over that area.
 - **Who:** a fresh agent (a subagent, or a cloud session: [cloud.md](cloud.md)) with only the repo. Read-only on

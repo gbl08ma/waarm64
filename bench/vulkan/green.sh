@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VK3 L4b's harness for the M4's green VA-API chroma (VK3-HANDOVER.md "The green: investigation log"): fresh sessions
+# VK3 L4b's harness for the M4's green VA-API chroma (bench/vulkan/REPORT.md "VK3 L4", "VK3 L4b–L4c"): fresh sessions
 # of bench/vulkan/mpv-frames.ts on the Mac (bench/gpu/sway-mac.sh), each one arm's page knobs and mpv options, arms
 # alternated (the next session is the arm with the fewest sessions in the results file, ties in ARMS' order), each
 # classified by bench/vulkan/green.ts (green / right / odd / error, from mpv's screenshot and the page's screen, VA-API

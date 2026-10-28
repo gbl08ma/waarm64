@@ -509,8 +509,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
   is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
   encoded by hand (or a recorded stream replayed through `venus_submit`).
-- **VK2's gate on NVIDIA** (bench/vulkan/REPORT.md "VK2 L7"): the user's run of `bench/vulkan/nvidia.sh page` (the
-  programs' frames, the scene against virgl, mpv's gate) is outstanding; its results go into REPORT.md beside the M4's.
+- **VK3's gate on NVIDIA: the user's final run** (bench/vulkan/REPORT.md "VK3: the summary"): what VK3 L5–L7b
+  changed (the adapter's features, the driver's gaps, the emulated rows, the binding count) hasn't run on the user's
+  RTX 3070; the last run there was 4fdc69fb's (after L4e). `bench/vulkan/nvidia.sh page` with a bundle of the track's
+  last commit (`bench/vulkan/nvidia-bundle.sh`, ~4.8 GB) runs the gate again and, for the first time there, dEQP-VK's
+  two pass lists and the rows' programs (ANGLE's ES3, vkd3d's tests); its `results/summary.txt` says whether the
+  page held the adapter's subgroups. Its results go into REPORT.md beside the M4's.
 - **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
@@ -519,7 +523,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   cache"): (1) render pipelines are made when a draw is recorded; made at vkCreateGraphicsPipelines from the pipeline's
   static state (the viewport's flip and dynamic state guessed), most would be ready before the first frame records,
   at the cost of some never used: unmeasured. (2) SwiftShader's compile isn't kept across a browser restart (Metal's
-  is, through Dawn's cache and Metal's own); NVIDIA's is the next run's question (nvidia.sh `pipelines`). (3) The
+  and NVIDIA's are, through Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA run after L2b"). (3) The
   store's entries are kept uncompressed (vkQuake's 3.5 MiB) and loaded whole at Vulkan's start; CompressionStream on
   the way to IndexedDB would hold ~3× more under the same budget. (4) The store isn't shown on the Machines page's
   storage line nor cleared from it, and its 32 MiB budget is fixed: the user wants it configurable (2026-10-26; the
@@ -540,9 +544,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   beside each ballot in an `if`), then lift the hold where the check passes. On the Mac with `shader-f16`, 226 of 233
   sampled `spirv_assembly.*.float16` cases pass: 6 fail on 16-bit infinities and NaNs (WGSL lets a backend assume
   none: values come back 0) and one graphics shuffle's WGSL nests ifs past Tint's 127 (an indexed f16 vector's `if`
-  tree). The per-stage
-  descriptor limits are WebGPU's whole, though the push buffer takes a dynamic uniform buffer of group 3 when push
-  constants pass the immediates: a pipeline at the limit would fail.
+  tree). The per-stage descriptor limits follow one count of what WebGPU takes since VK3 L7a ("Bindings past
+  WebGPU's" below).
 - **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; on by default since L7.3, `?gpu=vkycbcr=off`): only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats
   (tier1's) are unfilterable, so P010 and the 10-, 12- and 16-bit formats would need a nearest-only offer or filtering
   in the shader; no single-plane 422 formats (YUY2: WebGPU has none, they would be decoded from words); optimal tiling
@@ -569,13 +572,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   synchronous calls (each a ring round trip at the pump's ~1 ms) or fence waits. Only once GSK on Vulkan meets the bar
   is it worth offering GTK a modifier other than LINEAR (GTK takes Vulkan by default only then; sway on virgl would
   have to import it).
-- **Venus's frames on the user's NVIDIA desktop: the fix awaits the user's run** (VK3 L1, bench/vulkan/REPORT.md "VK3
-  L1"): the black came from the device reporting NVIDIA's vendor ID, for which Venus's guest driver (Mesa 26) takes
-  Mesa's prime-blit path: the shared blob is a buffer, not the image, and nothing was copied (`shareRefreshes` 0 in
-  VK2's run; reproduced on SwiftShader with `?gpu=vkvendor=nvidia`). NVIDIA is reported as an unknown maker now, and a
-  GPU way is checked at its first copies with a fallback to readback. `bench/vulkan/nvidia.sh page`'s `present` step
-  confirms it, way by way; whether the bitmap way itself copies right through ANGLE's GL on NVIDIA is the other thing
-  it answers. Close this once it does.
 - **A WSI image exported as a buffer isn't shared** (VK3 L1): Mesa's prime blit (a device Venus takes for another
   GPU's, or NVIDIA's) exports a linear buffer each frame is copied into; web/venus-share.ts shares only images
   (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name
@@ -585,18 +581,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   representative; likely NVIDIA's driver latency or its GPU leaving low power slowly; Venus is ahead at 1,000 fish and
   the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
   scene's pass ~0.9 ms of GPU (the M4's 0.41), a frame's `Queue::Submit` ~1.55 ms in the GPU process (REPORT.md "VK3:
-  the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`). History below.
-- **Venus's ~4.5 ms fence floor on NVIDIA: the poller's part fixed** (VK3 L2, bench/vulkan/REPORT.md "VK3 L2"):
-  found on the M4 and SwiftShader as two waits, both gone. The guest fences each frame through the virtqueue, and a
-  fence retired only at the ring poller's next turn, a nested `setTimeout(0)` clamped to ~4.5 ms (the M4's scene at 1
-  fish: 3.0 ms a frame, fences 4.3 ms; now 0.86 and 1.05, virgl's 0.87–0.96). And Dawn on Vulkan (SwiftShader, and so
-  likely NVIDIA's) says a submit is done only at Chromium's slow look at the device, ~3 ms after its work: an empty
-  submit every ~1 ms while one is in flight brings it back in ~1 ms (a submit's fence 3.1–3.2 → 1.0 ms). The prime
-  blit explains none of it (the scene draws offscreen; `vkvendor=nvidia` changes nothing). `nvidia.sh page`'s `fence`
-  and `scene` steps (the pump against `vkpoll=timeout`, each run's breakdown in `renderer.venus`) confirm it. Close
-  this once they do. The run of 5b9654ac did (the pump ~1.1 ms off every size), but left 1 fish at 2.5 ms against
-  virgl's 1.5 with a frame submit's done at 3.4–3.9 ms; VK3 L2b scripted what the next run must say of it (REPORT.md
-  "VK3 L2b": the GPU's real ms with `?gpu=vkgputime`, frame-shaped submits, `vknudge`, a trace).
+  the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`). The floor before it (~4.5 ms
+  a frame: a ring poller on a clamped `setTimeout(0)`, Dawn's slow look at a done submit) was fixed in VK3 L2 and
+  confirmed there (REPORT.md "VK3 L2", "VK3: the NVIDIA run after L2").
 - **The guest fences each frame through the virtqueue** (VK3 L2): in VK2 L5 the scene's guest sent ~1 fenced
   `SUBMIT_3D` a second, now one every two frames (269 a second at 1 fish on the M4; 109–208 in VK2's NVIDIA run), likely
   since L6/L7 advertised sync-file semaphores and external fences to Venus's guest driver. Each costs the guest an
@@ -649,7 +636,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Transform feedback**: queries (`transformFeedbackQueries`: `VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT`, ES3's
     `TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN` through ANGLE; the advance dispatch knows the primitives written and
     needed, a query's two values would be its sums), `vkCmdDrawIndirectByteCountEXT` (`transformFeedbackDraw`),
-    indirect draws captured, primitive restart in a captured draw (captured without restarts, warned), streams past 0,
+    primitive restart in a captured draw (captured without restarts, warned), streams past 0,
     `transformFeedbackPreservesProvokingVertex` (the records in Vulkan's order whatever the provoking vertex:
     `rasterization.provoking_vertex.transform_feedback.*` not supported), 16-bit outputs, records past 512 bytes, a
     program of four bind groups (the capture's own takes one: push constants past the immediates or draw parameters in
@@ -682,7 +669,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (vkd3d's UAV-clear pipelines then don't translate: "a storage image of format PIPE_FORMAT_NONE", 10 at device creation),
   vertex attribute divisors, sampler min/max reduction. vkd3d's own tests (tests/d3d12, built by
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
-  test_root_constants pass; test_vertex_id fails 39 of 89 (stream output of indirect draws: "ANGLE's row's gaps"; and a
+  test_root_constants pass; test_vertex_id fails 39 of 89 (as at L7.5 after VK3 L7b captured indirect draws, so not those alone: VK3 L8's check; and a
   capture of a program of four bind groups, which a vertex stage reading draw parameters makes likelier, since they
   bring the push buffer's group 3), test_instance_id 84 of 372 (instance step rates of 0 and 2: divisors; a 1-byte
   vertex stride WebGPU refuses, which invalidates the pipeline and its submit; whether its indirect rows fail apart
@@ -763,9 +750,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     image in a format other than its sRGB twin (WebGPU's `viewFormats`; the image-format query refuses a format list
     that names one, but an image made without a list gets an invalid view, warned: `image.mutable.*` isn't in the
     direct set; ffmpeg's and libplacebo's filters and DXVK alias formats this way; a fix would copy into a texture of
-    the view's format, or alias through a storage buffer). Depth and stencil resolves (SAMPLE_ZERO, VK3 L4f) are
-    checked by `tests/venus-driver.test.ts` only: dEQP-VK's `depth_stencil_resolve` groups need `sampleRateShading`
-    (L7's row); MIN, MAX and AVERAGE aren't advertised.
+    the view's format, or alias through a storage buffer). Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
+    dEQP-VK's SAMPLE_ZERO `depth_stencil_resolve` cases in the list since L7.1, stencil8's above); MIN, MAX and AVERAGE
+    aren't advertised.
   - **Usage scopes** (VK3 L5b, L6c; the out-of-context reviews of L4f's and L5-L6a's finding 2): the driver binds every
     buffer of a `VkDeviceMemory` from one GPUBuffer, and WebGPU refuses a writable usage beside any other of the same
     GPUBuffer in one usage scope (a dispatch; a whole render pass). A dispatch's read-only storage buffer beside a
@@ -1333,3 +1320,20 @@ report it. Nothing has been filed.
   thread, and report a deferred error only for the swapchain it came from. Our workaround: `VN_PERF=no_async_present`
   in the desktop image (images/arch/desktop-setup.sh), which goes away with the fix.
 
+- **Mesa, Venus hands back fd 0 for an opaque-fd semaphore export** (bench/vulkan/REPORT.md "VK3 L7.1b", "VK3 L7.2";
+  backlog "Dawn in the guest's Chromium on Venus"): Venus's guest driver (`src/virtio/vulkan/vn_physical_device.c`)
+  offers external semaphores as sync files only, but `vkGetSemaphoreFdKHR` with
+  `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT` on a semaphore made with that export returns `VK_SUCCESS` and fd 0
+  (`vn_GetSemaphoreFdKHR` assumes a sync file, its assert compiled out, and returns the payload's union), then -1: a
+  descriptor the caller doesn't own. Chromium's own Vulkan device (`--enable-features=Vulkan`) exports such semaphores
+  and its GPU process dies on "FD ownership violation". Seen with Mesa 26.2.5 (Arch's `vulkan-virtio`); repro:
+  `bench/vulkan/semfd.ts` (ctypes in the guest, `semfd.py`). Fix: refuse the export at creation
+  (`VK_ERROR_INVALID_EXTERNAL_HANDLE`) as the properties say, or back it with the DRM syncobj
+  (`vn_renderer_sync_export_syncobj(…, false)`).
+- **Chromium (Tint's Metal path or Apple's compiler) hoists a lone subgroup ballot out of an `if`** (bench/vulkan/REPORT.md
+  "VK3 L5"): a compute shader whose `if (odd invocation)` holds a `subgroupBallot` as its only subgroup operation gets
+  every invocation's bits (0xffffffff where 0xaaaaaaaa is right) on the M4 with Chrome for Testing 153.0.8010.12
+  (macOS 26.6.2); with any other subgroup operation beside it in the `if`, the result is right. Repro: the kernel of
+  `web/venus-gpu.ts` `subgroupsRight` in a page with `subgroups` requested. Which layer is at fault (Tint's MSL, Metal's
+  compiler) is unknown: compare Tint's MSL output with the hand-written MSL. Our workaround: the page holds subgroups
+  where the check fails.

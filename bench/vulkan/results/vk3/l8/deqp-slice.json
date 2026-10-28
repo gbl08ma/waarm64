@@ -1,0 +1,32 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 28,
+ "seconds": 7.468554324000004,
+ "counts": {
+  "Pass": 28
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.subgroups.vote.graphics.subgroupallequal_ivec4 Pass 1",
+  "dEQP-VK.subgroups.clustered.compute.subgroupclusteredor_ivec3 Pass 1",
+  "dEQP-VK.subgroups.arithmetic.graphics.subgroupmax_uvec2 Pass 1",
+  "dEQP-VK.subgroups.arithmetic.compute.subgroupinclusiveor_bvec4 Pass 1",
+  "dEQP-VK.subgroups.arithmetic.compute.subgroupexclusivemax_ivec3 Pass 1",
+  "dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.2d_to_2d.astc_10x8_srgb_block.astc_10x8_unorm_block.optimal_optimal Pass 1",
+  "dEQP-VK.subgroups.vote.compute.subgroupallequal_uvec2_requiredsubgroupsize Pass 0",
+  "dEQP-VK.subgroups.shuffle.graphics.subgroupshufflexor_ivec4_constant Pass 0",
+  "dEQP-VK.subgroups.shuffle.graphics.subgroupshuffledown_bool_constant Pass 0",
+  "dEQP-VK.subgroups.shuffle.compute.subgroupshuffleup_vec3_requiredsubgroupsize Pass 0"
+ ],
+ "last": "dEQP-VK.subgroups.shuffle.graphics.subgroupshufflexor_ivec4_constant Pass 0dEQP-VK.subgroups.vote.compute.subgroupallequal_uvec2_requiredsubgroupsize Pass 0dEQP-VK.subgroups.vote.graphics.subgroupallequal_ivec4 Pass 1",
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

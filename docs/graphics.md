@@ -5,7 +5,8 @@ the display (2D), and OpenGL ES through Mesa's **virgl** driver, rendered on the
 WebGL2**. Done (milestone M8's graphics track, G0 to G5, 2026-10-01 to 2026-10-19, and fixes since); the decisions that
 bind it are below ("Decisions"), the loose ends in [backlog.md](backlog.md) ("Platform and devices"). Vulkan is a
 second path beside it, per machine: Venus's commands translated onto the browser's WebGPU by a renderer of ours in wasm
-(VK0 to VK2, 2026-10-25 to 10-26: the direct set of [plans/graphics.md](plans/graphics.md) §4; how it works in
+(VK0 to VK3, 2026-10-25 to 10-28: the direct set of [plans/graphics.md](plans/graphics.md) §4, the adapter's features
+and the emulated rows for Dawn, ANGLE's ES3, vkd3d and YCbCr; how it works in
 [vk/README.md](../vk/README.md) and [devices.md](devices.md) "Venus"; the plan and what's ahead in plans/graphics.md),
 whose frames reach the screen through the virgl renderer. Where the parts are described in detail: the device in
 [devices.md](devices.md) "virtio-gpu" and "virgl", the page's screen, the Graphics choice and the guest's cursor in

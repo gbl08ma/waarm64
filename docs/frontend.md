@@ -1412,7 +1412,7 @@ without it, `--no-vulkan` leaves it out, and `npm start`'s copy has it only when
 - `assets/`: the page's code bundled, minified, with source maps: the page (`index-<hash>.js`, its CSS), each worker
   (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
   deflate) and the sound worklet; and the binaries the page fetches, the core (`webpc_core.wasm`), the tailnet client
-  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`) and Vulkan's renderer (`venus.wasm`, 11.9 MiB, fetched only by a machine with
+  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`) and Vulkan's renderer (`venus.wasm`, 12 MiB, fetched only by a machine with
   Vulkan on: vk/README.md "On the page"). Every name is hashed, so a host's caches never serve a stale file with a new
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the

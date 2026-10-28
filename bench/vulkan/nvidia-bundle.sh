@@ -4,7 +4,9 @@
 # are in this checkout, the wasm core, Vulkan's renderer (vk/build.sh), the UEFI firmware, and the guests' images: the
 # page's Debian, the tests' Debian with Venus (images/debian-vulkan/build.sh), the programs' frames
 # (images/vkframes/build.sh), the desktop guest (images/arch/desktop.sh), the media disk (bench/video/media-disk.sh)
-# and VK0's scene's disk (images/vulkan/build.sh). ~3.5 GB; the user copies it to the desktop.
+# and VK0's scene's disk (images/vulkan/build.sh); since VK3 L8 the dEQP-VK guest and its disk (images/deqp/build.sh vk)
+# and vkd3d's (bench/vulkan/vkd3d.ts disk, with its tests built by target/vkd3d/build-tests.sh). ~4.8 GB; the user copies
+# it to the desktop.
 #   bench/vulkan/nvidia-bundle.sh [out.tar]      (default target/vk2-nvidia-bundle.tar)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -14,6 +16,7 @@ FILES=(
   target/images/edk2/QEMU_EFI.fd target/images/edk2/LICENSES.txt target/images/debian/disk.qcow2
   target/images/debian-vulkan/disk.qcow2 target/vkframes/vkframes.ext4 target/arch/desktop.qcow2
   target/video/media.ext4 target/vulkan/disk.ext4
+  target/deqp/guest-vk.qcow2 target/deqp/deqp-vk.ext4 target/vkd3d/vkd3d.ext4
 )
 missing=()
 for f in "${FILES[@]}"; do [ -f "$f" ] || missing+=("$f"); done

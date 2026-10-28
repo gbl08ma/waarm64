@@ -20,7 +20,7 @@
 # At the end it writes <dir>/vk0-nvidia-results.tar.gz: send that file back.
 #
 # VK2 (`page`; it needs curl, tar and xz): the bundle bench/vulkan/nvidia-bundle.sh makes on the dev VM (the
-# repository's files, the built wasm core, Vulkan's renderer, the firmware and the guests' images, ~3.5 GB: copy it
+# repository's files, the built wasm core, Vulkan's renderer, the firmware and the guests' images, ~4.8 GB: copy it
 # over), unpacked, with a portable Node, the page's npm packages and Playwright's Chrome for Testing. The page runs in
 # the headless Chrome for Testing if it gets the NVIDIA adapter, else in your own Chromium (VK2_CHROMIUM=<path>, by
 # default the first of chromium, google-chrome-stable, google-chrome on the PATH), headed with a temporary profile: a
@@ -48,8 +48,17 @@
 #   6. mpv: its frames on Vulkan (VA-API, software) and GL compared, with libplacebo's complaints, twice as the page has
 #      it (libplacebo's advanced path on since VK3 L4e; the page's screen read too, and mpv's exit) and once with it held
 #      (`vkformats=held`; bench/vulkan/mpv-frames.ts; ~3 min each), then the gate, mpv on Vulkan with VA-API against
-#      mpv on GL, two alternated rounds (bench/audio/avsync.ts).
-# At the end it writes <dir>/vk3-nvidia-results.tar.gz: send that file back.
+#      mpv on GL, two alternated rounds (bench/audio/avsync.ts);
+#   7. deqp (VK3 L8): dEQP-VK's pass lists on this GPU, the direct set's and the emulated rows' (tests/deqp/vk.txt, ~4,700
+#      cases) and YCbCr's (tests/deqp/vk-ycbcr.txt), each in a boot of the dEQP-VK guest (bench/gpu/deqp-run.ts vk;
+#      ~10 and ~2 min on SwiftShader): what fails here that passes there, the subgroup cases among them;
+#   8. rows (VK3 L7.4, L7.5): the emulated rows' programs in the desktop guest: ANGLE's ES3 on Venus in the guest's
+#      Chromium (a flat varying from the last vertex, a transform feedback capture, 13 uniform blocks a stage:
+#      bench/vulkan/angle/es3.html through bench/vulkan/dawn-frames.ts) and vkd3d's own Direct3D 12 tests
+#      (bench/vulkan/vkd3d.ts; ~3 min each).
+# At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
+# page held the adapter's subgroups, VK3 L5): send that file back. VK2_DRY=1 prints what each step would run (no bundle
+# unpacked, nothing fetched, nothing run: a check of the script itself, on any machine with VK0_ANY_ARCH=1).
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
 trap 'echo "nvidia.sh: stopped at line $LINENO (exit $?): $BASH_COMMAND" >&2' ERR
@@ -61,7 +70,8 @@ PLAYWRIGHT=$(grep -m1 -A3 '"node_modules/playwright-core"' "$REPO/package-lock.j
 say() { printf '\n== %s\n' "$*"; }
 
 if [ "${1:-}" = page ]; then
-  BUNDLE=$(realpath "${2:?usage: bench/vulkan/nvidia.sh page <bundle.tar> [dir]}")
+  BUNDLE=$(realpath -m "${2:?usage: bench/vulkan/nvidia.sh page <bundle.tar> [dir]}")
+  DRY=${VK2_DRY:-}
   DIR=$(realpath -m "${3:-$HOME/webpc-vk2}")
   for t in curl tar xz; do command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }; done
   [ "$(uname -m)" = x86_64 ] || [ -n "${VK0_ANY_ARCH:-}" ] || { echo "this script is for x86_64 Linux" >&2; exit 1; }
@@ -71,6 +81,12 @@ if [ "${1:-}" = page ]; then
   export TMPDIR=$DIR/t XDG_CACHE_HOME=$DIR/cache npm_config_cache=$DIR/cache/npm PLAYWRIGHT_BROWSERS_PATH=$DIR/browsers
   export __GL_SHADER_DISK_CACHE_PATH=$DIR/cache/nvidia && mkdir -p "$__GL_SHADER_DISK_CACHE_PATH"
 
+  if [ -n "$DRY" ]; then
+    # The dry run: this checkout stands in for the bundle, and each step only says what it would run.
+    P=$REPO CHROMIUM=dry HEADED= CHROMIUM_ARGS=dry R=$DIR/results
+    export CHROMIUM CHROMIUM_ARGS
+    say "a dry run (VK2_DRY): the steps' commands, in $P"
+  else
   say "Node $NODE_VERSION"
   if [ "${VK0_NODE:-}" = system ]; then
     mkdir -p "$DIR/node/bin" && ln -sf "$(command -v node)" "$DIR/node/bin/node" && ln -sf "$(command -v npm)" "$DIR/node/bin/npm"
@@ -111,17 +127,23 @@ if [ "${1:-}" = page ]; then
   export CHROMIUM=$USE HEADED=$USE_HEADED CHROMIUM_ARGS="$USE_ARGS --mute-audio" WEBPC_TAILSCALE=0
   [ -n "$HEADED" ] || unset HEADED
   R=$DIR/results
+  fi
+  : > "$R/summary.txt"
   step() {  # name, seconds allowed, then the command: its output in results/<name>.log; a failure is noted and passed over
     local name=$1 limit=$2
     shift 2
     say "$name"
-    if (cd "$P" && timeout "$limit" "$@") > "$R/$name.log" 2>&1; then echo "  done"; else echo "  (failed or timed out: $R/$name.log; going on)"; fi
+    if [ -n "$DRY" ]; then echo "  (in $P, at most $limit s) $*"; echo "$name: dry" >> "$R/summary.txt"; return 0; fi
+    local rc=0
+    (cd "$P" && timeout "$limit" "$@") > "$R/$name.log" 2>&1 || rc=$?
+    if [ $rc = 0 ]; then echo "  done"; echo "$name: done" >> "$R/summary.txt"
+    else echo "  (failed or timed out, exit $rc: $R/$name.log; going on)"; echo "$name: FAILED or timed out (exit $rc)" >> "$R/summary.txt"; fi
   }
   [[ " ${VK2_STEPS:-} " == *" l2b "* ]] && VK2_STEPS="${VK2_STEPS/l2b/fence scene trace}"
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" present "* ]]; then
     step present 2400 env SHIM=1 node bench/vulkan/present.ts target/arch/desktop.qcow2 "$R/present"
     # The page's choice and each way's verdict, on the terminal too.
-    (cd "$P" && node -e '
+    [ -f "$R/present/results.json" ] && (cd "$P" && node -e '
       const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
       for (const w of r.ways) { const x = r[w] ?? {}; console.log(`  ${w}: ${x.skipped ?? x.error ?? `vkcube ${x.vkcube?.ok ? "right" : "WRONG"}, mpv ${x.mpv?.ok ? "right" : x.mpv?.black ? "BLACK" : "WRONG"}; the page took ${x.shareAfterMpv?.way ?? x.shareAfterVkcube?.way} (${x.shareAfterMpv?.state ?? x.shareAfterVkcube?.state})`}`); }
     ' "$R/present/results.json") || true
@@ -154,7 +176,7 @@ if [ "${1:-}" = page ]; then
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" trace "* ]]; then
     # VK3 L2b: 2 s of Venus's scene at 1 fish traced (JSON: gpu, dawn, viz, the GPU process's tasks), 5 s in.
     step trace 900 env TRACE=1 FISH=1 TOOLKIT= WARMUP=200 FRAMES=1000 node bench/vulkan/guest.ts venus target/arch/desktop.qcow2 "$R/trace"
-    grep -h "trace:" "$R/trace.log" | cut -c1-400 || true
+    grep -h "trace:" "$R/trace.log" 2>/dev/null | cut -c1-400 || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" pipelines "* ]]; then
     # VK3 L3: N new pipelines made one by one against all at once (and WebGL's round trips meanwhile), then the
@@ -192,7 +214,7 @@ if [ "${1:-}" = page ]; then
     for f in default default2 held; do
       knobs= grab="GRAB=1 REGRAB=20"; [ $f = held ] && knobs=vkformats=held grab=
       step "mpv-frames-$f" 900 env SHIM=1 GPU_KNOBS="$knobs" GUEST_ENV=VN_PERF=no_async_present $grab node bench/vulkan/mpv-frames.ts target/arch/desktop.qcow2 "$R/mpv-frames-$f"
-      grep -hE "^\[[0-9.]+\] (vk|gl)" "$R/mpv-frames-$f.log" | grep -v ' venus ' | cut -c1-200 | sed "s/^/  $f /" || true
+      grep -hE "^\[[0-9.]+\] (vk|gl)" "$R/mpv-frames-$f.log" 2>/dev/null | grep -v ' venus ' | cut -c1-200 | sed "s/^/  $f /" || true
       [ -n "$grab" ] && node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
         for (const t of ["vkva", "vkno"]) { const a = r[t] ?? {}; console.log(`  ${t}: ${a.seconds} s, mpv exit ${a.mpvExit}, page ${JSON.stringify(a.page)}`); }
         console.log(`  vkva ~ vkno page: ${JSON.stringify(r["vkva ~ vkno"]?.page)}`);' "$R/mpv-frames-$f/results.json" 2>/dev/null || true
@@ -201,7 +223,47 @@ if [ "${1:-}" = page ]; then
     step mpv 1800 env VIRGL_GPU=virgl,vulkan MEDIA=disk SHIM=1 CLIPS=mpv:sintel_trailer-480p.mp4 WARM_S=8 PHASE_S=20 ROUNDS=2 \
       MPV_ENV=VN_PERF=no_async_present MPV_VARIANTS="vk:--vo=gpu-next --gpu-api=vulkan|gl:--vo=gpu --gpu-api=opengl" node bench/audio/avsync.ts virgl target/arch/desktop.qcow2 "$R/mpv"
   fi
-  { uname -a; nvidia-smi --query-gpu=name,driver_version --format=csv 2>/dev/null || true; "$CHROMIUM" --version 2>/dev/null || true; cat "$P/BUNDLE.txt"; } > "$R/host.txt"
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" deqp "* ]]; then
+    # VK3 L8: dEQP-VK's pass lists on this GPU (CI runs them on SwiftShader; L6b on the M4: 7 Metal-only failures). Every
+    # case should pass but those whose feature this adapter lacks or the page holds (subgroups, if its check fails here:
+    # then the list's ~720 subgroup cases are NotSupported).
+    if [ -n "$DRY" ] || [ -f "$P/target/deqp/guest-vk.qcow2" ]; then
+      step deqp-vk 1800 env CASES=tests/deqp/vk.txt LIMIT_S=1500 DETAIL=40 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-vk"
+      step deqp-vk-ycbcr 900 env CASES=tests/deqp/vk-ycbcr.txt LIMIT_S=600 DETAIL=20 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-vk-ycbcr"
+      for l in vk vk-ycbcr; do
+        (cd "$P" && node -e '
+          let r; try { r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { console.log(`  ${process.argv[2]}: no results`); process.exit(0); }
+          const sub = (r.notPassed ?? []).filter((c) => c.includes(".subgroups.")).length;
+          console.log(`  ${process.argv[2]}: ${r.cases} cases, ${JSON.stringify(r.counts)}, ${sub} subgroup cases not passed${r.stoppedAt ? `, stopped at ${r.stoppedAt}` : ""}; adapter ${r.adapter}`);
+          for (const c of (r.notPassed ?? []).filter((c) => !c.includes(".subgroups.")).slice(0, 20)) console.log(`    ${c}`);
+        ' "$R/deqp-$l/results.json" "$l" | tee -a "$R/summary.txt") || true
+      done
+    else
+      echo "deqp: skipped (the bundle has no target/deqp/guest-vk.qcow2)" | tee -a "$R/summary.txt"
+    fi
+  fi
+  if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" rows "* ]]; then
+    # VK3 L7.4: ANGLE's ES3 on Venus (the guest's Chromium with --use-angle=vulkan): on the dev VM (L8) `flat
+    # 0,0,255,255`, `xfb 0,0,7,1,1,2,7,1,2,4,7,1,3,6,7,1`, `ubo 156,0,0,255`, as ANGLE on virgl's GL draws them.
+    step rows-angle 900 env PAGE=bench/vulkan/angle/es3.html ARMS=--use-angle=vulkan node bench/vulkan/dawn-frames.ts guest target/arch/desktop.qcow2 "$R/rows-angle"
+    [ -f "$R/rows-angle.log" ] && grep -hoE 'dawn: [a-z]+ [^"\\|]{0,100}' "$R/rows-angle.log" | sort -u | head -20 | sed 's/^/  /' | tee -a "$R/summary.txt" || true
+    # VK3 L7.5: vkd3d 1.19 makes a feature level 11_0 device on Venus; its own tests (the dev VM, L8: the first three
+    # pass, test_vertex_id fails 39 of 89 and test_instance_id 84 of 372, gaps filed in docs/backlog.md "vkd3d on Venus").
+    if [ -n "$DRY" ] || [ -f "$P/target/vkd3d/vkd3d.ext4" ]; then
+      step rows-vkd3d 900 env TESTS=test_draw_instanced,test_draw_indexed_instanced,test_root_constants,test_vertex_id,test_instance_id node bench/vulkan/vkd3d.ts target/arch/desktop.qcow2 "$R/rows-vkd3d"
+      [ -f "$R/rows-vkd3d.log" ] && grep -hoE 'test_[a-z_]+ rc=[0-9]+|[0-9]+ tests executed \([0-9]+ failures|level [0-9_]+: hr 0x[0-9a-f]+( \(device made\))?' "$R/rows-vkd3d.log" | sort -u | head -20 | sed 's/^/  /' | tee -a "$R/summary.txt" || true
+    else
+      echo "rows-vkd3d: skipped (the bundle has no target/vkd3d/vkd3d.ext4)" | tee -a "$R/summary.txt"
+    fi
+  fi
+  # VK3 L5: the page holds the adapter's subgroups where its check finds them wrong in divergent control flow (the M4's
+  # Metal). Every Venus step's page log says it if so.
+  if [ -z "$DRY" ]; then
+    held=$(grep -rl "subgroups are wrong in divergent control flow" "$R" 2>/dev/null | head -3 | tr '\n' ' ')
+    if [ -n "$held" ]; then echo "subgroups: HELD by the page's check (subgroups of one invocation; in $held)"
+    else echo "subgroups: not held (the device has the adapter's subgroups: the deqp step's subgroup cases ran on them)"; fi | tee -a "$R/summary.txt"
+  fi
+  { uname -a; nvidia-smi --query-gpu=name,driver_version --format=csv 2>/dev/null || true; "$CHROMIUM" --version 2>/dev/null || true; cat "$P/BUNDLE.txt" 2>/dev/null || true; } > "$R/host.txt"
 
   say "results"
   ( cd "$DIR" && tar -czf vk3-nvidia-results.tar.gz results )

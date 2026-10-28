@@ -6,96 +6,28 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L7b)
+## State (2026-10-28, after L8: the track's end)
 
-- **The reviews' findings all taken** (REPORT.md "VK3 L7b"): L7.4–L7.5's 1 (16-bit index ranges rounded down), 2
-  (indirect draws captured), 4 (dummy attachments counted per command buffer), 6 (eight null colour attachments), 7
-  (a restarted strip walked by 256 invocations), 9 (ANGLE's uniform layout tested: right); L6b–L7.3's 1
-  (`interpolateAt*` translated; 18 dEQP-VK cases join the list, 4,672 → 4,690), 3 (plane formats in format lists;
-  plane views of other formats warned, filed), 4 (multi-planar on external memory refused, filed), 5. None wrong.
-- Next: L8.
+- **L8 done** (REPORT.md "VK3: the summary": each loop, the gate row by row, the numbers and their JSON, CI): the docs
+  (vk/README.md, docs/devices.md "Venus", docs/graphics.md, the backlog: closed NVIDIA entries pruned, two upstream
+  reports added), plan §6/§7 revised (docs/plans/graphics.md: VK3 done, VK4 proposed, three new risks), PLAN.md's
+  row, THIRD_PARTY.md's vkd3d row. `bench/vulkan/nvidia.sh page` covers the final run (below) and has a dry run;
+  `nvidia-bundle.sh` now carries the dEQP-VK guest and vkd3d's disk (~4.8 GB). CI, alone: ci.sh 532 s,
+  ci-deqp-vk.sh 846 s, ci-debian.sh 416 s, ci-machines.sh 168 s, all OK.
+- **The gate:** met on SwiftShader and the M4 but for Dawn's program (the guest's Mesa: backlog); on NVIDIA as of
+  4fdc69fb but for 1 fish (parked by the user). L5–L7b haven't run on NVIDIA.
+- **Open:** (1) the out-of-context review of what VK3 changed (the supervisor runs it); (2) the user's final NVIDIA
+  run (the supervisor builds the bundle from a clean checkout at the last commit). Then the track's kickoff and
+  handover leave the tree (the supervisor).
 
-## Where VK3 stands (2026-10-28, after L7b; next L8)
+## Where VK3 stands
 
-- **L7a:** one count of the bindings WebGPU takes (`wg_caps.c` `wg_bindings_fit`), the advertised limits from it, a
-  pipeline past them refused saying why; ANGLE's 205 an sRGB view (backlog "ANGLE with Chromium's own Vulkan device
-  too"). Untested: a draw of > 64 resources, the split sampler in a render pipeline.
-
-- **L7.5:** vkd3d's row backed (draw parameters in the push buffer at byte 128); vkd3d 1.19 makes an 11_0 device in
-  the desktop guest, its own draw tests pass; dEQP-VK's list 4,599 → 4,672.
-
-- **L7.4:** ANGLE's ES3 row backed (13 uniform buffers a stage, the last vertex provoking, transform feedback); the
-  guest's Chromium with `--use-angle=vulkan` gives WebGL 2 on Venus; dEQP-VK's list 4,424 → 4,599.
-
-- **L7.3:** GTK4's black frames were L4c-D's partial CLEAR (fixed since); YCbCr on by default (GTK 4.24 aborted
-  without it; it still takes GL); GSK on Vulkan (forced) misses GTK4's bar (iconscroll 9 frames/s against GL's 28):
-  backlog "GSK's Vulkan renderer on Venus misses GTK4's bar".
-
-- **L7.2:** YCbCr conversions backed (the 8-bit 2- and 3-plane formats, a texture a plane, Mesa's
-  `nir_vk_lower_ycbcr_tex` in the translator); 773 dEQP-VK cases in `tests/deqp/vk-ycbcr.txt` (failing: plane views of
-  another format, memory aliased by a plane: backlog "YCbCr's gaps"). Opaque-fd semaphores are the guest's Mesa's
-  (hard-coded sync files; a guest Mesa patch is the way: backlog).
-
-- **L7.1b:** Chromium's opaque-fd semaphore exports, which the driver refused (vkr never had the object), now made; the
-  guest's Venus then hands back fd 0 and Chromium's GPU process dies ("FD ownership violation"): the guest's (L7.2).
-
-- **L7.1:** Dawn's row backed and advertised (the four `shader*ArrayDynamicIndexing`, `sampleRateShading`, `gl_FragCoord`
-  at the sample); dEQP-VK's list 4,251 → 4,424. The program (Dawn in the guest's Chromium) needs YCbCr (L7.2), the guest
-  side above, and a window (no Xwayland; `--headless=new` starts).
-
-- **L6c:** vkQuake's frame 5 back at L5's counts (L5b's compute SSBOs `read_write` made a usage-scope conflict: a
-  read-only SSBO is now writable only beside a write of its memory); page-venus runs in ci-deqp-vk.sh and fails on any
-  WebGPU error; the L5–L6a review's 8 findings fixed. Open: the usage-scope residue (uniform/indirect beside written
-  storage of one memory; render passes).
-
-- **L6b:** texel buffers, the depth/stencil copies WebGPU refuses, bind group layouts' uids by content; dEQP-VK's list
-  3,972 → 4,251 (on the M4: 3,547 pass, 7 fail, 697 subgroups not supported). Filed: texel buffers past the storage
-  count or aliasing, storage without format, D16's partial copies.
-
-- **L6a:** per-face stencil, depth24plus-stencil8's stencil copied, occlusion queries on the GPU, submits held for
-  timeline waits nothing signalled (signal-only submits go at once: holding vkr's ring fences hung the guest);
-  dEQP-VK's list 3,261 → 3,972. Filed: clears inside an occlusion query, queries outside a pass, `device_host`'s 41.
-
-- **L5b:** the out-of-context review of L4f's six findings fixed (`origin/review/venus-l4f`); usage-scope conflicts
-  and float sample counts filed.
-
-- **L5:** WGSL's subgroups where the adapter's have one size (held on the Mac: Chromium's Metal hoists a lone ballot out
-  of an `if`; the worker's `subgroupsRight` check falls back to subgroups of one), 16-bit storage, `shaderFloat16`,
-  tier2's read-write formats; dEQP-VK's list 2,333 → 3,261 (REPORT.md "VK3 L5").
-- **L4f:** the out-of-context reviews' remaining findings fixed (14) or filed (backlog "The Vulkan driver's gaps");
-  dual-source blending implemented and advertised, API 1.3 kept; dEQP-VK's list 1,807 → 2,333.
-- **Done:** L1 (NVIDIA's black: the vendor ID; a run-time check of the share ways), L2 (the fence's floor: the
-  pollers' clamped timers, Dawn's late done), L3 (async pipelines; translated shaders kept across runs, 32 MiB, the
-  origin's: approved by the user, the budget to become configurable), L3b (ci-machines.sh green), L4c (a fresh static
-  review's twelve real defects fixed, among them the M4's green chroma: REPORT.md "VK3 L4b–L4c"), L4d–L4e (below).
-  NVIDIA runs of 5b9654ac and f55eacd7: presentation right in every way, mpv at its bar, pipelines right.
-- **Step 4 done: libplacebo's advanced path is on by default** (`?gpu=vkformats=held` holds it; REPORT.md "VK3 L4d",
-  "VK3 L4e"). Warm it was right at L4d; a cold first mpv froze its window, which L4e found in the **guest's Mesa**:
-  Venus's async present (`vn_wsi_present_async`, Mesa 26.x and main) returns a failed present's error (OUT_OF_DATE from
-  a swapchain retired at a resize) for the next present and drops that one unsubmitted. **Remedy:**
-  `VN_PERF=no_async_present` in the desktop image (`images/arch/desktop-setup.sh`; `target/arch/desktop.qcow2` rebuilt).
-  Right on SwiftShader and the M4, cold and warm; mpv's bar holds (0 drops, 13–14%). Check: `CHECK=1 node
-  bench/vulkan/mpv-frames.ts` on SwiftShader; `?gpu=vkpipedelay=<ms>` makes a warm host cold.
-- **Confirmed on NVIDIA** (the run of 4fdc69fb, REPORT.md "VK3: the NVIDIA run after L4e"): the advanced path taken,
-  VA-API byte for byte software, the page on the fullscreen frame, mpv exits in every arm, mpv at its bar (0 drops,
-  12–14%); presentation, replays, pipelines, the fence and the scene as in the run after L2b.
-- **Open from L4e:** report the Mesa bug upstream (the fix is written in vk/README.md "The guest's Mesa") and drop the
-  workaround when Arch ships one; **the hosted desktop disk (vmdisks.tny.im) is still the old image**: replace it before
-  the page is next deployed, or a user's first cold mpv freezes (backlog; deploys are the user's call).
-- **Parked by the user (2026-10-26): Venus at 1 fish on NVIDIA** (2.4–2.6 ms a frame against virgl's 1.5): the gate's
-  scene clause is held at 1,000 fish and the toolkit unless the user reopens it (backlog "Venus at 1 fish on NVIDIA").
-- **The review's branch** `origin/review/venus-green` (78d08509) holds the review itself; its findings now live in
-  vk/README.md and the backlog. Kept until the user says to delete it.
-- **The out-of-context reviews of the translator and caps and of the driver** (a cloud session, 2026-10-27, after
-  L4e; their files deleted at L4f's end: `git show 301dd138:VENUS-COMPILER-REVIEW.md`, `…:VENUS-DRIVER-REVIEW.md`):
-  17 and 11+ findings, the open ones in docs/backlog.md "The Vulkan driver's gaps". Fixed
-  there, each with its test failing first on SwiftShader (`tests/venus-driver.test.ts`, `tests/wgsl.test.ts`,
-  `tests/venus-renderer.test.ts`; 31 pass): indexed strips without restart, a pipeline without a fragment shader in a
-  pass with colour, depth bias on lines (each an invalid WebGPU submit); the submit that grows the push buffer
-  (invalid); a linear image's freed memory reached by every submit (heap use after free); dynamic storage offsets read
-  back at 0; odd-sized storage bindings; `packHalf2x16`/`unpackHalf2x16` refused; a weak compare-exchange;
-  `pipelineCacheUUID` blind to the caps; L4f the rest (above).
-- **Next:** L7.
+Every loop L1–L7b is done; what each landed is REPORT.md "VK3: the summary" (and each loop's own section). Still
+open beyond the two items above, all filed in docs/backlog.md: Dawn in the guest's Chromium (opaque-fd semaphores, a
+guest Mesa change), GSK on Vulkan under GTK4's bar, vkd3d's failing tests, usage scopes, API 1.3's required features,
+Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **the hosted desktop disk
+(vmdisks.tny.im) to replace before the next deploy** (an old disk's first cold mpv freezes), the review branches
+(`origin/review/venus-*`) kept until the user says to delete them.
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -154,8 +86,8 @@ docs and the backlog; git keeps the old handovers.
   - [x] L7b: **the rest.** **Done:** every finding fixed with its test (7's a performance hazard: its test guards the
     new walk) but L6b–L7.3's 3b and 4's import (warned, refused; filed).
 
-- [ ] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, ci-debian.sh and
-  ci-machines.sh, an out-of-context review of what VK3 changed).
+- [x] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, the four CI
+  scripts). Left to the supervisor: an out-of-context review of what VK3 changed.
 
 ## What the next NVIDIA run must answer
 
@@ -167,14 +99,24 @@ commit without "with uncommitted changes". On the desktop, in a checkout at the 
 
     bench/vulkan/nvidia.sh page <the bundle> ~/webpc-vk2
 
-(~56 min whole; `VK2_STEPS="…"` runs some steps; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user puts
+(~75 min whole since L8; `VK2_STEPS="…"` runs some steps; results: `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user puts
 in the repo's root. Process it into REPORT.md and `bench/vulkan/results/vk3/nvidia-<name>/`, leave traces over a few MB
 in `bench/results/local/`, delete the tarball.) The last bundle is `target/vk3-nvidia-bundle-4fdc69fb.tar` (run 2026-10-27: REPORT.md "VK3: the NVIDIA run after
 L4e").
 
-**Open for the next run:** (L5) whether the page's log on NVIDIA says `venus: the WebGPU device's subgroups are wrong
-in divergent control flow` (the device then has subgroups of one, as before L5) or not (real subgroups of 32: mpv's
-libplacebo takes its subgroup paths; check its frames are still right). Any step's page log answers it.
+**The final run's questions** (each answered by a step; `results/summary.txt` gathers the verdicts):
+1. The gate again on L5–L7b's code: `present` (vkcube and mpv right on the page, every way), `mpv` (its bar),
+   `scene` (1,000 fish and the toolkit against virgl; 1 fish parked), `replay`, `pipelines` (warm across a restart),
+   `fence`, `trace`.
+2. (L5) Whether the page holds the adapter's subgroups there: the line `venus: the WebGPU device's subgroups are wrong
+   in divergent control flow` in any step's page log (summary.txt says "HELD" or "not held"); if not held, mpv's frames
+   (libplacebo's subgroup paths) and the dEQP-VK list's ~720 subgroup cases say whether real subgroups of 32 are right.
+3. (L8) dEQP-VK's two pass lists on NVIDIA (`deqp`: never run there; L6b's M4 run had 7 Metal-only failures).
+4. (L7.4, L7.5) The rows' programs there (`rows`: ANGLE's ES3 probe, flat 0.25, a capture, the uniform blocks' sum
+   156; vkd3d's tests).
+
+The whole run is ~75 min; `VK2_STEPS="deqp rows"` runs the new steps alone (~25 min). `VK2_DRY=1 VK0_ANY_ARCH=1
+bench/vulkan/nvidia.sh page - <dir>` prints each step's command without a bundle.
 
 ## Things worth not re-discovering
 

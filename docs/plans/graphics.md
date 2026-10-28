@@ -1,7 +1,7 @@
 # webpc graphics plan: Vulkan
 
 **Status: planned (the user, 2026-10-25): §2's decisions bind. VK0 is done (2026-10-25,
-[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is done (2026-10-26; its brief and notes in git history, at cd03da82): the direct set draws right through Venus on WebGPU, mpv on Vulkan meets its bar on the M4, but what Venus presents is black on the user's NVIDIA desktop (§6). VK3 is next (`VK3-KICKOFF.md`).** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
+[bench/vulkan/REPORT.md](../../bench/vulkan/REPORT.md)): continue, by route (b). VK1 is done (2026-10-25; its brief and notes in git history): route (b)'s premise passed (REPORT.md "VK1 step 1": 0.42 MiB brotli, 0.27 ms a stage in Chromium on the M4); the device, the host-visible window and its write-watch, and the null renderer (vkr and our driver in wasm, vk/README.md) are built, the guests have Venus, and the gate passed but for GTK4's frames (REPORT.md "VK1: the gate": Venus costs the guest 2–9× less a frame where there's work, ~0.3 ms more where there's almost none). VK2 is done (2026-10-26; its brief and notes in git history, at cd03da82): the direct set draws right through Venus on WebGPU, mpv on Vulkan meets its bar on the M4, but what Venus presents is black on the user's NVIDIA desktop (§6). VK3 is done (2026-10-28; its brief and notes in git history) but for the user's NVIDIA run: Venus right on NVIDIA, the adapter's features, the driver's gaps and §4's emulated rows for Dawn, ANGLE's ES3, vkd3d and YCbCr (§6; REPORT.md "VK3: the summary"). Whether VK4 starts is the user's call.** What exists (virtio-gpu 2D, virgl onto WebGL2, video, snapshots with
 3D, G0 to G5) and the decisions that bind it are [docs/graphics.md](../graphics.md); its loose ends are in
 [backlog.md](../backlog.md) "Platform and devices". This page is the work ahead: **Vulkan for unmodified guests,
 through Mesa's Venus driver, translated onto WebGPU on the host**, starting with a phase that measures what the design
@@ -124,7 +124,7 @@ on the GPU worker.
 | **Compute before the pass** | Geometry shaders and tessellation (expand into vertex and index buffers, then draw: libpoly's way); transform feedback (the vertex shader run as compute: WebGPU allows no writable storage in vertex shaders; after the pass, since Vulkan reads no captured vertex inside the pass that wrote it: VK3 L7.4); `vkCmdDrawIndirectCount` (a pass writes the indirect buffer, unused slots as zero-count draws) | A compute pass, its outputs left on the GPU |
 | **Copies on the GPU** | Formats WebGPU lacks (3-component, some packed), converted when written; image views that reinterpret a format (WebGPU allows only sRGB variants); memory aliasing between resources | Copy or compute passes: bandwidth, no readback |
 | **Below Vulkan's minimums** (VK0 A: advertised as Vulkan 1.2 with the 1.3 features WebGPU backs, or 1.3 knowingly short) | `bufferDeviceAddress` and `vulkanMemoryModel` (1.3 requires both); multiview (1.1: replayed per view); per-stage resources 86 or 50 (128 required) and per-set counts; `R32_UINT` storage-image atomics; texel buffers; buffer↔image copies at any row pitch (WebGPU: 256 bytes); attachment-less passes; depth copies | Lowered where cheap (row pitch by a staging copy, texel buffers as storage buffers), else the limit reported short |
-| **Not offered** | Sparse resources; 64-bit floats and integers in shaders; logic ops; pipeline statistics queries; sample counts other than 1 and 4; buffer device address and full bindless (until WebGPU's binding arrays exist: DXVK and VKD3D need them); geometry and tessellation until §6's VK3 | |
+| **Not offered** | Sparse resources; 64-bit floats and integers in shaders; logic ops; pipeline statistics queries; sample counts other than 1 and 4; buffer device address and full bindless (until WebGPU's binding arrays exist: DXVK and VKD3D need them); geometry and tessellation (not taken in VK3: they brought no program on their own) | |
 
 **Render pass breaks** are the emulation's real cost: WebGPU can't run compute inside a render pass, and ending one
 to run a pre-pass, then reopening it, stores and reloads every attachment, expensive on tiled GPUs like the Mac's
@@ -286,12 +286,37 @@ for the programs that switch. The user decides whether VK1 starts.
   at a submit's done, both shortened): the gate holds on the M4 and SwiftShader, not yet there. VK3 starts with both.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
   render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: Venus's
-  frames on NVIDIA (black, and ~4.5 ms a fence: backlog), libplacebo's advanced path (the M4's green chroma), the
-  adapter's features the translator still lacks (`subgroups`, `shader-f16`, read-write storage with `tier2`), the
-  driver's gaps dEQP-VK found (backlog "The Vulkan driver's gaps": per-face stencil, occlusion queries, texel
-  buffers, copies WebGPU refuses), and pipelines made asynchronously with a cache across runs (§7; done in VK3 L3).
-- **VK4, breadth and the default:** the programs of A, snapshots while Vulkan is in use (state as data, as for virgl:
-  objects, device memory and the window read back), on by default where every switching program meets the bar.
+  frames on NVIDIA, libplacebo's advanced path, the adapter's features the translator still lacked, the driver's gaps
+  dEQP-VK found, and pipelines made asynchronously with a cache across runs. **Done 2026-10-28 but for the user's
+  NVIDIA run** (REPORT.md "VK3: the summary"; vk/README.md): NVIDIA's black was the device's vendor ID (Venus's guest
+  WSI takes Mesa's prime blit for 0x10de, whose frames aren't shared), and a GPU way of presenting is now checked at
+  its first copies; the fence's floor was the host's (a clamped `setTimeout(0)` poller, Dawn's late look at a done
+  submit); pipelines compile on Dawn's workers and translated shaders persist (a program's second run translates
+  nothing); libplacebo's advanced path is on (the M4's green was a window page lost between two Venus devices, found by
+  an out-of-context review after a loop of experiments missed it; a cold mpv's frozen window was Mesa 26's async
+  present, which the desktop image turns off). The rows: Dawn's (indexed descriptor arrays, sample-rate shading),
+  ANGLE's ES3 (13 uniform buffers a stage, the last vertex provoking and transform feedback as compute passes hoisted
+  out of or run after the render pass: WebGL 2 on Venus in the guest's Chromium), vkd3d's (draw parameters in the push
+  buffer: a feature level 11_0 device) and YCbCr conversions (on by default: GTK 4.24 aborts on a device with the
+  dma-buf extensions and no YCbCr; with it GTK still takes GL, since Venus offers only the LINEAR modifier, and GSK on
+  Vulkan, forced, misses GTK4's bar). dEQP-VK's pass list 1,463 → 4,690 cases, and 773 for YCbCr. *What VK3 learned:*
+  the guest's Mesa is as much a party as the host (it keys its WSI on the vendor ID, drops presents, hands back fd 0
+  for opaque-fd semaphores, so Dawn in the guest's Chromium still doesn't take Venus): its bugs are worked around in
+  the images and reported upstream; WebGPU's binding model is narrower than Vulkan's in ways a per-binding analysis
+  can't always hide (one count of the bindings it takes now sets the limits, and a pipeline past them is refused;
+  usage scopes per GPUBuffer remain: §7); an adapter's compiler can be wrong (Chromium's Metal path and a ballot in an
+  `if`), so a feature is checked at run time where a cheap kernel can tell; and **out-of-context static reviews find
+  what loops miss** (~80 findings over eight reviews, most of them real): each subsystem gets one. **On NVIDIA**, as of
+  4fdc69fb (after L4e): presentation right in every way, mpv at its bar, the replays and pipelines right, Venus ahead of
+  virgl at 1,000 fish and the toolkit but not at 1 fish (2.5 against 1.5 ms: Chromium notices a lone pass done ~2.2 ms
+  late there; parked by the user). What L5–L7b changed hasn't run there: the user's final run
+  (`bench/vulkan/nvidia.sh page`, with dEQP-VK's lists and the rows' programs on NVIDIA for the first time).
+- **VK4, breadth and the default** (proposed; the user decides whether it starts): snapshots while Vulkan is in use
+  (state as data, as for virgl: objects, device memory and the window read back); the programs of A that VK3 left
+  short: Dawn in the guest's Chromium (a guest Mesa change for opaque-fd semaphores, or Chromium exporting sync files),
+  GSK on Vulkan at GTK4's bar (what a frame waits on), vkd3d's suite; usage scopes for sub-allocating programs; API
+  1.3's required features (multiview, buffer device addresses, image atomics); multi-draw indirect, then geometry and
+  tessellation as compute pre-passes; and on by default where every switching program meets the bar.
 
 ## 7. Risks
 
@@ -308,23 +333,31 @@ for the programs that switch. The user decides whether VK1 starts.
   4.2 s on the M4). Now they are made asynchronously (4.6× sooner, Dawn's workers; the screen goes on), a submit
   drawing with one not ready is held, and the translated shaders persist in the page's storage, so a program's second
   run translates nothing (vkQuake's 228 → 9 ms on the M4; REPORT.md "VK3 L3"). What remains is the browser's compile:
-  kept across a restart on Metal, not on SwiftShader; NVIDIA's to be measured.
+  kept across a restart on Metal and NVIDIA (vkQuake's 17 pipelines ready in 74 ms warm there), not on SwiftShader.
+  A program's first run on a machine still pays it (NVIDIA: 16 new pipelines in 0.5 s made asynchronously, 1.9 s with
+  WebGL stalled throughout made at once).
 - **The browser's timers and its look at the GPU** (VK3 L2): a worker's nested `setTimeout(0)` is clamped to ~4.5 ms
   (6 ms on the Mac), and Chromium's GPU process notices a Dawn device's finished work on Vulkan only at a slow timer
   (~3 ms late on SwiftShader) unless commands arrive. Venus's poller sleeps on `Atomics.waitAsync` and nudges with
   empty submits; a host whose browser changes either can bring a fence's floor back, so the render stats carry the
-  fence's breakdown (`venus`) and `nvidia.sh` measures it.
+  fence's breakdown (`venus`) and `nvidia.sh` measures it. On NVIDIA Chromium notices a lone pass done ~2.2 ms after
+  it ends (1.2 nudged, at once while submits keep coming), which keeps a light program's frame (VK0's scene at 1 fish:
+  2.5 ms against virgl's 1.5) behind virgl's there; heavier frames keep the queue busy and gain (VK3 L2b; parked by the
+  user as unrepresentative).
 - **WebGPU's per-call cost** in Chromium caps a frame at ~5,000 Vulkan-style draws a millisecond on the M4 (E): games
   at 3,000–5,000 draws fit, 30,000 don't at 60 frames a second; and Chromium costs ~0.25 ms a frame where the GPU is
   fast (NVIDIA).
 - **The browser's interop between WebGPU and WebGL differs by platform.** Venus's frames reach the screen as a copy
   from a WebGPU texture into WebGL's; the way that costs 0.8 ms a 1080p frame on the M4 gave black on the user's
   NVIDIA desktop (Linux: Dawn on Vulkan, ANGLE on GL), and a WebGPU canvas on SwiftShader loses the GPU channel. Each
-  way needs a check at run time and a fallback, and the user's run to confirm a platform the agents can't reach.
+  way needs a check at run time and a fallback, and the user's run to confirm a platform the agents can't reach. VK3
+  L1 found NVIDIA's black elsewhere (the guest's WSI, by the vendor ID) and its run confirmed the bitmap way right
+  there; the check (a few rows read back at a way's first copies) stays for the next platform.
 - **Route (b)'s size in wasm**: `spirv_to_nir`, NIR's passes and a NIR → shading-language backend measured in VK1 step 1
   (0.42 MiB brotli, 0.27 ms a stage in Chromium; wasi-sdk the toolchain); vkr with Mesa's lite runtime and the null
   driver is 3.2 MB, 510 KiB gzipped (VK1). VK2's whole module (vkr, the full runtime, the compiler, the driver) is
-  11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli, fetched only by a machine with Vulkan: settled.
+  11.9 MiB, 1.18 MiB gzipped, 0.69 MiB with brotli, fetched only by a machine with Vulkan; after VK3's rows 12.05 MiB,
+  1.24 and 0.74: settled.
 - **The guest's cost is its submit path, not Venus's encoding** (VK1's gate): encoding costs ≤0.55 µs a command, half
   virgl's, but Venus's driver makes ~2× virgl's execbuffers (9 a frame for GTK4's frames against 4), each ~0.17 ms of
   the emulated kernel's time. A light program pays more on Venus (+0.3 ms a frame); a heavy one gains. Levers: the
@@ -335,7 +368,24 @@ for the programs that switch. The user decides whether VK1 starts.
   their memories (VK1 found a use-after-free). Each new vkr wait or lifetime is checked against that.
 - **Adapters differ** (limits, features, formats, precision), as WebGL2 stacks did for dEQP-GLES: the caps follow
   the adapter since VK2 (SwiftShader's device reports 8,192-texel images and 256-invocation workgroups, the Mac's
-  16,384 and 1,024), but dEQP-VK's pass list runs on SwiftShader only: on the Mac's GPU and NVIDIA it is still to run.
+  16,384 and 1,024). dEQP-VK's pass list runs on SwiftShader in CI; on the M4 (VK3 L6b) 3,547 of its cases passed and 7
+  failed on Metal only; on NVIDIA it is the final run's `deqp` step. An adapter's shader compiler can be wrong: Chromium
+  153's Metal path hoists a ballot out of an `if`, so the page checks subgroups with a small kernel at Venus's start and
+  holds them where it fails (VK3 L5); a feature that a cheap kernel can check is checked that way.
+- **The guest's Mesa is a party too** (VK3): Venus's guest driver keys its WSI on the device's vendor ID (NVIDIA's sent
+  it down a path whose frames weren't shared), Mesa 26's async present drops a present after one that failed (a cold
+  mpv froze: the desktop image sets `VN_PERF=no_async_present`), and its opaque-fd semaphore export hands back fd 0
+  (Chromium's own Vulkan device dies on it, so Dawn in the guest's Chromium doesn't take Venus). The host can't fix
+  these: what the device reports is chosen around them, the images carry workarounds, and each goes upstream
+  (docs/backlog.md "Upstream reports"); a guest image built before a workaround meets the bug (the hosted desktop disk
+  must be replaced before the page's next deploy).
+- **WebGPU's binding model is narrower than Vulkan's** (VK3 L5b–L7a): bindings per stage are WebGPU's less what the
+  translation adds (the push buffer, texel buffers' parameters, folded uniform buffers, YCbCr planes, a capture's
+  buffers), so the advertised limits come from one count of them (`wg_bindings_fit`) and a pipeline past them is
+  refused at creation saying why; and usage scopes are per GPUBuffer, while the driver binds a `VkDeviceMemory` as
+  one: a render pass or dispatch that reads and writes storage of one memory through different bindings fails
+  validation, which sub-allocating programs (VMA, DXVK, engines) will meet (backlog "Usage scopes": a GPUBuffer per
+  binding or per `VkBuffer`, with copies, is the fix).
 - **The 4 GiB budget**: a Vulkan machine's memory 0 holds RAM, the window (256 MiB) and the renderer's arena (256 MiB)
   beside the core's heap, so RAM past 2.5 GiB spills (`splitRam`'s reserve); the arena caps the renderer's heap (blob
   storage included) until VK2 sizes it from what programs map.
