@@ -477,6 +477,7 @@ export class VenusGpu {
           samples = v.samples;
           desc.depthStencilAttachment = { ...j.depthStencilAttachment, view: v.view };
         }
+        if (j.occlusionQuerySet) desc.occlusionQuerySet = self.get<GPUQuerySet>(j.occlusionQuerySet);
         const atts = { colors, depth, samples, width: j.width as number, height: j.height as number };
         self.stats.passes++;
         later(() => {
@@ -765,7 +766,7 @@ export class VenusGpu {
   }
 
   /** A copy between a buffer and a depth or stencil aspect (aspect 1 or 2: the driver doesn't split their rows), which
-   * WebGPU allows only of whole subresources, with rows 256 bytes apart, not of depth24plus's aspects at all, not into
+   * WebGPU allows only of whole subresources, with rows 256 bytes apart, not of depth24plus's depth at all, not into
    * depth32float's depth (nor of multisampled textures): rows realigned through a temporary buffer, and what WebGPU can't do
    * skipped with a warning (one bad copy would invalidate the submit's whole command buffer). */
   private depthStencilCopy(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
@@ -773,7 +774,7 @@ export class VenusGpu {
     const stencil = aspect === 2 || f === 'stencil8';
     const bytes = stencil ? 1 : f === 'depth16unorm' ? 2 : 4;
     const whole = x === 0 && y === 0 && w === Math.max(1, t.width >> mip) && h === Math.max(1, t.height >> mip);
-    const allowed = (stencil && !f.startsWith('depth24plus')) || f === 'depth16unorm' || (!toTexture && f.startsWith('depth32float'));
+    const allowed = stencil || f === 'depth16unorm' || (!toTexture && f.startsWith('depth32float'));
     const row = w * bytes;
     const realign = bpr % 256 !== 0 && (rows > 1 || depth > 1);
     if (!whole || !allowed || t.sampleCount > 1 || (realign && (row % 4 || bpr % 4 || offset % 4))) {

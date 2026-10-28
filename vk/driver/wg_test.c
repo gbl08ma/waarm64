@@ -1383,11 +1383,18 @@ wgt_fl_done(uint32_t i)
  * 12: `cs` (ssbo-copy.comp: b[i] = a[i] · 2 + 1, `a` read-only) on two storage buffers of the result's memory, `a` at
  *    [512, 528) (1, 2, 3, 4 written by the submit), `b` at [0, 16): 3, 5, 7, 9 (the L4f review's finding 2: a buffer
  *    read and one written in one memory, one GPUBuffer).
+ * 13: 64 bytes copied from a host-visible buffer by a submit that waits on a timeline semaphore's value 1, which the
+ *    host signals after writing the source (0x11, then 0x22): the copy sees 0x22 (the driver review's finding 8: a wait
+ *    before its signal used to run at once).
  */
 static struct {
    VkFence fence;
    uint8_t *map;
 } misc;
+static struct {
+   VkBuffer src;
+   uint8_t *bytes;
+} misc13;
 
 static int
 misc_image(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags usage, VkImage *out)
@@ -1515,6 +1522,11 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
       CmdCopyImageToBuffer(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
                            &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   } else if (scenario == 13) {
+      if (buffer(4096, both, true, &misc13.src, (void **)&misc13.bytes))
+         return 1;
+      memset(misc13.bytes, 0x11, 64);
+      CmdCopyBuffer(cmd, misc13.src, out, 1, &(VkBufferCopy){ 0, 0, 64 });
    } else if (scenario == 8) {
       PFN_vkDestroyPipeline DestroyPipeline = (PFN_vkDestroyPipeline)GetDeviceProcAddr(dev, "vkDestroyPipeline");
       PFN_vkDestroyPipelineCache DestroyPipelineCache =
@@ -1870,6 +1882,28 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       }
    }
    CHECK(EndCommandBuffer(cmd));
+   if (scenario == 13) {
+      PFN_vkCreateSemaphore CreateSemaphore = (PFN_vkCreateSemaphore)GetDeviceProcAddr(dev, "vkCreateSemaphore");
+      PFN_vkSignalSemaphore SignalSemaphore = (PFN_vkSignalSemaphore)GetDeviceProcAddr(dev, "vkSignalSemaphore");
+      const VkSemaphoreTypeCreateInfo type = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                               .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE };
+      const VkSemaphoreCreateInfo sci = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &type };
+      VkSemaphore sem;
+      CHECK(CreateSemaphore(dev, &sci, NULL, &sem));
+      const uint64_t one = 1;
+      const VkTimelineSemaphoreSubmitInfo tsi = { .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+                                                  .waitSemaphoreValueCount = 1, .pWaitSemaphoreValues = &one };
+      const VkPipelineStageFlags stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+      const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = &tsi, .waitSemaphoreCount = 1,
+                                    .pWaitSemaphores = &sem, .pWaitDstStageMask = &stage, .commandBufferCount = 1,
+                                    .pCommandBuffers = &cmd };
+      CHECK(QueueSubmit(queue, 1, &submit, misc.fence));
+      memset(misc13.bytes, 0x22, 64);
+      const VkSemaphoreSignalInfo signal = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = sem,
+                                             .value = 1 };
+      CHECK(SignalSemaphore(dev, &signal));
+      return 0;
+   }
    const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
                                  .pCommandBuffers = &cmd };
    CHECK(QueueSubmit(queue, 1, &submit, misc.fence));

@@ -642,19 +642,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     with overrides added to the workgroup and global ids would do it; `compute.*.device_group.dispatch_base`); flat
     varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
     load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
-  - **Queries**: `vkGetQueryPoolResults` reports every query available and `VK_SUCCESS` (a reset query never ended
-    included: `VK_NOT_READY` and availability 0 are what Vulkan wants without `WAIT_BIT`), and
-    `vkCmdCopyQueryPoolResults` writes its whole span, zeroing the bytes between results of a wide stride (the
-    out-of-context review of the driver, finding 10; L6's occlusion queries take it: `query_pool.occlusion_query`'s
-    `*_stride_*` and `*with_availability*` cases fail); occlusion queries are reported as passing (WebGPU's occlusion query sets need the pass's set at its
-    start: the pass's op patched when a query begins in it), timestamps are the CPU's at replay (`timestamp-query`): a program's "GPU time" under Venus, VK0's scene's
-    included, is the replay's span, not the GPU's (VK3 L2b; the worker's `?gpu=vkgputime` measures the GPU's).
-  - **Rendering**: stencil state per face (WebGPU has one reference and one pair of masks: about a third of
-    `pipeline.monolithic.stencil` fails), indexed triangle fans (non-indexed ones draw through the device's fan
+  - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): a `vkCmdClearAttachments`
+    inside an occlusion query counts its pixels (the worker's clear is a draw: 16 of `query_pool.occlusion_query`'s
+    `*_clear_color`/`*_clear_depth` cases fail; a query cut around the clear and its parts summed by a compute pass would
+    do it); a query begun outside a render pass, beside another pool's in one pass, past slot 4,096, or cut by a WebGPU
+    pass's end inside Vulkan's is reported as passing, warned once (`query_pool.concurrent_queries.secondary_command_buffer`
+    fails); `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count); the host's
+    `vkGetQueryPoolResults` can't wait (`WAIT_BIT` answers `VK_NOT_READY` until the submit completes; Venus's guest
+    reads its feedback buffers instead); `vkCmdCopyQueryPoolResults` makes a copy and a write a query (a compute pass
+    would be one dispatch, for programs that copy thousands); timestamps are the CPU's at replay (`timestamp-query`): a
+    program's "GPU time" under Venus, VK0's scene's included, is the replay's span, not the GPU's (VK3 L2b; the worker's
+    `?gpu=vkgputime` measures the GPU's).
+  - **Rendering**: stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
+    and back primitives is lost where they overlap (not seen in dEQP-VK); indexed triangle fans (non-indexed ones draw through the device's fan
     indices), depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and
     multi-view, depth and stencil blits, attachment-less passes (`Render pass has no attachments`), 34 of
-    `renderpasses.*.load_store_op_none`'s 91 supported cases (VK3 L4c-D: stencil8 attachments, depth or stencil
-    NONE/DONT_CARE, an integer resolve, `alphablend`; not looked into further), vertex buffer offsets that aren't
+    `renderpasses.*.load_store_op_none`'s 149 supported cases (VK3 L6a, after DONT_CARE stores over a partial render
+    area were made stores: WebGPU's discard is the whole attachment's): the 20 `stencil_s8_uint_*` and the colour-only
+    ones whose fragment shader writes `gl_FragDepth` without a depth aspect (Vulkan drops the write, WebGPU refuses the
+    pipeline: "Depth stencil state format (Stencil8) has no depth aspect when fragment stage is writing to frag_depth";
+    a program variant printed without the output would do it), 5 `*_resolve` (an integer resolve), 5 `*_alphablend` and
+    4 `color_load_op_load_store_op_none`/`color_load_op_none_store_op_dontcare` (an attachment also read as an input
+    attachment) not looked into, vertex buffer offsets that aren't
     multiples of 4, early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
     passed only while depth resolves were dropped, and is out of the list since L4f); a depth or stencil attachment that is
     also an input attachment in a writable layout with a self-dependency (a feedback loop: WebGPU refuses a texture
@@ -693,11 +702,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
     limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
     integer formats allow.
-  - **Synchronization**: a submit that waits on a timeline value nothing has signalled yet runs at once
-    (`wg_sync_wait_many` answers every wait "pending", so Mesa's runtime hands the submit straight to the driver; the
-    driver review's finding 8). A fix would hold such a submit in the driver until its wait's value is signalled
-    (vkr runs on one thread: no submit thread of Mesa's), replaying it then. `synchronization*.timeline_semaphore.
-    wait_before_signal.*` aren't in the direct set; single-queue programs with binary semaphores are unaffected.
+  - **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
+    (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); dEQP-VK's `synchronization*.timeline_semaphore.
+    wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
+    (WebGPU's vertex stage has no writable storage). `synchronization*.timeline_semaphore.device_host.*` (a host thread
+    copying between iterations, signalled and waited on through the semaphore): 69 of 110 sampled pass since L6a (1
+    before), the other 41 fail with "Memory contents don't match", not looked into.
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
     they go): multiview, inline uniform blocks, buffer device addresses, storage-image atomics on `R32_UINT`/`R32_SINT`
     (the translator refuses image atomics), uniform and storage texel buffers (formats' mandatory buffer features), and

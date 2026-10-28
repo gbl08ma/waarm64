@@ -422,11 +422,12 @@ load_op(VkAttachmentLoadOp op, bool partial, bool resumed)
 }
 
 /* A store op as WebGPU's: DONT_CARE discards, but a suspended pass stores whatever it says, since its WebGPU pass ends
- * here and the one that resumes it loads. */
+ * here and the one that resumes it loads; so does a pass over part of the attachment, since WebGPU's discard is the
+ * whole attachment's and Vulkan's store ops only the render area's (outside it the contents stay). */
 static const char *
-store_op(VkAttachmentStoreOp op, bool suspending)
+store_op(VkAttachmentStoreOp op, bool suspending, bool partial)
 {
-   return op == VK_ATTACHMENT_STORE_OP_DONT_CARE && !suspending ? "discard" : "store";
+   return op == VK_ATTACHMENT_STORE_OP_DONT_CARE && !suspending && !partial ? "discard" : "store";
 }
 
 /* An attachment's layout that only reads its depth or its stencil: the aspect is WebGPU's read-only (it may then be
@@ -507,7 +508,7 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          snprintf(value, sizeof(value), "%.9g,%.9g,%.9g,%.9g", c->float32[0], c->float32[1], c->float32[2],
                   c->float32[3]);
       wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":[%s]", i ? "," : "", v->att,
-                     load_op(a->loadOp, partial, resumed), store_op(a->storeOp, suspending), value);
+                     load_op(a->loadOp, partial, resumed), store_op(a->storeOp, suspending, partial), value);
       if (v->slice >= 0)
          wg_json_printf(&j, ",\"depthSlice\":%d", v->slice);
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
@@ -554,7 +555,7 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          /* Vulkan resolves before the store op; the worker's resolve reads the attachment after the pass: stored. */
          wg_json_printf(&j, ",\"depthLoadOp\":\"%s\",\"depthStoreOp\":\"%s\",\"depthClearValue\":%.9g",
                         dv ? load_op(d->loadOp, partial, resumed) : "load",
-                        dv && !cmd->pass.resolve_src[0] ? store_op(d->storeOp, suspending) : "store",
+                        dv && !cmd->pass.resolve_src[0] ? store_op(d->storeOp, suspending, partial) : "store",
                         dv ? CLAMP(d->clearValue.depthStencil.depth, 0, 1) : 1.0);
          if (partial && clear) {
             wg_json_printf(&clears, ",\"depth\":%.9g", d->clearValue.depthStencil.depth);
@@ -567,7 +568,7 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          const bool clear = sv && !resumed && s->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
          wg_json_printf(&j, ",\"stencilLoadOp\":\"%s\",\"stencilStoreOp\":\"%s\",\"stencilClearValue\":%u",
                         sv ? load_op(s->loadOp, partial, resumed) : "load",
-                        sv && !cmd->pass.resolve_src[1] ? store_op(s->storeOp, suspending) : "store",
+                        sv && !cmd->pass.resolve_src[1] ? store_op(s->storeOp, suspending, partial) : "store",
                         sv ? s->clearValue.depthStencil.stencil : 0);
          if (partial && clear) {
             wg_json_printf(&clears, ",\"stencil\":%u", s->clearValue.depthStencil.stencil);
@@ -736,8 +737,35 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 }
 
 /* Whether a draw may go ahead (false: it draws nothing), its state recorded. */
+/* Triangles have faces; points and lines are front-facing. */
 static bool
-record_draw(struct wg_cmd_buffer *cmd, bool indexed)
+has_faces(VkPrimitiveTopology t)
+{
+   return t == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || t == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
+          t == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN || t == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY ||
+          t == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY || t == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+}
+
+/* How many draws a draw takes: WebGPU has one stencil reference and one pair of masks, Vulkan a set a face. A draw
+ * whose faces' differ, with both faces drawn, is two: its front faces with the front's (the back culled), then its back
+ * faces with the back's. Order between its front and back primitives is lost where they overlap (the stencil ops of
+ * the later face then run last). */
+static uint32_t
+draw_faces(struct wg_cmd_buffer *cmd)
+{
+   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+   const struct vk_stencil_test_face_state *f = &dyn->ds.stencil.front, *b = &dyn->ds.stencil.back;
+   if (!cmd->pass.stencil || !dyn->ds.stencil.test_enable || dyn->rs.cull_mode || !has_faces(dyn->ia.primitive_topology))
+      return 1;
+   return f->reference != b->reference || f->compare_mask != b->compare_mask ||
+                (!cmd->pass.stencil_ro && f->write_mask != b->write_mask)
+             ? 2
+             : 1;
+}
+
+/* `face`: 0 the whole draw, 1 its front faces, 2 its back faces (draw_faces). */
+static bool
+record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face)
 {
    struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX], *fs = cmd->shaders[MESA_SHADER_FRAGMENT];
    const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
@@ -761,7 +789,11 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
    if (indexed && (k.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || k.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP))
       k.strip_index = cmd->ib_type == VK_INDEX_TYPE_UINT32 ? 2 : 1;
    k.front_face = dyn->rs.front_face == VK_FRONT_FACE_CLOCKWISE;
-   k.cull = dyn->rs.cull_mode & 3;
+   k.cull = face == 1 ? VK_CULL_MODE_BACK_BIT : face == 2 ? VK_CULL_MODE_FRONT_BIT : dyn->rs.cull_mode & 3;
+   /* The stencil's reference and masks: the back's for back faces alone (a split draw's, or front faces culled). */
+   const struct vk_stencil_test_face_state *sface =
+      face == 2 || (k.cull == VK_CULL_MODE_FRONT_BIT && has_faces(k.topology)) ? &dyn->ds.stencil.back
+                                                                               : &dyn->ds.stencil.front;
    /* Depth clamped, or not clipped (VK_EXT_depth_clip_enable): WebGPU's unclippedDepth (which clamps to the viewport's
     * range, as the attachment would anyway). */
    const bool clip = dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_TRUE ||
@@ -801,8 +833,8 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
          k.stencil[f][2] = faces[f]->op.depth_fail;
          k.stencil[f][3] = faces[f]->op.compare;
       }
-      k.stencil_read = dyn->ds.stencil.front.compare_mask;
-      k.stencil_write = cmd->pass.stencil_ro ? 0 : dyn->ds.stencil.front.write_mask;
+      k.stencil_read = sface->compare_mask;
+      k.stencil_write = cmd->pass.stencil_ro ? 0 : sface->write_mask;
    }
    for (uint32_t i = 0; i < k.color_count; i++) {
       const struct vk_color_blend_attachment_state *a = &dyn->cb.attachments[i];
@@ -880,7 +912,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
          fprintf(stderr, "wg: a draw's colour blends with both the constant's colour and its alpha: its colour taken\n");
       warned = true;
    }
-   d.stencil_ref = dyn->ds.stencil.front.reference;
+   d.stencil_ref = sface->reference;
    if (memcmp(&d, cmd->last_dyn, sizeof(d))) {
       emit(cmd, OP_DYN, &d, sizeof(d));
       memcpy(cmd->last_dyn, &d, sizeof(d));
@@ -918,12 +950,11 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed)
    return true;
 }
 
-VKAPI_ATTR void VKAPI_CALL
-wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances, uint32_t first,
-           uint32_t first_instance)
+static void
+draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t first, uint32_t first_instance,
+     uint32_t face)
 {
-   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
-   if (!vertices || !instances || !record_draw(cmd, false))
+   if (!record_draw(cmd, false, face))
       return;
    if (cmd->vk.dynamic_graphics_state.ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN) {
       /* A fan (WebGPU has none) as a triangle list through the device's fan indices (0, 1, 2, 0, 2, 3, ...), from the
@@ -941,15 +972,39 @@ wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances,
    emit(cmd, OP_DRAW, (uint32_t[]){ vertices, instances, first, first_instance }, 16);
 }
 
+/* The faces a draw is recorded with, as record_draw's `face`, for i < draw_faces(cmd). */
+static uint32_t
+face_of(uint32_t faces, uint32_t i)
+{
+   return faces == 2 ? i + 1 : 0;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances, uint32_t first,
+           uint32_t first_instance)
+{
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   if (!vertices || !instances)
+      return;
+   const uint32_t faces = draw_faces(cmd);
+   for (uint32_t i = 0; i < faces; i++)
+      draw(cmd, vertices, instances, first, first_instance, face_of(faces, i));
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t instances, uint32_t first, int32_t base,
                   uint32_t first_instance)
 {
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
-   if (!indices || !instances || !record_draw(cmd, true))
+   if (!indices || !instances)
       return;
-   emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance },
-        sizeof(struct op_draw_indexed));
+   const uint32_t faces = draw_faces(cmd);
+   for (uint32_t i = 0; i < faces; i++) {
+      if (!record_draw(cmd, true, face_of(faces, i)))
+         return;
+      emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance },
+           sizeof(struct op_draw_indexed));
+   }
 }
 
 static void
@@ -958,12 +1013,17 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
 {
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    VK_FROM_HANDLE(wg_buffer, buffer, _buffer);
-   if (!count || !record_draw(cmd, indexed))
+   if (!count)
       return;
-   emit(cmd, OP_DRAW_INDIRECT,
-        &(struct op_indirect){ .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count,
-                               .stride = stride ? stride : (indexed ? 20 : 16), .offset = buffer->offset + offset },
-        sizeof(struct op_indirect));
+   const uint32_t faces = draw_faces(cmd);
+   for (uint32_t i = 0; i < faces; i++) {
+      if (!record_draw(cmd, indexed, face_of(faces, i)))
+         return;
+      emit(cmd, OP_DRAW_INDIRECT,
+           &(struct op_indirect){ .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count,
+                                  .stride = stride ? stride : (indexed ? 20 : 16), .offset = buffer->offset + offset },
+           sizeof(struct op_indirect));
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1387,6 +1447,20 @@ struct readback {
    uint32_t base; /* index into the submit's `bases` (UINT32_MAX: none) */
 };
 
+struct query_readback {
+   struct wg_query_pool *pool;
+   uint32_t lo, hi; /* queries [lo, hi) */
+   uint32_t slot;
+};
+
+/* An occlusion query of the current render pass (resolved at its end); `passing`: one WebGPU couldn't count (begun
+ * outside the pass or beside another pool's queries, or cut by the pass's end), reported as passing. */
+struct pass_query {
+   struct wg_query_pool *pool;
+   uint32_t index;
+   bool passing;
+};
+
 struct cpu_write {
    struct wg_device_memory *mem;
    VkDeviceSize offset;
@@ -1404,6 +1478,7 @@ struct wg_submit {
    struct util_dynarray bytes;
    struct util_dynarray bases;      /* the ranges' bases */
    struct util_dynarray signals;    /* struct vk_sync_signal */
+   struct util_dynarray queries;    /* struct query_readback: occlusion queries it ended, read back into `values` */
    bool shadowed;                   /* an upload left out some of its ranges' words: their pages go up again at its end */
 };
 
@@ -1429,6 +1504,11 @@ struct replay {
    uint32_t push_size;
    uint32_t push_offset; /* where in the device's push buffer the current push constants are (UINT32_MAX: none yet) */
    uint32_t dirty; /* RD_* */
+   /* Occlusion queries: the pool whose set the render pass counts into, the query counting (none: `qactive_pool`
+    * NULL), the pass's queries (struct pass_query). */
+   struct wg_query_pool *qpool, *qactive_pool;
+   uint32_t qactive;
+   struct util_dynarray pass_queries;
 };
 
 enum { RD_PIPELINE = 1, RD_DYN = 2, RD_GROUPS = 4, RD_VB = 8, RD_IB = 16, RD_PUSH = 32, RD_ALL = 63 };
@@ -1451,12 +1531,126 @@ readback(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, Vk
                               ((struct readback){ mem, start, end - start, 0, UINT32_MAX }));
 }
 
+#define WG_QUERY_SET_MAX 4096 /* WebGPU's largest query set */
+
+/* A query reported as passing: its value 1 in the pool's buffer (outside a pass; in one, at its end). */
+static void
+query_passing(struct replay *r, struct wg_query_pool *pool, uint32_t index)
+{
+   if (r->pass == RENDER) {
+      util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, true }));
+      return;
+   }
+   static const uint64_t one = 1;
+   gpu_update(pool->buf, index * 8.0, &one, 8);
+}
+
+static int
+cmp_u32(const void *a, const void *b)
+{
+   const uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+   return x < y ? -1 : x > y;
+}
+
+/* The pass's occlusion queries resolved into their pool's buffer: a run of consecutive queries at a time, through the
+ * device's scratch buffer (a resolve's destination offset must be 256-aligned). */
+static void
+resolve_queries(struct replay *r)
+{
+   struct wg_device *dev = r->dev;
+   const uint32_t n = util_dynarray_num_elements(&r->pass_queries, struct pass_query);
+   if (!n)
+      return;
+   if (!dev->query_scratch) {
+      struct wg_json j = { 0 };
+      dev->query_scratch_size = WG_QUERY_SET_MAX * 8;
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", dev->query_scratch_size, 0x200 | 4); /* QUERY_RESOLVE | COPY_SRC */
+      dev->query_scratch = wg_create_json(WG_KIND_BUFFER, &j);
+   }
+   uint32_t *idx = malloc(n * sizeof(uint32_t)), k = 0;
+   util_dynarray_foreach (&r->pass_queries, struct pass_query, q) {
+      if (q->passing)
+         query_passing(r, q->pool, q->index);
+      else if (idx)
+         idx[k++] = q->index;
+   }
+   if (idx && k) {
+      qsort(idx, k, sizeof(uint32_t), cmp_u32);
+      for (uint32_t a = 0, b; a < k; a = b) {
+         for (b = a + 1; b < k && idx[b] == idx[b - 1] + 1; b++)
+            ;
+         gpu_resolve_queries(r->qpool->set, idx[a], b - a, dev->query_scratch, 0);
+         gpu_copy_bb(dev->query_scratch, 0, r->qpool->buf, idx[a] * 8.0, (b - a) * 8.0);
+      }
+   }
+   free(idx);
+   util_dynarray_clear(&r->pass_queries);
+}
+
 static void
 end_pass(struct replay *r)
 {
+   if (r->pass == RENDER && r->qactive_pool) {
+      /* A query the pass's end cuts (WebGPU's pass ends inside Vulkan's): passing. */
+      gpu_end_occlusion();
+      util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
+         if (q->pool == r->qactive_pool && q->index == r->qactive)
+            q->passing = true;
+      r->qactive_pool = NULL;
+   }
    if (r->pass != NONE)
       gpu_pass_end();
+   const bool render = r->pass == RENDER;
    r->pass = NONE;
+   if (render)
+      resolve_queries(r);
+   r->qpool = NULL;
+}
+
+/* The pool whose occlusion queries the render pass starting at `p` begins (the first), NULL for none. */
+static struct wg_query_pool *
+pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      const void *d = h + 1;
+      p += sizeof(*h) + h->size;
+      if (h->op == OP_PASS || h->op == OP_PASS_END) {
+         *stop = true;
+         return NULL;
+      }
+      if (h->op == OP_QUERY) {
+         const struct op_query *q = d;
+         if (q->kind == 2 && q->pool->set && q->first < WG_QUERY_SET_MAX)
+            return q->pool;
+      } else if (h->op == OP_EXEC) {
+         const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
+         struct wg_query_pool *pool =
+            pass_query_pool(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, stop);
+         if (pool || *stop)
+            return pool;
+      }
+   }
+   return NULL;
+}
+
+/* A query ended at this point of the queue: available to later copies, and to the host once its submit completes
+ * (an occlusion query's value read back then). */
+static void
+query_ended(struct replay *r, struct wg_query_pool *pool, uint32_t index)
+{
+   pool->avail[index] = 1;
+   pool->ended[index] = r->submit->serial;
+   if (!pool->buf)
+      return;
+   util_dynarray_foreach (&r->submit->queries, struct query_readback, q) {
+      if (q->pool == pool) {
+         q->lo = MIN2(q->lo, index), q->hi = MAX2(q->hi, index + 1);
+         return;
+      }
+   }
+   util_dynarray_append_typed(&r->submit->queries, struct query_readback,
+                              ((struct query_readback){ pool, index, index + 1, 0 }));
 }
 
 /* Bind groups released once the submit is encoded: empty groups (a set index no resource uses) are made per use, and
@@ -1727,24 +1921,6 @@ apply(struct replay *r, uint32_t point)
 }
 
 static void
-query_results(struct wg_query_pool *pool, uint32_t first, uint32_t count, VkQueryResultFlags flags, uint8_t *out,
-              VkDeviceSize stride)
-{
-   for (uint32_t i = 0; i < count; i++, out += stride) {
-      const uint64_t v = pool->values[first + i];
-      if (flags & VK_QUERY_RESULT_64_BIT) {
-         memcpy(out, &v, 8);
-         if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
-            memcpy(out + 8, &(uint64_t){ 1 }, 8);
-      } else {
-         memcpy(out, &(uint32_t){ (uint32_t)v }, 4);
-         if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
-            memcpy(out + 4, &(uint32_t){ 1 }, 4);
-      }
-   }
-}
-
-static void
 cpu_write(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, const void *data, uint32_t size,
           bool fill, uint32_t value)
 {
@@ -1753,6 +1929,53 @@ cpu_write(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, c
    if (!fill)
       util_dynarray_append_array(&r->submit->bytes, uint8_t, data, size);
    util_dynarray_append_typed(&r->submit->writes, struct cpu_write, w);
+}
+
+/* vkCmdCopyQueryPoolResults: each query's value (an occlusion query's from its pool's buffer, on the GPU; a
+ * timestamp's from the CPU) and availability where Vulkan puts them, the bytes between them untouched. An unavailable
+ * query's value isn't written, unless PARTIAL_BIT asks for one (0). */
+static void
+copy_queries(struct replay *r, const struct op_copy_query *q)
+{
+   struct wg_query_pool *pool = q->pool;
+   const bool wide = q->flags & VK_QUERY_RESULT_64_BIT, with_avail = q->flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
+   const bool partial = q->flags & VK_QUERY_RESULT_PARTIAL_BIT, gpu = pool->buf;
+   const uint32_t size = wide ? 8 : 4, each = size * (with_avail ? 2 : 1);
+   const uint32_t buf = buffer_gpu(q->dst);
+   const VkDeviceSize base = q->dst->offset + q->offset;
+   if (!q->count)
+      return;
+   for (uint32_t i = 0; i < q->count; i++) {
+      const uint32_t index = q->first + i;
+      const VkDeviceSize at = base + i * q->stride;
+      const bool avail = pool->avail[index];
+      uint8_t bytes[16] = { 0 };
+      uint32_t from = 0, to = 0; /* the CPU's bytes: [from, to) of the query's */
+      if (avail && gpu) {
+         if (buf)
+            gpu_copy_bb(pool->buf, index * 8.0, buf, at, size);
+         from = to = size;
+      } else if (avail || partial) {
+         const uint64_t v = avail ? pool->values[index] : 0;
+         memcpy(bytes, &v, size); /* little-endian: a 32-bit result is the value's low word */
+         to = size;
+      } else {
+         from = to = size;
+      }
+      if (with_avail) {
+         memcpy(bytes + size, &(uint64_t){ avail }, size);
+         to = each;
+      }
+      if (to > from) {
+         if (buf)
+            gpu_update(buf, at + from, bytes + from, to - from);
+         if (!gpu && host_mem(q->dst))
+            cpu_write(r, q->dst->mem, at + from, bytes + from, to - from, false, 0);
+      }
+   }
+   /* An occlusion query's value is the GPU's: read back what the copy wrote to host-visible memory. */
+   if (gpu && host_mem(q->dst))
+      readback(r, q->dst->mem, base, (q->count - 1) * q->stride + each);
 }
 
 static void
@@ -1785,7 +2008,17 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_PASS: {
          end_pass(r);
          const char *json = d;
-         gpu_render_pass(json, strlen(json));
+         /* Its occlusion queries' set (WebGPU's pass takes one, at its start). */
+         bool stop = false;
+         r->qpool = pass_query_pool(p, end, &stop);
+         if (r->qpool) {
+            struct wg_json j = { 0 };
+            wg_json_printf(&j, "{\"occlusionQuerySet\":%u,%s", r->qpool->set, json + 1);
+            gpu_render_pass(j.data, j.len);
+            wg_json_free(&j);
+         } else {
+            gpu_render_pass(json, strlen(json));
+         }
          r->pass = RENDER;
          /* The attachments' size, for scissors (in the JSON's tail). */
          const char *w = strstr(json, "\"width\":");
@@ -1943,31 +2176,46 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       case OP_QUERY: {
          const struct op_query *q = d;
-         if (q->kind == 0)
-            memset(&q->pool->values[q->first], 0, q->count * sizeof(uint64_t));
-         else if (q->kind == 1)
-            q->pool->values[q->first] = os_time_get_nano();
-         else if (q->kind == 3)
-            /* Occlusion: reported as passing (WebGPU's query sets: docs/backlog.md). */
-            q->pool->values[q->first] = q->pool->vk.query_type == VK_QUERY_TYPE_OCCLUSION ? 1 : 0;
+         struct wg_query_pool *pool = q->pool;
+         const bool occlusion = pool->vk.query_type == VK_QUERY_TYPE_OCCLUSION;
+         if (q->kind == 0) {
+            memset(&pool->values[q->first], 0, q->count * sizeof(uint64_t));
+            memset(&pool->avail[q->first], 0, q->count);
+            memset(&pool->ended[q->first], 0, q->count * sizeof(uint32_t));
+         } else if (q->kind == 1) {
+            pool->values[q->first] = os_time_get_nano();
+            query_ended(r, pool, q->first);
+         } else if (q->kind == 2 && occlusion) {
+            if (r->pass == RENDER && pool == r->qpool && !r->qactive_pool && q->first < WG_QUERY_SET_MAX) {
+               gpu_begin_occlusion(q->first);
+               r->qactive_pool = pool;
+               r->qactive = q->first;
+               util_dynarray_append_typed(&r->pass_queries, struct pass_query,
+                                          ((struct pass_query){ pool, q->first, false }));
+            } else {
+               static bool warned;
+               if (!warned)
+                  fprintf(stderr, "wg: an occlusion query begun outside a render pass or beside another pool's: "
+                                  "reported as passing\n");
+               warned = true;
+            }
+         } else if (q->kind == 3) {
+            if (occlusion) {
+               if (r->pass == RENDER && r->qactive_pool == pool && r->qactive == q->first) {
+                  gpu_end_occlusion();
+                  r->qactive_pool = NULL;
+               } else {
+                  query_passing(r, pool, q->first);
+               }
+            }
+            query_ended(r, pool, q->first);
+         }
          break;
       }
-      case OP_COPY_QUERY: {
-         const struct op_copy_query *q = d;
-         const uint32_t each = (q->flags & VK_QUERY_RESULT_64_BIT ? 8 : 4) *
-                               (q->flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT ? 2 : 1);
-         const uint32_t size = q->count ? (q->count - 1) * q->stride + each : 0;
-         uint8_t *bytes = calloc(1, size + 4);
-         query_results(q->pool, q->first, q->count, q->flags, bytes, q->stride);
+      case OP_COPY_QUERY:
          end_pass(r);
-         const uint32_t buf = buffer_gpu(q->dst);
-         if (buf && size)
-            gpu_update(buf, q->dst->offset + q->offset, bytes, align(size, 4));
-         if (host_mem(q->dst))
-            cpu_write(r, q->dst->mem, q->dst->offset + q->offset, bytes, size, false, 0);
-         free(bytes);
+         copy_queries(r, d);
          break;
-      }
       case OP_EVENT: {
          const struct op_event *e = d;
          e->event->set = e->set;
@@ -1988,6 +2236,7 @@ static struct wg_device *devices[16];
 
 /* Submits are numbered across devices: wg_complete finds a submit by its number alone. */
 static uint32_t submit_serial;
+uint32_t wg_completed_serial;
 
 /* Marks a page of the window for a device's next upload. */
 static void
@@ -2185,10 +2434,119 @@ linear_images(struct wg_device *dev, bool load, struct replay *r)
    }
 }
 
+/* A sync of either kind on the CPU (below). */
+struct wg_sync {
+   struct vk_sync base;
+   uint64_t value;
+   uint64_t pending; /* a timeline's: the largest value a submit already replayed signals once it completes */
+};
+
+static bool
+is_wg_timeline(const struct vk_sync *sync)
+{
+   return sync->type == &wg_sync_type && (sync->flags & VK_SYNC_IS_TIMELINE);
+}
+
+/* A queue's wait on a timeline value is met once the value is reached or a submit already replayed will signal it
+ * (the queue runs in order); a binary one's signal always comes first (Vulkan's rule). */
+static bool
+wait_met(const struct vk_sync_wait *w)
+{
+   if (!is_wg_timeline(w->sync))
+      return true;
+   const struct wg_sync *s = (const struct wg_sync *)w->sync;
+   return s->value >= w->wait_value || s->pending >= w->wait_value;
+}
+
+/* A submit held for its waits (Vulkan's wait before signal: the host, or another queue, signals the value later). The
+ * runtime frees its vk_queue_submit when driver_submit returns: its command buffers and signals are copied (they stay
+ * the application's while the submit is pending), and its timeline waits. */
+struct held {
+   struct list_head link;
+   uint32_t cmd_count, signal_count, wait_count;
+   struct vk_command_buffer **cmds;
+   struct vk_sync_signal *signals;
+   struct vk_sync_wait *waits;
+};
+
+static bool completing;   /* inside wg_complete: held submits are replayed at its end */
+
+static VkResult submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *const *cmds,
+                           uint32_t signal_count, const struct vk_sync_signal *signals);
+
+static void
+held_free(struct held *h)
+{
+   list_del(&h->link);
+   free(h->cmds), free(h->signals), free(h->waits);
+   free(h);
+}
+
+/* Replays every device's held submits whose waits are met, oldest first (one not met holds those after it). */
+static void
+flush_held(void)
+{
+   for (bool progress = true; progress;) {
+      progress = false;
+      for (uint32_t i = 0; i < 16; i++) {
+         struct wg_device *dev = devices[i];
+         while (dev && !list_is_empty(&dev->held)) {
+            struct held *h = list_first_entry(&dev->held, struct held, link);
+            bool met = true;
+            for (uint32_t k = 0; k < h->wait_count; k++)
+               met &= wait_met(&h->waits[k]);
+            if (!met)
+               break;
+            list_del(&h->link);
+            submit_now(dev, h->cmd_count, h->cmds, h->signal_count, h->signals);
+            list_inithead(&h->link);
+            held_free(h);
+            progress = true;
+         }
+      }
+   }
+}
+
 VkResult
 wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
 {
    struct wg_device *dev = container_of(queue->base.device, struct wg_device, vk);
+   /* A submit of nothing but signals goes at once even behind held ones: vkr retires the guest's ring fences this way
+    * (an empty submit with a fence), and the guest's driver waits for those before it reuses its command buffers, so
+    * holding them would hold the very signal the held submits wait for. Such a submit signals early, as every submit
+    * did before submits were held. */
+   bool met = list_is_empty(&dev->held) || (!submit->command_buffer_count && !submit->wait_count);
+   for (uint32_t i = 0; i < submit->wait_count && met; i++)
+      met = wait_met(&submit->waits[i]);
+   if (met)
+      return submit_now(dev, submit->command_buffer_count, submit->command_buffers, submit->signal_count,
+                        submit->signals);
+   struct held *h = calloc(1, sizeof(*h));
+   if (!h)
+      return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   h->cmds = malloc(MAX2(submit->command_buffer_count, 1) * sizeof(*h->cmds));
+   h->signals = malloc(MAX2(submit->signal_count, 1) * sizeof(*h->signals));
+   h->waits = malloc(MAX2(submit->wait_count, 1) * sizeof(*h->waits));
+   if (!h->cmds || !h->signals || !h->waits) {
+      list_inithead(&h->link);
+      held_free(h);
+      return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+   h->cmd_count = submit->command_buffer_count;
+   memcpy(h->cmds, submit->command_buffers, h->cmd_count * sizeof(*h->cmds));
+   h->signal_count = submit->signal_count;
+   memcpy(h->signals, submit->signals, h->signal_count * sizeof(*h->signals));
+   for (uint32_t i = 0; i < submit->wait_count; i++)
+      if (is_wg_timeline(submit->waits[i].sync))
+         h->waits[h->wait_count++] = submit->waits[i];
+   list_addtail(&h->link, &dev->held);
+   return VK_SUCCESS;
+}
+
+static VkResult
+submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *const *cmds, uint32_t signal_count,
+           const struct vk_sync_signal *signals)
+{
    struct wg_submit *s = calloc(1, sizeof(*s));
    if (!s)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -2198,8 +2556,14 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    util_dynarray_init(&s->bytes, NULL);
    util_dynarray_init(&s->bases, NULL);
    util_dynarray_init(&s->signals, NULL);
-   for (uint32_t i = 0; i < submit->signal_count; i++)
-      util_dynarray_append_typed(&s->signals, struct vk_sync_signal, submit->signals[i]);
+   util_dynarray_init(&s->queries, NULL);
+   for (uint32_t i = 0; i < signal_count; i++) {
+      util_dynarray_append_typed(&s->signals, struct vk_sync_signal, signals[i]);
+      if (is_wg_timeline(signals[i].sync)) {
+         struct wg_sync *sync = (struct wg_sync *)signals[i].sync;
+         sync->pending = MAX2(sync->pending, signals[i].signal_value);
+      }
+   }
 
    /* Linear images in host-visible memory: their memory's buffer made first, so that upload() fills it. */
    list_for_each_entry (struct wg_image, image, &dev->linear_images, linear_link)
@@ -2208,12 +2572,12 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    linear_images(dev, true, NULL);
    struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX };
    uint64_t draws = 0;
-   for (uint32_t i = 0; i < submit->command_buffer_count; i++)
-      draws += container_of(submit->command_buffers[i], struct wg_cmd_buffer, vk)->draws;
+   for (uint32_t i = 0; i < cmd_count; i++)
+      draws += container_of(cmds[i], struct wg_cmd_buffer, vk)->draws;
    push_reserve(dev, draws * 256);
    dev->push_used = 0;
-   for (uint32_t i = 0; i < submit->command_buffer_count; i++) {
-      struct wg_cmd_buffer *cmd = container_of(submit->command_buffers[i], struct wg_cmd_buffer, vk);
+   for (uint32_t i = 0; i < cmd_count; i++) {
+      struct wg_cmd_buffer *cmd = container_of(cmds[i], struct wg_cmd_buffer, vk);
       replay(&r, cmd);
       end_pass(&r);
       r.dirty = RD_ALL;
@@ -2224,6 +2588,9 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
    upload(dev);
    util_dynarray_foreach (&s->readbacks, struct readback, b)
       b->slot = gpu_readback(b->mem->gpu, b->offset, b->size);
+   util_dynarray_foreach (&s->queries, struct query_readback, q)
+      q->slot = gpu_readback(q->pool->buf, q->lo * 8.0, (q->hi - q->lo) * 8);
+   util_dynarray_fini(&r.pass_queries);
    /* Ordered after the earlier submits' work and before this one's (queue.writeBuffer). */
    if (dev->push_used)
       gpu_write(dev->push_buffer, 0, dev->push_data, dev->push_used);
@@ -2244,6 +2611,7 @@ submit_free(struct wg_submit *s)
    util_dynarray_fini(&s->bytes);
    util_dynarray_fini(&s->bases);
    util_dynarray_fini(&s->signals);
+   util_dynarray_fini(&s->queries);
    free(s);
 }
 
@@ -2349,8 +2717,20 @@ mark_range(struct wg_device *dev, struct wg_device_memory *mem, VkDeviceSize off
       mark_page(dev, (uint32_t)p);
 }
 
+static void complete(uint32_t serial);
+
 __attribute__((visibility("default"))) void
 wg_complete(uint32_t serial)
+{
+   completing = true;
+   complete(serial);
+   completing = false;
+   /* Its signals may meet a held submit's waits. */
+   flush_held();
+}
+
+static void
+complete(uint32_t serial)
 {
    for (uint32_t i = 0; i < 16; i++) {
       struct wg_device *dev = devices[i];
@@ -2397,6 +2777,9 @@ wg_complete(uint32_t serial)
             util_dynarray_foreach (&s->writes, struct cpu_write, w)
                mark_range(dev, w->mem, w->offset, w->size);
          }
+         util_dynarray_foreach (&s->queries, struct query_readback, q)
+            gpu_readback_copy(q->slot, &q->pool->values[q->lo], (q->hi - q->lo) * 8);
+         wg_completed_serial = serial;
          util_dynarray_foreach (&s->signals, struct vk_sync_signal, sig)
             vk_sync_signal(&dev->vk, sig->sync, sig->signal_value);
          submit_free(s);
@@ -2412,14 +2795,14 @@ wg_device_drain(struct wg_device *dev)
 {
    list_for_each_entry_safe (struct wg_submit, s, &dev->pending, link)
       submit_free(s);
+   list_for_each_entry_safe (struct held, h, &dev->held, link)
+      held_free(h);
 }
 
-/* A sync of either kind on the CPU: a binary one is 0 or 1, a timeline one its value. A wait for a value nothing
- * reached yet times out rather than block: the GPU's work completes in a later task of the worker's (wg_complete). */
-struct wg_sync {
-   struct vk_sync base;
-   uint64_t value;
-};
+/* A sync of either kind on the CPU (struct wg_sync, above): a binary one is 0 or 1, a timeline one its value. A wait
+ * for a value nothing reached yet times out rather than block: the GPU's work completes in a later task of the
+ * worker's (wg_complete). Advertised as waiting before its signal (VK_SYNC_FEATURE_WAIT_BEFORE_SIGNAL: the runtime then
+ * submits at once, with no thread of its own): a submit whose timeline wait isn't met is held (wg_queue_submit). */
 
 static VkResult
 wg_sync_init(struct vk_device *device, struct vk_sync *sync, uint64_t initial_value)
@@ -2438,6 +2821,9 @@ wg_sync_signal(struct vk_device *device, struct vk_sync *sync, uint64_t value)
 {
    struct wg_sync *s = (struct wg_sync *)sync;
    s->value = (sync->flags & VK_SYNC_IS_TIMELINE) ? value : 1;
+   /* The host's signal (vkSignalSemaphore) may meet a held submit's waits; a completion's replays them at its end. */
+   if (!completing)
+      flush_held();
    return VK_SUCCESS;
 }
 
@@ -2452,6 +2838,7 @@ static VkResult
 wg_sync_reset(struct vk_device *device, struct vk_sync *sync)
 {
    ((struct wg_sync *)sync)->value = 0;
+   ((struct wg_sync *)sync)->pending = 0;
    return VK_SUCCESS;
 }
 
@@ -2470,9 +2857,11 @@ wg_sync_wait_many(struct vk_device *device, uint32_t count, const struct vk_sync
    uint32_t met = 0;
    for (uint32_t i = 0; i < count; i++) {
       const struct wg_sync *s = (const struct wg_sync *)waits[i].sync;
-      const uint64_t want = (waits[i].sync->flags & VK_SYNC_IS_TIMELINE) ? waits[i].wait_value : 1;
-      /* A pending wait (submitted, not done) counts as met: the queue runs in order. */
-      if (s->value >= want || (flags & VK_SYNC_WAIT_PENDING))
+      const bool timeline = waits[i].sync->flags & VK_SYNC_IS_TIMELINE;
+      const uint64_t want = timeline ? waits[i].wait_value : 1;
+      /* A pending wait counts as met (the queue runs in order): a timeline's value a replayed submit will signal, any
+       * binary one (its signal is submitted first). */
+      if (s->value >= want || ((flags & VK_SYNC_WAIT_PENDING) && (!timeline || s->pending >= want)))
          met++;
    }
    return met == count || (met && (flags & VK_SYNC_WAIT_ANY)) ? VK_SUCCESS : VK_TIMEOUT;
@@ -2497,7 +2886,8 @@ const struct vk_sync_type wg_sync_type = {
    .size = sizeof(struct wg_sync),
    .features = VK_SYNC_FEATURE_BINARY | VK_SYNC_FEATURE_TIMELINE | VK_SYNC_FEATURE_GPU_WAIT |
                VK_SYNC_FEATURE_GPU_MULTI_WAIT | VK_SYNC_FEATURE_CPU_WAIT | VK_SYNC_FEATURE_CPU_RESET |
-               VK_SYNC_FEATURE_CPU_SIGNAL | VK_SYNC_FEATURE_WAIT_ANY | VK_SYNC_FEATURE_WAIT_PENDING,
+               VK_SYNC_FEATURE_CPU_SIGNAL | VK_SYNC_FEATURE_WAIT_ANY | VK_SYNC_FEATURE_WAIT_PENDING |
+               VK_SYNC_FEATURE_WAIT_BEFORE_SIGNAL,
    .init = wg_sync_init,
    .finish = wg_sync_finish,
    .signal = wg_sync_signal,

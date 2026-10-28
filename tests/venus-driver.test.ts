@@ -224,6 +224,8 @@ for (const [scenario, what] of [
   ['depthResolveDiscard', 'a depth and stencil resolve of an attachment whose store op is DONT_CARE'],
   ['depthResolveArea', 'a depth and stencil resolve over part of the attachment'],
   ['storageAliased', 'a storage buffer read and one written, bound from one memory, in one dispatch'],
+  // L6a (the driver review's finding 8).
+  ['waitBeforeSignal', 'a submit that waits on a timeline value the host signals after it runs after the signal'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

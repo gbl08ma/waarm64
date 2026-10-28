@@ -164,6 +164,9 @@ struct wg_device {
    struct list_head linear_images;
    /* Submits whose work isn't done yet, oldest first (struct wg_submit). */
    struct list_head pending;
+   /* Submits held for a timeline value nothing has signalled or will signal yet (wg_cmd.c `struct held`), oldest
+    * first: replayed in order once their waits are met. */
+   struct list_head held;
    /* The window's pages written since this device last uploaded (a bit each; wg_cmd.c `take_pages`: the write-watch is
     * the window's, so each look's pages go to every device), with the words [pages_lo, pages_hi) that may hold bits;
     * `pages_all`: every page counts. */
@@ -177,6 +180,7 @@ struct wg_device {
    uint8_t *push_data;
    uint32_t push_used, push_size, push_gen;
    uint32_t fan_indices;   /* wg_fan_indices */
+   uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 #define WG_FAN_VERTICES 65536
@@ -405,11 +409,20 @@ struct wg_vertex_slots {
 };
 void wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vertex_slots *out);
 
+/* A query pool. Occlusion queries count on the GPU: the WebGPU query set `set` (a slot a query), resolved at the end of
+ * each pass that used it into `buf` (each query's last value, 8 bytes a query), which vkCmdCopyQueryPoolResults copies
+ * from; a submit reads back what its queries wrote into `values` at its completion. Timestamps are the CPU's at the
+ * replay (`values`). `avail`: a query's availability in the queue's order (the replay's: what a copy sees); `ended`:
+ * the serial of the submit that last ended it (0: reset since), available to the host once that submit completed. */
 struct wg_query_pool {
    struct vk_query_pool vk;
    uint64_t *values;
-   uint32_t set;  /* occlusion: a WebGPU query set */
+   uint8_t *avail;
+   uint32_t *ended;
+   uint32_t set, buf;
 };
+/* The serial of the last submit completed (submits complete in their order). */
+extern uint32_t wg_completed_serial;
 
 struct wg_event {
    struct vk_object_base base;

@@ -252,7 +252,19 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   `CONSTANT_ALPHA` colour factors as WebGPU's one constant set to the constant's alpha (a draw mixing it with
   `CONSTANT_COLOR` in its colour can't be expressed: warned, the colour kept);
   pipelines as WebGPU takes them: an indexed strip always has its index format, depth bias only for polygons, and a
-  pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten), copies
+  pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten); stencil state per
+  face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces' differ, both faces
+  drawn, is two draws, its front faces with the front's (the back culled) and then its back faces with the back's, so
+  the order between its front and back primitives is lost where they overlap; with one face culled the other's is used
+  (VK3 L6a); occlusion queries on the GPU (VK3 L6a): a pool is a WebGPU query set and a buffer of each query's last value;
+  a render pass whose commands begin a query takes the pool's set (the first pool's: a query of another pool, or one
+  begun outside a pass, is reported as passing, warned once), its queries are resolved into the buffer at the pass's
+  end (consecutive ones together, through the device's scratch buffer), and `vkCmdCopyQueryPoolResults` copies each value
+  from it on the GPU, with each availability (the queue's order: what the replay has seen ended and not reset since),
+  leaving the bytes between results untouched and an unavailable query's value unwritten without `PARTIAL_BIT`; a
+  submit reads the values its queries ended back for `vkGetQueryPoolResults`, which reports a query available once that
+  submit completed (`VK_NOT_READY` before, `WAIT_BIT` too: the host can't wait for a completion; Venus's guest driver
+  reads its feedback buffers, which the copies fill, instead); timestamps are the CPU's at the replay), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer copies WebGPU can't make (an
   offset or size not 4-aligned) go through a compute pass of the worker's: the source's words copied to a temporary
   buffer, then each destination word the copy touches written, its other bytes kept; on the GPU in the encoder's
@@ -273,7 +285,7 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   feedback slots) applied there too (outside the readbacks, which have the GPU's last word), each only where the CPU
   still has the range's base: a range read back is wider than what the GPU wrote (a copy's row gaps, a whole storage
   binding at its dynamic offset, 4-byte rounding), and what the guest wrote there since its submit stays; a byte that changes moves a later
-  in-flight range's base with it (VK3 L4c-B). Then the submit's syncs signal; vkr's fences retire at the next poll, which the
+  in-flight range's base with it (VK3 L4c-B). The submit's occlusion values land in their pools. Then the submit's syncs signal; vkr's fences retire at the next poll, which the
   completion runs at once. Only the window and the arena are written then (anything else is logged and dropped).
   While a submit is in flight the host's poller sends an empty submit at most every 1 ms (web/venus-gpu.ts `nudge`):
   Chromium looks at a Dawn device on Vulkan whose work is pending only on a slow timer, but at once when commands
@@ -285,8 +297,16 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
   The render stats' `venus` carries a submit's parts too: the worker's encoding, `queue.submit`'s call, its writes,
   passes and draws, and the done of the submits with a pass.
 - **Shared images** (Venus's WSI): see "Presentation".
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): occlusion queries (reported as
-  passing), timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component
+- **Waits before their signal** (VK3 L6a): syncs are advertised as waiting before their signal, so Mesa's runtime
+  hands every submit to the driver at once (no submit thread: vkr has one); a submit with a timeline wait that isn't
+  met, by the value or by a submit already replayed that will signal it, is held, with every later submit of its
+  device, and replayed in order once its waits are met: at the host's signal (`vkSignalSemaphore`) or at the end of a
+  completion. Binary waits are met in the queue's order. A submit of signals alone (no command buffers, no waits) goes
+  at once, ahead of held ones: vkr retires the guest's ring fences with such submits, and the guest's driver waits for
+  them before it reuses its command streams, so holding them held the guest before it could send the host's signal
+  (`synchronization*.timeline_semaphore.wait.host_wait_before_signal` hung the guest so); such a submit signals early,
+  as every submit did before.
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits and uploads, border colours and mirror-once, triangle fans, component
   swizzles, sampling 3D images through 2D views, texel buffers, integer textures sampled with a sampler, copies
   between formats, multi-view.
 

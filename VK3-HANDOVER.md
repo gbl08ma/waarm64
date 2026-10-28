@@ -6,19 +6,24 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
-## State (2026-10-28, after L5b)
+## State (2026-10-28, after L6a)
 
-- **Done:** the review of L4f's six findings (`origin/review/venus-l4f`, kept), each with its test failing first and
-  planted back: depth/stencil resolves stored whatever the store op and kept to the render area (multisampled layers:
-  WebGPU has none, so moot); a compute stage's storage buffers all `read_write` (fragment stages' too broke a dEQP-VK
-  case: a pass's vertex stages read storage read-only, so unwritten fragment buffers stay `read`); the integer
-  sample-count limits 1;
-  `maxComputeSharedMemorySize` WebGPU's whole (the uniform conditions' word in shared memory's slack, beside it, or saved
-  and restored); terminate and demote run, not only compiled. Filed: the usage-scope conflicts left (UBO, vertex/index
-  buffers beside written storage in one memory) and the float formats' sample counts (backlog).
-- **dEQP-VK:** the list holds (3,261 pass; ci.sh and ci-deqp-vk.sh green). **Next:** L6.
+- **Done:** per-face stencil (a draw split by face where the faces' reference or masks differ); depth24plus-stencil8's
+  stencil copied (the worker refused it); occlusion queries counted on the GPU, with availability and strided copies
+  (the driver review's 10); submits held for timeline waits nothing has signalled (the review's 8; `waitBeforeSignal`
+  in tests/venus-driver.test.ts, failing first, planted back); DONT_CARE stored over a partial render area. Each
+  failing first (dEQP samples or the driver test); stencil, occlusion and timeline planted back.
+- **dEQP-VK list:** 3,261 → 3,972 (stencil, occlusion, timestamps, timeline, load_store_op_none); ci.sh and
+  ci-deqp-vk.sh green (the list in 521 s).
+- **Filed:** clears inside an occlusion query counted; queries begun outside a pass reported passing; `device_host`'s
+  41 of 110; 34 `load_store_op_none` (stencil8 + `gl_FragDepth`, integer resolve, alphablend, input attachments).
+- **Worth knowing:** a held empty submit (vkr's ring fence) hung the guest (`host_wait_before_signal`): signal-only
+  submits go at once. dEQP-VK's `wait_before_signal.*` are all NotSupported here (`vertexPipelineStoresAndAtomics`).
 
-## Where VK3 stands (2026-10-28, after L5b; next L6)
+## Where VK3 stands (2026-10-28, after L6a; next L6b)
+
+- **L5b:** the out-of-context review of L4f's six findings fixed (`origin/review/venus-l4f`); usage-scope conflicts
+  and float sample counts filed.
 
 - **L5:** WGSL's subgroups where the adapter's have one size (held on the Mac: Chromium's Metal hoists a lone ballot out
   of an `if`; the worker's `subgroupsRight` check falls back to subgroups of one), 16-bit storage, `shaderFloat16`,
@@ -56,7 +61,7 @@ docs and the backlog; git keeps the old handovers.
   (invalid); a linear image's freed memory reached by every submit (heap use after free); dynamic storage offsets read
   back at 0; odd-sized storage bindings; `packHalf2x16`/`unpackHalf2x16` refused; a weak compare-exchange;
   `pipelineCacheUUID` blind to the caps; L4f the rest (above).
-- **Next:** L6.
+- **Next:** L6b.
 
 ## The plan (loops; the supervisor may reorder)
 
@@ -74,7 +79,7 @@ docs and the backlog; git keeps the old handovers.
   `framebuffer(Integer)ColorSampleCounts` past what the 32-bit formats report; `maxComputeSharedMemorySize` 16368 under
   Vulkan's 16384 minimum; the depth resolve's `renderArea` and layers; the tests that defend 3 and 4 or match text only.
   Each with its test failing first. Done: all six fixed (the resolve's layers moot), the usage scopes left filed.
-- [ ] L6a: the driver's semantics: per-face stencil; occlusion queries with their availability and strided result
+- [x] L6a: the driver's semantics: per-face stencil; occlusion queries with their availability and strided result
   copies (the driver review's 10); timeline waits before their signal (the driver review's 8: backlog
   "Synchronization"); the 34 `load_store_op_none` failures.
 - [ ] L6b: texel buffers; the depth/stencil copies WebGPU refuses; bind groups remade every frame (a performance item,
@@ -114,6 +119,9 @@ libplacebo takes its subgroup paths; check its frames are still right). Any step
 
 VK2's list still holds: `git show cd03da82:VK2-HANDOVER.md`, "Things worth not re-discovering". Add VK3's here.
 
+- (L6a) A guest stuck in D state (deqp-vk) with "fence … unretired" warnings: look for host submits held behind a
+  wait. vkr retires the guest's ring fences through empty submits on the queue, and Venus's guest waits on them before
+  reusing its command streams. vk-main.txt has duplicate lines: `sort -u` a CASES file, or deqp-vk exits at once.
 - (L5) `bench/gpu/sway-mac.sh` with `SCRIPT=deqp-run.ts` needs `VIRGL_GPU=virgl,vulkan` for dEQP-VK (its default
   machine has no Vulkan: deqp-vk exits at once, no statuses). A translated WGSL kernel runs on the Mac's WebGPU in
   seconds through a small Playwright script there (REPORT.md "VK3 L5"): the fastest way to narrow a Metal-only failure.

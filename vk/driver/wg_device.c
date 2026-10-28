@@ -507,6 +507,7 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
    list_inithead(&dev->linear_images);
    list_inithead(&dev->shared_memories);
    list_inithead(&dev->pending);
+   list_inithead(&dev->held);
    const VkPipelineCacheCreateInfo cache_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
    const struct vk_pipeline_cache_create_info cache = { .pCreateInfo = &cache_info, .weak_ref = true };
    dev->vk.mem_cache = vk_pipeline_cache_create(&dev->vk, &cache, NULL);
@@ -548,6 +549,7 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    vk_queue_finish(&dev->queue.vk);
    wg_id_release(dev->push_buffer);
    wg_id_release(dev->fan_indices);
+   wg_id_release(dev->query_scratch);
    free(dev->push_data);
    free(dev->pages);
    if (dev->vk.mem_cache)
@@ -1204,10 +1206,21 @@ wg_CreateQueryPool(VkDevice _device, const VkQueryPoolCreateInfo *pCreateInfo,
    struct wg_query_pool *pool = vk_query_pool_create(&dev->vk, pCreateInfo, pAllocator, sizeof(*pool));
    if (!pool)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
-   pool->values = calloc(pCreateInfo->queryCount, sizeof(uint64_t));
-   if (!pool->values) {
+   const uint32_t n = pCreateInfo->queryCount;
+   pool->values = calloc(n, sizeof(uint64_t));
+   pool->avail = calloc(n, 1);
+   pool->ended = calloc(n, sizeof(uint32_t));
+   if (!pool->values || !pool->avail || !pool->ended) {
+      free(pool->values), free(pool->avail), free(pool->ended);
       vk_query_pool_destroy(&dev->vk, pAllocator, &pool->vk);
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+   if (pCreateInfo->queryType == VK_QUERY_TYPE_OCCLUSION) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", MIN2(n, 4096));
+      pool->set = wg_create_json(WG_KIND_QUERY_SET, &j);
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", n * 8, 0x200 | 4 | 8); /* QUERY_RESOLVE | COPY_SRC | COPY_DST */
+      pool->buf = wg_create_json(WG_KIND_BUFFER, &j);
    }
    *pPool = wg_query_pool_to_handle(pool);
    return VK_SUCCESS;
@@ -1220,31 +1233,43 @@ wg_DestroyQueryPool(VkDevice _device, VkQueryPool _pool, const VkAllocationCallb
    VK_FROM_HANDLE(wg_query_pool, pool, _pool);
    if (!pool)
       return;
-   free(pool->values);
+   wg_id_release(pool->set);
+   wg_id_release(pool->buf);
+   free(pool->values), free(pool->avail), free(pool->ended);
    vk_query_pool_destroy(&dev->vk, pAllocator, &pool->vk);
 }
 
-/* Every query is available at once (the work is done at its submit), with the value it was given (0, or a timestamp). */
+/* A query is available once the submit that ended it has completed (its value read back by then). The host can't wait
+ * here for a submit (it completes in a later task of the worker's): with WAIT_BIT an unavailable query is VK_NOT_READY
+ * too. Venus's guest driver reads its own feedback buffers, which vkCmdCopyQueryPoolResults fills, instead. */
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_GetQueryPoolResults(VkDevice _device, VkQueryPool _pool, uint32_t first, uint32_t count, size_t dataSize,
                        void *pData, VkDeviceSize stride, VkQueryResultFlags flags)
 {
    VK_FROM_HANDLE(wg_query_pool, pool, _pool);
    const bool wide = flags & VK_QUERY_RESULT_64_BIT;
+   VkResult result = VK_SUCCESS;
    for (uint32_t i = 0; i < count; i++) {
       uint8_t *out = (uint8_t *)pData + stride * i;
-      const uint64_t v = pool->values[first + i];
-      if (wide) {
-         ((uint64_t *)out)[0] = v;
-         if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
-            ((uint64_t *)out)[1] = 1;
-      } else {
-         ((uint32_t *)out)[0] = (uint32_t)v;
-         if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
-            ((uint32_t *)out)[1] = 1;
+      const uint32_t e = pool->ended[first + i];
+      const bool avail = e && (int32_t)(wg_completed_serial - e) >= 0;
+      if (!avail)
+         result = VK_NOT_READY;
+      const uint64_t v = avail ? pool->values[first + i] : 0;
+      if (avail || (flags & VK_QUERY_RESULT_PARTIAL_BIT)) {
+         if (wide)
+            memcpy(out, &v, 8);
+         else
+            memcpy(out, &(uint32_t){ (uint32_t)v }, 4);
+      }
+      if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) {
+         if (wide)
+            memcpy(out + 8, &(uint64_t){ avail }, 8);
+         else
+            memcpy(out + 4, &(uint32_t){ avail }, 4);
       }
    }
-   return VK_SUCCESS;
+   return result;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1252,6 +1277,8 @@ wg_ResetQueryPool(VkDevice _device, VkQueryPool _pool, uint32_t first, uint32_t 
 {
    VK_FROM_HANDLE(wg_query_pool, pool, _pool);
    memset(&pool->values[first], 0, count * sizeof(uint64_t));
+   memset(&pool->avail[first], 0, count);
+   memset(&pool->ended[first], 0, count * sizeof(uint32_t));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

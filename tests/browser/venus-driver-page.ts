@@ -378,7 +378,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -392,7 +392,7 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   for (let k = 0; k < 1000 && !ex.wgt_misc_done(); k++) await new Promise((r) => setTimeout(r, 10));
   if (!ex.wgt_misc_done()) return { error: 'the fence never signalled', errors, warnings: v.gpu.stats.errors };
@@ -448,6 +448,9 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   } else if (scenario === 'freedModule') {
     new Float32Array(want.buffer, 0, 1)[0] = 0.25;
     Object.assign(checks, { depth: [0, 4096, want] });
+  } else if (scenario === 'waitBeforeSignal') {
+    want.fill(0x22, 0, 64);
+    Object.assign(checks, { copied: [0, 4096, want] });
   } else if (scenario === 'freedImage') {
     want.fill(0x11);
     Object.assign(checks, { filled: [0, 1024, want] });
