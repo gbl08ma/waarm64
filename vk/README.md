@@ -65,7 +65,7 @@ draw; a compute shader's `if` around a barrier, or breaking out of a loop that h
 value being a `var`; a barrier after it keeps the next write from racing the read, so one word serves every condition:
 shared memory's spare word where it has one (WebGPU counts each workgroup var rounded up to 16 bytes), else a var of
 its own, `wg_uc`, where the workgroup's storage has room, else shared memory's first word, saved and restored between
-barriers; shared memory of atomics filling the storage is refused; the device advertises WebGPU's workgroup storage
+barriers, through atomics where shared memory is of atomics (VK3 L6c; WGSL's `workgroupUniformLoad` takes one); the device advertises WebGPU's workgroup storage
 whole, VK3 L5b); a vertex shader's outputs are typed and interpolated as its
 fragment shader reads them, its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport) and its z
 mirrored (`w - z`) by `wg_flip_z` for an inverted depth range (WebGPU wants `minDepth <= maxDepth`: the range is set the

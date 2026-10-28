@@ -55,9 +55,10 @@ struct ctx {
    unsigned uniform_conds;
    bool in_barrier_loop;
    /* Where a uniform condition goes: shared memory's spare word or a var of its own (`uc`), or shared memory's first
-    * word, saved and restored around it where shared memory leaves no room (`uc_save`); `uc_none`: nowhere. */
+    * word, saved and restored around it where shared memory leaves no room (`uc_save`; through atomics where shared
+    * memory is of atomics). */
    const char *uc;
-   bool uc_save, uc_none;
+   bool uc_save;
    unsigned shm_words;
 };
 
@@ -2122,8 +2123,16 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
              * var rounded up to 16 bytes: the var is shared memory's spare word where it has one (wgsl_print), else one
              * of its own where the workgroup's storage has room, else shared memory's first word, saved and restored. */
             const unsigned n = c->uniform_conds++;
-            if (c->uc_none) {
-               failf(c, "a uniform condition with shared memory of atomics filling the workgroup's storage");
+            if (c->uc_save && c->shm_atomic) {
+               /* As below, through atomics (WGSL's workgroupUniformLoad takes an atomic: VK3 L6c). */
+               const char *t = c->shm_signed ? "i" : "u";
+               line(c, "workgroupBarrier();");
+               line(c, "let ucs%u = atomicLoad(&shm[0]);", n);
+               line(c, "workgroupBarrier();");
+               line(c, "atomicStore(&shm[0], select(0%s, 1%s, %s));", t, t, src_comp(c, &nif->condition, 0));
+               line(c, "let uc%u = u32(workgroupUniformLoad(&shm[0]));", n);
+               line(c, "atomicStore(&shm[0], ucs%u);", n);
+               line(c, "workgroupBarrier();");
             } else if (c->uc_save) {
                /* Shared memory takes the workgroup's storage whole: its first word holds the condition meanwhile, every
                 * access to it before done and after its restore (each invocation writes the same values). */
@@ -2211,10 +2220,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
          c.shm_words++;
       } else if (align(c.shm_words * 4, 16) + 16 <= o->max_workgroup_storage) {
          c.uc = "wg_uc";
-      } else if (!c.shm_atomic) {
-         c.uc_save = true;
       } else {
-         c.uc_none = true;
+         c.uc_save = true;
       }
    }
    /* Push constants past the immediates: a uniform buffer of the driver's, bound at a dynamic offset per draw. */

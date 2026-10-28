@@ -532,6 +532,27 @@ test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratc
   }
 });
 
+test('shared memory of atomics filling the workgroup\'s storage, with a barrier under a uniform condition (VK3 L6c)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  // The out-of-context review of L5-L6a's finding 6: maxComputeSharedMemorySize is WebGPU's whole, and this stage
+  // failed to translate (the condition's word had nowhere to go). It borrows shared memory's first word through atomics.
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/l6c/shared-atomic-full.comp', {});
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /var<workgroup> shm: array<atomic<u32>, 4096>;/);
+    assert.doesNotMatch(r.text, /wg_uc/);
+    const res = await runCompute(r.text, [{ binding: 0, size: 67 * 4 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const v = new Uint32Array(res.out[0].buffer);
+    const bad = [...Array(64).keys()].filter((k) => v[1 + k] !== (4095 - k * 64) * 3 + 5);
+    assert.deepEqual(bad.slice(0, 8), [], `${bad.length} wrong, v[1] = ${v[1]}`);
+    assert.deepEqual([v[65], v[66]], [5, 1 * 3 + 5 + 64], 's[0] restored, s[1] counted');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('the out-of-context review of L4f: a compute stage\'s readonly storage buffers read-only, the uniform conditions\' word in the workgroup\'s storage, terminate and demote run (VK3 L5b)', { skip: noGlslc, timeout: 180_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {

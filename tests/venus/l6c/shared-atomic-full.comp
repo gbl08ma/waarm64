@@ -1,0 +1,21 @@
+#version 450
+// Shared memory of atomics filling WebGPU's default workgroup storage (16384 bytes) with a barrier under a uniform
+// condition (VK3 L6c, the out-of-context review of L5-L6a's finding 6): the condition borrows shared memory's first word,
+// through atomics.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) buffer O { uint v[]; } o;
+shared uint s[4096];
+void main() {
+  for (uint i = gl_LocalInvocationIndex; i < 4096u; i += 64u) s[i] = i * 3u + 5u;
+  barrier();
+  atomicAdd(s[1], 1u);
+  barrier();
+  if (o.v[0] == 0u) {
+    barrier();
+    o.v[1u + gl_LocalInvocationIndex] = s[4095u - gl_LocalInvocationIndex * 64u];
+    if (gl_LocalInvocationIndex == 0u) {
+      o.v[65] = s[0];
+      o.v[66] = s[1];
+    }
+  }
+}
