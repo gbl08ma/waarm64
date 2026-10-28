@@ -564,12 +564,15 @@ test('the out-of-context review of L4f: a compute stage\'s readonly storage buff
     assert.match(full, /let ucs0 = shm\[0\];/);
     assert.doesNotMatch(full, /wg_uc/);
     for (const [code, top] of [[slack, 4094], [full, 4095]] as const) {
-      const res = await runCompute(code, [{ binding: 0, size: 65 * 4 }]);
+      const res = await runCompute(code, [{ binding: 0, size: 66 * 4 }]);
       if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
       assert.deepEqual(res.errors, []);
       const v = new Uint32Array(res.out[0].buffer);
-      const bad = [...Array(64).keys()].filter((k) => v[1 + k] !== (top - k * 64) * 3);
+      const bad = [...Array(64).keys()].filter((k) => v[1 + k] !== (top - k * 64) * 3 + 5);
       assert.deepEqual(bad.slice(0, 8), [], `${bad.length} wrong, v[1] = ${v[1]}`);
+      // Shared memory's first word after the condition borrowed it (shared-full.comp's): restored (VK3 L6c, the
+      // L5-L6a review's finding 5: the test read only from word 63 up, and the word held 0).
+      assert.equal(v[65], 5, 's[0] after the uniform condition');
     }
     // 6: a terminated invocation writes nothing and leaves its loop (else the draw never ends); a demoted one writes
     // nothing, and the others aren't helpers.

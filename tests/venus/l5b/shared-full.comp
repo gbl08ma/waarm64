@@ -5,10 +5,12 @@ layout(local_size_x = 64) in;
 layout(set = 0, binding = 0) buffer O { uint v[]; } o;
 shared uint s[4096];
 void main() {
-  for (uint i = gl_LocalInvocationIndex; i < 4096u; i += 64u) s[i] = i * 3u;
+  for (uint i = gl_LocalInvocationIndex; i < 4096u; i += 64u) s[i] = i * 3u + 5u;
   barrier();
   if (o.v[0] == 0u) {
     barrier();
     o.v[1u + gl_LocalInvocationIndex] = s[4095u - gl_LocalInvocationIndex * 64u];
+    // The first word, which shared-full.comp's condition borrowed (VK3 L6c: read back, 5).
+    if (gl_LocalInvocationIndex == 0u) o.v[65] = s[0];
   }
 }
