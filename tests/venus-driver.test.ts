@@ -235,6 +235,8 @@ for (const [scenario, what] of [
   // L6c (the out-of-context review of L5-L6a: finding 2, vkQuake's first frame).
   ['uniformBeside', 'a uniform buffer and a read-only storage buffer of one memory in one dispatch'],
   ['indirectBeside', 'a dispatch whose arguments share a memory with a read-only storage buffer it reads'],
+  // L6c (the review of L5-L6a: finding 1).
+  ['emptyAfterHeld', 'a submit of a fence alone behind a held submit signals after it'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

@@ -46,6 +46,7 @@ int wgt_pass_done(void);
 int wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words);
 uint8_t *wgt_misc_map(void);
 int wgt_misc_done(void);
+int wgt_misc_signal(void);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -1403,6 +1404,9 @@ wgt_fl_done(uint32_t i)
  *    101, 102, 103, 104 (the L5-L6a review's finding 2: `a` read-write made the uniform and it one usage scope's
  *    conflict, which invalidated the submit).
  * 18: as 17, dispatched indirectly with its arguments (1, 1, 1) at [512, 524) of that memory: the same.
+ * 19: as 13's copy, held for its wait, then a submit of nothing but a fence (vkQueueSubmit(queue, 0, NULL, fence), as
+ *    Mesa's vkQueueWaitIdle): the fence unsignalled until the host's signal (`wgt_misc_signal`), and the copy 0x22 (the
+ *    L5-L6a review's finding 1: such a submit went ahead of held ones, its fence saying they were done).
  */
 static struct {
    VkFence fence;
@@ -1411,6 +1415,7 @@ static struct {
 static struct {
    VkBuffer src;
    uint8_t *bytes;
+   VkSemaphore sem;
 } misc13;
 
 static int
@@ -1540,7 +1545,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       misc_barrier(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
       CmdCopyImageToBuffer(cmd, flat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
                            &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
-   } else if (scenario == 13) {
+   } else if (scenario == 13 || scenario == 19) {
       if (buffer(4096, both, true, &misc13.src, (void **)&misc13.bytes))
          return 1;
       memset(misc13.bytes, 0x11, 64);
@@ -2158,7 +2163,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       }
    }
    CHECK(EndCommandBuffer(cmd));
-   if (scenario == 13) {
+   if (scenario == 13 || scenario == 19) {
       PFN_vkCreateSemaphore CreateSemaphore = (PFN_vkCreateSemaphore)GetDeviceProcAddr(dev, "vkCreateSemaphore");
       PFN_vkSignalSemaphore SignalSemaphore = (PFN_vkSignalSemaphore)GetDeviceProcAddr(dev, "vkSignalSemaphore");
       const VkSemaphoreTypeCreateInfo type = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -2173,6 +2178,13 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = &tsi, .waitSemaphoreCount = 1,
                                     .pWaitSemaphores = &sem, .pWaitDstStageMask = &stage, .commandBufferCount = 1,
                                     .pCommandBuffers = &cmd };
+      if (scenario == 19) {
+         /* The copy held; then a submit of a fence alone, which the test polls before it signals (wgt_misc_signal). */
+         CHECK(QueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
+         CHECK(QueueSubmit(queue, 0, NULL, misc.fence));
+         misc13.sem = sem;
+         return 0;
+      }
       CHECK(QueueSubmit(queue, 1, &submit, misc.fence));
       memset(misc13.bytes, 0x22, 64);
       const VkSemaphoreSignalInfo signal = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = sem,
@@ -2196,4 +2208,16 @@ EXPORT int
 wgt_misc_done(void)
 {
    return misc.fence && GetFenceStatus(dev, misc.fence) == VK_SUCCESS;
+}
+
+/* Scenario 19's host signal: the source written 0x22, then the timeline's value 1 signalled. */
+EXPORT int
+wgt_misc_signal(void)
+{
+   PFN_vkSignalSemaphore SignalSemaphore = (PFN_vkSignalSemaphore)GetDeviceProcAddr(dev, "vkSignalSemaphore");
+   memset(misc13.bytes, 0x22, 64);
+   const VkSemaphoreSignalInfo signal = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = misc13.sem,
+                                          .value = 1 };
+   CHECK(SignalSemaphore(dev, &signal));
+   return 0;
 }

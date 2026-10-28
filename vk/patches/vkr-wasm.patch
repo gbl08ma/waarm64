@@ -272,10 +272,26 @@ index 32599664..63a8992c 100644
  VKR_DEFINE_OBJECT_CAST(device_memory, VK_OBJECT_TYPE_DEVICE_MEMORY, VkDeviceMemory)
  
 diff --git a/src/venus/vkr_queue.c b/src/venus/vkr_queue.c
-index d75a2294..89e863f7 100644
+index d75a2294..65786ba2 100644
 --- a/src/venus/vkr_queue.c
 +++ b/src/venus/vkr_queue.c
-@@ -120,7 +120,9 @@ vkr_queue_sync_thread_fini(struct vkr_queue *queue)
+@@ -91,7 +91,15 @@ vkr_queue_sync_submit(struct vkr_queue *queue,
+       return false;
+ 
+    mtx_lock(&queue->vk_mutex);
++#ifdef __wasi__
++   /* webpc: the driver lets this submit go ahead of submits it holds for their waits (wg_cmd.c wg_queue_submit). */
++   extern bool wg_ring_fence;
++   wg_ring_fence = true;
++#endif
+    VkResult result = vk->QueueSubmit(queue->base.handle.queue, 0, NULL, sync->fence);
++#ifdef __wasi__
++   wg_ring_fence = false;
++#endif
+    mtx_unlock(&queue->vk_mutex);
+ 
+    if (result == VK_ERROR_DEVICE_LOST) {
+@@ -120,7 +128,9 @@ vkr_queue_sync_thread_fini(struct vkr_queue *queue)
     cnd_signal(&queue->sync_thread.cond);
     mtx_unlock(&queue->sync_thread.mutex);
  
@@ -285,7 +301,7 @@ index d75a2294..89e863f7 100644
  
     list_for_each_entry_safe (struct vkr_queue_sync, sync, &queue->sync_thread.syncs, head)
        vkr_queue_sync_retire(queue, sync);
-@@ -147,6 +149,24 @@ vkr_queue_destroy(struct vkr_context *ctx, struct vkr_queue *queue)
+@@ -147,6 +157,24 @@ vkr_queue_destroy(struct vkr_context *ctx, struct vkr_queue *queue)
        free(queue);
  }
  
@@ -310,7 +326,7 @@ index d75a2294..89e863f7 100644
  static int
  vkr_queue_thread(void *arg)
  {
-@@ -211,6 +231,10 @@ vkr_queue_sync_thread_init(struct vkr_queue *queue)
+@@ -211,6 +239,10 @@ vkr_queue_sync_thread_init(struct vkr_queue *queue)
  
     list_inithead(&queue->sync_thread.syncs);
  
