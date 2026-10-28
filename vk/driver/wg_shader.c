@@ -448,7 +448,12 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask)
       uint32_t at = 0;
       while (at < v->resource_count && res_index(&v->resources[at]) != sidx)
          at++;
-      if (!filterable || !free || v->resource_count == WGSL_MAX_RESOURCES) {
+      /* The twin is a sampler more in each stage that sees it (wg_caps.c "The bindings WebGPU takes"). */
+      uint32_t samplers = 0;
+      for (uint32_t k = 0; at < v->resource_count && k < v->resource_count; k++)
+         samplers += (v->resources[k].kind == WGSL_SAMPLER || v->resources[k].kind == WGSL_SAMPLER_COMPARE) &&
+                     (v->vis[k] & v->vis[at]);
+      if (!filterable || !free || v->resource_count == WGSL_MAX_RESOURCES || samplers >= wg_limits.max_samplers) {
          v->resources[at].nonfiltering = true;
          continue;
       }
@@ -528,6 +533,8 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
          if (!known && p->pair_count < WGSL_MAX_PAIRS) {
             p->pairs[p->pair_count][0] = info->pairs[i][0];
             p->pairs[p->pair_count++][1] = info->pairs[i][1];
+         } else if (!known) {
+            p->pairs_full = true;
          }
       }
       for (uint32_t i = 0; i < info->resource_count; i++) {
@@ -922,7 +929,12 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          free(made);
          made = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
       }
-      if (!wg_bindings_fit(made, infos[0].set_layouts, error, sizeof(error))) {
+      if (made->pairs_full) {
+         snprintf(error, sizeof(error), "the stages sample more than %u texture-sampler pairs", WGSL_MAX_PAIRS);
+         free(made);
+         made = NULL;
+         ok = false;
+      } else if (!wg_bindings_fit(made, infos[0].set_layouts, error, sizeof(error))) {
          free(made);
          made = NULL;
          ok = false;
@@ -977,7 +989,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 /* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
  * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
  * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
-#define WG_SHADER_FORMAT 3
+#define WG_SHADER_FORMAT 4
 
 static bool
 wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)

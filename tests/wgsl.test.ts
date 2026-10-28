@@ -840,3 +840,18 @@ test('a vertex stage\'s draw parameters are read from the push buffer past the p
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('texture-sampler pairs past what the translator records fail the stage, saying so (VK3 L7a)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // 72 pairs are recorded (the cap was 64, the rest dropped without a word: their samplers never non-filtering).
+    const r72 = glslStage(translate, tmp, 'tests/venus/l7a/pairs-72.frag');
+    assert.equal(r72.rc, 0, r72.text);
+    const r = glslStage(translate, tmp, 'tests/venus/l7a/pairs.frag');
+    assert.notEqual(r.rc, 0, 'translated with pairs dropped');
+    assert.match(r.text, /texture-sampler pairs/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

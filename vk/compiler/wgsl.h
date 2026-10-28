@@ -23,7 +23,8 @@
 #define WGSL_MAX_SETS 8
 #define WGSL_MAX_GROUPS 4
 #define WGSL_MAX_RESOURCES 128
-#define WGSL_MAX_PAIRS 64
+/* Texture-sampler pairs a stage and a program record (a stage with more fails). */
+#define WGSL_MAX_PAIRS 128
 /* The push constants' uniform buffer's binding in group 3 (WebGPU's bindings stay under 1000). */
 #define WGSL_PUSH_BINDING 998
 /* A vertex stage's draw parameters (BaseVertex, BaseInstance, DrawIndex: VK3 L7.5) are words of the push buffer at

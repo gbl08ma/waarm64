@@ -394,6 +394,7 @@ struct wg_program {
    uint8_t vis[WGSL_MAX_RESOURCES];                    /* the stages that see each resource */
    uint32_t pair_count;
    uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
+   bool pairs_full;          /* program_create's: its stages' pairs past WGSL_MAX_PAIRS (the pipeline refused) */
    uint32_t compute_module;
    char *compute_wgsl;       /* a compute program's WGSL (a base's: its variants' modules are made from it) */
    bool owns_compute_module; /* the shader that made it was destroyed while others shared the program: it frees it */

@@ -55,6 +55,7 @@ uint8_t *wgt_misc_map(void);
 int wgt_misc_done(void);
 int wgt_misc_signal(void);
 int wgt_misc_pool_refs(void);
+int wgt_fits(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 /* wg_cmd.c: the pending submits' references to a query pool (destroyed or not). */
 int wg_submits_pool_refs(const void *pool);
 
@@ -1073,6 +1074,9 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
  *    (0, 1, 2) and (1, 3, 2) in Vulkan's order, the counter 192;
  * 3: as 0 in two draws (vertices 0 to 2, then 3 to 5) with the capture ended and begun again between them, the second
  *    resuming from the counter: the same.
+ * 4: `vs` xfb-many.vert (VK3 L7a, the binding review's finding 1): a triangle list of vertices 0 to 5 read through six
+ *    vertex bindings (the position from binding 0, from bindings 1 to 5 one float of the vertex, at bytes 4, 8, 12,
+ *    16, 0), captured into four buffers at 0, 512, 1024 and 1536 (16 bytes a vertex each), the first's counter 96.
  */
 static struct {
    VkFence fence;
@@ -1108,6 +1112,18 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
    ias.topology = scenario == 2 ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
    gpi.pInputAssemblyState = &ias;
    gpi.pRasterizationState = &rs;
+   VkVertexInputBindingDescription vbs[6];
+   VkVertexInputAttributeDescription vas[6];
+   const VkPipelineVertexInputStateCreateInfo vis = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .vertexBindingDescriptionCount = 6,
+      .pVertexBindingDescriptions = vbs, .vertexAttributeDescriptionCount = 6, .pVertexAttributeDescriptions = vas };
+   if (scenario == 4) {
+      for (uint32_t b = 0; b < 6; b++) {
+         vbs[b] = (VkVertexInputBindingDescription){ b, 20, VK_VERTEX_INPUT_RATE_VERTEX };
+         vas[b] = (VkVertexInputAttributeDescription){ b, b, b ? VK_FORMAT_R32_SFLOAT : VK_FORMAT_R32G32B32_SFLOAT, 0 };
+      }
+      gpi.pVertexInputState = &vis;
+   }
    VkPipeline p;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
    VkBuffer out;
@@ -1144,7 +1160,16 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
    CmdSetScissor(cmd, 0, 1, &scissor);
    const VkDeviceSize zero = 0, size = scenario == 1 ? 160 : 1024, counter_at = 2048;
    CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
-   Bind(cmd, 0, 1, &out, &zero, &size);
+   if (scenario == 4) {
+      const VkBuffer vb[5] = { scene.vertices, scene.vertices, scene.vertices, scene.vertices, scene.vertices };
+      const VkDeviceSize at[5] = { 4, 8, 12, 16, 0 };
+      CmdBindVertexBuffers(cmd, 1, 5, vb, at);
+      const VkBuffer xb[4] = { out, out, out, out };
+      const VkDeviceSize xat[4] = { 0, 512, 1024, 1536 }, xsize[4] = { 512, 512, 512, 512 };
+      Bind(cmd, 0, 4, xb, xat, xsize);
+   } else {
+      Bind(cmd, 0, 1, &out, &zero, &size);
+   }
    if (scenario == 3) {
       Begin(cmd, 0, 0, NULL, NULL);
       CmdDraw(cmd, 3, 1, 0, 0);
@@ -2132,6 +2157,80 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
       CmdDispatch(cmd, 1, 1, 1);
    }
+   return 0;
+}
+
+/*
+ * VK3 L7a: a graphics pipeline made, not drawn, of `vs` (l7a/fits.vert) and `fs` on a render pass whose subpass reads
+ * attachment 1 as its input attachment, the fragment stage's set 0 by `scenario`:
+ * 0: 16 combined image samplers (binding 0) and an input attachment (binding 1): l7a/input-many.frag (the binding
+ *    review's finding 6). What a test reads is WebGPU's errors (none) and the driver's word on the pipeline.
+ */
+EXPORT int
+wgt_fits(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words)
+{
+   if (!dev && init())
+      return 1;
+   VkShaderModule vm, fm;
+   if (shader(vs, vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkDescriptorSetLayoutBinding b[2] = {
+      { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+   };
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = scenario == 0 ? 2 : 0, .pBindings = b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkAttachmentDescription atts[2] = {
+      { 0, VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE,
+        VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
+      { 0, VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
+        VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+   };
+   const VkAttachmentReference cref = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
+                               iref = { 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+   const VkSubpassDescription sub = { .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      .inputAttachmentCount = 1, .pInputAttachments = &iref,
+                                      .colorAttachmentCount = 1, .pColorAttachments = &cref };
+   const VkRenderPassCreateInfo rpi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = 2,
+                                        .pAttachments = atts, .subpassCount = 1, .pSubpasses = &sub };
+   VkRenderPass rp;
+   CHECK(CreateRenderPass(dev, &rpi, NULL, &rp));
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm,
+        .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = fm, .pName = "main" },
+   };
+   const VkPipelineVertexInputStateCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkPipelineViewportStateCreateInfo vp = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+                                                  .viewportCount = 1, .scissorCount = 1 };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState cba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo cb = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &cba };
+   const VkDynamicState dyn[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+   const VkPipelineDynamicStateCreateInfo ds = { .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                                 .dynamicStateCount = 2, .pDynamicStates = dyn };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = stages,
+      .pVertexInputState = &vi, .pInputAssemblyState = &ia, .pViewportState = &vp, .pRasterizationState = &rs,
+      .pMultisampleState = &ms, .pColorBlendState = &cb, .pDynamicState = &ds, .layout = layout, .renderPass = rp,
+   };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
    return 0;
 }
 

@@ -18,6 +18,7 @@ type Test = {
   wgt_fl_done(i: number): number;
   wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
+  wgt_fits(scenario: number, vs: number, vn: number, fs: number, fn: number): number;
 };
 
 /** Two runs of the program, each on a renderer of its own (a machine started again), sharing a shader store: the
@@ -326,7 +327,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'drawParams' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'drawParams' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -351,6 +352,26 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     const variant = { strip: 0, vertexOnly: 1, lineBias: 2 } as const;
     const flat = { flatLast: 0, flatFanLast: 1, flatFanFirst: 2 } as const;
     let at: number, draws = 0;
+    if (scenario === 'xfbMany') {
+      // wgt_xfb's scenario 4: four buffers of 16 bytes a vertex from six vertex bindings (wg_test.c).
+      const quad = [[-1.5, -1, 0.5, 0, 0], [-0.5, -1, 0.5, 1, 0], [-0.5, 1, 0.5, 1, 1], [-1.5, 1, 0.5, 0, 1], [-1, -1, 0.75, 0, 0], [1, -1, 0.75, 0, 0]];
+      const want = new Uint8Array(4096).fill(0xee);
+      quad.forEach(([x, y, z, u, w], k) => {
+        new Float32Array(want.buffer, 16 * k, 4).set([x, y, z, 1]);
+        new Float32Array(want.buffer, 512 + 16 * k, 4).set([y, z, u, 0]);
+        new Float32Array(want.buffer, 1024 + 16 * k, 4).set([w, x, k, 0]);
+        new Float32Array(want.buffer, 1536 + 16 * k, 4).set([7, 8, 9, 10]);
+      });
+      new Uint32Array(want.buffer, 2048, 1)[0] = 96;
+      const [xv, xvn] = put(await words('/target/vk/test/xfb-many.vert.spv'));
+      if (ex.wgt_xfb(4, xv, xvn)) return { error: text(ex.wgt_error() >>> 0), errors };
+      await wait(() => ex.wgt_xfb_done(), 'the capture');
+      const got = new Uint8Array(memory.buffer, ex.wgt_xfb_map() >>> 0, 4096).slice();
+      let differs = -1;
+      for (let i = 0; i < 4096; i++) if (got[i] !== want[i]) { differs = i; break; }
+      device.destroy();
+      return { differs, got: [...new Float32Array(got.buffer, 0, 48)], counter: new Uint32Array(got.buffer, 2048, 1)[0], errors, warnings: v.gpu.stats.errors };
+    }
     if (scenario === 'xfbList' || scenario === 'xfbOverflow' || scenario === 'xfbStrip' || scenario === 'xfbResume') {
       // wgt_xfb's records: each vertex's (x, y, z, 1) and (u, v, its index, 7), from the scene's vertices (wg_test.c).
       const quad = [[-1.5, -1, 0.5, 0, 0], [-0.5, -1, 0.5, 1, 0], [-0.5, 1, 0.5, 1, 1], [-1.5, 1, 0.5, 0, 1], [-1, -1, 0.75, 0, 0], [1, -1, 0.75, 0, 0]];
@@ -604,4 +625,33 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   }
   device.destroy();
   return { checks: differs, errors, warnings: v.gpu.stats.errors, got: [...got.subarray(0, 16)], bindGroups: v.gpu.stats.bindGroups };
+}
+
+/**
+ * VK3 L7a: a graphics pipeline made and not drawn (vk/driver/wg_test.c `wgt_fits`), its stages' SPIR-V at `vert` and
+ * `frag`: WebGPU's errors once its objects are made (a queue's work done), and the driver's own error if it failed.
+ */
+export async function runFits(scenario: 'inputAttachments', vert: string, frag: string) {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const ex = v.raw as unknown as Test;
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  const put = async (url: string) => {
+    const b = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    const p = ex.venus_alloc(b.length) >>> 0;
+    new Uint8Array(memory.buffer, p, b.length).set(b);
+    return [p, b.length / 4];
+  };
+  const [vs, vn] = await put(vert), [fs, fn] = await put(frag);
+  if (ex.wgt_fits({ inputAttachments: 0 }[scenario], vs, vn, fs, fn)) return { error: text(ex.wgt_error() >>> 0), errors };
+  await device.queue.onSubmittedWorkDone();
+  for (let k = 0; k < 10; k++) await new Promise((r) => setTimeout(r, 10));
+  device.destroy();
+  return { errors, warnings: v.gpu.stats.errors };
 }

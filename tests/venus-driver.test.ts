@@ -33,7 +33,7 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert']]) {
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -234,6 +234,8 @@ for (const [scenario, what] of [
   ['xfbOverflow', 'a capture past its buffer keeps whole primitives only'],
   ['xfbStrip', 'a triangle strip captured in Vulkan\'s order of each triangle\'s vertices'],
   ['xfbResume', 'a capture ended and begun again resumes from its counter'],
+  // L7a (the binding review's finding 1): more vertex bindings and buffers than WebGPU's storage buffers a stage.
+  ['xfbMany', 'four buffers captured from six vertex bindings'],
 ] as const) {
   test(`transform feedback: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -327,5 +329,31 @@ for (const [scenario, what] of [
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).
     if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);
+  });
+}
+
+// L7a (the binding review's finding 6): pipelines past WebGPU's limits by what the device advertises, made but not
+// drawn: refused at their creation, saying why, with no WebGPU error.
+for (const [scenario, frag, what, why] of [
+  ['inputAttachments', 'input-many.frag', '16 sampled images and an input attachment, 17 textures', /didn't translate: the fragment stage binds 17 textures, past WebGPU's 16 \(of them: 1 input attachments\)/],
+] as const) {
+  test(`fits: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    const out = join(root, 'target/vk/test');
+    mkdirSync(out, { recursive: true });
+    for (const f of ['fits.vert', frag]) {
+      const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/l7a/${f}`)], { encoding: 'utf8' });
+      assert.equal(c.status, 0, c.stderr);
+    }
+    const page = await browser.newPage();
+    const logs: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') { logs.push(m.text()); console.log(`page: ${m.text().slice(0, 2000)}`); } });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runFits(s: string, v: string, f: string): Promise<Record<string, unknown>> } }).venus.runFits(s.scenario, '/target/vk/test/fits.vert.spv', `/target/vk/test/${s.frag}.spv`), { scenario, frag });
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, String(r.error));
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    assert.ok(logs.some((l) => why.test(l)), `not refused: ${JSON.stringify(logs)}`);
   });
 }

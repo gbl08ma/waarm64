@@ -675,6 +675,10 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
       if (!known && c->info->pair_count < WGSL_MAX_PAIRS) {
          c->info->pairs[c->info->pair_count][0] = tex->texture_index;
          c->info->pairs[c->info->pair_count++][1] = tex->sampler_index;
+      } else if (!known) {
+         /* The driver makes an unfilterable texture's samplers non-filtering by them (VK3 L7a, the binding review's
+          * finding 4: past the cap they were dropped, and the pipeline was invalid). */
+         failf(c, "more than %u texture-sampler pairs", WGSL_MAX_PAIRS);
       }
    }
    if (tex->op == nir_texop_lod)
