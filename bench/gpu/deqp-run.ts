@@ -11,7 +11,7 @@
 //   node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 [outdir]
 // STRIDE=<n> (default 50), OFFSET=<k> (0 to n-1, default 0), PREFIX=<groups, comma-separated: the list's cases under them>,
 // CASES=<file of case names, `*` patterns allowed, `#` lines comments>,
-// DETAIL=<n> (dEQP's messages for the first n cases that didn't pass), VIRGL_GPU=virgl,debug (the renderer's trace,
+// DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
 // LIMIT_S=<seconds the guest may run dEQP, default 1500>, PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases).
@@ -111,15 +111,23 @@ results.notPassed = statuses.filter(([, st]) => st !== 'Pass').map(([name, st]) 
 if (process.env.PASSED) results.passed = statuses.filter(([, st]) => st === 'Pass').map(([name]) => name);
 results.slowest = await runLines('sort -k3 -n -r /tmp/deqp.res | head -10');
 results.last = await run('tail -3 /tmp/deqp.res');
+// The guest kernel's log, whole, as <out>/dmesg.txt (gzipped through the terminal), and its warnings and worse in
+// results.kernel: a run that ends in time kept none of it (VK3 L9: a SLUB allocation failure seen on the screen only).
+const dmesg = gunzipSync(Buffer.from((await runLines('dmesg | gzip -9c | base64 -w 150', 120_000)).join(''), 'base64')).toString();
+writeFileSync(`${out}/dmesg.txt`, dmesg);
+results.kernel = (await runLines('dmesg --level=emerg,alert,crit,err,warn | tail -100')).filter(Boolean);
+if ((results.kernel as string[]).length) log('kernel', (results.kernel as string[]).length, 'warnings or worse: dmesg.txt');
 // Fewer statuses than cases: dEQP stopped (a crash, or LIMIT_S); the next case is where.
 const done = Object.values(results.counts as Record<string, number>).reduce((a, b) => a + b, 0);
 if (done < (results.cases as number)) {
   results.stoppedAt = await run(`sed -n '${done + 1}p' /tmp/cases.txt`);
   log('stopped at', results.stoppedAt);
 }
-// DETAIL=<n>: dEQP's own messages (its log's Text and Result lines) for the first <n> cases that didn't pass.
+// DETAIL=<n>: dEQP's own messages (its log's Text and Result lines) for the first <n> cases that didn't pass (with
+// DETAIL_MATCH=<a regex>, of those whose names match it).
 if (process.env.DETAIL) {
-  results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported" {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison|gl[A-Z]|//)" | head -12; done`, 120_000);
+  const match = process.env.DETAIL_MATCH ? ` && $1 ~ /${process.env.DETAIL_MATCH.replace(/[/'\\]/g, '')}/` : '';
+  results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported"${match} {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison|gl[A-Z]|//)" | head -12; done`, 120_000);
   log('detail', (results.detail as string[]).join('\n'));
 }
 // QPA=1: dEQP's whole log, its images in it, as <out>/deqp.qpa (for a few cases: it comes through the terminal).

@@ -509,12 +509,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
   is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
   encoded by hand (or a recorded stream replayed through `venus_submit`).
-- **VK3's gate on NVIDIA: the user's final run** (bench/vulkan/REPORT.md "VK3: the summary"): what VK3 L5–L8a
-  changed (the adapter's features, the driver's gaps, the emulated rows, the binding count) hasn't run on the user's
-  RTX 3070; the last run there was 4fdc69fb's (after L4e). `bench/vulkan/nvidia.sh page` with a bundle of the track's
-  last commit (`bench/vulkan/nvidia-bundle.sh`, ~4.8 GB) runs the gate again and, for the first time there, dEQP-VK's
-  two pass lists and the rows' programs (ANGLE's ES3, vkd3d's tests); its `results/summary.txt` says whether the
-  page held the adapter's subgroups. Its results go into REPORT.md beside the M4's.
 - **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
@@ -802,7 +796,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     three times, and `memory.binding.regular.suballocated.buffer_1048577` failed with it. Not on SwiftShader or the M4,
     nor with SwiftShader's completions delayed 4 ms. Since L9b a completion that throws is warned (`a submit's
     completion failed`) and doesn't complete later submits early; the trapped submit stays pending (its signals not
-    made, `completing` left set). `nvidia.sh VK2_STEPS=l9b` runs the case's group by name there.
+    made, `completing` left set). L9's run of the groups there (REPORT.md "VK3: the NVIDIA run for L9"; `nvidia.sh
+    VK2_STEPS=l9b`) had no trap, so the trap's cause stays unknown (seen once).
+  - **`memory.binding.*.buffer_1048577` fails on NVIDIA** (VK3's final run and L9's, `results/vk3/nvidia-l9b/`): every
+    binding mode (regular suballocated, dedicated, overallocated; aliasing suballocated) at 1 MiB + 1 byte, without
+    the trap above; every other size passes there, and every one on SwiftShader and the M4. dEQP's message wasn't
+    kept (DETAIL's 20 lines went to other cases): the next run there gets it (`nvidia.sh VK2_STEPS=l9b`, now with
+    `DETAIL_MATCH=memory` and the guest kernel's log). A size not a
+    multiple of 4 against WebGPU's copy and map alignment is the first suspect. Kept in the pass list (an
+    adapter-only failure is filed, not removed).
   - **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
     (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); dEQP-VK's `synchronization*.timeline_semaphore.
     wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
@@ -940,6 +942,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   what a decoder asked for (WebCodecs doesn't say what it got; Chromium's `prefer-hardware` fails rather than fall back,
   so a decoding stream asked for it is in practice hardware); per-vCPU bars scale to the run's peak, not a fixed scale.
   The editor is mouse- and keyboard-driven (drag, Alt+←/→, Delete); touch drag isn't handled (HTML5 drag and drop).
+- **A Venus machine of 2,560 MiB has a 1 MiB NUMA node** (VK3, REPORT.md "VK3: the NVIDIA run for L9"): memory 0
+  holds `MAX_MEMORY0_RAM` (3,071 MiB) less a Venus machine's 512 MiB (`VENUS_WINDOW` + `VENUS_ARENA`,
+  web/app/worker.ts), so `splitRam` spills whatever is past 2,559 MiB. At 2,560 MiB (guest-session.ts's default, so
+  every Venus run of the tools; any user's 2.5 GiB machine with Vulkan) that is 1 MiB: node 1, all its pages
+  unavailable to the kernel, "SLUB: Unable to allocate memory from node 1 … Allocating a useless per node structure"
+  at boot, a second node that turns on the distro's NUMA machinery (balancing, which our SMBIOS credential turns off
+  only under systemd) and spill-memory plumbing for nothing. Harmless otherwise (the same on every host). Ways out:
+  RAM sizes that keep a Venus machine in memory 0 (2,559 MiB or less) or a spill memory of at least, say, 256 MiB
+  (the Machines page's choices and the tools' default); or memory 0's reserve made smaller. A machine's split is
+  guest-visible and a snapshot's layout: the user's call.
 - **A ramdisk as swap, set up for the user** (the user's idea, 2026-10-18): an option on a ramdisk in the Machines
   screen's disks menu that formats it as swap and turns it on in the guest, with nothing to do inside. The host can
   write the swap header itself (`mkswap`'s format: a fixed page with `SWAPSPACE2`, a label and the size) and hand the

@@ -1,0 +1,3 @@
+deqp-l9b: done
+  l9b: 230 cases, {"Fail":61,"NotSupported":90,"Pass":79}; isampler2d_vec4_fragment Pass, buffer_1048577 NOT passed
+subgroups: not held (the device has the adapter's subgroups: the deqp step's subgroup cases ran on them)

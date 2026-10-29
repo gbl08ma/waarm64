@@ -269,13 +269,18 @@ if [ "${1:-}" = page ]; then
     # VK3 L9b (only when asked: VK2_STEPS=l9b, ~5 min): the first run's two fails and their neighbours by name
     # (bench/vulkan/l9b-cases.txt), with dEQP's messages, the cases that passed, and the page's completion faults (a trap
     # in the module's complete came with the memory binding fail: "a submit's completion failed" since L9b).
-    step deqp-l9b 900 env CASES="$REPO/bench/vulkan/l9b-cases.txt" LIMIT_S=600 DETAIL=20 PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-l9b"
+    # The checkout's deqp-run.ts (a bench tool: the guest kernel's log, DETAIL_MATCH) over a page unpacked before it.
+    [ -n "$DRY" ] || cp "$REPO/bench/gpu/deqp-run.ts" "$P/bench/gpu/deqp-run.ts"
+    step deqp-l9b 900 env CASES="$REPO/bench/vulkan/l9b-cases.txt" LIMIT_S=600 DETAIL=20 DETAIL_MATCH=memory PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-l9b"
     (cd "$P" && node -e '
       let r; try { r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { console.log("  l9b: no results"); process.exit(0); }
       const want = ["dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec4_fragment", "dEQP-VK.memory.binding.regular.suballocated.buffer_1048577"];
       const passed = new Set((r.passed ?? []).map((c) => c.split(" ")[0]));
       console.log(`  l9b: ${r.cases} cases, ${JSON.stringify(r.counts)}; ${want.map((c) => `${c.split(".").slice(-1)[0]} ${passed.has(c) ? "Pass" : "NOT passed"}`).join(", ")}`);
       for (const [w, n] of Object.entries(r.warnings ?? {})) if (/completion failed|readbacks failed|table index|out of bounds/.test(w)) console.log(`    ${n}x ${w.slice(0, 200)}`);
+      const k = (r.kernel ?? []).filter((l) => /SLUB|node|alloc|oom|gfp/i.test(l));
+      console.log(`  l9b: the guest kernel: ${(r.kernel ?? []).length} warnings or worse, ${k.length} about memory (deqp-l9b/dmesg.txt)`);
+      for (const l of k.slice(0, 12)) console.log(`    ${l.slice(0, 200)}`);
     ' "$R/deqp-l9b/results.json" | tee -a "$R/summary.txt") || true
     grep -hE "pageerror|page error" "$R/deqp-l9b.log" 2>/dev/null | sort | uniq -c | head -10 || true
   fi
