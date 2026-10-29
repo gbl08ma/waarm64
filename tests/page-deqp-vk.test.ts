@@ -1,7 +1,7 @@
 // dEQP-VK on the page (docs/testing.md "dEQP-VK"): the pass list of the direct set's groups (tests/deqp/vk.txt: cases
 // that pass on the page today, every one expected to pass) through bench/gpu/deqp-run.ts, on the guest images/deqp/build.sh
 // vk makes (target/deqp/guest-vk.qcow2: Arch Linux with Venus's guest driver; deqp-vk on target/deqp/deqp-vk.ext4), a
-// machine with Vulkan on the page's WebGPU (SwiftShader's in the dev VM: `--enable-unsafe-webgpu`). One boot, ~10 min; then
+// machine with Vulkan on the page's WebGPU (SwiftShader's in the dev VM: `--enable-unsafe-webgpu`). One boot, ~14 min; then
 // tests/deqp/vk-ycbcr.txt (VK3 L7.2: YCbCr conversions, on by default since L7.3), a second boot, ~1.5 min.
 // Opt-in with WEBPC_DEQP_VK=1 (scripts/ci-deqp-vk.sh); skipped where the page has no WebGPU adapter.
 import assert from 'node:assert/strict';
@@ -16,7 +16,7 @@ const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh
 
 // The seconds dEQP may run the list: ~2 times what it takes, so a hung device (every later fence held: the guest waits
 // for good) fails the test in minutes, with the guest's serial log kept.
-const LIMIT_S = 600;
+const LIMIT_S = 1500;
 
 /** Runs a pass list on the page (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr=off`); every case must pass. */
 function passList(t: { skip(m: string): void }, list: string, gpu?: string) {

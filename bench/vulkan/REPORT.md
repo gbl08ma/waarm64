@@ -771,6 +771,99 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T1: a census of dEQP-VK — 17% of the supported cases fail, two in five of them the samplers'
+
+**2026-10-29.** JSON in `results/vk4/t1/` (`swiftshader/`, `m4/`: one file a boot; `census.json`: every case that
+didn't pass, by cause; `new-passes/`: the list's new cases run as one list). Every 100th case of `vk-main.txt` (the
+mustpass list of the direct set's groups, 1,648,812 cases: 56% of them `pipeline`), 16,489 cases, as four boots of
+`bench/gpu/deqp-run.ts vk` (`STRIDE=400`, `OFFSET` 0, 100, 200, 300; `DETAIL` for every case that didn't pass), on the
+dev VM's SwiftShader (Chromium 153.0.8010.52) and on the M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2)
+through `bench/gpu/sway-mac.sh`; 96–137 s of deqp-vk a boot there, 80–107 s on the M4. Classed by
+`bench/vulkan/census.ts` (rules on the case's name and dEQP's messages, read against the renderer's warnings of each
+boot; the first that matches wins): of 500 and 545 failures, 1 and 3 aren't classed.
+
+| host | cases | pass | fail | crash | not supported | not passed of supported |
+|---|---|---|---|---|---|---|
+| SwiftShader | 16,489 | 2,448 | 498 | 2 | 13,541 | 500 of 2,948 (17.0%) |
+| M4 | 16,489 | 2,751 | 543 | 2 | 13,193 | 545 of 3,296 (16.5%) |
+
+By cause, ranked by consequence (tier 1 a crash, 2 work WebGPU refuses, so nothing drawn, 3 wrong results), then
+count; the task is VK4-KICKOFF.md's:
+
+
+| cause | tier | swiftshader | m4 | task |
+|---|---|---|---|---|
+| deqp-vk crashed or hung (a lost device) | 1 | 2 | 2 | T2 |
+| copies between formats (size-compatible, compressed ↔ uncompressed) | 2 | 93 | 112 | T10 |
+| integer cube textures sampled with a sampler (the stage refused: "an integer texture sampled with a sampler") | 2 | 31 | 31 | T8 |
+| an attachment also read as an input attachment with a self-dependency (a feedback loop WebGPU refuses) | 2 | 20 | 27 | T12 |
+| vertex attribute offsets and strides that aren't multiples of 4 (the pipeline refused) | 2 | 22 | 22 | T5 |
+| texture offsets that aren't constants after optimization (the stage refused) | 2 | 14 | 14 | T9 |
+| integer resolves | 2 | 3 | 3 | T10 |
+| multisampled images of several layers (WebGPU has no multisampled arrays: the texture refused) | 2 | 2 | 3 | T12 |
+| a format advertised for the use but refused at image creation (`VK_ERROR_FORMAT_NOT_SUPPORTED`) | 2 | 2 | 2 | T12 |
+| copies of multisampled images | 2 | 1 | 1 | T10 |
+| `gl_ClipDistance` read in a fragment shader (inputs past the varyings) | 2 | 1 | 1 | T9 |
+| compressed images whose size isn't whole blocks (ASTC's 5-, 6-, 10- and 12-texel blocks): the texture padded to whole blocks, so coordinates land wrong and cube views of it are refused | 3 | 102 | 102 | T18 |
+| component swizzles (image views' component mapping) | 3 | 55 | 62 | T8 |
+| border colours | 3 | 47 | 48 | T8 |
+| integer textures sampled with a sampler (address modes, LOD: fetched at clamp-to-edge) | 3 | 35 | 18 | T8 |
+| unnormalized coordinates | 3 | 25 | 28 | T8 |
+| clears of several layers or array layers past the first (another layer's value, or none) | 3 | 15 | 18 | T12 |
+| blits generating mipmaps (on the M4 over 6 layers; 32-bit float linear) | 3 | 4 | 16 | T12 |
+| the sampler's LOD bias and min/max LOD | 3 | 10 | 11 | T8 |
+| other blits (32-bit float and 16-bit unorm filtering, 3D) | 3 | 5 | 4 | T10 |
+| blends with both CONSTANT_COLOR and CONSTANT_ALPHA (WebGPU has one constant) | 3 | 0 | 4 | T12 |
+| `descriptorset_random`'s sets of four (a copy buffer reads zeros) | 3 | 0 | 3 | T12 |
+| multisampled rendering (several subpasses, sample masks) | 3 | 3 | 3 | T12 |
+| not classed (below) | 3 | 1 | 3 | — |
+| `textureQueryLod` | 3 | 2 | 2 | T9 |
+| 16-bit types in storage buffer layouts | 3 | 2 | 2 | T12 |
+| push descriptors pushed twice for one binding (`numcalls2`) | 3 | 2 | 2 | T12 |
+| clears of multisampled integer attachments | 3 | 1 | 1 | T12 |
+
+- **The samplers' causes are 203 of SwiftShader's 500** (integer cube textures, swizzles, border colours, integer
+  textures' address modes and LOD, unnormalized coordinates, LOD bias and clamps: T8); a sixth of them (the integer
+  cubes) are stages the translator refuses, not wrong pixels. Component swizzles (55 and 62) weren't in T8's brief:
+  Vulkan requires them, the driver ignores them (vk/README.md "Not yet").
+- **Compressed images whose size isn't whole blocks** (102 on each host, not in the backlog): WebGPU wants a
+  compressed texture's level 0 in whole blocks, so the driver makes it padded (a 13×13 image of ASTC 8×5 is a 16×20
+  texture); sampling then reads a texture larger than the image (normalized coordinates land wrong), and a cube view of
+  it is refused ("width (16) and height (20) are not equal"). On SwiftShader ASTC 4×4 and 8×8, whose blocks divide
+  dEQP's power-of-two sizes, pass 13 of 15 `pipeline` cases; the other blocks fail 102 of 107. Same counts on Metal:
+  the driver's, not SwiftShader's (the backlog's "ASTC and ETC2 on SwiftShader fail sampling" was this). A new task, T18.
+- **Copies between formats** (93 and 112: T10) are the largest cause of dropped work; then integer cube textures (31),
+  vertex strides that aren't multiples of 4 (22: `vertex_input.multiple_attributes`' 8- and 16-bit attributes, T5),
+  feedback loops through input attachments (20 and 27, T12) and non-constant texture offsets (14, T9).
+- **Two crashes, the same on both hosts**: `api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16` (a
+  format query) and `api.external.memory.opaque_fd.dedicated.device_only.dup2`, neither in the backlog (T2). No case hung; no boot stopped early.
+- **Smaller new causes** (T12): clears of several layers or of layers past the first (15 and 18: another layer's
+  colour, or the clear value cut to 8 bits for `a2b10g10r10_uint`), a 16-bit packed colour format with depth refused
+  at image creation though advertised (`render_to_image.*.a1r5g5b5_unorm_pack16_d32_sfloat_s8_uint`,
+  `r5g6b5_unorm_pack16_d24_unorm_s8_uint`: `VK_ERROR_FORMAT_NOT_SUPPORTED`), `int16_t` in storage buffer layouts (16-bit
+  storage is advertised), push descriptors pushed twice for one binding, and on the M4 three
+  `descriptorset_random.sets4` cases and four dual-source blends with both blend constants.
+- **What the census can't see**: `vk-main.txt` holds the direct set's groups, so usage scopes (T3), mutable images'
+  views (T4: `image.mutable` isn't in it), synchronization (T6) and API 1.3's features (T7: their groups are outside it
+  or not supported) aren't counted; they rank by the programs that meet them (the kickoff's reasons stand). 82% of the
+  sample is not supported (rasterization 150 of 150, compute 670 of 676, query pools 191 of 193 on SwiftShader): the
+  features VK4 doesn't advertise.
+- **Why not supported** (the M4's sample again with `DETAIL_NOTSUPPORTED=1`, `m4-notsupported/`: the reasons of its
+  13,187): **a compute queue without graphics** 2,427 (18%: "No matching queue found … requiredCaps=0x2,
+  excludedCaps=0x1", 1,984, mostly `pipeline`, and "Exclusive compute queue not supported", 443: the device has one
+  queue family; a second, compute-only one over the same WebGPU queue would open them), `VK_KHR_maintenance*` 711,
+  protected access 524, cooperative matrices 518, formats (not supported, for transfer, as source or destination;
+  D16S8; 3-component and packed formats sampled) ~2,000, multi-draw 196, `filterMinmaxImageComponentMapping` 195,
+  pipeline statistics queries 188, 3D ASTC 187, tessellation 172 and geometry 156, custom border colours 151,
+  mirror-clamp-to-edge 149, mutable descriptor types 143, depth resolve modes 130, ray tracing 129, LOD biases past
+  the limit 108, border colour swizzles 104; the long tail below 100 each.
+- **The pass list** (`tests/deqp/vk.txt`): 4,725 → 7,126, every case of the census that passed and wasn't in it (2,401;
+  memory's random allocations and the large workgroup memory left out, as before); run as one list on SwiftShader
+  they all pass, in 240 s of deqp-vk (`new-passes/`); `scripts/ci-deqp-vk.sh` went green with them, 1,148 s
+  (the list's test 861 s, its limit 1,500 s). VK2 L5's samples (21,485 cases by group, before VK3) had 670
+  not passed of 4,948 supported (13.5%), a different sample: its groups' strides made `pipeline` 7% of it, against 56%
+  here, so the shares don't compare.
+
 ## VK3: the summary — Venus right on NVIDIA, the adapter's features and §4's emulated rows
 
 **2026-10-28, at the track's end (L8); closed 2026-10-29 after the user's final NVIDIA runs and L9.** VK3 ran 2026-10-26
@@ -2187,6 +2280,9 @@ the toolbar's NUMA note now count Venus's share of memory 0.
 
 ## Tools
 
+- VK4 T1: `census.ts` (dEQP-VK's not-passed cases by cause, from `../gpu/deqp-run.ts`'s results; `--cases <cause>` lists
+  a cause's); `deqp-run.ts`'s `DETAIL` in one pass over the log (a census's hundreds of cases) and `DETAIL_NOTSUPPORTED=1`
+  (the reasons of NotSupported cases too; through `../gpu/sway-mac.sh`).
 - `nir/` (VK1 step 1): `build.sh` (the native Mesa build for its compile commands and generated sources, the
   toolchains, `gen.ts`'s ninja files), `spike.c`, `spike.ts` (the module with stubbed WASI), `run.ts` (native, Node,
   Chromium), `page.ts`; `mac.sh nir`.

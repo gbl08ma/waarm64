@@ -687,9 +687,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   own parameters' place), and a real program (vkd3d's demos need an X window: none in the guests). The draw
   parameters' cost (a push-buffer place and a bind of group 3 a draw whose bases change) isn't measured on a program.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
-  dEQP-VK's failures by cause (L5's samples of the direct set's groups: ~20,000 cases, 4,278 passed, 665 failed, 5
-  crashed, the rest unsupported; `bench/vulkan/results/vk2/l5/deqp/`; the cases that fail stay out of
-  `tests/deqp/vk.txt`; the counts below are of the samples):
+  dEQP-VK's failures by cause. VK4 T1's census (bench/vulkan/REPORT.md "VK4 T1": every 100th case of the direct set's
+  groups, 16,489; on SwiftShader 2,448 pass, 498 fail, 2 crash, the rest unsupported, the M4 alike) counts every cause
+  in its table (`bench/vulkan/census.ts`); the counts below without a date are L5's samples
+  (`bench/vulkan/results/vk2/l5/deqp/`). The cases that fail stay out of `tests/deqp/vk.txt`:
+  - **Not advertised, by what dEQP-VK asks** (VK4 T1's reasons, bench/vulkan/REPORT.md "VK4 T1"): a queue family
+    with compute and without graphics is the commonest (18% of the census's not-supported cases: `pipeline`'s compute
+    variants want one; a second queue family, compute-only, over the same WebGPU queue would serve them), then
+    `VK_KHR_maintenance*`, protected memory, cooperative matrices, formats, multi-draw, pipeline statistics queries.
+  - **Crashes** (VK4 T1, on SwiftShader and the M4): `api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16`
+    (a format query) and `api.external.memory.opaque_fd.dedicated.device_only.dup2` crash deqp-vk; not looked into.
+  - **Compressed images whose size isn't whole blocks** (VK4 T1: 102 failures on each host, a fifth of the census's):
+    WebGPU wants a compressed texture's level 0 in whole blocks, so the driver makes the texture padded to them (a
+    13×13 image of ASTC 8×5 is 16×20): sampling reads a texture larger than the image, so normalized coordinates land
+    wrong, and a cube view of it is refused (width and height not equal). ASTC 4×4 and 8×8, whose blocks divide
+    dEQP's sizes, pass. A fix would sample through coordinates scaled to the image (the view's size in the shader's
+    uniforms) and make cubes of a texture per face, or decode such images into an uncompressed texture.
   - **Stencil8's resolves**: a multisampled `S8_UINT` attachment's SAMPLE_ZERO stencil resolve reads 0 at the
     resolved pixels (and writes outside the render area with a sample mask:
     `depth_stencil_resolve.*.samples_4.s8_uint.*stencil*`, VK3 L7.1's samples, all 6 that ran); depth24plus-stencil8's
@@ -705,13 +718,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     buffer usages' `COPY_SRC`/`COPY_DST` (4 and 8, a texture's `TEXTURE_BINDING` and `STORAGE_BINDING`), so whole depth
     and stencil image copies go through the worker's passes too (right, slower; found in VK3 L8a). Taking it needs the
     texture usages and an aspect of `all` (WebGPU's rule for depth-stencil copies).
-  - **Formats**: ASTC and ETC2 on SwiftShader fail sampling and copy tests in numbers (`texture.compressed`,
-    `texture.filtering.3d`, `.2d_array`: not looked into; the Mac's results are the ones to read first); 3D images
+  - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); 3D images
     sampled through 2D views (`2D_ARRAY_COMPATIBLE`); D24 depth tests fail by one unit (depth24plus's precision);
     3-component formats in images (`glsl.440.linkage` makes RGB32 attachments: `VK_ERROR_FORMAT_NOT_SUPPORTED`);
-    vertex strides that aren't multiples of 4 (WebGPU's); copy regions past a level's end (a few `copy_and_blit`).
-  - **Samplers**: border colours and mirror-once (the nearest WebGPU address mode), component swizzles
-    (`texture-component-swizzle` where the browser has it), unnormalized coordinates, integer textures sampled with
+    vertex strides that aren't multiples of 4 (WebGPU's; VK4 T1: 22 `vertex_input.multiple_attributes` cases of 8- and
+    16-bit attributes, the pipeline refused); copy regions past a level's end (a few `copy_and_blit`); 16-bit packed
+    colour formats beside a depth format refused at image creation though advertised
+    (`render_to_image.*.a1r5g5b5_unorm_pack16_d32_sfloat_s8_uint`, `r5g6b5_unorm_pack16_d24_unorm_s8_uint`:
+    `VK_ERROR_FORMAT_NOT_SUPPORTED`, VK4 T1).
+  - **Samplers** (VK4 T1: 203 of SwiftShader's 500 failures, the largest share): border colours and mirror-once (the
+    nearest WebGPU address mode), component swizzles (ignored: Vulkan requires them; 55 and 62 failures,
+    `texture-component-swizzle` where the browser has it, else in the shader), unnormalized coordinates, integer textures sampled with
     a sampler (fetched at clamp-to-edge whatever the sampler's address mode: the address modes as a program variant
     would do the rest; from the level an explicit LOD selects, Vulkan's nearest within the view's levels since VK3 L9b,
     level 0 for an implicit LOD, a bias or gradients; the sampler's min/max LOD not applied), LOD bias and min/max LOD
@@ -730,6 +747,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     with overrides added to the workgroup and global ids would do it; `compute.*.device_group.dispatch_base`); flat
     varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
     load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
+  - **Clears of image layers** (VK4 T1: 15 and 18 `api.image_clearing` failures, not looked into): clears of several
+    layers or of layers past the first read another layer's colour or none, and an `a2b10g10r10_uint` clear value is
+    cut to 8 bits (511 reads 255); multisampled attachments of several layers are refused (no multisampled arrays in
+    WebGPU, "Sample counts" below).
+  - **Smaller ones VK4 T1 found** (not looked into): `int16_t` in storage buffer layouts (`ssbo.layout.*int16*`, 2:
+    16-bit storage is advertised), push descriptors pushed twice for one binding
+    (`push_descriptor.graphics.*numcalls2*`, 2), and on the M4 three `binding_model.descriptorset_random.sets4` cases (a
+    copy buffer reads zeros).
   - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): a `vkCmdClearAttachments`
     inside an occlusion query counts its pixels (the worker's clear is a draw: 16 of `query_pool.occlusion_query`'s
     `*_clear_color`/`*_clear_depth` cases fail; a query cut around the clear and its parts summed by a compute pass would

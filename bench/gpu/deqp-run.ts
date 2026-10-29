@@ -11,7 +11,8 @@
 //   node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 [outdir]
 // STRIDE=<n> (default 50), OFFSET=<k> (0 to n-1, default 0), PREFIX=<groups, comma-separated: the list's cases under them>,
 // CASES=<file of case names, `*` patterns allowed, `#` lines comments>,
-// DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names), VIRGL_GPU=virgl,debug (the renderer's trace,
+// DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names;
+// DETAIL_NOTSUPPORTED=1: NotSupported ones too, their reasons), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
 // LIMIT_S=<seconds the guest may run dEQP, default 1500>, PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases).
@@ -137,8 +138,12 @@ if (done < (results.cases as number)) {
 // DETAIL_MATCH=<a regex>, of those whose names match it).
 if (process.env.DETAIL) {
   const match = process.env.DETAIL_MATCH ? ` && $1 ~ /${process.env.DETAIL_MATCH.replace(/[/'\\]/g, '')}/` : '';
-  results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported"${match} {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison|gl[A-Z]|//)" | head -12; done`, 120_000);
-  log('detail', (results.detail as string[]).join('\n'));
+  // One pass over the log (a census has hundreds of such cases), gzipped through the terminal.
+  const notSupported = process.env.DETAIL_NOTSUPPORTED ? '' : ' && $2 != "NotSupported"';
+  await run(`awk '$2 != "Pass"${notSupported}${match} {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} > /tmp/detail.txt`);
+  const lines = gunzipSync(Buffer.from((await runLines(String.raw`awk 'FILENAME == "/tmp/detail.txt" {want[$1] = 1; next} /^#beginTestCaseResult /{on = ($2 in want); n = 0; if (on) print "== " $2; next} on && n < 12 && /<Text>|<Result / && !/<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison|gl[A-Z]|\/\/)/ {gsub(/^[ \t]+/, ""); print; n++}' /tmp/detail.txt /tmp/deqp.qpa | gzip -9c | base64 -w 150`, 600_000)).join(''), 'base64')).toString();
+  results.detail = lines.split('\n').filter(Boolean);
+  log('detail', (results.detail as string[]).length, 'lines');
 }
 // QPA=1: dEQP's whole log, its images in it, as <out>/deqp.qpa (for a few cases: it comes through the terminal).
 if (process.env.QPA) writeFileSync(`${out}/deqp.qpa`, gunzipSync(Buffer.from((await runLines('gzip -9c /tmp/deqp.qpa | base64 -w 150', 600_000)).join(''), 'base64')));

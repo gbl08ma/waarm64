@@ -270,7 +270,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   them.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
-  be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it; a 1D one 2D),
+  be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it, so it samples wrong
+  and its cube views are refused where the size isn't whole blocks: docs/backlog.md; a 1D one 2D),
   with views made as Vulkan made them (a depth or stencil aspect's with the image's format and the aspect) and, for
   attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`). Host-visible memory's bytes
   are in memory 0 (vkr's storage, or the window while its blob is mapped); at each submit the driver uploads the

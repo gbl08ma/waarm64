@@ -44,12 +44,21 @@ T2–T14; the rest of the order is judgement, said with each.
   SwiftShader; the same sample on the M4 through `bench/gpu/sway-mac.sh`), every not-passed case classed by cause
   against the backlog's "The Vulkan driver's gaps" (dEQP's messages through `DETAIL`, WebGPU's warnings), committed
   as a ranked table in bench/vulkan/REPORT.md. *Done:* counts per cause, cases that now pass added to the list,
-  this list re-ranked. *Start:* docs/testing.md "dEQP", `bench/gpu/deqp-run.ts`.
+  this list re-ranked. *Start:* docs/testing.md "dEQP", `bench/gpu/deqp-run.ts`. **Done 2026-10-29** (REPORT.md "VK4
+  T1"): every 100th case (16,489) on SwiftShader and the M4; 17.0% and 16.5% of the supported cases don't pass, 499
+  and 542 of 500 and 545 classed (`bench/vulkan/census.ts`); the list 4,725 → 7,126. The samplers' causes are two
+  fifths of the failures (T8, with component swizzles added), compressed images padded to whole blocks a fifth (new:
+  T18), copies between formats the most dropped work (T10). It can't count T3, T4, T6 and T7 (their groups aren't in
+  `vk-main.txt`): they keep their programs' ranks. **The order after T1**: T2, T3, T10, T5, T4, T6; T8, T18, T7, T9,
+  T11, T12; then tier 3 as it stands. Of the features not advertised, a compute-only queue family is what dEQP-VK
+  asks most (18% of the not-supported cases; backlog "Not advertised, by what dEQP-VK asks").
 - **T2. The renderer's robustness** (M): what takes Vulkan down for the guest. `memory.allocation.random.*` and
   `memory.mapping.suballocation.random.*` crash deqp-vk after enough earlier cases (something the renderer keeps:
   the arena's high-water mark is now measured, `heapUse`); vkr's `vkFreeMemory resulted in CS error`;
   `compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.*`; NVIDIA's one-off trap in
-  `wg_complete`; **Venus's contexts outliving a virtio reset** (a guest reboot meets the old rings). *Done:* each
+  `wg_complete`; **Venus's contexts outliving a virtio reset** (a guest reboot meets the old rings); T1's two crashes
+  (`api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16`,
+  `api.external.memory.opaque_fd.dedicated.device_only.dup2`, on both hosts). *Done:* each
   reproduced and fixed, or bounded with a test; the crashing groups in the list. *Start:* backlog "Memory",
   "Compute", "A trap in the module's completion", "Venus's contexts outlive a virtio reset".
 - **T3. Usage scopes** (L): the driver binds a `VkDeviceMemory` as one GPUBuffer, so a pass or dispatch that reads
@@ -81,9 +90,10 @@ T2–T14; the rest of the order is judgement, said with each.
   addresses** (pointers into GPUBuffers: one big storage buffer and offsets, or per-buffer bindings by address; the
   hardest, and DXVK and vkd3d need it). *Done:* each feature's dEQP-VK groups in the list. *Start:* backlog "API
   1.3's required features".
-- **T8. Samplers** (M): border colours (shadow maps), mirror-once, unnormalized coordinates, the sampler's LOD bias and
-  min/max LOD, integer textures' address modes and their min/max LOD (fetched today: clamp-to-edge whatever the
-  sampler says). In the shader where WebGPU's sampler can't. *Done:* `texture.*` and `glsl.texture_functions.*`
+- **T8. Samplers** (M; T1: 203 of SwiftShader's 500 failures): border colours (shadow maps), mirror-once,
+  unnormalized coordinates, the sampler's LOD bias and min/max LOD, integer textures' address modes and their min/max
+  LOD (fetched today: clamp-to-edge whatever the sampler says), integer cube textures (the stage refused: 31),
+  **component swizzles** (ignored today; Vulkan requires them: 55). In the shader where WebGPU's sampler can't. *Done:* `texture.*` and `glsl.texture_functions.*`
   cases of those causes in the list. *Start:* backlog "Samplers".
 - **T9. The translator's wrong results** (M): shadow sampling with a bias, an explicit LOD or gradients (a mipmapped
   shadow map sampled at level 0, silently), non-constant texture offsets (print constants as literals: cheap),
@@ -101,8 +111,17 @@ T2–T14; the rest of the order is judgement, said with each.
   gives one way".
 - **T12. The smaller rendering gaps** (S each, one task): queries (clears counted inside an occlusion query, two
   pools in one pass), depth clamping without clipping, 3D images through 2D views, feedback loops through an input
-  attachment, indirect fans, the M4's 7 Metal-only failures, vkQuake's 1.7%. *Start:* backlog "Queries",
+  attachment, indirect fans, the M4's 7 Metal-only failures, vkQuake's 1.7%; T1's smaller causes (clears of image
+  layers, 16-bit packed colour formats beside depth refused at creation, `int16_t` in storage buffers, push
+  descriptors pushed twice, the M4's `descriptorset_random.sets4`). *Start:* backlog "Queries",
   "Rendering", "Formats", "The M4's own failures", "vkQuake's frames".
+
+- **T18. Compressed images whose size isn't whole blocks** (M; found by T1: 102 failures on each host): the
+  texture is padded to whole blocks (WebGPU's rule for level 0), so sampling reads a larger texture than the image
+  and cube views of it are refused; ASTC's 5-, 6-, 10- and 12-texel blocks meet it at most sizes. Coordinates scaled
+  to the image in the shader and a cube's faces apart, or such images decoded to an uncompressed texture. *Done:* the
+  `pipeline.*.image`, `image_view`, `sampler` and `texture.compressed` cases of that cause in the list. *Start:*
+  backlog "Compressed images whose size isn't whole blocks".
 
 ### Tier 3: performance on real workloads
 
