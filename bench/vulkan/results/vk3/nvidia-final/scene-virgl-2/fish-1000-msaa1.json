@@ -1,0 +1,88 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1000,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 8.999,
+  "iqr": 0.038
+ },
+ "guestCpuMs": 5.661,
+ "line": "virgl aquarium: 8.999 ms a frame (IQR 0.038), CPU 5.661 ms, 1119 draws a frame",
+ "seconds": 18.106889939000002,
+ "renderer": {
+  "seconds": 19,
+  "busyMs": 820.8142104525315,
+  "submitMs": 819.422368426072,
+  "drawMs": 0.07368427828738564,
+  "presents": 4.894736842105263,
+  "glDraws": 103582.1052631579,
+  "commands": 357086.5263157895,
+  "uploadKB": 6254.472142269737,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 1.147105242076673,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 36,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 94.55555555555556,
+  "submitKB": 13887.363064236111,
+  "fences": {
+   "n": 101.27777777777777,
+   "meanMs": 10.847347777686275,
+   "maxMs": 66.45500016212463,
+   "heldMs": 1170.8341666460037,
+   "behindMs": 41.790555503633286,
+   "fullMs": 0.3258333338631524,
+   "heldMax": 16,
+   "toGpuMs": 8.634562654800803,
+   "toGpuMaxMs": 66.419677734375,
+   "backMs": 0.06561687984529363,
+   "backMaxMs": 10.28515625
+  }
+ },
+ "vm": {
+  "seconds": 18.000009999990464,
+  "Msteps": 388.177981,
+  "irqs": 1462,
+  "exceptions": {
+   "0x15": 1594,
+   "0x20": 43,
+   "0x24": 2157,
+   "0x25": 27
+  },
+  "tlbMisses": 53082,
+  "tlbFlushes": 2642,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 0.94006
+ }
+}

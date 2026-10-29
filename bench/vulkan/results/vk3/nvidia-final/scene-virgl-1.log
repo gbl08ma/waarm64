@@ -1,0 +1,7 @@
+[1.0] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[41.2] running
+[47.0] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk
+[51.9] device renderer: virgl (webpc) (OpenGL ES 3.0 Mesa 26.2.5-arch1.1)
+[58.1] fish-1-msaa1 1.544 ms a frame (IQR 0.071), guest CPU 1.447 ms; GPU worker busy 272 ms/s, 27620 draws/s
+[76.6] fish-1000-msaa1 9.025 ms a frame (IQR 0.136), guest CPU 5.68 ms; GPU worker busy 818 ms/s, 101854 draws/s
+[91.0] toolkit-2000-msaa1 6.96 ms a frame (IQR 0.152), guest CPU 6.627 ms; GPU worker busy 410 ms/s, 46971 draws/s

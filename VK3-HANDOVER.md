@@ -6,6 +6,15 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-29, the final NVIDIA run processed: L9 opened)
+
+- **The run** (c8087cb0's bundle, REPORT.md "VK3: the final NVIDIA run", `results/vk3/nvidia-final/`): presentation,
+  mpv's frames, replays, pipelines and the rows as on SwiftShader and at L4e; **subgroups of 32 not held and right**;
+  dEQP-VK 4,624 pass, 2 fail, 64 NotSupported (ASTC/ETC2, subgroup size 4), YCbCr 773 of 773.
+- **Open, taken by L9** (below): Venus's submits are done ~2 ms later than at L4e (the scene 5–40% dearer a frame, the
+  GPU's pass the same; mpv 1 drop in one round), and the two NVIDIA-only dEQP-VK fails.
+- After L9: its NVIDIA check in a new bundle if a fix needs one (`VK2_STEPS="scene mpv deqp"`), then the close (step 6).
+
 ## State (2026-10-28, after L8a: only the user's NVIDIA run is left)
 
 - **Every loop is done** (L1–L8a; REPORT.md "VK3: the summary", each loop's section). L8a fixed the track-end review's
@@ -81,6 +90,21 @@ Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **th
     finding fixed or guarded; ANGLE's 205 an sRGB view, filed.
   - [x] L7b: **the rest.** **Done:** every finding fixed with its test (7's a performance hazard: its test guards the
     new walk) but L6b–L7.3's 3b and 4's import (warned, refused; filed).
+
+- [ ] **L9** (the final NVIDIA run's findings; time-boxed ~3 h each, ask the user before going past):
+  - [ ] L9a: **Venus's submit-to-done regression on NVIDIA.** At 4fdc69fb a scene submit was done 3.28 ms after
+    it was made at 1 fish (4.90 toolkit, 5.62 at 1,000 fish, mpv 3.89); at c8087cb0 5.41, 6.88, 7.03, 4.85; the pass's
+    GPU time and encoding the same or lower, `fence.ts` unchanged (REPORT.md "VK3: the final NVIDIA run"). First: an
+    A/B of the scene at 4fdc69fb and c8087cb0 on the M4 (sway-mac.sh, alternated, ≥3 rounds) and SwiftShader, reading
+    the render stats' `venus` done and fences. Reproduced: bisect the 34 Venus commits between them (`git log
+    4fdc69fb..c8087cb0 -- vk web`) and fix, keeping the change's correctness (its dEQP-VK cases). Not reproduced: make
+    the suspects switchable (`?gpu=` knobs, off = L4e's behaviour) and add them as arms to nvidia.sh's scene step for
+    the next run.
+  - [ ] L9b: **the two NVIDIA-only dEQP-VK fails**: `glsl.texture_functions.textureprojlodoffset.clamp_to_edge.
+    isampler2d_vec4_fragment` and `memory.binding.regular.suballocated.buffer_1048577` (detail in
+    `results/vk3/nvidia-final/deqp-vk/results.json`). Read what each checks against what the driver and translator do
+    (a defect SwiftShader tolerates?); run them on the M4 by name (`CASES=`). A Venus defect: fixed with its test failing
+    first. NVIDIA's (Dawn, the driver): filed in docs/backlog.md with the evidence; the list unchanged.
 
 - [x] L8: the track's end (REPORT.md's VK3 summary, docs, plan §6/§7, the final NVIDIA run scripted, the four CI
   scripts). Left to the supervisor: an out-of-context review of what VK3 changed.

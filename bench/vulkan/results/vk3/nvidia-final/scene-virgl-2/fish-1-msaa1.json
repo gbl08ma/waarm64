@@ -1,0 +1,89 @@
+{
+ "arm": "guest-virgl",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 1.497,
+  "iqr": 0.124
+ },
+ "guestCpuMs": 1.423,
+ "line": "virgl aquarium: 1.497 ms a frame (IQR 0.124), CPU 1.423 ms, 120 draws a frame",
+ "seconds": 5.672033382000001,
+ "renderer": {
+  "seconds": 5,
+  "busyMs": 253.89200205802916,
+  "submitMs": 252.29800157546998,
+  "drawMs": 0.09599990844726562,
+  "presents": 5,
+  "glDraws": 27648,
+  "commands": 169160.4,
+  "uploadKB": 18718.544140625,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 8.836999940872193,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 24,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  }
+ },
+ "display": {
+  "submits": 280.1666666666667,
+  "submitKB": 6560.568359375,
+  "fences": {
+   "n": 307.6666666666667,
+   "meanMs": 1.2281338012618852,
+   "maxMs": 88.96499991416931,
+   "heldMs": 382.2350004911423,
+   "behindMs": 3.6666664282480874,
+   "fullMs": 0,
+   "heldMax": 7,
+   "toGpuMs": 1.119703834809164,
+   "toGpuMaxMs": 76.539794921875,
+   "backMs": 0.031601530759073675,
+   "backMaxMs": 0.635009765625
+  }
+ },
+ "vm": {
+  "seconds": 6,
+  "Msteps": 336.653765,
+  "irqs": 1824,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 3073,
+   "0x20": 79,
+   "0x24": 7930,
+   "0x25": 77
+  },
+  "tlbMisses": 66665,
+  "tlbFlushes": 7804,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 3.081173
+ }
+}

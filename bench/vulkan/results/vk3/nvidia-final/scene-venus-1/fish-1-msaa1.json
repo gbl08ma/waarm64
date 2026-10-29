@@ -1,0 +1,133 @@
+{
+ "arm": "guest-venus",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2)",
+ "browser": "153.0.8010.52",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 3.626,
+  "iqr": 0.179
+ },
+ "guestCpuMs": 0.919,
+ "line": "venus aquarium: 3.626 ms a frame (IQR 0.179), CPU 0.919 ms, GPU 0.219 ms, 120 draws a frame",
+ "seconds": 8.489343160999997,
+ "renderer": {
+  "seconds": 9,
+  "busyMs": 1.1816666391160753,
+  "submitMs": 0,
+  "drawMs": 0.10722215970357259,
+  "presents": 4.888888888888889,
+  "glDraws": 0,
+  "commands": 0,
+  "uploadKB": 0,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 0,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 0,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  },
+  "venus": {
+   "polls": 3197.3333333333335,
+   "gapMs": 0.24352460451067984,
+   "gapMaxMs": 6.43999981880188,
+   "submits": 401.8888888888889,
+   "doneMs": 5.4104216210842795,
+   "doneMaxMs": 52.950000047683716,
+   "orderMs": 0.0017804814070537336,
+   "nudges": 621.5555555555555,
+   "fences": 201,
+   "fenceMs": 5.67860696077215,
+   "fenceMaxMs": 66.89000010490417,
+   "doneMsBySecond": [
+    3.725,
+    0,
+    5.115,
+    5.982,
+    5.256,
+    5.652,
+    5.238,
+    5.625,
+    5.27
+   ],
+   "perSubmit": {
+    "encodeMs": 0.16265723226818785,
+    "submitCallMs": 0.00849199322307362,
+    "uploads": 1.4676958261863922,
+    "uploadKB": 31.023656375071468,
+    "readbacks": 0,
+    "passes": 0.4834190966266438,
+    "draws": 58.01029159519726,
+    "bindGroups": 2.911663807890223,
+    "withPass": 0.4834096109839817,
+    "withPassDoneMs": 5.434029587909315,
+    "withPassDoneMsBySecond": [
+     7.818,
+     5.871,
+     5.128,
+     5.525,
+     5.121,
+     5.522,
+     5.126
+    ]
+   }
+  }
+ },
+ "display": {
+  "submits": 576.8888888888889,
+  "submitKB": 13.546006944444445,
+  "fences": {
+   "n": 246.88888888888889,
+   "meanMs": 4.778296581052854,
+   "maxMs": 71.74500012397766,
+   "heldMs": 2848.355556488037,
+   "behindMs": 1647.149445215861,
+   "fullMs": 0.08166665501064724,
+   "heldMax": 16,
+   "toGpuMs": 4.817797514235211,
+   "toGpuMaxMs": 71.68994140625,
+   "backMs": 0.0341234911669482,
+   "backMaxMs": 0.35498046875
+  }
+ },
+ "vm": {
+  "seconds": 8.999990000009536,
+  "Msteps": 98.664792,
+  "irqs": 1959,
+  "exceptions": {
+   "0x15": 3230,
+   "0x20": 45,
+   "0x24": 4368,
+   "0x25": 81
+  },
+  "tlbMisses": 46183,
+  "tlbFlushes": 7082,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.317946
+ }
+}

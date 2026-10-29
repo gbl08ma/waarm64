@@ -857,6 +857,46 @@ all pass.
 `scripts/ci.sh` OK (532 s); `scripts/ci-deqp-vk.sh` OK (846 s: the 4,690-case list in 588 s, YCbCr's 773 in 89 s,
 the replays 169 s); `scripts/ci-debian.sh` OK (416 s); `scripts/ci-machines.sh` OK (168 s). steps.txt unmoved.
 
+## VK3: the final NVIDIA run — right everywhere, subgroups of 32 right, but Venus's submits done ~2 ms later than at L4e
+
+**2026-10-29.** The user ran the whole default `bench/vulkan/nvidia.sh page` with the bundle of c8087cb0 (L8a)
+(`results/vk3/nvidia-final/`; RTX 3070, driver 615.71.09, Arch's Chromium 153.0.8010.52, the page on Dawn's Vulkan, as
+at L4e). The first attempt stopped after its last step on the subgroups verdict (grep finding nothing under pipefail,
+fixed in 5457b183); `VK2_KEEP=1 VK2_STEPS=none` finished it from the same results. The page grabs (PPMs) and the 81 MB
+trace aren't committed (`bench/results/local/vk3-nvidia-final/`). Every step `done`.
+
+**The questions** (VK3-HANDOVER.md, in git history):
+1. **The gate on L5–L8a's code.** `present`: vkcube and mpv right in every way (auto and bitmap take bitmap, canvas,
+   readback). `mpv-frames-*`: the advanced path taken, **VA-API byte for byte software** (`vkva ~ vkno` 0 off) in
+   both runs, the page's screens the same, mpv exits 0 in every arm; held, "Failed creating FBO texture" as expected.
+   `replay`: as at L4e (vkQuake 1.66% of bytes over, tolerance 3%; the rest within theirs). `pipelines`: warm across a
+   restart **0 misses** (vkQuake translated 27 ms, ready 91 ms), cold 279 ms and 282 misses; one by one 1.97 s with
+   WebGL stalled, at once 0.50–0.54 s. `fence` (fence.ts, no Venus) within 0.01 ms of L4e's. `trace`: not summarized
+   (the summarizer's stack overflow on 81 MB, as at L4e's 137 MB). `mpv`: on Vulkan 538 and 532 frames, **0 and 1
+   dropped**, the guest **14 and 12%** busy (GL 9 and 8%); at L4e 0 and 0.
+2. **Subgroups not held:** the page's check finds NVIDIA's subgroups right, and they are: every subgroup case in the
+   list passes but 11 `ballot_broadcast.compute.*_requiredsubgroupsize4` (NotSupported: NVIDIA's size is 32 only),
+   and libplacebo's frames are byte for byte L4e's (which had no subgroups).
+3. **dEQP-VK on NVIDIA** (first run there): vk.txt **4,624 pass, 2 fail, 64 NotSupported** of 4,690 in 465 s;
+   vk-ycbcr.txt **773 of 773 pass**. NotSupported: 53 ASTC/ETC2/EAC cases (the adapter has no
+   `texture-compression-astc`/`-etc2`) and the 11 subgroup sizes above. **Fail:**
+   `glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec4_fragment` (image mismatch, 10,891 against
+   0.2) and `memory.binding.regular.suballocated.buffer_1048577`; both pass on SwiftShader in CI.
+4. **The rows' programs** as on SwiftShader: ANGLE's ES3 probe `flat 0,0,255,255`, the capture
+   `0,0,7,1,1,2,7,1,2,4,7,1,3,6,7,1`, `ubo 156,0,0,255`, glerror 0; vkd3d a device at 11_0 (11_1 and up refused),
+   test_draw_instanced, test_draw_indexed_instanced and test_root_constants pass, test_vertex_id fails 39 of 89 and
+   test_instance_id 84 of 372.
+
+**The scene** (ms a frame, two rounds; at L4e in brackets): 1,000 fish Venus 6.41, 5.97 (5.71, 5.70) against virgl
+9.03, 9.00 (8.85, 8.68); toolkit 4.36, 4.32 (3.19, 3.05) against 6.96, 6.78 (6.81, 7.43); 1 fish 3.63, 3.50 (2.47,
+2.59) against 1.54, 1.50 (parked). The clause still holds at 1,000 fish and the toolkit, but **Venus is 5–40% dearer a
+frame than at L4e**: a submit is done 5.41 ms after it's made at 1 fish (3.28 at L4e), 6.88 at the toolkit (4.90),
+7.03 at 1,000 fish (5.62); mpv's 4.85 and 5.01 (3.89, 3.99). The pass's GPU time is L4e's (`vkgputime` 0.94 against
+0.91 ms) and a submit's encoding is cheaper (0.16 against 0.21 ms: L6b's bind groups), so the wait is between the
+submit and its "done", in code between 4fdc69fb and c8087cb0 (the host's timers and a bare WebGPU submit's done are
+unchanged: `fence`). The arms at 1 fish keep L4e's shape, each ~1 ms dearer: `vknudge=0.25` 3.50, 3.58 (2.43, 2.37), `vknudge=0` 4.36, 4.35 (2.86, 2.79). **Taken by L9**
+(VK3-HANDOVER.md).
+
 ## VK3 L1: NVIDIA's black frames — the vendor ID, not the bitmap way
 
 **2026-10-26.** Why what Venus presented on the user's NVIDIA desktop was black ("VK2: the NVIDIA run"), found without

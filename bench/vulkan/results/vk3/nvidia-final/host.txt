@@ -1,0 +1,19 @@
+Linux segvision 7.2.9-1-cachyos #1 SMP PREEMPT_DYNAMIC Sat, 03 Oct 2026 18:34:55 +0000 x86_64 GNU/Linux
+name, driver_version
+NVIDIA GeForce RTX 3070, 615.71.09
+Chromium 153.0.8010.52 Arch Linux
+webpc VK2 NVIDIA bundle, made 2026-10-28T19:42:12Z from c8087cb0bf40
+  7.0M target/wasm32-unknown-unknown/release/webpc_core.wasm
+  13M target/vk/venus.wasm
+  20K target/vk/LICENSES.txt
+  3.0M target/images/edk2/QEMU_EFI.fd
+  16K target/images/edk2/LICENSES.txt
+  385M target/images/debian/disk.qcow2
+  567M target/images/debian-vulkan/disk.qcow2
+  59M target/vkframes/vkframes.ext4
+  1.9G target/arch/desktop.qcow2
+  25M target/video/media.ext4
+  71M target/vulkan/disk.ext4
+  859M target/deqp/guest-vk.qcow2
+  303M target/deqp/deqp-vk.ext4
+  12M target/vkd3d/vkd3d.ext4
