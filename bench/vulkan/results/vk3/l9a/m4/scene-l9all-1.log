@@ -1,0 +1,22 @@
+[0.5] WebGL2: ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version) | 153.0.8010.12
+[page log] venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies
+[25.9] running
+[29.6] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[31.7] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[35.6] fish-1-msaa1 0.851 ms a frame (IQR 0.025), guest CPU 0.391 ms; GPU worker busy 1 ms/s, 0 draws/s
+[35.6] fish-1-msaa1 venus: 891 submits/s done in 0.98 ms (max 5.4), then 0.00 ms in order (by second: 1.112 0 1.022 0.943); 2444 polls/s 0.19 ms apart (max 4.3); 285 nudges/s; 446 fences/s retired in 1.01 ms
+[35.6] fish-1-msaa1 venus a submit: encode 0.083 ms, queue.submit 0.003 ms, 1.5 writes (30.9 KB), 0.00 readbacks, 0.48 passes, 58 draws, 6.77 bind groups made; 48% have a pass, done in 0.98 ms (by second: 1.008 0.955)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[42.4] fish-1000-msaa1 2.533 ms a frame (IQR 0.037), guest CPU 1.606 ms; GPU worker busy 1 ms/s, 0 draws/s
+[42.4] fish-1000-msaa1 venus: 511 submits/s done in 1.86 ms (max 15.6), then 0.00 ms in order (by second: 0 0 1.753 1.912 1.932 1.817); 1709 polls/s 0.39 ms apart (max 13.8); 389 nudges/s; 255 fences/s retired in 1.87 ms
+[42.4] fish-1000-msaa1 venus a submit: encode 0.280 ms, queue.submit 0.003 ms, 1.5 writes (33.7 KB), 0.00 readbacks, 0.48 passes, 538 draws, 7.71 bind groups made; 48% have a pass, done in 1.90 ms (by second: 1.852 1.943 1.959 1.849)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[46.2] toolkit-2000-msaa1 0.919 ms a frame (IQR 0.007), guest CPU 0.36 ms; GPU worker busy 1 ms/s, 0 draws/s
+[46.2] toolkit-2000-msaa1 venus: 702 submits/s done in 1.08 ms (max 11.8), then 0.00 ms in order (by second: 1.942 0 0.791 0.924); 1895 polls/s 0.23 ms apart (max 9.4); 261 nudges/s; 351 fences/s retired in 1.09 ms
+[46.2] toolkit-2000-msaa1 venus a submit: encode 0.105 ms, queue.submit 0.003 ms, 1.0 writes (51.6 KB), 0.00 readbacks, 0.49 passes, 198 draws, 1.49 bind groups made; 49% have a pass, done in 0.92 ms (by second: 0.757 0.936)

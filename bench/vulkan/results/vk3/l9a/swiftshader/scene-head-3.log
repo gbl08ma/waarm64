@@ -1,0 +1,17 @@
+[0.5] WebGL2: ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) | 153.0.8010.52
+[page log] venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback
+[33.6] running
+[38.3] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 aquarium.pack gles gles-shaders shaders sweep.sh vk
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[41.7] device device: Virtio-GPU Venus (webpc WebGPU) (venus Mesa 26.2.5-arch1.1)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[62.6] fish-1-msaa1 10.671 ms a frame (IQR 1.113), guest CPU 2.085 ms; GPU worker busy 1 ms/s, 0 draws/s
+[62.6] fish-1-msaa1 venus: 170 submits/s done in 16.14 ms (max 32.3), then 0.01 ms in order (by second: 0 0 7.886 15.418 15.441 15.789 15.262 15.815 16.307 15.984 16.447 16.342 16.774 16.159 16.79 17.12 18.175 18.464 19.208 19.826); 2094 polls/s 0.42 ms apart (max 13.9); 625 nudges/s; 85 fences/s retired in 16.13 ms
+[62.6] fish-1-msaa1 venus a submit: encode 0.288 ms, queue.submit 0.078 ms, 1.5 writes (31.6 KB), 0.00 readbacks, 0.48 passes, 58 draws, 2.91 bind groups made; 48% have a pass, done in 16.84 ms (by second: 15.664 15.533 15.582 15.939 15.403 15.933 16.459 16.119 16.696 16.474 16.978 16.383 17.001 17.333 18.339 18.705 19.406 20.073)
+[page warning] venus: vkr: destroying context 2 (webpc-vk0-aquarium) with a valid instance
+[page warning] venus: vkr: destroying device with valid objects
+[83.0] toolkit-2000-msaa1 10.441 ms a frame (IQR 0.043), guest CPU 1.562 ms; GPU worker busy 1 ms/s, 0 draws/s
+[83.0] toolkit-2000-msaa1 venus: 168 submits/s done in 17.37 ms (max 127.6), then 0.00 ms in order (by second: 19.495 0 0 17.211 17.02 17.107 17.239 17.132 17.426 17.191 17.414 17.038 16.889 17.111 17.489 17.365 17.743 17.912 17.342 17.082 17.476); 2134 polls/s 0.42 ms apart (max 12.4); 626 nudges/s; 84 fences/s retired in 17.38 ms
+[83.0] toolkit-2000-msaa1 venus a submit: encode 0.238 ms, queue.submit 0.036 ms, 1.0 writes (50.2 KB), 0.00 readbacks, 0.50 passes, 199 draws, 0.50 bind groups made; 50% have a pass, done in 17.49 ms (by second: 0 20.406 17.113 17.184 17.309 17.206 17.521 17.277 17.511 17.122 16.975 17.224 17.582 17.448 17.803 18.017 17.418 17.157 17.57)

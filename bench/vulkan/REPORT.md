@@ -897,6 +897,58 @@ submit and its "done", in code between 4fdc69fb and c8087cb0 (the host's timers 
 unchanged: `fence`). The arms at 1 fish keep L4e's shape, each ~1 ms dearer: `vknudge=0.25` 3.50, 3.58 (2.43, 2.37), `vknudge=0` 4.36, 4.35 (2.86, 2.79). **Taken by L9**
 (VK3-HANDOVER.md).
 
+## VK3 L9a: the submit-to-done regression on NVIDIA — not on the M4 or SwiftShader; Dawn's `Queue::Submit` 1 ms dearer there, the suspects switchable for the next run
+
+**2026-10-29.** Why Venus's submits were done ~2 ms later on the user's NVIDIA desktop at c8087cb0 than at 4fdc69fb
+("VK3: the final NVIDIA run"). Each arm built in the checkout: `vk/` and `web/` at the commit (`vk/build.sh`; the
+core unchanged between them), the scene as `nvidia.sh` runs it (FISH="1 1000" TOOLKIT=2000 WARMUP=200 FRAMES=300), three
+alternated rounds; the M4 through `bench/gpu/sway-mac.sh` (Chrome for Testing 153.0.8010.12, macOS 26.6.2, Metal), the
+dev VM's SwiftShader (Chromium 153.0.8010.52, 320×180, 1 fish and the toolkit). JSON in `results/vk3/l9a/`.
+
+**Not reproduced.** Ms a frame (median, IQR) and the frame submits' done ms, rounds 1–3:
+
+| | 4fdc69fb | c8087cb0 |
+| --- | --- | --- |
+| M4, 1 fish | 0.887 (0.066) 0.99, 0.849 (0.026) 0.99, 0.869 (0.061) 1.00 | 0.806 (0.015) 0.95, 0.843 (0.040) 0.98, 0.850 (0.031) 0.98 |
+| M4, 1,000 fish | 2.520 1.85, 2.486 1.84, 2.590 1.86 | 2.466 1.85, 2.543 1.84, 2.555 1.85 |
+| M4, toolkit | 0.909 0.89, 0.888 0.93, 0.913 0.92 | 0.861 0.85, 0.882 0.84, 0.898 0.85 |
+| SwiftShader, 1 fish | 11.29 17.4, 10.74 17.3, 10.36 17.0 | 10.49 17.0, 10.74 17.3, 10.67 16.8 |
+| SwiftShader, toolkit | 10.53 17.8, 10.45 17.8, 10.34 17.5 | 10.51 17.8, 10.57 18.2, 10.44 17.5 |
+
+The rounds overlap everywhere (c8087cb0 if anything a little cheaper on the M4: L6b's bind groups); NVIDIA's +2 ms
+done (3.28 → 5.41 at 1 fish) would stand far out of either.
+
+**Where NVIDIA's goes: Dawn's `Queue::Submit` in the GPU process.** The NVIDIA runs' traces of 2 s at 1 fish (L2b's,
+L4e's, the final run's: `bench/results/local/vk3-nvidia-*`, summarized now by `node bench/vulkan/guest.ts summarize`,
+whose stack overflow on 81 MB is fixed; `results/vk3/l9a/traces/`): a frame's submit (those over 0.3 ms; the rest,
+nudges and the guest's fences, take ~0.01) keeps the GPU process's main thread **1.55 ms (L2b), 1.56 (4fdc69fb) and
+2.53 ms (c8087cb0)** at the median (p25–p75 1.53–1.62 against 2.43–2.68), and its thread time is the same (1.51 against
+2.48 ms): CPU, not a wait. With ~150–190 frames a second and the main thread busy 748 → 796 ms a second, a submit
+waits behind the one before it: the done's +2 ms. SwiftShader's frame submits take 0.13 ms in `Queue::Submit` at either
+commit (`swiftshader-*-summary.json`), the M4's frames don't move: whatever costs it is NVIDIA's (its driver, or Dawn's
+Vulkan path there).
+
+**The WebGPU calls are the same.** Counted per frame on SwiftShader by a temporary wrapper of WebGPU's prototypes
+(`calls/swiftshader-calls.json`): 1 render pass, 120 draws, 336 `setBindGroup`s with 109 dynamic offsets, 9
+pipelines, 4.3 `setImmediates`, 4.7 `copyBufferToTexture`, 3.1 `writeBuffer`s (107 KB), 10.2 `queue.submit`s at both;
+the bind groups' entries (sizes, offsets), the 16 pipelines' descriptors, the 31 bind group layouts, 11 pipeline
+layouts, 114 textures and 8 samplers dumped and identical. What differs: bind groups made 14.0 → 6.1 a frame (L6b's,
+kept by their layouts' content), the timestamp queries' results written as two 16-byte staging copies instead of one
+of 32, the memories' GPUBuffers 64 KiB longer (L7a's pad), every vertex shader a `wg_flip_z` override longer (L7.4),
+and the device asked for `subgroups`, `shader-f16` and three more limits (L5, L7a), with a subgroups check at start.
+
+**The suspects, switchable for the next run** (`?gpu=vkl9=<suspect>`, repeatable, `all`; default unchanged; vk/README.md):
+`features` (no `subgroups`, `shader-f16`: also no check; with `shader-f16` every shader is translated with `enable f16;`, so on NVIDIA's adapter, not on SwiftShader's whose WGSL was compared),
+`limits` (not the vertex stage's storage limits nor `maxBindingsPerBindGroup`), `bindgroups` (each pipeline's layouts
+their own uids, so bind groups remade as at 4fdc69fb), `pad` (no WG_MEMORY_PAD). On the M4 `vkl9=all` brings the bind
+groups made back to 4fdc69fb's (6.8, 7.7, 1.5 a submit against 2.9, 3.4, 0.5) at the same frames (1 fish 0.851,
+0.850, 0.880 against 0.856, 0.808, 0.829; `m4/scene-l9{all,default}-*`), and on SwiftShader it runs clean
+(`swiftshader/scene-l9all`). `bench/vulkan/nvidia.sh page <bundle> <dir>` with `VK2_STEPS=l9` (~15 min) runs the
+scene at 1 fish and the toolkit for `default`, `all` and each suspect, two alternated rounds, each with a 2 s trace's
+summary (`Queue::Submit`'s frame ms in its log's `trace:` line): `all` back at ~1.6 ms says it's among them, and the
+single arms which; `all` still at ~2.5 says it's outside them (the 16-byte copies, the shaders' override, or NVIDIA's
+host since: L4e's virgl frames are within 2% of the final run's).
+
 ## VK3 L1: NVIDIA's black frames — the vendor ID, not the bitmap way
 
 **2026-10-26.** Why what Venus presented on the user's NVIDIA desktop was black ("VK2: the NVIDIA run"), found without

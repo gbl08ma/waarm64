@@ -6,7 +6,7 @@
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `settled` says when the fences sent so far have.
 import type { ShaderCache } from './venus-cache.ts';
-import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps } from './venus-gpu.ts';
+import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps, type L9Suspect } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { WindowWatch } from './window.ts';
 
@@ -60,10 +60,15 @@ export type VenusOptions = { syncPipelines?: boolean;
    * (`?gpu=vkycbcr=off`). On by default since VK3 L7.3: GTK 4.24 asserts them on a device with dma-buf modifiers, so
    * without them every GTK4 program died on a machine with Vulkan; with them GTK still takes GL (LINEAR alone isn't a
    * dma-buf format to GTK's Vulkan renderer). Chromium's own Vulkan device wants them too (L7.1b). */
-  ycbcr?: boolean };
+  ycbcr?: boolean;
+  /** `?gpu=vkl9=<suspect>`: VK3 L9a's suspects back at 4fdc69fb's behaviour (web/venus-gpu.ts `L9_SUSPECTS`); the
+   * driver's take flags (`L9_FLAGS`), the device request the rest. */
+  l9?: readonly L9Suspect[] };
 
 /** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */
 const YCBCR = 1 << 30;
+/** venus_init's flags for `VenusOptions.l9`'s driver suspects (vk/driver/wg_private.h `WG_FEATURE_L9_*`). */
+export const L9_FLAGS: Partial<Record<L9Suspect, number>> = { bindgroups: 1 << 29, pad: 1 << 28 };
 
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
@@ -153,7 +158,7 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = [], ycbcr = false) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = [], ycbcr = false, l9: readonly L9Suspect[] = []) {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
@@ -167,7 +172,7 @@ export class VenusRenderer {
     const limits = gpuLimits(caps);
     const at = this.ex.venus_alloc(limits.byteLength);
     new Uint32Array(memory.buffer, at, limits.length).set(limits);
-    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold) | (ycbcr ? YCBCR : 0), at, limits.length, window.at, window.bytes);
+    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold) | (ycbcr ? YCBCR : 0) | l9.reduce((f, x) => f | (L9_FLAGS[x] ?? 0), 0), at, limits.length, window.at, window.bytes);
     this.ex.venus_free(at);
     if (!ok) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
@@ -195,7 +200,7 @@ export class VenusRenderer {
       wasi: { 'thread-spawn': () => -1 },
     };
     const instance = await WebAssembly.instantiate(module, imports);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.

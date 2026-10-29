@@ -581,7 +581,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   representative; likely NVIDIA's driver latency or its GPU leaving low power slowly; Venus is ahead at 1,000 fish and
   the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
   scene's pass ~0.9 ms of GPU (the M4's 0.41), a frame's `Queue::Submit` ~1.55 ms in the GPU process (REPORT.md "VK3:
-  the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`). The floor before it (~4.5 ms
+  the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`), 2.5 ms at c8087cb0 (the
+  same WebGPU calls; VK3 L9a: `nvidia.sh`'s `l9` arms bisect its suspects). The floor before it (~4.5 ms
   a frame: a ring poller on a clamped `setTimeout(0)`, Dawn's slow look at a done submit) was fixed in VK3 L2 and
   confirmed there (REPORT.md "VK3 L2", "VK3: the NVIDIA run after L2").
 - **The guest fences each frame through the virtqueue** (VK3 L2): in VK2 L5 the scene's guest sent ~1 fenced

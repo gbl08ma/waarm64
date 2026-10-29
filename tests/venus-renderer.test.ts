@@ -5,14 +5,14 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { GpuCaps } from '../web/venus-gpu.ts';
+import type { GpuCaps, L9Suspect } from '../web/venus-gpu.ts';
 import { VenusRenderer } from '../web/venus-host.ts';
 import { VENUS_CAPSET_WORDS } from '../web/venus.ts';
 
 const MODULE = new URL('../target/vk/venus.wasm', import.meta.url);
 const skip = !existsSync(MODULE) && 'SKIPPED: run vk/build.sh';
 
-async function renderer(caps?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean } = {}) {
+async function renderer(caps?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean; l9?: L9Suspect[] } = {}) {
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   // A window of 1 MiB at 256 MiB, and an empty write-watch (no vCPUs, no pages) below it.
   const window = { at: 0x1000_0000, bytes: 1 << 20, watch: 0x0100_0000 };
@@ -53,7 +53,7 @@ function adapter(file: string, vendor: string): GpuCaps {
 }
 
 test("what the driver advertises follows the WebGPU device's features and limits", { skip }, async () => {
-  const caps = async (c?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean } = {}) => {
+  const caps = async (c?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean; l9?: L9Suspect[] } = {}) => {
     const { v, memory } = await renderer(c, options);
     const at = (v.raw.wgt_caps as () => number)() >>> 0;
     assert.ok(at, 'wgt_caps failed');
@@ -120,6 +120,9 @@ test("what the driver advertises follows the WebGPU device's features and limits
   assert.deepEqual([mac.ycbcr, all.ycbcr, none.ycbcr], [1, 1, 1]);
   const off = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { ycbcr: false });
   assert.deepEqual([off.ycbcr, off.nv12], [0, 0]);
+  // `?gpu=vkl9=bindgroups,pad` (VK3 L9a's NVIDIA arms) reach the driver: its flags, so its pipeline cache's UUID.
+  const l9 = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { l9: ['bindgroups', 'pad'] });
+  assert.notEqual(l9.cacheUuid, all.cacheUuid);
   const on = all;
   const SAMPLED_IMAGE = 0x1, MIDPOINT = 0x20000, DISJOINT = 0x400000;
   assert.equal(on.nv12 & (SAMPLED_IMAGE | MIDPOINT | DISJOINT), SAMPLED_IMAGE | MIDPOINT | DISJOINT);

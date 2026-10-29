@@ -4,7 +4,7 @@
 // The real device's side is tests/venus-driver.test.ts's (Chromium).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { VenusGpu } from '../web/venus-gpu.ts';
+import { deviceRequest, L9_LIMITS, l9Suspects, VenusGpu } from '../web/venus-gpu.ts';
 
 // The classes venus-gpu.ts tells objects apart by.
 class FakeBuffer { destroyed = false; destroy() { this.destroyed = true; } mapAsync() { return Promise.resolve(); } getMappedRange() { return new ArrayBuffer(16); } unmap() {} }
@@ -299,4 +299,22 @@ test('a captured indexed draw copies the indices it reads, so a big index buffer
   assert.deepEqual(warnings, []);
   // The indices' copy into the draw's inputs: bytes [20, 26) as two words.
   assert.deepEqual(copies[0], [20, 0, 8]);
+});
+
+test('?gpu=vkl9=… asks for the device as at 4fdc69fb, suspect by suspect (VK3 L9a\'s NVIDIA arms); none by default', () => {
+  const adapter = {
+    features: new Set(['texture-compression-bc', 'subgroups', 'shader-f16', 'timestamp-query']),
+    limits: { maxTextureDimension2D: 16384, maxStorageBuffersInVertexStage: 8, maxStorageTexturesInVertexStage: 4, maxBindingsPerBindGroup: 1000, maxColorAttachmentBytesPerSample: 64 },
+  } as unknown as GPUAdapter;
+  const asked = (l9: string[]) => { const d = deviceRequest(adapter, { l9: l9Suspects(l9) }); return { features: [...(d.requiredFeatures ?? [])].sort(), limits: Object.keys(d.requiredLimits ?? {}).sort() }; };
+  const now = asked([]);
+  assert.deepEqual(now.features, ['shader-f16', 'subgroups', 'texture-compression-bc']);
+  for (const k of L9_LIMITS) assert.ok(now.limits.includes(k), k);
+  assert.deepEqual(asked(['features']).features, ['texture-compression-bc']);
+  assert.deepEqual(asked(['features']).limits, now.limits);
+  assert.deepEqual(asked(['limits']).features, now.features);
+  assert.deepEqual(asked(['limits']).limits, now.limits.filter((k) => !L9_LIMITS.includes(k)));
+  assert.deepEqual(asked(['all']), asked(['features', 'limits']));
+  assert.deepEqual(l9Suspects(['all']), ['features', 'limits', 'bindgroups', 'pad']);
+  assert.deepEqual(l9Suspects(['pad', 'nonsense']), ['pad']);
 });

@@ -471,7 +471,12 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   `?gpu=vknudge=<ms>` changes the nudges' period (0: none) and `?gpu=vkgputime` times each submit's first 8 passes on
   the GPU with timestamp queries (the device then asks for `timestamp-query`); both for A/B and diagnosis (VK3 L2b).
   The render stats' `venus` carries a submit's parts too: the worker's encoding, `queue.submit`'s call, its writes,
-  passes and draws, and the done of the submits with a pass.
+  passes and draws, and the done of the submits with a pass. `?gpu=vkl9=<suspect>` (repeatable; `all`) puts one of
+  VK3 L9a's suspects back as it was at 4fdc69fb, for the NVIDIA run's A/B only (web/venus-gpu.ts `L9_SUSPECTS`):
+  `features` (no `subgroups`, `shader-f16`), `limits` (not the vertex stage's storage limits nor
+  `maxBindingsPerBindGroup`), `bindgroups` (each pipeline's layouts their own uids), `pad` (no WG_MEMORY_PAD).
+  On NVIDIA a frame's `Queue::Submit` in the GPU process took 2.5 ms of its CPU at c8087cb0 against 1.6 at 4fdc69fb,
+  with the same WebGPU calls; SwiftShader's take ~0.1 ms either way (bench/vulkan/REPORT.md "VK3 L9a").
 - **Shared images** (Venus's WSI): see "Presentation".
 - **Semaphores' exports** (VK3 L7.1b): a semaphore is made whatever handle types its `VkExportSemaphoreCreateInfo`
   names; those other than sync files are dropped (`wg_CreateSemaphore`). Venus's guest driver creates semaphores

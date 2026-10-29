@@ -58,6 +58,11 @@ enum wg_feature {
                                         * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
+   /* Not the adapter's: VK3 L9a's suspects back at 4fdc69fb's behaviour for the NVIDIA run's A/B (`?gpu=vkl9=…`,
+    * web/venus-gpu.ts `L9_SUSPECTS`; never by default): each pipeline's bind group layouts their own uids (wg_shader.c
+    * `bgl_uid`), memories' GPUBuffers without WG_MEMORY_PAD. */
+   WG_FEATURE_L9_PAD = 1 << 28,
+   WG_FEATURE_L9_BGL_UIDS = 1 << 29,
    WG_FEATURE_YCBCR = 1 << 30, /* not the adapter's (VK3 L7.2): samplerYcbcrConversion and the multi-planar formats
                                 * (wg_ycbcr_format), on by default since L7.3; `?gpu=vkycbcr=off` holds them */
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
@@ -83,7 +88,7 @@ struct wg_limits {
 };
 extern struct wg_limits wg_limits;
 /* The bytes a memory's GPUBuffer has past its end: a uniform block's largest (wg_device.c `wg_memory_buffer`). */
-#define WG_MEMORY_PAD ((uint64_t)(wg_limits.max_uniform_buffer_binding_size & ~3u))
+#define WG_MEMORY_PAD ((wg_features & WG_FEATURE_L9_PAD) ? 0 : (uint64_t)(wg_limits.max_uniform_buffer_binding_size & ~3u))
 
 /* What the device advertises, from the features and limits (wg_caps.c); wg_caps_init sets them (venus_init's). */
 int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);

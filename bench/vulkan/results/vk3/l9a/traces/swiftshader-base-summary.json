@@ -1,0 +1,162 @@
+{
+ "seconds": 2.015951,
+ "gpuProcess": "GPU Process",
+ "gpuMain": "CrGpuMain",
+ "events": 289929,
+ "busyMsPerSecond": 112.19,
+ "handleDawnCommands": 979.1904664349481,
+ "pollingWork": 1048.6365988062212,
+ "stubPerformWork": 80.35909602961581,
+ "queueSubmit": {
+  "perSecond": 904.3,
+  "longPerSecond": 8.4,
+  "longMs": {
+   "p25": 0.335,
+   "p50": 0.353,
+   "p75": 0.531,
+   "p90": 0.606
+  },
+  "longThreadMsP50": 0.137,
+  "longMsPerSecond": 3.6
+ },
+ "top": [
+  {
+   "name": "ThreadControllerImpl::RunTask",
+   "n": 2210,
+   "msPerSecond": 112.19,
+   "meanMs": 0.102
+  },
+  {
+   "name": "Scheduler::RunTask",
+   "n": 2003,
+   "msPerSecond": 103.1,
+   "meanMs": 0.104
+  },
+  {
+   "name": "GpuChannel::ExecuteDeferredRequest",
+   "n": 2003,
+   "msPerSecond": 100.22,
+   "meanMs": 0.101
+  },
+  {
+   "name": "CommandBuffer::Flush",
+   "n": 1999,
+   "msPerSecond": 92.28,
+   "meanMs": 0.093
+  },
+  {
+   "name": "CommandBufferStub::OnAsyncFlush",
+   "n": 1999,
+   "msPerSecond": 91.33,
+   "meanMs": 0.092
+  },
+  {
+   "name": "CommandBufferService:PutChanged",
+   "n": 1994,
+   "msPerSecond": 89.01,
+   "meanMs": 0.09
+  },
+  {
+   "name": "WebGPU",
+   "n": 1986,
+   "msPerSecond": 72.97,
+   "meanMs": 0.074
+  },
+  {
+   "name": "DawnCommands",
+   "n": 1974,
+   "msPerSecond": 66.8,
+   "meanMs": 0.068
+  },
+  {
+   "name": "WebGPUDecoderImpl::HandleDawnCommands",
+   "n": 1974,
+   "msPerSecond": 65.77,
+   "meanMs": 0.067
+  },
+  {
+   "name": "Queue::Submit",
+   "n": 1823,
+   "msPerSecond": 25.83,
+   "meanMs": 0.029
+  },
+  {
+   "name": "WebGL",
+   "n": 13,
+   "msPerSecond": 20.29,
+   "meanMs": 3.146
+  },
+  {
+   "name": "DawnServiceSerializer::Flush",
+   "n": 4972,
+   "msPerSecond": 17.56,
+   "meanMs": 0.007
+  },
+  {
+   "name": "WebGPUDecoderImpl::PerformPollingWork",
+   "n": 2114,
+   "msPerSecond": 7.76,
+   "meanMs": 0.007
+  },
+  {
+   "name": "CommandBufferStub::PerformWork",
+   "n": 162,
+   "msPerSecond": 3.64,
+   "meanMs": 0.045
+  },
+  {
+   "name": "Queue::Tick",
+   "n": 3535,
+   "msPerSecond": 1.93,
+   "meanMs": 0.001
+  },
+  {
+   "name": "DawnReturnCommands",
+   "n": 2197,
+   "msPerSecond": 1.18,
+   "meanMs": 0.001
+  },
+  {
+   "name": "DeviceBase::APITick::IsDeviceIdle",
+   "n": 2034,
+   "msPerSecond": 1.1,
+   "meanMs": 0.001
+  },
+  {
+   "name": "SharedImageStub::OnDestroySharedImage",
+   "n": 4,
+   "msPerSecond": 0.87,
+   "meanMs": 0.437
+  },
+  {
+   "name": "GLContextEGL::MakeCurrent",
+   "n": 1,
+   "msPerSecond": 0.73,
+   "meanMs": 1.462
+  },
+  {
+   "name": "Scheduler::FinishTask",
+   "n": 991,
+   "msPerSecond": 0.54,
+   "meanMs": 0.001
+  },
+  {
+   "name": "CommandBuffer::FlushComplete",
+   "n": 984,
+   "msPerSecond": 0.51,
+   "meanMs": 0.001
+  },
+  {
+   "name": "CommandBufferStub::WaitForGetOffsetInRange",
+   "n": 9,
+   "msPerSecond": 0.05,
+   "meanMs": 0.01
+  }
+ ],
+ "threads": [
+  "CrGpuMain",
+  "PerfettoTrace",
+  "Chrome_ChildIOThread",
+  "VizCompositorThread"
+ ]
+}

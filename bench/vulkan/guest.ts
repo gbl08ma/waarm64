@@ -14,11 +14,21 @@
 // TRACE=1 (VK3 L2b): a Chromium trace of the first setting, in JSON (CDP's Tracing, all processes), TRACE_MS long from
 // TRACE_AT ms after the setting starts (defaults 2000 and 5000: past the warm-up), into <out>/trace-<setting>.json, and a
 // summary of the GPU process's main thread beside it (trace-<setting>-summary.json: its busy ms a second and the
-// events that take it, WebGPU's commands and polls a second). TRACE_CATEGORIES replaces the categories.
+// events that take it, WebGPU's commands and polls a second, Dawn's Queue::Submit of the frames: VK3 L9a).
+// TRACE_CATEGORIES replaces the categories; TRACE_KEEP=0 keeps the summary only. `node bench/vulkan/guest.ts summarize
+// <trace.json>...` writes each trace's summary beside it.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
 const arm = process.argv[2];
+if (arm === 'summarize') {
+  for (const f of process.argv.slice(3)) {
+    const sum = traceSummary(JSON.parse(readFileSync(f, 'utf8')));
+    writeFileSync(f.replace(/\.json$/, '-summary.json'), JSON.stringify(sum, null, 1) + '\n');
+    console.log(f, JSON.stringify({ busyMsPerSecond: sum.busyMsPerSecond, queueSubmit: sum.queueSubmit }));
+  }
+  process.exit(0);
+}
 if (!['lavapipe', 'virgl', 'venus', 'venus-nowatch'].includes(arm)) throw new Error('usage: node bench/vulkan/guest.ts <lavapipe|virgl|venus|venus-nowatch> [image] [out dir]');
 // venus-nowatch: Venus without the window's write-watch at each submit (`?gpu=vulkan,nowatch`), its cost against venus.
 const venus = arm.startsWith('venus');
@@ -36,7 +46,7 @@ const sizeArgs = width === 1920 && height === 1080 ? '' : ` --width ${width} --h
 const TRACE_CATEGORIES = env('TRACE_CATEGORIES', ['toplevel', 'toplevel.flow', 'gpu', 'gpu.service', 'gpu.dawn', 'dawn', 'viz', 'ipc', 'mojom', 'scheduler', 'v8.execute',
   'disabled-by-default-gpu.dawn', 'disabled-by-default-gpu.service', 'disabled-by-default-gpu.decoder', 'disabled-by-default-gpu.device', 'disabled-by-default-toplevel.flow'].join(','));
 
-type TraceEvent = { ph: string; name: string; pid: number; tid: number; ts: number; dur?: number; cat?: string; args?: { name?: string } };
+type TraceEvent = { ph: string; name: string; pid: number; tid: number; ts: number; dur?: number; tdur?: number; cat?: string; args?: { name?: string } };
 /** The GPU process's main thread in a JSON trace: its busy ms a second (top-level tasks), the events taking the most of it, and WebGPU's decoder calls a second. */
 function traceSummary(trace: { traceEvents: TraceEvent[] }) {
   const ev = trace.traceEvents;
@@ -45,15 +55,27 @@ function traceSummary(trace: { traceEvents: TraceEvent[] }) {
   const gpuPid = [...procs].find(([, n]) => /gpu/i.test(n))?.[0];
   const main = [...threads].find(([k, n]) => k.startsWith(`${gpuPid}:`) && /CrGpuMain/i.test(n))?.[0];
   const xs = ev.filter((e) => e.ph === 'X' && typeof e.dur === 'number');
-  const ts = xs.map((e) => e.ts);
-  const span = ts.length ? (Math.max(...ts) - Math.min(...ts)) / 1e6 : 0;
+  // A loop, not Math.max(...): an 81 MB trace's events overflowed the stack (the final NVIDIA run's).
+  let lo = Infinity, hi = -Infinity;
+  for (const e of xs) { if (e.ts < lo) lo = e.ts; if (e.ts > hi) hi = e.ts; }
+  const span = xs.length ? (hi - lo) / 1e6 : 0;
   const on = main ? xs.filter((e) => `${e.pid}:${e.tid}` === main) : [];
   const byName: Record<string, { n: number; ms: number }> = {};
   for (const e of on) { const b = (byName[e.name] ??= { n: 0, ms: 0 }); b.n++; b.ms += e.dur! / 1000; }
   const per = (k: string) => (byName[k]?.n ?? 0) / Math.max(span, 1e-9);
   const top = Object.entries(byName).sort((a, b) => b[1].ms - a[1].ms).slice(0, 40).map(([name, b]) => ({ name, n: b.n, msPerSecond: +(b.ms / Math.max(span, 1e-9)).toFixed(2), meanMs: +(b.ms / b.n).toFixed(3) }));
+  // Dawn's Queue::Submit on the GPU process's main thread: the frames' (over 0.3 ms; the rest are nudges and the
+  // guest's fences, ~0.01 ms) a second and their wall and thread ms (VK3 L9a: 1.56 ms at 4fdc69fb on NVIDIA, 2.53 at
+  // c8087cb0, all of it the thread's CPU; SwiftShader's ~0.13).
+  const submits = on.filter((e) => e.name === 'Queue::Submit');
+  const long = submits.filter((e) => e.dur! > 300);
+  const q = (v: number[], p: number) => { const a = [...v].sort((x, y) => x - y); return a.length ? +(a[Math.min(a.length - 1, Math.floor(p * a.length))] / 1000).toFixed(3) : 0; };
+  const queueSubmit = { perSecond: +(submits.length / Math.max(span, 1e-9)).toFixed(1), longPerSecond: +(long.length / Math.max(span, 1e-9)).toFixed(1),
+    longMs: { p25: q(long.map((e) => e.dur!), 0.25), p50: q(long.map((e) => e.dur!), 0.5), p75: q(long.map((e) => e.dur!), 0.75), p90: q(long.map((e) => e.dur!), 0.9) },
+    longThreadMsP50: q(long.filter((e) => typeof e.tdur === 'number').map((e) => e.tdur!), 0.5),
+    longMsPerSecond: +(long.reduce((a, e) => a + e.dur! / 1000, 0) / Math.max(span, 1e-9)).toFixed(1) };
   return { seconds: span, gpuProcess: procs.get(gpuPid!) , gpuMain: main && threads.get(main), events: ev.length, busyMsPerSecond: +((byName['ThreadControllerImpl::RunTask']?.ms ?? 0) / Math.max(span, 1e-9)).toFixed(2),
-    handleDawnCommands: per('WebGPUDecoderImpl::HandleDawnCommands'), pollingWork: per('WebGPUDecoderImpl::PerformPollingWork'), stubPerformWork: per('CommandBufferStub::PerformWork'), top,
+    handleDawnCommands: per('WebGPUDecoderImpl::HandleDawnCommands'), pollingWork: per('WebGPUDecoderImpl::PerformPollingWork'), stubPerformWork: per('CommandBufferStub::PerformWork'), queueSubmit, top,
     threads: [...threads].filter(([k]) => k.startsWith(`${gpuPid}:`)).map(([, n]) => n) };
 }
 
@@ -125,11 +147,12 @@ for (const st of settings) {
     await b.startTracing!(undefined, { categories: TRACE_CATEGORIES.split(',') });
     await new Promise((r) => setTimeout(r, Number(env('TRACE_MS', '2000'))));
     const buf = await b.stopTracing!();
-    writeFileSync(`${out}/trace-${st.name}.json`, buf);
+    // TRACE_KEEP=0: the summary only (nvidia.sh's l9 arms: a trace each).
+    if (env('TRACE_KEEP', '1') !== '0') writeFileSync(`${out}/trace-${st.name}.json`, buf);
     try {
       const sum = traceSummary(JSON.parse(buf.toString()));
       writeFileSync(`${out}/trace-${st.name}-summary.json`, JSON.stringify(sum, null, 1) + '\n');
-      log(st.name, `trace: ${(buf.length / 1e6).toFixed(1)} MB, ${sum.events} events over ${sum.seconds.toFixed(2)} s; the GPU process's main thread busy ${sum.busyMsPerSecond} ms/s, ${sum.handleDawnCommands.toFixed(0)} Dawn command batches/s, ${sum.pollingWork.toFixed(0)} polls/s; most: ${sum.top.slice(0, 5).map((x) => `${x.name} ${x.msPerSecond} ms/s`).join(', ')}`);
+      log(st.name, `trace: ${(buf.length / 1e6).toFixed(1)} MB, ${sum.events} events over ${sum.seconds.toFixed(2)} s; the GPU process's main thread busy ${sum.busyMsPerSecond} ms/s, ${sum.handleDawnCommands.toFixed(0)} Dawn command batches/s, ${sum.pollingWork.toFixed(0)} polls/s; Queue::Submit over 0.3 ms ${sum.queueSubmit.longPerSecond}/s, ${sum.queueSubmit.longMs.p50} ms (p25 ${sum.queueSubmit.longMs.p25}, p75 ${sum.queueSubmit.longMs.p75}; thread ${sum.queueSubmit.longThreadMsP50}); most: ${sum.top.slice(0, 5).map((x) => `${x.name} ${x.msPerSecond} ms/s`).join(', ')}`);
     } catch (err) {
       log(st.name, `trace: ${(buf.length / 1e6).toFixed(1)} MB, not summarized: ${String(err).slice(0, 200)}`);
     }

@@ -6,6 +6,21 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-29, after L9a)
+
+- **Not reproduced** on the M4 or SwiftShader (alternated A/B of the scene, 4fdc69fb's `vk/`+`web/` against c8087cb0's:
+  rounds overlap, c8087cb0 a little cheaper on the M4). **Located on NVIDIA from its traces**: a frame's Dawn
+  `Queue::Submit` takes the GPU process's main thread 1.56 ms (4fdc69fb) → 2.53 ms (c8087cb0) of CPU; SwiftShader's 0.13
+  at both. The WebGPU calls are the same (counted and dumped on SwiftShader: REPORT.md "VK3 L9a").
+- **For the next NVIDIA run** (a new bundle, the supervisor's): `VK2_STEPS=l9` (~15 min) runs `?gpu=vkl9=all` and each
+  suspect (`features`, `limits`, `bindgroups`, `pad`: 4fdc69fb's behaviour) against the default, each with a trace's
+  `Queue::Submit` line. Then fix the one it names (keeping its commit's dEQP-VK cases), or, if `all` stays at ~2.5 ms,
+  look outside them (the 16-byte query copies, the `wg_flip_z` override, NVIDIA's host).
+- Worth not re-discovering: Chromium's traces carry thread time (`tdur`): a long Dawn event is CPU or a wait at a glance.
+  A temporary wrapper of WebGPU's prototypes in web/gpu-worker.ts (console lines starting `venus`, ≤ 400 chars: chunk
+  them) counts or dumps a run's whole WebGPU stream in one SwiftShader boot.
+- CI alone: ci.sh 465 s, ci-deqp-vk.sh 853 s, both OK.
+
 ## State (2026-10-29, the final NVIDIA run processed: L9 opened)
 
 - **The run** (c8087cb0's bundle, REPORT.md "VK3: the final NVIDIA run", `results/vk3/nvidia-final/`): presentation,
@@ -92,7 +107,8 @@ Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **th
     new walk) but L6b–L7.3's 3b and 4's import (warned, refused; filed).
 
 - [ ] **L9** (the final NVIDIA run's findings; time-boxed ~3 h each, ask the user before going past):
-  - [ ] L9a: **Venus's submit-to-done regression on NVIDIA.** At 4fdc69fb a scene submit was done 3.28 ms after
+  - [x] L9a: **Venus's submit-to-done regression on NVIDIA.** **Done (not reproduced off NVIDIA; located in Dawn's
+    `Queue::Submit` there; the suspects switchable, `nvidia.sh` `VK2_STEPS=l9`):** REPORT.md "VK3 L9a". At 4fdc69fb a scene submit was done 3.28 ms after
     it was made at 1 fish (4.90 toolkit, 5.62 at 1,000 fish, mpv 3.89); at c8087cb0 5.41, 6.88, 7.03, 4.85; the pass's
     GPU time and encoding the same or lower, `fence.ts` unchanged (REPORT.md "VK3: the final NVIDIA run"). First: an
     A/B of the scene at 4fdc69fb and c8087cb0 on the M4 (sway-mac.sh, alternated, ≥3 rounds) and SwiftShader, reading

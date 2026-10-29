@@ -178,17 +178,34 @@ diagnostic(off, subgroup_uniformity);
   }
 }
 
+/**
+ * VK3 L9a's suspects for Venus's submits done ~2 ms later on NVIDIA at c8087cb0 than at 4fdc69fb (bench/vulkan/REPORT.md
+ * "VK3 L9a"), each switchable back to 4fdc69fb's behaviour by `?gpu=vkl9=<suspect>` (repeatable; `all` for every one) for
+ * the NVIDIA run's arms (bench/vulkan/nvidia.sh `l9`); none by default. `features`: the device without `MORE_FEATURES`
+ * (no subgroups, no shader-f16, so no subgroups check); `limits`: without `L9_LIMITS`; `bindgroups`: each pipeline's
+ * bind group layouts their own uids again (VK3 L6b shared them by content); `pad`: memories' GPUBuffers without
+ * WG_MEMORY_PAD (VK3 L7a). Diagnostic only: `limits` and `pad` can refuse or lose what L7a made fit.
+ */
+export const L9_SUSPECTS = ['features', 'limits', 'bindgroups', 'pad'] as const;
+export type L9Suspect = (typeof L9_SUSPECTS)[number];
+/** The limits asked for since 4fdc69fb (VK3 L7a). */
+export const L9_LIMITS = ['maxStorageBuffersInVertexStage', 'maxStorageTexturesInVertexStage', 'maxBindingsPerBindGroup'];
+/** `?gpu=vkl9=…`'s values as suspects (`all` is every one; unknown names dropped). */
+export function l9Suspects(values: readonly string[]): L9Suspect[] {
+  return L9_SUSPECTS.filter((s) => values.includes(s) || values.includes('all'));
+}
+
 /** The features and limits to ask an adapter's device for: every one the driver uses, as far as the adapter goes. */
-export function deviceRequest(adapter: GPUAdapter, options: { gpuTime?: boolean } = {}): GPUDeviceDescriptor {
+export function deviceRequest(adapter: GPUAdapter, options: { gpuTime?: boolean; l9?: readonly L9Suspect[] } = {}): GPUDeviceDescriptor {
   const limits = adapter.limits as unknown as Record<string, number>;
   const requiredLimits: Record<string, number> = {};
   // The adapter's maker and subgroup sizes aren't limits (a browser that still lists subgroup sizes among its limits
   // refuses them asked for).
-  const notLimits = ['vendorID', 'subgroupMinSize', 'subgroupMaxSize'];
+  const notLimits = ['vendorID', 'subgroupMinSize', 'subgroupMaxSize', ...(options.l9?.includes('limits') ? L9_LIMITS : [])];
   for (const [k] of LIMITS) if (!notLimits.includes(k) && typeof limits[k] === 'number') requiredLimits[k] = limits[k];
   // Vulkan has no limit on a pass's attachments' bytes a sample: ask for the most.
   if (typeof limits.maxColorAttachmentBytesPerSample === 'number') requiredLimits.maxColorAttachmentBytesPerSample = limits.maxColorAttachmentBytesPerSample;
-  const features = [...FEATURES, ...MORE_FEATURES].filter((f) => adapter.features.has(f)) as GPUFeatureName[];
+  const features = [...FEATURES, ...(options.l9?.includes('features') ? [] : MORE_FEATURES)].filter((f) => adapter.features.has(f)) as GPUFeatureName[];
   // `?gpu=vkgputime`: timestamp queries for the worker's own measurement (VK3 L2b), not the driver's.
   if (options.gpuTime && adapter.features.has('timestamp-query')) features.push('timestamp-query');
   return { requiredFeatures: features, requiredLimits };

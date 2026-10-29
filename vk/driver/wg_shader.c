@@ -194,6 +194,8 @@ bgl_uid(const struct wg_program *p, uint32_t g, const char *desc)
 {
    static struct hash_table *uids;
    static uint32_t next;
+   if (wg_features & WG_FEATURE_L9_BGL_UIDS)
+      return ++next;
    if (!uids)
       uids = _mesa_hash_table_create(NULL, _mesa_hash_string, _mesa_key_string_equal);
    struct wg_json key = { 0 };

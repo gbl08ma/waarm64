@@ -56,6 +56,9 @@
 #      Chromium (a flat varying from the last vertex, a transform feedback capture, 13 uniform blocks a stage:
 #      bench/vulkan/angle/es3.html through bench/vulkan/dawn-frames.ts) and vkd3d's own Direct3D 12 tests
 #      (bench/vulkan/vkd3d.ts; ~3 min each).
+# And only when named (VK2_STEPS="l9", ~15 min): VK3 L9a's suspects for the submits done ~2 ms later than at 4fdc69fb,
+# each back at 4fdc69fb's behaviour (`?gpu=vkl9=features|limits|bindgroups|pad|all`) against the default, two
+# alternated rounds of the scene at 1 fish and the toolkit with a trace's summary each (Dawn's Queue::Submit).
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
 # page held the adapter's subgroups, VK3 L5): send that file back. VK2_KEEP=1 keeps an earlier run's results and adds
 # to them (VK2_KEEP=1 VK2_STEPS=none only writes the summary's last line, host.txt and the tarball). VK2_DRY=1 prints what each step would run (no bundle
@@ -180,6 +183,19 @@ if [ "${1:-}" = page ]; then
     # VK3 L2b: 2 s of Venus's scene at 1 fish traced (JSON: gpu, dawn, viz, the GPU process's tasks), 5 s in.
     step trace 900 env TRACE=1 FISH=1 TOOLKIT= WARMUP=200 FRAMES=1000 node bench/vulkan/guest.ts venus target/arch/desktop.qcow2 "$R/trace"
     grep -h "trace:" "$R/trace.log" 2>/dev/null | cut -c1-400 || true
+  fi
+  if [[ " ${VK2_STEPS:-} " == *" l9 "* ]]; then
+    # VK3 L9a (only when asked: VK2_STEPS=l9, ~15 min): Venus's submits done ~2 ms later at c8087cb0 than at 4fdc69fb,
+    # Dawn's Queue::Submit of a frame 1.56 -> 2.53 ms of the GPU process's CPU; the suspects back at 4fdc69fb's
+    # behaviour one by one (`?gpu=vkl9=…`, web/venus-gpu.ts L9_SUSPECTS) and all at once, against the default; two
+    # alternated rounds at 1 fish and the toolkit, each with a trace of 2 s at 1 fish (its summary only: Queue::Submit).
+    for round in ${VK2_L9_ROUNDS:-1 2}; do
+      for arm in ${VK2_L9_ARMS:-default all features limits bindgroups pad}; do
+        knobs=; [ "$arm" = default ] || knobs="vkl9=$arm"
+        step "l9-$arm-$round" 900 env TRACE=1 TRACE_KEEP=0 TRACE_AT=1500 TRACE_MS=2000 FISH=1 TOOLKIT=2000 WARMUP=200 FRAMES=300 GPU_KNOBS="$knobs" node bench/vulkan/guest.ts venus target/arch/desktop.qcow2 "$R/l9-$arm-$round"
+      done
+    done
+    for f in "$R"/l9-*-1.log "$R"/l9-*-2.log; do [ -f "$f" ] && grep -hE "msaa1 [0-9.]+ ms a frame|msaa1 venus: |trace:" "$f" | sed "s|^|  $(basename "$f" .log) |" | cut -c1-260; done || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" pipelines "* ]]; then
     # VK3 L3: N new pipelines made one by one against all at once (and WebGL's round trips meanwhile), then the
