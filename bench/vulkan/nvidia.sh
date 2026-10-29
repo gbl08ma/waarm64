@@ -57,7 +57,8 @@
 #      bench/vulkan/angle/es3.html through bench/vulkan/dawn-frames.ts) and vkd3d's own Direct3D 12 tests
 #      (bench/vulkan/vkd3d.ts; ~3 min each).
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
-# page held the adapter's subgroups, VK3 L5): send that file back. VK2_DRY=1 prints what each step would run (no bundle
+# page held the adapter's subgroups, VK3 L5): send that file back. VK2_KEEP=1 keeps an earlier run's results and adds
+# to them (VK2_KEEP=1 VK2_STEPS=none only writes the summary's last line, host.txt and the tarball). VK2_DRY=1 prints what each step would run (no bundle
 # unpacked, nothing fetched, nothing run: a check of the script itself, on any machine with VK0_ANY_ARCH=1).
 set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
@@ -75,8 +76,10 @@ if [ "${1:-}" = page ]; then
   DIR=$(realpath -m "${3:-$HOME/webpc-vk2}")
   for t in curl tar xz; do command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }; done
   [ "$(uname -m)" = x86_64 ] || [ -n "${VK0_ANY_ARCH:-}" ] || { echo "this script is for x86_64 Linux" >&2; exit 1; }
-  # A run's results only (the run of f55eacd7 carried an earlier run's arms along).
-  rm -rf "$DIR/results"
+  # A run's results only (the run of f55eacd7 carried an earlier run's arms along), unless VK2_KEEP=1: then the steps
+  # run add to an earlier run's results and summary (VK2_KEEP=1 VK2_STEPS=none only finishes a run that stopped after
+  # its steps: the subgroups verdict, host.txt and the tarball).
+  [ -n "${VK2_KEEP:-}" ] || rm -rf "$DIR/results"
   mkdir -p "$DIR"/{dl,t,cache,results}
   export TMPDIR=$DIR/t XDG_CACHE_HOME=$DIR/cache npm_config_cache=$DIR/cache/npm PLAYWRIGHT_BROWSERS_PATH=$DIR/browsers
   export __GL_SHADER_DISK_CACHE_PATH=$DIR/cache/nvidia && mkdir -p "$__GL_SHADER_DISK_CACHE_PATH"
@@ -128,7 +131,7 @@ if [ "${1:-}" = page ]; then
   [ -n "$HEADED" ] || unset HEADED
   R=$DIR/results
   fi
-  : > "$R/summary.txt"
+  [ -n "${VK2_KEEP:-}" ] || : > "$R/summary.txt"
   step() {  # name, seconds allowed, then the command: its output in results/<name>.log; a failure is noted and passed over
     local name=$1 limit=$2
     shift 2
@@ -259,7 +262,8 @@ if [ "${1:-}" = page ]; then
   # VK3 L5: the page holds the adapter's subgroups where its check finds them wrong in divergent control flow (the M4's
   # Metal). Every Venus step's page log says it if so.
   if [ -z "$DRY" ]; then
-    held=$(grep -rl "subgroups are wrong in divergent control flow" "$R" 2>/dev/null | head -3 | tr '\n' ' ')
+    # grep finds nothing when the subgroups aren't held: under pipefail that would stop the script (the run of c8087cb0).
+    held=$(grep -rl "subgroups are wrong in divergent control flow" "$R" 2>/dev/null | head -3 | tr '\n' ' ' || true)
     if [ -n "$held" ]; then echo "subgroups: HELD by the page's check (subgroups of one invocation; in $held)"
     else echo "subgroups: not held (the device has the adapter's subgroups: the deqp step's subgroup cases ran on them)"; fi | tee -a "$R/summary.txt"
   fi

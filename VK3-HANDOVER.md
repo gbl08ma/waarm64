@@ -108,7 +108,10 @@ the track. Steps 1–2 are the user's, 3–6 the session's.
        bench/vulkan/nvidia.sh page <the bundle> ~/webpc-vk2
 
    ~75 min whole (`VK2_STEPS="deqp rows"` runs only the new steps, ~25 min; `VK2_STEPS="…"` any subset). It ends
-   with `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user copies into the repo's root on the dev VM.
+   with `~/webpc-vk2/vk3-nvidia-results.tar.gz`, which the user copies into the repo's root on the dev VM. The
+   first attempt (2026-10-29) ran every step, then stopped on the subgroups verdict (grep finding nothing, under
+   pipefail; fixed in the script, the bundle unchanged): `VK2_KEEP=1 VK2_STEPS=none bench/vulkan/nvidia.sh page
+   <the bundle> ~/webpc-vk2` writes the verdict, `host.txt` and the tarball from the results already there.
 3. **Unpack** into `bench/results/local/vk3-nvidia-final/` and read `results/summary.txt` (a line per step: `done`
    or `FAILED or timed out (exit N)`, plus the deqp, rows and subgroups verdicts) and `results/host.txt` (driver,
    Chromium, BUNDLE.txt: check the commit is c8087cb0). A failed step: its `results/<step>.log`. The last processed
