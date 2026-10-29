@@ -1,4 +1,4 @@
-// Venus on virtio-gpu, the device's side (docs/devices.md "virtio-gpu"; docs/plans/graphics.md): the capset and the
+// Venus on virtio-gpu, the device's side (docs/devices.md "virtio-gpu"; docs/graphics.md "Vulkan through Venus"): the capset and the
 // blob resources' constants. The renderer behind it (virglrenderer's vkr in the GPU worker) answers the protocol; the
 // device checks the commands and keeps the tables, as for virgl.
 

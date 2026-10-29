@@ -1,4 +1,4 @@
-// VK0's question A (docs/plans/graphics.md §5 "A"; bench/vulkan/REPORT.md): the Vulkan a WebGPU adapter backs, as
+// VK0's question A (bench/vulkan/REPORT.md "A: who takes which Vulkan"): the Vulkan a WebGPU adapter backs, as
 // Khronos Vulkan Profiles JSON for the Profiles layer (tools/vulkan-tools/build-profiles.sh), made from the adapters'
 // features and limits in bench/gpu/results/ (the G0 suite's JSON: the Mac's Metal adapter and the dev VM's
 // SwiftShader). Each file holds the direct profile (§4's "Direct" and "adapter's features" rows) and one profile per

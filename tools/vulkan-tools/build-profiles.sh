@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Khronos's Profiles layer (VK_LAYER_KHRONOS_profiles, Apache-2.0; docs/plans/graphics.md §5 A): makes a real driver
+# Khronos's Profiles layer (VK_LAYER_KHRONOS_profiles, Apache-2.0; bench/vulkan/REPORT.md "A"): makes a real driver
 # advertise only a chosen profile's features, limits, formats and extensions. At the Vulkan SDK 1.4.363.0 tag (the
 # system's Vulkan), built natively into target/vulkan-tools/profiles/ with its pinned dependencies (Vulkan-Headers,
 # Vulkan-Utility-Libraries, jsoncpp, valijson: scripts/known_good.json, fetched and built by its update_deps.py).

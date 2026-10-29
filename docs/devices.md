@@ -554,7 +554,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   `features: +virgl +edid +resource_blob +host_visible`, `+context_init`, `cap set 2: id 4, max-version 0, max-size 160`.
 
 #### The host-visible window (Venus, VK1)
-For Vulkan through Venus ([plans/graphics.md](plans/graphics.md)): guest-visible memory that the host renderer and the
+For Vulkan through Venus ([graphics.md](graphics.md) "Vulkan through Venus"): guest-visible memory that the host renderer and the
 guest share without copies (Venus's ring, its command streams, its reply buffers, and the Vulkan memory a program maps).
 - **Where it is** (`VmConfig.window`, ABI 53): memory 0's bytes right after RAM, at the guest PA after RAM, outside the
   DT's `/memory`; the virtio-gpu transport reports it as shared memory region 1 (`VIRTIO_GPU_SHM_ID_HOST_VISIBLE`;

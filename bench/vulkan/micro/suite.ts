@@ -1,4 +1,4 @@
-// VK0's WebGPU questions C, E and F (bench/vulkan/REPORT.md; docs/plans/graphics.md §5), a bench/run.ts suite run in a
+// VK0's WebGPU questions C, E and F (bench/vulkan/REPORT.md "C", "E", "F"), a bench/run.ts suite run in a
 // worker as the GPU worker would run the translator:
 //   c_split        one render pass split into N with store and load (colour and depth; 4x MSAA's colour stored and
 //                  reloaded too, resolved in the last pass), 200 draws spread over it, 1080p and 1440p

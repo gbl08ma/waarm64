@@ -1,4 +1,4 @@
-// VK3 L7.5: vkd3d (WineHQ's Direct3D 12 on Vulkan, vkd3d's row of plan §4: draw parameters) on Venus in the desktop
+// VK3 L7.5: vkd3d (WineHQ's Direct3D 12 on Vulkan, vkd3d's row: draw parameters, docs/graphics.md) on Venus in the desktop
 // guest (images/arch/desktop.sh) on the page: Arch's vkd3d and spirv-tools packages and vkd3d.py on a second disk
 // (target/vkd3d/vkd3d.ext4, made by `bench/vulkan/vkd3d.ts disk` in rootless Podman), installed at boot; then
 // D3D12CreateDevice at each feature level with vkd3d's warnings (bench/vulkan/REPORT.md "VK3 L7.5"); then, where the disk

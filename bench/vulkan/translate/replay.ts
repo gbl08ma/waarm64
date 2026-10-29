@@ -1,4 +1,4 @@
-// Arm 3 (bench/vulkan/REPORT.md): a throwaway prototype of plans/graphics.md §3's mapping, translating a Vulkan
+// Arm 3 (bench/vulkan/REPORT.md): a throwaway prototype of VK0's mapping (docs/graphics.md "The shape"), translating a Vulkan
 // program's command stream (convert.ts) to WebGPU at run time, in a worker, as our translator would: command buffers
 // recorded and translated at submit; descriptor sets made bind groups when bound, cached by their content; dynamic
 // offsets passed on; push constants as immediates where a pipeline's shaders read no more than the adapter's

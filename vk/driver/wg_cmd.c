@@ -2098,7 +2098,7 @@ pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop)
    return NULL;
 }
 
-/* The compute passes a render pass's draws need, made before it begins (docs/plans/graphics.md §4's render-pass rule:
+/* The compute passes a render pass's draws need, made before it begins (the render-pass rule, docs/graphics.md:
  * WebGPU runs no compute inside a render pass, and a break per draw costs a frame its attachments' store and load):
  * each OP_PROVOKE's indices, numbered in the pass's order, which its replay draws by the same numbers. Vulkan's
  * barriers inside a render pass reach no index buffer, so what a draw reads is what the commands before the pass left

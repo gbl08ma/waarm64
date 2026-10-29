@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Vulkan renderer (docs/plans/graphics.md route (b), VK1): virglrenderer's Venus decoder (vkr) over our driver on
+# The Vulkan renderer (docs/graphics.md "Vulkan through Venus", route (b); VK1): virglrenderer's Venus decoder (vkr) over our driver on
 # Mesa's Vulkan runtime, built for wasm with wasi-sdk -> target/vk/venus.wasm, which the GPU worker instantiates on
 # memory 0 (vk/README.md). Native meson builds of virglrenderer and Mesa give the compile commands and the generated
 # sources (gen.ts reads both); their C is compiled again for wasm32-wasip1 with our shims (vk/wasi/) and patches

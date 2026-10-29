@@ -2,7 +2,7 @@
  * What the device advertises, from the browser's WebGPU device (docs/plans/graphics.md §2: the caps follow the
  * adapter): its optional features (`wg_features`) and limits (`wg_limits`), both venus_init's, from the GPU worker
  * (web/venus-gpu.ts `gpuFeatures`, `gpuLimits`). The mapping is VK0 A's (bench/vulkan/profiles/make.ts `direct`): the
- * direct rows of plan §4 only, less what the translator can't do yet, plus what Venus's WSI shares through. The
+ * direct rows of docs/graphics.md "What maps, what's emulated, what isn't offered" only, less what the translator can't do yet, plus what Venus's WSI shares through. The
  * formats' features are wg_format.c's, from the same flags.
  */
 #include <stdio.h>

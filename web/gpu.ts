@@ -142,7 +142,7 @@ export type GpuOptions = {
   /** The VIRGL2 caps blob to advertise (the browser's, web/virgl-caps.ts); default `virglCaps(2)`, WebGL2's minimums. */
   caps?: Uint8Array;
   /**
-   * Vulkan through Venus, with `virgl` (docs/devices.md "The host-visible window"; docs/plans/graphics.md): features
+   * Vulkan through Venus, with `virgl` (docs/devices.md "The host-visible window"; docs/graphics.md "Vulkan through Venus"): features
    * RESOURCE_UUID, RESOURCE_BLOB and CONTEXT_INIT, the VENUS capset, contexts made for it, blob resources mapped into
    * the host-visible window (`window` bytes: the machine's, `BootOptions.window`), their commands handed to the host.
    * Off by default, a per-machine choice: without it the device is what it was.

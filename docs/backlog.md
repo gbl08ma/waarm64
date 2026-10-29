@@ -428,9 +428,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   rendering, the sRGB framebuffer switch, texture buffers, base vertex
   (`WEBGL_draw_instanced_base_vertex_base_instance`). Caps that follow each extension, where a workload needs one.
   Geometry and tessellation exist in neither WebGL2 nor WebGPU, so desktop GL above 3.1 isn't reachable on WebGL2
-  (on WebGPU through compute, as plans/graphics.md does for Vulkan, only if a real workload needs it).
+  (on WebGPU through compute, as Vulkan's renderer does: graphics.md "Vulkan through Venus"; only if a real workload needs it).
 - **A WebGPU backend for virgl** (GLES 3.1: compute, storage buffers), only where `navigator.gpu` gives an adapter.
-  It would share the WebGPU layer the Vulkan plan builds (plans/graphics.md), so it waits for that plan's VK0.
+  It could share what Vulkan's renderer learned of WebGPU (graphics.md "Vulkan through Venus").
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
@@ -497,7 +497,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
-  snapshot's RAM chunks don't cover yet) and the window itself: plan §6's VK4.
+  snapshot's RAM chunks don't cover yet) and the window itself: VK4's tier 4 (VK4-KICKOFF.md).
 - **Venus's contexts outlive a virtio reset** (seen in the code by VK3 L4c-C, not run): the device's `reset` clears its
   `venusContexts` and sends the GPU worker `reset`, which resets the virgl renderer and the import's maps only; Venus's
   renderer keeps its contexts, rings, blobs and imports (web/venus-host.ts). After a guest reboot a context id may be

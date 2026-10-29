@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Venus oracle (docs/plans/graphics.md §2, §5): virglrenderer with Venus (vtest server and render server) and
+# The Venus oracle (docs/plans/graphics.md §2; bench/vulkan/REPORT.md "B: the Venus stream"): virglrenderer with Venus (vtest server and render server) and
 # Mesa's Venus driver (the virtio Vulkan ICD), both at pinned versions, built natively into target/venus-oracle/.
 # A Vulkan client on Mesa's Venus talks vtest to `virgl_test_server --venus`, whose render server runs the commands
 # on the host's Vulkan (lavapipe in the dev VM). tools/venus-oracle/run.sh runs a client through it.

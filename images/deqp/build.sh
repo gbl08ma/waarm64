@@ -24,8 +24,8 @@ mkdir -p "$W"
 if [ "${1-}" = vk ]; then
   guest_vk() { "$ROOT/images/arch/build.sh" --packages "mesa vulkan-virtio vulkan-icd-loader libpng" --out "$W/guest-vk.qcow2"; }
   if [ "${2-}" = --guest-only ]; then guest_vk; exit; fi
-  # The mustpass files (external/vulkancts/mustpass/main/vk-default/) of the direct set's groups (docs/plans/graphics.md
-  # §4's direct rows); the pass lists (tests/deqp/vk-*.txt) take their cases from these.
+  # The mustpass files (external/vulkancts/mustpass/main/vk-default/) of the direct set's groups (docs/graphics.md
+  # "What maps, what's emulated, what isn't offered": the direct rows); the pass lists (tests/deqp/vk-*.txt) take their cases from these.
   VK_GROUPS="info api memory draw compute pipeline/monolithic/* renderpasses ubo ssbo texture glsl binding-model query-pool rasterization fragment-operations clipping dynamic-state"
   "$ROOT/images/arch/base.sh"
   podman build -q -t localhost/webpc-deqp-vk -f "$ROOT/images/deqp/Containerfile.vk" "$ROOT/images/deqp" >/dev/null

@@ -1,6 +1,6 @@
 # vk/: Venus's renderer in wasm
 
-The host side of Vulkan through Venus ([docs/plans/graphics.md](../docs/plans/graphics.md) route (b);
+The host side of Vulkan through Venus ([docs/graphics.md](../docs/graphics.md) "Vulkan through Venus": route (b);
 [docs/devices.md](../docs/devices.md) "Venus"): virglrenderer's Venus decoder (`vkr`) over a Vulkan driver of ours
 on Mesa's common Vulkan runtime, with Mesa's `spirv_to_nir`, NIR and our NIR → WGSL backend, built as one wasm module,
 `target/vk/venus.wasm` (12.05 MiB, 1.24 MiB gzipped, 0.74 MiB with brotli: most of the raw size is NIR's tables), which the GPU worker
@@ -211,9 +211,9 @@ plain numbers. Without a device (Node) the imports keep nothing and every submit
 - **What it advertises follows the browser's WebGPU device** (`wg_caps.c`, VK2 L7): the GPU worker asks the adapter
   for every limit and optional feature the driver uses (web/venus-gpu.ts `deviceRequest`), and `venus_init` gets the
   device's (`gpuFeatures`: a bit a feature; `gpuLimits`: 34 limits as `struct wg_limits`, WebGPU's defaults where the
-  browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows of plan §4:
+  browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows (docs/graphics.md "What maps, what's emulated, what isn't offered"):
   image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
-dynamic indexing of every descriptor array and sample-rate shading (VK3 L7.1, Dawn's row of plan §4: Dawn's Vulkan
+dynamic indexing of every descriptor array and sample-rate shading (VK3 L7.1, Dawn's row: Dawn's Vulkan
 backend refuses a device without the four `shader*ArrayDynamicIndexing` features, and its core WebGPU wants
 `sampleRateShading`; "The shader path"); ANGLE's row (VK3 L7.4): the last vertex provoking, transform feedback and
 uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5): draw parameters;
@@ -378,7 +378,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
 - **Draws through indices of their own** (VK3 L7.4): the provoking vertex's last (`VK_EXT_provoking_vertex`,
   `provokingVertexLast`, per pipeline: ANGLE's ES3, GL's convention) where the fragment shader reads a flat input
   (WebGPU's flat interpolation takes the first vertex), and indexed fans (WebGPU has none). Such a draw is an
-  `OP_PROVOKE`: before its render pass begins (the render-pass rule, plan §4: `prepasses` scans the pass's commands,
+  `OP_PROVOKE`: before its render pass begins (the render-pass rule, docs/graphics.md: `prepasses` scans the pass's commands,
   secondaries' too, numbering them as tickets), the worker's compute pass writes the draw's primitives as a list of
   32-bit indices, each one's vertices rotated so that Vulkan's provoking vertex comes first and the winding kept
   (`provoke`: triangle lists, strips and fans, line lists and strips; a strip or fan with primitive restart walked by
