@@ -267,3 +267,65 @@ D   (memory 1, m64) tst + b.ne, then the base reload
 **Verdict:** the rule needs C ≤ 5% on the random and sequential mixed kernels **and** on the core. On arm64 C passes the core (−0.1%) but fails both JIT kernels (+17.5%, +18.9%). **A stands on both hosts.**
 
 **Not measured on arm64:** the OOM kill (no cgroups on macOS), and the no-THP 1 GiB run (Linux-only). The 1 GiB groups in the JSON have the same host-placement noise as on x86_64 (A2 = A code, +111% in one group), and aren't used.
+
+## 6. memory64 re-measured (VK4 T19, 2026-10-29)
+
+**Why:** T19 (VK4-KICKOFF.md) weighed taking the renderer off memory 0, and the backlog asked whether memory64 had
+become cheap enough to replace layout A + spill memories with one memory64 (one node up to 16 GiB, a wasm64 core, no
+memory index in the TLB tag, no spill arm). **Verdict: no. memory64 costs about +15–20% on the userspace benchmark on
+macOS. The user set it aside, and T19 took the renderer off memory 0 into memory 1 instead.**
+
+Data: `results/t19/`. Hosts: the dev VM (Linux arm64 under Lima on the M4, Chromium 153.0.8010.52) and the Mac host
+itself (macOS, Chrome for Testing 153.0.8010.12, `bench/run-mac.sh`).
+
+**What memory64's check is now.** Trap handling for memory64 is on (`--wasm-memory64-trap-handling`, V8's default),
+but it can't make the check free. A 64-bit index can reach anything, so V8 still compares it against the reservation
+(16 GiB) and lets the guard region and signal handler cover only what lies below. That makes one compare and branch
+per access, on both arm64 and x86_64. M0.5's disassembly (§3) already shows this form. Two further findings
+(`m64-checks.ts`, `results/t19/node-linux-arm64-m64-checks.txt`, TurboFan in Node 26):
+- **One check per access**, even for accesses through the same index value. V8 drops a check only when an earlier
+  one has the same index and the same offset.
+- **With a constant offset**, V8 materializes `16 GiB − offset − size` in three instructions (`mov`/`movk`/`movk`),
+  then `cmp` and `b.cs`. The JIT reads `Vcpu` fields at many distinct offsets.
+
+**The microkernels (§2) on the dev VM:** C at +2% (rand 8 MiB), −3 to −6% (seq) and +6.4% (the Rust interpreter as
+wasm64), where M0.5 measured +17.5% and +18.9% on the M4 under macOS. **This is the host, not V8.** Linux arm64 has no
+wasm trap handler (docs/v8.md "Bounds checks"), so the VM's wasm32 baseline carries explicit checks too. Code that is
+byte-identical (A against AB spec one, `results/t19/chromium-linux-arm64-vm-machine-code-turbofan.txt`) also differed
+by 15% in one group, so these kernels don't resolve differences under ~10–15% on this VM. And they carry about one
+access per 4 guest instructions, where the JIT's blocks also touch the `Vcpu` register file for most instructions.
+
+**The userspace benchmark** (`alpine_user_jit`, three rounds alternated, median totals; every arm's rounds clear of
+the base's; step counts identical). The arms:
+- **enforce:** `--wasm-enforce-bounds-checks`, which checks every access, in the core and in JIT code. On a
+  fixed-size memory 0, V8 loads the size once per function, so each check is a compare against a register and a
+  branch. That is the same bounds-check lowering memory64 gets, with the same elimination, so it is the closest
+  stand-in for C.
+- **probe 1:** a compare and branch emitted (`if … unreachable`) at each read of the JIT's address locals (`VCPU`,
+  each TLB entry address, each host address; `results/t19/probe1.patch`).
+- **probe 2:** the same before every memory instruction the JIT emits, on its own index operand, with a constant
+  per offset.
+
+| arm | Mac: total | Mac: compress / Lua / churn / SQLite | dev VM: total |
+|---|---|---|---|
+| base | 11,857 ms | 1,711 / 2,838 / 924 / 2,060 ms | 13,716–13,757 ms |
+| enforce | **+18.4%** | +20.6 / +10.0 / +30.3 / +19.4% | +11.7% |
+| probe 1 (JIT only) | +9.2% | +7.0 / +3.7 / +17.0 / +7.9% | +10.3% |
+| probe 2 (JIT only) | +21.6% | +19.3 / +8.3 / +47.5 / +19.3% | +22% (one trial) |
+
+- **The probes aren't estimates.** Probe 2 costs more than enforce, which checks the core as well. Its wasm `if`
+  splits blocks where V8's own check doesn't. Probe 1 checks far fewer accesses than memory64 would.
+- **C on macOS is about +15–20%.** That is enforce's +18.4%, give or take two differences. memory64 materializes a
+  constant per offset where enforce reuses a register, and a wasm64 core's wider pointers add a little.
+- **x86_64 wasn't measured** (the desktop is the user's). M0.5 found C's gap in JIT code wider there than on the M4.
+- **Process churn pays most** (+30%): it compiles the most, and checks make every module bigger.
+- **The dev VM's numbers understate the gap**, since its baseline is checked too. Measure memory64 on the Mac host
+  or x86_64, never in the VM.
+
+**Against the alternatives.** Layout A's memory 0 has no checks on macOS and x86_64. A spill page reached through the
+JIT's arm runs at 1.0–1.6× on Debian's workloads and 1.06–1.18× on copies (docs/spill-memories.md), and only the
+accesses to that memory pay it. One memory64 would charge ~15–20% to every access of every machine to remove that
+uneven cost. **A single memory64 is not worth it while V8 checks each access.** Revisit if V8 gains range analysis for
+memory64 indexes or hoists checks out of loops. The core builds for wasm64 unchanged (`cargo build --target
+wasm64-unknown-unknown -p webpc-core`), so a prototype would mainly need the JIT's addresses in i64 and the host's
+pointer arguments as BigInt.

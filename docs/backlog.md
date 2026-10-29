@@ -865,12 +865,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     out of the list. A 128 MiB heap of its own was tried (peak 99 MiB) and reverted: GFXReconstruct's replays (and
     likely VMA and DXVK) take a host-visible heap under 1 GiB for a discrete GPU's BAR window and refuse it as general
     memory. The way out is an arena of ~1 GiB or more, which memory 0 can't spare: T19.
-- **Re-measure memory64 against the alternatives** (the user, 2026-10-29; bench/spike/memory/REPORT.md, M0.5 on
-  Chromium 152): memory64's whole cost was its bounds checks (V8's trap handler covered only wasm32), +6–20% in JIT
-  code, +8–11% in the core. V8 14.6 (Node 26) has `--wasm-memory64-trap-handling` on by default and caps a shared
-  memory64 at 16 GiB. Re-run M0.5's kernels on the current Chromium, beside what T19 weighs: memory 0 as memory64 (one
-  node up to 16 GiB, a wasm64 core and an i64 ABI), all spill RAM in one memory64 behind a generic JIT arm (every
-  spill page on the arm, none through the interpreter), and the window behind such an arm.
+- **Spill RAM past node 1 in one memory64 behind the JIT's arm** (bench/spike/memory/REPORT.md §6, VK4 T19): every
+  spill page would take the arm's path (D in M0.5's kernels: +11–14% per access against memory 1's +10–12% on the dev
+  VM) instead of the interpreter's 2–17× for nodes 2 and up, and the 8-memory list would become one memory of up to 16
+  GiB. Only a machine with more than ~7 GiB of active pages meets node 2. Memory 0 as one memory64 was measured and
+  set aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8
+  checks each memory64 access.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
     decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader) and a uniform buffer,
     which Vulkan counts with sampled or storage images, so a stage with many storage buffers and texel buffers is

@@ -21,3 +21,16 @@ and VMA and DXVK make the same distinction. Reverted by the user's call: a heap 
 sized to the arena), check the replays (`scripts/ci-deqp-vk.sh` runs them), add the random groups to the list, and
 close T2 (its kickoff row, this section deleted). `tests/venus-renderer.test.ts` "the memory budget reports the heap
 and its use" checks the heap's layout: update its expectations with it.
+
+## T19: the renderer out of memory 0
+
+**State (2026-10-29).** Measured first (bench/spike/memory/REPORT.md §6): one memory64 (option (c)) costs ~+15–20% on
+the userspace benchmark on macOS, since V8 checks each memory64 access; the user set memory64 aside. **Chosen (the
+user, 2026-10-29): a′**, a variant of (a). Memory 1 becomes the renderer's own wasm32 memory: the renderer's data,
+stack and heap (an arena of ≥ 1 GiB) at its bottom, then the window, then node 1's spill RAM in what's left. The JIT's
+existing memory-1 arm reaches both the window and node 1, so a NUMA machine with Vulkan needs no second arm. Memory 0
+then holds as much RAM with Vulkan as without. Only the guest's window accesses pay the arm (node 1 measured 1.0–1.6×,
+copies 1.06–1.18×).
+
+**Next:** design a′ against the core's window and spill code, measure today's cost on Venus's frame workloads (vkcube,
+mpv, GTK4 on Vulkan) to A/B against, build it, then T2's host-visible heap.

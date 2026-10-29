@@ -54,7 +54,9 @@ wasm64 core was free there), B +31–40%, D +26–32%.
   (`mem::Host`) names its memory in its top byte. NUMA balancing must be off (its hinting faults are expensive under
   emulation): an SMBIOS systemd credential does it. Node 1's workloads take 1.0–1.6× node 0's time; the guest fills
   node 0 first anyway.
-- Re-measure the gaps on new Chromium releases.
+- **Re-measured for VK4 T19** (Chromium 153, bench/spike/memory/REPORT.md §6): memory64 still checks each access (one
+  compare against its 16 GiB reservation, trap handling or not), ~+15–20% on the userspace benchmark on macOS. Measure
+  memory64 on macOS or x86_64 only: Linux arm64 has no wasm trap handler, so wasm32 is checked there too.
 
 ## Design principles
 
