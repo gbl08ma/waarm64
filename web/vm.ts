@@ -1104,15 +1104,20 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       let below = 0, touched = 0, high = 0;
       const buckets: number[] = []; // MiB touched in each 32 MiB of the reserve
       for (let p = 0; p < scratch / 4096; p++) if (nonzero(p)) below++;
+      // A Venus machine's renderer arena at memory 0's top is counted apart (its data and stack at its base, its heap
+      // upward from them: the highest touched page is its high-water mark).
+      const top = (memory.buffer.byteLength - arena) / 4096;
+      let arenaTouched = 0, arenaHigh = 0;
+      for (let p = top, end = memory.buffer.byteLength / 4096; p < end; p++) if (nonzero(p)) { arenaTouched++; arenaHigh = p - top + 1; }
       // The allocator's segment record sits at the reserve's end: the high-water mark leaves out the last 64 KiB.
-      for (let p = reserve, end = memory.buffer.byteLength / 4096; p < end; p++) {
+      for (let p = reserve, end = top; p < end; p++) {
         if (!nonzero(p)) continue;
         touched++;
         if (p < end - 16) high = p - reserve + 1;
         const b = Math.floor((p - reserve) / 8192);
         buckets[b] = (buckets[b] ?? 0) + 1 / 256;
       }
-      return { belowBytes: below * 4096, reserveBytes: memory.buffer.byteLength - reserve * 4096, touchedBytes: touched * 4096, highBytes: high * 4096, buckets: Array.from(buckets, (x) => Math.round(x ?? 0)) };
+      return { belowBytes: below * 4096, reserveBytes: top * 4096 - reserve * 4096, touchedBytes: touched * 4096, highBytes: high * 4096, buckets: Array.from(buckets, (x) => Math.round(x ?? 0)), arenaBytes: arena, arenaTouchedBytes: arenaTouched * 4096, arenaHighBytes: arenaHigh * 4096 };
     },
     cpu: ex.vm_cpu(vm, 0),
     /** Byte address of vCPU 0's `vm::Counters` in `memory` (u64s, read with Atomics.load; its PC word is vCPU 0's). */

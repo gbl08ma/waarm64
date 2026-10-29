@@ -117,6 +117,16 @@ const dmesg = gunzipSync(Buffer.from((await runLines('dmesg | gzip -9c | base64 
 writeFileSync(`${out}/dmesg.txt`, dmesg);
 results.kernel = (await runLines('dmesg --level=emerg,alert,crit,err,warn | tail -100')).filter(Boolean);
 if ((results.kernel as string[]).length) log('kernel', (results.kernel as string[]).length, 'warnings or worse: dmesg.txt');
+// What the core's heap and (Venus) the renderer's arena touched by the end (web/vm.ts `heapUse`; MiB).
+results.memory = await s.page.evaluate(async () => {
+  const w = window as unknown as { __heap?: Record<string, number>; __webpcHeap?: () => void };
+  w.__heap = undefined;
+  w.__webpcHeap?.();
+  for (let i = 0; i < 100 && !w.__heap; i++) await new Promise((r) => setTimeout(r, 50));
+  const h = w.__heap;
+  return h && Object.fromEntries(['highBytes', 'touchedBytes', 'arenaBytes', 'arenaTouchedBytes', 'arenaHighBytes'].map((k) => [k.replace('Bytes', 'MiB'), Math.round(h[k] / 2 ** 20 * 10) / 10]));
+});
+log('memory', JSON.stringify(results.memory));
 // Fewer statuses than cases: dEQP stopped (a crash, or LIMIT_S); the next case is where.
 const done = Object.values(results.counts as Record<string, number>).reduce((a, b) => a + b, 0);
 if (done < (results.cases as number)) {

@@ -8,6 +8,7 @@
 import type { ShaderCache } from './venus-cache.ts';
 import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps, type L9Suspect } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
+import { VENUS_ARENA } from './ram.ts';
 import { WindowWatch } from './window.ts';
 
 /** Where the module finds the window: its address in memory 0, its bytes, and the write-watch's words. */
@@ -91,6 +92,7 @@ type Exports = {
   venus_resource_data(ctx: number, res: number): number;
   venus_resource_texture(ctx: number, res: number): number;
   venus_build_id(): number;
+  venus_arena_base(): number;
   venus_alloc(size: number): number;
   venus_free(p: number): void;
 };
@@ -199,7 +201,12 @@ export class VenusRenderer {
       wasi_snapshot_preview1: wasi(memory),
       wasi: { 'thread-spawn': () => -1 },
     };
+    // A module linked at another arena would write its data over the core's heap as it is instantiated: one built before
+    // the arena became 255 MiB has no `venus_arena_base` (refused before that); a later one says where it is linked.
+    const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't linked at its arena (${(2 ** 32 - VENUS_ARENA).toString(16)}): rebuild it (vk/build.sh)`;
+    if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_base')) throw new Error(stale);
     const instance = await WebAssembly.instantiate(module, imports);
+    if ((instance.exports as unknown as Exports).venus_arena_base() >>> 0 !== 2 ** 32 - VENUS_ARENA) throw new Error(stale);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();

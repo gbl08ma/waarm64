@@ -171,11 +171,8 @@ export function deviceShm(d: DeviceSpec): bigint {
   return d.type === 'gpu' && d.virgl && d.venus ? 1n : 0n;
 }
 
-/** The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and mapped memory. */
-export const VENUS_WINDOW = 256 << 20;
-
-/** The renderer's arena at memory 0's top on such a machine (vk/gen.ts links the module at 4 GiB less this). */
-export const VENUS_ARENA = 256 << 20;
+// A Venus machine's window and renderer arena in memory 0 (web/ram.ts, beside the split they move).
+export { VENUS_ARENA, VENUS_WINDOW } from './ram.ts';
 
 /** virtio::DeviceEntry's first five u64s and the initial config space. */
 export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Array } {

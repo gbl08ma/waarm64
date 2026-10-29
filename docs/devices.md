@@ -497,8 +497,10 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 - **The renderer** ([vk/README.md](../vk/README.md); web/venus-host.ts `VenusRenderer`): virglrenderer's `vkr` and our
   Vulkan driver (Mesa's runtime) in one wasm module (`vk/build.sh` → `target/vk/venus.wasm`), which the GPU worker
   fetches on the device's `venus-init` and instantiates **on the VM's memory 0**, at a fixed arena at its top
-  (`VENUS_ARENA`, 256 MiB at 0xF000_0000: a Venus machine's memory 0 is 4 GiB, RAM, then the window, then the arena;
-  web/vm.ts). So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
+  (web/ram.ts `VENUS_ARENA`, 255 MiB at 0xF010_0000: a Venus machine's memory 0 is 4 GiB, RAM, then the window, then
+  the arena; web/vm.ts). With the 256 MiB window that leaves 2,560 MiB of RAM in memory 0 (the page's 2.5 GiB, one
+  NUMA node); dEQP-VK's whole pass list takes the arena to 137 MiB. web/venus-host.ts refuses a module linked
+  elsewhere (`venus_arena_base`): one built for the 256 MiB arena would write its data over the core's heap. So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
   vkr's threads are polls: a submit, a notify, a completion or a fenced command polls the rings, and the worker keeps
   polling while one is active or a submit is in flight (`venus_poll`; web/venus-host.ts `VenusPoll`: turns ~0.25 ms
   apart on `Atomics.waitAsync`'s timeout, never a nested `setTimeout`, whose ~4.5 ms clamp made every fence late, VK3

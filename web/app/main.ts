@@ -1597,6 +1597,8 @@ function syncMachineMenu() {
   ui.size.ramMiB = ramMiB;
   ui.size.split = ramSplit;
   ui.size.gpu = want3d ? '3d' : '2d';
+  // A machine with Vulkan keeps Venus's window and arena in memory 0: its split (the toolbar's note) moves.
+  ui.size.vulkan = want3d && wantsVulkan();
   ui.size.cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
   ui.size.ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
   ui.size.gpuLock = !webgl2 ? 'This browser has no WebGL2: 2D only' : gpuAsked ? `Set by the page's address (?gpu=${params.get('gpu')})` : '';

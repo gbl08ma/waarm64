@@ -141,7 +141,7 @@
   let ram0Input = $state<HTMLInputElement>();
   let nodesInput = $state<HTMLInputElement>();
   function customSplit(on: boolean) {
-    draft!.ramSplit = on ? ramSplitMiB(draft!.ramMiB) : undefined;
+    draft!.ramSplit = on ? ramSplitMiB(draft!.ramMiB, undefined, !!draft!.vulkan) : undefined;
     splitProblem = '';
     dirty = true;
   }
@@ -378,7 +378,7 @@
               <label>Name <input bind:value={draft.name} data-field="name"></label>
               <label>vCPUs <select bind:value={draft.ncpus} data-field="ncpus">{#each CPU_CHOICES as n}<option value={n}>{n}</option>{/each}</select></label>
               <label>RAM <select bind:value={draft.ramMiB} data-field="ram" disabled={!!draft.ramSplit} title={draft.ramSplit ? 'The sum of the split below' : ''}>{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}>{n} MiB</option>{/each}</select></label>
-              {#if numaNote(draft.ramMiB, draft.ramSplit)}<p class="note warn" data-numa>{numaNote(draft.ramMiB, draft.ramSplit)}</p>{/if}
+              {#if numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}<p class="note warn" data-numa>{numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}</p>{/if}
               <details class="advanced" data-ram-split open={!!draft.ramSplit}>
                 <summary>Memory split (advanced)</summary>
                 <Check checked={!!draft.ramSplit} onchange={customSplit} field="custom-split">Set the split myself</Check>

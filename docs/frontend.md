@@ -238,9 +238,9 @@ address opens it, so a reload keeps it): **Back to the machine** (or a view butt
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
 Open on this page (for the page's own machine, **Start** while it's off, "Running on this page" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
-- **Settings:** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the
-  rest goes to spill memories that the guest sees as NUMA nodes, slower to reach, and a note under the choice says
-  so: [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
+- **Settings:** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB (2,560 MiB on a
+  machine with Vulkan: Venus's window and arena share memory 0), the rest goes to spill memories that the guest sees
+  as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
   is), **Memory split (advanced)**, closed unless the machine has one: *Set the split myself* starts from the
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,

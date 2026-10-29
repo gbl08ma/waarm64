@@ -32,9 +32,10 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   has moved since; its symbols are renamed (`vkr_util_*`, a generated header of `#define`s from the native objects'
   `nm`) so both link into one module. So `glue.c` declares the driver's two symbols itself instead of including the
   driver's headers.
-- **The link:** `--import-memory --shared-memory --max-memory=4GiB`, `--global-base=0xF0000000`, `--no-stack-first`
-  and a 4 MiB stack: the module's data, stack and heap live in the arena at memory 0's top (256 MiB at 0xF000_0000, web/devices.ts
-  `VENUS_ARENA`), which web/vm.ts keeps free on a Venus machine. Its `sbrk` (`vk/wasi/arena.c`) starts at
+- **The link:** `--import-memory --shared-memory --max-memory=4GiB`, `--global-base=0xF0100000` (4 GiB less web/ram.ts
+  `VENUS_ARENA`, vk/gen.ts), `--no-stack-first` and a 4 MiB stack: the module's data, stack and heap live in the arena
+  at memory 0's top (255 MiB at 0xF010_0000), which web/vm.ts keeps free on a Venus machine; `venus_arena_base` says
+  where it is linked, and the host refuses a module without it or linked elsewhere (docs/devices.md "Venus"). Its `sbrk` (`vk/wasi/arena.c`) starts at
   `__heap_end`, past dlmalloc's initial region, and grows up to 4 GiB without `memory.grow`. wasm-ld puts the stack
   first by default (memory 0's bottom 4 MiB, whatever `--global-base` says): VK1's and L1's modules wrote memory 0
   there with every call, and the guest's kernel oopsed (zeroed AppArmor objects, a zeroed stack frame) once the

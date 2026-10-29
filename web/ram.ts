@@ -45,6 +45,19 @@ export const HEAP_FLOOR = 1 << 30;
  */
 export const MAX_MEMORY0_RAM = 2 ** 32 - HEAP_FLOOR - (1 << 20);
 
+/** The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and mapped memory. */
+export const VENUS_WINDOW = 256 << 20;
+
+/**
+ * The renderer's arena at memory 0's top on such a machine (vk/gen.ts links the module at 4 GiB less this). 255 MiB,
+ * not 256, so that the page's 2,560 MiB fits memory 0 with the window (a 1 MiB NUMA node otherwise); dEQP-VK's whole
+ * pass list takes it to 137 MiB (bench/vulkan/REPORT.md "The renderer's arena").
+ */
+export const VENUS_ARENA = 255 << 20;
+
+/** What memory 0 holds on a Venus machine beside RAM, the heap and the scratch page: `splitRam`'s `reserve` there. */
+export const VENUS_RESERVE = VENUS_WINDOW + VENUS_ARENA;
+
 /** The largest spill memory (a whole wasm32 memory) and how many a machine has at most (core/src/mem.rs `MAX_SPILL`). */
 export const MAX_SPILL_BYTES = 2 ** 32;
 export const MAX_SPILL = 8;

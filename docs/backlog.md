@@ -942,16 +942,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   what a decoder asked for (WebCodecs doesn't say what it got; Chromium's `prefer-hardware` fails rather than fall back,
   so a decoding stream asked for it is in practice hardware); per-vCPU bars scale to the run's peak, not a fixed scale.
   The editor is mouse- and keyboard-driven (drag, Alt+←/→, Delete); touch drag isn't handled (HTML5 drag and drop).
-- **A Venus machine of 2,560 MiB has a 1 MiB NUMA node** (VK3, REPORT.md "VK3: the NVIDIA run for L9"): memory 0
-  holds `MAX_MEMORY0_RAM` (3,071 MiB) less a Venus machine's 512 MiB (`VENUS_WINDOW` + `VENUS_ARENA`,
-  web/app/worker.ts), so `splitRam` spills whatever is past 2,559 MiB. At 2,560 MiB (guest-session.ts's default, so
-  every Venus run of the tools; any user's 2.5 GiB machine with Vulkan) that is 1 MiB: node 1, all its pages
-  unavailable to the kernel, "SLUB: Unable to allocate memory from node 1 … Allocating a useless per node structure"
-  at boot, a second node that turns on the distro's NUMA machinery (balancing, which our SMBIOS credential turns off
-  only under systemd) and spill-memory plumbing for nothing. Harmless otherwise (the same on every host). Ways out:
-  RAM sizes that keep a Venus machine in memory 0 (2,559 MiB or less) or a spill memory of at least, say, 256 MiB
-  (the Machines page's choices and the tools' default); or memory 0's reserve made smaller. A machine's split is
-  guest-visible and a snapshot's layout: the user's call.
 - **A ramdisk as swap, set up for the user** (the user's idea, 2026-10-18): an option on a ramdisk in the Machines
   screen's disks menu that formats it as swap and turns it on in the guest, with nothing to do inside. The host can
   write the swap header itself (`mkswap`'s format: a fixed page with `SWAPSPACE2`, a label and the size) and hand the

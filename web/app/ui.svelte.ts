@@ -86,7 +86,7 @@ export const ui = $state({
   /** The microphone's state (web/audio.ts `micState`), for the status bar. */
   mic: 'off',
   /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
-  size: { ncpus: 1, ramMiB: 1024, split: undefined as number[] | undefined, gpu: '3d' as '3d' | '2d', cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
+  size: { ncpus: 1, ramMiB: 1024, split: undefined as number[] | undefined, gpu: '3d' as '3d' | '2d', vulkan: false, cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
   /** Bumped when the store's records change (the toolbar's snapshot list rereads). */
   records: 0,
   /**

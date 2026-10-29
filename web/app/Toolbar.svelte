@@ -52,7 +52,7 @@
   // It shows what runs, except while it's open (a choice being made).
   $effect(() => { const [n, r, g] = [ui.size.ncpus, ui.size.ramMiB, ui.size.gpu]; if (!sizeOpen) [ncpus, ramMiB, gpu] = [n, r, g]; });
   /** The note for a size past memory 0 (its NUMA nodes); the running split (`?split=`) while the size is unchanged. */
-  const numa = $derived(numaNote(Number(ramMiB), Number(ramMiB) === ui.size.ramMiB ? ui.size.split : undefined));
+  const numa = $derived(numaNote(Number(ramMiB), Number(ramMiB) === ui.size.ramMiB ? ui.size.split : undefined, ui.size.vulkan));
   const ramText = (n: number) => (n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`);
 
   const VIEWS: { v: View; icon: 'device-desktop' | 'terminal-2' | 'layout-columns'; title: string }[] = [

@@ -283,6 +283,10 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   assert.deepEqual(ramSplitMiB(16384), [3071, 4096, 4096, 4096, 1025]);
   assert.deepEqual(ramSplitMiB(2048, [1024, 1024]), [1024, 1024]);
   assert.equal(numaNote(2560), undefined);
+  // With Vulkan, memory 0 also holds Venus's window and arena (as web/app/worker.ts splits it).
+  assert.equal(numaNote(2560, undefined, true), undefined);
+  assert.deepEqual(ramSplitMiB(4096, undefined, true), [2560, 1536]);
+  assert.match(numaNote(4096, undefined, true)!, /^2560 MiB of it is the machine's fast memory; the guest gets the other 1536 MiB/);
   assert.match(numaNote(4096)!, /^3071 MiB of it is the machine's fast memory; the guest gets the other 1025 MiB as a second NUMA node/);
   assert.match(numaNote(8192)!, /as 2 more NUMA nodes/);
   assert.match(numaNote(2048, [1024, 1024])!, /other 1024 MiB as a second NUMA node/);

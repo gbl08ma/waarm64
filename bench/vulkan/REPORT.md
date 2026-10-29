@@ -941,7 +941,7 @@ NVIDIA's: the guest kernel prints it at 0.000000 s on every host. The session's 
 memory 0 holds 3,071 MiB of RAM less Venus's 512 MiB (its window and renderer, web/app/worker.ts), so `splitRam` put
 the last 1 MiB in a spill memory: a NUMA node of 1 MiB whose pages are all unavailable to the kernel ("On node 1, zone
 Normal: … pages in unavailable ranges"), so SLUB's per-node structure for it comes from node 0. Filed (docs/backlog.md
-"A Venus machine of 2,560 MiB has a 1 MiB NUMA node"). The runs kept no guest kernel log unless they timed out:
+"A Venus machine of 2,560 MiB has a 1 MiB NUMA node"; fixed since: "The renderer's arena"). The runs kept no guest kernel log unless they timed out:
 deqp-run.ts now saves it (`dmesg.txt`, its warnings in results.json's `kernel`; SwiftShader's boot with the same
 node: `results/vk3/nvidia-l9b/swiftshader-memory/dmesg.txt`).
 
@@ -2168,6 +2168,22 @@ in `results/vk3/l73/`.
   the set's 64 spare slots, added on the GPU); 5 the restore test blind; 6 shared atomics filling the storage with a
   barrier under an `if` (the word borrowed through atomics); 7 the face split now only where both faces use the value
   that differs (the reorder left is inherent: one WebGPU reference); 8 a pool destroyed under a pending submit.
+
+## The renderer's arena: 255 MiB, so a 2.5 GiB machine with Vulkan has one NUMA node
+
+**2026-10-29**, after VK3 (the dev VM, SwiftShader, Chromium 153.0.8010.52; `results/arena/`). A Venus machine's memory
+0 holds the core's heap (at least 1 GiB), the scratch page and fw_cfg's files (1 MiB), RAM, Venus's 256 MiB window and
+the renderer's arena; with a 256 MiB arena 2,559 MiB of RAM fit, so the page's 2.5 GiB (and guest-session.ts's
+default) spilled 1 MiB into a NUMA node all of whose pages the kernel can't use ("SLUB: Unable to allocate memory from
+node 1", `dmesg-256.txt`). The arena's use, from web/vm.ts `heapUse` (now counting it apart): dEQP-VK's whole pass
+list (4,725 cases, all passing) took its high-water mark to **137.1 MiB** of 256 (28.5 MiB of its pages touched;
+`deqp-vk-256.json`), `memory.binding.regular.*` 34.3 MiB. So the arena is **255 MiB** (web/ram.ts `VENUS_ARENA`, the
+module linked at 0xF010_0000), 118 MiB above the most seen; the window, which the guest sees, stays. A 2,560 MiB
+Vulkan machine now boots with one node ("NUMA: Faking a node", SLUB `Nodes=1`, `dmesg-255.txt`; its memory binding
+group passes, `memory-binding-255.json`); 4 GiB with Vulkan splits 2,560 + 1,536 MiB. A snapshot keeps its own split,
+so one taken before restores onto 2,559 + 1. The host refuses a renderer module linked elsewhere (`venus_arena_base`,
+checked before instantiating: an old module would write its data over the core's heap), and the Machines page's and
+the toolbar's NUMA note now count Venus's share of memory 0.
 
 ## Tools
 

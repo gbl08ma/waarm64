@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import type { GpuCaps, L9Suspect } from '../web/venus-gpu.ts';
 import { VenusRenderer } from '../web/venus-host.ts';
 import { VENUS_CAPSET_WORDS } from '../web/venus.ts';
+import { VENUS_ARENA } from '../web/ram.ts';
 
 const MODULE = new URL('../target/vk/venus.wasm', import.meta.url);
 const skip = !existsSync(MODULE) && 'SKIPPED: run vk/build.sh';
@@ -25,13 +26,21 @@ test("the renderer's capset is the one the device advertises", { skip }, async (
   assert.deepEqual([...new Uint32Array(v.capset.buffer, v.capset.byteOffset, v.capset.length / 4)], VENUS_CAPSET_WORDS);
 });
 
+// A module built before the arena became 255 MiB is linked 1 MiB lower, over the core's heap: refused before it is
+// instantiated (it would write its data there), by its missing `venus_arena_base`.
+test('a renderer module not linked at the arena is refused', async () => {
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const old = new WebAssembly.Module(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+  await assert.rejects(VenusRenderer.create(old, memory, { at: 0, bytes: 0, watch: 0 }), /isn't linked at its arena \(f0100000\): rebuild it/);
+});
+
 test("a blob's bytes move into the window at its map and back at its unmap", { skip }, async () => {
   const { v, memory, window } = await renderer();
   v.call({ t: 'vctx', id: 7, create: true, name: 'test' });
   // Shared memory (blob id 0, mappable): vkr's own storage, in the arena at memory 0's top.
   v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 0n, size: 8192 });
   const storage = v.address(3);
-  assert.ok(storage >= 0xf000_0000, `storage at ${storage.toString(16)}`);
+  assert.ok(storage >= 2 ** 32 - VENUS_ARENA, `storage at ${storage.toString(16)}`);
   const u8 = new Uint8Array(memory.buffer);
   u8.set([1, 2, 3, 4], storage);
   v.call({ t: 'blob-map', res: 3, offset: 0x4000 });

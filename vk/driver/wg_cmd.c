@@ -3303,14 +3303,15 @@ wg_device_register(struct wg_device *dev, bool add)
    return false;
 }
 
-/* Whether [p, p + size) is memory the renderer may write: the host-visible window or its own arena (memory 0's top
- * 256 MiB). Anything else would be guest RAM. */
+/* Whether [p, p + size) is memory the renderer may write: the host-visible window or its own arena (from the base the
+ * module is linked at, vk/gen.ts, to memory 0's top). Anything else would be guest RAM. */
+extern unsigned char __global_base;
 static bool
 writable(const uint8_t *p, uint64_t size)
 {
    const uintptr_t a = (uintptr_t)p;
    const bool ok = (a >= wg_window_at && a + size <= wg_window_at + wg_window_bytes) ||
-                   (a >= 0xf0000000u && a + size <= 0x100000000ull);
+                   (a >= (uintptr_t)&__global_base && a + size <= 0x100000000ull);
    if (!ok)
       fprintf(stderr, "wg: a completion's write to %#lx (+%llu) is outside the window and the arena: dropped\n",
               (unsigned long)a, (unsigned long long)size);

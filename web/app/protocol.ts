@@ -227,7 +227,7 @@ export type FromWorker =
   | { type: 'profile'; samples: [string, number][] }
   /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
   /** `heap`'s answer (web/vm.ts `heapUse`). */
-  | { type: 'heap'; heap: { belowBytes: number; reserveBytes: number; touchedBytes: number; highBytes: number; buckets: number[] } }
+  | { type: 'heap'; heap: { belowBytes: number; reserveBytes: number; touchedBytes: number; highBytes: number; buckets: number[]; arenaBytes: number; arenaTouchedBytes: number; arenaHighBytes: number } }
   | { type: 'timeline'; timeline: Timeline }
   | { type: 'stopped' };
 

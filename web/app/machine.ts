@@ -4,7 +4,7 @@
 // benchmarks' guest on it; `buildroot` is the small test guest, for the page's
 // smoke test (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
 // nothing here depends on the dev server's layout beyond where target/ is.
-import { MAX_MEMORY0_RAM, splitError, splitRam } from '../ram.ts';
+import { MAX_MEMORY0_RAM, splitError, splitRam, VENUS_RESERVE } from '../ram.ts';
 
 export type Machine = {
   /** Its name on the page. */
@@ -156,11 +156,12 @@ export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 4096, 6144, 8192, 12288
 export const MEMORY0_MIB = MAX_MEMORY0_RAM / 2 ** 20;
 /**
  * A machine's split, MiB: memory 0 first, then each spill memory. `split` is the user's own (a stored machine's
- * `ramSplit`, `?split=`); without it, memory 0 as large as it goes and spill memories of up to 4 GiB.
+ * `ramSplit`, `?split=`); without it, memory 0 as large as it goes (less Venus's window and arena on a machine with
+ * Vulkan, as web/app/worker.ts splits it) and spill memories of up to 4 GiB.
  */
-export function ramSplitMiB(ramMiB: number, split?: number[]): number[] {
+export function ramSplitMiB(ramMiB: number, split?: number[], vulkan = false): number[] {
   if (split) return split;
-  const s = splitRam(ramMiB * 2 ** 20);
+  const s = splitRam(ramMiB * 2 ** 20, vulkan ? VENUS_RESERVE : 0);
   return [s.ramSize, ...s.spill].map((n) => n / 2 ** 20);
 }
 /** Why `split` (MiB, memory 0 first) isn't one a machine can have, for the user; undefined when it is. */
@@ -169,8 +170,8 @@ export function ramSplitError(split: number[]): string | undefined {
   return splitError(split[0] * 2 ** 20, split.slice(1).map((n) => n * 2 ** 20));
 }
 /** The note for a machine whose RAM goes past memory 0: undefined when it all fits there. */
-export function numaNote(ramMiB: number, split?: number[]): string | undefined {
-  const [m0, ...spill] = ramSplitMiB(ramMiB, split);
+export function numaNote(ramMiB: number, split?: number[], vulkan = false): string | undefined {
+  const [m0, ...spill] = ramSplitMiB(ramMiB, split, vulkan);
   if (!spill.length) return undefined;
   const nodes = spill.length === 1 ? 'a second NUMA node' : `${spill.length} more NUMA nodes`;
   return `${m0} MiB of it is the machine's fast memory; the guest gets the other ${ramMiB - m0} MiB as ${nodes}, slower to reach (each access goes through the emulator's slow path), which Linux uses once the first node is full.`;

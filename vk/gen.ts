@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { VENUS_ARENA } from '../web/ram.ts';
 
 const [W, SDK] = process.argv.slice(2).map((p) => resolve(p));
 if (!W || !SDK) throw new Error('usage: gen.ts <target/vk> <wasi-sdk>');
@@ -147,8 +148,9 @@ compile(`${HERE}/wasi/os_misc_virgl.c`, ['-include', PREFIX]);
 compile(`${HERE}/wasi/arena.c`, []);
 compile(`${HERE}/glue.c`, [...vkrFlags, `-I${HERE}/driver`]);
 
-// The module runs on memory 0 at the arena (vk/README.md): data and stack at its fixed base, the heap after them.
-const ARENA = 0xf000_0000;
+// The module runs on memory 0 at the arena (vk/README.md): data and stack at its fixed base (memory 0's top less
+// web/ram.ts VENUS_ARENA, 0xF010_0000), the heap after them.
+const ARENA = 2 ** 32 - VENUS_ARENA;
 const EXPORTS = [`${HERE}/glue.c`, `${HERE}/compiler/wgsl_test.c`, `${HERE}/driver/wg_test.c`].flatMap((f) => readFileSync(f, 'utf8').match(/^EXPORT[^(]*\b(\w+)\(/gm)!.map((l) => l.match(/(\w+)\($/)![1]));
 const link = `$cxx --target=wasm32-wasip1-threads --sysroot=${SDK}/share/wasi-sysroot -mexec-model=reactor -O2 ` +
   '-mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false -Wl,--gc-sections ' + (process.env.VK_NAMES ? '' : '-Wl,--strip-all ') +
