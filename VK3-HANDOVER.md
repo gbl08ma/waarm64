@@ -6,6 +6,14 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-29, the bundle for L9's NVIDIA run)
+
+- **Built** by the supervisor from a clean checkout at 2850df53 (after L9b): `target/vk3-nvidia-bundle-2850df53.tar`
+  (4.7 GiB, BUNDLE.txt "from 2850df53e735"). The user's run: `VK2_STEPS="l9 l9b" bench/vulkan/nvidia.sh page <the
+  bundle> ~/webpc-vk2` (~20 min). It answers L9a's suspects (`l9`: which `vkl9=` arm brings a frame's
+  `Queue::Submit` back to ~1.6 ms) and L9b's two cases (`l9b`). Then: fix what `l9` names (or look past the
+  suspects), and close the track (step 6 below). The old bundle (c8087cb0) is the user's to delete.
+
 ## State (2026-10-29, after L9b)
 
 - **`textureprojlodoffset…isampler2d_vec4_fragment`: a Venus defect, fixed.** An integer texture's explicit LOD was
