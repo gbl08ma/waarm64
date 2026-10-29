@@ -771,10 +771,11 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
-## VK3: the summary — Venus right on NVIDIA, the adapter's features and §4's emulated rows, the user's NVIDIA run outstanding
+## VK3: the summary — Venus right on NVIDIA, the adapter's features and §4's emulated rows
 
-**2026-10-28, at the track's end (L8).** VK3 ran 2026-10-26 to 10-28 as loops under a supervisor
-(`VK3-KICKOFF.md`, `VK3-HANDOVER.md` in git history), three of the user's NVIDIA runs and eight out-of-context reviews
+**2026-10-28, at the track's end (L8); closed 2026-10-29 after the user's final NVIDIA runs and L9.** VK3 ran 2026-10-26
+to 10-29 as loops under a supervisor (`VK3-KICKOFF.md`, `VK3-HANDOVER.md`: `git show 1fce4c0a:VK3-HANDOVER.md`,
+"Things worth not re-discovering"), five of the user's NVIDIA runs and eight out-of-context reviews
 between them. Each loop's section below has its numbers; JSON in `results/vk3/<loop>/`. Hosts: the dev VM's SwiftShader
 (Chromium 153.0.8010.52), the M4 (Metal, Chrome for Testing 153.0.8010.12, macOS 26.6.2) and the user's RTX 3070
 (NVIDIA 615.71.09, Arch's Chromium 153.0.8010.52; Dawn on Vulkan, ANGLE on NVIDIA's GL).
@@ -799,6 +800,7 @@ between them. Each loop's section below has its numbers; JSON in `results/vk3/<l
 | L7.4 | ANGLE's ES3 row (13 uniform buffers a stage, the last vertex provoking, transform feedback, attachment-less passes): WebGL 2 on Venus in the guest's Chromium | `l74/` |
 | L7.5 | vkd3d's row (draw parameters): vkd3d 1.19 makes a feature level 11_0 device | `l75/` |
 | L7a, L7b | the reviews after L7: one count of the bindings WebGPU takes, the advertised limits from it, a pipeline past them refused saying why; the rest (odd 16-bit index ranges, indirect draws captured, `interpolateAt*`, …) | `l7a/`, (L7b: tests) |
+| L9a, L9b | the final NVIDIA run's findings: Venus's submits done ~2 ms later there than at L4e, located in Dawn's `Queue::Submit` (the GPU process's CPU), not reproduced elsewhere, none of the suspects (`?gpu=vkl9=`): filed; an integer texture's explicit LOD clamped to its levels (NVIDIA read past them as zeros); a completion that throws no longer completes later submits early | `l9a/`, `l9b/`, `nvidia-final/`, `nvidia-l9/`, `nvidia-l9b/` |
 | L8a | the track-end review: copies and blits within one buffer or subresource (WebGPU refuses them), the provoking vertex's and a capture's index ranges bounded to the draw's, attachment-less passes at the pipelines' samples (secondaries in them too), descriptor copies keeping immutable samplers; its 5th wrong (Vulkan forbids xfb across a suspend) | (tests) |
 
 dEQP-VK's pass list grew from VK2's 1,463 cases to **4,690** (`tests/deqp/vk.txt`), with **773** more for YCbCr
@@ -808,17 +810,18 @@ dEQP-VK's pass list grew from VK2's 1,463 cases to **4,690** (`tests/deqp/vk.txt
 
 | gate item | SwiftShader and the M4 | the user's NVIDIA desktop |
 | --- | --- | --- |
-| vkcube and mpv on Vulkan visible and right on the page's screen | **met**: every way right on the M4 (`l1/mac-ways.json`; a broken bitmap way dropped for canvas, `l1/mac-bitmap-broken.json`), readback on SwiftShader (`l1/swiftshader-nvidia-sh.json`) | **met** at 5b9654ac and 4fdc69fb: vkcube and mpv right in every way, the page on bitmap (`nvidia/present/`, `nvidia-l4e/present/`) |
-| mpv meets its bar (no drops, the guest ≤ 19–27% busy) | **met** on the M4: 0 dropped, 14 and 13% busy, synchronous presents and the advanced path on (`l4e/mpv-mac-sync.json`) | **met** at 4fdc69fb: 0 dropped, 14 and 12% (`nvidia-l4e/mpv/`) |
-| VK0's scene no dearer a frame than virgl at every size | **met**: M4 1 fish 0.85–0.88 against 0.87–0.96 ms, 1,000 fish 2.50–2.55 against 4.55–4.61, toolkit 0.81 against 3.27–3.46 (`l2/scene-mac-*`; L6b's bind groups the same or lower, `l6b/bind-groups/`); SwiftShader 10.0 against 10.4–13.1 at 1 fish (`l2/scene-swiftshader-*`) | **1,000 fish and the toolkit met** (5.7 against 8.7–8.9 ms; 3.05–3.19 against 6.81–7.43: `nvidia-l4e/scene-*`); **1 fish not** (2.5 against 1.5), parked by the user: the scene clause is held at 1,000 fish and the toolkit |
-| the programs' replays within their tolerances | **met**: vkcube, vkmark's 13 scenes, vkQuake (1.7%, tolerance 3%) in `ci-deqp-vk.sh` on SwiftShader (below; `l6c/vkquake-fix.json`); the M4's as in VK2 (`../vk2/l5/`) | **met** at 4fdc69fb (`nvidia-l4e/replay/`) |
-| each emulated row: its dEQP-VK groups in the pass list | **met**: Dawn's 173 cases (L7.1) and `interpolateAt*`'s 18 (L7b), ANGLE's ES3 175 (L7.4), vkd3d's 73 (L7.5), YCbCr's 773 (L7.2) | at 4fdc69fb none of them existed: the next run's `deqp` step |
-| each emulated row: the program it brings runs right | ANGLE's ES3 in the guest's Chromium: right against ANGLE on virgl's GL (`l74/angle-es3.json`; 205 for 156 with Chromium's own Vulkan device too, an sRGB view: filed); vkd3d: a device at 11_0, its draw tests pass, three tests fail on filed gaps (`l75/vkd3d.json`); **Dawn's program not run** (the guest's Mesa hands back fd 0 for opaque-fd semaphores: backlog); GTK4 takes GL by itself, GSK on Vulkan (forced) right but under GTK4's bar (`l73/`). Not as replays against lavapipe: the programs' own checks | the next run's `rows` step |
-| pipelines: a second run pays no compile its first paid | **met** for the translation on both (vkQuake 271 → 12 ms on SwiftShader, 228 → 9 on the M4; across a restart 11 ms on the M4, `l3/`); the browser's compile kept across a restart on Metal (vkQuake's 17 ready in 18 ms), not on SwiftShader | **met** at f55eacd7 and 4fdc69fb: warm across a restart 25 ms, 0 misses, Chromium's pipelines ready in 74 ms (`nvidia-l2b/pipelines-*`, `nvidia-l4e/pipelines-*`) |
+| vkcube and mpv on Vulkan visible and right on the page's screen | **met**: every way right on the M4 (`l1/mac-ways.json`; a broken bitmap way dropped for canvas, `l1/mac-bitmap-broken.json`), readback on SwiftShader (`l1/swiftshader-nvidia-sh.json`) | **met** at 5b9654ac, 4fdc69fb and c8087cb0: vkcube and mpv right in every way, the page on bitmap (`nvidia/present/`, `nvidia-l4e/present/`, `nvidia-final/present/`) |
+| mpv meets its bar (no drops, the guest ≤ 19–27% busy) | **met** on the M4: 0 dropped, 14 and 13% busy, synchronous presents and the advanced path on (`l4e/mpv-mac-sync.json`) | **met** at 4fdc69fb: 0 dropped, 14 and 12% (`nvidia-l4e/mpv/`); at c8087cb0 0 and 1 dropped of 538 and 532, 14 and 12% (`nvidia-final/mpv/`) |
+| VK0's scene no dearer a frame than virgl at every size | **met**: M4 1 fish 0.85–0.88 against 0.87–0.96 ms, 1,000 fish 2.50–2.55 against 4.55–4.61, toolkit 0.81 against 3.27–3.46 (`l2/scene-mac-*`; L6b's bind groups the same or lower, `l6b/bind-groups/`); SwiftShader 10.0 against 10.4–13.1 at 1 fish (`l2/scene-swiftshader-*`) | **1,000 fish and the toolkit met** (5.7 against 8.7–8.9 ms; 3.05–3.19 against 6.81–7.43: `nvidia-l4e/scene-*`); **1 fish not** (2.5 against 1.5), parked by the user: the scene clause is held at 1,000 fish and the toolkit; at c8087cb0 still met there (6.0–6.4 against 9.0; 4.3 against 6.8–7.0) but Venus 5–40% dearer than at 4fdc69fb (its submits done ~2 ms later: "VK3: the final NVIDIA run", filed) |
+| the programs' replays within their tolerances | **met**: vkcube, vkmark's 13 scenes, vkQuake (1.7%, tolerance 3%) in `ci-deqp-vk.sh` on SwiftShader (below; `l6c/vkquake-fix.json`); the M4's as in VK2 (`../vk2/l5/`) | **met** at 4fdc69fb and c8087cb0 (`nvidia-l4e/replay/`, `nvidia-final/replay/`) |
+| each emulated row: its dEQP-VK groups in the pass list | **met**: Dawn's 173 cases (L7.1) and `interpolateAt*`'s 18 (L7b), ANGLE's ES3 175 (L7.4), vkd3d's 73 (L7.5), YCbCr's 773 (L7.2) | **met** at c8087cb0 but for 2 cases: 4,624 of 4,690 pass (64 NotSupported: ASTC/ETC2, a subgroup size), 773 of 773; the integer texture's LOD fixed in L9b (passes at 2850df53), `memory.binding.*.buffer_1048577` fails there only (filed) (`nvidia-final/deqp-*`, `nvidia-l9b/`) |
+| each emulated row: the program it brings runs right | ANGLE's ES3 in the guest's Chromium: right against ANGLE on virgl's GL (`l74/angle-es3.json`; 205 for 156 with Chromium's own Vulkan device too, an sRGB view: filed); vkd3d: a device at 11_0, its draw tests pass, three tests fail on filed gaps (`l75/vkd3d.json`); **Dawn's program not run** (the guest's Mesa hands back fd 0 for opaque-fd semaphores: backlog); GTK4 takes GL by itself, GSK on Vulkan (forced) right but under GTK4's bar (`l73/`). Not as replays against lavapipe: the programs' own checks | **as on SwiftShader** at c8087cb0: ANGLE's probe the same, vkd3d the same counts (`nvidia-final/rows-*`) |
+| pipelines: a second run pays no compile its first paid | **met** for the translation on both (vkQuake 271 → 12 ms on SwiftShader, 228 → 9 on the M4; across a restart 11 ms on the M4, `l3/`); the browser's compile kept across a restart on Metal (vkQuake's 17 ready in 18 ms), not on SwiftShader | **met** at f55eacd7, 4fdc69fb and c8087cb0: warm across a restart 0 misses (`nvidia-l2b/pipelines-*`, `nvidia-l4e/pipelines-*`, `nvidia-final/pipelines-*`) |
 
-So the gate is met on SwiftShader and the M4 but for Dawn's program, and on NVIDIA at 4fdc69fb (after L4e) but for 1
-fish (parked); **L5–L7b's changes (the adapter's features, the driver's gaps, the emulated rows, the binding count)
-haven't run on NVIDIA**: the user's final run (`bench/vulkan/nvidia.sh page`, below) is outstanding.
+So the gate is met on SwiftShader and the M4 but for Dawn's program, and on the user's NVIDIA desktop (the final runs:
+c8087cb0's code, then L9's at 2850df53) but for 1 fish (parked) and one NVIDIA-only dEQP-VK group (filed); the
+adapter's subgroups of 32 are right there and not held. Left open, by the user's call (2026-10-29): Venus's submits
+done ~2 ms later on NVIDIA than at 4fdc69fb (docs/backlog.md "Venus's submits ~2 ms later on NVIDIA since 4fdc69fb").
 
 **The numbers the kickoff asked for:**
 - *The fence's breakdown:* on the M4 and SwiftShader in "VK3 L2" (`l2/`: the guest's fence 4.32 → 1.05 ms at 1 fish
@@ -925,6 +928,22 @@ its dedicated twin) again after `memory.binding.regular.*`, and deqp-vk exits at
 in 1 s). Fixed: the list names each case once, deqp-run.ts drops duplicates, and the step reads the list from the
 checkout and runs on a page already unpacked (the bundle deleted). On SwiftShader the list runs (230 cases, both
 cases Pass, every not-passed case outside the pass list, `results/vk3/nvidia-l9/swiftshader-l9b.json`).
+
+**`l9b` again** (the user, from the page already unpacked; `results/vk3/nvidia-l9b/`): 230 cases, 79 pass, 61 fail, 90
+NotSupported. **`textureprojlodoffset.clamp_to_edge.isampler2d_vec4_fragment` passes** (L9b's fix confirmed).
+`memory.binding.regular.suballocated.buffer_1048577` still fails, with its dedicated, overallocated and aliasing
+twins: the only cases that pass on SwiftShader and fail here (the rest fail on both and are outside the pass list),
+with no completion trap this time and dEQP's message not kept (DETAIL's 20 lines went to the texture cases; since,
+`DETAIL_MATCH`). Filed (docs/backlog.md "`memory.binding.*.buffer_1048577` fails on NVIDIA").
+
+**"SLUB: Unable to allocate memory from node 1"**, which the user saw on the guest's console in that run, isn't
+NVIDIA's: the guest kernel prints it at 0.000000 s on every host. The session's machine has 2,560 MiB and Vulkan, and
+memory 0 holds 3,071 MiB of RAM less Venus's 512 MiB (its window and renderer, web/app/worker.ts), so `splitRam` put
+the last 1 MiB in a spill memory: a NUMA node of 1 MiB whose pages are all unavailable to the kernel ("On node 1, zone
+Normal: … pages in unavailable ranges"), so SLUB's per-node structure for it comes from node 0. Filed (docs/backlog.md
+"A Venus machine of 2,560 MiB has a 1 MiB NUMA node"). The runs kept no guest kernel log unless they timed out:
+deqp-run.ts now saves it (`dmesg.txt`, its warnings in results.json's `kernel`; SwiftShader's boot with the same
+node: `results/vk3/nvidia-l9b/swiftshader-memory/dmesg.txt`).
 
 ## VK3 L9a: the submit-to-done regression on NVIDIA — not on the M4 or SwiftShader; Dawn's `Queue::Submit` 1 ms dearer there, the suspects switchable for the next run
 

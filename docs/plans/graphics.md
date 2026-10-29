@@ -287,8 +287,8 @@ for the programs that switch. The user decides whether VK1 starts.
 - **VK3, emulation in §4's order:** each row a translation pass with its dEQP-VK groups as its gate and §4's
   render-pass rule applied; GTK4's row (YCbCr, modifiers) only once VK1's gate holds for it. First, from VK2: Venus's
   frames on NVIDIA, libplacebo's advanced path, the adapter's features the translator still lacked, the driver's gaps
-  dEQP-VK found, and pipelines made asynchronously with a cache across runs. **Done 2026-10-28 but for the user's
-  NVIDIA run** (REPORT.md "VK3: the summary"; vk/README.md): NVIDIA's black was the device's vendor ID (Venus's guest
+  dEQP-VK found, and pipelines made asynchronously with a cache across runs. **Done 2026-10-29** (REPORT.md "VK3: the
+  summary"; vk/README.md): NVIDIA's black was the device's vendor ID (Venus's guest
   WSI takes Mesa's prime blit for 0x10de, whose frames aren't shared), and a GPU way of presenting is now checked at
   its first copies; the fence's floor was the host's (a clamped `setTimeout(0)` poller, Dawn's late look at a done
   submit); pipelines compile on Dawn's workers and translated shaders persist (a program's second run translates
@@ -306,11 +306,14 @@ for the programs that switch. The user decides whether VK1 starts.
   can't always hide (one count of the bindings it takes now sets the limits, and a pipeline past them is refused;
   usage scopes per GPUBuffer remain: §7); an adapter's compiler can be wrong (Chromium's Metal path and a ballot in an
   `if`), so a feature is checked at run time where a cheap kernel can tell; and **out-of-context static reviews find
-  what loops miss** (~80 findings over eight reviews, most of them real): each subsystem gets one. **On NVIDIA**, as of
-  4fdc69fb (after L4e): presentation right in every way, mpv at its bar, the replays and pipelines right, Venus ahead of
-  virgl at 1,000 fish and the toolkit but not at 1 fish (2.5 against 1.5 ms: Chromium notices a lone pass done ~2.2 ms
-  late there; parked by the user). What L5–L7b changed hasn't run there: the user's final run
-  (`bench/vulkan/nvidia.sh page`, with dEQP-VK's lists and the rows' programs on NVIDIA for the first time).
+  what loops miss** (~80 findings over eight reviews, most of them real): each subsystem gets one. **On NVIDIA**, by the
+  user's final runs (c8087cb0, then L9's at 2850df53): presentation right in every way, mpv's frames right with the
+  adapter's subgroups of 32 (right, not held), the replays, pipelines and the rows' programs as on SwiftShader,
+  dEQP-VK's lists 4,624 of 4,690 and 773 of 773 (NotSupported: ASTC/ETC2 and a subgroup size; L9b fixed an integer
+  texture's LOD past its levels; `memory.binding.*.buffer_1048577` fails there only: backlog). Venus is ahead of
+  virgl at 1,000 fish and the toolkit, not at 1 fish (parked by the user), but its submits are done ~2 ms later than
+  at L4e (a frame 5–40% dearer), not on the M4 or SwiftShader and none of L9a's suspects: filed (backlog "Venus's
+  submits ~2 ms later on NVIDIA since 4fdc69fb", the user's call, 2026-10-29).
 - **VK4, breadth and the default** (proposed; the user decides whether it starts): snapshots while Vulkan is in use
   (state as data, as for virgl: objects, device memory and the window read back); the programs of A that VK3 left
   short: Dawn in the guest's Chromium (a guest Mesa change for opaque-fd semaphores, or Chromium exporting sync files),
