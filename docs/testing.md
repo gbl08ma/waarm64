@@ -58,7 +58,11 @@ only edits docs: `.md` files or code comments):
   `bench/gpu/deqp-run.ts vk`, `PASSED=1`), and since VK4 T1 of a census's (every 100th case of the whole list, `STRIDE=400`
   at four offsets, `DETAIL` for every case that didn't pass, classed by `bench/vulkan/census.ts`: bench/vulkan/REPORT.md
   "VK4 T1"); what fails is in docs/backlog.md "The Vulkan driver's gaps", by cause. A case
-  that crashes deqp-vk is recorded as `Crash` and the run goes on from the next one.
+  that crashes deqp-vk is recorded as `Crash` and the run goes on with the cases not recorded yet (also when deqp-vk
+  dies between cases); deqp-vk's other lines (an assertion's, its watchdog's) are kept in
+  `results.output`, and `WATCHDOG=disable` lifts its 30 s limit on a case's steps to time a slow one. Dawn zeroes
+  workgroup memory with Tint's own loop on these runs (`--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`):
+  SwiftShader's take of Vulkan's extension costs ~17 s of compile for a 16 KiB array (VK4 T2).
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
   them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).

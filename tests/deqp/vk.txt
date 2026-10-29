@@ -56,6 +56,11 @@
 # every texturelodoffset and textureprojlodoffset clamp_to_edge isampler and usampler case that passes (35 more), at the end.
 # VK4 T1: the census (every 100th case of vk-main.txt, bench/vulkan/REPORT.md "VK4 T1"): every case of it that passed and
 # wasn't in the list (2,401; memory's random allocations left out, as above), in mustpass order, at the end.
+# VK4 T2: the renderer's robustness. Every case that passes of api.external.memory's opaque_fd and dma_buf groups (the
+# guest's export imported again aliases its memory) and of zero_initialize_workgroup_memory.max_workgroup_memory
+# (Dawn's own zero-init on SwiftShader: deqp-run.ts), at the end. memory.allocation.random and
+# memory.mapping.suballocation.random pass since dead contexts' objects are destroyed, but take the renderer's arena to
+# 241 of its 255 MiB: out until host-visible memory has a heap the arena backs (VK4 T19).
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -7182,3 +7187,87 @@ dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind.with_template.uniform
 dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind.with_template.uniform_buffer_dynamic.vertex.multiple_descriptor_sets.multiple_arbitrary_descriptors.offset_view_nonzero_dynamic_zero
 dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind.with_template.uniform_buffer_dynamic.vertex_fragment.single_descriptor.offset_view_nonzero_dynamic_zero
 dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind.with_template.uniform_texel_buffer.vertex_fragment.multiple_discontiguous_descriptor_sets.descriptor_array.offset_zero
+
+dEQP-VK.api.external.memory.dma_buf.dedicated.buffer.bind_export_import_bind
+dEQP-VK.api.external.memory.dma_buf.dedicated.buffer.export_bind_import_bind
+dEQP-VK.api.external.memory.dma_buf.dedicated.buffer.export_import_bind_bind
+dEQP-VK.api.external.memory.dma_buf.dedicated.buffer.info
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.dup
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.dup2
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.dup3
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.fd_properties
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.import_multiple_times
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.import_twice
+dEQP-VK.api.external.memory.dma_buf.dedicated.device_only.send_over_socket
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.dup
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.dup2
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.dup3
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.export_multiple_times
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.fd_properties
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.import_multiple_times
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.import_twice
+dEQP-VK.api.external.memory.dma_buf.dedicated.host_visible.send_over_socket
+dEQP-VK.api.external.memory.dma_buf.dedicated.image.info
+dEQP-VK.api.external.memory.dma_buf.suballocated.buffer.bind_export_import_bind
+dEQP-VK.api.external.memory.dma_buf.suballocated.buffer.export_bind_import_bind
+dEQP-VK.api.external.memory.dma_buf.suballocated.buffer.export_import_bind_bind
+dEQP-VK.api.external.memory.dma_buf.suballocated.buffer.info
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.dup
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.dup2
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.dup3
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.export_multiple_times
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.fd_properties
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.import_multiple_times
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.import_twice
+dEQP-VK.api.external.memory.dma_buf.suballocated.device_only.send_over_socket
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.dup
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.dup2
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.dup3
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.export_multiple_times
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.fd_properties
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.import_multiple_times
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.import_twice
+dEQP-VK.api.external.memory.dma_buf.suballocated.host_visible.send_over_socket
+dEQP-VK.api.external.memory.dma_buf.suballocated.image.info
+dEQP-VK.api.external.memory.opaque_fd.dedicated.buffer.bind_export_import_bind
+dEQP-VK.api.external.memory.opaque_fd.dedicated.buffer.export_bind_import_bind
+dEQP-VK.api.external.memory.opaque_fd.dedicated.buffer.export_import_bind_bind
+dEQP-VK.api.external.memory.opaque_fd.dedicated.buffer.info
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.dup
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.dup2
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.dup3
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.export_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.import_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.import_twice
+dEQP-VK.api.external.memory.opaque_fd.dedicated.device_only.send_over_socket
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.dup
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.dup2
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.dup3
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.export_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.import_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.import_twice
+dEQP-VK.api.external.memory.opaque_fd.dedicated.host_visible.send_over_socket
+dEQP-VK.api.external.memory.opaque_fd.dedicated.image.info
+dEQP-VK.api.external.memory.opaque_fd.suballocated.buffer.bind_export_import_bind
+dEQP-VK.api.external.memory.opaque_fd.suballocated.buffer.export_bind_import_bind
+dEQP-VK.api.external.memory.opaque_fd.suballocated.buffer.export_import_bind_bind
+dEQP-VK.api.external.memory.opaque_fd.suballocated.buffer.info
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.dup
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.dup2
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.dup3
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.export_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.import_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.import_twice
+dEQP-VK.api.external.memory.opaque_fd.suballocated.device_only.send_over_socket
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.dup
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.dup2
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.dup3
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.export_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.import_multiple_times
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.import_twice
+dEQP-VK.api.external.memory.opaque_fd.suballocated.host_visible.send_over_socket
+dEQP-VK.api.external.memory.opaque_fd.suballocated.image.info
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.1
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.16
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.4
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.64

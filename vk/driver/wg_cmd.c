@@ -3077,7 +3077,7 @@ is_wg_timeline(const struct vk_sync *sync)
 static bool
 wait_met(const struct vk_sync_wait *w)
 {
-   if (!is_wg_timeline(w->sync))
+   if (!w->sync || !is_wg_timeline(w->sync))
       return true;
    const struct wg_sync *s = (const struct wg_sync *)w->sync;
    return s->value >= w->wait_value || s->pending >= w->wait_value;
@@ -3191,6 +3191,8 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    util_dynarray_init(&s->signals, NULL);
    util_dynarray_init(&s->queries, NULL);
    for (uint32_t i = 0; i < signal_count; i++) {
+      if (!signals[i].sync)
+         continue;
       util_dynarray_append_typed(&s->signals, struct vk_sync_signal, signals[i]);
       if (is_wg_timeline(signals[i].sync)) {
          struct wg_sync *sync = (struct wg_sync *)signals[i].sync;
@@ -3269,6 +3271,23 @@ wg_submits_forget_pool(struct wg_device *dev, const struct wg_query_pool *pool)
       util_dynarray_foreach (&s->queries, struct query_readback, q)
          if (q->pool == pool)
             q->pool = NULL;
+}
+
+/* For the driver's tests (wg_test.c): the syncs held submits signal or wait on. */
+int wg_held_syncs(void);
+int
+wg_held_syncs(void)
+{
+   int n = 0;
+   for (uint32_t i = 0; i < 16; i++)
+      if (devices[i])
+         list_for_each_entry (struct held, h, &devices[i]->held, link) {
+            for (uint32_t k = 0; k < h->signal_count; k++)
+               n += h->signals[k].sync != NULL;
+            for (uint32_t k = 0; k < h->wait_count; k++)
+               n += h->waits[k].sync != NULL;
+         }
+   return n;
 }
 
 /* For the driver's tests (wg_test.c). */
@@ -3440,7 +3459,8 @@ complete(uint32_t serial)
                gpu_readback_copy(q->slot, &q->pool->values[q->lo], (q->hi - q->lo) * 8);
          wg_completed_serial = serial;
          util_dynarray_foreach (&s->signals, struct vk_sync_signal, sig)
-            vk_sync_signal(&dev->vk, sig->sync, sig->signal_value);
+            if (sig->sync)
+               vk_sync_signal(&dev->vk, sig->sync, sig->signal_value);
          submit_free(s);
          if (wg_submitted)
             wg_submitted();
@@ -3470,9 +3490,29 @@ wg_sync_init(struct vk_device *device, struct vk_sync *sync, uint64_t initial_va
    return VK_SUCCESS;
 }
 
+/* A sync destroyed while a submit still names it (a fence or semaphore freed before its work is done, as a context's
+ * teardown does, or a guest that doesn't wait) leaves it: its completion would signal freed memory through its type's
+ * functions (NVIDIA's trap in wg_complete, VK3 L9b), and a held submit's wait on it is met. */
 static void
 wg_sync_finish(struct vk_device *device, struct vk_sync *sync)
 {
+   for (uint32_t i = 0; i < 16; i++) {
+      struct wg_device *dev = devices[i];
+      if (!dev)
+         continue;
+      list_for_each_entry (struct wg_submit, s, &dev->pending, link)
+         util_dynarray_foreach (&s->signals, struct vk_sync_signal, sig)
+            if (sig->sync == sync)
+               sig->sync = NULL;
+      list_for_each_entry (struct held, h, &dev->held, link) {
+         for (uint32_t k = 0; k < h->signal_count; k++)
+            if (h->signals[k].sync == sync)
+               h->signals[k].sync = NULL;
+         for (uint32_t k = 0; k < h->wait_count; k++)
+            if (h->waits[k].sync == sync)
+               h->waits[k].sync = NULL;
+      }
+   }
 }
 
 static VkResult

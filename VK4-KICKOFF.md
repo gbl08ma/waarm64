@@ -60,7 +60,16 @@ T2–T14; the rest of the order is judgement, said with each.
   (`api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16`,
   `api.external.memory.opaque_fd.dedicated.device_only.dup2`, on both hosts). *Done:* each
   reproduced and fixed, or bounded with a test; the crashing groups in the list. *Start:* backlog "Memory",
-  "Compute", "A trap in the module's completion", "Venus's contexts outlive a virtio reset".
+  "Compute", "A trap in the module's completion", "Venus's contexts outlive a virtio reset". **Blocked on T19**
+  (2026-10-29, REPORT.md "VK4 T2"; VK4-HANDOVER.md "T2"). Done: a dead context's objects are destroyed in the driver
+  (they leaked: a 17th device failed, the cause of the "crashes after earlier cases"); the guest's export imported
+  again aliases its memory (every supported `api.external.memory` case passes; was fatal); a sync freed while a submit
+  names it is dropped (likely NVIDIA's `wg_complete` trap: confirm in the next NVIDIA run); a virtio reset ends
+  Venus's contexts; the memory budget filled; `max_workgroup_memory` was SwiftShader's 17 s compile of Vulkan's
+  zero-init (dEQP-VK's runs use Tint's); `r12x4` is 34 s of synchronous queries past dEQP's watchdog (T13). The list
+  7,126 → 7,209. Left: host-visible memory's arena (255 MiB) can't back its 2 GiB heap, so `memory.*.random` (241 MiB
+  of it) stays out of the list; a 128 MiB heap of its own failed GFXReconstruct's 1 GiB rule. Back to it once T19 gives
+  the arena room for a ~1 GiB host-visible heap.
 - **T3. Usage scopes** (L): the driver binds a `VkDeviceMemory` as one GPUBuffer, so a pass or dispatch that reads
   and writes storage of one memory through different bindings fails WebGPU's validation and is dropped. Every
   sub-allocating program meets it (VMA: most engines, DXVK, vkd3d) once its shaders write storage. The fix: a
@@ -80,6 +89,24 @@ T2–T14; the rest of the order is judgement, said with each.
 - **T6. Synchronization's failures** (S–M): `synchronization*.timeline_semaphore.device_host.*` fails 41 of 110
   ("Memory contents don't match"): a host thread copying between iterations through a timeline semaphore, likely
   a real ordering bug. *Done:* the cause, a test, the group in the list. *Start:* backlog "Synchronization".
+
+- **T19. The renderer out of memory 0** (L; added 2026-10-29 by the user, next): Vulkan takes 511 MiB of memory 0
+  (the 256 MiB window and the renderer's 255 MiB arena), so a machine with Vulkan has 2,560 MiB of fast RAM against
+  3,071 without, and the arena is too small to back a host-visible heap programs accept (~1 GiB: T2). The goal: Vulkan
+  costs memory 0 no RAM, and host-visible memory has an arena that backs a heap of ~1 GiB or more. The renderer is C
+  for wasm32 (Mesa, vkr: one linear memory) and reads Venus's rings and command streams in the window in place, so
+  the window and the arena go together; the guest writes every Vulkan command into the window, so where the window
+  lives decides what its writes cost. **Measure first, then choose**, by the guest's cost on Venus's frame workloads
+  (vkcube, mpv on Vulkan, GTK4 on Vulkan: bench/run.ts rules) and memory 0's RAM:
+  (a) the window and the arena in the renderer's own wasm32 memory, reached by the guest through a JIT arm as spill
+  memory 1 is (every Vulkan machine's commands then take that path, not only NUMA machines'); (b) as (a), with all
+  spill RAM in one memory64 behind a generic arm (none through the interpreter); (c) memory 0 as memory64 (a wasm64
+  core, an i64 ABI; the renderer off memory 0 anyway); others the measurements suggest. With M0.5's kernels re-run for
+  memory64 on the current Chromium (backlog "Re-measure memory64 against the alternatives"). *Done:* memory 0's RAM
+  with Vulkan as without, a host-visible heap the arena backs (then T2's random groups in the list), the chosen
+  layout's cost on the workloads measured against today's. *Start:* docs/devices.md "The host-visible window",
+  docs/spill-memories.md, docs/architecture.md "Guest memory: layout A", bench/spike/memory/REPORT.md, vk/README.md
+  "The build", web/ram.ts, web/vm.ts `bootVm`.
 
 ### Tier 2: what's advertised and missing (API 1.3), and wrong pixels programs meet
 

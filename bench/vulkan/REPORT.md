@@ -771,6 +771,47 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T2 (blocked on T19): the renderer's robustness — dead contexts leaked their devices, imports of our own exports were fatal
+
+**2026-10-29**, the dev VM's SwiftShader (Chromium 153.0.8010.52); JSON in `results/vk4/t2/`. What took Vulkan down
+for the guest, each reproduced through `bench/gpu/deqp-run.ts vk` (`CASES`) and fixed:
+
+- **A context destroyed with objects left them in the driver.** vkr destroys a dead context's devices, memories and
+  syncs in the driver only on the render server's worker thread (natively each context is a process, whose exit frees
+  them); in our one module every killed or crashed program leaked its devices, and the 17th failed to be made ("wg:
+  more than 16 devices at once"), with its host-visible memory left in the arena. So the cases after a few crashes
+  failed too: dEQP-VK's runs met "crashes after enough earlier cases" (`memory.*.random`, T1's `r12x4`). vkr's patch
+  now takes the worker thread's way (without its idle wait, which the driver can't make).
+- **The guest's export imported again** (`api.external.memory.{opaque_fd,dma_buf}`, T1's `dup2`): our blobs are shared
+  memory without fds, which vkr's import refused; the guest allocates without waiting for the result, so its later
+  free named a memory vkr never made ("vkFreeMemory resulted in CS error"), fatal for the context. 8 of the group's
+  first 12 cases crashed and the run stopped there (`before-extmem.json`); now such an import aliases the exported
+  memory (vkr passes its handle as an opaque fd; the driver counts references), and every one of the group's 80
+  supported cases passes (16 image cases aren't offered).
+- **Host-visible memory on a 2 GiB heap the arena can't back** (open: T2 is blocked on T19). dEQP's random
+  allocations keep up to an eighth of each heap allocated, so up to 256 MiB of host-visible memory in a 255 MiB arena:
+  the 300 `memory.*.random` cases pass in one run, with the arena's high-water mark at **241.4 MiB** (`one-heap.json`);
+  a little more, and an allocation fails as above. A heap of its own of 128 MiB for host-visible memory took the same
+  run to **99.3 MiB** (`heap128.json`) and passed both dEQP-VK lists, but every program replay failed: GFXReconstruct
+  maps a host-visible type only onto a heap of at least 1 GiB (smaller ones it takes for a discrete GPU's BAR window,
+  `portability.cpp` `kMinHeapSize`), and VMA and DXVK budget alike. Reverted: the one heap stays, and the random groups
+  stay out of the list until the arena can back a heap of ~1 GiB, which needs the renderer out of memory 0 (T19). The
+  memory budget (`VK_EXT_memory_budget`, advertised but unfilled before) now reports the heap and its use.
+- **A sync freed while a submit names it**: a held submit's replay (a timeline wait met later) signalled a destroyed
+  fence through its freed type, `RuntimeError: function signature mismatch` in Node (`tests/venus-renderer.test.ts`);
+  NVIDIA's one-off "table index is out of bounds" in `wg_complete` (VK3 L9b) is the likely same. Destroyed syncs are
+  dropped from pending and held submits now.
+- **A virtio reset kept Venus's contexts**: the rebooted guest's contexts, whose ids vkr already had, weren't made.
+- **`max_workgroup_memory.*`** "crashed": SwiftShader compiles a pipeline with a 16 KiB zero-initialized workgroup array
+  in **16.8–17.3 s** through Vulkan's zero-init extension, which Dawn uses where the device has it, against **19 ms**
+  with Tint's own loop (the extension disabled; `bench/results/local/t2/wgmem.ts`, workgroup sizes 1, 64 and 247 alike;
+  a 64-element array: 72 ms); with dEQP's other compiles, past its 30 s watchdog. dEQP-VK's runs disable the extension.
+- **`image_format_properties2.2d.optimal.r12x4_unorm_pack16`** isn't a crash: a YCbCr format adds `DISJOINT` to the
+  case's create flags, ~340,000 synchronous queries, and the case passes in **34 s** with the watchdog off
+  (`r12x4-nowatchdog.json`): ~0.1 ms a round trip through Venus's ring, T13's concern; out of the list.
+
+The pass list 7,126 → 7,209 cases (the external memory and the workgroup memory).
+
 ## VK4 T1: a census of dEQP-VK — 17% of the supported cases fail, two in five of them the samplers'
 
 **2026-10-29.** JSON in `results/vk4/t1/` (`swiftshader/`, `m4/`: one file a boot; `census.json`: every case that

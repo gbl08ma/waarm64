@@ -494,6 +494,9 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   context's destruction hold their reply until the host has run them, fence flag or not.
 - Snapshots are refused while a Venus context exists ("the machine is using Vulkan (Venus), whose state can't be saved
   yet"; docs/backlog.md).
+- A virtio reset (a guest reboot) ends every Venus context, with its blobs, imports and objects
+  (web/venus-host.ts `VenusRenderer.reset`; VK4 T2): vkr refuses a context id it has, so the rebooted guest's
+  contexts weren't made, and the old rings would have been polled over memory the new guest reuses.
 - **The renderer** ([vk/README.md](../vk/README.md); web/venus-host.ts `VenusRenderer`): virglrenderer's `vkr` and our
   Vulkan driver (Mesa's runtime) in one wasm module (`vk/build.sh` → `target/vk/venus.wasm`), which the GPU worker
   fetches on the device's `venus-init` and instantiates **on the VM's memory 0**, at a fixed arena at its top

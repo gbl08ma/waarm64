@@ -140,6 +140,8 @@ export class VenusRenderer {
   private readonly owner = new Map<number, number>();
   /** Virgl resources imported into Venus contexts ("ctx:res"). */
   private readonly imported = new Set<string>();
+  /** The contexts made and not destroyed (a virtio reset destroys them: `reset`). */
+  private readonly contexts = new Set<number>();
   /** Fences sent to vkr and not yet retired ("ctx:ring:id"). */
   private readonly pending = new Set<string>();
   /** When each pending fence was sent (performance.now()), for the stuck-fence warning (`watchFences`). */
@@ -301,14 +303,11 @@ export class VenusRenderer {
       case 'vctx':
         if (c.create) {
           const name = new TextEncoder().encode(c.name ?? '');
-          if (this.withBytes(name, (p) => this.ex.venus_context_create(c.id, p, name.length))) this.stats.contexts++;
-          else console.warn(`venus: context ${c.id} couldn't be made`);
-        } else {
-          this.ex.venus_context_destroy(c.id);
-          this.stats.contexts--;
-          for (const [res, ctx] of this.owner) if (ctx === c.id) this.owner.delete(res);
-          for (const k of this.imported) if (k.startsWith(`${c.id}:`)) this.imported.delete(k);
-        }
+          if (this.withBytes(name, (p) => this.ex.venus_context_create(c.id, p, name.length))) {
+            this.stats.contexts++;
+            this.contexts.add(c.id);
+          } else console.warn(`venus: context ${c.id} couldn't be made`);
+        } else this.destroy(c.id);
         return;
       case 'blob':
         if (this.ex.venus_resource_create(c.ctx, c.res, c.blobId, BigInt(c.size), c.flags)) this.owner.set(c.res, c.ctx);
@@ -356,6 +355,30 @@ export class VenusRenderer {
         return;
       }
     }
+  }
+
+  /** Destroys a context with its blobs, imports and fences (vkr frees what it holds). */
+  private destroy(id: number) {
+    if (!this.contexts.delete(id)) return;
+    this.ex.venus_context_destroy(id);
+    this.stats.contexts--;
+    for (const [res, ctx] of this.owner) if (ctx === id) this.owner.delete(res);
+    for (const k of this.imported) if (k.startsWith(`${id}:`)) this.imported.delete(k);
+    for (const k of this.pending) {
+      if (!k.startsWith(`${id}:`)) continue;
+      this.pending.delete(k);
+      this.sentAt.delete(k);
+    }
+  }
+
+  /**
+   * A virtio reset (a guest reboot): every context ends, so the new guest's contexts can take the same ids and no old
+   * ring is polled over memory the new guest reuses. Returns the blobs that went with them.
+   */
+  reset() {
+    const blobs = [...this.owner.keys()];
+    for (const id of [...this.contexts]) this.destroy(id);
+    return blobs;
   }
 
   /** A blob's bytes' address in memory 0 now (its storage, or the window while mapped), 0 for none. */

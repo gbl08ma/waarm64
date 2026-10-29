@@ -242,6 +242,9 @@ struct wg_device_memory {
     * VA-API surface's plane, whose bytes the GPU worker writes into the textures of images bound here
     * (gpu_texture_import; web/venus-import.ts). 0: not imported. */
    uint32_t import_res;
+   /* Imports of it besides itself (the guest's own export imported again: an opaque fd, wg_AllocateMemory), each
+    * freed as one: the memory goes with the last. */
+   uint32_t aliases;
 };
 
 /* The texture of the shared image bound to a memory, or 0 (glue.c's venus_resource_texture). */

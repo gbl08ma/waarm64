@@ -215,6 +215,11 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     }
     if (c.t === 'unref') imports?.unref(c.id);
     else if (c.t === 'reset' || c.t === 'load') imports?.reset();
+    if (c.t === 'reset') {
+      // Venus's contexts end with the guest that made them (calls still waiting for the renderer were the old guest's).
+      if (venusBacklog) venusBacklog.length = 0;
+      for (const res of venus?.reset() ?? []) share?.forget(res);
+    }
     const t0 = performance.now();
     try {
       runCall(c, renderer, screen);

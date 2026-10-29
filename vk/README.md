@@ -192,7 +192,13 @@ of one invocation (bench/vulkan/REPORT.md "VK3 L5").
 - `glue.c`: the exports the GPU worker calls (`venus_init`, `venus_capset`, contexts, submits and fences, resources
   and their map and unmap, `venus_poll`, the heap), and two imports: `venus_retire` (a fence retired) and
   `venus_submitted` (a queue submit ran: the window's written pages are taken then).
-- `vk/patches/vkr-wasm.patch`: the polls; device memory as vkr's own `aligned_alloc` storage, imported into the driver
+- `vk/patches/vkr-wasm.patch`: the polls; a context destroyed with objects destroys them in the driver (vkr does so
+  on the render server's worker thread only, natively each context's process exits: here a killed program's devices
+  stayed, and the 17th failed to be made; VK4 T2), without the idle wait before (the driver can't block: its
+  `vkDestroyDevice` drops pending work); a blob of the context's own imported again (the guest's opaque-fd or dma-buf
+  export of a memory, imported) names that memory's handle as an opaque fd, which the driver takes as one more
+  reference to it (`wg_device_memory.aliases`), and an import that can't be made (the memory freed) is a memory of its
+  own, not an error the guest would only meet at its free; device memory as vkr's own `aligned_alloc` storage, imported into the driver
   as a host pointer (`VkImportMemoryHostPointerInfoEXT`) and exported as a blob of shared memory with no fd; a blob's
   map into the window copies its storage there and rebinds the driver's memory to it (`vkr_wasi_memory_moved` →
   `wg_memory_rebind`), an unmap copies it back (wasm can't remap pages). A memory freed while its blob lives hands the
@@ -236,7 +242,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
   listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types (device-local; host-visible, coherent, cached and
-  device-local) on a 2 GiB heap, one queue family. `tests/venus-renderer.test.ts` checks it against the Mac's and
+  device-local) on a 2 GiB heap, whose budget reports what's allocated from it (VK4 T2). Host-visible memory's bytes
+  are in the arena (255 MiB with the module's own heap), which the heap doesn't say: a guest past it meets an
+  allocation the renderer can't make (docs/backlog.md "Memory"; a heap the arena backs waits for VK4 T19). One queue
+  family. `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
 - **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
   tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
@@ -494,7 +503,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   at once, ahead of held ones: vkr retires the guest's ring fences with such submits, and the guest's driver waits for
   them before it reuses its command streams, so holding them held the guest before it could send the host's signal
   (`synchronization*.timeline_semaphore.wait.host_wait_before_signal` hung the guest so); such a submit signals early,
-  as every submit did before.
+  as every submit did before. A sync destroyed while a pending or held submit names it (a context's teardown, a guest
+  that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
+  the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
+  mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).
 - **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, border colours and mirror-once, component
   swizzles, sampling 3D images through 2D views, integer textures sampled with a sampler's address modes (fetched at clamp-to-edge, from the level an explicit LOD selects within the view's: VK3 L9b), copies
   between formats, multi-view.

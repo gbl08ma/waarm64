@@ -14,7 +14,7 @@
 // DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names;
 // DETAIL_NOTSUPPORTED=1: NotSupported ones too, their reasons), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
-// LIMIT_S=<seconds the guest may run dEQP, default 1500>, PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
+// LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -31,6 +31,10 @@ const STRIDE = Number(process.env.STRIDE ?? 50);
 const OFFSET = Number(process.env.OFFSET ?? 0);
 const LIMIT_S = Number(process.env.LIMIT_S ?? 1500);
 const CAPTURE = process.env.CAPTURE;
+// Dawn zeroes workgroup memory through Vulkan's VK_KHR_zero_initialize_workgroup_memory where the device has it, which
+// costs SwiftShader ~17 s of compile for a 16 KiB array (VK4 T2: `max_workgroup_memory.*` timed out, a crash); Tint's
+// own loop instead takes 19 ms. Both zero it; Metal has no such extension.
+if (vk) process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`;
 const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4' });
 const { log, pasteSerial, rootShell, run, runLines } = s;
 const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET };
@@ -77,25 +81,26 @@ await pasteSerial(String.raw`cat > /tmp/deqp.sh <<'EOF'
 cd /mnt/vdb/deqp/API
 echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
 start=$(date +%s)
-: > /tmp/deqp.res; : > /tmp/deqp.qpa; cp /tmp/cases.txt /tmp/rest.txt
+: > /tmp/deqp.res; : > /tmp/deqp.qpa; : > /tmp/deqp.out; cp /tmp/cases.txt /tmp/rest.txt
 while [ -s /tmp/rest.txt ]; do
   left=$(( LIMIT - ($(date +%s) - start) )); [ $left -gt 0 ] || break
   : > /tmp/deqp.cur
   timeout $left COMMAND \
     --deqp-log-filename=/tmp/deqp.part.qpa --deqp-log-images=IMAGES \
-    --deqp-log-shader-sources=disable --deqp-watchdog=enable --deqp-archive-dir=/mnt/vdb/deqp/API 2>&1 |
-    awk '/^Test case /{name=$3; sub(/^\047/, "", name); sub(/\047\.\.$/, "", name); t=systime(); print name > "/tmp/deqp.cur"; close("/tmp/deqp.cur"); next} /^  (Pass|Fail|NotSupported|QualityWarning|CompatibilityWarning|InternalError|Crash|Timeout|ResourceError) \(/{print name, $1, systime()-t; fflush(); name=""; printf "" > "/tmp/deqp.cur"; close("/tmp/deqp.cur")}' >> /tmp/deqp.res
+    --deqp-log-shader-sources=disable --deqp-watchdog=WATCHDOG --deqp-archive-dir=/mnt/vdb/deqp/API 2>&1 |
+    awk '/^Test case /{name=$3; sub(/^\047/, "", name); sub(/\047\.\.$/, "", name); t=systime(); print name > "/tmp/deqp.cur"; close("/tmp/deqp.cur"); next} /^  (Pass|Fail|NotSupported|QualityWarning|CompatibilityWarning|InternalError|Crash|Timeout|ResourceError) \(/{print name, $1, systime()-t; fflush(); name=""; printf "" > "/tmp/deqp.cur"; close("/tmp/deqp.cur"); next} !/^(  |$|Test run totals|Writing test log|DEQP Main|Testing |Test case duration)/ {print name ": " $0 >> "/tmp/deqp.out"; fflush("/tmp/deqp.out")}' >> /tmp/deqp.res
   cat /tmp/deqp.part.qpa >> /tmp/deqp.qpa 2>/dev/null
   cur=$(cat /tmp/deqp.cur)
-  [ -n "$cur" ] || break
   left=$(( LIMIT - ($(date +%s) - start) )); [ $left -gt 0 ] || break
-  echo "$cur Crash 0" >> /tmp/deqp.res
-  n=$(grep -n -x -F "$cur" /tmp/cases.txt | head -1 | cut -d: -f1)
-  [ -n "$n" ] || break
-  tail -n +$((n + 1)) /tmp/cases.txt > /tmp/rest.txt
+  [ -z "$cur" ] || echo "$cur Crash 0" >> /tmp/deqp.res
+  # On with the cases not recorded yet (dEQP runs them in its own order, not the list's, and may also die between
+  # cases, none running: e.g. a device lost at a case's end), until a run records nothing.
+  before=$(wc -l < /tmp/rest.txt)
+  awk 'NR == FNR {done[$1] = 1; next} !($0 in done)' /tmp/deqp.res /tmp/cases.txt > /tmp/rest.txt
+  [ "$(wc -l < /tmp/rest.txt)" -lt "$before" ] || break
 done
 echo "elapsed $(( $(date +%s) - start ))"
-EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('COMMAND', command.replace('/tmp/cases.txt', '/tmp/rest.txt')));
+EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '/tmp/rest.txt')));
 const t0 = performance.now();
 const elapsed = await run('sh /tmp/deqp.sh', (LIMIT_S + 120) * 1000);
 const seconds = (performance.now() - t0) / 1000;
@@ -112,6 +117,8 @@ results.notPassed = statuses.filter(([, st]) => st !== 'Pass').map(([name, st]) 
 if (process.env.PASSED) results.passed = statuses.filter(([, st]) => st === 'Pass').map(([name]) => name);
 results.slowest = await runLines('sort -k3 -n -r /tmp/deqp.res | head -10');
 results.last = await run('tail -3 /tmp/deqp.res');
+// deqp's own lines besides the statuses (an assertion's or a crash's message, prefixed with the case running), the last 40.
+results.output = (await runLines('tail -40 /tmp/deqp.out')).filter(Boolean);
 // The guest kernel's log, whole, as <out>/dmesg.txt (gzipped through the terminal), and its warnings and worse in
 // results.kernel: a run that ends in time kept none of it (VK3 L9: a SLUB allocation failure seen on the screen only).
 const dmesg = gunzipSync(Buffer.from((await runLines('dmesg | gzip -9c | base64 -w 150', 120_000)).join(''), 'base64')).toString();

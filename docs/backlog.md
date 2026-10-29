@@ -498,11 +498,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: VK4's tier 4 (VK4-KICKOFF.md).
-- **Venus's contexts outlive a virtio reset** (seen in the code by VK3 L4c-C, not run): the device's `reset` clears its
-  `venusContexts` and sends the GPU worker `reset`, which resets the virgl renderer and the import's maps only; Venus's
-  renderer keeps its contexts, rings, blobs and imports (web/venus-host.ts). After a guest reboot a context id may be
-  made again (vkr likely refuses an id it has; not checked), and an old ring may still be polled over memory the new
-  guest reuses. The fix: destroy every Venus context at `reset` (and clear `owner`/`imported`).
 - **Venus's submit path costs the guest** (VK1's gate, REPORT.md "VK1: the gate"): GTK4's frames +11% on Venus (9
   execbuffers a frame against virgl's 4, ~0.17 ms of the emulated kernel each). Ideas, unmeasured: a cheaper virtqueue
   notify (the MMIO write's exit), profiling the guest kernel's execbuffer and syncobj paths under our emulator.
@@ -695,8 +690,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     with compute and without graphics is the commonest (18% of the census's not-supported cases: `pipeline`'s compute
     variants want one; a second queue family, compute-only, over the same WebGPU queue would serve them), then
     `VK_KHR_maintenance*`, protected memory, cooperative matrices, formats, multi-draw, pipeline statistics queries.
-  - **Crashes** (VK4 T1, on SwiftShader and the M4): `api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16`
-    (a format query) and `api.external.memory.opaque_fd.dedicated.device_only.dup2` crash deqp-vk; not looked into.
+  - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
+    VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
+    Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
+    synchronous calls' latency is T13's.
+  - **External memory's leftovers** (VK4 T2): the guest's export imported again aliases its memory only while that
+    memory lives and on its own device; otherwise (the exporter freed first, another device) the import is a memory of
+    its own whose bytes aren't shared (vkr's patch, `wg_AllocateMemory`; not met by dEQP-VK). Images on external
+    memory (`api.external.memory.*.image.*`) aren't offered: an image is a texture of its own, which an import can't
+    share.
   - **Compressed images whose size isn't whole blocks** (VK4 T1: 102 failures on each host, a fifth of the census's):
     WebGPU wants a compressed texture's level 0 in whole blocks, so the driver makes the texture padded to them (a
     13×13 image of ASTC 8×5 is 16×20): sampling reads a texture larger than the image, so normalized coordinates land
@@ -815,14 +817,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
     limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
     integer formats allow.
-  - **A trap in the module's completion on NVIDIA** (VK3 L9b, bench/vulkan/REPORT.md "VK3 L9b"): the first dEQP-VK run
-    there logged `RuntimeError: table index is out of bounds` from `wg_complete` (an indirect call through a bad
-    pointer: the signals' `vk_sync_signal` or `wg_submitted`; a sync freed while its submit is pending the likeliest),
-    three times, and `memory.binding.regular.suballocated.buffer_1048577` failed with it. Not on SwiftShader or the M4,
-    nor with SwiftShader's completions delayed 4 ms. Since L9b a completion that throws is warned (`a submit's
-    completion failed`) and doesn't complete later submits early; the trapped submit stays pending (its signals not
-    made, `completing` left set). L9's run of the groups there (REPORT.md "VK3: the NVIDIA run for L9"; `nvidia.sh
-    VK2_STEPS=l9b`) had no trap, so the trap's cause stays unknown (seen once).
+  - **A trap in the module's completion on NVIDIA** (VK3 L9b, seen once): `RuntimeError: table index is out of bounds`
+    from `wg_complete`. VK4 T2 found a sync freed while a submit naming it is pending or held makes the completion call
+    the freed sync's type (`function signature mismatch` in Node) and fixed that (`wg_sync_finish`); whether it was
+    NVIDIA's trap shows only in the user's next runs there (a completion that throws is still warned: `a submit's
+    completion failed`).
   - **`memory.binding.*.buffer_1048577` fails on NVIDIA** (VK3's final run and L9's, `results/vk3/nvidia-l9b/`): every
     binding mode (regular suballocated, dedicated, overallocated; aliasing suballocated) at 1 MiB + 1 byte, without
     the trap above; every other size passes there, and every one on SwiftShader and the M4. dEQP's message wasn't
@@ -853,15 +852,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     blitted from the one the previous blit wrote, over 6 layers; other layer counts pass: a hazard between the
     worker's blit draws on Metal?), `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
     occlusion count of 496, out of range) and `texture.mipmap.3d.projected.nearest_linear_mirror`; not looked into.
-  - **Compute**: `compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.*` crash deqp-vk (`.1` alone;
-    `.16` and `.4` pass alone but crashed it in the long list, VK3 L4f: out of `tests/deqp/vk.txt`); not looked into
-    (L4f's suspect, the device's workgroup storage advertised 16 bytes under WebGPU's, is gone since L5b: rerun them).
-  - **Memory**: 3 `memory.binding.aliasing` cases and two `memory` crashes (vkr's `vkFreeMemory resulted in CS
-    error`), not looked into (VK3 L4f's rerun, after the driver review's fix of a linear image's freed memory: the
-    other `memory.binding` failures of L5's samples pass, the crashes stay). `memory.allocation.random.*` and
-    `memory.mapping.suballocation.random.*` pass alone but crash deqp-vk after enough earlier cases (VK3 L4c-F: with
-    its 179 cases added to the pass list, on the renderer of before as on the new one): something the renderer keeps
-    across cases (its arena's use or fragmentation?); they're out of `tests/deqp/vk.txt` until it's found.
+  - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
+    `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms
+    with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
+    dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
+    with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader).
+  - **Memory**: 3 `memory.binding.aliasing` cases fail, not looked into. **Host-visible memory isn't backed as
+    advertised** (VK4 T2, blocked on T19): its bytes are in the renderer's 255 MiB arena, on a 2 GiB heap; past the
+    arena an allocation fails in the renderer, and Venus's guest allocates without waiting, so its free of that memory
+    loses the context (vkr's "vkFreeMemory resulted in CS error"). dEQP's random allocations (an eighth of a heap at
+    once) take the arena to 241 MiB: `memory.allocation.random` and `memory.mapping.suballocation.random` pass but stay
+    out of the list. A 128 MiB heap of its own was tried (peak 99 MiB) and reverted: GFXReconstruct's replays (and
+    likely VMA and DXVK) take a host-visible heap under 1 GiB for a discrete GPU's BAR window and refuse it as general
+    memory. The way out is an arena of ~1 GiB or more, which memory 0 can't spare: T19.
+- **Re-measure memory64 against the alternatives** (the user, 2026-10-29; bench/spike/memory/REPORT.md, M0.5 on
+  Chromium 152): memory64's whole cost was its bounds checks (V8's trap handler covered only wasm32), +6–20% in JIT
+  code, +8–11% in the core. V8 14.6 (Node 26) has `--wasm-memory64-trap-handling` on by default and caps a shared
+  memory64 at 16 GiB. Re-run M0.5's kernels on the current Chromium, beside what T19 weighs: memory 0 as memory64 (one
+  node up to 16 GiB, a wasm64 core and an i64 ABI), all spill RAM in one memory64 behind a generic JIT arm (every
+  spill page on the arm, none through the interpreter), and the window behind such an arm.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
     decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader) and a uniform buffer,
     which Vulkan counts with sampled or storage images, so a stage with many storage buffers and texel buffers is

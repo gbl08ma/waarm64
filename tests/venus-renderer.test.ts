@@ -55,6 +55,44 @@ test("a blob's bytes move into the window at its map and back at its unmap", { s
   assert.equal(v.stats.contexts, 1);
 });
 
+// A virtio reset (a guest reboot) ends every Venus context with its blobs: the new guest makes its contexts again under
+// the same ids (vkr refuses an id it has), and a blob of the old one is gone.
+test('a virtio reset ends the contexts and their blobs', { skip }, async () => {
+  const { v } = await renderer();
+  v.call({ t: 'vctx', id: 2, create: true, name: 'before' });
+  v.call({ t: 'blob', ctx: 2, res: 5, mem: 2, flags: 1, blobId: 0n, size: 4096 });
+  assert.ok(v.address(5));
+  v.reset();
+  assert.equal(v.stats.contexts, 0);
+  assert.equal(v.address(5), 0);
+  assert.equal(v.has(5), false);
+  v.call({ t: 'vctx', id: 2, create: true, name: 'after' });
+  assert.equal(v.stats.contexts, 1, 'the context made again');
+});
+
+// The memory budget (VK_EXT_memory_budget, advertised) reports the heap and what's allocated from it: it was left
+// unfilled. The guest's export imported again aliases its memory, counted once (VK4 T2). One 2 GiB heap for both types,
+// though host-visible memory's bytes are in the renderer's 255 MiB arena: a heap the arena backs waits for VK4 T19.
+test('the memory budget reports the heap and its use, an import of an export counted once', { skip }, async () => {
+  const { v, memory } = await renderer();
+  const at = (v.raw.wgt_heaps as () => number)() >>> 0;
+  assert.ok(at, 'wgt_heaps failed');
+  const [count, heap, sizeMiB, budgetMiB, before, both, importLeft, none, reads, readsAfter] = new Uint32Array(memory.buffer, at, 10);
+  assert.deepEqual([count, heap, sizeMiB, budgetMiB], [1, 0, 2048, 2048]);
+  assert.deepEqual([both - before, importLeft - before, none - before], [1024, 1024, 0], 'usage (KiB) with the memory and its import, the import alone, neither');
+  assert.deepEqual([reads, readsAfter], [1, 1], "the import's bytes are the memory's");
+});
+
+// A fence destroyed while a submit held for a timeline wait signals it (a context's teardown destroys its objects so; VK4
+// T2): the held submit forgets it, so its replay at the host's signal doesn't signal freed memory (NVIDIA's trap in
+// wg_complete: an indirect call through the freed sync's type, VK3 L9b).
+test('a sync destroyed while a held submit names it is forgotten', { skip }, async () => {
+  const { v, memory } = await renderer();
+  const at = (v.raw.wgt_sync_freed as () => number)() >>> 0;
+  assert.ok(at, 'wgt_sync_freed failed');
+  assert.deepEqual([...new Uint32Array(memory.buffer, at, 4)], [2, 1, 0, 0], 'held syncs: fence and wait; the wait; the signal succeeds; none');
+});
+
 /** An adapter's features and limits as the G0 suite recorded them (bench/gpu/results/). */
 function adapter(file: string, vendor: string): GpuCaps {
   const p = (JSON.parse(readFileSync(new URL(`../bench/gpu/results/${file}`, import.meta.url), 'utf8')) as { results: { params: { features: string[]; limits: Record<string, number> } }[] }).results[0].params;

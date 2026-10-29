@@ -21,9 +21,13 @@
 #include "wg_private.h"
 
 /* The device's one heap and its two memory types: device-local, and host-visible coherent (a WebGPU device shares
- * the host's memory only through uploads, so "device-local" too: its shadow buffers). */
+ * the host's memory only through uploads, so "device-local" too: its shadow buffers). Host-visible memory's bytes are
+ * in the renderer's arena (web/ram.ts VENUS_ARENA, 255 MiB with the module's own heap), which the heap's size doesn't
+ * say: a heap the arena backs waits for the renderer's own memory (VK4 T19; docs/backlog.md "Memory"). The budget
+ * (VK_EXT_memory_budget) reports what's allocated from the heap. */
 #define WG_HEAP_SIZE (2ull << 30)
 #define WG_MEMORY_HOST 1
+static uint64_t heap_used;
 
 uint32_t wg_features, wg_max_immediates;
 uintptr_t wg_window_at, wg_window_bytes;
@@ -292,6 +296,14 @@ wg_GetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physicalDevice, VkPhysica
       .memoryHeapCount = 1,
       .memoryHeaps = { { .size = WG_HEAP_SIZE, .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT } },
    };
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT *budget =
+      vk_find_struct(pProps->pNext, PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
+   if (budget) {
+      memset(budget->heapBudget, 0, sizeof(budget->heapBudget));
+      memset(budget->heapUsage, 0, sizeof(budget->heapUsage));
+      budget->heapBudget[0] = WG_HEAP_SIZE;
+      budget->heapUsage[0] = heap_used;
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -619,12 +631,25 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
    VK_FROM_HANDLE(wg_device, dev, _device);
    if (pAllocateInfo->memoryTypeIndex > WG_MEMORY_HOST)
       return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+   const VkImportMemoryFdInfoKHR *fd_info = vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
+   if (fd_info && fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT) {
+      /* A memory of this device that the guest exported and imports again: vkr passes its handle as the fd (its
+       * patch). The import is that memory, one more reference to it (wg_FreeMemory). Another device's, or one that
+       * doesn't fit, is a memory of its own below (its bytes not shared). */
+      struct wg_device_memory *src = (struct wg_device_memory *)(uintptr_t)(uint32_t)fd_info->fd;
+      if (src && src->vk.base.type == VK_OBJECT_TYPE_DEVICE_MEMORY && src->vk.base.device == &dev->vk &&
+          pAllocateInfo->allocationSize <= src->vk.size) {
+         src->aliases++;
+         *pMem = wg_device_memory_to_handle(src);
+         return VK_SUCCESS;
+      }
+      fprintf(stderr, "wg: an opaque fd that isn't a memory of this device: a memory of its own\n");
+   }
    struct wg_device_memory *mem = vk_device_memory_create(&dev->vk, pAllocateInfo, pAllocator, sizeof(*mem));
    if (!mem)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    mem->size = align64(MAX2(pAllocateInfo->allocationSize, 4), 4);
    mem->host = pAllocateInfo->memoryTypeIndex == WG_MEMORY_HOST;
-   const VkImportMemoryFdInfoKHR *fd_info = vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
    if (fd_info && fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT && fd_info->fd > 0) {
       /* A dma-buf is another renderer's resource, by id (vkr's patch): its bytes are the GPU worker's to write into
        * the textures bound here; it has no storage of ours, even in a host-visible type. */
@@ -647,6 +672,7 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
       mem->dirty = true;
       list_addtail(&mem->link, &dev->host_memories);
    }
+   heap_used += mem->vk.size;
    *pMem = wg_device_memory_to_handle(mem);
    return VK_SUCCESS;
 }
@@ -674,6 +700,10 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
    VK_FROM_HANDLE(wg_device_memory, mem, _mem);
    if (!mem)
       return;
+   if (mem->aliases) {
+      mem->aliases--;
+      return;
+   }
    wg_submits_forget(dev, mem);
    /* An image may outlive its memory (then only to be destroyed): off the submits' linear images. */
    list_for_each_entry_safe (struct wg_image, image, &dev->linear_images, linear_link) {
@@ -688,6 +718,7 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
       list_del(&mem->link);
    if (mem->owned)
       free(mem->data);
+   heap_used -= mem->vk.size;
    wg_id_release(mem->gpu);
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
 }

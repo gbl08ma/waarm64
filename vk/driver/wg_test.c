@@ -28,6 +28,8 @@ int wgt_import(uint32_t res);
 const uint8_t *wgt_imported(void);
 const uint32_t *wgt_caps(void);
 int wgt_semaphores(void);
+const uint32_t *wgt_heaps(void);
+const uint32_t *wgt_sync_freed(void);
 int wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant);
 int wgt_draw_done(void);
 int wgt_two_init(uint8_t *window, uint32_t size);
@@ -60,6 +62,8 @@ int wgt_fits(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uin
 int wgt_samples(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 /* wg_cmd.c: the pending submits' references to a query pool (destroyed or not). */
 int wg_submits_pool_refs(const void *pool);
+/* wg_cmd.c: the syncs held submits signal or wait on. */
+int wg_held_syncs(void);
 
 #define FN(name) static PFN_vk##name name
 FN(CreateInstance); FN(EnumeratePhysicalDevices); FN(CreateDevice); FN(GetDeviceQueue); FN(GetDeviceProcAddr);
@@ -107,6 +111,15 @@ static struct {
       if (r_ != VK_SUCCESS) {                                                                                          \
          snprintf(error, sizeof(error), "%s: %d (line %d)", #x, r_, __LINE__);                                         \
          return 1;                                                                                                     \
+      }                                                                                                                \
+   } while (0)
+
+#define CHECK_NULL(x)                                                                                                  \
+   do {                                                                                                                \
+      VkResult r_ = (x);                                                                                               \
+      if (r_ != VK_SUCCESS) {                                                                                          \
+         snprintf(error, sizeof(error), "%s: %d (line %d)", #x, r_, __LINE__);                                         \
+         return NULL;                                                                                                  \
       }                                                                                                                \
    } while (0)
 
@@ -717,6 +730,105 @@ wgt_caps(void)
       out[i++] = (uint32_t)image_formats2(pdev, &fi, &ip);
    }
    destroy(inst, NULL);
+   return out;
+}
+
+/* The heaps (VK4 T2): [0] their count, [1] the host-visible type's heap, [2] its size and [3] its budget (MiB), then its
+ * usage (KiB) [4] before, [5] with 1 MiB of host-visible memory and an import of it (the guest's export imported again:
+ * an opaque fd naming the memory, wg_AllocateMemory), [6] with the memory freed and its import left, [7] with both
+ * freed; [8] 1 if the import's map reads what the memory's wrote, [9] if it still does once the memory is freed. NULL
+ * with wgt_error(). */
+EXPORT const uint32_t *
+wgt_heaps(void)
+{
+   static uint32_t out[10];
+   if (!dev && init())
+      return NULL;
+   PFN_vkGetPhysicalDeviceMemoryProperties2 props =
+      (PFN_vkGetPhysicalDeviceMemoryProperties2)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties2");
+   PFN_vkFreeMemory FreeMemory = (PFN_vkFreeMemory)GetDeviceProcAddr(dev, "vkFreeMemory");
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   if (EnumeratePhysicalDevices(instance, &n, &pdev) < 0) {
+      snprintf(error, sizeof(error), "no physical device");
+      return NULL;
+   }
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT budget = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT };
+   VkPhysicalDeviceMemoryProperties2 mp = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2, .pNext = &budget };
+   props(pdev, &mp);
+   const uint32_t heap = mp.memoryProperties.memoryTypes[1].heapIndex;
+   out[0] = mp.memoryProperties.memoryHeapCount;
+   out[1] = heap;
+   out[2] = (uint32_t)(mp.memoryProperties.memoryHeaps[heap].size >> 20);
+   out[3] = (uint32_t)(budget.heapBudget[heap] >> 20);
+   out[4] = (uint32_t)(budget.heapUsage[heap] >> 10);
+   const VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = 1 << 20,
+                                     .memoryTypeIndex = 1 };
+   VkDeviceMemory mem, alias;
+   uint8_t *a, *b;
+   if (AllocateMemory(dev, &ai, NULL, &mem) != VK_SUCCESS || MapMemory(dev, mem, 0, VK_WHOLE_SIZE, 0, (void **)&a)) {
+      snprintf(error, sizeof(error), "host-visible memory not made");
+      return NULL;
+   }
+   a[100] = 0x5a;
+   const VkImportMemoryFdInfoKHR fd = { .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+                                        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
+                                        .fd = (int)(uintptr_t)mem };
+   const VkMemoryAllocateInfo ii = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &fd,
+                                     .allocationSize = 1 << 20, .memoryTypeIndex = 1 };
+   if (AllocateMemory(dev, &ii, NULL, &alias) != VK_SUCCESS || MapMemory(dev, alias, 0, VK_WHOLE_SIZE, 0, (void **)&b)) {
+      snprintf(error, sizeof(error), "the import not made");
+      return NULL;
+   }
+   props(pdev, &mp);
+   out[5] = (uint32_t)(budget.heapUsage[heap] >> 10);
+   out[8] = b[100] == 0x5a;
+   FreeMemory(dev, mem, NULL);
+   props(pdev, &mp);
+   out[6] = (uint32_t)(budget.heapUsage[heap] >> 10);
+   out[9] = b[100] == 0x5a;
+   FreeMemory(dev, alias, NULL);
+   props(pdev, &mp);
+   out[7] = (uint32_t)(budget.heapUsage[heap] >> 10);
+   return out;
+}
+
+/* A sync destroyed while a held submit names it (VK4 T2: NVIDIA's trap in wg_complete, a completion signalling a freed
+ * sync through its type's functions): a submit held for a timeline semaphore's value 1 that signals a fence; the
+ * syncs held submits name [0] then, [1] once the fence is destroyed (the semaphore's wait only), [2] the host's signal
+ * of the value's result (the submit replayed and completed: no device), [3] the held syncs after. NULL with
+ * wgt_error(). */
+EXPORT const uint32_t *
+wgt_sync_freed(void)
+{
+   static uint32_t out[4];
+   if (!dev && init())
+      return NULL;
+   PFN_vkCreateSemaphore CreateSemaphore = (PFN_vkCreateSemaphore)GetDeviceProcAddr(dev, "vkCreateSemaphore");
+   PFN_vkDestroySemaphore DestroySemaphore = (PFN_vkDestroySemaphore)GetDeviceProcAddr(dev, "vkDestroySemaphore");
+   PFN_vkDestroyFence DestroyFence = (PFN_vkDestroyFence)GetDeviceProcAddr(dev, "vkDestroyFence");
+   PFN_vkSignalSemaphore SignalSemaphore = (PFN_vkSignalSemaphore)GetDeviceProcAddr(dev, "vkSignalSemaphore");
+   const VkSemaphoreTypeCreateInfo type = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                            .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE };
+   const VkSemaphoreCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &type };
+   VkSemaphore sem;
+   VkFence f;
+   CHECK_NULL(CreateSemaphore(dev, &si, NULL, &sem));
+   CHECK_NULL(CreateFence(dev, &(VkFenceCreateInfo){ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO }, NULL, &f));
+   const uint64_t one = 1;
+   const VkTimelineSemaphoreSubmitInfo ti = { .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+                                              .waitSemaphoreValueCount = 1, .pWaitSemaphoreValues = &one };
+   const VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = &ti, .waitSemaphoreCount = 1,
+                                 .pWaitSemaphores = &sem, .pWaitDstStageMask = &stage };
+   CHECK_NULL(QueueSubmit(queue, 1, &submit, f));
+   out[0] = (uint32_t)wg_held_syncs();
+   DestroyFence(dev, f, NULL);
+   out[1] = (uint32_t)wg_held_syncs();
+   const VkSemaphoreSignalInfo signal = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = sem, .value = 1 };
+   out[2] = (uint32_t)SignalSemaphore(dev, &signal);
+   out[3] = (uint32_t)wg_held_syncs();
+   DestroySemaphore(dev, sem, NULL);
    return out;
 }
 

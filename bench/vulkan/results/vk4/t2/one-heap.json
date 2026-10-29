@@ -1,0 +1,79 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 401,
+ "seconds": 66.35816067799999,
+ "counts": {
+  "Crash": 1,
+  "NotSupported": 16,
+  "Pass": 384
+ },
+ "notPassed": [
+  "dEQP-VK.api.external.memory.dma_buf.dedicated.buffer.maintenance5 NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.dedicated.image.bind_export_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.dedicated.image.export_bind_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.dedicated.image.export_import_bind_bind NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.suballocated.buffer.maintenance5 NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.suballocated.image.bind_export_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.suballocated.image.export_bind_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.dma_buf.suballocated.image.export_import_bind_bind NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.dedicated.buffer.maintenance5 NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.dedicated.image.bind_export_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.dedicated.image.export_bind_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.dedicated.image.export_import_bind_bind NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.suballocated.buffer.maintenance5 NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.suballocated.image.bind_export_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.suballocated.image.export_bind_import_bind NotSupported",
+  "dEQP-VK.api.external.memory.opaque_fd.suballocated.image.export_import_bind_bind NotSupported",
+  "dEQP-VK.api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16 Crash"
+ ],
+ "slowest": [
+  "dEQP-VK.memory.mapping.suballocation.random.97 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.92_map2 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.87_map2 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.82 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.79 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.75_map2 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.72_map2 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.69_map2 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.65_map2 Pass 1",
+  "dEQP-VK.memory.mapping.suballocation.random.60_map2 Pass 1"
+ ],
+ "last": "dEQP-VK.memory.mapping.suballocation.random.99 Pass 0dEQP-VK.memory.mapping.suballocation.random.99_map2 Pass 0dEQP-VK.memory.mapping.suballocation.random.9_map2 Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  "dEQP-VK.api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16: FATAL ERROR: Watchdog timer timeout for touch interval",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.125270] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.125300] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.125330] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.125364] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.125389] psci_checker: Could not start suspend tests on any CPU",
+  "[   13.938514] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   26.650955] coredump: 435(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 164.1,
+  "arenaMiB": 255,
+  "arenaTouchedMiB": 8.9,
+  "arenaHighMiB": 241.4
+ },
+ "detail": [
+  "== dEQP-VK.api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16"
+ ],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus: vkr: destroying context 3 (deqp) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 2,
+  "venus: vkr: destroying context 2 (deqp) with a valid instance": 1
+ }
+}
