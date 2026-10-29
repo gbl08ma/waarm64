@@ -6,6 +6,18 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-29, after L9b)
+
+- **`textureprojlodoffset…isampler2d_vec4_fragment`: a Venus defect, fixed.** An integer texture's explicit LOD was
+  rounded unclamped: 9 named a level past the view's (Dawn clamps on SwiftShader and the M4; NVIDIA reads zeros), -1
+  shrank the extent. Now Vulkan's nearest level within `textureNumLevels` (tests/wgsl.test.ts, failing first); 35
+  more clamp_to_edge integer cases in tests/deqp/vk.txt (4,725), 26 more of 1,272 neighbours pass on SwiftShader.
+- **`memory.binding…buffer_1048577`: passes on SwiftShader and the M4.** NVIDIA's log had a trap in the module's
+  `complete` (`table index is out of bounds`) and the worker then completed the next submits early (readbacks unmapped,
+  staging destroyed under the map): that cascade fixed (tests/venus-gpu.test.ts, failing first); the trap's cause not
+  found (backlog). **Next NVIDIA run: `VK2_STEPS="l9b"`** (~5 min) with L9a's `l9`; a new bundle (code changed).
+- CI alone: ci.sh 457 s, ci-deqp-vk.sh 848 s (the list of 4,725), both OK.
+
 ## State (2026-10-29, after L9a)
 
 - **Not reproduced** on the M4 or SwiftShader (alternated A/B of the scene, 4fdc69fb's `vk/`+`web/` against c8087cb0's:
@@ -116,7 +128,8 @@ Venus at 1 fish on NVIDIA (parked), the Mesa async-present report upstream, **th
     4fdc69fb..c8087cb0 -- vk web`) and fix, keeping the change's correctness (its dEQP-VK cases). Not reproduced: make
     the suspects switchable (`?gpu=` knobs, off = L4e's behaviour) and add them as arms to nvidia.sh's scene step for
     the next run.
-  - [ ] L9b: **the two NVIDIA-only dEQP-VK fails**: `glsl.texture_functions.textureprojlodoffset.clamp_to_edge.
+  - [x] L9b: **the two NVIDIA-only dEQP-VK fails**. **Done (the LOD fixed; the cascade fixed, its trap filed; `nvidia.sh`
+    `VK2_STEPS=l9b`):** REPORT.md "VK3 L9b". Was: `glsl.texture_functions.textureprojlodoffset.clamp_to_edge.
     isampler2d_vec4_fragment` and `memory.binding.regular.suballocated.buffer_1048577` (detail in
     `results/vk3/nvidia-final/deqp-vk/results.json`). Read what each checks against what the driver and translator do
     (a defect SwiftShader tolerates?); run them on the M4 by name (`CASES=`). A Venus defect: fixed with its test failing

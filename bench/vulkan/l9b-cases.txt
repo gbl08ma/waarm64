@@ -1,0 +1,10 @@
+# VK3 L9b's check on NVIDIA (bench/vulkan/nvidia.sh VK2_STEPS=l9b): the two cases its first dEQP-VK run failed and
+# their neighbours. The integer textures' explicit LODs (fixed at L9b: the level clamped to the view's), then memory
+# binding (its fail came with a trap in the module's completion and the next submits completed early: the cascade
+# fixed at L9b, the trap's cause not found off NVIDIA), the whole group twice over (a timing-dependent fault).
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.*
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.*
+dEQP-VK.memory.binding.regular.*
+dEQP-VK.memory.binding.aliasing.*
+dEQP-VK.memory.binding.regular.suballocated.buffer_1048577
+dEQP-VK.memory.binding.regular.dedicated.buffer_1048577

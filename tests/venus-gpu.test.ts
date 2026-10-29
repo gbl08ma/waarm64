@@ -318,3 +318,48 @@ test('?gpu=vkl9=… asks for the device as at 4fdc69fb, suspect by suspect (VK3 
   assert.deepEqual(l9Suspects(['all']), ['features', 'limits', 'bindgroups', 'pad']);
   assert.deepEqual(l9Suspects(['pad', 'nonsense']), ['pad']);
 });
+
+// VK3 L9b: NVIDIA's dEQP-VK run had a completion throw ("table index is out of bounds", a trap in the module's
+// complete), and the next submit was then completed at once, its readbacks not mapped yet and their staging destroyed
+// under the map ("Buffer was destroyed before mapping was resolved"): a failure stays its own submit's.
+test('a completion that throws neither completes the next submit before its readbacks are mapped nor destroys them under the map', async () => {
+  let resolveMap!: () => void;
+  const mapped = new Promise<void>((r) => { resolveMap = r; });
+  class Staging extends FakeBuffer { mapAsync() { return mapped; } }
+  const stagings: Staging[] = [], warnings: string[] = [], completed: number[] = [];
+  const device = {
+    addEventListener() {},
+    pushErrorScope() {},
+    popErrorScope: () => Promise.resolve(null),
+    createBuffer: (d: { usage: number }) => { const b = d.usage & 1 ? new Staging() : new FakeBuffer(); if (b instanceof Staging) stagings.push(b); return b; },
+    createCommandEncoder: () => ({ copyBufferToBuffer() {}, finish: () => ({}) }),
+    queue: { submit() {}, writeBuffer() {}, onSubmittedWorkDone: () => Promise.resolve() },
+  } as unknown as GPUDevice;
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const gpu = new VenusGpu(device, memory, (serial) => {
+    if (serial === 1) throw new Error('a trap');
+    completed.push(serial);
+  }, () => []);
+  (gpu as unknown as { warn(s: string): void }).warn = (s: string) => warnings.push(s);
+  const wg = gpu.imports() as Record<string, (...a: number[]) => number | void>;
+  const u8 = new Uint8Array(memory.buffer);
+  const json = new TextEncoder().encode('{"size":256,"usage":12}');
+  u8.set(json, 0);
+  wg.gpu_create(0, 1, 0, json.length);
+  wg.gpu_encoder();
+  wg.gpu_submit(1);
+  wg.gpu_encoder();
+  wg.gpu_readback(1, 0, 16);
+  wg.gpu_submit(2);
+  const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
+  await settle();
+  assert.equal(stagings.length, 1);
+  assert.deepEqual(completed, [], 'submit 2 waits for its readback');
+  assert.equal(stagings[0].destroyed, false, 'its staging kept while it maps');
+  assert.equal(warnings.length, 1, warnings.join('; '));
+  assert.match(warnings[0], /a trap/);
+  resolveMap();
+  await settle();
+  assert.deepEqual(completed, [2]);
+  assert.equal(stagings[0].destroyed, true);
+});

@@ -654,15 +654,21 @@ export class VenusGpu {
           }
         }
         // In submit order: a later submit's work can't be done before an earlier one's, but its maps may resolve first.
+        // A failure stays this submit's: an earlier one's rejected link once completed the next submits at once, their
+        // readbacks not mapped and destroyed under the map (VK3 L9b: a trap in the module's complete on NVIDIA).
         const finish = (doneAt: number) => {
           self.inFlight--;
           self.stats.orderMs += performance.now() - doneAt;
-          self.complete(serial);
+          try {
+            self.complete(serial);
+          } catch (err) {
+            self.warn(`a submit's completion failed: ${err}`);
+          }
         };
-        self.chain = self.chain.then(() => done).then(finish, (err) => {
+        self.chain = self.chain.then(() => done.then(finish, (err) => {
           self.warn(`a submit's readbacks failed: ${err}`);
           finish(performance.now());
-        }).finally(() => {
+        })).finally(() => {
           for (const s of slots) { self.slots.get(s)!.buffer.destroy(); self.slots.delete(s); }
         });
         self.onSubmit?.();

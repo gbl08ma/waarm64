@@ -412,7 +412,20 @@ lower_int_sample(nir_builder *b, nir_tex_instr *tex, void *data)
    nir_def *size = nir_get_texture_size(b, tex);
    b->cursor = nir_before_instr(&tex->instr);
    const int li = nir_tex_instr_src_index(tex, nir_tex_src_lod), oi = nir_tex_instr_src_index(tex, nir_tex_src_offset);
-   nir_def *lod = tex->op == nir_texop_txl && li >= 0 ? nir_f2i32(b, nir_fround_even(b, tex->src[li].src.ssa)) : nir_imm_int(b, 0);
+   nir_def *lod = nir_imm_int(b, 0);
+   if (tex->op == nir_texop_txl && li >= 0) {
+      /* Vulkan's nearest mipmap selection (the spec's preferred rounding, ceil(d + 0.5) - 1) within the view's levels:
+       * WGSL's textureLoad past them is undefined (VK3 L9b: Dawn clamps the level on SwiftShader, NVIDIA's reads
+       * zeros), and a level below 0 also shrank the extent below by a negative shift. */
+      nir_def *levels = nir_build_tex(b, nir_texop_query_levels, .texture_deref = nir_src_as_deref(tex->src[ti].src),
+                                      .dim = tex->sampler_dim, .is_array = tex->is_array, .dest_type = nir_type_int32);
+      nir_tex_instr *query = nir_instr_as_tex(nir_def_instr(levels));
+      query->sampler_dim = tex->sampler_dim;
+      query->is_array = tex->is_array;
+      nir_def *d = nir_fadd_imm(b, nir_fceil(b, nir_fadd_imm(b, tex->src[li].src.ssa, 0.5)), -1.0);
+      d = nir_fmin(b, nir_fmax(b, d, nir_imm_float(b, 0)), nir_i2f32(b, nir_iadd_imm(b, levels, -1)));
+      lod = nir_f2i32(b, d);
+   }
    nir_def *coord = tex->src[ci].src.ssa;
    const unsigned n = tex->coord_components, spatial = n - (tex->is_array ? 1 : 0);
    nir_def *c[4];

@@ -164,7 +164,7 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), integer textures sampled with a sampler, image atomics, `textureQueryLod`, and
+16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), image atomics, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
 its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
@@ -494,7 +494,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   (`synchronization*.timeline_semaphore.wait.host_wait_before_signal` hung the guest so); such a submit signals early,
   as every submit did before.
 - **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, border colours and mirror-once, component
-  swizzles, sampling 3D images through 2D views, integer textures sampled with a sampler, copies
+  swizzles, sampling 3D images through 2D views, integer textures sampled with a sampler's address modes (fetched at clamp-to-edge, from the level an explicit LOD selects within the view's: VK3 L9b), copies
   between formats, multi-view.
 
 ## Pipelines made asynchronously

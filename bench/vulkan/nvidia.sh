@@ -59,6 +59,8 @@
 # And only when named (VK2_STEPS="l9", ~15 min): VK3 L9a's suspects for the submits done ~2 ms later than at 4fdc69fb,
 # each back at 4fdc69fb's behaviour (`?gpu=vkl9=features|limits|bindgroups|pad|all`) against the default, two
 # alternated rounds of the scene at 1 fish and the toolkit with a trace's summary each (Dawn's Queue::Submit).
+# And VK2_STEPS="l9b" (~5 min): VK3 L9b's check, the first dEQP-VK run's two fails and their neighbours by name
+# (bench/vulkan/l9b-cases.txt) with the page's completion faults.
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
 # page held the adapter's subgroups, VK3 L5): send that file back. VK2_KEEP=1 keeps an earlier run's results and adds
 # to them (VK2_KEEP=1 VK2_STEPS=none only writes the summary's last line, host.txt and the tarball). VK2_DRY=1 prints what each step would run (no bundle
@@ -260,6 +262,20 @@ if [ "${1:-}" = page ]; then
     else
       echo "deqp: skipped (the bundle has no target/deqp/guest-vk.qcow2)" | tee -a "$R/summary.txt"
     fi
+  fi
+  if [[ " ${VK2_STEPS:-} " == *" l9b "* ]]; then
+    # VK3 L9b (only when asked: VK2_STEPS=l9b, ~5 min): the first run's two fails and their neighbours by name
+    # (bench/vulkan/l9b-cases.txt), with dEQP's messages, the cases that passed, and the page's completion faults (a trap
+    # in the module's complete came with the memory binding fail: "a submit's completion failed" since L9b).
+    step deqp-l9b 900 env CASES=bench/vulkan/l9b-cases.txt LIMIT_S=600 DETAIL=20 PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-l9b"
+    (cd "$P" && node -e '
+      let r; try { r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { console.log("  l9b: no results"); process.exit(0); }
+      const want = ["dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec4_fragment", "dEQP-VK.memory.binding.regular.suballocated.buffer_1048577"];
+      const passed = new Set((r.passed ?? []).map((c) => c.split(" ")[0]));
+      console.log(`  l9b: ${r.cases} cases, ${JSON.stringify(r.counts)}; ${want.map((c) => `${c.split(".").slice(-1)[0]} ${passed.has(c) ? "Pass" : "NOT passed"}`).join(", ")}`);
+      for (const [w, n] of Object.entries(r.warnings ?? {})) if (/completion failed|readbacks failed|table index|out of bounds/.test(w)) console.log(`    ${n}x ${w.slice(0, 200)}`);
+    ' "$R/deqp-l9b/results.json" | tee -a "$R/summary.txt") || true
+    grep -hE "pageerror|page error" "$R/deqp-l9b.log" 2>/dev/null | sort | uniq -c | head -10 || true
   fi
   if [ -z "${VK2_STEPS:-}" ] || [[ " $VK2_STEPS " == *" rows "* ]]; then
     # VK3 L7.4: ANGLE's ES3 on Venus (the guest's Chromium with --use-angle=vulkan): on the dev VM (L8) `flat

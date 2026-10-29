@@ -949,6 +949,44 @@ summary (`Queue::Submit`'s frame ms in its log's `trace:` line): `all` back at ~
 single arms which; `all` still at ~2.5 says it's outside them (the 16-byte copies, the shaders' override, or NVIDIA's
 host since: L4e's virgl frames are within 2% of the final run's).
 
+## VK3 L9b: NVIDIA's two dEQP-VK fails — an integer texture's LOD past its levels (fixed), and a completion fault that cascaded (the cascade fixed, the fault not reproduced)
+
+2026-10-29, on the dev VM (SwiftShader, Chromium 153) and the M4 (Metal, `sway-mac.sh`), with each case's
+neighbours by name (`results/vk3/l9b/cases.txt`: `textureprojlodoffset.*`, `textureprojlod.*`, `texturelodoffset.*`,
+`memory.binding.*`, 1,272 cases); JSON in `results/vk3/l9b/` (`swiftshader-before`, `swiftshader-after`, `m4-after`).
+
+**`textureprojlodoffset.clamp_to_edge.isampler2d_vec4_fragment`.** The case samples a 256×256 RGBA8I texture of 9
+levels at LODs from -1 to 9 (vktShaderRenderTextureFunctionTests.cpp). An integer texture sampled with a sampler is
+fetched (`lower_int_sample`, vk/compiler/wgsl_nir.c), and its level was the LOD rounded to even, unclamped: 9 named a
+level past the view's (WGSL's `textureLoad` there is undefined: Dawn clamps it on SwiftShader and the M4, NVIDIA's
+returns zeros, so 10,891 there against 0.2) and -1 a level below 0, whose extent the negative shift below made 1
+(the corner texel; the case's tolerance hid it on SwiftShader). Now the
+level is Vulkan's nearest selection (`ceil(d + 0.5) - 1`, the spec's preferred rounding) clamped to the view's
+levels (`textureNumLevels`). Its test, failing first on SwiftShader (LOD -1 read 300, not 110): tests/wgsl.test.ts
+"an integer texture sampled at an explicit LOD…" (a 4×4 r32sint of three levels at 8 LODs, with and without an
+offset). On SwiftShader 26 more of the 1,272 pass and none fewer; on the M4 none of the list's fail; 35
+`texturelodoffset`/`textureprojlodoffset` clamp_to_edge `isampler`/`usampler` cases that now pass on both join
+tests/deqp/vk.txt (4,725). The other address modes stay clamp-to-edge (docs/backlog.md "Samplers").
+
+**`memory.binding.regular.suballocated.buffer_1048577`** (ten 1 MiB + 1 buffers, each filled by an unaligned
+`vkCmdCopyBuffer` and read back through host-visible memory) passes on SwiftShader and the M4, and nothing in the
+driver depends on the adapter there (the worker's compute copy, a 4-aligned readback within the memory's 4-aligned
+size). NVIDIA's log has what the others don't: `a submit's readbacks failed: RuntimeError: table index is out of
+bounds` (a trap in the module's `complete`: an indirect call through a bad pointer) and three pairs of page errors,
+`mapAsync … Buffer was destroyed before mapping was resolved` then the trap. The worker's chain of completions made
+one fault many: a completion that threw left the chain rejected, and the next submit's link then skipped its own
+`done` and completed it at once, its readbacks not mapped (their bytes not landed: a read of them wrong, as this
+case's) and their staging destroyed under the map. Fixed (web/venus-gpu.ts `gpu_submit`): each submit waits for its
+own work and maps, a completion that throws is warned (`a submit's completion failed`) and the chain goes on;
+tests/venus-gpu.test.ts "a completion that throws…", failing first. **The trap itself isn't found**: the indirect
+calls under `complete` are the signals' (`vk_sync_signal`) and `wg_submitted`, so a sync freed while its submit was
+pending is the likeliest (none found by reading: Mesa's `vk_common_QueueWaitIdle` would do it, as our wait doesn't
+block, but vkr never calls it in wasm); SwiftShader with each submit's done 4 ms later (a temporary delay, NVIDIA's
+submits being done ~2 ms later) ran ~9 min of the pass list without a fault (cut by its bound). Filed
+(docs/backlog.md "A trap in the module's completion on NVIDIA"). **For the next NVIDIA run:** `VK2_STEPS=l9b` (~5 min,
+`bench/vulkan/l9b-cases.txt`): both cases and their groups by name, with the completion faults it logs.
+CI alone: ci.sh 457 s, ci-deqp-vk.sh 848 s, both OK.
+
 ## VK3 L1: NVIDIA's black frames — the vendor ID, not the bitmap way
 
 **2026-10-26.** Why what Venus presented on the user's NVIDIA desktop was black ("VK2: the NVIDIA run"), found without

@@ -710,7 +710,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Samplers**: border colours and mirror-once (the nearest WebGPU address mode), component swizzles
     (`texture-component-swizzle` where the browser has it), unnormalized coordinates, integer textures sampled with
     a sampler (fetched at clamp-to-edge whatever the sampler's address mode: the address modes as a program variant
-    would do the rest), LOD bias and min/max LOD clamps against WebGPU's.
+    would do the rest; from the level an explicit LOD selects, Vulkan's nearest within the view's levels since VK3 L9b,
+    level 0 for an implicit LOD, a bias or gradients; the sampler's min/max LOD not applied), LOD bias and min/max LOD
+    clamps against WebGPU's.
   - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
@@ -785,6 +787,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
     limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
     integer formats allow.
+  - **A trap in the module's completion on NVIDIA** (VK3 L9b, bench/vulkan/REPORT.md "VK3 L9b"): the first dEQP-VK run
+    there logged `RuntimeError: table index is out of bounds` from `wg_complete` (an indirect call through a bad
+    pointer: the signals' `vk_sync_signal` or `wg_submitted`; a sync freed while its submit is pending the likeliest),
+    three times, and `memory.binding.regular.suballocated.buffer_1048577` failed with it. Not on SwiftShader or the M4,
+    nor with SwiftShader's completions delayed 4 ms. Since L9b a completion that throws is warned (`a submit's
+    completion failed`) and doesn't complete later submits early; the trapped submit stays pending (its signals not
+    made, `completing` left set). `nvidia.sh VK2_STEPS=l9b` runs the case's group by name there.
   - **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
     (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); dEQP-VK's `synchronization*.timeline_semaphore.
     wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`

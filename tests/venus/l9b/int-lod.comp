@@ -1,0 +1,16 @@
+#version 450
+// VK3 L9b: an integer texture sampled at explicit LODs (tests/wgsl.test.ts): the translator fetches it, from the level
+// Vulkan's nearest mipmap selection names, clamped to the image's levels (dEQP-VK's textureprojlodoffset isampler2d
+// cases run LODs from -1 to 9 over 9 levels). At (0.6, 0.6), without an offset (0-7) and with (-1, 1) (8-15).
+layout(local_size_x = 16) in;
+layout(set = 0, binding = 0) uniform isampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { ivec4 o[16]; };
+const float lods[8] = float[](-1.0, 0.3, 1.2, 1.7, 2.0, 5.0, 9.0, -0.3);
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  vec2 uv = vec2(0.6, 0.6);
+  if (i < 8u)
+    o[i] = textureLod(img, uv, lods[i]);
+  else
+    o[i] = textureLodOffset(img, uv, lods[i - 8u], ivec2(-1, 1));
+}

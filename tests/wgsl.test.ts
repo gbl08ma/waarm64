@@ -724,9 +724,10 @@ test('interpolateAtOffset and interpolateAtSample move the input along its deriv
 
 /**
  * Runs a translated compute shader (one workgroup) over textures in headless Chromium's WebGPU: each texture made of
- * its bytes at its WGSL binding, a sampler (`filter`) at `sampler`, a storage buffer of `size` bytes at `out`, read back.
+ * its bytes at its WGSL binding (`mips`: its further levels' bytes), a sampler (`filter`) at `sampler` (none: no
+ * sampler), a storage buffer of `size` bytes at `out`, read back.
  */
-async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; data: number[] }[], sampler: { binding: number; filter: string }, out: { binding: number; size: number }) {
+async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string } | undefined, out: { binding: number; size: number }) {
   const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
@@ -745,12 +746,16 @@ async function runSampled(code: string, textures: { binding: number; format: str
       if (errors.length) return { errors, out: [] as number[] };
       const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
       const entries: GPUBindGroupEntry[] = textures.map((t) => {
-        const tex = device.createTexture({ size: [t.w, t.h], format: t.format as GPUTextureFormat, usage: 0x2 | 0x4 /* COPY_DST | TEXTURE_BINDING */ });
+        const levels = [t.data, ...(t.mips ?? [])];
+        const tex = device.createTexture({ size: [t.w, t.h], format: t.format as GPUTextureFormat, mipLevelCount: levels.length, usage: 0x2 | 0x4 /* COPY_DST | TEXTURE_BINDING */ });
         const bpp = t.data.length / (t.w * t.h);
-        device.queue.writeTexture({ texture: tex }, new Uint8Array(t.data), { bytesPerRow: t.w * bpp }, [t.w, t.h]);
+        levels.forEach((data, mip) => {
+          const w = Math.max(t.w >> mip, 1), h = Math.max(t.h >> mip, 1);
+          device.queue.writeTexture({ texture: tex, mipLevel: mip }, new Uint8Array(data), { bytesPerRow: w * bpp }, [w, h]);
+        });
         return { binding: t.binding, resource: tex.createView() };
       });
-      entries.push({ binding: sampler.binding, resource: device.createSampler({ magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode }) });
+      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode }) });
       const buffer = device.createBuffer({ size: out.size, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
       entries.push({ binding: out.binding, resource: { buffer } });
       const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
@@ -879,6 +884,30 @@ test('texture-sampler pairs past what the translator records fail the stage, say
     const r = glslStage(translate, tmp, 'tests/venus/l7a/pairs.frag');
     assert.notEqual(r.rc, 0, 'translated with pairs dropped');
     assert.match(r.text, /texture-sampler pairs/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('an integer texture sampled at an explicit LOD is fetched from the level Vulkan selects, within the image\'s levels (VK3 L9b)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/l9b/int-lod.comp');
+    assert.equal(r.rc, 0, r.text);
+    // A 4×4 r32sint image of three levels: level 0's texels 100 + y·4 + x, level 1's 200 + y·2 + x, level 2's 300.
+    const word = (v: number) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
+    const level = (n: number, base: number) => Array.from({ length: n * n }, (_, i) => word(base + i)).flat();
+    // The sampler's binding is the texture's + 1; a fetch doesn't use it.
+    const sampled = r.text.includes('@binding(1) var') ? { binding: 1, filter: 'nearest' } : undefined;
+    const res = await runSampled(r.text, [{ binding: 0, format: 'r32sint', w: 4, h: 4, data: level(4, 100), mips: [level(2, 200), level(1, 300)] }], sampled, { binding: 2, size: 16 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const got = [...new Int32Array(res.out.buffer)].filter((_, i) => i % 4 === 0);
+    // The LODs -1, 0.3, 1.2, 1.7, 2, 5, 9, -0.3: levels 0, 0, 1, 2, 2, 2, 2, 0 (nearest, clamped to 0-2); (0.6, 0.6)
+    // is texel (2, 2) of level 0, (1, 1) of level 1, (0, 0) of level 2; offset (-1, 1): (1, 3), (0, 1) clamped, (0, 0).
+    const at = [110, 203, 300], off = [113, 202, 300], levels = [0, 0, 1, 2, 2, 2, 2, 0];
+    assert.deepEqual(got, [...levels.map((l) => at[l]), ...levels.map((l) => off[l])]);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

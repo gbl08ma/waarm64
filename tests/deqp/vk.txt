@@ -52,6 +52,8 @@
 # VK3 L7b: interpolateAtOffset and interpolateAtSample (the input moved along its derivatives): every samples_4 case of
 # multisample_interpolation's offset_interpolate_at_pixel_center, offset_interpolation_at_sample_position and
 # sample_interpolate_at groups, and sample_interpolate_at_single_sample's, at the end.
+# VK3 L9b: integer textures sampled at an explicit LOD fetched from Vulkan's nearest level within the view's levels:
+# every texturelodoffset and textureprojlodoffset clamp_to_edge isampler and usampler case that passes (35 more), at the end.
 dEQP-VK.info.device
 dEQP-VK.info.device_extension_supported
 dEQP-VK.info.device_extensions
@@ -4742,3 +4744,38 @@ dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_igno
 dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_ignores_centroid.137_191_1.samples_4
 dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_single_sample.128_128_1.samples_1
 dEQP-VK.pipeline.monolithic.multisample_interpolation.sample_interpolate_at_single_sample.137_191_1.samples_1
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler1d_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler1d_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler1darray_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler1darray_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler2d_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler2d_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler2darray_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler2darray_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler3d_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.isampler3d_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler1d_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler1d_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler1darray_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler1darray_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler2d_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler2d_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler2darray_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler2darray_vertex
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler3d_fragment
+dEQP-VK.glsl.texture_functions.texturelodoffset.clamp_to_edge.usampler3d_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler1d_vec2_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler1d_vec2_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler1d_vec4_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler1d_vec4_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec3_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec3_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec4_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler1d_vec2_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler1d_vec2_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler1d_vec4_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler1d_vec4_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler2d_vec3_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler2d_vec3_vertex
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler2d_vec4_fragment
+dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.usampler2d_vec4_vertex
