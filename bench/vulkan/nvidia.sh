@@ -106,7 +106,9 @@ if [ "${1:-}" = page ]; then
 
   say "the bundle (the page, its binaries and the guests' images; a few minutes the first time)"
   P=$DIR/page
-  if [ ! -f "$P/.bundle" ] || [ "$(cat "$P/.bundle")" != "$(stat -c %s-%Y "$BUNDLE")" ]; then
+  # A bundle deleted after its run: the page unpacked from it is used as it is.
+  if [ ! -e "$BUNDLE" ] && [ -f "$P/.bundle" ]; then echo "  (the bundle is gone: the page unpacked from it, as it is)"
+  elif [ ! -f "$P/.bundle" ] || [ "$(cat "$P/.bundle")" != "$(stat -c %s-%Y "$BUNDLE")" ]; then
     rm -rf "$P" && mkdir -p "$P" && tar -xf "$BUNDLE" -C "$P" && stat -c %s-%Y "$BUNDLE" > "$P/.bundle"
   fi
   cat "$P/BUNDLE.txt"
@@ -267,7 +269,7 @@ if [ "${1:-}" = page ]; then
     # VK3 L9b (only when asked: VK2_STEPS=l9b, ~5 min): the first run's two fails and their neighbours by name
     # (bench/vulkan/l9b-cases.txt), with dEQP's messages, the cases that passed, and the page's completion faults (a trap
     # in the module's complete came with the memory binding fail: "a submit's completion failed" since L9b).
-    step deqp-l9b 900 env CASES=bench/vulkan/l9b-cases.txt LIMIT_S=600 DETAIL=20 PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-l9b"
+    step deqp-l9b 900 env CASES="$REPO/bench/vulkan/l9b-cases.txt" LIMIT_S=600 DETAIL=20 PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-l9b"
     (cd "$P" && node -e '
       let r; try { r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { console.log("  l9b: no results"); process.exit(0); }
       const want = ["dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler2d_vec4_fragment", "dEQP-VK.memory.binding.regular.suballocated.buffer_1048577"];

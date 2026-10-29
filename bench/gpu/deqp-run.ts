@@ -53,8 +53,9 @@ log('info', results.info);
 if (process.env.CASES) {
   const cases = readFileSync(process.env.CASES, 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).join('\n');
   await pasteSerial(`cat > /tmp/patterns.txt <<'EOF'\n${cases}\nEOF`);
-  // A name with `*` stands for the mustpass list's cases it matches (dEQP's case lists take no wildcards).
-  await run(`while read -r p; do case "$p" in *'*'*) grep -E "^$(echo "$p" | sed 's/[.]/[.]/g; s/[*]/.*/g')$" /mnt/vdb/deqp/${api}-main.txt;; *) echo "$p";; esac; done < /tmp/patterns.txt > /tmp/cases.txt`);
+  // A name with `*` stands for the mustpass list's cases it matches (dEQP's case lists take no wildcards); each case once
+  // (deqp-vk exits at once on a duplicate).
+  await run(`while read -r p; do case "$p" in *'*'*) grep -E "^$(echo "$p" | sed 's/[.]/[.]/g; s/[*]/.*/g')$" /mnt/vdb/deqp/${api}-main.txt;; *) echo "$p";; esac; done < /tmp/patterns.txt | awk '!seen[$0]++' > /tmp/cases.txt`);
 } else {
   // PREFIX=<a,b,...>: only the mustpass list's cases under those groups (e.g. dEQP-VK.draw.), then every STRIDE-th.
   const prefix = (process.env.PREFIX ?? '').split(',').filter(Boolean).map((p) => p.replace(/[.]/g, '[.]')).join('|');

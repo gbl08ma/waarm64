@@ -1,0 +1,10 @@
+[0.8] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
+[page log] venus: Vulkan on nvidia ampere adapter; its frames reach virgl by bitmap, checked at the first copies
+[33.2] running
+[37.8] info 7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt
+[42.0] cases 232
+[43.5] ran elapsed 1 1 s
+[44.5] counts {}
+[48.4] stopped at dEQP-VK.glsl.texture_functions.textureprojlodoffset.clamp_to_edge.isampler1d_vec2_compute
+[51.3] detail 
+[51.3] done 0 not passed; warnings 1

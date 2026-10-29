@@ -1,0 +1,15 @@
+l9-default-1: done
+l9-all-1: done
+l9-features-1: done
+l9-limits-1: done
+l9-bindgroups-1: done
+l9-pad-1: done
+l9-default-2: done
+l9-all-2: done
+l9-features-2: done
+l9-limits-2: done
+l9-bindgroups-2: done
+l9-pad-2: done
+deqp-l9b: done
+  l9b: 232 cases, {}; isampler2d_vec4_fragment NOT passed, buffer_1048577 NOT passed
+subgroups: not held (the device has the adapter's subgroups: the deqp step's subgroup cases ran on them)

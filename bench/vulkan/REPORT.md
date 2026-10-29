@@ -897,6 +897,35 @@ submit and its "done", in code between 4fdc69fb and c8087cb0 (the host's timers 
 unchanged: `fence`). The arms at 1 fish keep L4e's shape, each ~1 ms dearer: `vknudge=0.25` 3.50, 3.58 (2.43, 2.37), `vknudge=0` 4.36, 4.35 (2.86, 2.79). **Taken by L9**
 (VK3-HANDOVER.md).
 
+## VK3: the NVIDIA run for L9 — none of L9a's suspects is the regression; L9b's check ran nothing
+
+**2026-10-29.** The user ran `VK2_STEPS="l9 l9b" bench/vulkan/nvidia.sh page` with the bundle of 2850df53 (after L9b;
+`results/vk3/nvidia-l9/`; the host as before: RTX 3070, 615.71.09, Arch's Chromium 153.0.8010.52).
+
+**`l9`** (VK0's scene at 1 fish and the toolkit, ms a frame, two alternated rounds; then a submit's done in ms, and the
+traced GPU process's `Queue::Submit` over 0.3 ms, median):
+
+| arm (`?gpu=vkl9=`) | 1 fish | toolkit | done, 1 fish | done, toolkit | `Queue::Submit` |
+| --- | --- | --- | --- | --- | --- |
+| default | 3.62, 3.60 | 4.41, 4.40 | 5.47, 5.48 | 6.80, 6.68 | 2.82, 2.85 |
+| `all` (4fdc69fb's behaviour) | 3.82, 3.75 | 4.50, 4.43 | 5.60, 5.56 | 7.03, 6.87 | 2.92, 3.62 |
+| `features` | 3.60, 3.62 | 4.37, 4.46 | 5.54, 5.45 | 6.78, 7.02 | 2.85, 2.76 |
+| `limits` | 3.69, 3.64 | 4.41, 4.36 | 5.52, 5.48 | 6.62, 6.64 | 2.92, 2.69 |
+| `bindgroups` | 3.91, 3.75 | 4.12, 4.23 | 5.62, 5.54 | 6.05, 6.46 | 2.71, 2.66 |
+| `pad` | 3.71, 3.67 | 4.37, 4.37 | 5.52, 5.70 | 6.73, 6.61 | 2.86, 3.31 |
+
+`all` is no cheaper than the default, so **the regression is none of the suspects** (the device's features and limits,
+L6b's kept bind groups, L7a's padding). `bindgroups` alone is a little cheaper at the toolkit (rounds apart from the
+default's) but not inside `all`, which has it: not a cause. Still outside: the rest of the 34 commits'
+changes that the WebGPU stream doesn't show (L9a counted the calls on SwiftShader), and the order or timing of the
+calls. Filed: docs/backlog.md "Venus's submits ~2 ms later on NVIDIA since 4fdc69fb".
+
+**`l9b`** ran nothing: `bench/vulkan/l9b-cases.txt` named `memory.binding.regular.suballocated.buffer_1048577` (and
+its dedicated twin) again after `memory.binding.regular.*`, and deqp-vk exits at once on a duplicate case (`counts {}`
+in 1 s). Fixed: the list names each case once, deqp-run.ts drops duplicates, and the step reads the list from the
+checkout and runs on a page already unpacked (the bundle deleted). On SwiftShader the list runs (230 cases, both
+cases Pass, every not-passed case outside the pass list, `results/vk3/nvidia-l9/swiftshader-l9b.json`).
+
 ## VK3 L9a: the submit-to-done regression on NVIDIA — not on the M4 or SwiftShader; Dawn's `Queue::Submit` 1 ms dearer there, the suspects switchable for the next run
 
 **2026-10-29.** Why Venus's submits were done ~2 ms later on the user's NVIDIA desktop at c8087cb0 than at 4fdc69fb

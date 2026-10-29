@@ -582,9 +582,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
   scene's pass ~0.9 ms of GPU (the M4's 0.41), a frame's `Queue::Submit` ~1.55 ms in the GPU process (REPORT.md "VK3:
   the NVIDIA run after L2b"; the 134 MB trace in `bench/results/local/vk3-nvidia-l2b/`), 2.5 ms at c8087cb0 (the
-  same WebGPU calls; VK3 L9a: `nvidia.sh`'s `l9` arms bisect its suspects). The floor before it (~4.5 ms
+  same WebGPU calls: the next entry). The floor before it (~4.5 ms
   a frame: a ring poller on a clamped `setTimeout(0)`, Dawn's slow look at a done submit) was fixed in VK3 L2 and
   confirmed there (REPORT.md "VK3 L2", "VK3: the NVIDIA run after L2").
+- **Venus's submits ~2 ms later on NVIDIA since 4fdc69fb** (VK3's final NVIDIA run; REPORT.md "VK3: the final NVIDIA
+  run", "VK3 L9a", "VK3: the NVIDIA run for L9"): at c8087cb0 a scene submit is done 5.4 ms after it's made at 1 fish
+  (3.3 at 4fdc69fb), 6.9 at the toolkit (4.9), mpv's 4.9 (3.9); a frame 5–40% dearer, still under virgl's at 1,000
+  fish and the toolkit. The GPU's pass and the encoding unchanged, a frame's Dawn `Queue::Submit` 1.56 → 2.53 ms of the
+  GPU process's CPU. Not on the M4 or SwiftShader (alternated A/B), the same WebGPU calls (counted on SwiftShader), and
+  none of the suspects (`?gpu=vkl9=features|limits|bindgroups|pad|all`, 4fdc69fb's behaviour: `all` no cheaper).
+  Next: a bisect on NVIDIA itself, a bundle carrying the page at several of the 34 commits between them (`git log
+  4fdc69fb..c8087cb0 -- vk web`: the images shared, ~20 MB a page) run as alternated arms in one session; or Dawn's
+  own trace categories (`dawn.validation`, per-command timings) at both commits, which would name the slower command.
 - **The guest fences each frame through the virtqueue** (VK3 L2): in VK2 L5 the scene's guest sent ~1 fenced
   `SUBMIT_3D` a second, now one every two frames (269 a second at 1 fish on the M4; 109–208 in VK2's NVIDIA run), likely
   since L6/L7 advertised sync-file semaphores and external fences to Venus's guest driver. Each costs the guest an

@@ -1,0 +1,271 @@
+{
+ "seconds": 2.006874,
+ "gpuProcess": "GPU Process",
+ "gpuMain": "CrGpuMain",
+ "events": 343377,
+ "busyMsPerSecond": 599.68,
+ "handleDawnCommands": 1250.2030521098984,
+ "pollingWork": 1292.059192555188,
+ "stubPerformWork": 164.43483746363748,
+ "queueSubmit": {
+  "perSecond": 1077.8,
+  "longPerSecond": 97.2,
+  "longMs": {
+   "p25": 2.511,
+   "p50": 2.861,
+   "p75": 3.91,
+   "p90": 4.402
+  },
+  "longThreadMsP50": 2.815,
+  "longMsPerSecond": 306.4
+ },
+ "top": [
+  {
+   "name": "ThreadControllerImpl::RunTask",
+   "n": 3003,
+   "msPerSecond": 599.68,
+   "meanMs": 0.401
+  },
+  {
+   "name": "Scheduler::RunTask",
+   "n": 2480,
+   "msPerSecond": 591.85,
+   "meanMs": 0.479
+  },
+  {
+   "name": "GpuChannel::ExecuteDeferredRequest",
+   "n": 2458,
+   "msPerSecond": 585.4,
+   "meanMs": 0.478
+  },
+  {
+   "name": "CommandBuffer::Flush",
+   "n": 2457,
+   "msPerSecond": 577.67,
+   "meanMs": 0.472
+  },
+  {
+   "name": "WebGPU",
+   "n": 2444,
+   "msPerSecond": 575.96,
+   "meanMs": 0.473
+  },
+  {
+   "name": "CommandBufferStub::OnAsyncFlush",
+   "n": 2457,
+   "msPerSecond": 575.44,
+   "meanMs": 0.47
+  },
+  {
+   "name": "CommandBufferService:PutChanged",
+   "n": 2457,
+   "msPerSecond": 570.92,
+   "meanMs": 0.466
+  },
+  {
+   "name": "DawnCommands",
+   "n": 2509,
+   "msPerSecond": 564.06,
+   "meanMs": 0.451
+  },
+  {
+   "name": "WebGPUDecoderImpl::HandleDawnCommands",
+   "n": 2509,
+   "msPerSecond": 561.85,
+   "meanMs": 0.449
+  },
+  {
+   "name": "Queue::Submit",
+   "n": 2163,
+   "msPerSecond": 331.6,
+   "meanMs": 0.308
+  },
+  {
+   "name": "DawnServiceSerializer::Flush",
+   "n": 4988,
+   "msPerSecond": 18.43,
+   "meanMs": 0.007
+  },
+  {
+   "name": "WebGPUDecoderImpl::PerformPollingWork",
+   "n": 2593,
+   "msPerSecond": 9.39,
+   "meanMs": 0.007
+  },
+  {
+   "name": "Queue::Tick",
+   "n": 6487,
+   "msPerSecond": 3.93,
+   "meanMs": 0.001
+  },
+  {
+   "name": "WebGL",
+   "n": 12,
+   "msPerSecond": 3.62,
+   "meanMs": 0.605
+  },
+  {
+   "name": "DawnReturnCommands",
+   "n": 4386,
+   "msPerSecond": 2.39,
+   "meanMs": 0.001
+  },
+  {
+   "name": "DeviceBase::APITick::IsDeviceIdle",
+   "n": 4432,
+   "msPerSecond": 2.37,
+   "meanMs": 0.001
+  },
+  {
+   "name": "CommandBufferStub::PerformWork",
+   "n": 330,
+   "msPerSecond": 1.66,
+   "meanMs": 0.01
+  },
+  {
+   "name": "Scheduler::FinishTask",
+   "n": 2236,
+   "msPerSecond": 1.26,
+   "meanMs": 0.001
+  },
+  {
+   "name": "CommandBuffer::FlushComplete",
+   "n": 2110,
+   "msPerSecond": 1.14,
+   "meanMs": 0.001
+  },
+  {
+   "name": "DeviceBase::APICreateShaderModule",
+   "n": 22,
+   "msPerSecond": 0.87,
+   "meanMs": 0.079
+  },
+  {
+   "name": "SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass",
+   "n": 10,
+   "msPerSecond": 0.5,
+   "meanMs": 0.1
+  },
+  {
+   "name": "SkiaOutputSurfaceImplOnGpu::SwapBuffers",
+   "n": 10,
+   "msPerSecond": 0.49,
+   "meanMs": 0.098
+  },
+  {
+   "name": "GPUTracer::ProcessTraces",
+   "n": 172,
+   "msPerSecond": 0.27,
+   "meanMs": 0.003
+  },
+  {
+   "name": "SimpleWatcher::OnHandleReady",
+   "n": 20,
+   "msPerSecond": 0.27,
+   "meanMs": 0.027
+  },
+  {
+   "name": "RendererRasterWorker",
+   "n": 2,
+   "msPerSecond": 0.25,
+   "meanMs": 0.249
+  },
+  {
+   "name": "Receive mojo message",
+   "n": 21,
+   "msPerSecond": 0.18,
+   "meanMs": 0.017
+  },
+  {
+   "name": "Graphics.Pipeline",
+   "n": 20,
+   "msPerSecond": 0.18,
+   "meanMs": 0.018
+  },
+  {
+   "name": "RasterDecoderImpl::DoEndRasterCHROMIUM",
+   "n": 2,
+   "msPerSecond": 0.16,
+   "meanMs": 0.165
+  },
+  {
+   "name": "RasterDecoderImpl::DoEndRasterCHROMIUM::Flush",
+   "n": 2,
+   "msPerSecond": 0.16,
+   "meanMs": 0.157
+  },
+  {
+   "name": "GLContextEGL::MakeCurrent",
+   "n": 41,
+   "msPerSecond": 0.12,
+   "meanMs": 0.006
+  },
+  {
+   "name": "DeviceBase::APICreateRenderPipelineAsync",
+   "n": 8,
+   "msPerSecond": 0.08,
+   "meanMs": 0.021
+  },
+  {
+   "name": "RasterDecoderImpl::DoRasterCHROMIUM",
+   "n": 2,
+   "msPerSecond": 0.04,
+   "meanMs": 0.041
+  },
+  {
+   "name": "RasterDecoderImpl::DoRasterCHROMIUM::Deserializing",
+   "n": 2,
+   "msPerSecond": 0.04,
+   "meanMs": 0.038
+  },
+  {
+   "name": "SkiaOutputDevice->ScheduleOverlays()",
+   "n": 10,
+   "msPerSecond": 0.03,
+   "meanMs": 0.007
+  },
+  {
+   "name": "SyncToken::Release",
+   "n": 10,
+   "msPerSecond": 0.03,
+   "meanMs": 0.005
+  },
+  {
+   "name": "CommandBufferStub::OnDestroyTransferBuffer",
+   "n": 1,
+   "msPerSecond": 0.02,
+   "meanMs": 0.047
+  },
+  {
+   "name": "SkiaOutputSurfaceImplOnGpu::BeginAccessImages",
+   "n": 10,
+   "msPerSecond": 0.02,
+   "meanMs": 0.005
+  },
+  {
+   "name": "SkiaOutputSurfaceImplOnGpu::EndAccessImages",
+   "n": 10,
+   "msPerSecond": 0.01,
+   "meanMs": 0.002
+  },
+  {
+   "name": "RasterDecoderImpl::DoBeginRasterCHROMIUM",
+   "n": 2,
+   "msPerSecond": 0.01,
+   "meanMs": 0.007
+  },
+  {
+   "name": "Scheduler::SequenceUnblocked",
+   "n": 9,
+   "msPerSecond": 0.01,
+   "meanMs": 0.001
+  }
+ ],
+ "threads": [
+  "CrGpuMain",
+  "PerfettoTrace",
+  "VizCompositorThread",
+  "Chrome_ChildIOThread",
+  "GpuChannelManager Trace"
+ ]
+}

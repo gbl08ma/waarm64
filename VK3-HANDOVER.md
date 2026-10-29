@@ -6,6 +6,18 @@ of "Where VK3 stands"; the supervisor folds older states into it. History and nu
 `bench/vulkan/REPORT.md` (a "VK3 …" section per loop and NVIDIA run, JSON in `bench/vulkan/results/vk3/`), the
 docs and the backlog; git keeps the old handovers.
 
+## State (2026-10-29, the NVIDIA run for L9 processed)
+
+- **`l9`:** none of L9a's suspects is the regression (`vkl9=all` no cheaper: 1 fish 3.75–3.82 against 3.60–3.62 ms);
+  filed, with the next ways to bisect it, in docs/backlog.md "Venus's submits ~2 ms later on NVIDIA since 4fdc69fb".
+  REPORT.md "VK3: the NVIDIA run for L9", `results/vk3/nvidia-l9/`.
+- **`l9b` ran nothing** (a duplicate name in its list: deqp-vk exits at once). Fixed; the step now reads the list from
+  the checkout and runs on the page already unpacked, so `VK2_STEPS=l9b bench/vulkan/nvidia.sh page <the bundle's
+  old path> ~/webpc-vk2` works on the desktop without the bundle (~5 min). Checked on SwiftShader (both cases pass).
+- Both bundles deleted (the user, 2026-10-29). **The user's call (2026-10-29): close VK3 with the regression filed**,
+  after their `l9b` run: process it (REPORT.md "VK3: the NVIDIA run for L9", its `l9b` paragraph), then the close
+  (step 6).
+
 ## State (2026-10-29, the bundle for L9's NVIDIA run)
 
 - **Built** by the supervisor from a clean checkout at 2850df53 (after L9b): `target/vk3-nvidia-bundle-2850df53.tar`
