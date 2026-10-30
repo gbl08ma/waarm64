@@ -273,13 +273,10 @@ left open, most promising first.
   bodies; `bench/boot/results/wasm-size/` README, not weighted by execution, no timings; Firefox's pages session and
   Alpine weren't in that session, so check the shares there first). Block tails are 42% of the code, inline
   instructions 43% (TLB probes 10.3%, slow arms 7.5%), failure chains 9%, NZCV commits before branches 3.5%, prologues
-  2%. Two costs cut across them: **materializing NZCV, 13.2%** (~67 B each, 86% of them SUBS's), and **linking to the
+  2%. Two costs cut across them: **materializing NZCV, 13.2%** (~67 B each, 86% of them SUBS's; SUBS's has since lost about 16 B of its 74 and 69, `bench/interp/REPORT.md` "SUBS's NZCV from its operands"), and **linking to the
   next block, 17.3%** (`block::chain` 13.9%: jump-cache tails 6.2%, transfer-cache probes for uncompiled successors in
   another page 3.5%, guarded direct calls with their probe 3.4% at 190 B each; BR/BLR/RET's probes 3.4%). Register
   write-backs are 15.6% (7.5 B each) and PC stores 3.2%, what exact state at exits needs. Untried, by size:
-  - **SUBS's NZCV from its operands** (`nzcv_of`'s `Kind::Sub`): `r = x - y`, `C = x >=u y`, `V = sign((x ^ y) & (x
-    ^ r))` instead of `x + ~y + 1` through `add_nzcv`: ~56 B instead of 74 (64-bit), ~54 instead of 69, about 2.8% of
-    the code and fewer ops at every flag-committing exit; the formula checked against AddWithCarry (`nzcvcheck.py`).
   - **NZCV in small functions of the module** (`nzcv_sub64(x, y)` and kin, the store at the site or in it: 8-11 B a
     site): in the failure chains alone (cold) ~3.5%, everywhere ~11%. V8 inlines direct wasm calls of up to 500 wire
     bytes by default, from Liftoff's call counts, but Liftoff's code pays a call, and TurboFan is sensitive to where

@@ -1,0 +1,110 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-30T15:21:00.657Z",
+ "commit": "3a3c62b6e846",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_jit_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 7349.71,
+     "interpretedPct": 13.641,
+     "blocks": 10,
+     "modules": 4,
+     "bytes": 9530,
+     "compileMs": 0.48,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 15,
+     "condDirect": 13,
+     "condComputed": 0,
+     "condMemory": 1,
+     "blocksPerRegion": 1.5,
+     "backEdges": 7,
+     "tierUps": 1
+    }
+   },
+   "samples": [
+    139.76240389006153
+   ],
+   "median": 139.76240389006153,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 14407.94,
+     "interpretedPct": 0.095,
+     "blocks": 8,
+     "modules": 3,
+     "bytes": 13454,
+     "compileMs": 0.36,
+     "inlinePct": 100,
+     "inlineStepsPct": 99.99,
+     "flagsElided": 4,
+     "flagsStored": 40,
+     "condDirect": 27,
+     "condComputed": 0,
+     "condMemory": 2,
+     "blocksPerRegion": 1.95,
+     "backEdges": 9,
+     "tierUps": 2,
+     "helpers": [
+      {
+       "op": "STP_LDP_gen",
+       "calls": 18880
+      }
+     ]
+    }
+   },
+   "samples": [
+    4662.004671072913,
+    4184.1004173665615,
+    4981.320067561234,
+    5031.446510702131,
+    4705.882352941177,
+    5025.125641686872,
+    5063.291116319317,
+    4524.886891252249,
+    5056.889995875826,
+    5095.541424487995,
+    5076.142135051387,
+    4728.132366387242,
+    5082.5921189027085,
+    5161.290322580645,
+    5188.067459315675
+   ],
+   "median": 5031.446510702131,
+   "iqr": 362.3597673128388,
+   "n": 15
+  }
+ ]
+}

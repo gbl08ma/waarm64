@@ -1,0 +1,105 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-30T15:18:26.492Z",
+ "commit": "3a3c62b6e846",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_jit_flat_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 7318.52,
+     "interpretedPct": 13.642,
+     "blocks": 10,
+     "modules": 4,
+     "bytes": 9740,
+     "compileMs": 0.35,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 15,
+     "condDirect": 13,
+     "condComputed": 0,
+     "condMemory": 1,
+     "blocksPerRegion": 1.5,
+     "backEdges": 7,
+     "tierUps": 1
+    }
+   },
+   "samples": [
+    157.79092687329273
+   ],
+   "median": 157.79092687329273,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_flat_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 14412.11,
+     "interpretedPct": 0.095,
+     "blocks": 12,
+     "modules": 4,
+     "bytes": 16102,
+     "compileMs": 0.38,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 4,
+     "flagsStored": 41,
+     "condDirect": 28,
+     "condComputed": 0,
+     "condMemory": 5,
+     "blocksPerRegion": 1.78,
+     "backEdges": 9,
+     "tierUps": 2,
+     "helpers": []
+    }
+   },
+   "samples": [
+    5215.123847843967,
+    4395.604384087981,
+    5249.343828736112,
+    5479.452045846553,
+    5174.644270340793,
+    5517.241379310345,
+    5698.005713487299,
+    5018.820596681983,
+    5747.12640528226,
+    5610.09818046999,
+    5649.717527442067,
+    5270.092203437641,
+    5763.688762786989,
+    5657.708633729432,
+    5532.503488829706
+   ],
+   "median": 5517.241379310345,
+   "iqr": 421.4792422957098,
+   "n": 15
+  }
+ ]
+}

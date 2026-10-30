@@ -177,7 +177,9 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
    (the cold ones), per arm the sessions' medians. Judge by the build times, never the MIPS samples (those spread
    1,094-1,489 across sessions of one core; the build times of three sessions agreed within 0.3%). The run's first
    session built 6.6% slower than the rest, so the driver runs a warm-up session first and drops it
-   (`bench/interp/REPORT.md` "M8-INTERP loop 11").
+   (`bench/interp/REPORT.md` "M8-INTERP loop 11"). Sessions can also fall into two modes ~6% apart with one core (30.1-30.6 s
+   against 31.7-32.3 s, each arm in both, `bench/interp/REPORT.md` "SUBS's NZCV from its operands"; the mode shows by
+   the second build), so a few sessions a side don't resolve a small difference.
 
 ## Rules
 

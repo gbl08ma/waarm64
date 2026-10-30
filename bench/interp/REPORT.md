@@ -1733,3 +1733,36 @@ the extra tests and the code the inlined path adds to `hot`. The likely cause, n
 V8 keeps in registers across the loop, and the flat guest, which has no TLB to save on, lost most. A new path in `hot`
 for a probe's sake may well do the same. On x86_64 the atomics remain the larger lever (docs/cpu.md, backlog "Interpreter").
 
+## SUBS's NZCV from its operands (2026-10-30)
+
+`nzcv_of`'s `Kind::Sub` computed `x + !y + 1` and went through `add_nzcv`; now `r = x - y`, `C = x >=u y`,
+`V = sign((x ^ y) & (x ^ r))` (`sub_nzcv`), which CCMP shares, one scratch local fewer. Kept: smaller code and no cost
+seen. Dev VM, Chromium 153.0.8010.52, JSON and summaries in `results/nzcv-sub/`.
+
+**Code.** On Firefox's pages session (from the snapshot, 3 alternated rounds with an A/A) wasm bytes per inline
+instruction fell 1.6% (101.6-102.0 to 100.1-100.3), per block 1.4% (1547-1562 to 1520-1534), against the census's 2.8%
+estimate (`bench/boot/results/wasm-size/`, static, Debian). The session's total stayed at 133 MB: it compiled ~1.2% more
+instructions and 1.3% more blocks in every round; why wasn't traced.
+
+**Time.** `bench/interp/ab.sh`, 3 alternated rounds, medians:
+
+| | base | ops | |
+|---|---|---|---|
+| `alpine_user_jit_total` (ms) | 13307.8 | 13327.0 | +0.1% |
+| `boot_alpine_jit_mips` | 498.7 | 513.2 | +2.9% |
+| `boot_jit_mips` | 171.4 | 171.2 | -0.2% |
+| `jit_mips` | 5641.8 | 5653.7 | +0.2% |
+| `vm_jit_flat_mips` | 5517.2 | 5540.2 | +0.4% |
+| `vm_jit_mmu_mips` | 5006.3 | 5044.1 | +0.8% |
+| `jit_coremark_mips` | 2353.6 | 2352.9 | 0.0% |
+| `jit_fp_mips` | 1426.0 | 1425.3 | -0.1% |
+
+Every row's rounds overlap, Alpine's boot too (base 514.2, 497.4, 498.7; ops 513.2, 513.3, 509.6), and so do the
+userspace phases (compress -0.4%, Lua +0.4%, churn +0.7%, SQLite -0.6%, in ms): no difference counts, either way.
+
+**The long sessions didn't resolve anything finer.** Pages session, busy MIPS: base 198, 215, 215; A/A copy 212, 198,
+213; ops 202, 195, 211. `bench/stress/go-ab.sh` (median build after the first three, s): base 30.07, 30.56, 32.34; ops
+31.66, 31.77, 30.45. Both are bimodal, ~6% apart, with both arms in both modes: within a mode ops isn't slower, but it
+was in the slow mode 2 times of 3 on each workload against base's 1, and these rounds can't say whether that's chance.
+Twelve shorter `go build` sessions to count the modes were stopped: a change this small isn't worth the machine time,
+and no benchmark showed a cost. Not measured on the Mac host or x86_64.

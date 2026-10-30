@@ -1,0 +1,105 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-30T15:20:59.721Z",
+ "commit": "3a3c62b6e846",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_jit_flat_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 7318.52,
+     "interpretedPct": 13.642,
+     "blocks": 10,
+     "modules": 4,
+     "bytes": 9740,
+     "compileMs": 0.61,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 15,
+     "condDirect": 13,
+     "condComputed": 0,
+     "condMemory": 1,
+     "blocksPerRegion": 1.5,
+     "backEdges": 7,
+     "tierUps": 1
+    }
+   },
+   "samples": [
+    153.3154463350918
+   ],
+   "median": 153.3154463350918,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_flat_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 14412.11,
+     "interpretedPct": 0.095,
+     "blocks": 12,
+     "modules": 4,
+     "bytes": 16102,
+     "compileMs": 0.38,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 4,
+     "flagsStored": 41,
+     "condDirect": 28,
+     "condComputed": 0,
+     "condMemory": 5,
+     "blocksPerRegion": 1.78,
+     "backEdges": 9,
+     "tierUps": 2,
+     "helpers": []
+    }
+   },
+   "samples": [
+    5517.241379310345,
+    4390.779385170169,
+    5221.932097003835,
+    5540.166228769282,
+    5270.092244823935,
+    5657.708633729432,
+    5602.240907582731,
+    5018.820596681983,
+    5714.285714285715,
+    5706.134053395983,
+    5657.708633729432,
+    5277.044866500025,
+    5772.005766048398,
+    5738.880943740784,
+    5571.030635118786
+   ],
+   "median": 5571.030635118786,
+   "iqr": 408.3527879007279,
+   "n": 15
+  }
+ ]
+}

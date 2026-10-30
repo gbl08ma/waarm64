@@ -951,9 +951,19 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                     get(c, sf, rm);
                 }
             };
-            let (tx, ty, tr) = add_with_carry(c, sf, |c| get(c, sf, rn), y, sub);
-            let carry = if sub { Carry::One } else { Carry::Zero };
-            add_nzcv(c, sf, tx, ty, tr, carry);
+            let (tx, ty, tr) = (tmp(sf, 0), tmp(sf, 1), tmp(sf, 2));
+            get(c, sf, rn);
+            c.local_set(tx);
+            y(c);
+            c.local_set(ty);
+            c.local_get(tx).local_get(ty);
+            arith(c, sf, if sub { SUB } else { ADD });
+            c.local_set(tr);
+            if sub {
+                sub_nzcv(c, sf, tx, ty, tr);
+            } else {
+                add_nzcv(c, sf, tx, ty, tr, Carry::Zero);
+            }
             c.i32_const((bits(i, 3, 0) << 28) as i32);
             cond(c, bits(i, 15, 12));
             c.select().i64_extend_i32_u().i64_store(NZCV);
@@ -3665,11 +3675,10 @@ fn cmp(c: &mut Func, sf: bool, op32: u8) {
     c.op(if sf { op32 + WC } else { op32 });
 }
 
-/// The carry into an addition: none, one (a subtraction), or `NZCV.C` in an i32 local.
+/// The carry into an addition: none, or `NZCV.C` in an i32 local.
 #[derive(Clone, Copy)]
 enum Carry {
     Zero,
-    One,
     Dynamic(u32),
 }
 
@@ -3708,42 +3717,14 @@ fn addsub(
     c.set_flags(if sub { Kind::Sub } else { Kind::Add }, sf);
 }
 
-/// AddWithCarry(x, sub ? !y : y, sub) into scratch locals (x, y, result).
-fn add_with_carry(
-    c: &mut Func,
-    sf: bool,
-    x: impl FnOnce(&mut Func),
-    y: impl FnOnce(&mut Func),
-    sub: bool,
-) -> (u32, u32, u32) {
-    let (tx, ty, tr) = (tmp(sf, 0), tmp(sf, 1), tmp(sf, 2));
-    x(c);
-    c.local_set(tx);
-    y(c);
-    if sub {
-        konst(c, sf, u64::MAX);
-        arith(c, sf, XOR);
-    }
-    c.local_set(ty);
-    c.local_get(tx).local_get(ty);
-    arith(c, sf, ADD);
-    if sub {
-        konst(c, sf, 1);
-        arith(c, sf, ADD);
-    }
-    c.local_set(tr);
-    (tx, ty, tr)
-}
-
 /// Pushes AddWithCarry's NZCV as an i32 for `r` = `x` + `y` + carry (locals
 /// of the operation size): C is `r < x` unsigned, or `r <= x` with a carry
-/// in; V is the sign of `(x ^ r) & (y ^ r)`.
+/// in; V is the sign of `(x ^ r) & (y ^ r)`. A subtraction has [`sub_nzcv`].
 fn add_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     nz(c, sf, r);
     c.local_get(r).local_get(x);
     match carry {
         Carry::Zero => cmp(c, sf, LT_U),
-        Carry::One => cmp(c, sf, LE_U),
         Carry::Dynamic(cin) => {
             cmp(c, sf, LT_U);
             c.local_get(r).local_get(x);
@@ -3761,10 +3742,27 @@ fn add_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     c.op(OR);
 }
 
-/// Pushes the NZCV of a lazy setter as an i32 (scratch: `tmp(sf, 1..=2)`).
+/// Pushes AddWithCarry(x, !y, 1)'s NZCV as an i32 for `r` = `x` - `y` (locals
+/// of the operation size): C is `x >= y` unsigned; V is the sign of
+/// `(x ^ y) & (x ^ r)`.
+fn sub_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32) {
+    nz(c, sf, r);
+    c.local_get(x).local_get(y);
+    cmp(c, sf, GE_U);
+    c.i32_const(29).op(SHL).op(OR);
+    c.local_get(x).local_get(y);
+    arith(c, sf, XOR);
+    c.local_get(x).local_get(r);
+    arith(c, sf, XOR);
+    arith(c, sf, AND);
+    sign_to(c, sf, 28);
+    c.op(OR);
+}
+
+/// Pushes the NZCV of a lazy setter as an i32 (scratch: `tmp(sf, 2)`).
 fn nzcv_of(c: &mut Func, kind: Kind, sf: bool) {
     let (x, y, r) = flag_locals(sf);
-    let (ty, tr) = (tmp(sf, 1), tmp(sf, 2));
+    let tr = tmp(sf, 2);
     match kind {
         Kind::Logic => nz(c, sf, r),
         Kind::Adc => add_nzcv(c, sf, x, y, r, Carry::Dynamic(FC)),
@@ -3775,16 +3773,10 @@ fn nzcv_of(c: &mut Func, kind: Kind, sf: bool) {
             add_nzcv(c, sf, x, y, tr, Carry::Zero);
         }
         Kind::Sub => {
-            // x + !y + 1
-            c.local_get(y);
-            konst(c, sf, u64::MAX);
-            arith(c, sf, XOR);
-            c.local_tee(ty).local_get(x);
-            arith(c, sf, ADD);
-            konst(c, sf, 1);
-            arith(c, sf, ADD);
+            c.local_get(x).local_get(y);
+            arith(c, sf, SUB);
             c.local_set(tr);
-            add_nzcv(c, sf, x, ty, tr, Carry::One);
+            sub_nzcv(c, sf, x, y, tr);
         }
     }
 }

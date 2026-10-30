@@ -1324,8 +1324,8 @@ mod tests {
         // b.lt is i64.lt_s on the second's operands, and NZCV is stored once,
         // at the end (live out of every block).
         let (bytes, counts) = one(&[0xeb02003f, 0xeb04007f, 0x5400000b]);
-        // Locals after compaction: entry, two scratch (for the store), the flag locals.
-        assert!(has(&bytes, &[0x20, 6, 0x20, 7, 0x53])); // i64.lt_s
+        // Locals after compaction: entry, one scratch (for the store), the flag locals.
+        assert!(has(&bytes, &[0x20, 5, 0x20, 6, 0x53])); // i64.lt_s
         assert_eq!(nzcv_stores(&bytes), 1);
         assert!(!has(&bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
         // Stored before the branch's PC store (`commit_flags`), not after it.
