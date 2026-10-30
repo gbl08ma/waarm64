@@ -177,6 +177,23 @@ test('VideoContext: VP9 pictures through the decoder into their planes; a hidden
   assert.ok(t.stats.latencyMaxMs <= t.stats.latencyMs && t.stats.writeMs <= t.stats.latencyMs, 'the pictures\' times: each within the total, the writes within the wait');
 });
 
+test('VideoContext: a buffer destroyed between BEGIN_FRAME and END_FRAME: the picture is decoded and waited for by nothing (found by fuzzing)', () => {
+  const t = video(PROFILE.VP9_PROFILE0);
+  const cmd = (c: number, ...p: number[]) => t.v.command(c, new Uint32Array(p));
+  t.frame(vp9(true), new Uint8Array([1]));
+  cmd(57, 1, 3);
+  cmd(56, 3);
+  cmd(61, 1, 3);
+  assert.equal(t.made[0].chunks.length, 1, 'only the first: the second had no data');
+  t.frame(vp9(false), new Uint8Array([2]), 4);
+  cmd(57, 1, 5);
+  t.v.command(59, new Uint32Array([1, 5, 107, 108, 1]));
+  cmd(56, 5);
+  cmd(61, 1, 5);
+  assert.equal(t.made[0].chunks.length, 3, 'decoded: a later picture may refer to it');
+  assert.equal(t.v.waiting, 2, 'the first two pictures only');
+});
+
 test('VideoContext: a decoder error loses its pictures, and a new decoder starts at the next key picture', () => {
   const t = video(PROFILE.VP9_PROFILE0);
   t.frame(vp9(false), new Uint8Array([9])); // no key yet: dropped, nothing sent

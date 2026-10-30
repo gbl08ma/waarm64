@@ -395,6 +395,12 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
   dma-buf (mpv on Vulkan maps VA-API's surfaces), stays the virgl renderer's; each video picture written into a plane
   is also handed to web/venus-import.ts (`onPlane`), which writes it into the Venus textures imported from it, and a
   resource with no picture yet is read back once (`readResource`) ([vk/README.md](../vk/README.md) "Imports").
+- **What the guest sizes is bounded** before the CPU works on it (WebGL validates only the calls it gets; fuzzing the
+  stream found each of these, docs/testing.md "virgl fuzzing"): a resource past WebGL's texture limits or a buffer over
+  256 MiB (its CPU copy) is made with nothing on the host, as vrend's `check_resource_valid` refuses it; an upload or
+  read-back's box must lie in a level of the texture (whole blocks of a compressed format) and an upload hold the box's
+  bytes; an indexed draw's indices must be of size 1, 2 or 4, aligned and in the index buffer; sampler view and state
+  slots end at 32 (Gallium's `PIPE_MAX_SAMPLERS`); a blit covers at most the destination's layers.
 - **Blits** go through GL's framebuffer blit for the same stored layout (and between integer formats of one
   signedness, which can't be sampled as floats), a draw through both formats' swizzles otherwise; a drawn blit has
   only its destination attached (a texture still attached from the last draw and sampled is a feedback loop WebGL

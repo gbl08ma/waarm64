@@ -157,6 +157,8 @@ export type VideoEnv = {
   /** The size of a resource's backing (0 if none). */
   size(res: number): number;
   error(m: string): void;
+  /** Every exception a picture's parsing caught (`VirglRenderer.onCaught`). */
+  caught?: (e: unknown) => void;
   debug?: (m: string) => void;
   /** Decoders for the codecs; without them pictures are only counted (a null decoder, V0's). */
   decoders?: DecoderFactory;
@@ -342,6 +344,7 @@ export class VideoContext {
         shown = !!(desc[VP9_PIC_FIELDS] & 8);
       }
     } catch (e) {
+      this.env.caught?.(e);
       this.stats.dropped++;
       return this.err(`video: codec ${c.handle}: ${e instanceof Error ? e.message : e}`);
     }
@@ -353,7 +356,9 @@ export class VideoContext {
     if (key) c.epoch++;
     const ts = this.seq++;
     if (c.h264 && !c.hardware) this.remember(c, desc, bits, key, ts);
-    if (shown) this.pending.set(ts, { codec: c, target, planes: this.buffers.get(target)!.planes, at: performance.now(), epoch: c.epoch, poc });
+    // Decoded (a later picture may refer to it) but written nowhere if the guest destroyed its buffer after BEGIN_FRAME.
+    const planes = this.buffers.get(target)?.planes;
+    if (shown && planes) this.pending.set(ts, { codec: c, target, planes, at: performance.now(), epoch: c.epoch, poc });
     c.dec!.decode(data, key, ts);
   }
 
@@ -374,6 +379,7 @@ export class VideoContext {
       if (planes) this.pending.set(ts, { codec: c, target: f.shown, planes, at: performance.now() });
       chunks = c.av1!.chunks(desc, bits, target, ts);
     } catch (e) {
+      this.env.caught?.(e);
       this.pending.delete(ts);
       this.stats.dropped++;
       return this.err(`video: codec ${c.handle}: ${e instanceof Error ? e.message : e}`);

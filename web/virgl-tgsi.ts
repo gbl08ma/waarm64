@@ -154,7 +154,8 @@ function parseOperand(s: string, dst: boolean): Operand {
     op.ind = first.ind;
   }
   if (c.eat('.')) {
-    const m = /^[xyzw]+/.exec(c.s.slice(c.at))![0];
+    const m = /^[xyzw]+/.exec(c.s.slice(c.at))?.[0];
+    if (!m) throw new TgsiError(`expected a swizzle at ${c.at} in ${c.s}`);
     c.at += m.length;
     if (dst) op.mask = [...m].reduce((k, ch) => k | (1 << COMP.indexOf(ch)), 0);
     else {
@@ -319,6 +320,13 @@ function cast(e: string, from: Ty, to: Ty) {
   if (from === 'f') return `${to === 'i' ? 'floatBitsToInt' : 'floatBitsToUint'}(${e})`;
   if (to === 'f') return `${from === 'i' ? 'intBitsToFloat' : 'uintBitsToFloat'}(${e})`;
   return `${VEC[to]}(${e})`;
+}
+
+/** An instruction's source operand `k` (one the guest left out is the shader's error, not a TypeError: tests/virgl-fuzz.ts). */
+function operand(ins: Instr, k: number): Operand {
+  const op = ins.src[k];
+  if (!op) throw new TgsiError(`${ins.op} has no operand ${k}`);
+  return op;
 }
 
 /** An instruction's two sources are the same value (register, swizzle, modifiers). */
@@ -654,8 +662,8 @@ class Gen {
   }
 
   private emitInstr(ins: Instr) {
-    const s = (k: number, ty: Ty = 'f') => this.src(ins.src[k], ty);
-    const x = (k: number, ty: Ty = 'f') => `${this.src(ins.src[k], ty)}.x`;
+    const s = (k: number, ty: Ty = 'f') => this.src(operand(ins, k), ty);
+    const x = (k: number, ty: Ty = 'f') => `${this.src(operand(ins, k), ty)}.x`;
     const f = (e: string) => this.dst(ins, e, 'f');
     const i = (e: string) => this.dst(ins, e, 'i');
     const u = (e: string) => this.dst(ins, e, 'u');
@@ -665,7 +673,7 @@ class Gen {
       case 'NOP': return;
       case 'MOV': {
         const d = ins.dst[0];
-        const sop = ins.src[0];
+        const sop = operand(ins, 0);
         if (ins.sat || sop.neg || sop.abs) return f(s(0));
         // A bit copy: in the source's own type, so integers keep their bits.
         const ty: Ty = sop.file === 'IMM' && !sop.ind ? (d ? this.storage(d) : 'f') : this.storage(sop);
@@ -819,7 +827,7 @@ class Gen {
       case 'BRK': this.line('break;'); return;
       case 'CONT': this.line('continue;'); return;
       case 'SWITCH': this.switchDepth.push(true); this.line(`switch (${x(0, 'i')}) {`); this.depth++; return;
-      case 'CASE': this.line(`case ${(this.t.imms[ins.src[0].index]?.bits[ins.src[0].swizzle[0]] ?? 0) | 0}:`); return;
+      case 'CASE': this.line(`case ${(this.t.imms[operand(ins, 0).index]?.bits[operand(ins, 0).swizzle[0]] ?? 0) | 0}:`); return;
       case 'DEFAULT': this.line('default:'); return;
       case 'ENDSWITCH': this.switchDepth.pop(); this.depth--; this.line('}'); return;
       case 'RET': this.line('return;'); return;
@@ -842,7 +850,7 @@ class Gen {
 
   private texture(ins: Instr) {
     const target = ins.tex ?? '2D';
-    const unit = ins.op === 'TXQ' ? ins.src[1] : ins.op === 'TXD' ? ins.src[3] : ['TXB2', 'TXL2', 'TEX2'].includes(ins.op) ? ins.src[2] : ins.src[1];
+    const unit = ins.op === 'TXQ' ? operand(ins, 1) : ins.op === 'TXD' ? operand(ins, 3) : ['TXB2', 'TXL2', 'TEX2'].includes(ins.op) ? operand(ins, 2) : operand(ins, 1);
     if (!unit || (unit.file !== 'SAMP' && unit.file !== 'SVIEW')) throw new TgsiError(`${ins.op} without a sampler`);
     const n = unit.index;
     const k = (this.stage === 'vs' ? this.key.samplers.vs : this.key.samplers.fs)[n];
@@ -856,7 +864,7 @@ class Gen {
     const samplerType = `${sty === 'f' ? '' : sty === 'i' ? 'i' : 'u'}sampler${gl === '2D_ARRAY' ? '2DArray' : gl === 'CUBE' ? 'Cube' : gl}${shadow ? 'Shadow' : ''}`;
     const name = this.samplerName(n);
     this.declareSampler(n, samplerType);
-    const c = this.src(ins.src[0], ins.op === 'TXF' || ins.op === 'TXF_LZ' ? 'i' : 'f');
+    const c = this.src(operand(ins, 0), ins.op === 'TXF' || ins.op === 'TXF_LZ' ? 'i' : 'f');
     const oneD = k?.oneD || target === '1D' || target === 'SHADOW1D' || target === '1D_ARRAY' || target === 'SHADOW1D_ARRAY';
     const rect = k?.rect || target === 'RECT' || target === 'SHADOWRECT';
     // The coordinate (and the shadow reference) in the GL target's shape.
@@ -891,19 +899,19 @@ class Gen {
         break;
       }
       case 'TXB': case 'TXB2': {
-        const bias = ins.op === 'TXB2' ? `${this.src(ins.src[1], 'f')}.x` : `${cv}.w`;
+        const bias = ins.op === 'TXB2' ? `${this.src(operand(ins, 1), 'f')}.x` : `${cv}.w`;
         call = `${off('texture')}(${name}, ${withRef(coord)}${offs ? `, ${offs}` : ''}, ${bias})`;
         break;
       }
       case 'TXL': case 'TXL2': {
-        const lod = ins.op === 'TXL2' ? `${this.src(ins.src[1], 'f')}.x` : `${cv}.w`;
+        const lod = ins.op === 'TXL2' ? `${this.src(operand(ins, 1), 'f')}.x` : `${cv}.w`;
         call = `${off('textureLod')}(${name}, ${withRef(coord)}, ${lod}${offs ? `, ${offs}` : ''})`;
         break;
       }
       case 'TXD': {
         // Gradients have the texture's dimensions: a 2D array's are 2D.
         const sz = gl === '3D' || gl === 'CUBE' ? 'xyz' : 'xy';
-        call = `${off('textureGrad')}(${name}, ${withRef(coord)}, ${this.src(ins.src[1], 'f')}.${sz}, ${this.src(ins.src[2], 'f')}.${sz}${offs ? `, ${offs}` : ''})`;
+        call = `${off('textureGrad')}(${name}, ${withRef(coord)}, ${this.src(operand(ins, 1), 'f')}.${sz}, ${this.src(operand(ins, 2), 'f')}.${sz}${offs ? `, ${offs}` : ''})`;
         break;
       }
       case 'TXF': case 'TXF_LZ': {
@@ -913,7 +921,7 @@ class Gen {
         break;
       }
       case 'TXQ': {
-        const lod = `${this.src(ins.src[0], 'i')}.x`;
+        const lod = `${this.src(operand(ins, 0), 'i')}.x`;
         const size = `textureSize(${name}, ${lod})`;
         // A cube's size is 2D (its width and height); an array's has its layers last (a 1D array is a 2D one of height 1).
         const v = target === '1D' || target === 'SHADOW1D' ? `ivec4(${size}.x, 0, 0, 0)` : target.endsWith('1D_ARRAY') ? `ivec4(${size}.xz, 0, 0)` : dims === 2 || gl === 'CUBE' ? `ivec4(${size}.xy, 0, 0)` : `ivec4(${size}, 0)`;
