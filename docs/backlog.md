@@ -416,8 +416,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   request (`max_discard_seg` 1); a compaction copies synchronously in the device worker (at most
   the blocks freed, so a trim of GBs can hold the guest's I/O for seconds). The page's Debian
   doesn't mount with `discard`: the user runs `fstrim`, or waits for `fstrim.timer`.
-- 9p: an in-memory tree only (OPFS or an HTTP-served tree, as v86's lazy filesystem, are the
-  candidates); no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
+- 9p: an in-memory tree only (folders on the user's computer and in OPFS are planned:
+  [plans/shares.md](plans/shares.md); an HTTP-served tree, as v86's lazy filesystem, isn't); no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
   entry indices; whole-second timestamps.
 - Input: the keyboard layout reaches only guests with systemd 256+ (the firmware, GRUB and older guests type a US
   layout; Latin layouts only: frontend.md "The keyboard layout"); no horizontal wheel (the tablet and the mouse have
@@ -1133,7 +1133,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **9p's state isn't saved** (the server's tree and its fids): a VM with a 9p device refuses a
   snapshot. The page's machines have none; the device test and Alpine's test image do, so their
   host round trips run without it (`tests/snapshot.test.ts`). It needs the tree serialized with
-  node identities (fids and unlinked-but-open files point into it).
+  node identities (fids and unlinked-but-open files point into it). Shared folders save theirs
+  ([plans/shares.md](plans/shares.md) §6); this entry is the in-memory tree's.
 - **The base image's hash is never written by the page**, so a snapshot only loads on a disk of
   the same identity (a URL's path and size, or a chosen file's name, size and modification time): a
   copy of the same image with another date is refused. `readSnapshot` already accepts a matching
