@@ -71,6 +71,7 @@ fn boot_mode(
         firmware: flash as u64,
         flash_size: if flash { 1 << 20 } else { 0 },
         rtc: if flash { common::FIRMWARE_EPOCH_MS } else { 0 },
+        jit: std::env::var("WEBPC_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
         ..VmConfig::default()
     };
     let mut vm = Vm::new(mem, cfg);
@@ -388,6 +389,22 @@ fn run_all(parallel: bool, runs: usize, snapshots: bool) {
         }
     }
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// tests/baremetal/review/run.sh: what the review's candidates do here.
+#[test]
+#[ignore]
+fn review_observations() {
+    let image = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/baremetal/review/review.bin"
+    ))
+    .unwrap();
+    let text = match boot(&image, 1) {
+        Ok((_, out)) => out,
+        Err(e) => e,
+    };
+    std::fs::write(std::env::var("REVIEW_OUT").unwrap(), text).unwrap();
 }
 
 /// The runner itself: a failing check must surface as its code.

@@ -261,9 +261,17 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             if el0 && c.sctlr_el1 & sctlr::DZE == 0 {
                 return Err(trap_sys(i));
             }
+            // Normal memory only: on what isn't RAM, an alignment fault, as on
+            // hardware (never the run loop's `io`, which would store to a device).
             let a = c.reg(rt) & !63;
             for k in 0..8 {
-                m.write(c, a + 8 * k, 8, 0)?;
+                m.write(c, a + 8 * k, 8, 0).map_err(|f| match f.kind {
+                    FaultKind::Bus => Fault {
+                        kind: FaultKind::Align,
+                        ..f
+                    },
+                    _ => f,
+                })?;
             }
         }
         // No caches to maintain, but the address must translate (and, from
@@ -274,7 +282,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
                 return Err(trap_sys(i));
             }
             let pa = m.maint(c, c.reg(rt), false)?;
-            if op == IC_IVAU {
+            if let (IC_IVAU, Some(pa)) = (op, pa) {
                 return Err(Exit::Invalidate(pa));
             }
         }
@@ -305,7 +313,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
                 }
             }
             // IC IALLU(IS) with Rt != 31 (should-be-ones): as with 31.
-            (0, 7, 5 | 1, 0) => {}
+            (0, 7, 5 | 1, 0) => return Err(Exit::Invalidate(u64::MAX)),
             // AT S1E1R, S1E1W, S1E0R, S1E0W.
             (0, 7, 8, op2 @ 0..=3) => {
                 let u = if op2 & 1 == 1 { Use::Write } else { Use::Read };

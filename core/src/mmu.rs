@@ -584,8 +584,9 @@ pub trait Bus {
     fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault>;
     /// Cache maintenance by VA: translates and checks permission (write for
     /// `DC IVAC`, read otherwise), and faults like a data access with CM set.
-    /// Returns the PA (for `IC IVAU`, which invalidates JIT blocks).
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault>;
+    /// What's at the address doesn't matter: a device or nothing is no fault.
+    /// Returns the PA if it's RAM (for `IC IVAU`, which invalidates JIT blocks).
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<Option<u64>, Fault>;
     /// Host address for an access by the atomics, which must be aligned to `len`.
     fn host_aligned(&mut self, c: &Cpu, va: u64, len: u64, access: Access) -> Result<Host, Fault>;
     /// The host pointer for `size` bytes at `va` with the current EL's `u`
@@ -697,8 +698,8 @@ impl Bus for Flat<'_> {
         self.0.read(pc, 4).map(|v| v as u32)
     }
 
-    fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<u64, Fault> {
-        self.0.host(va, 1, Access::Maint).map(|_| va)
+    fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<Option<u64>, Fault> {
+        Ok(self.0.host(va, 1, Access::Maint).ok().map(|_| va))
     }
 
     #[inline(always)]
@@ -937,10 +938,13 @@ impl Bus for Mmu<'_> {
             .then(|| va.wrapping_add(e.addend) as usize as *mut u8)
     }
 
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault> {
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<Option<u64>, Fault> {
         let u = if write { Use::Write } else { Use::Read };
-        let p = self.host(c, va, 1, Access::Maint, u, c.el())?;
-        Ok(self.mem.pa(p))
+        match self.host(c, va, 1, Access::Maint, u, c.el()) {
+            Ok(p) => Ok(Some(self.mem.pa(p))),
+            Err(f) if f.kind == FaultKind::Bus => Ok(None),
+            Err(f) => Err(f),
+        }
     }
 
     fn host_aligned(&mut self, c: &Cpu, va: u64, len: u64, access: Access) -> Result<Host, Fault> {

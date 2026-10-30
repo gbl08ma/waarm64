@@ -32,8 +32,26 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).
 - **MMU:** per-ASID stashes of nG entries (the previous ASID's are dropped at a switch; Alpine's
   boot refills ~0.3M); ~0.3M of Alpine's misses are direct-mapped conflicts; no Device-memory
-  alignment faults; no address-size fault for VAs past 40 bits with the MMU off (external abort);
-  PRFM with a misaligned SP base faults; cache maintenance by VA to a device PA faults.
+  alignment faults (with the MMU off too, where every access is Device: on the M4 an unaligned load and DC ZVA fault,
+  QEMU's TCG only the load; the flat bus exists to have no such test; correct firmware doesn't notice); no
+  address-size fault for VAs past 40 bits with the MMU off (external abort); PRFM with a misaligned SP base faults.
+- **A tagged PC** (found 2026-10-30, against the M4): with TBI, BR, BLR, RET and ERET to a tagged address keep the tag in
+  the PC (`AArch64.BranchAddr` removes it: the top byte is bit 55's sign extension), so ADR, BL's X30 and ELR show it.
+  Reached only by code that branches through tagged pointers; TBI0 is on for every Linux process. A check in every
+  indirect branch would cost the JIT's hot path. Untried: a tagged PC always misses the transfer cache and the
+  same-page chain, so canonicalize it on those slow paths and never fill an instruction TLB entry for a tagged VA.
+- **Watchpoints** (found 2026-10-30, against the M4, `interp/debug.rs`): an atomic read-modify-write is checked as a store
+  alone, so a load-only watchpoint misses LDADD and CAS, a failing CAS included; and the check comes before the
+  translation, so a watchpoint on an unmapped address beats the translation fault (M4 and QEMU: translation fault).
+  The first has to tell RMWs from STXR, which shares `cas`; the second needs a probe of the translation first.
+- **Reserved AdvSIMD encodings with FPEN 0** take the FP trap (`interp.rs`: `fp_enabled` before the handler's field
+  checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED.
+- **Smaller, from reading the code (2026-10-30), not tested:** a stepped instruction that takes a real external abort
+  leaves SPSR.SS 0 (`debug::step`'s list can't add `Bus`: MMIO shares it); the SP alignment check comes before the
+  checks for reserved load/store encodings; `interp::run` and `run_system` take `Exit::Wfe`, `Sev` and `TlbiIs` for
+  faults, unreachable today (only a VM's vCPUs have `FEATURE_SMP`).
+- **Exclusives and LSE on device memory:** an LDXR reads (through `Io`, with LDAR), its STXR and the LSE atomics take
+  an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.md`); read it only to
   generate decoder tables or coverage checks from it.
 - **Corpus depth:** thin FP flag paths (8 `fp_scalar` tests raise Divide-by-Zero); add biased forms
@@ -67,12 +85,17 @@ left open, most promising first.
   check and the handler's first instruction (the indirect branch's redirect). Every store to wasm memory carries an
   explicit bounds check on arm64 (V8 reloads the memory's size: shared memory can grow; loads use the trap
   handler), so a register write costs four more instructions; x86_64 wasn't looked at. Untried: register caching;
-  ADRP+ADD as a pair (0.5% of the pairs). Not tried, settled by a measurement: tail-call dispatch (`become`), since
+  ADRP+ADD as a pair (0.5% of the pairs); XZR without `rd`'s and `wr`'s compare (at pack time, a slot that holds zero
+  and one that's a write sink; `run`'s unpacking maps back, so it touches every kind; what taking out the index masks
+  gave suggests it's worth a try, `bench/interp/REPORT.md` "No index masks, one probe for a pair"); SUBS's flags in
+  `hot` from its operands, as the JIT's (`x >= y` for `add_with_carry`'s two carries). Not tried, settled by a measurement: tail-call dispatch (`become`), since
   V8's `return_call_indirect` costs ~15 ns an entry even among 16 functions (`bench/boot/REPORT.md` "M8: where a busy
   vCPU's time goes in Firefox"), several times a whole micro-op now. Lost before: a sentinel instead of the `u ==
   end` test, LdO/StO runs in a loop (docs/cpu.md "Tried and not kept"). Any code in `hot` moves V8's register
   allocation for all of it, and a guest branch must stay a host branch (loop 12: a `select` there cost 30%): measure
   on the small guests too.
+- `ldst_fp::multiple` copies all of `c.v` (512 bytes) for every structure access, stores included, to commit loads
+  after the last read; up to four `u128`s would do. LD1/ST1 are inline in the JIT, so this is LD2-4 and cold code.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.

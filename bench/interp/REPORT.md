@@ -1766,3 +1766,30 @@ userspace phases (compress -0.4%, Lua +0.4%, churn +0.7%, SQLite -0.6%, in ms): 
 was in the slow mode 2 times of 3 on each workload against base's 1, and these rounds can't say whether that's chance.
 Twelve shorter `go build` sessions to count the modes were stopped: a change this small isn't worth the machine time,
 and no benchmark showed a cost. Not measured on the Mac host or x86_64.
+
+## No index masks, one probe for a pair (2026-10-30)
+
+Two changes that take instructions out of `hot` rather than add a path, the difference from the shared probe above. `reg`:
+`rd`, `wr`, `rsp` and `wsp` index `c.x` with `get_unchecked` where they masked with `& 31` (no panic either way: a
+micro-op's register bytes are `pack`'s, below 32). `pair`: LDP, STP and the SIMD&FP pairs take one `fast_in` of both
+registers' bytes where they took two; a pair across pages goes to the slow path. `bench/interp/ab.sh`, dev VM,
+Chromium 153.0.8010.52, 3 alternated rounds, medians, JSON and patches in `results/review-interp/` (`three-arms/`, then
+`combined/`, a session of its own):
+
+| | base | `reg` | `pair` |
+|---|---|---|---|
+| `boot_alpine_dec_mips` | 222.1 | 224.7 (+1.2%) | 224.7 (+1.2%) |
+| `vm_dec_mmu_mips` | 472.3 | 482.8 (+2.2%) | 479.2 (+1.5%) |
+| `dec_mips` | 475.1 | 483.2 (+1.7%, rounds overlap) | 474.3 (−0.2%) |
+| `vm_dec_flat_mips` | 475.3 | 482.0 (+1.4%, rounds overlap) | 475.8 (+0.1%) |
+
+| | base | both | |
+|---|---|---|---|
+| `boot_alpine_dec_mips` | 221.8 | 225.5 | +1.6% |
+| `boot_dec_mips` (Buildroot) | 184.2 | 186.8 | +1.4%, rounds overlap, inside its noise |
+| `dec_mips` | 472.4 | 486.5 | +3.0% |
+| `vm_dec_flat_mips` | 474.7 | 489.1 | +3.0% |
+| `vm_dec_mmu_mips` | 473.1 | 485.1 | +2.5% |
+
+Kept, both. Buildroot wasn't in the three-arm session (the worktree couldn't serve its image). Not measured: x86_64, and the
+worth under the JIT, where the interpreter runs the cold code.

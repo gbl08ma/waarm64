@@ -3,13 +3,29 @@
 //! `ldst`, every memory read happens before any register write.
 
 use super::{Exit, R, bit, bits, extend, sext};
-use crate::cpu::Cpu;
+use crate::cpu::{Cpu, sctlr};
 use crate::decode::Op;
+use crate::mem::{Access, Fault, FaultKind};
 use crate::mmu::Bus;
+
+/// `SCTLR_EL1.A` on a Q register: one 16-byte element, though it's accessed as
+/// two 8-byte ones.
+#[inline]
+fn q_aligned(c: &Cpu, addr: u64, access: Access) -> R {
+    if c.sctlr_el1 & sctlr::A != 0 && addr & 15 != 0 {
+        return Err(Exit::Fault(Fault {
+            addr,
+            access,
+            kind: FaultKind::Align,
+        }));
+    }
+    Ok(())
+}
 
 /// Little-endian read of 1, 2, 4, 8 or 16 bytes.
 pub(super) fn load(c: &Cpu, m: &mut impl Bus, addr: u64, bytes: u32) -> R<u128> {
     Ok(if bytes == 16 {
+        q_aligned(c, addr, Access::Read)?;
         m.read(c, addr, 8)? as u128 | (m.read(c, addr.wrapping_add(8), 8)? as u128) << 64
     } else {
         m.read(c, addr, bytes)? as u128
@@ -19,6 +35,7 @@ pub(super) fn load(c: &Cpu, m: &mut impl Bus, addr: u64, bytes: u32) -> R<u128> 
 /// Little-endian write of the low 1, 2, 4, 8 or 16 bytes of `v`.
 pub(super) fn store(c: &Cpu, m: &mut impl Bus, addr: u64, bytes: u32, v: u128) -> R {
     if bytes == 16 {
+        q_aligned(c, addr, Access::Write)?;
         // High half first: when only it faults, memory is left untouched.
         m.write(c, addr.wrapping_add(8), 8, (v >> 64) as u64)?;
         m.write(c, addr, 8, v as u64)?;

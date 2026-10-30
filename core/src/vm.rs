@@ -1893,8 +1893,30 @@ impl Bus for Io<'_> {
         self.mmu.fetch(c, pc)
     }
 
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault> {
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<Option<u64>, Fault> {
         self.mmu.maint(c, va, write)
+    }
+
+    // LDAR and STLR, which Device memory allows. An LDXR reads here too; its
+    // STXR's `cas` doesn't, and aborts.
+    fn read_atomic(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
+        match self.mmu.read_atomic(c, va, size) {
+            Err(f) if f.kind == FaultKind::Bus => {
+                let pa = self.pa(c, va);
+                self.dev_read(pa, size).ok_or(f)
+            }
+            r => r,
+        }
+    }
+
+    fn write_atomic(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
+        match self.mmu.write_atomic(c, va, size, val) {
+            Err(f) if f.kind == FaultKind::Bus => {
+                let pa = self.pa(c, va);
+                self.dev_write(pa, size, val).ok_or(f)
+            }
+            r => r,
+        }
     }
 
     fn host_aligned(

@@ -607,7 +607,7 @@ fn spill_memory_pages() {
     assert_eq!(b.cas_pair(&c, 0x1020, [0, 0], [3, 4]), Ok([0, 0]));
     assert_eq!(b.read_pair(&c, 0x1020), Ok([3, 4]));
     assert_eq!(b.fetch(&c, 0x1020), Ok(3));
-    assert_eq!(b.maint(&c, 0x1024, false), Ok(0x100_2024));
+    assert_eq!(b.maint(&c, 0x1024, false), Ok(Some(0x100_2024)));
     // A TLBI drops the spill entry like any other: remapped, the next access walks.
     p.r.mem.write(0x100_0000 + 0x2000 + 0x30, 8, 0x55).unwrap();
     b.flush_va(0x1000);

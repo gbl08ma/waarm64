@@ -1282,25 +1282,33 @@ pub const NEXT: u32 = 2;
 
 #[inline(always)]
 fn rd(c: &Cpu, n: u32) -> u64 {
-    if n == 31 { 0 } else { c.x[(n & 31) as usize] }
+    // SAFETY: a micro-op's register bytes are below 32 (`pack`).
+    if n == 31 {
+        0
+    } else {
+        unsafe { *c.x.get_unchecked(n as usize) }
+    }
 }
 
 #[inline(always)]
 fn wr(c: &mut Cpu, n: u32, v: u64) {
     if n != 31 {
-        c.x[(n & 31) as usize] = v;
+        // SAFETY: as in `rd`.
+        unsafe { *c.x.get_unchecked_mut(n as usize) = v };
     }
 }
 
 /// Register `n`, 31 the SP.
 #[inline(always)]
 fn rsp(c: &Cpu, n: u32) -> u64 {
-    c.x[(n & 31) as usize]
+    // SAFETY: as in `rd`.
+    unsafe { *c.x.get_unchecked(n as usize) }
 }
 
 #[inline(always)]
 fn wsp(c: &mut Cpu, n: u32, v: u64) {
-    c.x[(n & 31) as usize] = v;
+    // SAFETY: as in `rd`.
+    unsafe { *c.x.get_unchecked_mut(n as usize) = v };
 }
 
 /// In [`hot`], after a flag setter whose B.cond follows it ([`mov_runs`]):
@@ -1492,22 +1500,16 @@ pub fn hot<B: Fast>(
                         base.wrapping_add(off)
                     };
                     let (bytes, pair, load) = (1u32 << log, x >> 6 & 1 != 0, x >> 5 & 1 != 0);
-                    let a2 = addr.wrapping_add(bytes as u64);
                     let w = if load { Use::Read } else { Use::Write };
-                    let Some(p1) = m.fast_in(fx, addr, bytes, w) else {
+                    // One probe of the bytes: a pair across pages takes the slow path.
+                    let span = if pair { 2 * bytes } else { bytes };
+                    let Some(p1) = m.fast_in(fx, addr, span, w) else {
                         break 'run SLOW;
                     };
-                    let p2 = if pair {
-                        match m.fast_in(fx, a2, bytes, w) {
-                            Some(p) => p,
-                            None => break 'run SLOW,
-                        }
-                    } else {
-                        p1
-                    };
+                    let p2 = p1.wrapping_add(bytes as usize);
                     // One access, or two of 8 bytes for a Q register, each aligned.
                     let a = (bytes as usize).min(8) - 1;
-                    if (p1 as usize | p2 as usize) & a != 0 {
+                    if p1 as usize & a != 0 {
                         break 'run SLOW;
                     }
                     let (rt, rt2) = ((d & 31) as usize, (o.m & 31) as usize);
@@ -2065,16 +2067,17 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
     } else {
         base.wrapping_add(imm)
     };
-    let a2 = addr.wrapping_add(size as u64);
     let (rt, rt2) = (d, o.m as u32);
     let ldp = o.k == K::Ldp as u8;
     let w = if ldp { Use::Read } else { Use::Write };
-    let (Some(p1), Some(p2)) = (m.fast_in(fx, addr, size, w), m.fast_in(fx, a2, size, w)) else {
+    // One probe of both registers' bytes: a pair across pages takes the slow path.
+    let Some(p1) = m.fast_in(fx, addr, 2 * size, w) else {
         return false;
     };
-    if (p1 as usize | p2 as usize) & (size as usize - 1) != 0 {
+    if p1 as usize & (size as usize - 1) != 0 {
         return false;
     }
+    let p2 = p1.wrapping_add(size as usize);
     if ldp {
         // SAFETY: `fast_in` found RAM at both, aligned (checked).
         let (v1, v2) = unsafe {

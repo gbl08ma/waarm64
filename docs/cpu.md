@@ -194,7 +194,8 @@ The table is `core/src/interp/sys.rs`.
   parallel SMP queues them and the issuer's next DSB waits ([platform.md](platform.md) "Broadcast
   maintenance").
 - Faults carry kind, level and access (ESR WnR, CM). Cache maintenance by VA translates and
-  faults like a read (`DC IVAC` like a write).
+  faults like a read (`DC IVAC` like a write); what's at the address doesn't matter, so a device or nothing is no
+  fault. `DC ZVA` on what isn't RAM is an alignment fault, as on the M4 (never a store to a device).
 - **The TLB** is the M0 spike's shape: direct-mapped, 4096 entries × {tag, addend} (16 bytes) per
   (EL, read/write/execute). The tag is the page VA with bits 11:0 all ones (**bits 11:3 are
   reserved for an inverted memory index**, layout A's escape hatch, [architecture.md](architecture.md));
@@ -219,10 +220,10 @@ The table is `core/src/interp/sys.rs`.
 - The TLB also holds the JIT's **transfer cache** (`Tlb::xc`, VA to compiled block), which every
   flush above drops its share of ([jit.md](jit.md) "Linking").
 - The interpreter has three copies of `exec` over a `Bus`: flat (MMU off), MMU, and `vm::Io`
-  for device MMIO ([platform.md](platform.md)); the choice is made outside the instruction loop.
+  for device MMIO, LDAR and STLR included ([platform.md](platform.md)); the choice is made outside the instruction
+  loop.
 - Loose ends (backlog): no Device-memory alignment faults, no address-size fault for VAs past 40
-  bits with the MMU off, PRFM with a misaligned SP base faults, cache maintenance by VA to a
-  device PA faults.
+  bits with the MMU off, PRFM with a misaligned SP base faults, a branch to a tagged address keeps the tag in the PC.
 
 ## Memory accesses and atomics (`core/src/mem.rs`)
 
@@ -363,10 +364,14 @@ test it against `tests/steps.txt`.
   outside the loop) is computed once a call (`Fast::ctx`), not once an access: +2.5% on Alpine's boot, +3.9%
   with the MMU on. The commonest form, an offset load or store of 4 or 8 bytes with no writeback or
   extension (`LdO`, `StO`, made at decode), has its own handler without `Ld`'s choices: +4% on the small
-  guests, +1.4% on Alpine's boot (`bench/interp/REPORT.md` "M8-INTERP loop 8").
+  guests, +1.4% on Alpine's boot (`bench/interp/REPORT.md` "M8-INTERP loop 8"). A pair (LDP, STP, their SIMD&FP forms)
+  takes one TLB probe of both registers' bytes; one across pages takes the slow path. With the register indexes'
+  masks gone, +1.6% on Alpine's boot, +2.5-3.0% on the small guests (`bench/interp/REPORT.md` "No index masks, one
+  probe for a pair").
 - **One call-free loop** (`interp::block::hot`): the blocks run, and chain from one to the next, in a
   loop with no call on any path (no generic micro-op, no slow load or store, no TLB walk, no panic:
-  register indexes masked, the slots a fixed-size array), so V8 keeps its state in registers. What
+  a micro-op's register bytes trusted, as `pack` makes them, the slots a fixed-size array), so V8 keeps its state in
+  registers. What
   needs a call returns a status to `jit::interpret`, which runs that one micro-op through `run` (the
   slow path) or finds the next block, and calls `hot` again. +26% on the user-mode guest, +56-68% at
   EL1, +13% and +18% on the Buildroot and Alpine boots (`bench/interp/REPORT.md` "M8-INTERP loop 1").

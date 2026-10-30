@@ -301,7 +301,7 @@ impl<B: Bus> Bus for Watch<B> {
         self.0.fetch(c, pc)
     }
 
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault> {
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<Option<u64>, Fault> {
         self.0.maint(c, va, write)
     }
 
