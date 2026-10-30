@@ -317,7 +317,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   pipelines are made at the first draw needing one, keyed by the state WebGPU bakes in (`wg_pipeline_key`: vertex
   layout, topology, rasterization, depth and stencil, blend, attachment formats, samples, the viewport's flip); an
   attribute past its binding's stride (Vulkan allows it, WebGPU doesn't) reads a vertex buffer slot of its own, the
-  same buffer further on (`wg_vertex_slots`). A texture the shader declared filterable float but bound to a view
+  same buffer further on (`wg_vertex_slots`). A binding WebGPU's vertex buffers refuse is pulled instead (below,
+  "Pulled vertices"). A texture the shader declared filterable float but bound to a view
   WebGPU can't filter (a depth view, `r32float` without `float32-filterable`) draws with a variant of the program
   (`wg_program_variant`, by a mask of such bindings): those bindings unfilterable, the samplers they're sampled with
   non-filtering and given the sampler's nearest twin. A render pipeline is made when a draw needing it is recorded
@@ -412,6 +413,21 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
+- **Pulled vertices** (VK4 T5): WebGPU wants strides and bound offsets in multiples of 4 and an attribute's offset in
+  multiples of its size up to 4, and Vulkan doesn't. A binding that breaks one (`wg_vertex_pull`, at each draw: the
+  bound offset is part of the key, `vb[b].pull`), or with an attribute past its stride that no slot serves, is read by
+  the vertex stage from a read-only storage binding. Its pipeline is the worker's variant of the stage
+  (`pulledCode`): the entry point takes the bindings left as vertex buffers in a struct of their own, and fetches the
+  rest from `vertex_index` or `instance_index`, the stride and the offset with `vertexDecode`, as transform feedback's
+  compute pass does, the same modules kept per layout. Those bindings' bind group (`wg_pipeline_pull`: a storage buffer
+  per slot and a uniform of each range's bytes past a storage offset, which needs no pipeline per offset) takes the
+  first group without resources: past the program's, or an empty one below its push buffer's group 3. The replay
+  (`apply`) gives the worker the ranges (`gpu_pull_buffer`, also for any bound offset no vertex buffer can take, unread
+  or not) and has it set the group after the program's groups, which may have set an empty one there (`gpu_pull_bind`,
+  a bind group per change of the ranges); a pipeline after a pulling one sets its groups again. Usage scopes see a
+  vertex read as before, so shadows serve it. Transform feedback reads the same ranges. Refused still: a program with
+  no group free (four sets; said once on stderr), and more pulled bindings than the vertex stage has storage buffers
+  left. A range past `maxStorageBufferBindingSize` is cut there.
 - **Draws through indices of their own** (VK3 L7.4): the provoking vertex's last (`VK_EXT_provoking_vertex`,
   `provokingVertexLast`, per pipeline: ANGLE's ES3, GL's convention) where the fragment shader reads a flat input
   (WebGPU's flat interpolation takes the first vertex), and indexed fans (WebGPU has none). Such a draw is an

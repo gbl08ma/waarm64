@@ -1139,6 +1139,11 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
          k.attr[a].format = vi->attributes[a].format;
          k.attr[a].offset = vi->attributes[a].offset;
       }
+      uint64_t bound[8] = { 0 };
+      for (uint32_t b = 0; b < 8; b++)
+         if (cmd->vbs[b].buffer)
+            bound[b] = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
+      wg_vertex_pull(&k, vs->info.inputs, bound);
    }
    if (!cmd->have_key || memcmp(&k, &cmd->last_key, sizeof(k)) || cmd->last_program[0] != p) {
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
@@ -1999,6 +2004,7 @@ struct replay {
    uint32_t group_count[2];
    struct op_vb vb[8];
    uint32_t vb_mask;
+   const struct wg_pull *pull; /* the render pipeline's */
    struct op_ib ib;
    bool have_ib;
    uint8_t push[256];
@@ -2916,7 +2922,13 @@ apply(struct replay *r, uint32_t point)
          u_foreach_bit(b, r->vb_mask)
             if (r->vb[b].buffer) {
                const struct shadow *s = find_shadow(r, r->vb[b].buffer, r->vb[b].offset, r->vb[b].size);
-               gpu_set_vertex_buffer(b, s ? s->to : r->vb[b].buffer, s ? s->place : r->vb[b].offset, r->vb[b].size);
+               const uint32_t to = s ? s->to : r->vb[b].buffer;
+               const double place = s ? s->place : r->vb[b].offset;
+               /* Offsets WebGPU's vertex buffers refuse: no pipeline but a pulling one reads them. */
+               if ((r->pull && (r->pull->slots & (1u << b))) || fmod(place, 4))
+                  gpu_pull_buffer(b, to, place, r->vb[b].size);
+               else
+                  gpu_set_vertex_buffer(b, to, place, r->vb[b].size);
             }
       if ((r->dirty & RD_IB) && r->have_ib) {
          const struct shadow *s = find_shadow(r, r->ib.buffer, r->ib.offset, r->ib.size);
@@ -2951,6 +2963,9 @@ apply(struct replay *r, uint32_t point)
    if (r->dirty & RD_GROUPS)
       for (uint32_t g = 0; g < r->group_count[point]; g++)
          gpu_set_bind_group(g, r->groups[point][g].group, r->groups[point][g].offsets, r->groups[point][g].n);
+   /* After the groups: its group may be an empty one of the program's, set again with them. */
+   if (point == 0 && r->pull && (r->dirty & (RD_PIPELINE | RD_GROUPS | RD_VB)))
+      gpu_pull_bind(r->pull->group, r->pull->bgl, r->pull->slots);
    const uint32_t immediates = p ? MIN2(r->push_size, p->immediate_size) : r->push_size;
    if ((r->dirty & (RD_PUSH | RD_PIPELINE)) && immediates)
       gpu_set_immediates(0, r->push, immediates);
@@ -3104,6 +3119,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->program[0] = op->program;
          r->dirty |= RD_PIPELINE;
          r->group_count[0] = op->program->group_count;
+         /* The group the last one pulled from may be a set's of this one. */
+         if (r->pull)
+            r->dirty |= RD_GROUPS;
+         r->pull = wg_pipeline_pull(op->program, &op->key);
          break;
       }
       case OP_COMPUTE: {

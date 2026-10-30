@@ -424,6 +424,7 @@ struct wg_program {
    const struct wg_shader *fs_no_depth_of;
    uint32_t compute;        /* a compute pipeline */
    struct hash_table *pipelines;
+   struct wg_pull *pulls;   /* wg_pipeline_pull's, by the bindings pulled */
    /* What identifies the program across shaders (wg_shader.c `program_link`): its data and its stages' WGSL. Stages
     * compiled or loaded from a cache separately find their program by it (`programs`), so that a vertex and fragment
     * shader of one link share one program however they came. */
@@ -475,7 +476,8 @@ struct wg_pipeline_key {
    uint32_t vb_count;
    struct {
       uint16_t stride;
-      uint8_t instance, pad;
+      uint8_t instance;
+      uint8_t pull;         /* read through a storage binding (wg_vertex_pull) */
    } vb[8];
    struct {
       uint8_t binding, pad[3];
@@ -487,15 +489,29 @@ struct wg_pipeline_key {
 uint32_t wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *key);
 /* WebGPU's vertex buffers for a draw: Vulkan's binding b is slot b, except that an attribute reaching past its
  * binding's stride (Vulkan allows offsets up to maxVertexInputAttributeOffset, WebGPU wants offset + size within the
- * stride) reads a slot of its own, a free one, bound to the same buffer `base` bytes further. */
+ * stride) reads a slot of its own, a free one, bound to the same buffer `base` bytes further. A pulled binding
+ * (wg_vertex_pull) stays at slot b with its offsets, whatever they are. */
 struct wg_vertex_slots {
    uint32_t used;           /* slots */
    uint8_t binding[8];      /* by slot: the Vulkan binding */
    uint32_t base[8];        /* by slot: bytes past the binding's offset */
    uint8_t slot[32];        /* by attribute location */
    uint32_t offset[32];     /* by attribute location: its offset in its slot */
+   uint32_t stuck;          /* bindings with an attribute past the stride that no slot of its own serves */
 };
 void wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vertex_slots *out);
+/* Sets the key's `pull` on the bindings WebGPU's vertex buffers can't take (VK4 T5; `bound`: each binding's byte in its
+ * GPUBuffer): a stride, a bound offset or an attribute's offset WebGPU refuses. The vertex stage reads them from a
+ * storage binding (web/venus-gpu.ts `pulledCode`). */
+void wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *bound);
+/* What a pipeline's pulled bindings take: a bind group `group` of layout `bgl`, the storage bindings of `slots` and
+ * their offsets' remainders' uniform, in a pipeline layout `layout` of the program's groups with it. */
+struct wg_pull {
+   struct wg_pull *next;
+   uint32_t slots, group, bgl, layout;
+};
+/* The pipeline's, or NULL: nothing pulled, or no group free (four sets bound: the pipeline stays refused). */
+const struct wg_pull *wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *key);
 
 /* A query pool. Occlusion queries count on the GPU: the WebGPU query set `set` (a slot a query), resolved at the end of
  * each pass that used it into `buf` (each query's last value, 8 bytes a query), which vkCmdCopyQueryPoolResults copies

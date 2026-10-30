@@ -91,7 +91,10 @@ T2–T14; the rest of the order is judgement, said with each.
 - **T5. Vertex strides and offsets that aren't multiples of 4** (M): WebGPU refuses them, which invalidates the
   pipeline and drops its submit (vkd3d's test_instance_id; Direct3D content through vkd3d and DXVK uses such
   layouts). Vertex pulling from a storage buffer for the attributes WebGPU can't take. *Done:* the dEQP-VK cases,
-  test_instance_id's stride rows. *Start:* backlog "Formats", "vkd3d on Venus".
+  test_instance_id's stride rows. *Start:* backlog "Formats", "vkd3d on Venus". **Done 2026-10-30** (REPORT.md "VK4 T5"): such a binding is read by the vertex
+  stage from a read-only storage binding, in a free bind group; the 1,002 `vertex_input` cases that failed pass on
+  SwiftShader and the M4, the list 8,600 → 9,602; test_instance_id 84 → 24 of 372 (those seen divisors). Left (backlog
+  "Pulled vertices' leftovers"): a program with no group free stays refused; the cost unmeasured.
 - **T6. Synchronization's failures** (S–M): `synchronization*.timeline_semaphore.device_host.*` fails 41 of 110
   ("Memory contents don't match"): a host thread copying between iterations through a timeline semaphore, likely
   a real ordering bug. *Done:* the cause, a test, the group in the list. *Start:* backlog "Synchronization".

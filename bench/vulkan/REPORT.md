@@ -771,6 +771,38 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T5: vertex strides and offsets that aren't multiples of 4 — 1,002 of `vertex_input`'s failures to 0, pulled from storage
+
+**2026-10-30.** JSON in `results/vk4/t5/`: `base/` before and `after/` after (`pipeline.monolithic.vertex_input.*`,
+13,296 cases, `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52), `m4/` the 1,002 cases on the
+M4 (Metal, Chrome for Testing 153.0.8010.12).
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| before | 13,296 | 1,469 | 1,002 | 10,825 |
+| after | 13,296 | 2,471 | 0 | 10,825 |
+| the M4, the 1,002 | 1,002 | 1,002 | 0 | 0 |
+
+- **The cause and the fix.** WebGPU refuses a stride or a bound offset that isn't a multiple of 4 and an attribute's
+  offset that isn't a multiple of its size (up to 4), which invalidates the pipeline and its submit. Such a binding is
+  now read by the vertex stage from a read-only storage binding, as transform feedback's compute pass already read
+  vertices (vk/README.md "Pulled vertices"). The list 8,600 → 9,602 cases. The census counted 22 of these in its
+  every-100th sample; the group has 1,002 (`multiple_attributes` 949, `single_attribute` 52, `max_attributes` 1).
+- **vkd3d's test_instance_id** 84 → 24 failures of 372: the 1-byte stride's row draws. Of the 24 left the run's output shows
+  10, all Test 2 (a step rate of 2), whose values are the step rate of 1 row's: the 1-byte stride reads right and the
+  rate is ignored (divisors, tier 4). The other 14 weren't seen; a step rate of 0, Test 0, is the likely rest. The first version of the fix left
+  84: its draws differ in their base instance alone, which sets the groups again for the parameters' new place, past
+  where `apply` had decided the pulled group needn't be set; the program's empty group replaced it. dEQP-VK's group
+  didn't meet it (no draw parameters); vkd3d's run did, and `pullDrawParams` now does.
+- **Tests** (`tests/venus-driver.test.ts`, 5 new; the first four failed first with WebGPU's error): strides and offsets
+  direct, indexed, indirect and beside an ordinary binding; draw parameters; a pipeline with a set in the group the last
+  one pulled from; one layout at four bound offsets; and, written after the fix, a transform feedback capture of pulled
+  vertices. Planted: no groups
+  set after a pulling pipeline (fails `pullGroups`, once its shaders really read their sets: `* 0.0` was folded away,
+  no groups at all, and the plant passed), an unaligned offset given to `setVertexBuffer` (fails `pullLayouts`).
+- **Left** (backlog "Pulled vertices' leftovers"): a program with no group free stays refused; the cost isn't measured,
+  as nothing we run but these tests meets it.
+
 ## VK4 T10: copies and resolves WebGPU refuses — 189 of a sample's failures to 0 of those causes
 
 **2026-10-30.** JSON in `results/vk4/t10/`: `base/` before (2,509 cases: samples of `image_to_image`, `resolve_image`,

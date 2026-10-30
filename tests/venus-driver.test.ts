@@ -33,7 +33,7 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag']]) {
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/vertex-pull.vert', 'vertex-pull.vert'], ['tests/venus/vertex-pull-fixed.vert', 'vertex-pull-fixed.vert'], ['tests/venus/vertex-pull.frag', 'vertex-pull.frag'], ['tests/venus/vertex-pull0.frag', 'vertex-pull0.frag'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -206,6 +206,11 @@ for (const [scenario, what, want] of [
   // L7.5: draw parameters (each quad's base vertex, base instance, 200 + its draw's index; indirect first instances
   // 0 where the adapter has none: checked below).
   ['drawParams', 'the base vertex, base instance and draw index of direct, indexed and indirect draws in one pass', { topLeft: [10, 20, 200, 255], bottomLeft: [30, 40, 200, 255] }],
+  // VK4 T5: vertex layouts WebGPU's vertex buffers refuse, pulled from a storage binding.
+  ['pullLayouts', 'strides and offsets that aren\'t multiples of 4, direct, indexed, indirect, beside an ordinary binding', { topLeft: [255, 0, 0, 255], topRight: [0, 255, 0, 255], bottomLeft: [255, 255, 0, 255], bottomRight: [128, 0, 0, 255] }],
+  ['pullDrawParams', 'a pulled stage that reads draw parameters, two draws apart by those alone', { topLeft: [255, 0, 7, 255], topRight: [255, 0, 9, 255] }],
+  ['pullGroups', 'a pulled draw between draws of a pipeline with a set where its group went', { topLeft: [0, 255, 0, 255], topRight: [255, 0, 0, 255], bottomLeft: [0, 255, 0, 255], bottomRight: [0, 0, 255, 255] }],
+  ['pullOffsets', 'one layout bound at four offsets', { topLeft: [255, 0, 0, 255], topRight: [0, 255, 0, 255], bottomLeft: [255, 255, 0, 255], bottomRight: [255, 255, 255, 255] }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -248,6 +253,8 @@ for (const [scenario, what] of [
   ['xfbIndexedIndirect', 'an indexed indirect draw captured'],
   ['xfbNullColors', 'a capture in a pass of eight colour attachments, all null'],
   ['xfbPasses', 'captures in 17 passes without attachments, each of its own size, in one command buffer'],
+  // VK4 T5.
+  ['xfbPulled', 'a capture of vertices bound at an offset WebGPU\'s vertex buffers refuse'],
 ] as const) {
   test(`transform feedback: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.

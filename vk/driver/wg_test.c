@@ -52,6 +52,8 @@ int wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32
               const uint32_t *cs, uint32_t cs_words);
 uint8_t *wgt_scope_map(uint32_t which);
 int wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t first_instance);
+int wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words,
+             const uint32_t *fs2, uint32_t fs2_words);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
 int wgt_pass_done(void);
@@ -98,6 +100,7 @@ static struct {
    VkRenderPass rp;
    VkFramebuffer fb;
    VkBuffer vertices, indices;
+   const void *vertex_map;
    VkDescriptorSet set;
    VkCommandPool pool;
    VkImage color;
@@ -493,6 +496,7 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    scene.rp = rp;
    scene.fb = fb;
    scene.vertices = vertices;
+   scene.vertex_map = v;
    scene.indices = indices;
    scene.set = sets[0];
    scene.set_layout = set_layout;
@@ -1247,6 +1251,209 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
 }
 
 /*
+ * Vertex layouts WebGPU's vertex buffers refuse (VK4 T5), after wgt_run: vertex-pull.vert's quads, each in a quarter, in
+ * the scene's pass, each attribute's bytes written where its layout says.
+ * 0: top left, a stride of 7, two 8-bit corners and a colour at byte 2 of it, drawn directly;
+ *    top right, a stride of 8 bound at byte 2, indexed with a base vertex;
+ *    bottom left, a float32x2 at byte 2 and a unorm16x4 at byte 10, a stride of 18, drawn indirectly;
+ *    bottom right, corners from an ordinary binding, the colour from an instance binding of stride 1 at an odd offset
+ *    (R8_UNORM: red, a first instance of 2);
+ *    then top left again, by a pipeline that leaves that odd offset bound and unread.
+ * 1: top left as 0's with a base instance of 7, which puts draw parameters' group 3 in the program, then top right
+ *    with one of 9 and nothing else new (the groups set again for the parameters' new place, the pulled one too).
+ * 2: pipelines with and without a set 1 in one pass, no push constants, the one without pulling its vertices from the
+ *    group the other's set 1 stays bound in: top left with set 1, top right pulled without it, bottom left with set 1.
+ * 3: the top left's quad rebound at other offsets of one layout: drawn at bytes 0 (top left), 1 (top right), 2
+ *    (bottom left), 3 (bottom right) of the buffer.
+ */
+static struct {
+   VkPipeline pipeline[4];
+   VkBuffer vb, ib, args;
+   uint8_t *map;
+   uint32_t scenario;
+   VkPipelineLayout sets2;
+} pull;
+
+static const uint8_t pull_corner[6][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
+#define PULL_RED 0xff0000ffu
+#define PULL_GREEN 0xff00ff00u
+#define PULL_YELLOW 0xff00ffffu
+
+/* A 7-byte stride's quad at `at` of the buffer. */
+static void
+pull_stride7(uint32_t at, uint32_t colour)
+{
+   for (uint32_t i = 0; i < 6; i++) {
+      pull.map[at + 7 * i] = pull_corner[i][0] * 255;
+      pull.map[at + 7 * i + 1] = pull_corner[i][1] * 255;
+      memcpy(pull.map + at + 7 * i + 2, &colour, 4);
+   }
+}
+
+static void
+pull_record(VkCommandBuffer cmd, bool in_pass)
+{
+   static PFN_vkCmdDrawIndirect CmdDrawIndirect;
+   if (!CmdDrawIndirect)
+      CmdDrawIndirect = (PFN_vkCmdDrawIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndirect");
+   if (!in_pass)
+      return;
+   static const float off[4][4] = { { -1, -1 }, { 0.05f, -1 }, { -1, 0.05f }, { 0.05f, 0.05f } };
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[0]);
+   const VkDeviceSize zero = 0, at[4] = { 0, 8192 + 2, 16384, 24576 }, whole = 8192;
+   if (pull.scenario == 1) {
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &zero);
+      CmdDraw(cmd, 6, 1, 0, 7);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[1]);
+      CmdDraw(cmd, 6, 1, 0, 9);
+   } else if (pull.scenario == 2) {
+      const VkViewport quarter[3] = { { 0, 0, 32, 32, 0, 1 }, { 32, 0, 32, 32, 0, 1 }, { 0, 32, 32, 32, 0, 1 } };
+      const uint32_t offsets[2] = { 0, 0 };
+      const VkDescriptorSet sets[2] = { scene.set, scene.set };
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.sets2, 0, 2, sets, 2, offsets);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[1]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &whole);
+      CmdSetViewport(cmd, 0, 1, &quarter[0]);
+      CmdDraw(cmd, 6, 1, 0, 0);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[0]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &zero);
+      CmdSetViewport(cmd, 0, 1, &quarter[1]);
+      CmdDraw(cmd, 6, 1, 0, 0);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[1]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &whole);
+      CmdSetViewport(cmd, 0, 1, &quarter[2]);
+      CmdDraw(cmd, 6, 1, 0, 0);
+   } else if (pull.scenario == 3) {
+      for (uint32_t i = 0; i < 4; i++) {
+         const VkDeviceSize place = 1024 * i + i;
+         CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &place);
+         CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[i]);
+         CmdDraw(cmd, 6, 1, 0, 0);
+      }
+   } else {
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &zero);
+      CmdDraw(cmd, 6, 1, 0, 0);
+
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[1]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[1]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &at[1]);
+      CmdBindIndexBuffer(cmd, pull.ib, 0, VK_INDEX_TYPE_UINT16);
+      CmdDrawIndexed(cmd, 6, 1, 0, 3, 0);
+
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[2]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[2]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &at[2]);
+      CmdDrawIndirect(cmd, pull.args, 0, 1, 16);
+
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[3]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[3]);
+      const VkBuffer two[2] = { pull.vb, pull.vb };
+      const VkDeviceSize places[2] = { at[3], 28673 };
+      CmdBindVertexBuffers(cmd, 0, 2, two, places);
+      CmdDraw(cmd, 6, 1, 0, 2);
+
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[0]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &zero);
+      CmdDraw(cmd, 6, 1, 0, 0);
+   }
+}
+
+EXPORT int
+wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words,
+         const uint32_t *fs2, uint32_t fs2_words)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   VkPipelineShaderStageCreateInfo stages[2] = { scene.stages[0], scene.stages[1] };
+   stages[1].pSpecializationInfo = NULL;
+   VkShaderModule fs2_module;
+   if (shader(vs, vs_words, &stages[0].module) || shader(fs, fs_words, &stages[1].module) ||
+       shader(fs2, fs2_words, &fs2_module))
+      return 1;
+   if (!pull.vb) {
+      uint16_t *idx;
+      uint32_t *args;
+      if (buffer(32768, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true, &pull.vb, (void **)&pull.map) ||
+          buffer(16, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &pull.ib, (void **)&idx) ||
+          buffer(16, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, &pull.args, (void **)&args))
+         return 1;
+      for (uint16_t i = 0; i < 6; i++)
+         idx[i] = i;
+      memcpy(args, (uint32_t[4]){ 6, 1, 0, 0 }, 16);
+      VkDescriptorSetLayout layouts[2] = { scene.set_layout, scene.set_layout };
+      const VkPushConstantRange range = { VK_SHADER_STAGE_VERTEX_BIT, 0, 16 };
+      const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 2,
+                                               .pSetLayouts = layouts, .pushConstantRangeCount = 1,
+                                               .pPushConstantRanges = &range };
+      CHECK(CreatePipelineLayout(dev, &pli, NULL, &pull.sets2));
+   }
+   memset(pull.map, 0, 32768);
+   pull.scenario = scenario;
+   /* Each shape's bindings and attributes (location 0 the corner, 1 the colour). */
+   const struct {
+      VkVertexInputBindingDescription b[2];
+      VkVertexInputAttributeDescription a[2];
+      uint32_t bindings;
+   } shapes[4] = {
+      { { { 0, 7, VK_VERTEX_INPUT_RATE_VERTEX } },
+        { { 0, 0, VK_FORMAT_R8G8_UNORM, 0 }, { 1, 0, VK_FORMAT_R8G8B8A8_UNORM, 2 } }, 1 },
+      { { { 0, 8, VK_VERTEX_INPUT_RATE_VERTEX } },
+        { { 0, 0, VK_FORMAT_R8G8_UNORM, 0 }, { 1, 0, VK_FORMAT_R8G8B8A8_UNORM, 4 } }, 1 },
+      { { { 0, 18, VK_VERTEX_INPUT_RATE_VERTEX } },
+        { { 0, 0, VK_FORMAT_R32G32_SFLOAT, 2 }, { 1, 0, VK_FORMAT_R16G16B16A16_UNORM, 10 } }, 1 },
+      { { { 0, 8, VK_VERTEX_INPUT_RATE_VERTEX }, { 1, 1, VK_VERTEX_INPUT_RATE_INSTANCE } },
+        { { 0, 0, VK_FORMAT_R8G8_UNORM, 0 }, { 1, 1, VK_FORMAT_R8_UNORM, 0 } }, 2 },
+   };
+   for (uint32_t i = 0; i < 4; i++) {
+      const VkPipelineVertexInputStateCreateInfo vis = {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+         .vertexBindingDescriptionCount = shapes[i].bindings, .pVertexBindingDescriptions = shapes[i].b,
+         .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = shapes[i].a };
+      VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+      VkPipelineShaderStageCreateInfo own[2] = { stages[0], stages[1] };
+      VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+      rs.cullMode = VK_CULL_MODE_NONE;
+      gpi.pRasterizationState = &rs;
+      gpi.pVertexInputState = &vis;
+      if (scenario == 2 && i == 1) {
+         own[1].module = fs2_module;
+         gpi.layout = pull.sets2;
+      }
+      gpi.pStages = own;
+      CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &pull.pipeline[i]));
+   }
+   if (scenario == 3) {
+      for (uint32_t i = 0; i < 4; i++)
+         pull_stride7(1024 * i + i, i == 0 ? PULL_RED : i == 1 ? PULL_GREEN : i == 2 ? PULL_YELLOW : 0xffffffffu);
+   } else {
+      pull_stride7(0, PULL_RED);
+      /* The indexed draw's base vertex of 3: its quad from the fourth stride. */
+      for (uint32_t i = 0; i < 6; i++) {
+         const uint32_t at = 8192 + (scenario == 2 ? 0 : 2 + 8 * 3) + 8 * i, green = PULL_GREEN;
+         pull.map[at] = pull_corner[i][0] * 255;
+         pull.map[at + 1] = pull_corner[i][1] * 255;
+         memcpy(pull.map + at + 4, &green, 4);
+         const float xy[2] = { pull_corner[i][0], pull_corner[i][1] };
+         const uint16_t yellow[4] = { 65535, 65535, 0, 65535 };
+         memcpy(pull.map + 16384 + 18 * i + 2, xy, 8);
+         memcpy(pull.map + 16384 + 18 * i + 10, yellow, 8);
+         pull.map[24576 + 8 * i] = pull_corner[i][0] * 255;
+         pull.map[24576 + 8 * i + 1] = pull_corner[i][1] * 255;
+      }
+      pull.map[28673 + 2] = 128;
+   }
+   draw_custom = pull_record;
+   const int r = draw_with(NULL, 0, 0, pull.pipeline[0]);
+   draw_custom = NULL;
+   return r;
+}
+
+/*
  * ANGLE's ES3 layout of uniform buffers (VK3 L7b, the review of L7.4-L7.5's finding 9: the tests of more than WebGPU's
  * uniform buffers a stage had one stage, one arrayed binding), after wgt_run: `vs` and `fs` (angle-ubo.vert, .frag), a
  * full-screen triangle; set 0 a dynamic uniform buffer for each stage (the default blocks: 100 and 44, at dynamic
@@ -1556,6 +1763,8 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
  * 7: as 0, in a dynamic rendering pass of 8 colour attachments, all null;
  * 8: 17 dynamic rendering passes without attachments, render areas 17x17 down to 1x1, each capturing vertices 0 to 2
  *    into its own 96 bytes (at 96 * i): 17 times the first triangle's 3 records, the counter 96.
+ * VK4 T5:
+ * 9: as 0, the vertices bound at byte 2 of a buffer of their own (pulled from a storage binding).
  */
 static struct {
    VkFence fence;
@@ -1707,6 +1916,15 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
    CmdSetViewport(cmd, 0, 1, &viewport);
    CmdSetScissor(cmd, 0, 1, &scissor);
    CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+   if (scenario == 9) {
+      VkBuffer moved;
+      uint8_t *m;
+      if (buffer(10 * 5 * 4 + 2, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true, &moved, (void **)&m))
+         return 1;
+      memcpy(m + 2, scene.vertex_map, 10 * 5 * 4);
+      const VkDeviceSize two = 2;
+      CmdBindVertexBuffers(cmd, 0, 1, &moved, &two);
+   }
    if (scenario == 4) {
       const VkBuffer vb[5] = { scene.vertices, scene.vertices, scene.vertices, scene.vertices, scene.vertices };
       const VkDeviceSize at[5] = { 4, 8, 12, 16, 0 };

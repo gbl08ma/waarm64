@@ -131,6 +131,12 @@ program_free(struct wg_program *p)
    wg_id_release(p->vs_module);
    wg_id_release(p->fs_module);
    wg_id_release(p->fs_no_depth);
+   for (struct wg_pull *u = p->pulls, *next; u; u = next) {
+      next = u->next;
+      wg_id_release(u->bgl);
+      wg_id_release(u->layout);
+      free(u);
+   }
    free(p->compute_wgsl);
    free(p);
 }
@@ -402,6 +408,7 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask)
    v->listed = false;
    v->merged = NULL;
    v->pipelines = NULL;
+   v->pulls = NULL;
    v->push_group = 0;
    v->push_group_gen = 0;
    v->compute = 0;
@@ -1176,7 +1183,7 @@ wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vert
       const uint32_t size = vk_format_get_blocksize(k->attr[loc].format), offset = k->attr[loc].offset;
       out->slot[loc] = b;
       out->offset[loc] = offset;
-      if (!stride || offset + size <= stride)
+      if (!stride || offset + size <= stride || k->vb[b].pull)
          continue;
       /* Its own slot: the same binding further on, the offset's remainder within 4 bytes (WebGPU's buffer offsets are
        * 4-aligned). With no slot free, it stays (and the pipeline fails). */
@@ -1190,8 +1197,10 @@ wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vert
          }
          free = s;
       }
-      if (free < 0 || offset - base + size > stride)
+      if (free < 0 || offset - base + size > stride) {
+         out->stuck |= 1u << b;
          continue;
+      }
       out->used |= 1u << free;
       out->binding[free] = b;
       out->base[free] = base;
@@ -1208,6 +1217,69 @@ wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vert
       if (!any)
          out->used &= ~(1u << b);
    }
+}
+
+void
+wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *bound)
+{
+   bool past = false;
+   u_foreach_bit(loc, inputs) {
+      if (!k->attr[loc].format)
+         continue;
+      const uint32_t b = k->attr[loc].binding, size = vk_format_get_blocksize(k->attr[loc].format);
+      if ((k->vb[b].stride & 3) || (bound[b] & 3) || (k->attr[loc].offset % MIN2(size, 4)))
+         k->vb[b].pull = 1;
+      past |= k->vb[b].stride && k->attr[loc].offset + size > k->vb[b].stride;
+   }
+   if (!past)
+      return;
+   struct wg_vertex_slots slots;
+   wg_vertex_slots(k, inputs, &slots);
+   u_foreach_bit(b, slots.stuck)
+      k->vb[b].pull = 1;
+}
+
+const struct wg_pull *
+wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
+{
+   uint32_t mask = 0;
+   u_foreach_bit(loc, k->vs->info.inputs)
+      if (k->attr[loc].format && k->vb[k->attr[loc].binding].pull)
+         mask |= 1u << k->attr[loc].binding;
+   if (!mask)
+      return NULL;
+   for (struct wg_pull *u = p->pulls; u; u = u->next)
+      if (u->slots == mask)
+         return u;
+   /* The first group without resources: past the program's, or one it leaves empty below its push buffer's group 3. */
+   uint32_t used = 0;
+   for (uint32_t i = 0; i < p->resource_count; i++)
+      used |= 1u << p->resources[i].group;
+   const uint32_t group = ffs(~used) - 1;
+   if (group > MIN2(p->group_count, WGSL_MAX_GROUPS - 1)) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: no bind group left to pull a vertex binding WebGPU refuses from\n");
+      warned = true;
+      return NULL;
+   }
+   struct wg_pull *u = calloc(1, sizeof(*u));
+   u->slots = mask;
+   u->group = group;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"entries\":[");
+   u_foreach_bit(s, mask)
+      wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"read-only-storage\"}},", s);
+   wg_json_printf(&j, "{\"binding\":8,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}}]}");
+   u->bgl = wg_create_json(WG_KIND_BGL, &j);
+   wg_json_printf(&j, "{\"bindGroupLayouts\":[");
+   for (uint32_t g = 0; g < MAX2(p->group_count, group + 1); g++)
+      wg_json_printf(&j, "%s%u", g ? "," : "", g == group ? u->bgl : p->bgl[g]);
+   wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);
+   u->layout = wg_create_json(WG_KIND_LAYOUT, &j);
+   u->next = p->pulls;
+   p->pulls = u;
+   return u;
 }
 
 /* A fragment stage that writes depth into an attachment without a depth aspect: Vulkan drops the write, WebGPU refuses the
@@ -1243,9 +1315,14 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    wg_variant_modules(p, k->vs, k->fs);
 
    struct wg_json j = { 0 };
+   const struct wg_pull *pull = wg_pipeline_pull(p, k);
    wg_json_printf(&j, "{\"layout\":%u,\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
-                  "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d},\"buffers\":[",
-                  p->layout, p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1, k->flip_z ? 1 : 0);
+                  "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d},",
+                  pull ? pull->layout : p->layout, p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1,
+                  k->flip_z ? 1 : 0);
+   if (pull)
+      wg_json_printf(&j, "\"pullGroup\":%u,", pull->group);
+   wg_json_printf(&j, "\"buffers\":[");
    /* A binding none of the shader's inputs reads is left out (else a draw would need its buffer). */
    const uint32_t inputs = k->vs->info.inputs;
    struct wg_vertex_slots vs;
@@ -1257,8 +1334,9 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
          continue;
       }
       const uint32_t binding = vs.binding[b];
-      wg_json_printf(&j, "%s{\"arrayStride\":%u,\"stepMode\":\"%s\",\"attributes\":[", b ? "," : "",
-                     k->vb[binding].stride, k->vb[binding].instance ? "instance" : "vertex");
+      wg_json_printf(&j, "%s{%s\"arrayStride\":%u,\"stepMode\":\"%s\",\"attributes\":[", b ? "," : "",
+                     pull && (pull->slots & (1u << b)) ? "\"pull\":true," : "", k->vb[binding].stride,
+                     k->vb[binding].instance ? "instance" : "vertex");
       bool first = true;
       u_foreach_bit(loc, inputs) {
          if (!k->attr[loc].format || vs.slot[loc] != b)

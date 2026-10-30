@@ -716,10 +716,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
   test_root_constants pass; test_vertex_id fails 39 of 89 (as at L7.5 after VK3 L7b captured indirect draws, so not those alone: VK3 L8's check; and a
   capture of a program of four bind groups, which a vertex stage reading draw parameters makes likelier, since they
-  bring the push buffer's group 3), test_instance_id 84 of 372 (instance step rates of 0 and 2: divisors; a 1-byte
-  vertex stride WebGPU refuses, which invalidates the pipeline and its submit; whether its indirect rows fail apart
-  from those: not looked into), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
-  "The Vulkan driver's gaps"). The next steps by promise: the indirect rows of test_instance_id, a run of the whole
+  bring the push buffer's group 3), test_instance_id 24 of 372 (instance step rates of 0 and 2: divisors; its 1-byte
+  vertex stride pulled since VK4 T5), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
+  "The Vulkan driver's gaps"). The next steps by promise: a run of the whole
   d3d12 suite for a ranked list, multi-draw indirect (the driver already loops over a draw count, each draw with its
   own parameters' place), and a real program (vkd3d's demos need an X window: none in the guests). The draw
   parameters' cost (a push-buffer place and a bind of group 3 a draw whose bases change) isn't measured on a program.
@@ -755,11 +754,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     84 failures of T10's sample. GFXReconstruct's trimmed captures restore their depth images through the worker's
     paths (vkQuake's first replayed frame). `multisample_resolve.*.max_attachments_4_samples_4` (17 of the sample) reads
     an attachment of its pass as an input attachment: the feedback loop under "Rendering".
+  - **Pulled vertices' leftovers** (VK4 T5; vk/README.md "Pulled vertices"): a program with four groups of resources
+    has none to pull from, and its pipeline stays refused (group 3 could take the bindings); more pulled bindings than
+    the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
+    could back next, each a few lines of the fetch: vertex attribute divisors (`iid / rate`: vkd3d's other 24 of
+    test_instance_id, tier 4), and formats WebGPU's vertex buffers lack (three-component 8- and 16-bit, scaled:
+    816 and 120 of `vertex_input`'s 10,825 cases not supported by their names; 4,080 are `legacy_vertex_attributes`,
+    an extension not advertised; the other reasons not looked into). Its cost isn't measured: nothing we run meets it but dEQP-VK
+    and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes decoded per vertex).
   - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); 3D images
     sampled through 2D views (`2D_ARRAY_COMPATIBLE`); D24 depth tests fail by one unit (depth24plus's precision);
     3-component formats in images (`glsl.440.linkage` makes RGB32 attachments: `VK_ERROR_FORMAT_NOT_SUPPORTED`);
-    vertex strides that aren't multiples of 4 (WebGPU's; VK4 T1: 22 `vertex_input.multiple_attributes` cases of 8- and
-    16-bit attributes, the pipeline refused); 16-bit packed
+    16-bit packed
     colour formats beside a depth format refused at image creation though advertised
     (`render_to_image.*.a1r5g5b5_unorm_pack16_d32_sfloat_s8_uint`, `r5g6b5_unorm_pack16_d24_unorm_s8_uint`:
     `VK_ERROR_FORMAT_NOT_SUPPORTED`, VK4 T1).

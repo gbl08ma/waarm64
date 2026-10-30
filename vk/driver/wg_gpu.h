@@ -69,6 +69,11 @@ WG_IMPORT(gpu_pass_end) void gpu_pass_end(void);
 WG_IMPORT(gpu_set_pipeline) void gpu_set_pipeline(uint32_t id);
 WG_IMPORT(gpu_set_bind_group) void gpu_set_bind_group(uint32_t index, uint32_t id, const uint32_t *offsets, uint32_t n);
 WG_IMPORT(gpu_set_vertex_buffer) void gpu_set_vertex_buffer(uint32_t slot, uint32_t buffer, double offset, double size);
+/* A vertex binding the current pipeline reads through a storage binding (wg_vertex_pull), and that bind group set from
+ * the slots' last ranges (bgl: wg_pull's), in the render pass (VK4 T5). A range WebGPU's vertex buffers refuse comes
+ * this way whatever the pipeline. */
+WG_IMPORT(gpu_pull_buffer) void gpu_pull_buffer(uint32_t slot, uint32_t buffer, double offset, double size);
+WG_IMPORT(gpu_pull_bind) void gpu_pull_bind(uint32_t group, uint32_t bgl, uint32_t slots);
 WG_IMPORT(gpu_set_index_buffer) void gpu_set_index_buffer(uint32_t buffer, uint32_t wide, double offset, double size);
 WG_IMPORT(gpu_set_viewport) void gpu_set_viewport(float x, float y, float w, float h, float min, float max);
 WG_IMPORT(gpu_set_scissor) void gpu_set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
