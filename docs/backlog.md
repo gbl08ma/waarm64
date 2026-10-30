@@ -461,9 +461,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   desktop guest to see what else it asks for, and measure what the feedback copies cost there (a copy at every such
   draw, no write tracking to skip one whose source hasn't changed). KWin, Mutter and Xorg sessions on 3D are
   unmeasured too (graphics.md "Applications on 3D").
-- **Fuzz virgl's stream decoder**: the renderer parses untrusted guest data (WebGL validates only what it is given).
-  Fuzz the stream's decoder as the device's commands and the virtqueue parser are (`core/fuzz`), on the recording
-  WebGL2 of `tests/virgl-mock-gl.ts`.
+- **virgl fuzzing's reach** (docs/testing.md "virgl fuzzing"): no seed trace uses stream output or Z32_FLOAT_S8X24
+  uploads, and the fuzzer's decoders give no pictures, so those paths and the picture writes aren't fuzzed. A trace of
+  dEQP-GLES3's transform_feedback and depth32f_stencil8 cases (`CAPTURE=`) and a decoder that outputs small pictures
+  would add them.
 - **Desktop GL 3.0 and 3.1 on WebGL2** (graphics.md "What isn't backed"): they need what WebGL2 lacks or has only as
   extensions: `gl_ClipDistance` (`WEBGL_clip_cull_distance`), depth clamp (`EXT_depth_clamp`), conditional
   rendering, the sRGB framebuffer switch, texture buffers, base vertex

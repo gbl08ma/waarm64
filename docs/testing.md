@@ -149,6 +149,7 @@ kept in `~/webpc-tailcat`), the page's Debian through it. **The IPv6 part needs 
 | Snapshot file | `tests/snapshot-file.test.ts` | the snapshot container (`web/snapshot-file.ts`, [plans/snapshots.md](plans/snapshots.md)): CRC-32 against zlib's, round trips of every frame kind (RAM from a shared-memory view at an odd offset), 1-byte, random and Blob input, writer back-pressure and order, every refusal with its `problem`, truncation at every prefix and a flipped bit at every byte of a small file, the stored and a pluggable codec. Node only, ~3 s; buffers are compared with `sameBytes`, never `assert.deepEqual` (a diff of two RAM-sized arrays exhausts memory) |
 | Decoder sweep | `core/fuzz` (not in CI) | every 2³² word vs Capstone |
 | virtqueue fuzzing | `cargo fuzz run virtqueue` (not in CI) | the transport and split-queue parser |
+| virgl stream fuzzing ("virgl fuzzing" below) | `tests/virgl-fuzz.ts` (300 cases in `tests/virgl.test.ts`; longer runs by hand, not in CI) | the renderer's decoding of SUBMIT_3D streams, staging data and 3D resource commands, through the device, on the recording WebGL2 |
 
 Rules behind that matrix:
 - **Interpreter runs of long guests happen natively** (Rust release builds are fast and need no
@@ -417,6 +418,36 @@ feature is one we leave out (`SYS_NOT_OURS`), an unnamed one must be UNDEFINED e
 CONSTRAINED UNPREDICTABLE encodings Capstone rejects, should-be-one fields the M4 ignores). Both
 report 0 mismatch classes. Not in `ci.sh` (it builds Capstone from C): rerun it when the decoder
 changes. `cargo fuzz run decode` (from `core/`) is the libFuzzer target.
+
+## virgl fuzzing (`tests/virgl-fuzz.ts`)
+
+The renderer parses what the guest sends (web/virgl-renderer.ts, the TGSI translator, the H.264 and AV1 parsers of
+video), and WebGL validates only the calls it is given, so the decoding itself is fuzzed. A case is a seed: one of
+the captured traces (`tests/virgl/`: glcomp, sway, three dEQP captures, VP9, H.264 and AV1 with its coding tools) up to
+a few submits past a chosen one, with mutations in that window: stream words (interesting values, nudges, bit flips,
+handles), command and object types, lengths, a payload's bytes (a shader's text: its numbers made huge or odd, its
+punctuation), commands deleted, duplicated or spliced in from any trace, staging data's bytes, and fields of
+`RESOURCE_CREATE_3D` and the 3D transfers. It replays through the device (`web/virgl-replay.ts`) into a renderer on
+`tests/virgl-mock-gl.ts`, with video decoders that take every chunk and give no picture (so bitstreams are parsed;
+without decoders they aren't). A defect is an exception out of the device or renderer (`escape`), an exception a
+command's decoding caught that isn't an `Error` thrown on purpose (`fault`, through `VirglRenderer.onCaught`: a
+TypeError or RangeError), resources keeping over 256 MiB (`memory`), or a case over 2 s (`slow`; the runner kills one
+hung 10 s).
+- **`tests/virgl.test.ts` runs seeds 1–300** (~4 s); `node tests/virgl-fuzz.ts [seconds] [first seed]` runs on (~35
+  cases a second; a child process the parent watches), prints each new class of finding with its seed and writes its
+  trace to `bench/results/local/virgl-fuzz/<seed>.vglt`; `node tests/virgl-fuzz.ts --run <seed|file>` runs one.
+  Pure Node: it runs in a cloud session as well as the dev VM. Rerun it for a while when the decoder changes.
+- **What it found** (2026-10-30, ~70,000 cases; each now has its test in `tests/virgl.test.ts` or
+  `tests/virgl-video.test.ts`, each planted back fails it): a sampler view or state start slot of 2³¹ (every draw walked
+  the sparse array: a hang); a blit of 2³² layers (as many blits); index buffers misaligned (a RangeError) or shorter
+  than the count (the CPU's rebasing sized by it); an upload box past its level and data shorter than the box; a 2 GiB
+  buffer resource (a 2 GiB copy); a TGSI swizzle that isn't one and an instruction missing an operand (TypeErrors); a
+  video buffer destroyed between BEGIN_FRAME and END_FRAME (a TypeError). The last run, 9,700 cases over every
+  trace, found nothing.
+- **What it doesn't reach** (V8's coverage over 800 cases): stream output and Z32_FLOAT_S8X24 uploads (no trace uses
+  them), snapshots and external resources (not the stream's), and pictures written into planes (the decoders give
+  none). Counting array buffers alive (`process.memoryUsage()`) flagged cases that didn't repeat alone (V8 frees them
+  on a thread of its own), so `memory` counts what the resources keep instead.
 
 ## Litmus tests (`images/build.sh litmus`, M7)
 

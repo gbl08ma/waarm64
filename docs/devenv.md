@@ -90,6 +90,7 @@ scripts/tsan.sh                # ThreadSanitizer on the native parallel SMP runn
 WEBPC_PARALLEL_RUNS=20 cargo test --release --test baremetal baremetal_parallel   # parallel SMP, repeated
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])      # decoder sweep vs Capstone (~3 min; sys: seconds)
 (cd core && cargo fuzz run virtqueue)                           # libFuzzer on the virtio transport
+node tests/virgl-fuzz.ts [seconds] [first seed]               # virgl's stream decoder fuzzed (docs/testing.md "virgl fuzzing")
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf]  # rebuild the bare-metal tests, run them on QEMU (TCG or hvf)
 node tools/uefi-oracle.ts debian alpine alpine-grub          # unmodified images through our EDK2 (images/build.sh edk2) on QEMU
 tests/usb/gadget.sh up|down|status [zero acm zero-a zero-b]   # the dummy_hcd gadgets (once: tests/usb/gadget.sh install)

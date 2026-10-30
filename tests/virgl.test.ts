@@ -18,6 +18,7 @@ import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
 import { encodeRecord, encodeTrace, readTrace } from '../web/virgl-trace.ts';
 import { ramLayout } from '../web/ram.ts';
+import { dictionary, findingKey, loadSeeds, makeCase, runTrace } from './virgl-fuzz.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
 const fixture = (name: string) => {
@@ -942,4 +943,55 @@ test('virgl cursor: a 3D resource\'s image is read back from the renderer, in it
   g.cursor(cmd(0x300, 0, 10, 20, 0, 0, 0, 0, 0));
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(shown.slice(1), [null]);
+});
+
+// What fuzzing the stream found (tests/virgl-fuzz.ts, docs/testing.md "virgl fuzzing"): each defect at its command.
+test('virgl renderer: guest-sized slots, layers, indices, boxes and buffers are bounded (found by fuzzing)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [], faults: unknown[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.onCaught = (e) => { if (!(e instanceof Error && e.constructor === Error)) faults.push(e); };
+  r.createContext(1);
+  const d = drawable(r);
+  r.submit(1, new Uint32Array(d.setup));
+  assert.deepEqual(errors, []);
+  const run = (...words: number[]) => { errors.length = 0; r.submit(1, new Uint32Array(words)); return errors.join('\n'); };
+  // A start slot of 2^31 (a draw walked every slot below it: a hang).
+  assert.match(run(10 | 3 << 16, 1, 0x7fffffff, 0), /bad SET_SAMPLER_VIEWS/);
+  assert.match(run(18 | 3 << 16, 1, 0x7fffffff, 0), /bad BIND_SAMPLER_STATES/);
+  // A blit of 2^32 - 1 layers into a 2D texture (as many blits: a hang) is its one layer.
+  r.createResource({ id: 4, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 4);
+  gl.log.length = 0;
+  run(16 | 21 << 16, 0xf, 0, 0, 4, 0, 67, 0, 0, 0, 4, 4, 0xffffffff, 3, 0, 67, 0, 0, 0, 4, 4, 1);
+  assert.equal(gl.log.filter(([n]) => n === 'blitFramebuffer').length, 1);
+  // Indices misaligned or past the index buffer (a view of an odd length threw; a count sized the CPU's rebasing).
+  r.createResource({ id: 2, target: 0, format: 64, bind: 0x20, width: 16, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 2);
+  const indexed = (count: number) => [8 | 12 << 16, 0, count, 4, 1, 0, 0, 0, 0, 0, 0, 2, 0];
+  assert.match(run(11 | 3 << 16, 2, 2, 1, ...indexed(3)), /past index buffer/);
+  assert.match(run(11 | 3 << 16, 2, 2, 0, ...indexed(0x7fffffff)), /past index buffer/);
+  assert.match(run(11 | 3 << 16, 2, 3, 0, ...indexed(3)), /past index buffer/);
+  assert.doesNotMatch(run(11 | 3 << 16, 2, 2, 0, ...indexed(8)), /past index buffer/);
+  // An upload whose box isn't in the texture (it sized the CPU's repacking) or has fewer bytes than the box.
+  assert.match(run(9 | 15 << 16, 3, 0, 0, 3, 0, 0, 0, 0, 0x7fffffff, 1, 1, 0, 0, 0, 0), /isn't in level 0/);
+  assert.match(run(9 | 15 << 16, 3, 0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0), /16 bytes for the box/);
+  // A 2 GiB buffer (its CPU copy was as big) and a texture past WebGL's limits make nothing on the host.
+  r.createResource({ id: 5, target: 0, format: 64, bind: 0x10, width: 0x80000000, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.createResource({ id: 6, target: 2, format: 67, bind: 2, width: 1 << 20, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  assert.equal(r.resources.get(5)?.shadow, undefined);
+  assert.equal(r.resources.get(6)?.tex, undefined);
+  assert.deepEqual(faults, []);
+  // A TGSI swizzle that isn't one, and an instruction missing an operand: the shader's errors, not TypeErrors.
+  assert.throws(() => parseTgsi('FRAG\nDCL IN[0]\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0].q\n  1: END'), TgsiError);
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END');
+  assert.throws(() => generate(vs, parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\n  0: ADD OUT[0], IN[0]\n  1: END'), KEY), TgsiError);
+});
+
+test('virgl renderer: fuzzed streams through the device find no defects (tests/virgl-fuzz.ts, 300 cases)', () => {
+  const seeds = loadSeeds(), dict = dictionary(seeds);
+  const found: string[] = [];
+  for (let seed = 1; seed <= 300; seed++) for (const f of runTrace(makeCase(seeds, dict, seed).trace).findings) found.push(`seed ${seed}: ${findingKey(f)}`);
+  assert.deepEqual(found, []);
 });

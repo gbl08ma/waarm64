@@ -175,6 +175,13 @@ const BIND_STAGING = 1 << 19, BIND_INDEX = 1 << 5;
 const SHADER_VERTEX = 0, SHADER_FRAGMENT = 1;
 /** Texture units: the fragment shader's samplers from 0, the vertex shader's from here. */
 const VS_UNIT_BASE = 16;
+/**
+ * A stage's sampler view and sampler state slots (Gallium's PIPE_MAX_SAMPLERS): a start slot past them is refused (a
+ * draw walks every slot below the highest set, so 2^31 of them hung it: tests/virgl-fuzz.ts).
+ */
+const MAX_SLOTS = 32;
+/** The largest buffer resource: its CPU copy is as big (a guest's GL buffers are a few MiB; a VBO of 256 MiB is none's). */
+const MAX_BUFFER = 256 << 20;
 
 const BLEND_FACTOR: Record<number, number> = {
   0x1: E.ONE, 0x2: E.SRC_COLOR, 0x3: E.SRC_ALPHA, 0x4: E.DST_ALPHA, 0x5: E.DST_COLOR, 0x6: E.SRC_ALPHA_SATURATE,
@@ -241,6 +248,8 @@ export class VirglRenderer {
   external?: ExternalSource;
   /** A video picture's plane written into a resource (rows of `w` texels of `bpp` bytes): Venus's textures imported from it take it too (web/venus-import.ts). */
   onPlane?: (res: number, data: Uint8Array, w: number, h: number, bpp: number) => void;
+  /** Every exception a command's decoding caught (tests/virgl-fuzz.ts: anything but an `Error` thrown on purpose is a defect). */
+  onCaught?: (e: unknown) => void;
   private externals = new Set<Res>();
   /** External resources whose bytes are on their way (`externalWait`): what may see them waits, as for a picture. */
   private externalWaits = new Set<number>();
@@ -250,6 +259,8 @@ export class VirglRenderer {
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
   private readonly maxSamples: number;
+  /** WebGL's limits on a texture's size (what the caps offer: web/virgl-caps.ts), checked at a resource's creation. */
+  private readonly limits: { size: number; size3d: number; cube: number; layers: number };
   /** The color attachments the context has, up to the 8 the caps offer (WebGL2 promises 4; SwiftShader's Vulkan has 6). */
   private readonly colorAttachments: number;
   private queries: Query[] = [];
@@ -285,6 +296,8 @@ export class VirglRenderer {
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
     this.maxSamples = gl.getParameter(E.MAX_SAMPLES) as number;
+    const p = (n: number) => gl.getParameter(n) as number;
+    this.limits = { size: p(E.MAX_TEXTURE_SIZE), size3d: p(E.MAX_3D_TEXTURE_SIZE), cube: p(E.MAX_CUBE_MAP_TEXTURE_SIZE), layers: p(E.MAX_ARRAY_TEXTURE_LAYERS) };
     this.colorAttachments = Math.min(gl.getParameter(E.MAX_COLOR_ATTACHMENTS) as number, 8);
     gl.getExtension('EXT_color_buffer_half_float');
     gl.getExtension('EXT_texture_norm16');
@@ -388,6 +401,13 @@ export class VirglRenderer {
     this.debug?.(`resource ${d.id} ${res.fmt?.name ?? d.format} ${d.width}x${d.height} target ${d.target} bind ${d.bind.toString(16)}`);
     this.resources.set(d.id, res);
     if (this.debug) this.life.set(d.id, { t0: performance.now(), uploads: 0, bytes: 0, staged: 0 });
+    // Past the limits (as vrend's check_resource_valid) the guest's object exists with nothing on the host: a buffer's
+    // CPU copy and a texture's kept texels are sized by it (a 2 GiB buffer was a 2 GiB copy: tests/virgl-fuzz.ts).
+    const tooBig = this.tooBig(d);
+    if (tooBig) {
+      this.error(`resource ${d.id}: ${tooBig}`);
+      return true;
+    }
     if (d.target === PIPE_BUFFER) {
       // A staging buffer is only ever the guest's pages.
       if (d.bind & BIND_STAGING) return true;
@@ -443,6 +463,16 @@ export class VirglRenderer {
     // would make an incomplete texture of a single level unsampleable without one, so set a level range.
     gl.texParameteri(res.glTarget, E.TEXTURE_MAX_LEVEL, d.lastLevel);
     return true;
+  }
+
+  /** Why a resource can't be made (its size past WebGL's limits), if it can't. */
+  private tooBig(d: ResourceDesc) {
+    const l = this.limits;
+    if (d.target === PIPE_BUFFER) return d.width > MAX_BUFFER ? `a buffer of ${d.width} bytes` : undefined;
+    const [size, layers] = d.target === PIPE_TEXTURE_3D ? [l.size3d, l.size3d] : d.target === PIPE_TEXTURE_CUBE ? [l.cube, 6] : [l.size, l.layers];
+    if (d.width > size || d.height > size || (d.target === PIPE_TEXTURE_3D ? d.depth : d.arraySize) > layers) return `a texture of ${d.width}x${d.height}x${d.target === PIPE_TEXTURE_3D ? d.depth : d.arraySize}`;
+    if (d.lastLevel > 31) return `${d.lastLevel + 1} levels`;
+    return undefined;
   }
 
   unrefResource(id: number) {
@@ -668,6 +698,7 @@ export class VirglRenderer {
     }
     const f = r.fmt;
     if (!f || !r.tex) return this.error(`upload to resource ${r.id} without a texture`);
+    if (!this.inLevel(r, level, box)) return this.error(`upload to resource ${r.id}: the box isn't in level ${level}`);
     if (f.id === 126) return this.drawZ32S8(r, level, box, data, stride, layerStride);
     if (f.id === 19 || f.id === 21) {
       // Z24_UNORM_S8_UINT and Z24X8_UNORM keep depth in a word's low 24 bits; GL's UNSIGNED_INT_24_8 (and a 24-bit
@@ -681,6 +712,7 @@ export class VirglRenderer {
     stride ||= rowBytes;
     const rows = Math.ceil(box.h / b);
     layerStride ||= stride * rows;
+    if (data.length < boxBytes(f, box.w, box.h, box.d, stride, layerStride)) return this.error(`upload to resource ${r.id}: ${data.length} bytes for the box`);
     if (stride % f.bpp && b === 1) {
       // A stride that isn't a whole number of pixels: repack.
       const out = new Uint8Array(rowBytes * rows * box.d);
@@ -741,7 +773,7 @@ export class VirglRenderer {
       return r.shadow.slice(box.x, box.x + box.w);
     }
     const f = r.fmt;
-    if (!f || f.block > 1) return null;
+    if (!f || f.block > 1 || !this.inLevel(r, level, box)) return null;
     const rowBytes = box.w * f.bpp;
     stride ||= rowBytes;
     layerStride ||= stride * box.h;
@@ -757,6 +789,19 @@ export class VirglRenderer {
     }
     gl.bindFramebuffer(E.READ_FRAMEBUFFER, null);
     return out;
+  }
+
+  /**
+   * Whether a texture's box lies in one of its levels (whole blocks of a compressed format): WebGL refuses the others,
+   * and the CPU's work on a box (repacking, keeping texels, reading back) is sized by it (tests/virgl-fuzz.ts). A 1D
+   * array's layers are its box's rows (an upload's) or its layers (a snapshot's read).
+   */
+  private inLevel(r: Res, level: number, box: Box) {
+    if (level > r.lastLevel) return false;
+    const b = r.fmt?.block ?? 1, { w, h, d } = this.levelSize(r, level);
+    const [rows, layers] = r.target === PIPE_TEXTURE_1D ? [1, 1] : r.target === PIPE_TEXTURE_1D_ARRAY ? [Math.max(1, r.arraySize), Math.max(1, r.arraySize)] : r.target === PIPE_TEXTURE_CUBE ? [h, Math.max(6, d)] : [h, d];
+    const fits = (at: number, n: number, size: number, block: number) => Math.ceil((at + n) / block) <= Math.ceil(size / block);
+    return fits(box.x, box.w, w, b) && fits(box.y, box.h, rows, r.target === PIPE_TEXTURE_1D_ARRAY ? 1 : b) && box.z + box.d <= layers;
   }
 
   /** The read framebuffer with the resource's level (and layer) as its color attachment. */
@@ -836,6 +881,7 @@ export class VirglRenderer {
       try {
         this.command(c, h & 0xff, (h >>> 8) & 0xff, p);
       } catch (e) {
+        this.onCaught?.(e);
         this.error(`ctx ${ctxId}: command ${h & 0xff}: ${e instanceof Error ? e.message : e}`);
       }
       at += 1 + len;
@@ -880,6 +926,7 @@ export class VirglRenderer {
       case 10: { // SET_SAMPLER_VIEWS: shader, start slot, handles
         const st = this.stage(p[0]);
         if (!st) return;
+        if (p[1] + p.length - 2 > MAX_SLOTS) throw new Error('bad SET_SAMPLER_VIEWS');
         for (let k = 2; k < p.length; k++) {
           const o = s.objects.get(p[k]);
           s.views[st][p[1] + k - 2] = o?.kind === 'view' ? o.v : undefined;
@@ -904,6 +951,7 @@ export class VirglRenderer {
       case 18: { // BIND_SAMPLER_STATES: shader, start slot, handles
         const st = this.stage(p[0]);
         if (!st) return;
+        if (p[1] + p.length - 2 > MAX_SLOTS) throw new Error('bad BIND_SAMPLER_STATES');
         for (let k = 2; k < p.length; k++) {
           const o = s.objects.get(p[k]);
           s.samplers[st][p[1] + k - 2] = o?.kind === 'sampler' ? o.v : undefined;
@@ -991,6 +1039,7 @@ export class VirglRenderer {
         return r ? this.backingSize(r) : 0;
       },
       error: (m) => this.error(`ctx ${c.id}: ${m}`),
+      caught: (e) => this.onCaught?.(e),
       debug: this.debug,
       decoders: this.video?.decoders,
       hardware: this.video?.hardware,
@@ -1237,6 +1286,7 @@ export class VirglRenderer {
     try {
       sh.tgsi = parseTgsi(sh.text);
     } catch (e) {
+      this.onCaught?.(e);
       sh.error = e instanceof Error ? e.message : String(e);
       this.error(`shader ${sh.serial}: ${sh.error}`);
     }
@@ -1391,7 +1441,9 @@ export class VirglRenderer {
       if (!tmp) return this.error('blit: the multisampled source can\'t be resolved');
       src = tmp;
     }
-    for (let z = 0; z < Math.max(1, db.d); z++) {
+    // The destination's layers the box covers (a guest's depth of 2^32 was a loop of as many blits: tests/virgl-fuzz.ts).
+    const layers = Math.min(Math.max(1, db.d), this.levelSize(dst, db.level).d - db.z);
+    for (let z = 0; z < layers; z++) {
       const sz = sb.z + Math.floor((z * sb.d) / Math.max(1, db.d));
       if (color) {
         if (same || ints || src.rb) {
@@ -1807,6 +1859,7 @@ void main() {
     try {
       layout = generate(vs.tgsi!, fs.tgsi!, key);
     } catch (e) {
+      this.onCaught?.(e);
       this.error(`program ${vs.serial}/${fs.serial}: ${e instanceof Error ? e.message : e}`);
       this.programs.set(id, null);
       return null;
@@ -2196,6 +2249,9 @@ void main() {
       let size = ib.size || 2;
       // Mesa folds the draw's start into the index buffer's offset (vrend reads only the offset).
       let offset = ib.offset;
+      // Indices of a size GL has, aligned and in the buffer (WebGL refuses the others too); the rebasing below reads
+      // them on the CPU, so a guest's count can't size its work past the buffer (tests/virgl-fuzz.ts).
+      if ((size !== 1 && size !== 2 && size !== 4) || offset % size || offset + count * size > r.shadow.length) return this.error(`an indexed draw past index buffer ${r.id} (${count} of size ${size} at ${offset})`);
       if (r.idirty || !r.ibuf) {
         r.ibuf ??= gl.createBuffer()!;
         gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
