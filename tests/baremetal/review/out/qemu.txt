@@ -1,0 +1,43 @@
+-- MMU off
+t6.unaligned_ldr_mmu_off exceptions 1 esr 0x0000000096000021
+t6.dc_zva_mmu_off exceptions 0 esr 0x0000000000000000
+-- T1: PC after a branch to a tagged address (TBI0 set)
+t1.adr_after_br 0x0000000040006fc0
+t1.adr_after_eret 0x0000000040006fe4
+-- T2: Q registers with SCTLR_EL1.A
+t2.ldr_d_addr4 exceptions 1 esr 0x0000000096000021
+t2.ldr_q_addr0 exceptions 0 esr 0x0000000000000000
+t2.ldr_q_addr8 exceptions 1 esr 0x0000000096000021
+t2.str_q_addr8 exceptions 1 esr 0x0000000096000061
+t2.ldp_q_addr8 exceptions 1 esr 0x0000000096000021
+-- T3: acquire and release on Device memory
+t3.ldar_ibrd 0x0000000000000010
+5 exceptions so far
+t3.stlr_then_ibrd 0x0000000000000020
+t3.exceptions 0x0000000000000000
+-- T4: cache maintenance on Device memory
+t4.dc_cvac_uart exceptions 0 esr 0x0000000000000000
+t4.dc_civac_uart exceptions 0 esr 0x0000000000000000
+t4.dc_ivac_uart exceptions 0 esr 0x0000000000000000
+t4.ic_ivau_uart exceptions 0 esr 0x0000000000000000
+t4.dc_cvac_hole exceptions 0 esr 0x0000000000000000
+t4.ic_ivau_hole exceptions 0 esr 0x0000000000000000
+-- T5: DC ZVA on Device memory
+t5.dc_zva_hole exceptions 1 esr 0x0000000096000050
+-- T7: watchpoints and atomics
+t7.ldadd_load_watch exceptions 1 esr 0x00000000d6000022
+t7.str_load_watch exceptions 0 esr 0x0000000000000000
+t7.cas_fail_load_watch exceptions 1 esr 0x00000000d6000022
+t7.ldadd_store_watch exceptions 1 esr 0x00000000d6000062
+t7.ldr_store_watch exceptions 0 esr 0x0000000000000000
+-- T8: a watchpoint on an address with no translation
+t8.ldr_unmapped_watched exceptions 1 esr 0x0000000096000005
+-- T9: IC IALLU with Rt != 31
+t9.before 0x0000000000000001
+t9.before 0x0000000000000001
+t9.after_ic_iallu_rt0 0x0000000000000002
+t9.after_ic_iallu 0x0000000000000003
+-- T13: reserved AdvSIMD encodings with FPEN 0
+t13.add_1d_reserved exceptions 1 esr 0x0000000002000000
+t13.add_2d_valid exceptions 1 esr 0x000000001fe00000
+exit 0
