@@ -555,11 +555,12 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   hands every submit to the driver at once (no submit thread: vkr has one); a submit with a timeline wait that isn't
   met, by the value or by a submit already replayed that will signal it, is held, with every later submit of its
   device, and replayed in order once its waits are met: at the host's signal (`vkSignalSemaphore`) or at the end of a
-  completion. Binary waits are met in the queue's order. A submit of signals alone (no command buffers, no waits) goes
-  at once, ahead of held ones: vkr retires the guest's ring fences with such submits, and the guest's driver waits for
-  them before it reuses its command streams, so holding them held the guest before it could send the host's signal
-  (`synchronization*.timeline_semaphore.wait.host_wait_before_signal` hung the guest so); such a submit signals early,
-  as every submit did before. A sync destroyed while a pending or held submit names it (a context's teardown, a guest
+  completion. Binary waits are met in the queue's order. A submit of signals alone is held with the rest: Mesa's
+  vkQueueWaitIdle and vkDeviceWaitIdle are such submits, and so is vkr's fence that retires a guest's ring fence, through
+  which Venus's guest driver signals its timeline semaphores (a semaphore is a DRM syncobj in the guest, its point
+  signalled by the fence of the execbuffer sent after each batch; a fence that went ahead said a batch's value was
+  reached before the batch ran, VK4 T6). Held fences wait in the guest's control queue, so the device answers them out
+  of line (docs/devices.md "Venus"). A sync destroyed while a pending or held submit names it (a context's teardown, a guest
   that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
   the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
   mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).

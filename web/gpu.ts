@@ -1132,6 +1132,10 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
   type Held = { w0: number; len: number; flush: boolean; ready: boolean; behind: boolean; at: number; type: number };
   let held: Held[] = [];
+  // Replies to ring fences (Venus's), sent when their fence retires. They are out of line: such a fence stands for a
+  // queue's work, which may wait for the guest's own signal, and the replies held behind it would fill the queue before
+  // the guest got to send that (docs/devices.md "Venus"). The kernel takes fences of different rings in any order.
+  const rings = new Set<Held>();
   // The stats' queue occupancy (`?displaystats`): the most replies held at once, and the time QUEUE_FULL of them were
   // (the page's queue size: the guest's ring had no free entry, so its next command waited).
   const QUEUE_FULL = 16;
@@ -1188,6 +1192,12 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       const wait = gpu.takeWait();
       const flush = !!o.paceFlushes && type === RESOURCE_FLUSH;
       const now = performance.now();
+      if (wait && type === SUBMIT_3D && new DataView(cmd.buffer, cmd.byteOffset, cmd.length).getUint32(4, true) & FLAG_INFO_RING_IDX) {
+        const h: Held = { w0: r.w0, len: reply.length, flush, ready: false, behind: false, at: now, type };
+        rings.add(h);
+        void wait.then(() => { if (rings.delete(h)) ctx.complete(h.w0, h.len); });
+        return undefined;
+      }
       if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
         // `behind`: neither fenced nor a paced flush, held only for the replies before it.
         const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now, type };
@@ -1224,6 +1234,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       clearTimeout(timer);
       timer = undefined;
       held = [];
+      rings.clear();
       fullSince = -1;
       gpu.reset();
     },

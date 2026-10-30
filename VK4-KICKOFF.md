@@ -102,7 +102,12 @@ T2–T14; the rest of the order is judgement, said with each.
   "Pulled vertices' leftovers"): a program with no group free stays refused; the cost unmeasured.
 - **T6. Synchronization's failures** (S–M): `synchronization*.timeline_semaphore.device_host.*` fails 41 of 110
   ("Memory contents don't match"): a host thread copying between iterations through a timeline semaphore, likely
-  a real ordering bug. *Done:* the cause, a test, the group in the list. *Start:* backlog "Synchronization".
+  a real ordering bug. *Done:* the cause, a test, the group in the list. *Start:* backlog "Synchronization". **Done 2026-10-30** (REPORT.md "VK4 T6"): a
+  timeline semaphore in the guest is signalled by the ring fence sent after its batch, and those fences went ahead of
+  held submits, so a value read as reached before its batch ran (the group's other cases pass with their data all
+  zeros). Fences now hold with the rest, and the device answers them out of line, which is what the old hang needed.
+  `device_host`'s 202 failures to 0, 576 cases of the group and its neighbours, the list 12,733 → 13,217. Left (backlog
+  "Synchronization"): 16 held submits from the thread that signals them fill the control queue.
 
 - **T19. The renderer out of memory 0** (L; added 2026-10-29 by the user, next): Vulkan takes 511 MiB of memory 0
   (the 256 MiB window and the renderer's 255 MiB arena), so a machine with Vulkan has 2,560 MiB of fast RAM against

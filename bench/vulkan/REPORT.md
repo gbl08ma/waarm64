@@ -771,6 +771,41 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T6: synchronization's failures — `device_host`'s 202 failures to 0, a semaphore's value reached before its batch ran
+
+**2026-10-30.** JSON in `results/vk4/t6/`: `base/` before and `fix/` after (the 1,913 `timeline_semaphore.device_host`
+cases of both groups, which aren't in `vk-main.txt`: names from the CTS image's mustpass; `fix/` with the list's other
+timeline cases), `m4/` the passing ones on the M4 (Metal, Chrome for Testing 153.0.8010.12), `ab/` below.
+`bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| before | 1,913 | 351 | 202 | 1,360 |
+| after, with the list's other timeline cases | 1,936 | 576 | 0 | 1,360 |
+| the M4, the list's | 567 | 567 | 0 | 0 |
+
+- **The pattern misled**: every buffer and 3D case failed and every 1D and 2D one passed, whatever the operations. The
+  test's `randomizeData` loops to the image's depth, which is 0 for a 1D or 2D `ResourceDescription`, so those cases
+  send zeros down the chain, and what went wrong yields zeros too. Their passes proved nothing (backlog's "69 of 110").
+- **The cause**: a driver trace showed the guest's copy of iteration 1 before the read it copies was replayed. Venus's
+  timeline semaphore is a DRM syncobj per queue in the guest (`VN_SYNC_TYPE_TIMELINE_SYNC`), its point signalled by the
+  fence of the execbuffer sent after each batch. The driver let vkr's fence submits go ahead of held submits (L6a's way
+  out of a hang), so a held batch's value read as reached before the batch ran. Held with the rest, the chain's data
+  arrives whole. The fence-alone exception and vkr's flag are gone.
+- **What L6a's hang was**: not the guest's command streams, as written then. The device answered in order, so a held
+  ring fence held the unfenced execbuffer each queue submit also sends: 8 submits (16 replies) filled the page's control
+  queue, and `host_wait_before_signal`'s thread stopped in the kernel before its signal. A ring fence's reply is now out
+  of line (`web/gpu.ts`, `rings`). A larger queue isn't the way: a full queue is what paces a compositor.
+- **A test**: `tests/gpu.test.ts`, the reply out of line. Planted back in line, it fails. dEQP's group is the test of the
+  order (no unit test holds Venus's guest driver); the driver's own `emptyAfterHeld` covers a fence alone behind a held
+  submit.
+- **What it costs** (`ab/`, `bench/vulkan/apps-load.ts` through `bench/gpu/sway-mac.sh`: vkcube on sway at 1080p on the M4,
+  macOS 26.6.2, 4 vCPUs, warmed 15 s and measured 15 s, three rounds alternated, the arms differing in `web/gpu.ts`): the
+  same, rounds overlapping: 59.75–59.9 frames a second against 59.9, vkcube's 1.42–1.57 ms of CPU a frame against
+  1.42–1.47, the guest 9–10% busy against 9%.
+
+Left: backlog "Synchronization" (16 held submits from the thread that signals them fill the control queue).
+
 ## VK4 T4: views in another format — every `image.mutable` failure but multisampled ones, 3,132 cases and the plane views
 
 **2026-10-30.** JSON in `results/vk4/t4/`: `base/` before (every 10th of `image.mutable`'s 10,645 cases, which aren't in

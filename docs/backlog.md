@@ -878,9 +878,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
     (WebGPU's vertex stage has no writable storage; were it offered, a draw split by face for its stencil state, whose
     vertex stage runs twice, would double its stores: vk/README.md "Commands"). A submit of signals alone behind held
-    ones is held too, but vkr's ring fences (VK3 L6c: the L5-L6a review's finding 1). `synchronization*.timeline_semaphore.device_host.*` (a host thread
-    copying between iterations, signalled and waited on through the semaphore): 69 of 110 sampled pass since L6a (1
-    before), the other 41 fail with "Memory contents don't match", not looked into.
+    ones is held too. **A program that queues 16 or more submits that wait for its own later signal, from the thread
+    that sends the signal, hangs in `vkQueueSubmit`** (VK4 T6; none seen, dEQP's largest is 12): each held batch's fence
+    holds a slot of the guest's control queue, 16 on the page, and a full queue blocks the ioctl. A larger queue isn't
+    the fix: that queue being full is what paces a compositor (docs/devices.md, "Flush replies are paced"), and 256 of
+    them would put 4 s of replies ahead of each fence. Retiring fences early past a bound would bring T6's bug back.
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
     they go): multiview, inline uniform blocks, buffer device addresses, storage-image atomics on `R32_UINT`/`R32_SINT`
     (the translator refuses image atomics), texel buffer atomics on `R32` (VK3 L6b offers the texel buffers themselves), and

@@ -3763,23 +3763,14 @@ flush_held(void)
    }
 }
 
-/* Set by vkr around the submit that retires a guest's virtio-gpu fence (vk/patches/vkr-wasm.patch,
- * `vkr_queue_sync_submit`). */
-bool wg_ring_fence;
-
 VkResult
 wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
 {
    struct wg_device *dev = container_of(queue->base.device, struct wg_device, vk);
    /* Behind a held submit every submit is held, in order: a fence or semaphore a later submit signals says the earlier
-    * ones are done (Mesa's vkQueueWaitIdle and vkDeviceWaitIdle are such submits of a sync alone), and the application
-    * may then free what they replay. But vkr's own submit of a fence alone, which retires the guest's virtio-gpu fence,
-    * goes at once: the guest's kernel waits for that fence before it reuses the command stream's memory, so holding it
-    * held the guest before it could send the host's signal the held submit waits for (VK3 L6a,
-    * `timeline_semaphore.wait.host_wait_before_signal`). It signals early, which only frees that memory, whose commands
-    * vkr has already decoded; what the held submits replay stays the guest's until its own fences and semaphores, which
-    * are held with them (the L5-L6a review's finding 1, VK3 L6c). */
-   bool met = list_is_empty(&dev->held) || (wg_ring_fence && !submit->command_buffer_count && !submit->wait_count);
+    * ones are done (Mesa's vkQueueWaitIdle and vkDeviceWaitIdle are such submits of a sync alone; vkr's fence that
+    * retires a guest's ring fence too, and through that fence Venus's guest driver signals its timeline semaphores). */
+   bool met = list_is_empty(&dev->held);
    for (uint32_t i = 0; i < submit->wait_count && met; i++)
       met = wait_met(&submit->waits[i]);
    if (met)

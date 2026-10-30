@@ -589,6 +589,41 @@ test('gpu: a transfer copies when it arrives, also while its reply is held (the 
   b.reset();
 });
 
+test('gpu: a ring fence\'s reply is out of line: what follows it is answered while it waits, and its own at its retirement', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const done: number[] = [];
+  const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
+  const retire: (() => void)[] = [];
+  b.gpu.host = { call() {}, fence: () => new Promise<void>((r) => retire.push(r)) };
+  const send = (w0: number, c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] }); };
+  send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
+  const ringed = (id: bigint) => {
+    const s = ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
+    const v = new DataView(s.buffer);
+    v.setUint32(4, 1 | 2, true);
+    v.setBigUint64(8, id, true);
+    v.setUint8(20, 1);
+    return s;
+  };
+  done.length = 0;
+  assert.equal(send(10, ringed(1n)), undefined, 'waits for its retirement');
+  assert.notEqual(send(11, ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5)), undefined, 'an unfenced command behind it is answered at once');
+  assert.equal(send(12, ringed(2n)), undefined);
+  retire[1]();
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(done, [12], 'a later ring\'s fence retires on its own');
+  retire[0]();
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(done, [12, 10]);
+  send(13, ringed(3n));
+  b.reset();
+  retire[2]();
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(done, [12, 10], 'nothing is answered after a reset');
+});
+
 // ---- virgl on the null renderer (web/gpu.ts `virgl`, web/virgl.ts) ----
 
 const V = { CAPSET_INFO: 0x108, CAPSET: 0x109, CTX_CREATE: 0x200, CTX_DESTROY: 0x201, CTX_ATTACH: 0x202, CTX_DETACH: 0x203, CREATE_3D: 0x204, TO_HOST_3D: 0x205, FROM_HOST_3D: 0x206, SUBMIT_3D: 0x207 };

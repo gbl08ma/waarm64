@@ -509,7 +509,11 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   polling while one is active or a submit is in flight (`venus_poll`; web/venus-host.ts `VenusPoll`: turns ~0.25 ms
   apart on `Atomics.waitAsync`'s timeout, never a nested `setTimeout`, whose ~4.5 ms clamp made every fence late, VK3
   L2), and nudges WebGPU with an empty submit at most every 1 ms while one is in flight (Dawn on Vulkan says done only
-  at Chromium's slow look otherwise). A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
+  at Chromium's slow look otherwise). A ring fence's reply is out of line (the only one that is: `rings` in `gpuBackend`): it stands for a queue's work, which
+  may wait for the guest's own signal (a held submit, vk/README.md "Waits before their signal"), and held in order it
+  held what follows, including the unfenced `SUBMIT_3D` every queue submit also sends, so 8 such submits filled the page's
+  16 entries and the guest stopped in the kernel before it signalled. The kernel takes fences of different rings in any
+  order. A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
   which happens once the GPU's work before it is done (`VenusRenderer.settled`: the GPU worker holds the device's fence
   until then). The render stats (`?displaystats`) carry the way back a second (`venus`: submits done in, polls apart,
   nudges, fences retired in, and a submit's parts: encoding, `queue.submit`, writes, passes, draws, the GPU's ms with
