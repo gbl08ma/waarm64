@@ -192,6 +192,16 @@ int main(void) {
     __asm__ volatile("ldr %0, [%2, #8]; ldr %2, [%2]; ldr %1, [%2]" : "=&r"(x), "=&r"(y), "+r"(b) : : "memory");
     check(x == 0x1001 && b == TEST_VA + 0x100 && y == 0x1020, 38);
   }
+  // A group's second store faults after the first's writeback, the base dirty at
+  // an earlier access of the block: the writeback stays done.
+  for (int i = 0; i < 64; i++) {
+    u64 n1 = n_exc, end = TEST_VA + 3 * PAGE_SZ, b = end - 24, v = 0x77 + i, t;
+    __asm__ volatile("add %0, %0, #16; ldr %1, [%2]; str %3, [%0], #8; str %3, [%0]"
+                     : "+r"(b), "=&r"(t)
+                     : "r"(end), "r"(v)
+                     : "memory");
+    check(n_exc == n1 + 1 && last_far == end && b == end, 39);
+  }
 
   // LDTR/STTR at EL1 have EL0's permissions: they fault on EL1-only pages
   // (permission, level 3) and reach the user stack.

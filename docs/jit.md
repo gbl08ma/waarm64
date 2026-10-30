@@ -647,7 +647,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   the leader's there, the fast arm not having run). On a miss (no entry, the span across a page,
   a fault, MMIO, SP misaligned, FP off) the `else` runs each of the span's instructions through the helper in
   order, returning at the first that doesn't retire to the leader's segment of the failure chain; it writes back
-  what the span reads or writes first and reloads what it writes after. A load into the base ends its group;
+  what the span reads or writes first and reloads what it writes after, and an instruction past the first that fails
+  reloads those of them earlier sites' segments store (from their locals) before it leaves, or the chain would undo what
+  the instructions before it retired. A load into the base ends its group;
   loads and stores group apart (separate TLB arrays), LDTR/STTR, exclusives and register offsets never. Alpine's
   userspace benchmark compiles 3.5% less wasm with groups, its spill variant 4.6%, at the same speed
   (`bench/boot/REPORT.md` "Groups of accesses").

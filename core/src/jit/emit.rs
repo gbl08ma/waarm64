@@ -2896,11 +2896,23 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
     let d = dirty & !ch.cum;
     *ch.segs.last_mut().expect("a segment") = d;
     ch.cum |= d;
+    // Earlier sites' segments store their registers from the locals: past the
+    // first instruction, those the span wrote hold what the helper left in
+    // the `Cpu` (a single access's arm has retired nothing when it leaves).
+    let stale = written & ch.cum;
     for j in g.first..=g.last {
         let w = c.words[j];
         c.local_get(VCPU).i32_const(w as i32);
         pc_plus(c, 4 * j as i64);
         c.call(cx.helper).hint(false).if_();
+        if j > g.first {
+            let mut m = stale;
+            while m != 0 {
+                let n = m.trailing_zeros();
+                m &= m - 1;
+                c.load(n);
+            }
+        }
         c.i32_const(j as i32).br(2 + cx.spill);
         c.end();
     }
