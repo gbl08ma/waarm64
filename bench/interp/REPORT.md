@@ -1793,3 +1793,30 @@ Chromium 153.0.8010.52, 3 alternated rounds, medians, JSON and patches in `resul
 
 Kept, both. Buildroot wasn't in the three-arm session (the worktree couldn't serve its image). Not measured: x86_64, and the
 worth under the JIT, where the interpreter runs the cold code.
+
+## XZR's reads without a compare (2026-10-30)
+
+`rd` tests `n == 31` on every operand. `pack` now stores a slot that holds zero for the register bytes that are only read
+(`reads`, per kind), and `hot` reads those with `ra`, a plain indexed load. Left with the compare: what's written through the
+same byte (BFM's and MOVK's Rd, CAS's Rs) and what's no byte (MADD's Ra, MSR's Rt). Writes keep `wr`'s. `Uop::wide` maps
+back for `run`. The slot is `afsr0_el1`, which no instruction writes: a spike's shortcut, no layout change. A slot that
+held a live register fails the differential test. `bench/interp/ab.sh`, dev VM, Chromium 153.0.8010.52, 3 alternated
+rounds, medians, JSON in `results/xzr-spike/`:
+
+| | base | zero slot | |
+|---|---|---|---|
+| `boot_alpine_dec_mips` | 219.4 | 226.2 | +3.1% |
+| `boot_dec_mips` (Buildroot) | 183.3 | 187.1 | +2.1%, inside its noise |
+| `dec_mips` | 476.8 | 489.2 | +2.6% |
+| `vm_dec_flat_mips` | 482.5 | 482.3 | 0.0% |
+| `vm_dec_mmu_mips` | 481.1 | 488.5 | +1.6% |
+
+The boots again in a session of their own, with the build before the device memory fixes (the two sessions' bases sat ~3%
+under that build's result that morning): the fixes cost nothing, and that was the session.
+
+| | before the fixes | base | zero slot | |
+|---|---|---|---|---|
+| `boot_alpine_dec_mips` | 219.7 | 219.5 | 227.1 | +3.4% |
+| `boot_dec_mips` (Buildroot) | 182.0 | 181.9 | 186.1 | +2.3%, inside its noise |
+
+Not measured: x86_64. Before it lands: a slot of its own, or `Cpu::restore` zeroing this one (a snapshot's bytes reach it).

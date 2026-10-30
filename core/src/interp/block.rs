@@ -265,6 +265,9 @@ impl Uop {
         let u = &b[i];
         let k = u.kind();
         let (d, n, m, w) = (u.d as u32, u.n as u32, u.m as u32, u.w);
+        let (rd_, rn_, rm_) = reads(k, w);
+        let back = |v: u32, on: bool| if on && v == ZERO as u32 { 31 } else { v };
+        let (d, n, m) = (back(d, rd_), back(n, rn_), back(m, rm_));
         let s = w as i32 as i64 as u64;
         let c = || b[i + w as usize].bits();
         let off16 = (w as i32 >> 16) as i64 as u64;
@@ -460,7 +463,9 @@ pub fn pack(b: &[Wide]) -> Vec<Uop> {
             debug_assert_eq!(v as i16 as i64 as u64, v, "{u:?}");
             (v as u16 as u32) << 16
         };
-        let (d, n, m) = (u.d, u.n, u.m);
+        let (rd_, rn_, rm_) = reads(u.k, u.x);
+        let zero = |v: u8, on: bool| if on && v == 31 { ZERO } else { v };
+        let (d, n, m) = (zero(u.d, rd_), zero(u.n, rn_), zero(u.m, rm_));
         out.push(match u.k {
             K::Generic => p(u.imm as u8, (u.imm >> 8) as u8, 0, u.x),
             K::Nop | K::Dmb | K::Zva => p(d, n, m, u.imm as u32),
@@ -1280,6 +1285,44 @@ pub const SLOW: u32 = 1;
 /// found no next block inline: its caller looks for one.
 pub const NEXT: u32 = 2;
 
+/// The slot XZR's reads go to in [`hot`] ([`reads`]): a `Cpu` field no instruction
+/// writes (`AFSR0_EL1` is RAZ/WI), as an index of the `Cpu`'s u64s.
+const ZERO: u8 = (core::mem::offset_of!(Cpu, afsr0_el1) / 8) as u8;
+
+/// Which of a micro-op's `d`, `n` and `m` are registers only read, 31 being XZR: [`pack`]
+/// stores [`ZERO`] for them, and [`hot`] reads them with [`ra`]. `x` is the micro-op's `x`
+/// or `w` (the low bits of both).
+fn reads(k: K, x: u32) -> (bool, bool, bool) {
+    let offset = x >> 2 & 3 == 3;
+    match k {
+        K::AddR
+        | K::LogR
+        | K::ShiftV
+        | K::Csel
+        | K::Extr
+        | K::Adc
+        | K::Div
+        | K::Mulh
+        | K::Madd
+        | K::Maddl => (false, true, true),
+        K::Ccmp => (false, true, x >> 4 & 1 == 0),
+        K::AddX | K::Mov | K::Lse => (false, false, true),
+        K::LogI | K::Ubfm | K::Sbfm | K::Bit1 | K::Bfm | K::Br | K::Blr => (false, true, false),
+        K::St => (true, false, offset),
+        K::Ld => (false, false, offset),
+        K::Stp => (true, false, true),
+        K::StO | K::Cbz | K::Tbz | K::Stx | K::Zva => (true, false, false),
+        _ => (false, false, false),
+    }
+}
+
+/// A register [`reads`] names: no compare for XZR.
+#[inline(always)]
+fn ra(c: &Cpu, n: u32) -> u64 {
+    // SAFETY: a register byte, or `ZERO`: a u64 of the `Cpu` (`pack`).
+    unsafe { *(c as *const Cpu as *const u64).add(n as usize) }
+}
+
 #[inline(always)]
 fn rd(c: &Cpu, n: u32) -> u64 {
     // SAFETY: a micro-op's register bytes are below 32 (`pack`).
@@ -1373,7 +1416,7 @@ pub fn hot<B: Fast>(
                     if p as usize & (size as usize - 1) != 0 {
                         break 'run SLOW;
                     }
-                    let v = rd(c, o.m as u32) & if sf { u64::MAX } else { u32::MAX as u64 };
+                    let v = ra(c, o.m as u32) & if sf { u64::MAX } else { u32::MAX as u64 };
                     let op = w >> 12 & 15;
                     // SAFETY: `fast_in` found `size` bytes of RAM at `p`, aligned (checked).
                     let old = match unsafe { mem::rmw(p, size, op, v) } {
@@ -1446,7 +1489,7 @@ pub fn hot<B: Fast>(
                         if p as usize & (size as usize - 1) != 0 {
                             break 'run SLOW;
                         }
-                        let v = rd(c, d);
+                        let v = ra(c, d);
                         // SAFETY: as for `Ldx`.
                         unsafe {
                             if excl {
@@ -1468,7 +1511,7 @@ pub fn hot<B: Fast>(
                     if c.el() == 0 && c.sctlr_el1 & sctlr::DZE == 0 {
                         break 'run SLOW;
                     }
-                    let Some(p) = m.fast_in(fx, rd(c, d) & !63, 64, Use::Write) else {
+                    let Some(p) = m.fast_in(fx, ra(c, d) & !63, 64, Use::Write) else {
                         break 'run SLOW;
                     };
                     if p as usize & 7 != 0 {
@@ -1590,16 +1633,16 @@ pub fn hot<B: Fast>(
                         _ => c.pstate |= a as u64,
                     }
                 }
-                K::Maddl => wr(c, d, maddl(w, rd(c, n), rd(c, o.m as u32), rd(c, w & 31))),
-                K::Extr => wr(c, d, extr(w, rd(c, n), rd(c, o.m as u32))),
-                K::Bit1 => wr(c, d, bit1(w, rd(c, n))),
+                K::Maddl => wr(c, d, maddl(w, ra(c, n), ra(c, o.m as u32), rd(c, w & 31))),
+                K::Extr => wr(c, d, extr(w, ra(c, n), ra(c, o.m as u32))),
+                K::Bit1 => wr(c, d, bit1(w, ra(c, n))),
                 K::Adc => {
-                    let v = adc(c, w, rd(c, n), rd(c, o.m as u32));
+                    let v = adc(c, w, ra(c, n), ra(c, o.m as u32));
                     wr(c, d, v)
                 }
-                K::Div => wr(c, d, div(w, rd(c, n), rd(c, o.m as u32))),
-                K::Mulh => wr(c, d, mulh(w, rd(c, n), rd(c, o.m as u32))),
-                K::Bfm => wr(c, d, bfm(o.m as u32, w, rd(c, d), rd(c, n))),
+                K::Div => wr(c, d, div(w, ra(c, n), ra(c, o.m as u32))),
+                K::Mulh => wr(c, d, mulh(w, ra(c, n), ra(c, o.m as u32))),
+                K::Bfm => wr(c, d, bfm(o.m as u32, w, rd(c, d), ra(c, n))),
                 K::Cas => {
                     let base = rsp(c, n);
                     let size = 1u32 << (w >> 30);
@@ -1637,15 +1680,15 @@ pub fn hot<B: Fast>(
                 }
                 K::AddR => {
                     let sf = w >> 8 & 1 != 0;
-                    let y = shift(rd(c, o.m as u32), w & 3, w >> 2 & 63, sf);
-                    addsub_h(c, w, d, rd(c, n), y, sf, false);
+                    let y = shift(ra(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+                    addsub_h(c, w, d, ra(c, n), y, sf, false);
                     if w & 1 << 11 != 0 {
                         and_bcond!('block, u, end, pc, c.nzcv);
                     }
                 }
                 K::AddX => {
                     let sf = w >> 8 & 1 != 0;
-                    let y = extend(rd(c, o.m as u32), w & 7, w >> 3 & 7);
+                    let y = extend(ra(c, o.m as u32), w & 7, w >> 3 & 7);
                     addsub_h(c, w, d, rsp(c, n), y, sf, true);
                 }
                 K::MovI => {
@@ -1666,23 +1709,23 @@ pub fn hot<B: Fast>(
                     let v = (rd(c, d) & !(0xffff << sh)) | (w as u64) << sh;
                     wr(c, d, trunc(v, n & 1 != 0));
                 }
-                K::Mov => wsp(c, d, trunc(rd(c, o.m as u32), w & 1 != 0)),
+                K::Mov => wsp(c, d, trunc(ra(c, o.m as u32), w & 1 != 0)),
                 K::LogI => {
                     let x = o.m as u32;
                     let opc = x & 3;
                     // SAFETY: a LogI's `w` is its constant's distance.
                     let imm = unsafe { konst(u) };
-                    logical_h(c, opc, d, op(opc, rd(c, n), imm), x & 4 != 0, true);
+                    logical_h(c, opc, d, op(opc, ra(c, n), imm), x & 4 != 0, true);
                     if x & 8 != 0 {
                         and_bcond!('block, u, end, pc, c.nzcv);
                     }
                 }
                 K::LogR => {
                     let sf = w >> 11 & 1 != 0;
-                    let y = shift(rd(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+                    let y = shift(ra(c, o.m as u32), w & 3, w >> 2 & 63, sf);
                     let y = if w >> 10 & 1 != 0 { !y } else { y };
                     let opc = w >> 8 & 3;
-                    logical_h(c, opc, d, op(opc, rd(c, n), y), sf, false);
+                    logical_h(c, opc, d, op(opc, ra(c, n), y), sf, false);
                     if w & 1 << 12 != 0 {
                         and_bcond!('block, u, end, pc, c.nzcv);
                     }
@@ -1692,12 +1735,12 @@ pub fn hot<B: Fast>(
                     wr(
                         c,
                         d,
-                        ror(trunc(rd(c, n), sf), o.m as u32 & 63, sf) & ubfm_mask(w),
+                        ror(trunc(ra(c, n), sf), o.m as u32 & 63, sf) & ubfm_mask(w),
                     )
                 }
                 K::Sbfm => {
                     let (rr, s, sf) = (o.m as u32 & 63, w & 63, w >> 8 & 1 != 0);
-                    let src = rd(c, n);
+                    let src = ra(c, n);
                     let v = if s >= rr {
                         sext(src >> rr, s - rr + 1)
                     } else {
@@ -1707,14 +1750,14 @@ pub fn hot<B: Fast>(
                 }
                 K::ShiftV => {
                     let sf = w & 4 != 0;
-                    let amt = (rd(c, o.m as u32) & if sf { 63 } else { 31 }) as u32;
-                    wr(c, d, shift(rd(c, n), w & 3, amt, sf));
+                    let amt = (ra(c, o.m as u32) & if sf { 63 } else { 31 }) as u32;
+                    wr(c, d, shift(ra(c, n), w & 3, amt, sf));
                 }
                 K::Csel => {
                     let v = if holds(w >> 16, c.nzcv) {
-                        rd(c, n)
+                        ra(c, n)
                     } else {
-                        let y = rd(c, o.m as u32);
+                        let y = ra(c, o.m as u32);
                         match w >> 4 & 3 {
                             0 => y,
                             1 => y.wrapping_add(1),
@@ -1729,17 +1772,17 @@ pub fn hot<B: Fast>(
                         let y = if w >> 4 & 1 != 0 {
                             o.m as u64
                         } else {
-                            rd(c, o.m as u32)
+                            ra(c, o.m as u32)
                         };
                         let sub = w >> 5 & 1 != 0;
                         let y = if sub { !y } else { y };
-                        add_with_carry(rd(c, n), y, sub, w >> 6 & 1 != 0).1
+                        add_with_carry(ra(c, n), y, sub, w >> 6 & 1 != 0).1
                     } else {
                         ((w >> 8 & 15) as u64) << 28
                     };
                 }
                 K::Madd => {
-                    let p = rd(c, n).wrapping_mul(rd(c, o.m as u32));
+                    let p = ra(c, n).wrapping_mul(ra(c, o.m as u32));
                     let a = rd(c, w & 31);
                     let v = if w >> 5 & 1 != 0 {
                         a.wrapping_sub(p)
@@ -1767,16 +1810,16 @@ pub fn hot<B: Fast>(
                 }
                 K::Cbz => {
                     let x = o.m;
-                    let t = (trunc(rd(c, d), x & 1 != 0) != 0) == (x & 2 != 0);
+                    let t = (trunc(ra(c, d), x & 1 != 0) != 0) == (x & 2 != 0);
                     break 'block pc.wrapping_add(if t { unsafe { taken_imm(u) } } else { 4 });
                 }
                 K::Tbz => {
-                    let t = (rd(c, d) >> (o.m & 63) & 1 != 0) == (n != 0);
+                    let t = (ra(c, d) >> (o.m & 63) & 1 != 0) == (n != 0);
                     break 'block pc.wrapping_add(if t { unsafe { taken_imm(u) } } else { 4 });
                 }
-                K::Br => break 'block rd(c, n),
+                K::Br => break 'block ra(c, n),
                 K::Blr => {
-                    let to = rd(c, n);
+                    let to = ra(c, n);
                     c.x[30] = pc.wrapping_add(4);
                     break 'block to;
                 }
@@ -1810,7 +1853,7 @@ pub fn hot<B: Fast>(
                         }
                         2 => (base, Some(base.wrapping_add(imm))),
                         _ => {
-                            let off = extend(rd(c, o.m as u32), w >> 8 & 7, w >> 12 & 7);
+                            let off = extend(ra(c, o.m as u32), w >> 8 & 7, w >> 12 & 7);
                             (base.wrapping_add(off), None)
                         }
                     };
@@ -1820,7 +1863,7 @@ pub fn hot<B: Fast>(
                             break 'run SLOW;
                         };
                         // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
-                        if !unsafe { mem::store_aligned(p, bytes, rd(c, d)) } {
+                        if !unsafe { mem::store_aligned(p, bytes, ra(c, d)) } {
                             break 'run SLOW;
                         }
                     } else {
@@ -2037,7 +2080,7 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
             return false;
         };
         // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
-        unsafe { mem::store_aligned(p, bytes, rd(c, d)) }
+        unsafe { mem::store_aligned(p, bytes, ra(c, d)) }
     } else {
         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
             return false;
@@ -2090,7 +2133,7 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         wr(c, rt, ext(v1));
         wr(c, rt2, ext(v2));
     } else {
-        let (v1, v2) = (rd(c, rt), rd(c, rt2));
+        let (v1, v2) = (ra(c, rt), ra(c, rt2));
         // SAFETY: as for the loads.
         unsafe {
             mem::store_aligned(p1, size, v1);
