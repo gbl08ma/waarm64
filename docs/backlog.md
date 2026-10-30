@@ -862,12 +862,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     1,280 MiB, backs the 1 GiB heap and the renderer's own heap) surfaces as a CS error at its free, not as
     `VK_ERROR_OUT_OF_DEVICE_MEMORY`. A program within the heap doesn't meet it (dEQP's random allocations peak at 242
     MiB); refusing the blob's creation, which the guest's kernel waits for, might give the error back (VK4 T19).
-- **Spill RAM past node 1 in one memory64 behind the JIT's arm** (bench/spike/memory/REPORT.md §6, VK4 T19): every
-  spill page would take the arm's path (D in M0.5's kernels: +11–14% per access against memory 1's +10–12% on the dev
-  VM) instead of the interpreter's 2–17× for nodes 2 and up, and the 8-memory list would become one memory of up to 16
-  GiB. Only a machine with more than ~7 GiB of active pages meets node 2. Memory 0 as one memory64 was measured and
-  set aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8
-  checks each memory64 access.
+- **Nodes 2 and up in one memory64 behind a second JIT arm** (bench/spike/memory/REPORT.md §6, VK4 T19). Memory 1 stays
+  wasm32 (node 1, and on a Vulkan machine the renderer and window, behind today's arm). Nodes 2 and up, which an access
+  reaches today only through the interpreter (2–17× node 0's time), would share one memory64 of up to 16 GiB, reached
+  by a second arm. That access pays memory64's check and V8's base reload: M0.5's M4 kernels put that layout (D) at
+  +26–32% per access on macOS, where memory 1's accesses carry no check. Each load and store on such a machine would
+  also carry another copy of its body (one arm: +15% wasm bytes). Only a machine with more active pages than memory
+  0 and node 1 hold meets node 2: past ~7 GiB, ~5.5 GiB with Vulkan. Memory 0 as one memory64 was measured and set
+  aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8 checks
+  each memory64 access.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
     decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader) and a uniform buffer,
     which Vulkan counts with sampled or storage images, so a stage with many storage buffers and texel buffers is
