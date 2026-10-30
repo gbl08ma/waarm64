@@ -6,12 +6,26 @@
 // container: offscreen, no window) for each name in TESTS (comma-separated; VKD3D_TEST_FILTER matches a part of a name).
 //   node bench/vulkan/vkd3d.ts disk
 //   CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan" node bench/vulkan/vkd3d.ts [image] [outdir]
+// TESTS=all runs the whole suite (LIMIT_S, default 1500), keeping its summary and failures by d3d12.c line; then
+//   node bench/vulkan/vkd3d.ts lines <outdir>/vkd3d.txt
+// names the test each failing line is in (from target/vkd3d/src's d3d12.c).
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
 const root = new URL('../..', import.meta.url).pathname;
 const W = `${root}target/vkd3d`;
+if (process.argv[2] === 'lines') {
+  // Each `N d3d12.c:L: Test failed` of a run's output, by the test function L is in.
+  const src = readFileSync(`${root}target/vkd3d/src/vkd3d-1.19/tests/d3d12.c`, 'utf8').split('\n');
+  const fn = (line: number) => { for (let i = line - 1; i >= 0; i--) { const m = /^static void (test_\w+)\(/.exec(src[i]); if (m) return m[1]; } return '?'; };
+  const most = new Map<number, number>();
+  for (const m of readFileSync(process.argv[3], 'utf8').matchAll(/(\d+) d3d12\.c:(\d+): Test failed/g)) most.set(+m[2], Math.max(most.get(+m[2]) ?? 0, +m[1]));
+  const by = new Map<string, number>();
+  for (const [line, n] of most) by.set(fn(line), (by.get(fn(line)) ?? 0) + n);
+  for (const [k, v] of [...by].sort((a, b) => b[1] - a[1])) console.log(v, k);
+  process.exit(0);
+}
 if (process.argv[2] === 'disk') {
   mkdirSync(`${W}/disk`, { recursive: true });
   copyFileSync(new URL('./vkd3d.py', import.meta.url), `${W}/disk/vkd3d.py`);
@@ -37,7 +51,25 @@ try {
     parts.push(part);
   }
   const tests: string[] = [];
-  for (const name of (process.env.TESTS ?? '').split(',').filter(Boolean)) {
+  if (process.env.TESTS === 'all') {
+    // The whole suite (VK4 T3), each test a process of its own (one that crashes ends only itself; the filter matches
+    // a part of a name, so a test whose name is in another's runs both: `lines` takes each line's most), LIMIT_S at
+    // most: each test's summary, then the failures by source line (d3d12.c's: `bench/vulkan/vkd3d.ts lines`).
+    const limit = Number(process.env.LIMIT_S ?? 1500);
+    const names = [...readFileSync(`${W}/src/vkd3d-1.19/tests/d3d12.c`, 'utf8').matchAll(/^\s*run_test\((test_\w+)\);/gm)].map((m) => m[1]);
+    await s.run(': > /tmp/names.txt');
+    // In lines under the console's 4,095 bytes.
+    for (let i = 0; i < names.length; i += 40) await s.run(`printf '%s\\n' ${names.slice(i, i + 40).join(' ')} >> /tmp/names.txt`);
+    const t0 = performance.now();
+    await s.run(`cd /tmp && : > /tmp/all.sum && end=$(( $(date +%s) + ${limit} )); while read -r n; do [ $(date +%s) -lt $end ] || break; VKD3D_TEST_FILTER=$n timeout 120 /mnt/vkd3d/d3d12 > /tmp/one.txt 2>&1; echo "$n rc=$? $(grep -o '[0-9]* tests executed ([^)]*)' /tmp/one.txt)" >> /tmp/all.sum; grep -o 'd3d12.c:[0-9]*: Test failed' /tmp/one.txt | sort | uniq -c >> /tmp/all.sum; done < /tmp/names.txt; wc -l < /tmp/all.sum`, (limit + 180) * 1000);
+    tests.push(`all: ${((performance.now() - t0) / 1000).toFixed(0)} s`);
+    for (let at = 1; at < 4000; at += 12) {
+      const part = await s.run(`sed -n '${at},${at + 11}p' /tmp/all.sum`);
+      if (!part.trim()) break;
+      tests.push(part);
+    }
+  }
+  for (const name of (process.env.TESTS ?? '').split(',').filter((n) => n && n !== 'all')) {
     const t = await s.run(`cd /tmp && VKD3D_TEST_FILTER=${name} timeout 120 /mnt/vkd3d/d3d12 > /tmp/t.txt 2>&1; echo "${name} rc=$?"; grep -v -e "Optional user instance extension" -e "^vkd3d:.*:warn:vkd3d_init" /tmp/t.txt | tail -8`, 180_000);
     console.log(t);
     tests.push(t);

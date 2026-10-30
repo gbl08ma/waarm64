@@ -48,6 +48,9 @@ uint8_t *wgt_xfb_map(void);
 int wgt_xfb_done(void);
 int wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
 int wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
+int wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words,
+              const uint32_t *cs, uint32_t cs_words);
+uint8_t *wgt_scope_map(uint32_t which);
 int wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t first_instance);
 int wgt_pass(uint32_t scenario);
 const uint8_t *wgt_pass_pixels(void);
@@ -1341,6 +1344,199 @@ wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_
 }
 
 /*
+ * Usage scopes (VK4 T3), after wgt_run: `vs` and `fs` (scope.vert, .frag: a full-screen triangle whose vertices carry
+ * 1000, plus the vertex stage's read-only storage word, 200, and the fragment stage's uniform, 30; every fragment
+ * writes their sum, 1230, to its storage buffer's first word) in the scene's render pass, depth testing off. Two
+ * host-visible buffers, M and N (`wgt_scope_map`), each of its own memory, laid out alike: the written word at 0, the
+ * uniform at 256, the storage at 512, the vertices at 1024, the indices at 1536, indexed indirect arguments at 2048.
+ * The draw writes M's word 0; `mask` says which of its reads are bound from M too (else N): 1 the vertex buffer, 2 the
+ * index buffer, 4 the uniform, 8 the storage, 16 the indirect arguments (vkCmdDrawIndexedIndirect; else
+ * vkCmdDrawIndexed). 32: another draw before it in the pass, every read from M and its write to N's word 0. 64 (with
+ * 4): `cs` (ubo-ssbo.comp) bound inside the pass with its uniform M's (30, the pass's copy of it) and `a` at M's 512
+ * (200), `b` at N's 3072; after the pass M's uniform updated to 31 and `cs` dispatched: N's word 768 231 (the pass's
+ * copies are its own: the driver records a set's bind at the dispatch, outside the pass, which this keeps true). Each
+ * VkDeviceMemory is one GPUBuffer, and WebGPU's usage scope (the whole pass) refuses a writable usage beside any other
+ * of one buffer. M's and N's word 0 1230 where written, 0 where not; wgt_draw_done says when.
+ */
+static struct {
+   VkPipelineLayout layout, clayout;
+   VkPipeline compute;
+   VkDescriptorSet sets[3]; /* the mask's draw's, 32's draw's, 64's dispatch's */
+   VkBuffer m, n;
+   uint32_t *maps[2];
+   uint32_t mask;
+} sc;
+
+static void
+scope_record(VkCommandBuffer cmd, bool in_pass)
+{
+   static PFN_vkCmdDrawIndexedIndirect CmdDrawIndexedIndirect;
+   if (!CmdDrawIndexedIndirect)
+      CmdDrawIndexedIndirect = (PFN_vkCmdDrawIndexedIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndexedIndirect");
+   static PFN_vkCmdUpdateBuffer CmdUpdateBuffer;
+   if (!CmdUpdateBuffer)
+      CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   if (!in_pass)
+      return;
+   if (sc.mask & 64) {
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sc.compute);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sc.clayout, 0, 1, &sc.sets[2], 0, NULL);
+   }
+   const VkDeviceSize vat = 1024;
+   if (sc.mask & 32) {
+      CmdBindVertexBuffers(cmd, 0, 1, &sc.m, &vat);
+      CmdBindIndexBuffer(cmd, sc.m, 1536, VK_INDEX_TYPE_UINT16);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sc.layout, 0, 1, &sc.sets[1], 0, NULL);
+      CmdDrawIndexed(cmd, 3, 1, 0, 0, 0);
+   }
+   CmdBindVertexBuffers(cmd, 0, 1, sc.mask & 1 ? &sc.m : &sc.n, &vat);
+   CmdBindIndexBuffer(cmd, sc.mask & 2 ? sc.m : sc.n, 1536, VK_INDEX_TYPE_UINT16);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sc.layout, 0, 1, &sc.sets[0], 0, NULL);
+   if (sc.mask & 16)
+      CmdDrawIndexedIndirect(cmd, sc.m, 2048, 1, 20);
+   else
+      CmdDrawIndexed(cmd, 3, 1, 0, 0, 0);
+   if (sc.mask & 64) {
+      /* After the pass (draw_with ends it after this): M's uniform 31, then the dispatch bound inside the pass. */
+      CmdEndRenderPass(cmd);
+      static const uint32_t k = 31;
+      CmdUpdateBuffer(cmd, sc.m, 256, 4, &k);
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
+                         NULL);
+      CmdDispatch(cmd, 1, 1, 1);
+      const VkClearValue clears[2] = { { .color = { .float32 = { 0, 0, 1, 1 } } }, { .depthStencil = { 1, 0 } } };
+      const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = scene.rp,
+                                          .framebuffer = scene.fb, .renderArea = { { 0, 0 }, { scene.w, scene.h } },
+                                          .clearValueCount = 2, .pClearValues = clears };
+      CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   }
+}
+
+EXPORT uint8_t *
+wgt_scope_map(uint32_t which)
+{
+   return (uint8_t *)sc.maps[which];
+}
+
+EXPORT int
+wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words,
+          const uint32_t *cs, uint32_t cs_words)
+{
+   if (!scene.pipeline) {
+      snprintf(error, sizeof(error), "wgt_run first");
+      return 1;
+   }
+   const VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+   sc.mask = mask;
+   if (buffer(4096, usage, true, &sc.m, (void **)&sc.maps[0]) || buffer(4096, usage, true, &sc.n, (void **)&sc.maps[1]))
+      return 1;
+   for (uint32_t i = 0; i < 2; i++) {
+      uint32_t *w = sc.maps[i];
+      memset(w, 0, 4096);
+      w[64] = 30;
+      w[128] = 200;
+      const float pos[6] = { -1, -1, 3, -1, -1, 3 };
+      for (uint32_t v = 0; v < 3; v++) {
+         memcpy(&w[256 + 3 * v], &pos[2 * v], 8);
+         w[256 + 3 * v + 2] = 1000;
+      }
+      const uint16_t idx[4] = { 0, 1, 2, 0 };
+      memcpy(&w[384], idx, sizeof(idx));
+      const uint32_t args[5] = { 3, 1, 0, 0, 0 };
+      memcpy(&w[512], args, sizeof(args));
+   }
+   const VkDescriptorSetLayoutBinding b[3] = {
+      { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL },
+      { 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+   };
+   VkDescriptorSetLayout dsl;
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 3, .pBindings = b };
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &sc.layout));
+   /* The dispatch's (64): the same bindings, every stage seeing them. */
+   VkDescriptorSetLayoutBinding cb[3] = { b[0], b[1], b[2] };
+   for (uint32_t k = 0; k < 3; k++)
+      cb[k].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+   VkDescriptorSetLayout cdsl;
+   const VkDescriptorSetLayoutCreateInfo cli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = 3, .pBindings = cb };
+   CHECK(CreateDescriptorSetLayout(dev, &cli, NULL, &cdsl));
+   const VkPipelineLayoutCreateInfo cpli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                             .setLayoutCount = 1, .pSetLayouts = &cdsl };
+   CHECK(CreatePipelineLayout(dev, &cpli, NULL, &sc.clayout));
+   if (mask & 64) {
+      VkShaderModule m;
+      if (shader(cs, cs_words, &m))
+         return 1;
+      const VkComputePipelineCreateInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = sc.clayout,
+         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = m, .pName = "main" },
+      };
+      CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &sc.compute));
+   }
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 3,
+                                            .poolSizeCount = 2, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetLayout dsls[3] = { dsl, dsl, cdsl };
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 3, .pSetLayouts = dsls };
+   CHECK(AllocateDescriptorSets(dev, &dai, sc.sets));
+   const VkDescriptorBufferInfo bi[9] = {
+      { mask & 4 ? sc.m : sc.n, 256, 16 }, { mask & 8 ? sc.m : sc.n, 512, 16 }, { sc.m, 0, 16 },
+      { sc.m, 256, 16 }, { sc.m, 512, 16 }, { sc.n, 0, 16 },
+      { sc.m, 256, 16 }, { sc.m, 512, 16 }, { sc.n, 3072, 16 },
+   };
+   VkWriteDescriptorSet wr[9];
+   for (uint32_t k = 0; k < 9; k++)
+      wr[k] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sc.sets[k / 3],
+                                      .dstBinding = k % 3, .descriptorCount = 1,
+                                      .descriptorType = k % 3 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                                              : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                      .pBufferInfo = &bi[k] };
+   UpdateDescriptorSets(dev, 9, wr, 0, NULL);
+   VkGraphicsPipelineCreateInfo gpi = scene.gpi;
+   VkPipelineShaderStageCreateInfo stages[2] = { scene.stages[0], scene.stages[1] };
+   stages[1].pSpecializationInfo = NULL;
+   if (shader(vs, vs_words, &stages[0].module) || shader(fs, fs_words, &stages[1].module))
+      return 1;
+   const VkVertexInputBindingDescription vb = { 0, 12, VK_VERTEX_INPUT_RATE_VERTEX };
+   const VkVertexInputAttributeDescription va[2] = { { 0, 0, VK_FORMAT_R32G32_SFLOAT, 0 },
+                                                     { 1, 0, VK_FORMAT_R32_UINT, 8 } };
+   const VkPipelineVertexInputStateCreateInfo vi = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .vertexBindingDescriptionCount = 1,
+      .pVertexBindingDescriptions = &vb, .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = va };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
+   rs.cullMode = VK_CULL_MODE_NONE;
+   VkPipelineDepthStencilStateCreateInfo ds = *gpi.pDepthStencilState;
+   ds.depthTestEnable = ds.depthWriteEnable = VK_FALSE;
+   gpi.pStages = stages;
+   gpi.layout = sc.layout;
+   gpi.pVertexInputState = &vi;
+   gpi.pInputAssemblyState = &ia;
+   gpi.pRasterizationState = &rs;
+   gpi.pDepthStencilState = &ds;
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   draw_custom = scope_record;
+   const int r = draw_with(NULL, 0, 0, p);
+   draw_custom = NULL;
+   return r;
+}
+
+/*
  * Transform feedback (VK3 L7.4, VK_EXT_transform_feedback), after wgt_run: `vs` (xfb.vert: each vertex's position and
  * (u, v, gl_VertexIndex, 7) captured, 32 bytes a vertex) on the scene's vertices, rasterizer discard on, in the scene's
  * render pass, into a host-visible buffer (`wgt_xfb_map`, 4 KiB filled 0xee, the capture bound at 0), its counter at
@@ -2193,6 +2389,10 @@ wgt_fl_done(uint32_t i)
  *    101, 102, 103, 104 (the L5-L6a review's finding 2: `a` read-write made the uniform and it one usage scope's
  *    conflict, which invalidated the submit).
  * 18: as 17, dispatched indirectly with its arguments (1, 1, 1) at [512, 524) of that memory: the same.
+ * VK4 T3 (usage scopes: a dispatch that writes storage of a memory it reads otherwise), as 17 but:
+ * 33: `k` at [256, 272) of the result (100, written by the submit): 101, 102, 103, 104 at [0, 16), 100 at 256;
+ * 34: dispatched indirectly with its arguments (1, 1, 1) at [512, 524) of the result: the same at [0, 16);
+ * 35: `a` at [0, 16) of the result, the words `b` writes (1, 2, 3, 4 written by the submit): 101 to 104 there.
  * 20: as 7 (4,096 bytes) inside an occlusion query begun and ended outside a render pass, its result copied to
  *    [1024, 1028): v[k] at [0, 16) and 1 there (passing; the L5-L6a review's finding 3: the query's write was recorded
  *    with the compute pass open, which invalidated the submit).
@@ -2840,7 +3040,8 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    const VkBufferUsageFlags both = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
    VkBuffer out;
    if (buffer(scenario == 3 || scenario == 4 ? 20000 : scenario == 7 ? 4098 : 4096,
-              both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT, true, &out,
+              both | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT |
+                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, &out,
               (void **)&misc.map))
       return 1;
    if (!misc.fence) {
@@ -3387,7 +3588,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
       CmdDispatch(cmd, 1, 1, 1);
-   } else if (scenario == 17 || scenario == 18) {
+   } else if (scenario == 17 || scenario == 18 || (scenario >= 33 && scenario <= 35)) {
       PFN_vkCmdDispatchIndirect CmdDispatchIndirect =
          (PFN_vkCmdDispatchIndirect)GetDeviceProcAddr(dev, "vkCmdDispatchIndirect");
       VkShaderModule m;
@@ -3431,7 +3632,22 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
                                                 .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
       VkDescriptorSet set;
       CHECK(AllocateDescriptorSets(dev, &dai, &set));
-      const VkDescriptorBufferInfo bi[3] = { { in, 0, 16 }, { in, 256, 16 }, { out, 0, 16 } };
+      /* VK4 T3: 33 the uniform in the result's memory (100 at 256), 34 the indirect arguments there (1, 1, 1 at 512),
+       * 35 `a` there over the very words `b` writes (1, 2, 3, 4 at 0), each written by the submit. */
+      if (scenario >= 33) {
+         static const uint32_t k[1] = { 100 }, args[3] = { 1, 1, 1 }, a[4] = { 1, 2, 3, 4 };
+         if (scenario == 33)
+            CmdUpdateBuffer(cmd, out, 256, sizeof(k), k);
+         else if (scenario == 34)
+            CmdUpdateBuffer(cmd, out, 512, sizeof(args), args);
+         else
+            CmdUpdateBuffer(cmd, out, 0, sizeof(a), a);
+      }
+      const VkDescriptorBufferInfo bi[3] = { scenario == 33 ? (VkDescriptorBufferInfo){ out, 256, 16 }
+                                                            : (VkDescriptorBufferInfo){ in, 0, 16 },
+                                             scenario == 35 ? (VkDescriptorBufferInfo){ out, 0, 16 }
+                                                            : (VkDescriptorBufferInfo){ in, 256, 16 },
+                                             { out, 0, 16 } };
       const VkWriteDescriptorSet wr[2] = {
          { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[0] },
@@ -3440,13 +3656,15 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       };
       UpdateDescriptorSets(dev, 2, wr, 0, NULL);
       const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                                   .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT };
-      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0,
-                         NULL);
+                                   .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                                                    VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL,
+                         0, NULL);
       CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
-      if (scenario == 18)
-         CmdDispatchIndirect(cmd, in, 512);
+      if (scenario == 18 || scenario == 34)
+         CmdDispatchIndirect(cmd, scenario == 18 ? in : out, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
    } else if ((scenario >= 24 && scenario <= 29) || scenario == 32) {

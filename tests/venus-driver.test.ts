@@ -266,9 +266,42 @@ for (const [scenario, what] of [
   });
 }
 
+// VK4 T3: usage scopes in a render pass (wg_test.c's wgt_scope): its scope is the whole pass, and each memory one
+// GPUBuffer, so a draw writing storage of a memory beside any read of it was refused with the pass's submit.
+for (const [mask, what] of [
+  [1, 'a vertex buffer'],
+  [2, 'an index buffer'],
+  [4, 'a uniform buffer'],
+  [8, 'a storage buffer the vertex stage reads'],
+  [16, 'indirect arguments'],
+  [31, 'all of them'],
+  [32, 'what an earlier draw of the pass reads'],
+  [4 | 64, 'a uniform buffer, with a compute set bound inside the pass dispatched after it'],
+] as const) {
+  test(`usage scopes: a render pass writing storage of the memory of ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    // After the first test, which compiled the scene's shaders.
+    const out = join(root, 'target/vk/test');
+    for (const name of ['scope.vert', 'scope.frag', 'ubo-ssbo.comp']) {
+      const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, `tests/venus/${name}`)], { encoding: 'utf8' });
+      assert.equal(c.status, 0, c.stderr);
+    }
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    await page.goto(`${base}/tests/browser/venus-driver.html`);
+    await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+    const r = await page.evaluate((m) => (window as unknown as { venus: { runScope(spirv: object, mask: number): Promise<Record<string, unknown>> } }).venus.runScope({
+      vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv' }, m), mask);
+    await page.close();
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, String(r.error));
+    assert.deepEqual(r.errors, [], 'WebGPU errors');
+    assert.deepEqual(r.got, { m: 1230, n: mask & 32 ? 1230 : 0, ...(mask & 64 ? { dispatched: 231 } : {}) });
+  });
+}
+
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled' } as const;
+const source = { freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -315,6 +348,10 @@ for (const [scenario, what] of [
   ['sameMemoryCopy', 'buffer copies between two buffers of one memory, within one buffer, and within the result itself'],
   ['sameImageCopy', 'a copy and a blit within one subresource of an image'],
   ['immutableCopied', 'a combined image sampler copied over one with an immutable sampler keeps the immutable one'],
+  // VK4 T3: usage scopes (one GPUBuffer a memory): a dispatch that reads what shares a memory with storage it writes.
+  ['uniformWritten', 'a dispatch whose uniform buffer shares a memory with storage it writes'],
+  ['indirectWritten', 'a dispatch whose indirect arguments share a memory with storage it writes'],
+  ['readInPlace', 'a dispatch whose read-only storage buffer is the range it writes through another binding'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

@@ -618,6 +618,7 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    for (uint32_t i = 0; i < 16; i++)
       wg_dummy_unref(dev->dummies[i]);
    wg_id_release(dev->query_scratch);
+   wg_id_release(dev->shadow);
    free(dev->push_data);
    free(dev->pages);
    if (dev->vk.mem_cache)

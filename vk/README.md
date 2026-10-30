@@ -79,11 +79,11 @@ storage buffer is `read_write` only where the stage writes it (or declares it of
 can then read what the fragment stage only reads, and a render pass's draws, whose scope is the whole pass, agree with
 its vertex stages', which WebGPU has read-only). The driver binds every buffer of a `VkDeviceMemory` from one
 GPUBuffer, and WebGPU's usage scope (a dispatch's) refuses writable storage beside any other usage of it, so a dispatch
-whose read-only storage buffer shares its memory with a storage buffer it writes takes a variant of its program
-(`program_for` in wg_cmd.c): that binding `storage` in the layout and `read_write` in a module of the variant's own
-(the program keeps its WGSL for that); read-only elsewhere, it shares a memory with uniform buffers and indirect
-arguments (VK3 L6c: L5b made every compute storage buffer `read_write`, and vkQuake's first frame, whose dispatch reads
-a uniform and a read-only storage buffer of one memory, lost its submit); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
+whose read-only storage buffer shares its memory with a storage buffer it writes, apart from its range, takes a variant
+of its program (`program_for` in wg_cmd.c): that binding `storage` in the layout and `read_write` in a module of the
+variant's own (the program keeps its WGSL for that), which costs nothing; read-only elsewhere, and where its range
+overlaps the written one (WebGPU refuses two writable bindings of one range), where the replay copies it as it does a
+scope's other reads ("The driver", "Usage scopes"); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
 array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max is refused; a texture
 and a sampler array indexed apart get an `if` tree each (every texture with every sampler); a terminate
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
@@ -297,6 +297,20 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   back after; freeing that memory takes the image off that list (Vulkan lets the image outlive it, only to be
   destroyed). A storage binding is a whole number of words (WebGPU's): a buffer of an odd size bound whole loses its
   last bytes' word.
+- **Usage scopes** (VK4 T3, `scope_pass` and `scope_dispatch` in wg_cmd.c): WebGPU's usage scope (a dispatch; a whole
+  render pass) refuses a GPUBuffer bound as writable storage beside any other usage of it, and a memory is one GPUBuffer,
+  so a pass or dispatch that wrote storage of a memory it also read through another binding (a uniform or read-only
+  storage buffer, a texel buffer, a vertex or index buffer, indirect arguments) was dropped with its submit; every
+  sub-allocating program (VMA, DXVK, vkd3d) meets it once its shaders write storage. The replay scans each scope before
+  it begins (a render pass's commands up to its end, secondaries included: the binds, buffers and indirect arguments in
+  force at each draw; a dispatch's bound groups), and where it reads a GPUBuffer it binds writable, it copies those
+  reads into the device's shadow buffer (`shadow_place`: 256-aligned places taken in order within a submit, the buffer
+  grown by replacement) and binds them from there: bind groups of the scope's own (their dynamic offsets 0), vertex,
+  index and indirect buffers at their places; at the scope's end the groups are bound again without. Each buffer's read
+  ranges are merged into spans copied once (from 256 bytes below the first, so offsets keep their alignment). A scope
+  reads what such a range held at its start, so a draw doesn't see what an earlier draw of its pass wrote there (a
+  barrier within a render pass, by region: rare); shadows are never written back. Two writable bindings whose ranges
+  overlap are still refused (no copy serves both). A scope without such a conflict costs the scan alone.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render

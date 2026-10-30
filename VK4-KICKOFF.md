@@ -75,7 +75,14 @@ T2–T14; the rest of the order is judgement, said with each.
   GPUBuffer per binding (or per `VkBuffer`) over the same bytes, with copies where they alias. *Done:* a test of
   each conflicting shape (the backlog lists them), dEQP-VK's failing cases of that cause, a real sub-allocating
   program's frame (a VMA sample in the guest, or vkd3d's tests), the copies' cost measured on the scene. *Start:*
-  backlog "Usage scopes", graphics.md "Known limits".
+  backlog "Usage scopes", graphics.md "Known limits". **Done 2026-10-30** (REPORT.md "VK4 T3"): the replay scans each scope (a render
+  pass to its end, a dispatch) and copies its reads of a GPUBuffer it binds writable (uniform, read-only storage, texel,
+  vertex, index, indirect) into a shadow buffer, each buffer's ranges merged; a dispatch's disjoint read-only storage
+  still bound writable, an overlapping one copied. Every shape a test (10, failing first with WebGPU's errors). No
+  dEQP-VK case of the direct set meets it (32,607 cases of its likeliest groups: none logged a usage-scope error), nor
+  vkd3d's 175 tests (dedicated memory per resource); both the same after. VK0's scene, which writes no storage, the
+  same (three alternated rounds overlapping). Left (backlog "Usage scopes' leftovers"): two writable bindings of one
+  range; a draw reading what an earlier draw of its pass wrote; a program that meets it, to measure the copies on.
 - **T4. Views in another format** (M–L): a mutable image viewed in a format other than its sRGB twin gets an invalid
   view and its submit is dropped (ffmpeg's and libplacebo's filters, DXVK alias formats this way), and YCbCr's plane
   views of another format of their class (66 cases) have the same root. A texture per view format with copies

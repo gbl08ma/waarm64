@@ -712,8 +712,9 @@ bar** (bench/vulkan/REPORT.md G), or GTK4 moves to the slower path.
   built before a workaround meets the bug.
 - **WebGPU's binding model is narrower than Vulkan's**: the advertised per-stage limits come from one count of the
   bindings WebGPU takes, translation's own included (`wg_bindings_fit`), and a pipeline past them is refused at
-  creation saying why; usage scopes are per GPUBuffer while the driver binds a `VkDeviceMemory` as one, so a pass that
-  reads and writes storage of one memory through different bindings fails validation (VK4 T3).
+  creation saying why; usage scopes are per GPUBuffer while the driver binds a `VkDeviceMemory` as one, so a pass or
+  dispatch that writes storage of a memory it reads otherwise reads copies of those ranges taken at its start (VK4 T3:
+  vk/README.md "Usage scopes"), and two writable bindings of one range in one scope are refused.
 - **The arena**: memory 1's first 1,280 MiB (web/ram.ts `VENUS_ARENA`) caps the renderer's heap, blob storage
   included (dEQP-VK's pass list took 137 MiB: bench/vulkan/REPORT.md "The renderer's arena"); the window and node 1
   follow it in memory 1 (VK4 T19).

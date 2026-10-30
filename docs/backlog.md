@@ -810,20 +810,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the view's format, or alias through a storage buffer). Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
     dEQP-VK's SAMPLE_ZERO `depth_stencil_resolve` cases in the list since L7.1, stencil8's above); MIN, MAX and AVERAGE
     aren't advertised.
-  - **Usage scopes** (VK3 L5b, L6c; the out-of-context reviews of L4f's and L5-L6a's finding 2): the driver binds every
-    buffer of a `VkDeviceMemory` from one GPUBuffer, and WebGPU refuses a writable usage beside any other of the same
-    GPUBuffer in one usage scope (a dispatch; a whole render pass). A dispatch's read-only storage buffer beside a
-    storage buffer it writes in one memory is bound writable (a variant of its program: vk/README.md "The shader
-    path"), and stays read-only otherwise, beside uniform buffers and indirect arguments; but a dispatch that reads a
-    uniform buffer or takes its indirect arguments from a memory it writes storage of, two writable bindings of one
-    memory whose ranges overlap ("Writable storage buffer binding aliasing"), and a render pass where any read usage (a
-    vertex, index or uniform buffer, storage a stage only reads) shares a memory with storage a fragment stage writes,
-    still fail validation (the dispatch or the pass dropped, a WebGPU error). The same per-binding analysis can't serve a
-    render pass: its scope is every draw of the pass, which the variant of each draw doesn't see. Fragment stages' unwritten buffers stay `read`: made `read_write`, they broke
-    `memory.pipeline_barrier.graphics.host_write_storage_buffer` (one buffer read by a vertex and a fragment stage in
-    one pass), the commoner case. Sub-allocating programs (VMA, DXVK, most engines) meet it once their compute or fragment shaders write
-    storage. A fix would give such a binding a GPUBuffer of its own over the same bytes (a copy in before the scope and
-    none out, for read-only usages), or one GPUBuffer per `VkBuffer` with copies between those that alias.
+  - **Usage scopes' leftovers** (VK4 T3: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
+    memory it reads otherwise reads copies taken at its start. Left: two writable bindings of one memory whose ranges
+    overlap in one scope ("Writable storage buffer binding aliasing": no copy serves both; a GPUBuffer per `VkBuffer`
+    with copies between those that alias, or one binding the shader indexes for both); a draw reading a range an
+    earlier draw of its render pass wrote through storage reads the pass's starting bytes (a barrier within a pass, by
+    region; splitting the WebGPU pass there would serve it); a range past `maxBufferSize` isn't copied (warned, the
+    scope dropped as before). Not met by anything measured (dEQP-VK's likeliest groups of the direct set, vkd3d's
+    suite: bench/vulkan/REPORT.md "VK4 T3"), so the copies' cost is unmeasured on a program: DXVK or a VMA-based
+    program whose shaders write storage would show it (vkQuake met the dispatch's shape in VK3 L6c).
   - **Sample counts Vulkan wants but WebGPU lacks** (the review of L4f's finding 3): `framebufferColorSampleCounts` is
     1|4 (Vulkan's minimum) though `R32G32B32A32_SFLOAT` and `R32G32_SFLOAT` colour attachments have 1 sample (WebGPU
     multisamples neither): `api.info.image_format_properties.*` checks the superset; an emulation (a 4-layer texture
@@ -893,8 +888,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     refused at its pipeline's creation (VK3 L7a, vk/README.md "Bindings past WebGPU's"; 2
     `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage); their parameters as one uniform
     buffer a group (written with the set) would give the uniform buffers back, their words would still be storage; a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
-    then, or else a usage-scope conflict) is refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
-    cases: "Writable storage buffer binding aliasing", the dispatch dropped; "Usage scopes" below has the same root);
+    then, or else a usage-scope conflict) was refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
+    cases: "Writable storage buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied
+    instead: "Usage scopes' leftovers" above);
     `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` aren't advertised though texel buffers don't need a
     format (images do: 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases NotSupported; advertising them
     for images needs the image's format at the bind); storage texel buffers of formats under a word (r8, rg8, r16) and

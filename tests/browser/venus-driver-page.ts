@@ -17,7 +17,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
-  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_angle_ubo(vs: number, vn: number, fs: number, fn: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
+  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_angle_ubo(vs: number, vn: number, fs: number, fn: number): number; wgt_scope(mask: number, vs: number, vn: number, fs: number, fn: number, cs: number, cn: number): number; wgt_scope_map(which: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
   wgt_fits(scenario: number, vs: number, vn: number, fs: number, fn: number): number;
   wgt_samples(vs: number, vn: number, fs: number, fn: number): number;
@@ -439,6 +439,46 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
 }
 
 /**
+ * VK4 T3: usage scopes in a render pass (wg_test.c's wgt_scope): a draw that writes storage of a memory M and reads,
+ * by `mask`'s bits, its vertex buffer, index buffer, uniform, storage or indirect arguments from M too (32: another
+ * draw before it reads them all from M and writes N; 64: a dispatch after the pass whose set was bound inside it). M's
+ * and N's first words, and 64's dispatch's.
+ */
+export async function runScope(spirv: { vert: string; frag: string; comp: string }, mask: number) {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device);
+  const ex = v.raw as unknown as Test;
+  const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+  const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
+  const [vs, vn] = put(await words(spirv.vert)), [fs, fn] = put(await words(spirv.frag)), [cs, cn] = put(await words(spirv.comp));
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  const wait = async (done: () => number, what: string) => {
+    for (let k = 0; k < 500 && !done(); k++) await new Promise((r) => setTimeout(r, 10));
+    if (!done()) throw new Error(`${what}'s fence never signalled`);
+  };
+  try {
+    if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: text(ex.wgt_error() >>> 0), errors };
+    await wait(() => ex.wgt_done(), 'the scene');
+    const [sv, svn] = put(await words('/target/vk/test/scope.vert.spv')), [sf, sfn] = put(await words('/target/vk/test/scope.frag.spv'));
+    const [sc, scn] = put(await words('/target/vk/test/ubo-ssbo.comp.spv'));
+    if (ex.wgt_scope(mask, sv, svn, sf, sfn, sc, scn)) return { error: text(ex.wgt_error() >>> 0), errors };
+    await wait(() => ex.wgt_draw_done(), 'the draw');
+    const word = (which: number, at = 0) => new Uint32Array(memory.buffer, (ex.wgt_scope_map(which) >>> 0) + at, 1)[0];
+    const got = { m: word(0), n: word(1), ...(mask & 64 ? { dispatched: word(1, 3072) } : {}) };
+    device.destroy();
+    return { got, errors };
+  } catch (e) {
+    return { error: String(e), errors };
+  }
+}
+
+/**
  * VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for
  * (vk/driver/wg_test.c `wgt_misc`). `copy`: buffer copies at offsets and sizes that aren't 4-aligned, from host-visible,
  * device-local and GPU-written memory; `clear`: a clear of a format WebGPU can't render to, and of a 3D image;
@@ -447,7 +487,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied', push: string) {
+export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -462,7 +502,7 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32 }[scenario];
+  const index = { copy: 0, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   if (scenario === 'emptyAfterHeld') {
     // The fence of the submit behind the held copy: unsignalled while the copy waits for the host.
@@ -564,6 +604,12 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
     Object.assign(checks, { read: [0, 4096, want] });
   } else if (scenario === 'uniformBeside' || scenario === 'indirectBeside') {
     u32(want.subarray(0, 16)).set([101, 102, 103, 104]);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'uniformWritten' || scenario === 'indirectWritten' || scenario === 'readInPlace') {
+    // VK4 T3: the uniform, the indirect arguments or `a` in the memory the dispatch writes (wg_test.c 33 to 35).
+    u32(want.subarray(0, 16)).set([101, 102, 103, 104]);
+    if (scenario === 'uniformWritten') u32(want.subarray(256, 260))[0] = 100;
+    if (scenario === 'indirectWritten') u32(want.subarray(512, 524)).set([1, 1, 1]);
     Object.assign(checks, { written: [0, 4096, want] });
   } else if (scenario === 'storageAliased') {
     u32(want.subarray(0, 16)).set([3, 5, 7, 9]);

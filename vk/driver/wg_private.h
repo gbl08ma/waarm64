@@ -209,6 +209,10 @@ struct wg_device {
    /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size and samples. */
    struct wg_dummy *dummies[16];
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
+   /* Copies of what a usage scope reads from a GPUBuffer it also binds as writable storage (VK4 T3; wg_cmd.c
+    * `shadow_place`): `shadow_size` bytes, places taken in order within a submit from `shadow_used`. */
+   uint32_t shadow;
+   uint64_t shadow_size, shadow_used;
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 #define WG_FAN_VERTICES 65536

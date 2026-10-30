@@ -771,6 +771,41 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T3: usage scopes — a pass or dispatch that writes storage of a memory it reads otherwise is no longer dropped
+
+**2026-10-30**, the dev VM's SwiftShader (Chromium 153.0.8010.52); JSON in `results/vk4/t3/`. Each `VkDeviceMemory` is
+one GPUBuffer, and WebGPU's usage scope (a dispatch; a whole render pass) refuses a buffer bound as writable storage
+beside any other usage of it. Before T3 only a dispatch's read-only storage beside storage it wrote elsewhere was served
+(bound writable, VK3 L6c); everything else lost its pass or dispatch and its submit.
+
+- **The fix** (vk/README.md "Usage scopes"): the replay scans each scope before it begins (a render pass's commands to
+  its end, secondaries included; a dispatch's bound groups and indirect arguments). Where it reads a GPUBuffer it also
+  binds writable, those reads are copied into the device's shadow buffer and bound from there: bind groups of the
+  scope's own, and vertex, index and indirect buffers at their places. Each buffer's read ranges are merged into spans
+  copied once. A dispatch's read-only storage disjoint from what it writes is still bound writable (no copy); one
+  overlapping it is copied, since two writable bindings of one range are refused too ("binding aliasing").
+- **Tests, failing first** (`tests/venus-driver.test.ts`, wg_test.c `wgt_scope` and misc 33–35), each with WebGPU's own
+  error before the fix: a render pass whose fragment stage writes storage of the memory of its vertex buffer, index
+  buffer, uniform buffer, a storage buffer its vertex stage reads, its indirect arguments, all of them, or what an
+  earlier draw of the pass reads; a dispatch whose uniform buffer, indirect arguments or read-only storage over the very
+  range it writes share its memory; and one that holds without a fix (a compute set bound inside a pass is recorded at
+  its dispatch, outside the pass, so it never takes the pass's copies). 84 of 84 pass.
+- **dEQP-VK doesn't meet it in the direct set.** The old module over the likeliest groups whole (`ssbo`, `memory`,
+  `ubo`, `binding_model.descriptor_copy`, `compute.pipeline.basic` and `indirect_dispatch`,
+  `draw.renderpass.indirect_draw`: 32,607 cases, 2,193 s; 14,178 pass, 196 fail, 4 resource errors) logged no
+  usage-scope error (`groups-old.json`); its 200 cases that didn't pass fail the same with the fix (`failed-new.json`).
+  dEQP-VK allocates a memory per buffer; T1 said the census couldn't see this cause, and it can't.
+- **vkd3d's suite** (`TESTS=all node bench/vulkan/vkd3d.ts`, new: each of d3d12.c's 175 tests a process of its own,
+  since the whole suite in one dies at `test_clear_unordered_access_view_image`; `vkd3d.ts lines` names a run's failing
+  tests): 109 pass, 58 fail, 9 crash in the guest, the same before and after, failure for failure (`vkd3d-old.txt`,
+  `vkd3d-new.txt`), and no usage-scope error: vkd3d gives each committed resource a memory of its own. So **no program
+  measured here meets the cause**, and the copies' cost on one is open (backlog "Usage scopes' leftovers": DXVK, a
+  VMA-based program; vkQuake met the dispatch's shape in VK3 L6c).
+- **What it costs where nothing conflicts: nothing measurable.** VK0's scene (`guest.ts venus`, the desktop guest,
+  three rounds alternated against the module before T3, `scene/`), ms a frame: 1,000 fish 216.2–218.0 before,
+  212.5–217.1 after (1,119 draws a frame in one pass, each scanned); the toolkit at 2,000 20.7–22.1 and 20.1–21.5, at
+  8,000 53.8–54.1 and 50.4–55.2; the GPU worker 1.0–1.2 ms busy a frame on both. The rounds overlap.
+
 ## VK4 T19: the renderer out of memory 0 — Venus's renderer and window in memory 1
 
 **2026-10-30.** Measured first (bench/spike/memory/REPORT.md §6): one memory64 costs ~+15–20% on the userspace
