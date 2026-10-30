@@ -3,7 +3,7 @@
 # renderer's driver or translator (vk/), the GPU worker's WebGPU side (web/venus-gpu.ts), Venus's device; and at the end
 # of a Vulkan track. ~19 min: the direct set's pass list (tests/deqp/vk.txt), one guest boot, and the YCbCr one
 # (tests/deqp/vk-ycbcr.txt: YCbCr is on by default since VK3 L7.3), a second; then the programs'
-# captures replayed against lavapipe's frames (tests/page-venus.test.ts, also scripts/ci-debian.sh's: VK3 L6c, vkQuake's
+# captures replayed against lavapipe's frames (tests/page-venus.test.ts, also scripts/ci-graphics.sh's: VK3 L6c, vkQuake's
 # first frame went 80% wrong over three loops that ran only this script). Needs the wasm core (scripts/ci.sh builds it),
 # the renderer (vk/build.sh), images/deqp/build.sh vk's dEQP-VK disk and guest (on demand, ~25 min once),
 # images/debian-vulkan/build.sh's Debian and images/vkframes/build.sh's disk. Skips where the page has no WebGPU adapter.

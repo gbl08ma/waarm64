@@ -2,7 +2,7 @@
 # What every change runs (~6 min); works the same locally. CHROMIUM overrides the browser binary.
 # docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
 # alpine-uefi run when their images are current; WEBPC_DISTROS (a comma list) overrides which
-# ones. The Debian page boots are scripts/ci-debian.sh's (they take turns, ~10 min), the network
+# ones. The Debian page boots are scripts/ci-debian.sh's, graphics' scripts/ci-graphics.sh's, the network
 # tests on Debian scripts/ci-net.sh's. The heaviest multi-vCPU runs (WEBPC_LONG_TESTS) are on.
 set -euo pipefail
 cd "$(dirname "$0")/.."

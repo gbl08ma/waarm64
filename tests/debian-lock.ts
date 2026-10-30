@@ -4,7 +4,7 @@
 // `npm test`, they loaded the host enough that realtime tests with 1 ms windows
 // (the parallel bare-metal timer.bin) failed (M8 loop 6). A directory in the temp
 // directory is the lock; its `pid` file lets a waiter take over from a dead holder.
-// WEBPC_DEBIAN_SLOTS lets that many boots run at once (scripts/ci-debian.sh and scripts/ci-machines.sh, where nothing else
+// WEBPC_DEBIAN_SLOTS lets that many boots run at once (scripts/ci-debian.sh, scripts/ci-graphics.sh and scripts/ci-machines.sh, where nothing else
 // runs beside them): a slot is a directory each.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -53,7 +53,8 @@ Details: [docs/cloud.md](docs/cloud.md).
 ```sh
 scripts/ci.sh                  # what every change runs (~8 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
-scripts/ci-debian.sh           # Debian on the page (~3.5 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes, track ends (docs/testing.md)
+scripts/ci-debian.sh           # Debian on the page (~5 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes; --platform (~6.5 min) adds the USB keyboard in the firmware and the clock catch-up, for those and track ends (docs/testing.md)
+scripts/ci-graphics.sh         # graphics on Debian (~3 min): also for the display, 3D, Venus's device, track ends: the Machine menu's 3D or 2D, vkcube through Venus
 scripts/ci-machines.sh         # machines as the unit on Debian (~3.5 min): also for stored machines, their disks (stored, blank, ramdisk, overlays), their snapshots, the Machines page, track ends
 scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, alone): also when a change touches sound (docs/testing.md)
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
@@ -71,7 +72,7 @@ images/build.sh [name...]      # guest images in rootless Podman -> target/image
 Everything else (the corpus, the JIT's tests, the oracles, the USB rigs, the network clients, the renderer,
 benchmarks): [docs/devenv.md](docs/devenv.md) "Commands" and [docs/benchmarking.md](docs/benchmarking.md).
 **`scripts/ci.sh` must pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
-the display, for guest-visible changes and at the end of a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines page; `scripts/ci-net.sh`
+the display, for guest-visible changes and at the end of a track; `scripts/ci-graphics.sh` when it touches the display, 3D or Venus's device and at the end of a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines page; `scripts/ci-net.sh`
 when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D; `scripts/ci-deqp-vk.sh` when it touches Vulkan; `scripts/ci-fp.sh` when it touches floating point; `scripts/ci-usb.sh` when it touches USB). **Exception:** a change that only edits docs (`.md` files or code comments)
 needs no CI run.
 
@@ -162,7 +163,7 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
-- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh`, `scripts/ci-deqp-vk.sh`, `scripts/ci-fp.sh` and `scripts/ci-usb.sh` run alone, one at a time, in the background** (each is at or over the
+- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh`, `scripts/ci-deqp-vk.sh`, `scripts/ci-fp.sh` and `scripts/ci-usb.sh` run alone, one at a time, in the background** (each is at or over the
   Bash tool's cap): start it, wait for its notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
   timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
 - `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the

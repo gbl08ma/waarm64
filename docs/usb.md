@@ -676,7 +676,7 @@ by themselves.
 - **Tests:**
   - `tests/usb-keyboard.test.ts` (Node): the descriptors, reports, rollover, modifiers, LEDs, idle and protocol,
     and the `usb-key` path through the glue.
-  - `tests/page-usb-keyboard.test.ts` (Chromium, Debian, ci-debian):
+  - `tests/page-usb-keyboard.test.ts` (Chromium, Debian, `ci-debian.sh --platform`):
     1. GRUB's countdown is stopped by `c` on the screen.
     2. A command typed at `grub>` runs.
     3. `keystatus --shift` sees a Shift held through Enter. No terminal sends a modifier by itself, so this is the

@@ -1,6 +1,6 @@
 // The Machine menu (docs/frontend.md "Machine"): the vCPU count and the RAM chosen on the page apply
 // by a restart, show in the status line and are remembered by the browser; `?ncpus=` and `?ram=` win.
-// On Buildroot (seconds); the graphics choice on Debian (scripts/ci-debian.sh).
+// On Buildroot (seconds); the graphics choice on Debian (scripts/ci-graphics.sh).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -56,9 +56,9 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
 });
 
 // Graphics (virtio-gpu machines: Debian): 3D where WebGL2 is, 2D from the menu, remembered; the query over it. The
-// machine only starts (the choice shows in `data-graphics` before the guest boots). In scripts/ci-debian.sh.
+// machine only starts (the choice shows in `data-graphics` before the guest boots). In scripts/ci-graphics.sh.
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const skipDebian = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)'
+const skipDebian = !debian ? 'SKIPPED: scripts/ci-graphics.sh runs it (WEBPC_DISTROS=debian)'
   : !(existsSync(new URL('debian/disk.qcow2', IMAGES)) && existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES))) && 'SKIPPED: run images/build.sh debian edk2';
 test('the Machine menu chooses 3D or 2D graphics, remembered, with the query over it', { skip: skipDebian }, () => withDebianLock(async () => {
   const context = await browser.newContext();

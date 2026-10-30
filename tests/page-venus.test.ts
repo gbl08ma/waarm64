@@ -6,7 +6,7 @@
 // images/vkframes/build.sh's disk, its captures (vkcube, vkmark's scenes, vkQuake) replayed on the device and their
 // frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
 // the dev VM), as without the image or the renderer. Any WebGPU error the page logged fails it (an invalid command drops
-// its whole submit: VK3 L6c's vkQuake frame, 80% off). In scripts/ci-debian.sh and scripts/ci-deqp-vk.sh, ~1.5 min.
+// its whole submit: VK3 L6c's vkQuake frame, 80% off). In scripts/ci-graphics.sh and scripts/ci-deqp-vk.sh, ~1.5 min.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -22,7 +22,7 @@ const FRAMES_DISK = 'target/vkframes/vkframes.ext4';
 const frames = existsSync(join(root, FRAMES_DISK));
 const missing = [IMAGE, 'target/vk/venus.wasm'].filter((f) => !existsSync(join(root, f)));
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : missing.length ? `SKIPPED: ${missing.join(' and ')} not built (images/debian-vulkan/build.sh, vk/build.sh)` : false;
+const skip = !debian ? 'SKIPPED: scripts/ci-graphics.sh runs it (WEBPC_DISTROS=debian)' : missing.length ? `SKIPPED: ${missing.join(' and ')} not built (images/debian-vulkan/build.sh, vk/build.sh)` : false;
 
 // The frames of the short run and the long one: the rate is the difference's, past vkcube's start.
 const SHORT = 60, LONG = 360;

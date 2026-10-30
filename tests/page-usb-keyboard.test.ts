@@ -3,7 +3,7 @@
 // machine's xHCI): `c` stops the countdown, a command typed at grub> runs, and a held Shift reaches GRUB's
 // `keystatus` (no terminal sends a modifier by itself: it is the USB path, not the serial one). Then Linux
 // boots, its virtio keyboard goes live, the page unplugs the USB keyboard (the guest sees it gone: no key
-// twice), and the screen's keys are virtio-input's. Opt-in with WEBPC_DISTROS=debian (scripts/ci-debian.sh).
+// twice), and the screen's keys are virtio-input's. Opt-in with WEBPC_DISTROS=debian (scripts/ci-debian.sh --platform).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -17,7 +17,7 @@ import { answerAsks } from './page-ask.ts';
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)'
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WEBPC_DISTROS=debian)'
   : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 
 let browser: Browser;
