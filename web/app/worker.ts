@@ -415,7 +415,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   let specs: DeviceSpec[] | undefined;
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
   // user's split, else the automatic one; a snapshot's own.
-  // A machine with Vulkan keeps its window and its renderer in memory 0 too (docs/devices.md "Venus").
+  // A machine with Vulkan keeps its renderer and window in memory 1, before node 1 (docs/devices.md "Venus").
   const venus = here.some((s) => s.kind === 'gpu') && (gpuTuning().vulkan || !!m.vulkan) && !!m.renderer;
   let split = m.ramSplit ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) } : splitRam(ramMiB * 2 ** 20, venus ? VENUS_RESERVE : 0);
   if (snapshot) {

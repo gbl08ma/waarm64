@@ -102,7 +102,7 @@ test("a snapshot carries the spill memories' RAM, and restores only onto the sam
   await vm.settle();
   /** The pages written: [memory, offset, byte]; the last page of each spill memory too. */
   const marks: [number, number, number][] = [[0, 15 << 20, 0x11], [1, 0, 0x22], [1, 0x17_f000, 0x33], [2, 0x10_0000, 0x44], [2, (2 << 20) - 4096, 0x55]];
-  const views = (v: typeof vm) => [new Uint8Array(v.memory.buffer, v.ram, v.ramSize), ...v.spill.map((m) => new Uint8Array(m.buffer))];
+  const views = (v: typeof vm) => [new Uint8Array(v.memory.buffer, v.ram, v.ramSize), ...v.spillRam()];
   for (const [m, at, b] of marks) views(vm)[m].fill(b, at, at + 4096);
   const parts: Uint8Array[] = [];
   await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);

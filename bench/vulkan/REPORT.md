@@ -771,6 +771,33 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T19: the renderer out of memory 0 — Venus's renderer and window in memory 1
+
+**2026-10-30.** Measured first (bench/spike/memory/REPORT.md §6): one memory64 costs ~+15–20% on the userspace
+benchmark on macOS, so the user set it aside. Built instead: memory 1 is the renderer's own memory, with the module's
+stack, data and heap in an arena of 1,280 MiB at its bottom (web/ram.ts `VENUS_ARENA`; `vk/wasi/arena.c` stops the heap
+there), the host-visible window after it (`VmConfig.window_at`, ABI 55), then node 1's RAM if the machine has one. The
+guest reaches the window as it reaches node 1: JIT code through the memory-1 arm of each load and store, which every
+Vulkan machine's modules now carry. **Memory 0 holds 3,071 MiB of RAM with Vulkan as without** (it was 2,560), and the
+first NUMA node holds at most 2,560 MiB beside the arena and window.
+
+**What it costs the guest** (`bench/vulkan/apps-load.ts` through `bench/gpu/sway-mac.sh`: the desktop guest at 2,560 MiB, all
+of it in memory 0 on both arms, 4 vCPUs, sway on GLES, each program warmed 20 s and measured 15 s; Apple M4, Chrome for
+Testing 153.0.8010.12, macOS 26.6.2; the base is 19f9c740's core, renderer and page, three rounds alternated; JSON in
+`results/vk4/t19/`):
+
+| program | window in memory 0 | window in memory 1 | |
+| --- | --- | --- | --- |
+| vkcube | 1.38, 1.48, 1.48 ms of CPU a frame; 60 frames/s | 1.45, 1.47, 1.50 ms; 60 | the same (rounds overlap) |
+| mpv on Vulkan, decoding in software (`--hwdec=no`, Sintel's VP9 480p) | 404, 405, 410 ms/s (16.2–16.4 ms a frame); the guest 14% busy | **436, 436, 436 ms/s** (17.4–17.5); 15% | **+7.5% of mpv's CPU**, rounds clear; 25 frames/s both |
+| gtk4-demo's fishbowl, GSK on Vulkan | 272, 304, 448 ms/s; 54–59 frames/s | 304, 404, 420 ms/s; 55–59 | the rounds spread past any difference |
+
+- **mpv in software is the window's heaviest writer**: each decoded frame is copied into mapped host-visible memory,
+  through the arm. Its +31 ms of guest CPU a second is the layout's price where it shows. vkcube's command streams are
+  too small to see.
+- **Not measured apart**: the arm's code in every Vulkan machine's modules (on spill machines: 15% more wasm bytes, the
+  same compile time, docs/spill-memories.md). It is inside these numbers.
+
 ## VK4 T2 (blocked on T19): the renderer's robustness — dead contexts leaked their devices, imports of our own exports were fatal
 
 **2026-10-29**, the dev VM's SwiftShader (Chromium 153.0.8010.52); JSON in `results/vk4/t2/`. What took Vulkan down

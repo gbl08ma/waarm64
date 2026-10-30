@@ -19,10 +19,10 @@ import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
-import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
+import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 54;
+export const ABI = 55;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -520,14 +520,16 @@ export const Counter = {
  * of RAM, which `bootVm`'s `framebuffer` locates for web/display.ts.
  */
 export type BootOptions = {
-  /** Guest RAM in memory 0 (at most `MAX_MEMORY0_RAM` (web/ram.ts) for a fixed memory, less the window). */
+  /** Guest RAM in memory 0 (at most `MAX_MEMORY0_RAM` (web/ram.ts) for a fixed memory). */
   ramSize: number;
   /**
-   * `VmConfig.window` (ABI 53): the host-visible window's bytes, after RAM in memory 0 (a multiple of 2 MiB; 0, the
+   * `VmConfig.window` (ABI 53): the host-visible window's bytes, at the guest PA after RAM (a multiple of 2 MiB; 0, the
    * default, none); a transport whose entry has `shm` reports it as its shared memory region 1 (docs/devices.md
-   * "virtio-gpu").
+   * "virtio-gpu"). Its bytes are in memory 1 at `windowAt` (`VmConfig.window_at`, ABI 55: a Venus machine's
+   * `VENUS_ARENA`, past the renderer's arena; else 0), node 1's RAM after them.
    */
   window?: number;
+  windowAt?: number;
   /**
    * The spill memories' sizes (`VmConfig.spill`, ABI 39; docs/spill-memories.md): RAM past memory 0, each a
    * shared memory of its own and a CPU-less NUMA node for the guest; `splitRam` (web/ram.ts) makes the usual split.
@@ -754,23 +756,25 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
   // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
   // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
-  // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says.
+  // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says. It is in memory 1,
+  // after a Venus machine's renderer arena there (web/venus-host.ts, vk/README.md), before node 1's RAM.
   const venus = (o.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
   const windowBytes = o.window ?? (venus ? VENUS_WINDOW : 0);
-  // A Venus machine's renderer lives in an arena at memory 0's top (web/venus-host.ts, vk/README.md): the memory is
-  // then 4 GiB, and the core's heap reserve stops below the arena.
-  const arena = venus ? VENUS_ARENA : 0;
-  const rest = 65536 + o.ramSize + windowBytes + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
-  const heapPages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - arena - rest))) + rest) / 65536;
-  const pages = venus ? 65536 : heapPages;
-  if (venus && heapPages > 65536 - arena / 65536) throw new RangeError(`a machine with Vulkan holds at most ${(2 ** 32 - arena - HEAP_FLOOR - 65536 - windowBytes) / 2 ** 20} MiB of RAM in memory 0`);
+  const windowAt = windowBytes ? o.windowAt ?? (venus ? VENUS_ARENA : 0) : 0;
+  const spillAt = windowBytes ? windowAt + windowBytes : 0;
+  const rest = 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
+  const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
   const fixed = o.fixedMemory !== false && pages <= 65536;
-  if (venus && !fixed) throw new RangeError('a machine with Vulkan needs a fixed memory (its renderer is at a fixed place in it)');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
-  // The spill memories (docs/spill-memories.md), each at its final size.
+  // Memories 1 and up (docs/spill-memories.md), each at its final size: the spill memories' RAM, memory 1's after
+  // what it holds before it (`VmConfig::memory_sizes`).
   const spillSizes = o.spill ?? [];
   if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES)) throw new RangeError(`spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`);
-  const spill = spillSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
+  const memSizes = spillAt ? [spillAt + (spillSizes[0] ?? 0), ...spillSizes.slice(1)] : spillSizes;
+  if (memSizes[0] > MAX_SPILL_BYTES) throw new RangeError(`memory 1 holds the window at ${windowAt} and node 1's ${spillSizes[0]} bytes: past 4 GiB`);
+  const spill = memSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
+  /** Each spill memory's RAM, memory 1 first (node 1's after the window there). */
+  const spillRam = () => spill.slice(0, spillSizes.length).map((m, k) => new Uint8Array(m.buffer, k ? 0 : spillAt, spillSizes[k]));
   const first = wasm instanceof WebAssembly.Module ? wasm : await compileCore(wasm);
   // The core that runs a fixed memory declares its exact size: compiled while the first instance lays the memory out.
   const exact = fixed && o.exactCore !== false ? exactCore(first, pages) : undefined;
@@ -782,9 +786,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   let ex = unsigned(instance.exports) as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
-  // Scratch page for VmConfig and the command line, then RAM and the window after it.
+  // Scratch page for VmConfig and the command line, then RAM.
   const scratch = memory.grow(1) * 65536;
-  const ram = memory.grow((o.ramSize + windowBytes) / 65536) * 65536;
+  const ram = memory.grow(o.ramSize / 65536) * 65536;
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type === 'gpu' && d.venus) return { ...d, window: windowBytes };
@@ -829,8 +833,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // allocator's rounding leaves, the host grows itself.
   if (fixed) {
     // A RangeError, as a failed grow is (the page's "couldn't reserve" message).
-    if (!ex.heap_reserve(heapPages)) throw new RangeError(`the core's heap reserve: no memory to grow ${heapPages} pages into`);
-    // Then (with Venus) the rest below the arena, unused, and the arena: the host's, as fw_cfg's files are.
+    if (!ex.heap_reserve(pages)) throw new RangeError(`the core's heap reserve: no memory to grow ${pages} pages into`);
     memory.grow(pages - memory.buffer.byteLength / 65536);
     // The memory is at its size: the rest runs on the exact core, here and in every worker. The first instance only
     // laid the memory out (it can grow it; the exact one can't) and isn't called again.
@@ -843,11 +846,12 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 34).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 35).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
     BigInt(o.jitBytes ?? 0), // the JIT's code cache budget (ABI 44)
-    BigInt(windowBytes)]); // the host-visible window (ABI 53)
+    BigInt(windowBytes), // the host-visible window (ABI 53)
+    BigInt(windowAt)]); // where it is in memory 1 (ABI 55)
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, ENTRY_WORDS * specs.length).set(specs.flatMap((d) => [...deviceEntry(d).entry, deviceShm(d)]));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -867,7 +871,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   if (o.restore) {
     // RAM first (the transports read the chains their backends held from it), then the core's
     // state: the registers, the devices, their config spaces, the flash bank.
-    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spill.map((m) => new Uint8Array(m.buffer)));
+    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spillRam());
     const { core } = o.restore;
     const at = ex.thread_alloc(core.length, 16);
     if (!at) throw new Error('no memory for the snapshot\'s state');
@@ -899,9 +903,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
   // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them.
   const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(16 * specs.length) : new ArrayBuffer(16 * specs.length));
-  // The devices' view of memory 0 reaches the window too: buffers there are memory 0's, past RAM.
-  const venusWindow = windowBytes ? { at: ram + o.ramSize, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize + windowBytes, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
+  // The window is memory 1's bytes at `windowAt`; its write-watch's words are memory 0's.
+  const venusWindow = windowBytes ? { at: windowAt, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
+  const layout = ramLayout(o.ramSize, spillSizes, windowBytes, spillAt);
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1002,10 +1007,14 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     usb,
     /** Bytes of guest RAM (at `ram`). */
     ramSize: o.ramSize,
-    /** The host-visible window's write-watch (`BootOptions.window`; its bytes follow RAM at `ram + ramSize`). */
+    /** The host-visible window's write-watch (`BootOptions.window`; its bytes are memory 1's at `window.at`). */
     watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm)) : undefined,
-    /** The spill memories (`BootOptions.spill`), memory 1 first: the guest RAM past memory 0. */
+    /** The window's bytes (`BootOptions.window`), if there is one: `bytes` at `at` in `spill[0]`. */
+    window: venusWindow,
+    /** Memories 1 and up, memory 1 first: the guest RAM past memory 0 (`spillRam`), and memory 1's renderer arena and window before node 1. */
     spill,
+    /** Each spill memory's RAM (`BootOptions.spill`), memory 1's node 1 first: what a snapshot keeps. */
+    spillRam,
     /** Whether the guest is in PSCI SYSTEM_SUSPEND: every vCPU off until `wake` (docs/platform.md "System suspend"). */
     suspended: () => ex.vm_suspended(vm) !== 0,
     /** Wakes a guest in SYSTEM_SUSPEND: its vCPU resumes where the guest asked. False if it wasn't suspended. */
@@ -1100,16 +1109,22 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     heapUse: () => {
       const w = new Uint32Array(memory.buffer);
       const nonzero = (page: number) => { for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true; return false; };
-      const reserve = (fwCfg ? fwCfgAt + Math.ceil(fwCfg.length / 65536) * 65536 : ram + o.ramSize + windowBytes) / 4096;
+      const reserve = (fwCfg ? fwCfgAt + Math.ceil(fwCfg.length / 65536) * 65536 : ram + o.ramSize) / 4096;
       let below = 0, touched = 0, high = 0;
       const buckets: number[] = []; // MiB touched in each 32 MiB of the reserve
       for (let p = 0; p < scratch / 4096; p++) if (nonzero(p)) below++;
-      // A Venus machine's renderer arena at memory 0's top is counted apart (its data and stack at its base, its heap
-      // upward from them: the highest touched page is its high-water mark).
-      const top = (memory.buffer.byteLength - arena) / 4096;
+      // A Venus machine's renderer arena, memory 1's first bytes, is counted apart (its data and stack at its base, its
+      // heap upward from them: the highest touched page is its high-water mark).
+      const arena = venus ? VENUS_ARENA : 0;
+      const w1 = arena ? new Uint32Array(spill[0].buffer, 0, arena / 4) : undefined;
       let arenaTouched = 0, arenaHigh = 0;
-      for (let p = top, end = memory.buffer.byteLength / 4096; p < end; p++) if (nonzero(p)) { arenaTouched++; arenaHigh = p - top + 1; }
+      for (let p = 0; p < arena / 4096; p++) {
+        let any = false;
+        for (let i = p * 1024, e = i + 1024; i < e; i++) if (w1![i]) { any = true; break; }
+        if (any) { arenaTouched++; arenaHigh = p + 1; }
+      }
       // The allocator's segment record sits at the reserve's end: the high-water mark leaves out the last 64 KiB.
+      const top = memory.buffer.byteLength / 4096;
       for (let p = reserve, end = top; p < end; p++) {
         if (!nonzero(p)) continue;
         touched++;

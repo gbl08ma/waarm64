@@ -1163,6 +1163,7 @@ fn spill_memory_end_to_end() {
         let regions = [crate::mem::Spill {
             phys: SPILL,
             size: 1 << 16,
+            off: 0,
             base: spill.as_mut_ptr() as *mut u8,
         }];
         // SAFETY: both buffers are 16-byte aligned, as long as their sizes, and outlive the Vm.
@@ -1208,6 +1209,7 @@ fn spill_memory_end_to_end() {
                 .map(|(phys, size)| crate::mem::Spill {
                     phys,
                     size,
+                    off: 0,
                     base: spill.as_mut_ptr() as *mut u8,
                 })
                 .collect();
@@ -1249,14 +1251,18 @@ fn jit_bytes_sets_the_budget() {
     }
 }
 
-/// The host-visible window (ABI 53) is memory 0's bytes after RAM, reached at its guest PA like RAM, by the
-/// interpreter and the block interpreter; the spill memories start past it.
+/// The host-visible window (ABI 53, 55) is memory 1's bytes at `window_at`, reached at its guest PA right after RAM
+/// as RAM is, by the interpreter and the block interpreter; node 1's RAM follows it in memory 1, and the spill
+/// memories' guest PAs start past it.
 #[test]
-fn the_window_follows_ram_in_memory_0() {
+fn the_window_is_in_memory_1_after_its_renderer() {
     const WINDOW: u64 = RAM_BASE + (1 << 20);
-    let prog: [u32; 3] = [
+    const AT: u64 = 3 << 16;
+    let prog: [u32; 5] = [
         0xf900_0001, // str x1, [x0]
         0xf940_0402, // ldr x2, [x0, #8]
+        0xf900_0061, // str x1, [x3]
+        0xf940_0464, // ldr x4, [x3, #8]
         B_SELF,
     ];
     for jit in [0, 4] {
@@ -1264,41 +1270,88 @@ fn the_window_follows_ram_in_memory_0() {
             ram_size: 1 << 20,
             jit,
             window: 2 << 20,
+            window_at: AT,
+            spill: [1 << 16, 0, 0, 0, 0, 0, 0, 0],
             ..VmConfig::default()
         };
         assert!(cfg.valid_window());
         assert_eq!(cfg.window_layout(), Some((WINDOW, 2 << 20)));
-        let mut ram = vec![0u128; (3 << 20) / 16];
-        // SAFETY: 16-byte aligned, 3 MiB (RAM and the window), and outlives the Vm.
-        let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 3 << 20) };
+        assert_eq!(cfg.memory_sizes()[0], AT + (2 << 20) + (1 << 16));
+        let node1 = cfg.spill_layout()[0].0;
+        let mut ram = vec![0u128; (1 << 20) / 16];
+        let mut mem1 = vec![0u128; cfg.memory_sizes()[0] as usize / 16];
+        let base1 = mem1.as_mut_ptr() as *mut u8;
+        // SAFETY: 16-byte aligned, as long as RAM and memory 1, and both outlive the Vm.
+        let mem = unsafe {
+            Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20)
+                .with_spill(&[crate::mem::Spill {
+                    phys: node1,
+                    size: 1 << 16,
+                    off: cfg.spill_at(),
+                    base: base1,
+                }])
+                .with_window(crate::mem::Spill {
+                    phys: WINDOW,
+                    size: 2 << 20,
+                    off: AT,
+                    base: base1,
+                })
+        };
         let mut vm = Vm::new(mem, cfg);
         for (k, w) in prog.iter().enumerate() {
             vm.mem.write(RAM_BASE + 4 * k as u64, 4, *w as u64).unwrap();
         }
         vm.mem.write(WINDOW + 0x1008, 8, 0x5678).unwrap();
+        vm.mem.write(node1 + 0x108, 8, 0x9abc).unwrap();
         let c = &mut vm.vcpus[0].cpu;
-        (c.x[0], c.x[1]) = (WINDOW + 0x1000, 0x1234);
+        (c.x[0], c.x[1], c.x[3]) = (WINDOW + 0x1000, 0x1234, node1 + 0x100);
         assert_eq!(vm.run(10), exit::BUDGET);
-        assert_eq!(vm.vcpus[0].cpu.x[2], 0x5678, "jit {jit}");
-        // The store is in the buffer's bytes past RAM.
-        assert_eq!(ram[((1 << 20) + 0x1000) / 16] as u64, 0x1234);
+        assert_eq!(
+            (vm.vcpus[0].cpu.x[2], vm.vcpus[0].cpu.x[4]),
+            (0x5678, 0x9abc),
+            "jit {jit}"
+        );
+        // The stores are in memory 1's bytes: the window's at AT, node 1's after the window.
+        assert_eq!(mem1[(AT as usize + 0x1000) / 16] as u64, 0x1234);
+        assert_eq!(mem1[(cfg.spill_at() as usize + 0x100) / 16] as u64, 0x1234);
+        // A device's (memory, offset) and back.
+        assert_eq!(
+            vm.mem.ram_offset(WINDOW + 0x1000, 8),
+            Some((1, AT + 0x1000))
+        );
+        assert_eq!(vm.mem.ram_pa(1, AT + 0x1000), WINDOW + 0x1000);
+        assert_eq!(vm.mem.ram_pa(1, cfg.spill_at() + 0x100), node1 + 0x100);
     }
-    // The DTB goes to the top of RAM, not of memory 0 (whose last bytes are the window's).
+    // A machine whose memory 1 holds the window but no RAM: no NUMA node, the window still reached.
     let cfg = VmConfig {
         ram_size: 4 << 20,
         window: 2 << 20,
+        window_at: AT,
         ..VmConfig::default()
     };
-    let mut ram = vec![0u128; (6 << 20) / 16];
-    // SAFETY: 16-byte aligned, RAM and the window long, outlives the Vm.
-    let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 6 << 20) };
+    assert_eq!(cfg.spill_layout(), []);
+    assert_eq!(cfg.memory_sizes()[0], AT + (2 << 20));
+    let mut ram = vec![0u128; (4 << 20) / 16];
+    let mut mem1 = vec![0u128; cfg.memory_sizes()[0] as usize / 16];
+    // SAFETY: 16-byte aligned, as long as RAM and memory 1, and both outlive the Vm.
+    let mem = unsafe {
+        Mem::new(ram.as_mut_ptr() as *mut u8, 4 << 20).with_window(crate::mem::Spill {
+            phys: RAM_BASE + (4 << 20),
+            size: 2 << 20,
+            off: AT,
+            base: mem1.as_mut_ptr() as *mut u8,
+        })
+    };
     let mut vm = Vm::new(mem, cfg);
+    // The DTB goes to the top of RAM.
     vm.boot(RAM_BASE, None, "").unwrap();
     assert_eq!(
         vm.mem.read(RAM_BASE + (2 << 20), 4),
         Ok(0xedfe_0dd0),
         "the DTB's magic at RAM's top 2 MiB"
     );
+    vm.mem.write(RAM_BASE + (4 << 20), 8, 7).unwrap();
+    assert_eq!(mem1[AT as usize / 16] as u64, 7);
     // Past RAM and the window, from the next GiB boundary: 1 GiB less 1 MiB of RAM and a 2 MiB window end
     // 1 MiB past the first boundary.
     let cfg = VmConfig {
@@ -1308,18 +1361,27 @@ fn the_window_follows_ram_in_memory_0() {
         ..VmConfig::default()
     };
     assert_eq!(cfg.spill_layout(), [(RAM_BASE + (2 << 30), 1 << 16)]);
-    for (ram_size, window, ok) in [
-        (1 << 20, 0, true),
-        (1 << 20, 1 << 20, false),
-        (1 << 20, MAX_WINDOW, true),
-        (1 << 20, MAX_WINDOW + (2 << 20), false),
-        ((1 << 20) + 4096, 2 << 20, false),
+    for (ram_size, window, window_at, spill, ok) in [
+        (1 << 20, 0, 0, 0, true),
+        (1 << 20, 1 << 20, 0, 0, false),
+        (1 << 20, MAX_WINDOW, 0, 0, true),
+        (1 << 20, MAX_WINDOW + (2 << 20), 0, 0, false),
+        ((1 << 20) + 4096, 2 << 20, 0, 0, false),
+        (1 << 20, 2 << 20, 4096, 0, false),
+        (1 << 20, 2 << 20, (1 << 32) - (2 << 20), 0, true),
+        (1 << 20, 2 << 20, (1 << 32) - (2 << 20), 1 << 16, false),
     ] {
         let cfg = VmConfig {
             ram_size,
             window,
+            window_at,
+            spill: [spill, 0, 0, 0, 0, 0, 0, 0],
             ..VmConfig::default()
         };
-        assert_eq!(cfg.valid_window(), ok, "{ram_size} {window}");
+        assert_eq!(
+            cfg.valid_window(),
+            ok,
+            "{ram_size} {window} {window_at} {spill}"
+        );
     }
 }

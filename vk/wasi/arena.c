@@ -1,14 +1,15 @@
-/* The renderer's heap (vk/README.md): the module lives in a fixed arena at memory 0's top, which is the core's and of
- * a fixed size, so malloc (wasi-libc's dlmalloc) must never grow the memory. dlmalloc starts with the memory past the
- * module's data and stack that its initial size gives (`__heap_base` to `__heap_end`) and calls sbrk for more, which
- * hands out the arena from there to its end (`ARENA_END`, the top of memory 0) instead of growing the memory. */
+/* The renderer's heap (vk/README.md): the module lives in a fixed arena at the bottom of memory 1, of a fixed size, with
+ * the host-visible window after it, so malloc (wasi-libc's dlmalloc) must never grow the memory nor reach the window.
+ * dlmalloc starts with the memory past the module's stack and data that its initial size gives (`__heap_base` to
+ * `__heap_end`) and calls sbrk for more, which hands out the arena from there to its end (`ARENA_END`: web/ram.ts
+ * VENUS_ARENA, from vk/gen.ts) instead of growing the memory. */
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 
 extern unsigned char __heap_end;
-#define ARENA_END 0x100000000ull
+#define ARENA_END ((uint64_t)VENUS_ARENA_END)
 
 static uintptr_t brk_at;
 

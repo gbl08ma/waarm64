@@ -145,16 +145,15 @@ for (const f of readdirSync(`${HERE}/compiler`).filter((f) => f.endsWith('.c')).
 }
 compile(`${HERE}/wasi/os_misc.c`, runtimeFlags);
 compile(`${HERE}/wasi/os_misc_virgl.c`, ['-include', PREFIX]);
-compile(`${HERE}/wasi/arena.c`, []);
-compile(`${HERE}/glue.c`, [...vkrFlags, `-I${HERE}/driver`]);
+compile(`${HERE}/wasi/arena.c`, [`-DVENUS_ARENA_END=${VENUS_ARENA}u`]);
+compile(`${HERE}/glue.c`, [...vkrFlags, `-I${HERE}/driver`, `-DVENUS_ARENA_END=${VENUS_ARENA}u`]);
 
-// The module runs on memory 0 at the arena (vk/README.md): data and stack at its fixed base (memory 0's top less
-// web/ram.ts VENUS_ARENA, 0xF010_0000), the heap after them.
-const ARENA = 2 ** 32 - VENUS_ARENA;
+// The module runs on memory 1, its own (vk/README.md): stack and data at its bottom, the heap after them up to the
+// arena's end (web/ram.ts VENUS_ARENA, vk/wasi/arena.c), the host-visible window after it.
 const EXPORTS = [`${HERE}/glue.c`, `${HERE}/compiler/wgsl_test.c`, `${HERE}/driver/wg_test.c`].flatMap((f) => readFileSync(f, 'utf8').match(/^EXPORT[^(]*\b(\w+)\(/gm)!.map((l) => l.match(/(\w+)\($/)![1]));
 const link = `$cxx --target=wasm32-wasip1-threads --sysroot=${SDK}/share/wasi-sysroot -mexec-model=reactor -O2 ` +
   '-mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false -Wl,--gc-sections ' + (process.env.VK_NAMES ? '' : '-Wl,--strip-all ') +
-  `-Wl,--import-memory -Wl,--shared-memory -Wl,--max-memory=4294967296 -Wl,--global-base=${ARENA} -Wl,--no-stack-first -Wl,-z,stack-size=4194304 ` +
+  `-Wl,--import-memory -Wl,--shared-memory -Wl,--max-memory=4294967296 -Wl,-z,stack-size=4194304 ` +
   EXPORTS.map((e) => `-Wl,--export=${e}`).join(' ') +
   ' -lsetjmp -lwasi-emulated-mman -lwasi-emulated-process-clocks -lwasi-emulated-signal -lwasi-emulated-getpid $in -o $out';
 lines.push('', 'rule link', `  command = ${link}`, '  description = LINK $out', '');

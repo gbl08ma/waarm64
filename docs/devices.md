@@ -499,11 +499,12 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   contexts weren't made, and the old rings would have been polled over memory the new guest reuses.
 - **The renderer** ([vk/README.md](../vk/README.md); web/venus-host.ts `VenusRenderer`): virglrenderer's `vkr` and our
   Vulkan driver (Mesa's runtime) in one wasm module (`vk/build.sh` → `target/vk/venus.wasm`), which the GPU worker
-  fetches on the device's `venus-init` and instantiates **on the VM's memory 0**, at a fixed arena at its top
-  (web/ram.ts `VENUS_ARENA`, 255 MiB at 0xF010_0000: a Venus machine's memory 0 is 4 GiB, RAM, then the window, then
-  the arena; web/vm.ts). With the 256 MiB window that leaves 2,560 MiB of RAM in memory 0 (the page's 2.5 GiB, one
-  NUMA node); dEQP-VK's whole pass list takes the arena to 137 MiB. web/venus-host.ts refuses a module linked
-  elsewhere (`venus_arena_base`): one built for the 256 MiB arena would write its data over the core's heap. So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
+  fetches on the device's `venus-init` and instantiates **on the VM's memory 1**, its own: its stack, data and heap in
+  the arena at memory 1's bottom (web/ram.ts `VENUS_ARENA`, 1,280 MiB; `vk/wasi/arena.c` stops the heap there), the
+  window after it, then node 1's RAM if the machine has one ("The host-visible window" below). Memory 0 holds as much
+  RAM with Vulkan as without; untouched arena pages cost nothing. web/venus-host.ts refuses a module with another
+  arena (`venus_arena_end`): one built for memory 0 would write its data over the core's heap, and one with a larger
+  arena would grow its heap into the window. So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
   vkr's threads are polls: a submit, a notify, a completion or a fenced command polls the rings, and the worker keeps
   polling while one is active or a submit is in flight (`venus_poll`; web/venus-host.ts `VenusPoll`: turns ~0.25 ms
   apart on `Atomics.waitAsync`'s timeout, never a nested `setTimeout`, whose ~4.5 ms clamp made every fence late, VK3
@@ -559,11 +560,13 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 #### The host-visible window (Venus, VK1)
 For Vulkan through Venus ([graphics.md](graphics.md) "Vulkan through Venus"): guest-visible memory that the host renderer and the
 guest share without copies (Venus's ring, its command streams, its reply buffers, and the Vulkan memory a program maps).
-- **Where it is** (`VmConfig.window`, ABI 53): memory 0's bytes right after RAM, at the guest PA after RAM, outside the
-  DT's `/memory`; the virtio-gpu transport reports it as shared memory region 1 (`VIRTIO_GPU_SHM_ID_HOST_VISIBLE`;
-  `DeviceEntry.shm`), and Linux maps blobs into it. Memory 0 because Venus writes its whole command stream there: the
-  window's pages are reached by the JIT's inline loads and stores as RAM's are (a memory of its own past memory 1 would
-  go through the interpreter, [spill-memories.md](spill-memories.md)).
+- **Where it is** (`VmConfig.window`, ABI 53; `window_at`, ABI 55): at the guest PA after RAM, outside the DT's
+  `/memory`; its bytes are **memory 1's**, after the renderer's arena (`window_at`) and before node 1's RAM, so the
+  renderer reads them in place and memory 0 gives none of its 4 GiB to Vulkan (VK4 T19). The virtio-gpu transport
+  reports it as shared memory region 1 (`VIRTIO_GPU_SHM_ID_HOST_VISIBLE`; `DeviceEntry.shm`), and Linux maps blobs into
+  it. The guest reaches its pages as node 1's: JIT code through the memory-1 arm of each load and store, the core
+  through the spill accessor ([spill-memories.md](spill-memories.md) "The JIT's spill arm"); every Vulkan machine's
+  JIT modules carry that arm. Memory 1 rather than a memory of its own because the JIT inlines memory 1 alone.
 - **The write-watch** (core/src/mem.rs `Watch`, core/src/mmu.rs `fill_watched`, web/window.ts): mappings are coherent,
   so the guest never says what it wrote, but WebGPU needs the written bytes uploaded at each submit. A write to a
   window page fills the vCPU's write TLB entry as for any page, and the vCPU records it (at most 64; then it drops them

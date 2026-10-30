@@ -67,7 +67,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const carried = (d: (typeof all)[number]) => d.ram || (!opts.suspend && !opts.omit?.(d.slot));
   const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: carried(d) ? d.blocks.length : 0, sha256: opts.sha256?.(d.slot), overlay: d.overlay, generation: d.generation, ...(d.ram ? { ram: true } : {}) }));
   const disks = all.filter(carried);
-  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, ...(vm.spill.length ? { spill: vm.spill.map((m) => m.buffer.byteLength) } : {}), disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
+  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, ...(vm.spillRam().length ? { spill: vm.spillRam().map((v) => v.length) } : {}), disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
   // The state's Uint8Arrays go in BLOB frames; DEVS names each by its number and length.
   const blobs: Uint8Array[] = [];
   const devs = JSON.stringify(state.host, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v));
@@ -75,8 +75,9 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   await w.bytes('CORE', state.core);
   await w.bytes('DEVS', new TextEncoder().encode(devs));
   for (const [n, b] of blobs.entries()) await w.blob(n, b);
-  // Memory 0's RAM, then each spill memory's, their chunks numbered on (`ramStarts`); the progress is over all of it.
-  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spill.map((m) => new Uint8Array(m.buffer))];
+  // Memory 0's RAM, then each spill memory's (node 1's after Venus's arena and window in memory 1), their chunks numbered
+  // on (`ramStarts`); the progress is over all of it.
+  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
   const total = views.reduce((n, v) => n + v.length, 0);
   const starts = ramStarts(views.map((v) => v.length));
   const ram = { pages: 0, frames: 0 };

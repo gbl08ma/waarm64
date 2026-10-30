@@ -59,7 +59,7 @@ rasterizer.
   VM (Mesa's Venus driver can talk vtest natively, as virpipe does for virgl), so protocol captures and reference
   images come without QEMU (which can't run 3D there: graphics.md "Findings").
 - **Route (b)** (VK0 D, built in VK1–VK3): vkr calling a Mesa Vulkan driver of ours whose hardware is WebGPU, the
-  translator NIR → WGSL; **one renderer module on memory 0**, in its arena at memory 0's top; **vkr on one thread**
+  translator NIR → WGSL; **one renderer module on memory 1**, its own, the window after its arena (VK4 T19, the user's call 2026-10-29: it was memory 0's top, which cost the guest 511 MiB of fast RAM); **vkr on one thread**
   (graphics.md "The shape").
 - **API 1.3 advertised** (the user, 2026-10-28), and **what the device advertises must work** (VK4): a feature or
   format that can't be backed is taken off the advertised set (guest-visible, pre-approved) rather than left failing.

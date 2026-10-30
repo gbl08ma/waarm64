@@ -103,14 +103,28 @@ impl Host {
     }
 }
 
-/// A spill memory: guest RAM at `phys..phys + size` in memory `index + 1`.
+/// A range of guest-physical memory in a memory past memory 0: a spill memory's RAM (memory `index + 1`), or the
+/// host-visible window (memory 1). `phys..phys + size` is at `off..off + size` in its memory.
 #[derive(Clone, Copy, Debug)]
 pub struct Spill {
     pub phys: u64,
     pub size: u64,
-    /// Natively, its bytes (16-byte aligned; on wasm the core can't address
-    /// another memory, and the `ram` imports reach it: null).
+    /// Where it starts in its memory: 0, but for node 1's RAM after the renderer and the window in memory 1
+    /// (`VmConfig::window_at`).
+    pub off: u64,
+    /// Natively, its memory's first byte (16-byte aligned; on wasm the core can't address another memory, and the
+    /// `ram` imports reach it: null).
     pub base: *mut u8,
+}
+
+impl Spill {
+    /// Whether `len` bytes at offset `off` of its memory are in it.
+    #[inline]
+    fn holds(&self, off: u64, len: u64) -> bool {
+        off.checked_sub(self.off)
+            .and_then(|o| o.checked_add(len))
+            .is_some_and(|end| end <= self.size)
+    }
 }
 
 /// Guest RAM, shared by all vCPUs.
@@ -122,6 +136,8 @@ pub struct Mem {
     phys: u64,
     /// Memories 1 and up, in order, at increasing guest PAs past memory 0's.
     spill: Vec<Spill>,
+    /// The host-visible window, in memory 1 before node 1's RAM (`VmConfig::window_at`).
+    window: Option<Spill>,
     /// Serializes the 128-bit atomics (CASP, LDXP/STXP of two X registers)
     /// on the same 16 bytes: wasm has no 128-bit compare-and-swap. Hashed by
     /// address, a cache line each, so per-CPU pairs don't contend. Boxed: JIT
@@ -257,6 +273,7 @@ impl Mem {
             size,
             phys: 0,
             spill: Vec::new(),
+            window: None,
             pair_locks: Box::new([const { PairLock(AtomicU32::new(0)) }; PAIR_LOCKS]),
             watch: None,
             watch_pa: 0,
@@ -264,10 +281,13 @@ impl Mem {
         }
     }
 
-    /// Watches writes to the window at guest PA `pa`, `len` bytes of memory 0 (whole pages), for `ncpus` vCPUs.
+    /// Watches writes to the window at guest PA `pa`, `len` bytes of RAM or the window (whole pages), for `ncpus`
+    /// vCPUs.
     pub fn with_watch(self, pa: u64, len: u64, ncpus: usize) -> Self {
         assert!(
-            pa.is_multiple_of(4096) && len.is_multiple_of(4096) && self.host0(pa, len).is_some()
+            pa.is_multiple_of(4096)
+                && len.is_multiple_of(4096)
+                && self.host(pa, len, Access::Read).is_ok()
         );
         Mem {
             watch: Some(Box::new(Watch::new(len / 4096, ncpus))),
@@ -310,13 +330,47 @@ impl Mem {
         assert!(spill.len() <= MAX_SPILL, "too many spill memories");
         let mut end = self.phys + self.size;
         for s in spill {
-            assert!(s.phys >= end && s.size <= 1 << 32, "spill memory {s:?}");
+            assert!(
+                s.phys >= end && s.off + s.size <= 1 << 32,
+                "spill memory {s:?}"
+            );
             end = s.phys + s.size;
         }
         Mem {
             spill: spill.to_vec(),
             ..self
         }
+    }
+
+    /// Adds the host-visible window: `w` in memory 1, before any of node 1's RAM there and past memory 0's RAM.
+    ///
+    /// # Safety
+    /// As for [`Mem::with_spill`]: memory 1 holds `w.off + w.size` bytes (natively, at `w.base`).
+    pub unsafe fn with_window(self, w: Spill) -> Self {
+        assert!(
+            w.phys >= self.phys + self.size
+                && w.off + w.size <= 1 << 32
+                && self.spill.first().is_none_or(|s| {
+                    s.phys >= w.phys + w.size && s.off >= w.off + w.size && s.base == w.base
+                }),
+            "window {w:?}"
+        );
+        Mem {
+            window: Some(w),
+            ..self
+        }
+    }
+
+    /// The host-visible window's region in memory 1, if there is one.
+    pub fn window(&self) -> Option<&Spill> {
+        self.window.as_ref()
+    }
+
+    /// The region of memory `m` (1 and up) that holds `len` bytes at offset `off`.
+    #[inline]
+    fn region(&self, m: usize, off: u64, len: u64) -> Option<&Spill> {
+        let w = self.window.as_ref().filter(|w| m == 1 && w.holds(off, len));
+        w.or_else(|| self.spill.get(m - 1).filter(|s| s.holds(off, len)))
     }
 
     /// Memory 0's RAM size.
@@ -364,10 +418,11 @@ impl Mem {
 
     #[inline(never)]
     fn host_spill(&self, pa: u64, len: u64, access: Access) -> Result<Host, Fault> {
-        for (k, s) in self.spill.iter().enumerate() {
+        let mems = self.window.iter().map(|w| (1, w));
+        for (m, s) in mems.chain(self.spill.iter().enumerate().map(|(k, s)| (k + 1, s))) {
             let off = pa.wrapping_sub(s.phys);
             if off.checked_add(len).is_some_and(|end| end <= s.size) {
-                return Ok(Host(((k as u64 + 1) << MEM_SHIFT) | off));
+                return Ok(Host(((m as u64) << MEM_SHIFT) | (s.off + off)));
             }
         }
         Err(Fault {
@@ -391,7 +446,10 @@ impl Mem {
     pub fn ram_pa(&self, m: usize, off: u64) -> u64 {
         match m {
             0 => self.phys + off,
-            m => self.spill[m - 1].phys + off,
+            m => {
+                let s = self.region(m, off, 0).expect("an offset in a region");
+                s.phys + off - s.off
+            }
         }
     }
 
@@ -407,7 +465,7 @@ impl Mem {
     pub fn pa(&self, h: Host) -> u64 {
         match h.mem() {
             0 => (h.0 as usize - self.base as usize) as u64 + self.phys,
-            m => self.spill[m - 1].phys + h.off(),
+            m => self.ram_pa(m, h.off()),
         }
     }
 
@@ -763,16 +821,21 @@ impl Mem {
     pub fn native_ptr(&self, h: Host) -> *mut u8 {
         match h.as_ptr() {
             Some(p) => p,
-            None => self.spill[h.mem() - 1].base.wrapping_add(h.off() as usize),
+            None => {
+                let s = self
+                    .region(h.mem(), h.off(), 0)
+                    .expect("a host address in a region");
+                s.base.wrapping_add(h.off() as usize)
+            }
         }
     }
 
     /// Natively, a spill address's pointer.
     #[cfg(not(target_arch = "wasm32"))]
     fn acc_ptr(&self, h: Host, size: u32) -> *mut u8 {
-        let s = &self.spill[h.mem() - 1];
-        assert!(h.off() + size as u64 <= s.size && h.off().is_multiple_of(size as u64));
-        s.base.wrapping_add(h.off() as usize)
+        let s = self.region(h.mem(), h.off(), size as u64);
+        assert!(s.is_some() && h.off().is_multiple_of(size as u64));
+        s.unwrap().base.wrapping_add(h.off() as usize)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1035,6 +1098,7 @@ pub(crate) mod tests {
                 .map(|(&(phys, size), b)| Spill {
                     phys,
                     size: size as u64,
+                    off: 0,
                     base: b.as_mut_ptr() as *mut u8,
                 })
                 .collect();

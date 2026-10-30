@@ -24,13 +24,13 @@ and its use" checks the heap's layout: update its expectations with it.
 
 ## T19: the renderer out of memory 0
 
-**State (2026-10-29).** Measured first (bench/spike/memory/REPORT.md §6): one memory64 (option (c)) costs ~+15–20% on
-the userspace benchmark on macOS, since V8 checks each memory64 access; the user set memory64 aside. **Chosen (the
-user, 2026-10-29): a′**, a variant of (a). Memory 1 becomes the renderer's own wasm32 memory: the renderer's data,
-stack and heap (an arena of ≥ 1 GiB) at its bottom, then the window, then node 1's spill RAM in what's left. The JIT's
-existing memory-1 arm reaches both the window and node 1, so a NUMA machine with Vulkan needs no second arm. Memory 0
-then holds as much RAM with Vulkan as without. Only the guest's window accesses pay the arm (node 1 measured 1.0–1.6×,
-copies 1.06–1.18×).
+**State (2026-10-30).** Measured first, memory64 set aside by the user (bench/spike/memory/REPORT.md §6). **Built (a′):**
+Venus's renderer and window in memory 1 (arena 1,280 MiB, then the window, then node 1; ABI 55 `window_at`); memory 0
+holds 3,071 MiB with Vulkan as without. Its cost on the Mac (bench/vulkan/REPORT.md "VK4 T19"): vkcube the same, mpv
+decoding in software +7.5% of its CPU, fishbowl too noisy to tell. ci.sh, ci-deqp-vk.sh, ci-debian.sh, ci-machines.sh OK.
 
-**Next:** design a′ against the core's window and spill code, measure today's cost on Venus's frame workloads (vkcube,
-mpv, GTK4 on Vulkan) to A/B against, build it, then T2's host-visible heap.
+**Next (closes T19 and T2):** T2's step, now that the arena has room: give the host-visible type a heap the arena backs
+(≥ 1 GiB: its own heap of ~1 GiB, or the one heap sized to the arena), check the replays (`scripts/ci-deqp-vk.sh`), add
+`memory.allocation.random` and `memory.mapping.suballocation.random` to `tests/deqp/vk.txt`, then mark T19's and T2's
+kickoff rows done and delete both sections. `tests/venus-renderer.test.ts` "the memory budget reports the heap and its
+use" checks the heap's layout.

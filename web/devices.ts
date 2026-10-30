@@ -885,13 +885,18 @@ export function ring(bell: Int32Array, wait: boolean) {
 
 export type DevicesInit = {
   memory: WebAssembly.Memory;
-  /** The host-visible window (`BootOptions.window`): its address in `memory`, its bytes and its write-watch's (web/window.ts). */
+  /**
+   * The host-visible window (`BootOptions.window`): its address in memory 1 (`spill[0]`), its bytes, and its
+   * write-watch's address in `memory` (web/window.ts).
+   */
   window?: { at: number; bytes: number; watch: number };
   /** Addresses in `memory` of each device's `virtio::DevShared`, of guest RAM and of the signal word. */
   shared: number[];
   ram: number;
   ramSize: number;
-  /** The spill memories (docs/spill-memories.md), memory 1 first. */
+  /** Where each memory's RAM is (web/ram.ts `ramLayout`; default: the spill memories' RAM from their first byte, no window). */
+  layout?: RamLayout;
+  /** Memories 1 and up (docs/spill-memories.md), memory 1 first. */
   spill?: WebAssembly.Memory[];
   signal: number;
   specs: DeviceSpec[];
@@ -943,11 +948,11 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
-    const layout = ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
+    const layout = given ?? ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
         ram: () => [new Uint8Array(this.memory.buffer, ram), ...spillViews],
@@ -978,9 +983,9 @@ export class Devices {
           if (d.renderer && d.virgl) {
             // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
             const host = portHost(d.renderer);
-            host.call({ t: 'ram', ram: ctx.ram().map((r, k) => ({ buffer: r.buffer, offset: r.byteOffset, length: ctx.layout[k].size })) });
-            // Venus's renderer runs on memory 0 itself (web/venus-host.ts): the memory, and where the window is.
-            if (d.venus && window) host.call({ t: 'venus-init', memory, window: d.noWatch ? { ...window, watch: 0 } : window });
+            host.call({ t: 'ram', ram: ctx.ram().map((r, k) => ({ buffer: r.buffer, offset: r.byteOffset, length: k ? r.byteLength : ctx.layout[0].size })) });
+            // Venus's renderer runs on memory 1 itself (web/venus-host.ts), the window there; the watch's words are memory 0's.
+            if (d.venus && window) host.call({ t: 'venus-init', memory: spill[0], core: memory, window: d.noWatch ? { ...window, watch: 0 } : window });
             b.gpu.host = host;
           }
           if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);

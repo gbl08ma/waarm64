@@ -140,27 +140,54 @@ pub struct VmConfig {
     /// these bytes on their code and metadata.
     pub jit_bytes: u64,
     /// The host-visible window's bytes (ABI 53, docs/devices.md "virtio-gpu"): guest-physical memory right
-    /// after RAM in memory 0, outside the DT's `/memory`, that a transport whose entry has `shm` reports as
-    /// its shared memory region 1 (Venus's blobs are mapped there). A multiple of 2 MiB, at most
-    /// `MAX_WINDOW`; 0: none.
+    /// after RAM, outside the DT's `/memory`, that a transport whose entry has `shm` reports as its shared memory
+    /// region 1 (Venus's blobs are mapped there). Its bytes are in memory 1 at `window_at`. A multiple of 2 MiB, at
+    /// most `MAX_WINDOW`; 0: none.
     pub window: u64,
+    /// Where the window's bytes start in memory 1 (ABI 55): past the bytes before it there (Venus's renderer:
+    /// docs/devices.md "The host-visible window"); node 1's RAM, if any, follows the window there. A multiple of
+    /// 64 KiB.
+    pub window_at: u64,
 }
 
-/// The largest host-visible window: it comes out of memory 0's 4 GiB with guest RAM.
+/// The largest host-visible window.
 pub const MAX_WINDOW: u64 = 1 << 30;
 
 impl VmConfig {
-    /// The host-visible window as (guest PA, size), if there is one: right after RAM, in memory 0.
+    /// The host-visible window as (guest PA, size), if there is one: right after RAM (its bytes in memory 1).
     pub fn window_layout(&self) -> Option<(u64, u64)> {
         (self.window != 0).then(|| (RAM_BASE + self.ram_size, self.window))
     }
 
-    /// No window, or one of whole 2 MiB units up to `MAX_WINDOW` after RAM of whole 64 KiB pages.
+    /// Where node 1's RAM starts in memory 1: after the window, if there is one.
+    pub fn spill_at(&self) -> u64 {
+        if self.window != 0 {
+            self.window_at + self.window
+        } else {
+            0
+        }
+    }
+
+    /// The sizes of memories 1 and up in bytes (0: none): node 1's RAM after what memory 1 holds before it
+    /// ([`VmConfig::spill_at`]), the other spill memories their RAM alone.
+    pub fn memory_sizes(&self) -> [u64; crate::mem::MAX_SPILL] {
+        let mut m = self.spill;
+        if self.window != 0 {
+            m[0] += self.spill_at();
+        }
+        m
+    }
+
+    /// No window, or one of whole 2 MiB units up to `MAX_WINDOW` after RAM of whole 64 KiB pages, at a whole
+    /// 64 KiB page of memory 1 that holds it and node 1's RAM.
     pub fn valid_window(&self) -> bool {
         self.window == 0
             || (self.window.is_multiple_of(1 << 21)
                 && self.window <= MAX_WINDOW
-                && self.ram_size.is_multiple_of(1 << 16))
+                && self.ram_size.is_multiple_of(1 << 16)
+                && self.window_at.is_multiple_of(1 << 16)
+                && self.window_at <= 1 << 32
+                && self.spill_at() + self.spill[0] <= 1 << 32)
     }
 
     /// The spill memories as (guest PA, size): each starts at the 1 GiB
@@ -254,6 +281,7 @@ impl Default for VmConfig {
             spill: [0; crate::mem::MAX_SPILL],
             jit_bytes: 0,
             window: 0,
+            window_at: 0,
         }
     }
 }
@@ -757,7 +785,7 @@ impl Vm {
                 c.max_bytes
             },
             pages: cfg.mem_pages as u32,
-            spill: cfg.spill.map(|n| (n >> 16) as u32),
+            spill: cfg.memory_sizes().map(|n| (n >> 16) as u32),
             // A table per vCPU in parallel SMP, one in round-robin.
             decoded: crate::interp::block::budget(if parallel { n } else { 1 }) as u32,
             ..c
@@ -820,12 +848,16 @@ impl Vm {
             quantum: if n > 1 { QUANTUM } else { u64::MAX },
             mem: {
                 let mem = mem.at(RAM_BASE);
+                assert!(
+                    cfg.window_layout()
+                        == mem
+                            .window()
+                            .map(|w| (w.phys, w.size))
+                            .filter(|_| { mem.window().is_some_and(|w| w.off == cfg.window_at) }),
+                    "the window doesn't match the configuration"
+                );
                 let mem = match cfg.window_layout() {
-                    Some((pa, len))
-                        if mem.watch().is_none() && mem.size() >= cfg.ram_size + len =>
-                    {
-                        mem.with_watch(pa, len, n)
-                    }
+                    Some((pa, len)) if mem.watch().is_none() => mem.with_watch(pa, len, n),
                     _ => mem,
                 };
                 let want = cfg.spill_layout();
@@ -835,12 +867,9 @@ impl Vm {
                             .spill()
                             .iter()
                             .zip(&want)
-                            .all(|(s, w)| (s.phys, s.size) == *w),
+                            .zip(core::iter::once(cfg.spill_at()).chain(core::iter::repeat(0)))
+                            .all(|((s, w), off)| (s.phys, s.size, s.off) == (w.0, w.1, off)),
                     "the spill memories don't match the configuration"
-                );
-                assert!(
-                    mem.size() >= cfg.ram_size + cfg.window,
-                    "memory 0 doesn't hold the window"
                 );
                 mem
             },

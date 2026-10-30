@@ -12,7 +12,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 54);
+  assert.equal(ex.abi_version(), 55);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -245,11 +245,13 @@ test('guest RAM splits into memory 0 and spill memories', () => {
   assert.deepEqual(splitRam(3 * G - M), { ramSize: 3 * G - M, spill: [] });
   assert.deepEqual(splitRam(4 * G), { ramSize: 3 * G - M, spill: [G + M] });
   assert.deepEqual(splitRam(12 * G), { ramSize: 3 * G - M, spill: [4 * G, 4 * G, G + M] });
-  // A Venus machine's memory 0 also holds its window and renderer (512 MiB).
-  assert.deepEqual(splitRam(4 * G, G / 2), { ramSize: 2.5 * G - M, spill: [1.5 * G + M] });
-  // ...a 1 MiB smaller arena: the page's 2.5 GiB with Vulkan all in memory 0 (no NUMA node of 1 MiB).
-  assert.deepEqual(splitRam(2.5 * G, VENUS_RESERVE), { ramSize: 2.5 * G, spill: [] });
-  assert.deepEqual(splitRam(4 * G, VENUS_RESERVE), { ramSize: 2.5 * G, spill: [1.5 * G] });
+  // A Venus machine's memory 1 holds its renderer's arena and window before node 1 (1.5 GiB): memory 0 as without.
+  assert.equal(VENUS_RESERVE, 1.5 * G);
+  assert.deepEqual(splitRam(3 * G - M, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [] });
+  assert.deepEqual(splitRam(4 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [G + M] });
+  assert.deepEqual(splitRam(12 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [2.5 * G, 4 * G, 2.5 * G + M] });
+  assert.equal(splitError(2 * G, [2.5 * G], VENUS_RESERVE), undefined);
+  assert.match(splitError(2 * G, [2.5 * G + 64 * 1024], VENUS_RESERVE)!, /with Vulkan, the first NUMA node holds at most 2560 MiB/);
   assert.throws(() => splitRam(40 * G), RangeError);
   assert.equal(splitError(2 * G, [G, 4 * G]), undefined);
   assert.match(splitError(3 * G, [])!, /at most 3071 MiB/);

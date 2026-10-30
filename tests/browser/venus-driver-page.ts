@@ -5,6 +5,7 @@ import { memoryBackend, ShaderCache, type CacheBackend } from '../../web/venus-c
 import { deviceRequest } from '../../web/venus-gpu.ts';
 import { VenusRenderer, type VenusPoll } from '../../web/venus-host.ts';
 import { VenusImport } from '../../web/venus-import.ts';
+import { VENUS_ARENA } from '../../web/ram.ts';
 
 type Test = {
   wgt_run(vs: number, vn: number, fs: number, fn: number, cs: number, cn: number): number;
@@ -41,7 +42,7 @@ export async function run(spirv: { vert: string; frag: string; comp: string }, b
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
   let store: ShaderCache | undefined;
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, device, 'pump',
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, device, 'pump',
     backend ? { cache: async (id) => (store = await ShaderCache.open(id, { backend })) } : {});
   const ex = v.raw as unknown as Test;
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
@@ -79,7 +80,7 @@ export async function runImport() {
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device);
   const ex = v.raw as unknown as Test;
   const RG8 = 65;
   const first = Uint8Array.from({ length: 16 }, (_, i) => 10 + i);
@@ -119,7 +120,7 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
   let empty = 0;
   const submit = device.queue.submit.bind(device.queue);
   device.queue.submit = (buffers: Iterable<GPUCommandBuffer>) => { if (![...buffers].length) empty++; submit(buffers); };
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, device, poll);
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, device, poll);
   const ex = v.raw as unknown as Test;
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
   const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
@@ -161,7 +162,7 @@ export async function runTwo(scenario: 'watch' | 'serials' | 'odd') {
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const at = 0x1000_0000, bytes = 1 << 20, watchAt = 0x2000_0000;
+  const at = VENUS_ARENA, bytes = 1 << 20, watchAt = VENUS_ARENA + 0x1000_0000;
   // web/window.ts: GEN, NCPUS, WORDS, PAGES, ACK[128], RUNNING[128], the bitmap.
   const head = new Int32Array(memory.buffer, watchAt, 4 + 256 + bytes / 4096 / 32);
   head[2] = bytes / 4096 / 32;
@@ -241,7 +242,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const at = 0x1000_0000, bytes = 1 << 20, watchAt = 0x2000_0000;
+  const at = VENUS_ARENA, bytes = 1 << 20, watchAt = VENUS_ARENA + 0x1000_0000;
   const head = new Int32Array(memory.buffer, watchAt, 4 + 256 + bytes / 4096 / 32);
   head[2] = bytes / 4096 / 32;
   head[3] = bytes / 4096;
@@ -336,7 +337,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device);
   const ex = v.raw as unknown as Test;
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
   const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
@@ -455,7 +456,7 @@ export async function runMisc(scenario: 'copy' | 'clear' | 'blit' | 'push' | 'pu
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
   // `ycbcr`: the device with `?gpu=vkycbcr`'s YCbCr conversions (VK3 L7.2).
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device, undefined, undefined, { ycbcr: scenario === 'ycbcr' });
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, undefined, undefined, { ycbcr: scenario === 'ycbcr' });
   const ex = v.raw as unknown as Test;
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
@@ -660,7 +661,7 @@ export async function runFits(scenario: 'inputAttachments', vert: string, frag: 
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device);
   const ex = v.raw as unknown as Test;
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
   const put = async (url: string) => {
@@ -689,7 +690,7 @@ export async function runSamples(vert: string, frag: string) {
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
-  const v = await VenusRenderer.create(module, memory, { at: 0x1000_0000, bytes: 1 << 20, watch: 0 }, device);
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device);
   const ex = v.raw as unknown as Test;
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
   const put = async (url: string) => {

@@ -4,7 +4,7 @@ The host side of Vulkan through Venus ([docs/graphics.md](../docs/graphics.md) "
 [docs/devices.md](../docs/devices.md) "Venus"): virglrenderer's Venus decoder (`vkr`) over a Vulkan driver of ours
 on Mesa's common Vulkan runtime, with Mesa's `spirv_to_nir`, NIR and our NIR → WGSL backend, built as one wasm module,
 `target/vk/venus.wasm` (12.05 MiB, 1.24 MiB gzipped, 0.74 MiB with brotli: most of the raw size is NIR's tables), which the GPU worker
-instantiates on the VM's memory 0 (web/venus-host.ts).
+instantiates on the VM's memory 1, its own, the host-visible window after its arena (web/venus-host.ts).
 
 ```sh
 vk/build.sh     # -> target/vk/venus.wasm (the first run clones and builds natively, a few minutes; later ones are quick)
@@ -32,15 +32,15 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   has moved since; its symbols are renamed (`vkr_util_*`, a generated header of `#define`s from the native objects'
   `nm`) so both link into one module. So `glue.c` declares the driver's two symbols itself instead of including the
   driver's headers.
-- **The link:** `--import-memory --shared-memory --max-memory=4GiB`, `--global-base=0xF0100000` (4 GiB less web/ram.ts
-  `VENUS_ARENA`, vk/gen.ts), `--no-stack-first` and a 4 MiB stack: the module's data, stack and heap live in the arena
-  at memory 0's top (255 MiB at 0xF010_0000), which web/vm.ts keeps free on a Venus machine; `venus_arena_base` says
-  where it is linked, and the host refuses a module without it or linked elsewhere (docs/devices.md "Venus"). Its `sbrk` (`vk/wasi/arena.c`) starts at
-  `__heap_end`, past dlmalloc's initial region, and grows up to 4 GiB without `memory.grow`. wasm-ld puts the stack
-  first by default (memory 0's bottom 4 MiB, whatever `--global-base` says): VK1's and L1's modules wrote memory 0
-  there with every call, and the guest's kernel oopsed (zeroed AppArmor objects, a zeroed stack frame) once the
-  compiler's deep calls ran in vkcube's start. Pointers past 2 GiB reach JS as negative i32s: the imports take
-  `>>> 0` of them.
+- **The link:** `--import-memory --shared-memory --max-memory=4GiB` and a 4 MiB stack, otherwise wasm-ld's defaults:
+  the stack, then data at the bottom of memory 1, which is the module's own. Its `sbrk` (`vk/wasi/arena.c`) starts at
+  `__heap_end`, past dlmalloc's initial region, and grows without `memory.grow` up to the arena's end
+  (`VENUS_ARENA_END`, web/ram.ts `VENUS_ARENA`, passed by vk/gen.ts), where the host-visible window starts;
+  `venus_arena_end` says where that is, and the host refuses a module without it or with another (docs/devices.md
+  "Venus"). Until VK4 T19 the module lived in an arena at memory 0's top, linked there with `--global-base` and
+  `--no-stack-first`: wasm-ld puts the stack first by default, whatever `--global-base` says, and VK1's modules wrote
+  memory 0's bottom 4 MiB (the core's) with every call. Pointers past 2 GiB reach JS as negative i32s: the imports
+  take `>>> 0` of them.
 - **No threads.** vkr's ring, ring-monitor and queue-sync threads become polls under `__wasi__`
   (`vk/patches/vkr-wasm.patch`): `vkr_renderer_poll` runs every ring and retires fences, and a seqno wait polls its
   ring. A ring command that waits for a virtqueue seqno not submitted yet (`vkWaitVirtqueueSeqnoMESA`, which Mesa
@@ -283,7 +283,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   and its cube views are refused where the size isn't whole blocks: docs/backlog.md; a 1D one 2D),
   with views made as Vulkan made them (a depth or stencil aspect's with the image's format and the aspect) and, for
   attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`). Host-visible memory's bytes
-  are in memory 0 (vkr's storage, or the window while its blob is mapped); at each submit the driver uploads the
+  are in the module's memory (vkr's storage in the arena, or the window while its blob is mapped); at each submit the driver uploads the
   window's written pages of the memories mapped there, and the whole of those that moved or are new, each to its
   4-aligned size (an odd-sized memory's last bytes too). The write-watch is the window's, one for every device (each
   Venus context has its own): each submit's look at it gives the pages to every device (`wg_device.pages`, a bit a
@@ -468,7 +468,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   one holds it until it is reset or freed (VK3 L7b: a 17th size released one under a recorded pass, its id another's).
 - **Completion**: submits are numbered across devices (a completion finds its submit by number alone; at most 16
   devices at once, a 17th fails to be made). The worker calls `venus_complete(serial)` in submit order once the work is done and its staging
-  buffers are mapped; the readbacks are copied into memory 0, fills and updates of host-visible memory (Venus's
+  buffers are mapped; the readbacks are copied into the module's memory, fills and updates of host-visible memory (Venus's
   feedback slots) applied there too (outside the readbacks, which have the GPU's last word), each only where the CPU
   still has the range's base: a range read back is wider than what the GPU wrote (a copy's row gaps, a whole storage
   binding at its dynamic offset, 4-byte rounding), and what the guest wrote there since its submit stays; a byte that changes moves a later

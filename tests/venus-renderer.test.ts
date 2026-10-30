@@ -1,5 +1,5 @@
 // Venus's renderer module (vk/build.sh: virglrenderer's vkr over our null driver, target/vk/venus.wasm) in Node, on a
-// 4 GiB shared memory as the VM's memory 0 is (web/venus-host.ts): vkr's capset is the one the device advertises
+// 4 GiB shared memory as the VM's memory 1 is, its arena first (web/venus-host.ts): vkr's capset is the one the device advertises
 // (web/venus.ts), a blob's bytes move into the host-visible window at its map and back out at its unmap, and what the
 // driver advertises follows the WebGPU device's features and limits. A guest drives it whole in tests/page-venus.test.ts.
 import assert from 'node:assert/strict';
@@ -15,8 +15,8 @@ const skip = !existsSync(MODULE) && 'SKIPPED: run vk/build.sh';
 
 async function renderer(caps?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean; l9?: L9Suspect[] } = {}) {
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
-  // A window of 1 MiB at 256 MiB, and an empty write-watch (no vCPUs, no pages) below it.
-  const window = { at: 0x1000_0000, bytes: 1 << 20, watch: 0x0100_0000 };
+  // A window of 1 MiB after the arena, and an empty write-watch (no vCPUs, no pages) past it.
+  const window = { at: VENUS_ARENA, bytes: 1 << 20, watch: VENUS_ARENA + 0x1000_0000 };
   const v = await VenusRenderer.create(await WebAssembly.compile(readFileSync(MODULE)), memory, window, undefined, caps, undefined, options);
   return { v, memory, window };
 }
@@ -26,21 +26,22 @@ test("the renderer's capset is the one the device advertises", { skip }, async (
   assert.deepEqual([...new Uint32Array(v.capset.buffer, v.capset.byteOffset, v.capset.length / 4)], VENUS_CAPSET_WORDS);
 });
 
-// A module built before the arena became 255 MiB is linked 1 MiB lower, over the core's heap: refused before it is
-// instantiated (it would write its data there), by its missing `venus_arena_base`.
-test('a renderer module not linked at the arena is refused', async () => {
+// A module built for memory 0 (its arena at the top, before memory 1) would write its data over the core's heap
+// there, and one with another arena would grow its heap into the window: refused, by a missing `venus_arena_end`
+// before it is instantiated, or by its value.
+test('a renderer module built for another arena is refused', async () => {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
   const old = new WebAssembly.Module(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
-  await assert.rejects(VenusRenderer.create(old, memory, { at: 0, bytes: 0, watch: 0 }), /isn't linked at its arena \(f0100000\): rebuild it/);
+  await assert.rejects(VenusRenderer.create(old, memory, { at: 0, bytes: 0, watch: 0 }), /isn't built for its arena \(1280 MiB of memory 1\): rebuild it/);
 });
 
 test("a blob's bytes move into the window at its map and back at its unmap", { skip }, async () => {
   const { v, memory, window } = await renderer();
   v.call({ t: 'vctx', id: 7, create: true, name: 'test' });
-  // Shared memory (blob id 0, mappable): vkr's own storage, in the arena at memory 0's top.
+  // Shared memory (blob id 0, mappable): vkr's own storage, in the arena, before the window.
   v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 0n, size: 8192 });
   const storage = v.address(3);
-  assert.ok(storage >= 2 ** 32 - VENUS_ARENA, `storage at ${storage.toString(16)}`);
+  assert.ok(storage > 0 && storage < VENUS_ARENA, `storage at ${storage.toString(16)}`);
   const u8 = new Uint8Array(memory.buffer);
   u8.set([1, 2, 3, 4], storage);
   v.call({ t: 'blob-map', res: 3, offset: 0x4000 });

@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 54;
+pub const ABI_VERSION: u32 = 55;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -458,8 +458,8 @@ pub unsafe extern "C" fn vm_new(
         || !cfg.valid_xhci()
         || !cfg.valid_spill()
         || !cfg.valid_window()
-        // Natively the spill memories are pointers only a Rust caller has.
-        || (cfg!(not(target_arch = "wasm32")) && cfg.spill[0] != 0)
+        // Natively the spill memories and the window's memory 1 are pointers only a Rust caller has.
+        || (cfg!(not(target_arch = "wasm32")) && cfg.memory_sizes()[0] != 0)
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();
@@ -487,18 +487,29 @@ pub unsafe extern "C" fn vm_new(
     let spill: Vec<_> = cfg
         .spill_layout()
         .into_iter()
-        .map(|(phys, size)| mem::Spill {
+        .enumerate()
+        .map(|(k, (phys, size))| mem::Spill {
             phys,
             size,
+            off: if k == 0 { cfg.spill_at() } else { 0 },
             base: core::ptr::null_mut(),
         })
         .collect();
-    // SAFETY: the host made memory k + 1 `spill[k].size` bytes (ABI 39), and memory 0's RAM is followed by
-    // the window's bytes (ABI 53).
+    // SAFETY: the host made memory k + 1 `memory_sizes()[k]` bytes (ABI 39, 55): node 1's RAM and the window in
+    // memory 1 at their offsets.
     let mem = unsafe {
-        mem::Mem::new(ram, ram_size + cfg.window)
+        let mem = mem::Mem::new(ram, ram_size)
             .at(vm::RAM_BASE)
-            .with_spill(&spill)
+            .with_spill(&spill);
+        match cfg.window_layout() {
+            Some((phys, size)) => mem.with_window(mem::Spill {
+                phys,
+                size,
+                off: cfg.window_at,
+                base: core::ptr::null_mut(),
+            }),
+            None => mem,
+        }
     };
     let mut vm = vm::Vm::with_devices(mem, cfg, devices);
     if cfg.firmware() {

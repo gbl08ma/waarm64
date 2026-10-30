@@ -2,30 +2,36 @@
 // and the segments the core posts into them; and how a machine's RAM splits into them. A small module of its own:
 // the GPU worker and the page's main thread import it.
 
-/** A guest buffer: `len` bytes at `off` in memory `mem` (0: memory 0's RAM, from its first byte; k: spill memory k, ABI 40). */
+/** A guest buffer: `len` bytes at `off` in memory `mem` (0: memory 0's RAM, from its first byte; k: memory k from its first byte, ABI 40). */
 export type Segment = { off: number; len: number; mem: number };
 /** Guest RAM by memory: memory 0's RAM, then each spill memory (docs/spill-memories.md). */
 export type Ram = Uint8Array[];
 /** A segment's bytes, in place. */
 export const bytes = (ram: Ram, s: Segment) => ram[s.mem].subarray(s.off, s.off + s.len);
-/** Where each memory's RAM is in the guest's physical address space, memory 0 first (`VmConfig::spill_layout`). */
-export type RamLayout = { pa: number; size: number }[];
+/**
+ * Where each memory's RAM is in the guest's physical address space, memory 0 first (`VmConfig::spill_layout`): `size`
+ * bytes at `pa`, from `off` in the memory (memory 1's node after Venus's renderer and window, docs/spill-memories.md).
+ */
+export type RamLayout = { pa: number; size: number; off: number }[];
 /** Guest RAM's base (`vm::RAM_BASE`). */
 export const RAM_BASE = 0x4000_0000;
 /** The segment of `len` bytes at guest PA `pa`, if they lie in one memory's RAM (backends handed guest PAs: virtio-gpu's backing). */
 export function locate(layout: RamLayout, pa: bigint, len: bigint): Segment | undefined {
   for (const [mem, r] of layout.entries()) {
     const off = pa - BigInt(r.pa);
-    if (off >= 0n && len <= BigInt(r.size) - off) return { off: Number(off), len: Number(len), mem };
+    if (off >= 0n && len <= BigInt(r.size) - off) return { off: r.off + Number(off), len: Number(len), mem };
   }
 }
-/** The spill memories' layout past `ramSize` bytes of memory 0, as the core places them (1 GiB boundaries, a hole between). */
-export function ramLayout(ramSize: number, spill: number[] = []): RamLayout {
-  const layout = [{ pa: RAM_BASE, size: ramSize }];
-  let end = RAM_BASE + ramSize;
-  for (const size of spill) {
+/**
+ * The spill memories' layout past `ramSize` bytes of memory 0 and a host-visible window of `window` bytes after it, as
+ * the core places them (1 GiB boundaries, a hole between); node 1 starts at `spillAt` in memory 1 (`VmConfig::spill_at`).
+ */
+export function ramLayout(ramSize: number, spill: number[] = [], window = 0, spillAt = 0): RamLayout {
+  const layout = [{ pa: RAM_BASE, size: ramSize, off: 0 }];
+  let end = RAM_BASE + ramSize + window;
+  for (const [k, size] of spill.entries()) {
     const pa = (Math.floor(end / 2 ** 30) + 1) * 2 ** 30;
-    layout.push({ pa, size });
+    layout.push({ pa, size, off: k ? 0 : spillAt });
     end = pa + size;
   }
   return layout;
@@ -49,14 +55,17 @@ export const MAX_MEMORY0_RAM = 2 ** 32 - HEAP_FLOOR - (1 << 20);
 export const VENUS_WINDOW = 256 << 20;
 
 /**
- * The renderer's arena at memory 0's top on such a machine (vk/gen.ts links the module at 4 GiB less this). 255 MiB,
- * not 256, so that the page's 2,560 MiB fits memory 0 with the window (a 1 MiB NUMA node otherwise); dEQP-VK's whole
- * pass list takes it to 137 MiB (bench/vulkan/REPORT.md "The renderer's arena").
+ * The renderer's arena on such a machine: memory 1's first bytes, the module's data, stack and heap (vk/wasi/arena.c
+ * stops its heap here, vk/gen.ts). Untouched pages cost nothing. It backs host-visible Vulkan memory, whose heap
+ * programs take as general memory only from 1 GiB (VK4 T2), beside the renderer's own (dEQP-VK's pass list: 137 MiB).
  */
-export const VENUS_ARENA = 255 << 20;
+export const VENUS_ARENA = 1280 << 20;
 
-/** What memory 0 holds on a Venus machine beside RAM, the heap and the scratch page: `splitRam`'s `reserve` there. */
-export const VENUS_RESERVE = VENUS_WINDOW + VENUS_ARENA;
+/**
+ * What memory 1 holds before node 1's RAM on a Venus machine (docs/devices.md "The host-visible window"): the arena,
+ * then the window (`VmConfig.window_at` is the arena's size). `splitRam`'s `reserve` there.
+ */
+export const VENUS_RESERVE = VENUS_ARENA + VENUS_WINDOW;
 
 /** The largest spill memory (a whole wasm32 memory) and how many a machine has at most (core/src/mem.rs `MAX_SPILL`). */
 export const MAX_SPILL_BYTES = 2 ** 32;
@@ -64,24 +73,28 @@ export const MAX_SPILL = 8;
 
 /**
  * The automatic split of `total` bytes of guest RAM (a 64 KiB multiple): memory 0 as large as it goes
- * ({@link MAX_MEMORY0_RAM}, less `reserve` bytes memory 0 must also hold: a Venus machine's window and renderer,
- * web/devices.ts), then spill memories of up to 4 GiB (docs/spill-memories.md).
+ * ({@link MAX_MEMORY0_RAM}), then spill memories of up to 4 GiB (docs/spill-memories.md), the first less `reserve`
+ * bytes memory 1 holds before its RAM (a Venus machine's renderer and window: {@link VENUS_RESERVE}).
  */
 export function splitRam(total: number, reserve = 0): { ramSize: number; spill: number[] } {
-  const ramSize = Math.min(total, MAX_MEMORY0_RAM - reserve);
+  const ramSize = Math.min(total, MAX_MEMORY0_RAM);
   const spill: number[] = [];
-  for (let left = total - ramSize; left > 0; left -= MAX_SPILL_BYTES) spill.push(Math.min(left, MAX_SPILL_BYTES));
+  for (let left = total - ramSize; left > 0; left -= spill.at(-1)!) spill.push(Math.min(left, MAX_SPILL_BYTES - (spill.length ? 0 : reserve)));
   if (spill.length > MAX_SPILL) throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);
   return { ramSize, spill };
 }
 
-/** Why memory 0's `ramSize` and the spill memories' sizes (bytes) aren't a split a machine can have, in words for the user; undefined when they are. */
-export function splitError(ramSize: number, spill: number[]): string | undefined {
+/**
+ * Why memory 0's `ramSize` and the spill memories' sizes (bytes) aren't a split a machine can have, in words for the
+ * user; undefined when they are. Memory 1 holds `reserve` bytes before node 1 ({@link splitRam}).
+ */
+export function splitError(ramSize: number, spill: number[], reserve = 0): string | undefined {
   const mib = (n: number) => `${n / 2 ** 20} MiB`;
   if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || ramSize % 65536) return 'memory 0 needs at least 64 MiB';
   if (ramSize > MAX_MEMORY0_RAM) return `memory 0 holds at most ${mib(MAX_MEMORY0_RAM)}`;
   if (spill.length > MAX_SPILL) return `at most ${MAX_SPILL} NUMA nodes past memory 0`;
   const bad = spill.find((s) => !Number.isSafeInteger(s) || s < 65536 || s % 65536 || s > MAX_SPILL_BYTES);
   if (bad !== undefined) return `a NUMA node holds 1 to ${mib(MAX_SPILL_BYTES)} (not ${bad / 2 ** 20})`;
+  if (spill.length && spill[0] > MAX_SPILL_BYTES - reserve) return `with Vulkan, the first NUMA node holds at most ${mib(MAX_SPILL_BYTES - reserve)}`;
   return undefined;
 }

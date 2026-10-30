@@ -1,5 +1,5 @@
 // Venus's renderer on the host (docs/devices.md "Venus"; vk/README.md): the module vk/build.sh makes (virglrenderer's
-// vkr over our Vulkan driver), instantiated on the VM's memory 0, so the guest's rings, command streams and mapped
+// vkr over our Vulkan driver), instantiated on the VM's memory 1 (its own, the window after its arena), so the guest's rings, command streams and mapped
 // memory in the host-visible window are its own pointers. It runs the device's Venus calls (web/virgl-host.ts
 // `VenusCall`) and polls the rings while they are active or a submit is in flight (`VenusPoll`; an idle ring waits for
 // the guest's notify). The driver's WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the
@@ -11,8 +11,11 @@ import type { VenusCall } from './virgl-host.ts';
 import { VENUS_ARENA } from './ram.ts';
 import { WindowWatch } from './window.ts';
 
-/** Where the module finds the window: its address in memory 0, its bytes, and the write-watch's words. */
-export type VenusWindow = { at: number; bytes: number; watch: number };
+/**
+ * Where the module finds the window: its address in the module's memory (memory 1, past the arena), its bytes, and
+ * the write-watch's words' address in `core` (memory 0; default: the module's memory).
+ */
+export type VenusWindow = { at: number; bytes: number; watch: number; core?: WebAssembly.Memory };
 
 export type VenusStats = {
   submits: number; completed: number; fences: number; polls: number; dirtyPages: number; dirtyLooks: number; contexts: number;
@@ -92,7 +95,7 @@ type Exports = {
   venus_resource_data(ctx: number, res: number): number;
   venus_resource_texture(ctx: number, res: number): number;
   venus_build_id(): number;
-  venus_arena_base(): number;
+  venus_arena_end(): number;
   venus_alloc(size: number): number;
   venus_free(p: number): void;
 };
@@ -104,7 +107,7 @@ function wasi(memory: WebAssembly.Memory) {
   let line = '';
   return {
     clock_time_get: (_id: number, _precision: bigint, out: number) => { dv().setBigUint64(out >>> 0, BigInt(Math.round(performance.now() * 1e6)), true); return 0; },
-    // Pointers past 2 GiB (the module's stack and heap are in the arena at memory 0's top) come as negative i32s.
+    // Pointers past 2 GiB (the window, past a large arena) come as negative i32s.
     fd_write: (fd: number, iovs: number, n: number, written: number) => {
       iovs >>>= 0;
       written >>>= 0;
@@ -166,10 +169,10 @@ export class VenusRenderer {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
-    // Its heap is in the arena at memory 0's top: past 2 GiB, which a wasm i32 gives JS as negative.
+    // A pointer past 2 GiB (the window, with a large arena) comes from a wasm i32 as a negative number.
     this.ex = { ...ex, venus_alloc: (size: number) => ex.venus_alloc(size) >>> 0 };
     [this.memory, this.window] = [memory, window];
-    this.watch = window.watch ? new WindowWatch(memory, window.watch) : undefined;
+    this.watch = window.watch ? new WindowWatch(window.core ?? memory, window.watch) : undefined;
     this.gpu = gpu;
     this.ex._initialize();
     // What the device advertises follows the WebGPU device's features and limits (vk/driver/wg_caps.c).
@@ -186,8 +189,8 @@ export class VenusRenderer {
   }
 
   /**
-   * The module (vk/build.sh's target/vk/venus.wasm) on `memory`, the VM's memory 0, which must be 4 GiB with its arena
-   * unused; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
+   * The module (vk/build.sh's target/vk/venus.wasm) on `memory`, the VM's memory 1, whose arena (its first
+   * `VENUS_ARENA` bytes) is unused and the window after it; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
    * what `caps` has (the device's features and limits; a test's stand-in, or WebGPU's defaults).
    */
   static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump', options: VenusOptions = {}) {
@@ -203,12 +206,12 @@ export class VenusRenderer {
       wasi_snapshot_preview1: wasi(memory),
       wasi: { 'thread-spawn': () => -1 },
     };
-    // A module linked at another arena would write its data over the core's heap as it is instantiated: one built before
-    // the arena became 255 MiB has no `venus_arena_base` (refused before that); a later one says where it is linked.
-    const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't linked at its arena (${(2 ** 32 - VENUS_ARENA).toString(16)}): rebuild it (vk/build.sh)`;
-    if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_base')) throw new Error(stale);
+    // A module with another arena would grow its heap into the window (or, built for memory 0, write its data over the
+    // core's heap there): one built before memory 1 has no `venus_arena_end`; a later one says where its arena ends.
+    const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't built for its arena (${VENUS_ARENA >> 20} MiB of memory 1): rebuild it (vk/build.sh)`;
+    if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_end')) throw new Error(stale);
     const instance = await WebAssembly.instantiate(module, imports);
-    if ((instance.exports as unknown as Exports).venus_arena_base() >>> 0 !== 2 ** 32 - VENUS_ARENA) throw new Error(stale);
+    if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     gpu.onSubmit = () => self?.worked();
@@ -381,7 +384,7 @@ export class VenusRenderer {
     return blobs;
   }
 
-  /** A blob's bytes' address in memory 0 now (its storage, or the window while mapped), 0 for none. */
+  /** A blob's bytes' address in the module's memory now (its storage, or the window while mapped), 0 for none. */
   address(res: number) {
     const ctx = this.owner.get(res);
     return ctx === undefined ? 0 : this.ex.venus_resource_data(ctx, res) >>> 0;

@@ -232,13 +232,25 @@ fn window_watch() {
     ))
     .unwrap();
     for (jit, parallel) in [(0, false), (4, false), (0, true), (4, true)] {
-        let window = 2u64 << 20;
-        let mut ram = vec![0u128; (RAM_SIZE + window as usize) / 16];
-        // SAFETY: ram is 16-byte aligned, RAM and the window long, and outlives the Vm.
-        let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64 + window) };
+        // The window in memory 1, past 64 KiB of the renderer's (docs/devices.md "The host-visible window").
+        let (window, window_at) = (2u64 << 20, 1u64 << 16);
+        let mut ram = vec![0u128; RAM_SIZE / 16];
+        let mut mem1 = vec![0u128; (window_at + window) as usize / 16];
+        // SAFETY: both are 16-byte aligned, as long as RAM and memory 1, and outlive the Vm.
+        let mem = unsafe {
+            Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64).with_window(
+                webpc_core::mem::Spill {
+                    phys: RAM_BASE + RAM_SIZE as u64,
+                    size: window,
+                    off: window_at,
+                    base: mem1.as_mut_ptr() as *mut u8,
+                },
+            )
+        };
         let cfg = VmConfig {
             ram_size: RAM_SIZE as u64,
             window,
+            window_at,
             jit,
             deterministic: !parallel as u64,
             smp: parallel as u64,

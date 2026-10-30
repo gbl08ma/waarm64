@@ -624,8 +624,8 @@ host's side in [devices.md](devices.md) "Venus" and "The host-visible window", t
   of ours whose hardware is WebGPU**, built on Mesa's common Vulkan runtime (render passes over dynamic rendering,
   command recording, meta operations, synchronization), `spirv_to_nir` and NIR's passes, with a NIR → WGSL backend
   modelled on KosmicKrisp's NIR → MSL. One wasm module (~12 MiB, 0.74 MiB with brotli), fetched only by a machine
-  with Vulkan, instantiated in the GPU worker **on the VM's memory 0** at a fixed arena at its top (255 MiB), so the
-  guest's rings, command streams and mapped memory are its own pointers; vkr runs on one thread, its waits as polls.
+  with Vulkan, instantiated in the GPU worker **on the VM's memory 1**, its own (an arena of 1,280 MiB, then the
+  window), so the guest's rings, command streams and mapped memory are its own pointers; vkr runs on one thread, its waits as polls.
 - **Commands** are recorded and translated at submit, so a whole render pass is seen before it is encoded (the
   render-pass rule below); pipelines become render and compute pipelines, made asynchronously on Dawn's workers (a
   submit drawing with one not ready is held) and their WGSL kept across runs in the page's storage; descriptor sets
@@ -633,10 +633,10 @@ host's side in [devices.md](devices.md) "Venus" and "The host-visible window", t
   fourth group); push constants are immediates, past them a push buffer of the driver's; barriers are accepted
   (WebGPU tracks hazards); one queue family; fences complete on `onSubmittedWorkDone`. vk/README.md "The driver".
 - **Memory:** device-local memory is plain GPUBuffers and textures. Host-visible memory is the window (256 MiB of
-  memory 0 after RAM, outside guest RAM), which guest and renderer share; its pages are write-protected in the TLB
+  memory 1 after the arena, at the guest PA after RAM, outside guest RAM), which guest and renderer share; its pages are write-protected in the TLB
   and marked dirty on the first write (the write-watch), and the written ranges are uploaded at each submit.
   Readbacks map a staging buffer and copy into the window before the fence is signalled. A Vulkan machine's memory 0
-  holds RAM, the window and the arena beside the core's heap, so up to 2,560 MiB of RAM; more spills to NUMA nodes
+  holds as much RAM as any (3,071 MiB); node 1 follows the window in memory 1, at most 2,560 MiB
   ([spill-memories.md](spill-memories.md)).
 - **Presentation:** Venus's WSI images are shared with the virgl renderer's screen as a copy from a WebGPU texture into
   WebGL's (bitmap, canvas or readback; the first copies of a way are checked against a readback, and a wrong way is
@@ -714,9 +714,9 @@ bar** (bench/vulkan/REPORT.md G), or GTK4 moves to the slower path.
   bindings WebGPU takes, translation's own included (`wg_bindings_fit`), and a pipeline past them is refused at
   creation saying why; usage scopes are per GPUBuffer while the driver binds a `VkDeviceMemory` as one, so a pass that
   reads and writes storage of one memory through different bindings fails validation (VK4 T3).
-- **The 4 GiB budget**: memory 0 holds the core's heap (≥1 GiB), RAM, the window (256 MiB) and the renderer's arena
-  (255 MiB, the most seen 137 MiB: bench/vulkan/REPORT.md "The renderer's arena"), which caps the renderer's heap,
-  blob storage included.
+- **The arena**: memory 1's first 1,280 MiB (web/ram.ts `VENUS_ARENA`) caps the renderer's heap, blob storage
+  included (dEQP-VK's pass list took 137 MiB: bench/vulkan/REPORT.md "The renderer's arena"); the window and node 1
+  follow it in memory 1 (VK4 T19).
 
 ### What VK0 to VK3 found
 

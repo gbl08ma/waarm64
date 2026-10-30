@@ -149,7 +149,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         const subgroups = device ? await subgroupsRight(device) : true;
         if (!subgroups) console.warn('venus: the WebGPU device\'s subgroups are wrong in divergent control flow: subgroups of one invocation');
         const hold = subgroups ? vkHold : [...(vkHold ?? []), 'subgroups'];
-        venus = await VenusRenderer.create(module, init.memory, init.window, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined, vkPoll, { syncPipelines: vkSyncPipelines, pipelineDelayMs: vkPipeDelayMs, cache, nudgeMs: vkNudgeMs, gpuTime: vkGpuTime, hold, heldFormats: vkHeldFormats, ycbcr: vkYcbcr, l9: l9Suspects(vkL9 ?? []) });
+        venus = await VenusRenderer.create(module, init.memory, { ...init.window, core: init.core }, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined, vkPoll, { syncPipelines: vkSyncPipelines, pipelineDelayMs: vkPipeDelayMs, cache, nudgeMs: vkNudgeMs, gpuTime: vkGpuTime, hold, heldFormats: vkHeldFormats, ycbcr: vkYcbcr, l9: l9Suspects(vkL9 ?? []) });
         venus.onRetire = () => fenced.release();
         const v = venus;
         if (device && adapter) {

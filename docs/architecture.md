@@ -51,7 +51,8 @@ wasm64 core was free there), B +31–40%, D +26–32%.
   unchanged; the interpreter's miss path does the access through `ram.*` imports from a host-made module
   (`web/spill.ts`). JIT code reaches spill memory 1 in a second arm of each access, its body again on a memarg naming
   memory 1 (multi-memory), and re-runs the instruction in the interpreter for the others. A core host address
-  (`mem::Host`) names its memory in its top byte. NUMA balancing must be off (its hinting faults are expensive under
+  (`mem::Host`) names its memory in its top byte. On a machine with Vulkan, memory 1 holds Venus's renderer and the
+  host-visible window before node 1 (VK4 T19). NUMA balancing must be off (its hinting faults are expensive under
   emulation): an SMBIOS systemd credential does it. Node 1's workloads take 1.0–1.6× node 0's time; the guest fills
   node 0 first anyway.
 - **Re-measured for VK4 T19** (Chromium 153, bench/spike/memory/REPORT.md §6): memory64 still checks each access (one

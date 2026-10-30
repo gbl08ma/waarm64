@@ -148,7 +148,7 @@
   /** Takes the two fields: a valid split sets the RAM to its sum, else says what's wrong (and Save waits). */
   function editSplit() {
     const split = [Number(ram0Input!.value), ...nodesInput!.value.split(',').map((x) => x.trim()).filter(Boolean).map(Number)];
-    splitProblem = ramSplitError(split) ?? '';
+    splitProblem = ramSplitError(split, !!draft!.vulkan) ?? '';
     if (!splitProblem) [draft!.ramSplit, draft!.ramMiB] = [split, split.reduce((a, b) => a + b, 0)];
     dirty = true;
   }

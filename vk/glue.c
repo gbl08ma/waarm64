@@ -30,7 +30,7 @@ IMPORT("venus_submitted") void venus_submitted(void);
 
 int venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *window, uint32_t window_bytes);
 const char *venus_build_id(void);
-uint32_t venus_arena_base(void);
+uint32_t venus_arena_end(void);
 void venus_complete(uint32_t serial);
 uint32_t venus_capset(void *out);
 int venus_context_create(uint32_t ctx_id, const char *name, uint32_t nlen);
@@ -93,13 +93,12 @@ venus_build_id(void)
    return wg_build_id();
 }
 
-/* Where the module is linked (vk/gen.ts: its data, stack and heap from there to memory 0's top): the host refuses a
- * module whose arena isn't the one it keeps free (web/ram.ts VENUS_ARENA). */
-extern unsigned char __global_base;
+/* Where the module's arena ends (vk/wasi/arena.c: its data, stack and heap from memory 1's bottom to there, the window
+ * after it): the host refuses a module whose arena isn't the one it keeps (web/ram.ts VENUS_ARENA). */
 EXPORT uint32_t
-venus_arena_base(void)
+venus_arena_end(void)
 {
-   return (uint32_t)(uintptr_t)&__global_base;
+   return VENUS_ARENA_END;
 }
 
 /* The VENUS capset into `out` (its size returned). */

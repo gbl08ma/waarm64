@@ -45,6 +45,12 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
   through the spill accessor without a walk. JIT code reaches spill memory 1 in a second arm of each load and store
   ([The JIT's spill arm](#the-jits-spill-arm)); for the other spill memories its miss re-runs the instruction in the
   interpreter (`jit_exec_mmu`).
+- **Memory 1 on a machine with Vulkan** (VK4 T19) holds Venus's renderer first (its arena, web/ram.ts
+  `VENUS_ARENA`), then the host-visible window (`VmConfig.window_at`, [devices.md](devices.md) "The host-visible
+  window"), then node 1's RAM, if any: a region is a guest-physical range at an offset in its memory (`mem::Spill`'s
+  `off`), and node 1 holds at most 4 GiB less the arena and the window (2,560 MiB; `splitRam`'s `reserve`). Such a
+  machine has memory 1 even without a NUMA node, and its JIT code the memory-1 arm, so the window's pages are reached
+  as node 1's. Memory 0 is then as large as without Vulkan.
 - **A host address names its memory.** The core's RAM pointers are a 64-bit `Host`: bits 63:56 are the memory index
   (0: a plain pointer into memory 0), and the low bits are the offset in that memory. The access primitives
   (`mem::load`, `store`, the atomics, the pair ops) branch once on the index. Fast paths that hold a TLB hit never see

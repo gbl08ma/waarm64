@@ -864,7 +864,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     once) take the arena to 241 MiB: `memory.allocation.random` and `memory.mapping.suballocation.random` pass but stay
     out of the list. A 128 MiB heap of its own was tried (peak 99 MiB) and reverted: GFXReconstruct's replays (and
     likely VMA and DXVK) take a host-visible heap under 1 GiB for a discrete GPU's BAR window and refuse it as general
-    memory. The way out is an arena of ~1 GiB or more, which memory 0 can't spare: T19.
+    memory. The way out is an arena of ~1 GiB or more: VK4 T19 moved the renderer to memory 1 with a 1,280 MiB arena (T2 then sizes the heap).
 - **Spill RAM past node 1 in one memory64 behind the JIT's arm** (bench/spike/memory/REPORT.md §6, VK4 T19): every
   spill page would take the arm's path (D in M0.5's kernels: +11–14% per access against memory 1's +10–12% on the dev
   VM) instead of the interpreter's 2–17× for nodes 2 and up, and the 8-memory list would become one memory of up to 16

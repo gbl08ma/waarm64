@@ -426,7 +426,7 @@ test('a state\'s Uint8Arrays (the display\'s 3D contents) travel as BLOB frames,
   const vmWith = (devices: unknown[]) => ({
     snapshot: async () => ({ version: 7, core: random(100, 1), host: { devices, input: [1, 2] } }),
     disks: async () => [], diskBlocks: async () => new Uint8Array(0),
-    ramSize: 65536, spill: [], memory: { buffer: new ArrayBuffer(65536) }, ram: 0,
+    ramSize: 65536, spill: [], spillRam: () => [], memory: { buffer: new ArrayBuffer(65536) }, ram: 0,
   }) as unknown as Vm;
   const save = async (devices: unknown[]) => {
     const parts: Uint8Array[] = [];

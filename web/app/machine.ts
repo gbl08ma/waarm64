@@ -156,18 +156,18 @@ export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 4096, 6144, 8192, 12288
 export const MEMORY0_MIB = MAX_MEMORY0_RAM / 2 ** 20;
 /**
  * A machine's split, MiB: memory 0 first, then each spill memory. `split` is the user's own (a stored machine's
- * `ramSplit`, `?split=`); without it, memory 0 as large as it goes (less Venus's window and arena on a machine with
- * Vulkan, as web/app/worker.ts splits it) and spill memories of up to 4 GiB.
+ * `ramSplit`, `?split=`); without it, memory 0 as large as it goes and spill memories of up to 4 GiB, the first less
+ * Venus's arena and window on a machine with Vulkan (memory 1 holds them before node 1, as web/app/worker.ts splits it).
  */
 export function ramSplitMiB(ramMiB: number, split?: number[], vulkan = false): number[] {
   if (split) return split;
   const s = splitRam(ramMiB * 2 ** 20, vulkan ? VENUS_RESERVE : 0);
   return [s.ramSize, ...s.spill].map((n) => n / 2 ** 20);
 }
-/** Why `split` (MiB, memory 0 first) isn't one a machine can have, for the user; undefined when it is. */
-export function ramSplitError(split: number[]): string | undefined {
+/** Why `split` (MiB, memory 0 first) isn't one a machine (with Vulkan or not) can have, for the user; undefined when it is. */
+export function ramSplitError(split: number[], vulkan = false): string | undefined {
   if (!split.length || split.some((n) => !Number.isInteger(n))) return 'sizes are whole MiB';
-  return splitError(split[0] * 2 ** 20, split.slice(1).map((n) => n * 2 ** 20));
+  return splitError(split[0] * 2 ** 20, split.slice(1).map((n) => n * 2 ** 20), vulkan ? VENUS_RESERVE : 0);
 }
 /** The note for a machine whose RAM goes past memory 0: undefined when it all fits there. */
 export function numaNote(ramMiB: number, split?: number[], vulkan = false): string | undefined {
