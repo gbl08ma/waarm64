@@ -1711,3 +1711,25 @@ code worse; with the loads plain too it gains in both. So the backlog's first re
 plain stores (one vCPU or round-robin, atomics in parallel SMP) recover the cost. What that is worth on a real
 workload wasn't measured: under the JIT the interpreter runs cold code and slow paths only (Alpine's boot under
 `jit` 4, all interpreted, would bound it), so 3-4% of the interpreter's share of a boot.
+
+## A shared TLB probe for pairs off one base: a loss (2026-10-30)
+
+The JIT's groups of accesses (`bench/boot/REPORT.md` "Groups of accesses, measured") in the block interpreter's terms:
+`hot` already runs a pair of LdOs or StOs in one dispatch, each with its own probe; the pair off one base, of one kind,
+took one probe of the bytes they span instead, falling back to the two singles on a miss. Tried because the block
+interpreter runs 4.0% of the guest's instructions on Firefox's pages session (3.45 G of 85.8 G, every round) at a few
+times the JIT's cost each. `bench/interp/ab.sh`, dev VM, 3 alternated rounds, JSON in `results/same-base/`, medians:
+
+| | base | same base, one probe | |
+|---|---|---|---|
+| `dec_mips` | 475.2 | 461.9 | −2.8% |
+| `vm_dec_flat_mips` | 477.4 | 384.2 | −19.5% |
+| `vm_dec_mmu_mips` | 472.2 | 466.5 | −1.2% |
+| `boot_dec_mips` (Buildroot) | 184.8 | 182.5 | −1.2%, inside its noise |
+| `boot_alpine_dec_mips` | 221.2 | 220.3 | −0.4% |
+
+Dropped. A probe here is two loads and a compare in a handler that does much more; what the pair gives back is less than
+the extra tests and the code the inlined path adds to `hot`, whose speed rests on what V8 keeps in registers across
+the loop (the flat guest's −19.5% is that, not the probes: it has no TLB). Anything that adds a path to `hot` for a
+probe's sake should expect the same. On x86_64 the atomics remain the larger lever (docs/cpu.md, backlog "Interpreter").
+
