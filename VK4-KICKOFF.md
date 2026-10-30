@@ -60,16 +60,15 @@ T2–T14; the rest of the order is judgement, said with each.
   (`api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16`,
   `api.external.memory.opaque_fd.dedicated.device_only.dup2`, on both hosts). *Done:* each
   reproduced and fixed, or bounded with a test; the crashing groups in the list. *Start:* backlog "Memory",
-  "Compute", "A trap in the module's completion", "Venus's contexts outlive a virtio reset". **Blocked on T19**
-  (2026-10-29, REPORT.md "VK4 T2"; VK4-HANDOVER.md "T2"). Done: a dead context's objects are destroyed in the driver
-  (they leaked: a 17th device failed, the cause of the "crashes after earlier cases"); the guest's export imported
-  again aliases its memory (every supported `api.external.memory` case passes; was fatal); a sync freed while a submit
-  names it is dropped (likely NVIDIA's `wg_complete` trap: confirm in the next NVIDIA run); a virtio reset ends
-  Venus's contexts; the memory budget filled; `max_workgroup_memory` was SwiftShader's 17 s compile of Vulkan's
-  zero-init (dEQP-VK's runs use Tint's); `r12x4` is 34 s of synchronous queries past dEQP's watchdog (T13). The list
-  7,126 → 7,209. Left: host-visible memory's arena (255 MiB) can't back its 2 GiB heap, so `memory.*.random` (241 MiB
-  of it) stays out of the list; a 128 MiB heap of its own failed GFXReconstruct's 1 GiB rule. Back to it once T19 gives
-  the arena room for a ~1 GiB host-visible heap.
+  "Compute", "A trap in the module's completion", "Venus's contexts outlive a virtio reset". **Done 2026-10-30** (REPORT.md "VK4 T2", "VK4 T19"): a dead context's objects are destroyed in the driver (they
+  leaked: a 17th device failed, the cause of the "crashes after earlier cases"); the guest's export imported again
+  aliases its memory (every supported `api.external.memory` case passes; was fatal); a sync freed while a submit names
+  it is dropped (likely NVIDIA's `wg_complete` trap: confirm in the next NVIDIA run); a virtio reset ends Venus's
+  contexts; the memory budget filled; `max_workgroup_memory` was SwiftShader's 17 s compile of Vulkan's zero-init
+  (dEQP-VK's runs use Tint's); `r12x4` is 34 s of synchronous queries past dEQP's watchdog (T13). Once T19 gave the
+  arena room, host-visible memory got a 1 GiB heap of its own, which the arena backs, and `memory.*.random` (300, 242
+  MiB at their peak) joined the list: 7,126 → 7,509. Left (backlog "Memory"): an allocation past the arena still loses
+  the context rather than failing.
 - **T3. Usage scopes** (L): the driver binds a `VkDeviceMemory` as one GPUBuffer, so a pass or dispatch that reads
   and writes storage of one memory through different bindings fails WebGPU's validation and is dropped. Every
   sub-allocating program meets it (VMA: most engines, DXVK, vkd3d) once its shaders write storage. The fix: a
@@ -106,7 +105,13 @@ T2–T14; the rest of the order is judgement, said with each.
   with Vulkan as without, a host-visible heap the arena backs (then T2's random groups in the list), the chosen
   layout's cost on the workloads measured against today's. *Start:* docs/devices.md "The host-visible window",
   docs/spill-memories.md, docs/architecture.md "Guest memory: layout A", bench/spike/memory/REPORT.md, vk/README.md
-  "The build", web/ram.ts, web/vm.ts `bootVm`.
+  "The build", web/ram.ts, web/vm.ts `bootVm`. **Done 2026-10-30** (bench/spike/memory/REPORT.md §6, REPORT.md "VK4 T19"): memory64 measured first: V8 checks
+  each memory64 access, ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in),
+  and the user set (b) and (c) aside. Built (a′): memory 1 is the renderer's own, an arena of 1,280 MiB, then the window
+  (`VmConfig.window_at`, ABI 55), then node 1's RAM, reached through the existing memory-1 arm; memory 0 holds 3,071
+  MiB with Vulkan as without (was 2,560), node 1 at most 2,560. On the Mac against the old layout: vkcube the same, mpv
+  decoding in software +7.5% of its CPU, fishbowl within its spread. Host-visible memory's 1 GiB heap is the arena's
+  (T2 closed with it).
 
 ### Tier 2: what's advertised and missing (API 1.3), and wrong pixels programs meet
 

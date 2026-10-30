@@ -72,14 +72,16 @@ test('a virtio reset ends the contexts and their blobs', { skip }, async () => {
 });
 
 // The memory budget (VK_EXT_memory_budget, advertised) reports the heap and what's allocated from it: it was left
-// unfilled. The guest's export imported again aliases its memory, counted once (VK4 T2). One 2 GiB heap for both types,
-// though host-visible memory's bytes are in the renderer's 255 MiB arena: a heap the arena backs waits for VK4 T19.
+// unfilled. The guest's export imported again aliases its memory, counted once (VK4 T2). Host-visible memory has a heap
+// of its own that the renderer's arena backs (VK4 T19: 1 GiB, the least GFXReconstruct, VMA and DXVK take as general
+// memory rather than a discrete GPU's BAR window), counted apart from the device-local heap.
 test('the memory budget reports the heap and its use, an import of an export counted once', { skip }, async () => {
   const { v, memory } = await renderer();
   const at = (v.raw.wgt_heaps as () => number)() >>> 0;
   assert.ok(at, 'wgt_heaps failed');
   const [count, heap, sizeMiB, budgetMiB, before, both, importLeft, none, reads, readsAfter] = new Uint32Array(memory.buffer, at, 10);
-  assert.deepEqual([count, heap, sizeMiB, budgetMiB], [1, 0, 2048, 2048]);
+  assert.deepEqual([count, heap, sizeMiB, budgetMiB], [2, 1, 1024, 1024]);
+  assert.ok(sizeMiB * 2 ** 20 < VENUS_ARENA, 'the arena backs the heap');
   assert.deepEqual([both - before, importLeft - before, none - before], [1024, 1024, 0], 'usage (KiB) with the memory and its import, the import alone, neither');
   assert.deepEqual([reads, readsAfter], [1, 1], "the import's bytes are the memory's");
 });

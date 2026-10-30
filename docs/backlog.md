@@ -857,14 +857,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
     dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
     with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader).
-  - **Memory**: 3 `memory.binding.aliasing` cases fail, not looked into. **Host-visible memory isn't backed as
-    advertised** (VK4 T2, blocked on T19): its bytes are in the renderer's 255 MiB arena, on a 2 GiB heap; past the
-    arena an allocation fails in the renderer, and Venus's guest allocates without waiting, so its free of that memory
-    loses the context (vkr's "vkFreeMemory resulted in CS error"). dEQP's random allocations (an eighth of a heap at
-    once) take the arena to 241 MiB: `memory.allocation.random` and `memory.mapping.suballocation.random` pass but stay
-    out of the list. A 128 MiB heap of its own was tried (peak 99 MiB) and reverted: GFXReconstruct's replays (and
-    likely VMA and DXVK) take a host-visible heap under 1 GiB for a discrete GPU's BAR window and refuse it as general
-    memory. The way out is an arena of ~1 GiB or more: VK4 T19 moved the renderer to memory 1 with a 1,280 MiB arena (T2 then sizes the heap).
+  - **Memory**: 3 `memory.binding.aliasing` cases fail, not looked into. **An allocation past the arena loses the
+    context**: Venus's guest allocates without waiting, so a host-visible allocation the renderer can't make (its arena,
+    1,280 MiB, backs the 1 GiB heap and the renderer's own heap) surfaces as a CS error at its free, not as
+    `VK_ERROR_OUT_OF_DEVICE_MEMORY`. A program within the heap doesn't meet it (dEQP's random allocations peak at 242
+    MiB); refusing the blob's creation, which the guest's kernel waits for, might give the error back (VK4 T19).
 - **Spill RAM past node 1 in one memory64 behind the JIT's arm** (bench/spike/memory/REPORT.md §6, VK4 T19): every
   spill page would take the arm's path (D in M0.5's kernels: +11–14% per access against memory 1's +10–12% on the dev
   VM) instead of the interpreter's 2–17× for nodes 2 and up, and the 8-memory list would become one memory of up to 16

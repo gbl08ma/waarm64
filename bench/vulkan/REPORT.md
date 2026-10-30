@@ -795,6 +795,9 @@ Testing 153.0.8010.12, macOS 26.6.2; the base is 19f9c740's core, renderer and p
 - **mpv in software is the window's heaviest writer**: each decoded frame is copied into mapped host-visible memory,
   through the arm. Its +31 ms of guest CPU a second is the layout's price where it shows. vkcube's command streams are
   too small to see.
+- **Host-visible memory's heap** (T2's last step): its own heap of 1 GiB, the arena's (`vk/driver/wg_device.c`; the
+  budget counts each heap apart). `memory.allocation.random` and `memory.mapping.suballocation.random` pass, all 300,
+  the arena at 242 MiB at their peak (`results/vk4/t19/random-1g-heap.json`), and join the list (7,209 → 7,509).
 - **Not measured apart**: the arm's code in every Vulkan machine's modules (on spill machines: 15% more wasm bytes, the
   same compile time, docs/spill-memories.md). It is inside these numbers.
 

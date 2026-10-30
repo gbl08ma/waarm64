@@ -20,14 +20,15 @@
 
 #include "wg_private.h"
 
-/* The device's one heap and its two memory types: device-local, and host-visible coherent (a WebGPU device shares
- * the host's memory only through uploads, so "device-local" too: its shadow buffers). Host-visible memory's bytes are
- * in the renderer's arena (web/ram.ts VENUS_ARENA, 255 MiB with the module's own heap), which the heap's size doesn't
- * say: a heap the arena backs waits for the renderer's own memory (VK4 T19; docs/backlog.md "Memory"). The budget
- * (VK_EXT_memory_budget) reports what's allocated from the heap. */
+/* The device's two memory types, each on a heap of its own: device-local, and host-visible coherent (a WebGPU device
+ * shares the host's memory only through uploads, so "device-local" too: its shadow buffers). Host-visible memory's
+ * bytes are in the renderer's arena (web/ram.ts VENUS_ARENA, 1,280 MiB with the module's own heap), which backs its
+ * heap's 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory (a smaller host-visible heap is a discrete
+ * GPU's BAR window to them; VK4 T2, T19). The budget (VK_EXT_memory_budget) reports what's allocated from each heap. */
 #define WG_HEAP_SIZE (2ull << 30)
+#define WG_HOST_HEAP_SIZE (1ull << 30)
 #define WG_MEMORY_HOST 1
-static uint64_t heap_used;
+static uint64_t heap_used[2];
 
 uint32_t wg_features, wg_max_immediates;
 uintptr_t wg_window_at, wg_window_bytes;
@@ -291,10 +292,11 @@ wg_GetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physicalDevice, VkPhysica
          { .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 },
          { .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-           .heapIndex = 0 },
+           .heapIndex = WG_MEMORY_HOST },
       },
-      .memoryHeapCount = 1,
-      .memoryHeaps = { { .size = WG_HEAP_SIZE, .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT } },
+      .memoryHeapCount = 2,
+      .memoryHeaps = { { .size = WG_HEAP_SIZE, .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT },
+                       { .size = WG_HOST_HEAP_SIZE, .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT } },
    };
    VkPhysicalDeviceMemoryBudgetPropertiesEXT *budget =
       vk_find_struct(pProps->pNext, PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
@@ -302,7 +304,9 @@ wg_GetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physicalDevice, VkPhysica
       memset(budget->heapBudget, 0, sizeof(budget->heapBudget));
       memset(budget->heapUsage, 0, sizeof(budget->heapUsage));
       budget->heapBudget[0] = WG_HEAP_SIZE;
-      budget->heapUsage[0] = heap_used;
+      budget->heapBudget[1] = WG_HOST_HEAP_SIZE;
+      budget->heapUsage[0] = heap_used[0];
+      budget->heapUsage[1] = heap_used[1];
    }
 }
 
@@ -672,7 +676,7 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
       mem->dirty = true;
       list_addtail(&mem->link, &dev->host_memories);
    }
-   heap_used += mem->vk.size;
+   heap_used[mem->vk.memory_type_index] += mem->vk.size;
    *pMem = wg_device_memory_to_handle(mem);
    return VK_SUCCESS;
 }
@@ -718,7 +722,7 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
       list_del(&mem->link);
    if (mem->owned)
       free(mem->data);
-   heap_used -= mem->vk.size;
+   heap_used[mem->vk.memory_type_index] -= mem->vk.size;
    wg_id_release(mem->gpu);
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
 }

@@ -241,10 +241,11 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
-  listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types (device-local; host-visible, coherent, cached and
-  device-local) on a 2 GiB heap, whose budget reports what's allocated from it (VK4 T2). Host-visible memory's bytes
-  are in the arena (255 MiB with the module's own heap), which the heap doesn't say: a guest past it meets an
-  allocation the renderer can't make (docs/backlog.md "Memory"; a heap the arena backs waits for VK4 T19). One queue
+  listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types, each on a heap of its own (device-local, 2 GiB;
+  host-visible, coherent, cached and device-local, 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory
+  rather than a discrete GPU's BAR window), whose budget reports what's allocated from each (VK4 T2). Host-visible
+  memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19); a
+  guest past the heap meets an allocation the renderer can't make (docs/backlog.md "Memory"). One queue
   family. `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
 - **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
