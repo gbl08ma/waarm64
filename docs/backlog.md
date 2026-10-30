@@ -92,6 +92,8 @@ left open, most promising first.
     returns did (above): first measure whether a direct tail call into code evicted from the caches stalls as much as
     an indirect one (`chain.mjs` with the targets evicted). A per-site slot in a module-local
     table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
+    Re-emitting would shrink the code too: a jump-cache tail is 61 B and a probe for a successor in another page 116,
+    against 22 for a direct call, 9.7% of Debian's code (the wasm size item below).
   - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
 - **Fewer, larger modules for a browser, what's left** after tier-ups wait for the batch ([jit.md](jit.md) "Compile
   policy"; `bench/boot/REPORT.md` "M8: tier-ups folded into the batches"): Firefox's pages session makes ~2,800
@@ -109,7 +111,8 @@ left open, most promising first.
   i64 doesn't matter. In Firefox's pages session 40% of the functions compiled zero-fill (13 locals or more; Alpine's
   userspace benchmark 42%), 36 loop turns each, and 18.6% have 13-16 integer locals. Trimming a local only shortens
   the loop (2 turns a local) unless it crosses 12: keeping a load's base in BASE only when needed moved Firefox's
-  zero-filled share from 40.2% to 39.7% (not kept). The lever is getting functions to 12, which dropping scratch
+  zero-filled share from 40.2% to 39.7% (not kept for the zero-fill; its wasm was 0.6% smaller, which counts on its
+  own with the wasm size items below: `no-base-local.patch` in `bench/boot/results/m8-liftoff/baseruns/`). The lever is getting functions to 12, which dropping scratch
   locals can't (one load or store takes ADDR, HOST and TLBE): it would take sharing one local between guest
   registers whose live ranges don't overlap, a register allocator over the block's locals. Bounded by the
   prologues' ~5% of Liftoff's samples in Firefox.
@@ -264,6 +267,39 @@ left open, most promising first.
   accesses) have no static span. Across blocks, 46% of probes land on the page of one of the function's last two
   probes, which no group can reach: the region's next lever if probes ever matter, though no time difference has
   come from removing them yet.
+
+- **Where the JIT's wasm bytes go, and what could shrink them** (2026-10-30, a static census of Debian's boot and a
+  shell workload on the page: every module with each instruction's and each piece's byte ranges, 35.1 MB of function
+  bodies; `bench/boot/results/wasm-size/` README, not weighted by execution, no timings; Firefox's pages session and
+  Alpine weren't in that session, so check the shares there first). Block tails are 42% of the code, inline
+  instructions 43% (TLB probes 10.3%, slow arms 7.5%), failure chains 9%, NZCV commits before branches 3.5%, prologues
+  2%. Two costs cut across them: **materializing NZCV, 13.2%** (~67 B each, 86% of them SUBS's), and **linking to the
+  next block, 17.3%** (`block::chain` 13.9%: jump-cache tails 6.2%, transfer-cache probes for uncompiled successors in
+  another page 3.5%, guarded direct calls with their probe 3.4% at 190 B each; BR/BLR/RET's probes 3.4%). Register
+  write-backs are 15.6% (7.5 B each) and PC stores 3.2%, what exact state at exits needs. Untried, by size:
+  - **SUBS's NZCV from its operands** (`nzcv_of`'s `Kind::Sub`): `r = x - y`, `C = x >=u y`, `V = sign((x ^ y) & (x
+    ^ r))` instead of `x + ~y + 1` through `add_nzcv`: ~56 B instead of 74 (64-bit), ~54 instead of 69, about 2.8% of
+    the code and fewer ops at every flag-committing exit; the formula checked against AddWithCarry (`nzcvcheck.py`).
+  - **NZCV in small functions of the module** (`nzcv_sub64(x, y)` and kin, the store at the site or in it: 8-11 B a
+    site): in the failure chains alone (cold) ~3.5%, everywhere ~11%. V8 inlines direct wasm calls of up to 500 wire
+    bytes by default, from Liftoff's call counts, but Liftoff's code pays a call, and TurboFan is sensitive to where
+    NZCV is computed (`bench/interp/REPORT.md` "M5 step 6"): the hot sites need an A/B.
+  - **`local.set N; local.get N` as `local.tee N`**: 294,000 pairs, 1.7%, mostly HOST and scratch read at once. A
+    peephole in `wasm::Code::local_get` must not merge across a `mark` a `rewind` can return to (`Func::skip_addr`).
+  - **A guarded chain's fallback as the miss function**: after the instruction-TLB check fails, tail-call the
+    imported `xmiss` (which fills the transfer cache) instead of probing inline: ~1.8%, on a path that seldom runs.
+    The same for an uncompiled successor in another page (~3%) puts a path that stays hot (regions aren't
+    re-emitted) behind two probes and one shared indirect call site: measure.
+  - **One budget counter on region edges**: `acc + left` is constant in a function, so an edge could update one
+    of them (~1.2%), for one local more (Liftoff's zero-fill, the item above).
+  - Below ~0.3% together: a 0 added (`const 0; add`, mostly an access's address at offset 0: 0.22%); UBFM as LSR or
+    LSL (today a rotate and a mask, LSR's mask a 64-bit constant Liftoff builds), SXTB/SXTH/SXTW as `extendN_s`,
+    CSET/CSETM as the condition itself, `ADD #0`: 0.1% in all. Register offsets past 128 take a 2-byte memarg (~1 B
+    on half the write-backs). Folding MOVK chains was counted at ~0.2% before ([jit.md](jit.md) "Tried and not kept").
+  - **Not worth trying again:** outlining the jump-cache tails or BR/BLR/RET's probes into a shared function (6.2% and
+    3.4%) puts every site behind one `return_call_indirect`, losing per-site prediction: out-of-line jump-cache probes
+    were slower ([jit.md](jit.md) "Tried and not kept"), and a browser's time stalls at those tails already (the
+    indirect transfers item above).
 
 ## The core with `simd128`
 
