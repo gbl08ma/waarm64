@@ -83,6 +83,13 @@ static u64 test_word(u64 va) {
   return pages[off < PAGE_SZ ? 1 : 0][(off % PAGE_SZ) / 8];
 }
 
+// A load and a store to the page of `p`, in one block on its own.
+__attribute__((noinline)) static u64 load_store(u64 p, u64 v) {
+  u64 x;
+  __asm__ volatile("ldr %0, [%1]; str %2, [%1, #8]" : "=&r"(x) : "r"(p), "r"(v) : "memory");
+  return x;
+}
+
 static u64 user_read_kernel(void) { return *(volatile u64 *)&pages[0][0]; }
 static u64 user_write_ro(void) {
   *(volatile u64 *)(TEST_VA + 3 * PAGE_SZ) = 1;
@@ -202,6 +209,33 @@ int main(void) {
                      : "memory");
     check(n_exc == n1 + 1 && last_far == end && b == end, 39);
   }
+  // Loads and stores share a group, the write array's probe answering for both,
+  // with other instructions among them: across the swapped pages, the store
+  // landing on its own page; on the read-only page, the load before the
+  // faulting store done, and what's between too.
+  for (int i = 0; i < 64; i++) {
+    u64 b = TEST_VA + PAGE_SZ - 8, v = 0x5000 + i, x, y, n = i;
+    __asm__ volatile("ldr %0, [%3]; add %2, %2, #1; str %4, [%3, #8]; ldr %1, [%3, #8]"
+                     : "=&r"(x), "=&r"(y), "+r"(n)
+                     : "r"(b), "r"(v)
+                     : "memory");
+    check(x == test_word(b) && y == v && test_word(b + 8) == v && n == (u64)i + 1, 40);
+    u64 n1 = n_exc, ro = TEST_VA + 3 * PAGE_SZ;
+    n = i;
+    __asm__ volatile("ldr %0, [%2]; add %1, %1, #1; str %3, [%2, #8]"
+                     : "=&r"(x), "+r"(n)
+                     : "r"(ro), "r"(v)
+                     : "memory");
+    check(n_exc == n1 + 1 && last_far == ro + 8 && x == pages[3][0] && n == (u64)i + 1, 41);
+  }
+  // Often enough to be compiled and hit the TLB: the load's read entry must not
+  // let the store through.
+  u64 n2 = n_exc, kept = pages[3][1];
+  for (int i = 0; i < 5000; i++) {
+    (void)*(volatile u64 *)(TEST_VA + 3 * PAGE_SZ);
+    load_store(TEST_VA + 3 * PAGE_SZ, kept + 1);
+  }
+  check(n_exc == n2 + 5000 && pages[3][1] == kept, 42);
 
   // LDTR/STTR at EL1 have EL0's permissions: they fault on EL1-only pages
   // (permission, level 3) and reach the user stack.

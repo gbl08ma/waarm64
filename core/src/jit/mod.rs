@@ -2366,6 +2366,32 @@ pub unsafe extern "C" fn jit_exec_mmu(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     status(&mut v.jit, r)
 }
 
+/// As [`jit_exec_mmu`] for the `n` (at most six) instructions from `pc` of a
+/// group of accesses (`emit::close`), their words in `w0`, `w1`, `w2`, low
+/// half first; returns how many retired, stopping at the first that doesn't.
+///
+/// # Safety
+/// As for [`jit_exec_flat`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_exec_span(
+    v: *mut Vcpu,
+    pc: u64,
+    n: u32,
+    w0: u64,
+    w1: u64,
+    w2: u64,
+) -> u32 {
+    let w = [w0, w1, w2];
+    for k in 0..n {
+        let insn = (w[k as usize / 2] >> (32 * (k & 1))) as u32;
+        // SAFETY: guaranteed by the caller.
+        if unsafe { jit_exec_mmu(v, insn, pc.wrapping_add(4 * k as u64)) } != 0 {
+            return k;
+        }
+    }
+    n
+}
+
 /// A helper's exit through [`State::fast`], if it has one and that finishes it.
 ///
 /// # Safety

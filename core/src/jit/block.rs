@@ -528,6 +528,16 @@ pub fn module(
     let ht = m.ty(&[I32, I32, I64], &[I32]);
     let flat = m.import_func("env", "jit_exec_flat", ht);
     let mmu = m.import_func("env", "jit_exec_mmu", ht);
+    // Most modules have no group of accesses to call it.
+    let groups = regions
+        .iter()
+        .filter(|r| r.blocks[0].key & KEY_MMU != 0)
+        .flat_map(|r| &r.blocks)
+        .any(|b| emit::may_group(&b.words));
+    let span = groups.then(|| {
+        let t = m.ty(&[I32, I64, I32, I64, I64, I64], &[I32]);
+        m.import_func("env", "jit_exec_span", t)
+    });
     let checker = cfg.check.then(|| {
         let ct = m.ty(&[I32, I64], &[]);
         m.import_func("env", "jit_check", ct)
@@ -616,6 +626,7 @@ pub fn module(
                 clock,
                 spill,
                 groups: emit::GROUPS,
+                span: span.unwrap_or(0),
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -630,6 +641,7 @@ pub fn module(
                 clock,
                 spill: 0,
                 groups: false,
+                span: 0,
             }
         };
         let env = Env {

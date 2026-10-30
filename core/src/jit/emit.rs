@@ -1200,6 +1200,8 @@ pub struct Ctx {
     pub spill: u32,
     /// Accesses off one base share a TLB probe ([`plan`]; with the MMU on).
     pub groups: bool,
+    /// The span helper (`jit_exec_span`), for a group's cold arm ([`close`]).
+    pub span: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2669,13 +2671,14 @@ fn access(
             span,
             off,
             fp,
+            store,
         } => {
             return lead(
                 c,
                 cx,
                 i,
                 k,
-                write,
+                store,
                 guards,
                 written,
                 (last, lo, span, off, fp),
@@ -2785,7 +2788,8 @@ fn access(
 /// for the group's span (`g`: its [`Role::Lead`]'s fields) from the lowest
 /// address, into `ADDR`, and the leader's body in the fast arm, which stays
 /// open over the span (HOST the lowest address's host address) until the last
-/// access closes it ([`close`]).
+/// access closes it ([`close`]). `write`: a store in the span, so the write
+/// array's entry answers for all of it (a page's write permission implies read).
 #[allow(clippy::too_many_arguments)]
 fn lead(
     c: &mut Func,
@@ -2842,10 +2846,11 @@ fn lead(
 }
 
 /// Closes group `g` after its last access (at `here`): the probe's `else`,
-/// where the helper runs each of the span's instructions in turn, the block
+/// where the span helper runs the span's instructions in turn, the block
 /// returning at the first that doesn't retire (to the leader's segment of
 /// the failure chain), with what the span reads or writes written back
 /// before and what it writes reloaded after, as [`fallback_arm`] for one.
+/// The words go as constants, in calls of [`SPAN_WORDS`].
 fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
     debug_assert_eq!(g.last, (here / 4) as usize);
     c.group = None;
@@ -2896,24 +2901,30 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
     let d = dirty & !ch.cum;
     *ch.segs.last_mut().expect("a segment") = d;
     ch.cum |= d;
-    // Earlier sites' segments store their registers from the locals: past the
-    // first instruction, those the span wrote hold what the helper left in
-    // the `Cpu` (a single access's arm has retired nothing when it leaves).
+    // Earlier sites' segments store their registers from the locals: those
+    // the span wrote hold what the helper left in the `Cpu` (a single access's
+    // arm has retired nothing when it leaves; here it may have).
     let stale = written & ch.cum;
-    for j in g.first..=g.last {
-        let w = c.words[j];
-        c.local_get(VCPU).i32_const(w as i32);
-        pc_plus(c, 4 * j as i64);
-        c.call(cx.helper).hint(false).if_();
-        if j > g.first {
-            let mut m = stale;
-            while m != 0 {
-                let n = m.trailing_zeros();
-                m &= m - 1;
-                c.load(n);
-            }
+    for from in (g.first..=g.last).step_by(SPAN_WORDS) {
+        let to = (from + SPAN_WORDS).min(g.last + 1);
+        c.local_get(VCPU);
+        pc_plus(c, 4 * from as i64);
+        c.i32_const((to - from) as i32);
+        for p in 0..SPAN_WORDS / 2 {
+            let word = |q: usize| c.words.get(from + q).filter(|_| from + q < to).copied();
+            let w = word(2 * p).unwrap_or(0) as u64 | (word(2 * p + 1).unwrap_or(0) as u64) << 32;
+            c.i64_const(w as i64);
         }
-        c.i32_const(j as i32).br(2 + cx.spill);
+        c.call(cx.span).local_tee(HOST);
+        c.i32_const((to - from) as i32).op(NE).hint(false).if_();
+        let mut m = stale;
+        while m != 0 {
+            let n = m.trailing_zeros();
+            m &= m - 1;
+            c.load(n);
+        }
+        c.local_get(HOST).i32_const(from as i32).op(ADD);
+        c.br(2 + cx.spill);
         c.end();
     }
     c.touched.get_or_insert(true);
@@ -2935,6 +2946,15 @@ pub const GROUPS: bool = true;
 /// A group's span (from its lowest byte to past its highest), at most.
 const SPAN_MAX: i64 = 256;
 
+/// The instructions a call of the span helper takes (`jit_exec_span`).
+pub const SPAN_WORDS: usize = 6;
+
+/// The instructions a group may hold besides its accesses.
+const OTHERS: usize = 4;
+
+/// Loads and stores share a group.
+const MIXED: bool = true;
+
 /// An instruction's part in a group of accesses ([`plan`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Role {
@@ -2942,13 +2962,15 @@ pub enum Role {
     None,
     /// The first access: its probe covers the group's `span` bytes from its
     /// address + `lo`, the lowest the group accesses, its own at `off` from
-    /// there; the group ends at instruction `last`; `fp`: an access is SIMD&FP.
+    /// there; the group ends at instruction `last`; `fp`: an access is SIMD&FP;
+    /// `store`: an access is a store (the probe's array).
     Lead {
         last: usize,
         lo: i64,
         span: u32,
         off: u32,
         fp: bool,
+        store: bool,
     },
     /// A later access, at `off` from the group's lowest address.
     Follow { off: u32 },
@@ -3084,6 +3106,15 @@ fn shape(i: u32) -> Option<Shape> {
     Some(s)
 }
 
+/// Whether a block has the two accesses a group needs ([`plan`]).
+pub fn may_group(words: &[u32]) -> bool {
+    words
+        .iter()
+        .filter(|&&w| shape(w).is_some())
+        .nth(1)
+        .is_some()
+}
+
 /// Whether instruction `i` may sit between a group's accesses: an integer
 /// operation without flags that is inline and leaves `HOST` alone; a write to
 /// the base `rn` must add an immediate to it (into `delta`), any other ends the
@@ -3162,13 +3193,12 @@ fn pure(i: u32, k: usize, cx: &Ctx) -> bool {
         && !c.c.uses_local(HOST)
 }
 
-/// The groups of a block's loads or stores that share one TLB probe: each
-/// one of two or more accesses of one kind (loads, or stores) off the same
-/// base register, unchanged between them but by writebacks and immediates
-/// added to it, over a span within [`SPAN_MAX`] bytes, with only [`between`]
-/// instructions among them, at most one fewer than the accesses. The leader's
-/// probe covers the whole span; on a miss, the span's instructions run
-/// through the helper ([`access`]).
+/// The groups of a block's loads and stores that share one TLB probe: each
+/// one of two or more accesses off the same base register, unchanged between
+/// them but by writebacks and immediates added to it, over a span within
+/// [`SPAN_MAX`] bytes, with at most [`OTHERS`] [`between`] instructions among
+/// them. The leader's probe covers the whole span; on a miss, the span's
+/// instructions run through the span helper ([`access`]).
 pub fn plan(words: &[u32], cx: &Ctx) -> Vec<Role> {
     let mut roles = vec![Role::None; words.len()];
     if !cx.groups || !matches!(cx.bus, Bus::Tlb { .. }) {
@@ -3190,9 +3220,9 @@ fn group(words: &[u32], first: usize, cx: &Ctx, roles: &mut [Role]) -> usize {
     if s.loads & 1 << s.rn != 0 {
         return first;
     }
-    let (rn, write) = (s.rn, s.write);
+    let rn = s.rn;
     let (mut lo, mut hi) = (s.off, s.off + s.len as i64);
-    let mut fp = s.fp;
+    let (mut fp, mut store) = (s.fp, s.write);
     let mut delta = s.wb;
     // Each access's address from the leader's base, and the best end so far.
     let mut at = vec![(first, s.off)];
@@ -3205,7 +3235,7 @@ fn group(words: &[u32], first: usize, cx: &Ctx, roles: &mut [Role]) -> usize {
             others += 1;
             continue;
         };
-        if t.rn != rn || t.write != write || (rn == 31 && delta % 16 != 0) {
+        if t.rn != rn || (!MIXED && t.write != s.write) || (rn == 31 && delta % 16 != 0) {
             break;
         }
         let a = delta.wrapping_add(t.off);
@@ -3213,17 +3243,17 @@ fn group(words: &[u32], first: usize, cx: &Ctx, roles: &mut [Role]) -> usize {
         if h - l > SPAN_MAX {
             break;
         }
-        (lo, hi, fp) = (l, h, fp || t.fp);
+        (lo, hi, fp, store) = (l, h, fp || t.fp, store || t.write);
         at.push((k, a));
-        if others < at.len() - 1 {
-            best = Some((at.len(), lo, hi, fp));
+        if others <= OTHERS {
+            best = Some((at.len(), lo, hi, fp, store));
         }
         delta = delta.wrapping_add(t.wb);
         if t.loads & 1 << rn != 0 {
             break;
         }
     }
-    let Some((n, lo, hi, fp)) = best else {
+    let Some((n, lo, hi, fp, store)) = best else {
         return first;
     };
     let last = at[n - 1].0;
@@ -3233,6 +3263,7 @@ fn group(words: &[u32], first: usize, cx: &Ctx, roles: &mut [Role]) -> usize {
         span: (hi - lo) as u32,
         off: (s.off - lo) as u32,
         fp,
+        store,
     };
     for &(k, a) in &at[1..n] {
         roles[k] = Role::Follow {
@@ -4109,6 +4140,7 @@ mod tests {
         clock: None,
         spill: 0,
         groups: true,
+        span: 0,
     };
 
     /// Through the TLB at EL1.
@@ -4129,6 +4161,15 @@ mod tests {
             span,
             off,
             fp: false,
+            store: false,
+        };
+        let stores = |last, lo, span, off| Lead {
+            last,
+            lo,
+            span,
+            off,
+            fp: false,
+            store: true,
         };
         // ldr x2, [x15]; ldr x1, [x15, #8]; ldur x0, [x15, #-8]; ubfx; ldr x3, [x17, x18, lsl #3]
         let w = [0xf94001e2, 0xf94005e1, 0xf85f81e0, 0xd3432df2, 0xf8727a23];
@@ -4167,30 +4208,41 @@ mod tests {
                 Follow { off: 0 }
             ]
         );
-        // One instruction between two accesses: not worth it.
-        assert!(plan(&w[..3], &TLB).iter().all(|&r| r == None));
+        // Up to OTHERS instructions among the accesses; past them the group ends.
+        assert_eq!(
+            plan(&w[..3], &TLB),
+            [lead(2, 0, 24, 0), None, Follow { off: 16 }]
+        );
+        let add = 0x91000421; // add x1, x1, #1
+        let w = [0xf9400002, add, add, add, add, 0xf9400403];
+        assert_eq!(plan(&w, &TLB)[5], Follow { off: 8 });
+        let w = [0xf9400002, add, add, add, add, add, 0xf9400403];
+        assert!(plan(&w, &TLB).iter().all(|&r| r == None));
         // ldr x1, [x0, #8]; ldr x0, [x0]; ldr x2, [x0]: a load of the base ends the group.
         let w = [0xf9400401, 0xf9400000, 0xf9400002];
         assert_eq!(
             plan(&w, &TLB),
             [lead(1, -8, 16, 8), Follow { off: 0 }, None]
         );
-        // Loads and stores apart; another base apart: str x1, [x0]; ldr x2, [x0, #8];
-        // ldr x3, [x0, #16]; ldr x4, [x5]
+        // Loads and stores together (the write array's probe); another base apart:
+        // str x1, [x0]; ldr x2, [x0, #8]; ldr x3, [x0, #16]; ldr x4, [x5]
         let w = [0xf9000001, 0xf9400402, 0xf9400803, 0xf94000a4];
         assert_eq!(
             plan(&w, &TLB),
-            [None, lead(2, 0, 16, 0), Follow { off: 8 }, None]
+            [
+                stores(2, 0, 24, 0),
+                Follow { off: 8 },
+                Follow { off: 16 },
+                None
+            ]
         );
         // stp x29, x30, [sp, #-32]!; mov x29, sp; stp x19, x20, [sp, #16]: the
         // prologue, SP's writeback a multiple of 16.
-        let w = [0xa9be7bfd, 0x910003fd, 0xa90153f3];
-        assert_eq!(plan(&w, &TLB), [None; 3]); // one between, one follower
         let w = [0xa9be7bfd, 0x910003fd, 0xa90153f3, 0xa9025bf5];
         assert_eq!(
             plan(&w, &TLB),
             [
-                lead(3, 0, 48, 0),
+                stores(3, 0, 48, 0),
                 None,
                 Follow { off: 16 },
                 Follow { off: 32 }
@@ -4206,7 +4258,8 @@ mod tests {
                     lo: 0,
                     span: 64,
                     off: 0,
-                    fp: true
+                    fp: true,
+                    store: false
                 },
                 Follow { off: 32 }
             ]
@@ -4725,6 +4778,7 @@ mod tests {
             clock: None,
             spill: 0,
             groups: true,
+            span: 0,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

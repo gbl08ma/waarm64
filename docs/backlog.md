@@ -257,13 +257,13 @@ left open, most promising first.
 - Blocks are formed twice: decoded for the block interpreter on first sight (which gives the cache
   their length) and again at compile time.
 
-- **Groups of accesses' leftovers** (docs/jit.md "Loads and stores", `bench/boot/REPORT.md` "Groups of
-  accesses"; built 2026-10-30, wasm 3.5-4.6% smaller, time unchanged). Untried: loads and stores in one group (a
-  write entry implies read permission on this architecture, but the TLB arrays are filled apart), register-offset
-  and literal members, LD1/ST1 and the structure forms, accesses off another base between a group's (they end it:
-  their own chain segments would nest inside the group's `if`), and a span cap other than 256 bytes (a straddling
-  span runs its instructions through the helper every time: no straddle rate was counted). A desktop session's
-  wasm wasn't measured.
+- **Groups of accesses' leftovers** (docs/jit.md "Loads and stores", `bench/boot/REPORT.md` "Groups of accesses,
+  measured"). Probes left on Firefox's pages session, of those with no groups at all: 74% with today's rule. Untried: two
+  or three probes in one `if` (accesses off another base inside a group: 72%, 71%; followers need a second `HOST`) and
+  instructions with flags among a group's (SUBS, CSEL: 72.3% with any instruction, the bound). Register offsets (5.6% of
+  accesses) have no static span. Across blocks, 46% of probes land on the page of one of the function's last two
+  probes, which no group can reach: the region's next lever if probes ever matter, though no time difference has
+  come from removing them yet.
 
 ## The core with `simd128`
 

@@ -636,23 +636,23 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   instruction: the fast path changes nothing before its check, so fault state is exact by
   construction. Every guest RAM access in generated code goes through one lowering function
   (layout A's single point of change).
-  **Groups share one probe** (`emit::plan`, with the MMU on): two or more loads (or stores) with
-  an immediate offset off one base register, unchanged between them but by their writebacks and `ADD`/`SUB` of an
-  immediate to it, over at most 256 bytes, with only flagless inline integer instructions among them that leave
-  `HOST` alone (each emitted once on its own to check: `emit::between`), and fewer of those than followers. The
-  leader probes the group's whole span from its lowest address (the same compare, the span as the length), and its
-  fast arm stays open over the span: every member's body takes `HOST` (the lowest address's) with its own offset
-  as the memarg, and a follower emits no address, probe or slow arm. With spill memories the `else` first takes
-  each inline one's arm: the span emitted again, its accesses naming that memory (ADDR, BASE and TLBE still hold
-  the leader's there, the fast arm not having run). On a miss (no entry, the span across a page,
-  a fault, MMIO, SP misaligned, FP off) the `else` runs each of the span's instructions through the helper in
-  order, returning at the first that doesn't retire to the leader's segment of the failure chain; it writes back
-  what the span reads or writes first and reloads what it writes after, and an instruction past the first that fails
-  reloads those of them earlier sites' segments store (from their locals) before it leaves, or the chain would undo what
-  the instructions before it retired. A load into the base ends its group;
-  loads and stores group apart (separate TLB arrays), LDTR/STTR, exclusives and register offsets never. Alpine's
-  userspace benchmark compiles 3.5% less wasm with groups, its spill variant 4.6%, at the same speed
-  (`bench/boot/REPORT.md` "Groups of accesses").
+  **Groups share one probe** (`emit::plan`, with the MMU on): two or more loads and stores with an immediate offset off
+  one base register, unchanged between them but by their writebacks and `ADD`/`SUB` of an immediate to it, over at most
+  256 bytes, with at most four flagless inline integer instructions among them that leave `HOST` alone (each emitted
+  once on its own to check: `emit::between`). The leader probes the group's whole span from its lowest address (the same
+  compare, the span as the length), in the write array if a member stores (a page's write permission implies read, and
+  debug watchpoints bypass the fast paths), and its fast arm stays open over the span: every member's body takes `HOST`
+  (the lowest address's) with its own offset as the memarg, and a follower emits no address, probe or slow arm. With
+  spill memories the `else` first takes each inline one's arm: the span emitted again, its accesses naming that memory
+  (ADDR, BASE and TLBE still hold the leader's there, the fast arm not having run). On a miss (no entry, the span across
+  a page, a fault, MMIO, SP misaligned, FP off) the `else` calls `jit_exec_span` with the span's words as constants, up
+  to six a call, so the arm's size doesn't grow with the group's; it returns how many retired, and the first that doesn't
+  leaves through the leader's segment of the failure chain. The arm writes back what the span reads or writes first and
+  reloads what it writes after, and on a failure reloads those of them earlier sites' segments store (from their locals)
+  before it leaves, or the chain would undo what the instructions before it retired. A load into the base ends its
+  group; LDTR/STTR, exclusives and register offsets never join one. Measured on Firefox's pages session
+  (`bench/boot/REPORT.md` "Groups of accesses, measured"): 32.6% of guest instructions are loads and stores, 92.8% of
+  those immediate forms; groups leave 74-75% of their probes; 0.58% of group runs straddle a page.
   **The slow arms share their failure exits** (`emit::Chain`, `fallback_chain`): the arm writes back only the
   dirty registers the instruction reads (its fast path's reads, `Func::ireads`) or writes, calls the helper, and
   if that doesn't retire branches with its retired count to its segment of the block's failure chain. A segment

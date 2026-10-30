@@ -2995,3 +2995,52 @@ swapped pages, with a writeback and an add between; a group's second store fault
 its group), `tests/jit-diff.test.ts` "groups of accesses" on spill memories. Planted: the probe checking the
 leader's first byte only (mmu checks 35 and 36 fail; jit-diff's VA = PA pages are contiguous, so it passes), the
 cold arm running only the leader (check 36), the spill arm naming memory 0 (jit-diff).
+
+## Groups of accesses, measured: what's left, and mixed groups (2026-10-30)
+
+The leftovers ranked on measurements instead of guesses. An instrumented core (`results/accstat/instrument.patch`,
+applied to 4271f7c6; not on main) logged every compiled block's words and execution count, each group's lowest page
+offset, cold arms and straddles, and each probe's page against the function's last two, over Firefox's pages session
+(5 sites, from `target/snapbench/pages.webpcsnap`). Its analyzer (`examples/accstat.rs`, in the patch) replays the plan's
+variants over those blocks. Output: `results/accstat/pages.txt`; 8.6e10 instructions, 227,119 blocks compiled.
+
+- **The mix:** 32.6% of instructions are loads and stores: immediate forms 92.8% (68% loads), register offset 5.6%,
+  literal 0.0%, LD/ST structures 0.1%, the rest (exclusives, atomics, acquire/release) 1.5%. So literal and LD1/ST1
+  members buy nothing, and a register offset has no static span.
+- **Probes left**, of every immediate access probing: today's rule 82.1%. Span cap 32: 88.6; 64: 84.2; 128: 82.3; 512:
+  82.0; 4096: 81.8: past 128 bytes the cap does nothing, and 256 stays. Up to 4 others among a group's accesses: 78.0; 16:
+  77.8. Mixed loads and stores: 79.8; with 4 others **73.8**. Then two probes in one `if`: 71.8; three: 71.2; any
+  instruction between (the bound): 70.0. Inside a block about 30% of probes can go, whatever the rule: blocks are short.
+- **What ends a group** that had a same-base access within 12 instructions (2.7% of accesses): SUBS 29%, MRS 14%,
+  register offsets 17%, CSEL & co 7%.
+- **Straddles:** 0.58% of group runs straddle a page (14 M), 0.68% take the cold arm at all. The predicted rate from
+  the offsets (4.7% for 256 bytes, 2.6% for 128, 0.8% for 64) matches the spans actually run, most of them short.
+  Offsets are near uniform, the page's last 256 bytes 5.0% of runs where uniform gives 6.25%.
+- **Across blocks:** of 1.8e10 probes run, 46% hit the page of one of the function's last two probes.
+
+Built from that: **mixed groups** (the probe in the write array if a member stores; a read entry never answers for a
+store) and **up to 4 other instructions** among a group's accesses, the cold arm made one call instead of one each
+(`jit_exec_span`, the span's words as constants, six a call: ABI 56). Dev VM, Chromium headless, Firefox's pages
+session from the snapshot, `base` = 4271f7c6 with the ABI bumped, `k4m` = this; 4 rounds alternated from the second,
+JSON in `results/groups-v2/`:
+
+| | base | k4m | |
+|---|---|---|---|
+| wasm / inline instruction (B) | 104.43 · 104.46 · 104.56 · 104.43 | 101.75 · 101.70 · 101.82 · 101.56 | **−2.6%** |
+| busy-vCPU MIPS | 209 · 208 · 201 · 195 | 211 · 211 · 210 · 191 | overlapping |
+| pages' load (ms, sum of 5) | 30,492 · 31,500 · 32,836 · 34,712 | 30,637 · 31,525 · 31,061 · 35,869 | overlapping |
+| wasm total (MB) | 133.8 · 133.9 · 133.4 · 133.6 | 132.7 · 132.8 · 132.6 · 133.0 | −0.6% |
+
+The total falls less than the density: the session compiled 1.8% more inline instructions in every `k4m` run
+(1.30 M against 1.28 M), which nobody has explained. Other limits, one round: 1 other 102.37 B, 2: 101.63, 8: 101.46; 4
+without mixing 102.80. (These ran with the import in every module; the build committed imports it only where a block
+has two candidates, which `block.rs`'s byte tests need.) Time doesn't move, as with the first groups: removing a TLB probe saves little per access, and
+the session's speed is set elsewhere. Two probes weren't built: 2 points of probes for a second `HOST` through every
+body, at about 0.5% of wasm by these ratios.
+
+Tests: `mmu.c` checks 40-42, the plan's unit test, `jit-diff`'s groups now mixed, with an add among them and a dirty
+earlier site, each state run twice. Planted: the failure's reload gone (check 39, and `jit-diff`: 13 of 512 groups
+differ, the Firefox crash's class), mixed groups on the read array (check 42: a 64-iteration loop compiled nothing,
+and with the load only inside the group the plant still passed, for a reason not found; a load of the page before each
+call made it fail).
+

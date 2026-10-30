@@ -575,6 +575,7 @@ implemented by this step).
 | 51 | FEAT_SHA512 and FEAT_SHA3: `VmConfig.features` bit 3 (`FEATURE_SHA3`, with bit 0); `ID_AA64ISAR0_EL1` SHA2 = 2, SHA3 = 1 |
 | 53 | the host-visible window: `VmConfig.window` (memory 0's bytes after RAM), `DeviceEntry.shm` (6 u64s an entry), the transport's SHM registers for region 1, `vm_window_watch` (VK1, docs/plans/graphics.md) |
 | 55 | the window in memory 1: `VmConfig.window_at`; memory 0 holds RAM alone (`vm_new`'s `ram`), memory 1 the bytes before the window (Venus's renderer), the window, then node 1's RAM; a device's (memory, offset) counts from the memory's first byte (VK4 T19) |
+| 56 | `jit_exec_span(vcpu, pc, n, w0, w1, w2)`: `jit_exec_mmu` for up to six instructions, their words as constants; returns how many retired (a group of accesses' cold arm, docs/jit.md "Loads and stores") |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |
