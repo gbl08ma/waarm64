@@ -39,7 +39,10 @@ model, locks and wizard ([network-adapters.md](../network-adapters.md)); the uni
    machine runs. Chromium's "allow on every visit" makes this rare. A grant lost while running (the user revoked it)
    turns the folder's requests into `EACCES` and brings the same button back.
 6. **The guest's side is set by the page:** with **Mount shared folders in the guest** on (`MachineRecord.sharesMount`,
-   default on, carried by definitions, not in the shape), a systemd automount at `/mnt/shared` (§5). Nothing is
+   default on), a systemd automount at the machine's **mount point** (`MachineRecord.sharesPath`, default
+   `/mnt/shared`, left out of the record while it is the default), set per machine because distributions differ on
+   what lives under `/mnt` and `/media` (§5). Both are carried by definitions and not in the shape (the guest's disk
+   decides what a path means, not the device). Nothing is
    installed in the guest's disk.
 
 ## 2. The folders
@@ -50,7 +53,7 @@ model, locks and wizard ([network-adapters.md](../network-adapters.md)); the uni
 browser, its OPFS directory), the user's name (a picked folder's starts as its directory's name), `kind: 'host' |
 'opfs'`, `readOnly`, `handle` (host only), `lastUsed` (what the wizard preselects). A machine record's
 `folders: {id, readOnly}[]` are its attachments, in the root's order. A definition (export) carries `shares` and
-`sharesMount`, never folders (as it carries MACs and no connections).
+`sharesMount` and `sharesPath`, never folders (as it carries MACs and no connections).
 
 No ephemeral folders: a host folder's handle has to be kept for its grant to be asked again, and a folder in the
 browser is its stored files.
@@ -129,24 +132,34 @@ after the request it names** (today every request completes at once, so it's ans
 ## 4. The page
 
 - **The Machines page:** a **Shared folders** tab per machine: **Shared folders** (the switch: in the shape, so asked
-  as Settings' changes are), **Mount shared folders in the guest**, and the attached folders in order (name, kind,
+  as Settings' changes are), **Mount shared folders in the guest** and under it **Mount point** (a text field, default
+  `/mnt/shared`, checked as typed by `sharesPathError`, §5; on the machine running on this page a change says it takes
+  effect at the next start), and the attached folders in order (name, kind,
   Read-only, held by another machine, no permission in this browser; up, down, Detach, Allow…). **Attach a folder…**
   opens the **Folder wizard** (`FolderWizard.svelte`): the browser's folders first, those in use marked with their
   machine, after **New folder…**: the kind, each explained, then its settings. **Shared folders** in the list of
   machines is the browser's (§2.2, §2.3), with rename, Read-only, Delete (naming the machines that lose it).
 - **The toolbar:** a **Folders** menu while the page's machine has `shares`: each attached folder with its state,
-  **Allow access…**, Detach, **Attach a folder…** (the wizard), and where the guest finds them (`/mnt/shared/<name>`).
+  **Allow access…**, Detach, **Attach a folder…** (the wizard), and where the guest finds them (`<mount point>/<name>`).
 - **A drop on the page's screen** of a directory offers to attach it to the running machine (and keep it as a folder).
 - The transient machine (`?machine=`, `?disk=`) has no folders: it isn't stored, and tests make their own.
 
 ## 5. The guest
 
-- **The mount** is a unit of the page's (`guestUnit`, SMBIOS credentials, systemd 256+): `mnt-shared.mount`
-  (`What=webpc`, `Type=9p`, `Options=trans=virtio,version=9p2000.L,cache=none,msize=1048576,access=user,nofail`) and
-  `mnt-shared.automount`, wanted by `remote-fs.target` through a drop-in, so the first access mounts it and a guest
-  without the module or the device boots on. Debian 13 and Arch load `9pnet_virtio` from the device's modalias (to be
-  checked on both in L5; our own kernels have it built in, `images/linux.fragment`). `/mnt/shared` is the mount
-  point for every guest; the user can mount the tag elsewhere by hand.
+- **The mount** is a unit of the page's (`guestUnit`, SMBIOS credentials, systemd 256+): `<unit>.mount`
+  (`What=webpc`, `Where=<mount point>`, `Type=9p`,
+  `Options=trans=virtio,version=9p2000.L,cache=none,msize=1048576,access=user,nofail`) and `<unit>.automount`, wanted
+  by `remote-fs.target` through a drop-in, so the first access mounts it and a guest without the module or the device
+  boots on. systemd creates the mount point if it is missing. Debian 13 and Arch load `9pnet_virtio` from the
+  device's modalias (to be checked on both in L5; our own kernels have it built in, `images/linux.fragment`).
+- **The mount point** is the machine's (`sharesPath`, default `/mnt/shared`). `<unit>` is its name as systemd escapes
+  a path (`systemd-escape --path`: `/mnt/shared` is `mnt-shared`, `/home/me/host files` is `home-me-host\x20files`),
+  done by `web/app/shares-mount.ts` `mountUnit` and unit-tested against `systemd-escape`'s outputs. `sharesPathError`
+  takes an absolute, normalized path (no `.`, `..`, `//` or trailing `/`; no control characters; at most 255 bytes) and
+  refuses `/` and the guest's own trees (`/bin`, `/boot`, `/dev`, `/etc`, `/lib*`, `/proc`, `/run`, `/sbin`, `/sys`,
+  `/tmp`, `/usr`, `/var` themselves, and anything under `/dev`, `/proc`, `/sys`); mounting over a directory that has
+  files hides them, which the field's note says. The units are read at boot, so a new mount point applies at the next
+  start.
 - Guests without systemd 256 see the device and mount it by hand: `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none webpc /mnt`.
   The Folders menu says so.
 
@@ -177,7 +190,7 @@ between save and restore is the host's business, as a network share's would be.
 - **L4, the page:** §4 and §2.2–2.3. Page tests with folders in the browser (the wizard, attach while running, the
   lock's Use it here between two tabs, Delete).
 - **L5, the guest:** the mount unit; `tests/page-debian.test.ts` (or `ci-machines.sh`'s) reads and writes
-  `/mnt/shared/<name>` and sees a folder attached while running; Arch's desktop by hand.
+  `/mnt/shared/<name>`, then another mount point after a restart, and sees a folder attached while running; Arch's desktop by hand.
 - **L6, snapshots:** §6, with a test that saves with a file open for writing and restores into a detached folder.
 - **The end:** an out-of-context review of `web/9p.ts` and the folders' code; `scripts/ci.sh`, `ci-debian.sh`,
   `ci-machines.sh`; the outcome into docs (`docs/shares.md`, devices.md "9p", frontend.md) and PLAN.md §3.
