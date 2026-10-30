@@ -257,6 +257,22 @@ left open, most promising first.
 - Blocks are formed twice: decoded for the block interpreter on first sight (which gives the cache
   their length) and again at compile time.
 
+- **One TLB probe for a group of accesses** (2026-10-30, the user's question; untried). Every guest load and store
+  probes the TLB inline (docs/jit.md "Loads and stores"); a group of accesses in one block through the same base
+  register, unchanged between them (`ldr x1,[x0]; ldr x2,[x0,#8]; str x4,[x0,#16]`, a stack frame's spills and fills,
+  a struct's fields), could share one probe: the tag compare already checks a range (`(va + len − 1) | 0xfff`), so one
+  compare over the group's whole span gives every access its addend, the same shape with another constant. A miss
+  (the span across a page, no entry, a fault) falls back to each access's own probe and slow path in order, so faults
+  keep their order and MMIO is unchanged. Loads and stores group apart (separate TLB arrays: a read entry says nothing
+  of write permission); exclusives, atomics and accesses with a helper call between them stay alone. The translation
+  can't change inside a block (a TLBI or a regime MSR ends it, a fault leaves it). The dynamic form, a memo of the
+  last-hit entry in wasm locals, lost (docs/jit.md "A TLB translation memo": its two compares and loop-carried locals
+  cost more than the probe); this one adds no run-time check. On a spill machine it also drops arm copies (one per
+  probe). **First** count the opportunity: per compiled block, the accesses that could share a probe (same kind, same
+  unchanged base, a span under a page), weighted by the block's runs, on `alpine_user_jit` and a desktop session;
+  then, if the ceiling is worth it, build it behind a switch and A/B it on the Mac host (the base kept in a local
+  across instructions is register pressure in TurboFan, what sank the memo).
+
 ## The core with `simd128`
 
 Off since the pinned nightly miscompiled the JIT's register-mask code three times; nothing needs
