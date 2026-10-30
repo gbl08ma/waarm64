@@ -582,11 +582,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in the shader; no single-plane 422 formats (YUY2: WebGPU has none, they would be decoded from words); optimal tiling
   only (a linear image can't be sampled here anyway); no explicit chroma reconstruction nor a chroma filter apart from
   the sampler's (Mesa's implicit reconstruction, which dEQP-VK's conversion cases pass); planes aren't attachments or
-  storage images. Failing (out of `tests/deqp/vk-ycbcr.txt`): **a plane viewed in another format of its class**
-  (r8_uint of an r8unorm plane: WebGPU's views differ only in sRGB-ness; 66 `plane_view.image_view.*compatible_format*`,
-  the view invalid and its submit dropped; since VK3 L7b warned, `wg: a view of format … of plane …`, and a mutable
-  image's format list may name its planes' formats: Vulkan allows such a view without a list, so the image-format
-  query can't refuse it; a plane texture per view format would need copies between them) and **an image aliasing a
+  storage images. Failing (out of `tests/deqp/vk-ycbcr.txt`): **an image aliasing a
   plane's memory** (48 `plane_view.memory_alias`: images are textures of their own, never their memory's bytes). **No
   multi-planar image on external memory** (VK3 L7b, the review of L6b-L7.3's finding 4: refused by the image-format
   query, since its planes' textures were neither imported from an imported memory's resource nor registered as
@@ -754,6 +750,24 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     84 failures of T10's sample. GFXReconstruct's trimmed captures restore their depth images through the worker's
     paths (vkQuake's first replayed frame). `multisample_resolve.*.max_attachments_4_samples_4` (17 of the sample) reads
     an attachment of its pass as an input attachment: the feedback loop under "Rendering".
+  - **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
+    `image.mutable` is multisampled: 380 multisampled arrays (below), 62 view formats WebGPU can't multisample
+    (`r32_sint`, `r32_uint`, the `rg32` ones: such an image's alias can't be made), and 3 sRGB-twin resolves in 2D
+    (`b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att` and two more: colours off by ~0.26 in green and
+    blue, no WebGPU error, on SwiftShader; not run on the M4). Also not backed: a multisampled copy between
+    formats (bit patterns can't cross a draw; an attachment that keeps its contents meets it), a shared or linear
+    image's view in another format (what others read is its own texture), views of another block size (uncompressed of
+    compressed: `BLOCK_TEXEL_VIEW_COMPATIBLE`), and, in one render pass, a write through one format read through
+    another (no copies in a pass). `image.mutable`'s `store` and `load` cases are NotSupported here (dEQP asks for
+    multisampled storage): checked once by reporting samples for storage in a throwaway build, 113 of 371 passing, none
+    failing, the rest not supported (`results/vk4/t4/store-probe/`). The copies' cost on a program isn't measured
+    (ffmpeg's and libplacebo's filters are the ones to measure: whole subresources, per switch of format).
+  - **Multisampled arrays** (VK4 T4: 380 of `image.mutable`, T12's): WebGPU's multisampled textures have one layer. A
+    multisampled 2D texture per layer would serve rendering and resolves, which go a layer at a time, at no cost past
+    the bookkeeping (the aliases' per-subresource shape fits); a shader sampling a whole multi-layer `sampler2DMSArray`
+    needs a binding per layer and a switch on the layer in the translator. Not a compute emulation: WGSL can't write a
+    multisampled texture from compute, and doing it in storage would mean rasterizing coverage by hand. Not built, not
+    measured.
   - **Pulled vertices' leftovers** (VK4 T5; vk/README.md "Pulled vertices"): a program with four groups of resources
     has none to pull from, and its pipeline stays refused (group 3 could take the bindings); more pulled bindings than
     the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
@@ -826,11 +840,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`); a storage buffer the fragment
     stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); indirect fans
     drawn as lists, without the fan-index conversion, and non-indexed fans past 65,536 vertices dropped without a
-    warning (the driver review's "smaller gaps"); views of a mutable
-    image in a format other than its sRGB twin (WebGPU's `viewFormats`; the image-format query refuses a format list
-    that names one, but an image made without a list gets an invalid view, warned: `image.mutable.*` isn't in the
-    direct set; ffmpeg's and libplacebo's filters and DXVK alias formats this way; a fix would copy into a texture of
-    the view's format, or alias through a storage buffer). Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
+    warning (the driver review's "smaller gaps"). Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
     dEQP-VK's SAMPLE_ZERO `depth_stencil_resolve` cases in the list since L7.1, stencil8's above); MIN, MAX and AVERAGE
     aren't advertised.
   - **Usage scopes' leftovers** (VK4 T3: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a

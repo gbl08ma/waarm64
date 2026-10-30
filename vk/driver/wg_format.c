@@ -263,6 +263,26 @@ wg_ycbcr_format(VkFormat format)
    return info;
 }
 
+VkFormatFeatureFlags
+wg_view_formats_features(const struct wg_texture_format *f, const VkFormat *list, uint32_t count)
+{
+   VkFormatFeatureFlags all = 0;
+   for (uint32_t i = 0; i < FORMAT_COUNT; i++) {
+      const struct wg_texture_format *v = wg_texture_format(formats[i].vk);
+      if (!v || v->bytes != f->bytes || v->bw != f->bw || v->bh != f->bh || (v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
+         continue;
+      bool listed = !list;
+      for (uint32_t k = 0; list && k < count; k++)
+         listed |= list[k] == v->vk;
+      if (!listed)
+         continue;
+      VkFormatFeatureFlags linear, optimal, buffer;
+      wg_format_features(v->vk, &linear, &optimal, &buffer);
+      all |= optimal;
+   }
+   return all;
+}
+
 /* What the device reports of a format: optimal tiling from WebGPU's capabilities, linear tiling only copies (a linear
  * image is a texture like any other, but the guest can't sample what it maps), buffers vertex input and texel buffers
  * (wg_texel_buffer_layout). */

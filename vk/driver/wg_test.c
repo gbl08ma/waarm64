@@ -3292,6 +3292,103 @@ wgt_samples(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t 
    return 0;
 }
 
+/*
+ * VK4 T4, wgt_misc's scenario 38, `cs` mutable-view.comp: a 4x4 R8G8B8A8_UNORM mutable image of two levels, both cleared
+ * in its format (level 0 green, level 1 red); the shader stores 0x04030201 at (1, 1) of level 0 through an R32_UINT
+ * storage view and reads level 1 through an R32_UINT sampled view into the buffer's first word; then both levels
+ * are copied out in the image's format, at 256 and 512. The store keeps the clear's other texels only if the view's
+ * texture took them, and the copy sees the store only if it comes back.
+ */
+static int
+t4_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
+      .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = { 4, 4, 1 }, .mipLevels = 2,
+      .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+               VK_IMAGE_USAGE_SAMPLED_BIT,
+   };
+   VkImage img;
+   CHECK(CreateImage(dev, &info, NULL, &img));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, img, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, img, mem, 0));
+   VkImageView views[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img,
+                                         .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R32_UINT,
+                                         .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, i, 1, 0, 1 } };
+      CHECK(CreateImageView(dev, &vi, NULL, &views[i]));
+   }
+   const VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+   VkSampler sampler;
+   CHECK(CreateSampler(dev, &si, NULL, &sampler));
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   const VkDescriptorSetLayoutBinding bindings[3] = {
+      { 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+   };
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 3, .pBindings = bindings };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolSize ps[3] = { { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
+                                        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+                                        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 3, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   const VkDescriptorImageInfo stored = { VK_NULL_HANDLE, views[0], VK_IMAGE_LAYOUT_GENERAL },
+                               sampled = { sampler, views[1], VK_IMAGE_LAYOUT_GENERAL };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[3] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = &stored },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &sampled },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 2, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 3, wr, 0, NULL);
+   const VkImageSubresourceRange level0 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }, level1 = { VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 0, 1 };
+   CmdClearColorImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { 0, 1, 0, 1 } }, 1, &level0);
+   CmdClearColorImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { 1, 0, 0, 1 } }, 1, &level1);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+   CmdDispatch(cmd, 1, 1, 1);
+   const VkBufferImageCopy down[2] = {
+      { .bufferOffset = 256, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .imageExtent = { 4, 4, 1 } },
+      { .bufferOffset = 512, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 1, 0, 1 }, .imageExtent = { 2, 2, 1 } },
+   };
+   CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_GENERAL, out, 2, down);
+   return 0;
+}
+
 EXPORT int
 wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
 {
@@ -3940,6 +4037,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 36 || scenario == 37) {
       if (t10_misc(scenario, cmd, out))
+         return 1;
+   } else if (scenario == 38) {
+      if (t4_misc(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 23) {
       /* More uniform buffers than WebGPU binds a stage (VK3 L7.4): the device's maximum, 13 or more. */

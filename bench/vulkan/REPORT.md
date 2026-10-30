@@ -771,6 +771,38 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T4: views in another format — every `image.mutable` failure but multisampled ones, 3,132 cases and the plane views
+
+**2026-10-30.** JSON in `results/vk4/t4/`: `base/` before (every 10th of `image.mutable`'s 10,645 cases, which aren't in
+`vk-main.txt`: names from the CTS image's mustpass, and the 456 8-bit plane views), `whole/` after (all of them), `m4/` the
+3,198 passing on the M4 (Metal, Chrome for Testing 153.0.8010.12), `store-probe/` below. `bench/gpu/deqp-run.ts vk`,
+SwiftShader on the dev VM, Chromium 153.0.8010.52.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| before, the sample | 1,521 | 132 | 213 | 1,176 |
+| after, the sample (before the storage twin's fix) | 1,521 | 389 | 43 | 1,089 |
+| after, the whole group | 11,101 | 3,198 | 445 | 7,458 |
+| the M4, the 3,198 | 3,198 | 3,198 | 0 | 0 |
+
+- **The fix.** A view WebGPU refuses is of a texture of its own format, and the replay copies subresources between an
+  image's textures where one is used that doesn't hold them (vk/README.md "Views in another format"). The lists 9,602 →
+  12,733 and 773 → 839 (the 66 plane views). Nothing that passed before fails; one case left the list, not failing:
+  `imagesizems.image2dms_fixed_vertex` passed by running nothing (the query said one sample), and now, asked for 4, is
+  NotSupported through its image's other usage.
+- **What left the failures**: every one of the 445 is multisampled: 380 arrays (WebGPU has none: T12; backlog
+  "Multisampled arrays"), 62 view formats WebGPU can't multisample, 3 sRGB-twin resolves not understood (backlog).
+- **The query was the larger gate.** `image.mutable` asks every case for a format with more than one sample, whatever
+  it does, and we said one for an image without attachment usage (though `sampledImageColorSampleCounts` says 4) and
+  refused `EXTENDED_USAGE` usage its format lacks. Both fixed: 83 of the sample's passes.
+- **`store` and `load` are still not supported** (dEQP's same check, for storage usage, where 1 is the truth), so the path
+  ffmpeg and libplacebo take has no CI case but `mutableViews`. Checked once in a throwaway build reporting samples for
+  storage (every 12th, 371 cases): 112 pass, 1 fail, a storage view of an sRGB image's linear twin, which had no
+  storage usage; fixed, 113 pass and none fail (258 not supported).
+- **Tests**: `misc: mutableViews` failed first with WebGPU's error. Not planted: the copies themselves are what its pixels
+  check, and the attachment-resolve bug found on the way (resolves named the image's own texture) was caught by dEQP.
+- **Left** (backlog "Views in another format's leftovers"): the copies' cost on a real program isn't measured.
+
 ## VK4 T5: vertex strides and offsets that aren't multiples of 4 — 1,002 of `vertex_input`'s failures to 0, pulled from storage
 
 **2026-10-30.** JSON in `results/vk4/t5/`: `base/` before and `after/` after (`pipeline.monolithic.vertex_input.*`,

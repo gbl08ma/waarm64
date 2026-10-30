@@ -87,7 +87,12 @@ T2–T14; the rest of the order is judgement, said with each.
   view and its submit is dropped (ffmpeg's and libplacebo's filters, DXVK alias formats this way), and YCbCr's plane
   views of another format of their class (66 cases) have the same root. A texture per view format with copies
   between them, or aliasing through a storage buffer. *Done:* `image.mutable.*` and the plane views in the lists.
-  *Start:* backlog "Rendering" (the mutable images), "YCbCr's gaps".
+  *Start:* backlog "Rendering" (the mutable images), "YCbCr's gaps". **Done 2026-10-30** (REPORT.md "VK4 T4"): a texture per
+  view format, the replay copying each subresource where it is used in a texture that doesn't hold it; `EXTENDED_USAGE`
+  and sampled images' sample counts in the image-format query. `image.mutable` 3,198 pass, on SwiftShader and the M4
+  (the 66 plane views among them), the lists 9,602 → 12,733 and 773 → 839; the 445 failures left are multisampled (380
+  arrays, 62 formats WebGPU can't multisample, 3 twin resolves not understood). Left: backlog "Views in another
+  format's leftovers"; the copies' cost unmeasured.
 - **T5. Vertex strides and offsets that aren't multiples of 4** (M): WebGPU refuses them, which invalidates the
   pipeline and drops its submit (vkd3d's test_instance_id; Direct3D content through vkd3d and DXVK uses such
   layouts). Vertex pulling from a storage buffer for the attributes WebGPU can't take. *Done:* the dEQP-VK cases,

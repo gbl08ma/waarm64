@@ -156,6 +156,9 @@ const char *wg_vertex_format(VkFormat format);
 bool wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *storage);
 void wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatureFlags *optimal,
                         VkFormatFeatureFlags *buffer);
+/* What views of an image of `f` can do, in the formats of `list` (NULL: any it can be viewed in), with optimal tiling:
+ * an image with EXTENDED_USAGE's usage comes from these, not its own format. */
+VkFormatFeatureFlags wg_view_formats_features(const struct wg_texture_format *f, const VkFormat *list, uint32_t count);
 
 /* Building JSON for gpu_create and friends. */
 struct wg_json {
@@ -209,6 +212,7 @@ struct wg_device {
    /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size and samples. */
    struct wg_dummy *dummies[16];
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
+   bool aliased;           /* an image has aliases: the replay looks at what each scope binds (wg_cmd.c `scope_images`) */
    /* Copies of what a usage scope reads from a GPUBuffer it also binds as writable storage (VK4 T3; wg_cmd.c
     * `shadow_place`): `shadow_size` bytes, places taken in order within a submit from `shadow_used`. */
    uint32_t shadow;
@@ -260,6 +264,7 @@ struct wg_buffer {
    VkDeviceSize offset;
 };
 
+#define WG_IMAGE_ALIASES 7
 /* An image is a texture, made with the image (its memory is only where its bytes are said to be). */
 struct wg_image {
    struct vk_image vk;
@@ -274,6 +279,16 @@ struct wg_image {
    bool linear_host;
    struct list_head linear_link;
    bool imported;   /* bound to imported memory: its texture is another renderer's resource's (gpu_texture_import) */
+   /* Views in a format WebGPU won't view its texture in (VK4 T4; vk/README.md "Views in another format"): a texture of
+    * that format each, the same size. `valid`, NULL without one: for each plane, level and layer (wg_image_valid), a
+    * bit for each texture that holds its bytes, bit 0 its own and i + 1 aliases[i]; the replay keeps it, in queue order. */
+   uint32_t alias_count;
+   struct wg_image_alias {
+      uint32_t tex;
+      const struct wg_texture_format *fmt;
+      uint32_t plane;
+   } aliases[WG_IMAGE_ALIASES];
+   uint8_t *valid;
    /* A multi-planar format's planes (VK3 L7.2), each a texture of its own (plane 0's are `tex` and `fmt` above), and
     * where its bytes are: in the image's (`offset` past the image's own), or, disjoint, in a memory bound to the plane.
     * 1 for every other format. */
@@ -289,6 +304,17 @@ struct wg_image {
 };
 /* The plane an aspect names (PLANE_n, or 0). */
 uint32_t wg_image_plane(const struct wg_image *image, VkImageAspectFlags aspect);
+/* The layers `valid` counts: a 3D image's level is one. */
+static inline uint32_t
+wg_image_valid_layers(const struct wg_image *image)
+{
+   return image->vk.image_type == VK_IMAGE_TYPE_3D ? 1 : image->vk.array_layers;
+}
+static inline uint8_t *
+wg_image_valid(const struct wg_image *image, uint32_t plane, uint32_t level, uint32_t layer)
+{
+   return &image->valid[((plane * image->vk.mip_levels + level) * wg_image_valid_layers(image)) + layer];
+}
 /* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
 void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);
 
@@ -305,6 +331,8 @@ struct wg_image_view {
     * samples each (wgsl_lower_ycbcr). */
    uint32_t plane_count;
    uint32_t planes[3];
+   uint32_t first_plane; /* of a one-plane view */
+   uint32_t alias;       /* the image's texture it views: 0 its own, i + 1 aliases[i] */
 };
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and

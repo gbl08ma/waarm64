@@ -380,6 +380,16 @@ view_format_ok(VkFormat format, VkFormat view)
    return view == twin;
 }
 
+/* A view of `format` of a texture of `f`, which WebGPU refuses, that a texture of its own can back (VK4 T4): bytes for
+ * bytes, a block for a block. */
+static bool
+view_format_aliasable(const struct wg_texture_format *f, VkFormat view)
+{
+   const struct wg_texture_format *v = wg_texture_format(view);
+   return v && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !(v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) &&
+          v->bytes == f->bytes && v->bw == f->bw && v->bh == f->bh;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
                                            const VkPhysicalDeviceImageFormatInfo2 *info,
@@ -389,7 +399,7 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    const struct vk_properties *p = &pdev->vk.properties;
    VkFormatFeatureFlags linear, optimal, buffer;
    wg_format_features(info->format, &linear, &optimal, &buffer);
-   const VkFormatFeatureFlags features =
+   VkFormatFeatureFlags features =
       info->tiling == VK_IMAGE_TILING_LINEAR ? linear : optimal; /* a modifier's: the optimal's (above) */
    VkFormatFeatureFlags needed = 0;
    if (info->usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
@@ -404,18 +414,22 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       needed |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
    if (info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
       needed |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-   /* A mutable image's views may differ from its format only in sRGB-ness in WebGPU (viewFormats): a format list
-    * naming another format is refused (an image made without one gets views of other formats, which WebGPU refuses:
-    * CreateImageView warns). */
+   /* A mutable image's views differ from its format only in sRGB-ness in WebGPU (viewFormats); others take a texture
+    * of their own (wg_CreateImageView), but for a shared or linear image, whose texture is what others read. */
    const VkImageFormatListCreateInfo *list = vk_find_struct_const(info->pNext, IMAGE_FORMAT_LIST_CREATE_INFO);
    const struct vk_format_ycbcr_info *ycbcr = wg_ycbcr_format(info->format);
    if ((info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && list) {
       for (uint32_t i = 0; i < list->viewFormatCount; i++) {
          /* A multi-planar image's: its planes' formats (a plane's view, each plane a texture of its own: VK3 L7b,
           * the review of L6b-L7.3's finding 3), or their twins. */
-         bool ok = view_format_ok(info->format, list->pViewFormats[i]);
-         for (uint8_t p = 0; ycbcr && p < ycbcr->n_planes && !ok; p++)
-            ok = view_format_ok(ycbcr->planes[p].format, list->pViewFormats[i]);
+         const VkFormat v = list->pViewFormats[i];
+         const struct wg_texture_format *own = wg_texture_format(info->format);
+         const bool alias = info->tiling == VK_IMAGE_TILING_OPTIMAL;
+         bool ok = view_format_ok(info->format, v) || (alias && own && view_format_aliasable(own, v));
+         for (uint8_t p = 0; ycbcr && p < ycbcr->n_planes && !ok; p++) {
+            const struct wg_texture_format *plane = wg_texture_format(ycbcr->planes[p].format);
+            ok = view_format_ok(ycbcr->planes[p].format, v) || (alias && plane && view_format_aliasable(plane, v));
+         }
          if (!ok) {
             pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -434,6 +448,10 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    const bool depth = features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
    const struct wg_texture_format *tf = wg_texture_format(info->format);
    const bool compressed = tf && (tf->bw > 1 || tf->bh > 1);
+   /* EXTENDED_USAGE: usage its format lacks and a view's has. */
+   if (features && tf && (info->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) && info->tiling == VK_IMAGE_TILING_OPTIMAL)
+      features |= wg_view_formats_features(tf, list && list->viewFormatCount ? list->pViewFormats : NULL,
+                                           list ? list->viewFormatCount : 0);
    if (!features || (features & needed) != needed || info->type > VK_IMAGE_TYPE_3D ||
        (info->type != VK_IMAGE_TYPE_2D && (depth || compressed))) {
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
@@ -448,8 +466,11 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    const uint32_t dim = info->type == VK_IMAGE_TYPE_1D ? p->maxImageDimension1D
                        : info->type == VK_IMAGE_TYPE_2D ? p->maxImageDimension2D
                                                         : p->maxImageDimension3D;
-   const bool attachment = info->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+   /* Multisampled textures are attachments in WebGPU, so a sampled image takes samples where its format renders. */
+   const bool attachment = (info->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) ||
+                           ((info->usage & VK_IMAGE_USAGE_SAMPLED_BIT) && tf &&
+                            (tf->flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL)));
    pProps->imageFormatProperties = (VkImageFormatProperties){
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
       .maxMipLevels = ycbcr ? 1 : util_logbase2(dim) + 1,
@@ -971,6 +992,14 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    /* A linear image may be bound to host-visible memory: copied to and from it at each submit. */
    if (vi->tiling == VK_IMAGE_TILING_LINEAR)
       usage |= 1 | 2;
+   /* A mutable image's textures of different formats copy between them (VK4 T4), and its usage may be its views'. */
+   if (vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) {
+      usage |= 1 | 2;
+      if (!(flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL)))
+         usage &= ~16u;
+      if (!(flags & WG_FMT_SAMPLE))
+         usage &= ~4u;
+   }
    /* depth24plus can't be copied; depth24plus-stencil8's stencil can. */
    if ((flags & WG_FMT_NOCOPY) && !(flags & WG_FMT_STENCIL))
       usage &= ~3u;
@@ -1043,6 +1072,45 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
    return VK_SUCCESS;
 }
 
+/* The image's texture of plane `plane` for views of `format`, made at the first such view: its index + 1, or 0 where
+ * none can be (the view stays on the image's texture, which WebGPU refuses, said once). */
+static uint32_t
+image_alias(struct wg_device *dev, struct wg_image *image, uint32_t plane, VkFormat format)
+{
+   const struct wg_texture_format *own = image->planes[plane].fmt, *view = wg_texture_format(format);
+   /* A storage view of an sRGB image's linear twin: WebGPU's usage is the texture's, and sRGB formats have no storage. */
+   const bool storage = (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && image->vk.samples == 1 && view &&
+                        (view->flags & WG_FMT_STORAGE) && !(own->flags & WG_FMT_STORAGE);
+   if (view_format_ok(own->vk, format) && !storage)
+      return 0;
+   for (uint32_t i = 0; i < image->alias_count; i++)
+      if (image->aliases[i].plane == plane && view_format_ok(image->aliases[i].fmt->vk, format))
+         return i + 1;
+   const bool can = (image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && !image->shared &&
+                    image->vk.tiling == VK_IMAGE_TILING_OPTIMAL && image->alias_count < WG_IMAGE_ALIASES &&
+                    view_format_aliasable(own, format);
+   if (!can) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a view of format %d of plane %u of an image of format %d that no texture can back\n", format,
+                 plane, image->vk.format);
+      warned = true;
+      return 0;
+   }
+   if (!image->valid) {
+      const uint32_t n = image->plane_count * image->vk.mip_levels * wg_image_valid_layers(image);
+      image->valid = malloc(n);
+      memset(image->valid, 1, n);
+   }
+   const struct wg_texture_format *f = wg_texture_format(format);
+   const VkExtent3D e = image->plane_count > 1 ? (VkExtent3D){ image->planes[plane].extent.width,
+                                                               image->planes[plane].extent.height, 1 }
+                                               : image->vk.extent;
+   image->aliases[image->alias_count] = (struct wg_image_alias){ wg_texture_create(image, f, e), f, plane };
+   dev->aliased = true;
+   return ++image->alias_count;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *pAllocator)
 {
@@ -1065,6 +1133,9 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
    wg_id_release(image->tex);
    for (uint32_t p = 1; p < image->plane_count; p++)
       wg_id_release(image->planes[p].tex);
+   for (uint32_t i = 0; i < image->alias_count; i++)
+      wg_id_release(image->aliases[i].tex);
+   free(image->valid);
    vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
 
@@ -1224,14 +1295,9 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
    view->fmt = wg_texture_format(view->vk.view_format);
-   if (!view_format_ok(image->vk.format, view->vk.view_format) && image->plane_count < 2 &&
-       !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !vk_format_is_compressed(image->vk.format)) {
-      static bool warned;
-      if (!warned)
-         fprintf(stderr, "wg: a view of format %d of an image of format %d: WebGPU's views differ only in sRGB-ness\n",
-                 view->vk.view_format, image->vk.format);
-      warned = true;
-   }
+   if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
+      view->alias = image_alias(dev, image, 0, view->vk.view_format);
+   const uint32_t tex = view->alias ? image->aliases[view->alias - 1].tex : image->tex;
    /* A depth or stencil aspect of a combined format is the image's format with an aspect in WebGPU (the runtime's
     * view format is the aspect's own). */
    if (!view->fmt || (image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
@@ -1264,16 +1330,10 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       const bool one = a == VK_IMAGE_ASPECT_PLANE_0_BIT || a == VK_IMAGE_ASPECT_PLANE_1_BIT ||
                        a == VK_IMAGE_ASPECT_PLANE_2_BIT;
       const uint32_t first = one ? wg_image_plane(image, a) : 0;
-      /* A plane's view in a format other than the plane's (or its twin): WebGPU's views differ only in sRGB-ness, so
-       * WebGPU refuses it (the review of L6b-L7.3's finding 3; docs/backlog.md "YCbCr's gaps"). */
-      const struct vk_format_ycbcr_info *yi = wg_ycbcr_format(image->vk.format);
-      if (one && yi && !view_format_ok(yi->planes[first].format, view->vk.view_format)) {
-         static bool warned;
-         if (!warned)
-            fprintf(stderr, "wg: a view of format %d of plane %u of an image of format %d: WebGPU's views differ only "
-                            "in sRGB-ness\n", view->vk.view_format, first, image->vk.format);
-         warned = true;
-      }
+      /* A plane's view in a format other than the plane's (or its twin) is of a texture of its own. */
+      if (one)
+         view->alias = image_alias(dev, image, first, view->vk.view_format);
+      view->first_plane = first;
       view->plane_count = one ? 1 : image->plane_count;
       for (uint32_t p = 0; p < view->plane_count; p++) {
          const struct wg_image_plane *plane = &image->planes[first + p];
@@ -1281,7 +1341,8 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
          const struct wg_texture_format *f = vf ? vf : plane->fmt;
          wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"%s\",\"baseMipLevel\":0,"
                         "\"mipLevelCount\":1,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
-                        plane->tex, f->name, dim, view->vk.base_array_layer, view->vk.layer_count);
+                        view->alias ? image->aliases[view->alias - 1].tex : plane->tex, f->name, dim,
+                        view->vk.base_array_layer, view->vk.layer_count);
          view->planes[p] = wg_create_json(WG_KIND_VIEW, &j);
       }
       view->fmt = one && wg_texture_format(view->vk.view_format) ? wg_texture_format(view->vk.view_format)
@@ -1292,7 +1353,7 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       return VK_SUCCESS;
    }
    /* An aspect's view takes the aspect's format: left to WebGPU. */
-   wg_json_printf(&j, "{\"texture\":%u,", image->tex);
+   wg_json_printf(&j, "{\"texture\":%u,", tex);
    if (!strcmp(aspect, "all"))
       wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
    wg_json_printf(&j, "\"dimension\":\"%s\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
@@ -1306,25 +1367,25 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
        (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
       wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"2d-array\",\"baseMipLevel\":%u,"
                      "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
-                     image->tex, view->fmt->name, view->vk.base_mip_level, view->vk.level_count,
+                     tex, view->fmt->name, view->vk.base_mip_level, view->vk.level_count,
                      view->vk.base_array_layer, view->vk.layer_count);
       view->storage = wg_create_json(WG_KIND_VIEW, &j);
    }
    /* As an attachment: one level and one layer, 2D; a 3D image's level as a 3D view and the slice the view starts at
     * (a 2D view of a 3D image), the render pass's depthSlice. */
    view->slice = -1;
-   if (!layered && image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT && (image->fmt->flags & WG_FMT_RENDER)) {
+   if (!layered && image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT && (view->fmt->flags & WG_FMT_RENDER)) {
       wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"3d\",\"baseMipLevel\":%u,\"mipLevelCount\":1}",
-                     image->tex, view->fmt->name, view->vk.base_mip_level);
+                     tex, view->fmt->name, view->vk.base_mip_level);
       view->att = wg_create_json(WG_KIND_VIEW, &j);
       view->slice = view->vk.base_array_layer;
    } else if (image->vk.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                           VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
        layered && strcmp(wg_dimension(&image->vk), "1d") &&
-       (image->fmt->flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL))) {
+       (view->fmt->flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL))) {
       wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"2d\",\"baseMipLevel\":%u,"
                      "\"mipLevelCount\":1,\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
-                     image->tex, view->fmt->name, view->vk.base_mip_level, view->vk.base_array_layer);
+                     tex, view->fmt->name, view->vk.base_mip_level, view->vk.base_array_layer);
       view->att = wg_create_json(WG_KIND_VIEW, &j);
    }
    *pView = wg_image_view_to_handle(view);

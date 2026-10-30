@@ -46,6 +46,7 @@ enum op {
    OP_COPY_BT,         /* struct op_copy_bt */
    OP_COPY_TB,
    OP_COPY_TT,         /* struct op_copy_tt */
+   OP_IMAGE_USE,       /* struct op_image_use */
    OP_FILL,            /* struct op_fill */
    OP_UPDATE,          /* struct op_fill, then the bytes */
    OP_META,            /* JSON (gpu_blit) */
@@ -136,6 +137,14 @@ struct op_copy_tt {
    uint32_t dst_w, dst_h, cols, rows, bytes; /* the region at the destination, in its blocks; a block's bytes */
 };
 
+/* A mutable image's subresources about to be used in its own texture or an alias (`image_use`). */
+struct op_image_use {
+   struct wg_image *image;
+   uint32_t plane, alias, level, levels, layer, layers;
+   bool write;
+   bool discard; /* written whole: what it held needn't come first */
+};
+
 struct op_fill {
    uint32_t buffer, value, size;
    double offset;
@@ -200,6 +209,46 @@ forget(struct wg_cmd_buffer *cmd)
    cmd->last_compute = NULL;
    memset(cmd->last_program, 0, sizeof(cmd->last_program));
    cmd->emitted = 0;
+}
+
+/* Before a command that reaches a mutable image's own texture or, an attachment, a view's. */
+static void
+record_image_use(struct wg_cmd_buffer *cmd, struct wg_image *image, uint32_t plane, uint32_t alias, uint32_t level,
+                 uint32_t levels, uint32_t layer, uint32_t layers, bool write)
+{
+   if (!(image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+      return;
+   const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
+   struct op_image_use u = { image, plane, alias, level, levels, is3d ? 0 : layer, is3d ? 1 : layers, write, false };
+   emit(cmd, OP_IMAGE_USE, &u, sizeof(u));
+}
+
+static void
+record_layers_use(struct wg_cmd_buffer *cmd, struct wg_image *image, const VkImageSubresourceLayers *r, bool write)
+{
+   record_image_use(cmd, image, wg_image_plane(image, r->aspectMask), 0, r->mipLevel, 1, r->baseArrayLayer,
+                    vk_image_subresource_layer_count(&image->vk, r), write);
+}
+
+/* An attachment, whose old bytes the pass may not read (`discard`). */
+static void
+record_attachment_use(struct wg_cmd_buffer *cmd, const struct wg_image_view *v, bool discard)
+{
+   struct wg_image *image = container_of(v->vk.image, struct wg_image, vk);
+   if (!(image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+      return;
+   const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
+   struct op_image_use u = { image, 0, v->alias, v->vk.base_mip_level, 1, is3d ? 0 : v->vk.base_array_layer,
+                             is3d ? 1 : v->vk.layer_count, true, discard };
+   emit(cmd, OP_IMAGE_USE, &u, sizeof(u));
+}
+
+/* The texture a view is of. */
+static uint32_t
+view_texture(const struct wg_image_view *v)
+{
+   const struct wg_image *image = container_of(v->vk.image, struct wg_image, vk);
+   return v->alias ? image->aliases[v->alias - 1].tex : image->tex;
 }
 
 /* Command buffers. */
@@ -627,6 +676,7 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          wg_json_printf(&j, "%snull", i ? "," : "");
          continue;
       }
+      record_attachment_use(cmd, v, a->loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && !partial && !resumed);
       cmd->pass.colors[i] = v->vk.format;
       const bool clear = !resumed && a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
       const VkClearColorValue *c = &a->clearValue.color;
@@ -641,6 +691,8 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
                   c->float32[3]);
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
       const bool resolves = r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE;
+      if (resolves)
+         record_attachment_use(cmd, r, !partial);
       /* What WebGPU's resolve can't make (a format it doesn't resolve, part of the attachment, a 3D image) is the worker's draw
        * at the pass's end, which reads the attachment: stored. */
       const bool drawn = resolves && (!(v->fmt->flags & WG_FMT_BLEND) || (v->fmt->flags & WG_FMT_FLOAT32) || partial ||
@@ -755,13 +807,12 @@ end_rendering(struct wg_cmd_buffer *cmd)
       const struct wg_image_view *src = cmd->pass.resolve_color_src[a], *dst = cmd->pass.resolve_color_dst[a];
       if (!src)
          continue;
-      const struct wg_image *si = container_of(src->vk.image, struct wg_image, vk);
-      const struct wg_image *di = container_of(dst->vk.image, struct wg_image, vk);
       const VkRect2D *ra = &cmd->pass.area;
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
                      "\"dstLayer\":%u,\"format\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
-                     si->tex, src->vk.base_mip_level, src->vk.base_array_layer, di->tex, dst->vk.base_mip_level,
+                     view_texture(src), src->vk.base_mip_level, src->vk.base_array_layer, view_texture(dst),
+                     dst->vk.base_mip_level,
                      dst->slice >= 0 ? dst->slice : dst->vk.base_array_layer, dst->fmt->name, ra->offset.x, ra->offset.y,
                      ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
       meta(cmd, &j);
@@ -1635,6 +1686,7 @@ copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct 
    const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
    const uint32_t layers = is3d ? 1 : vk_image_subresource_layer_count(&image->vk, &r->imageSubresource);
    const uint32_t depth = is3d ? e.depth : 1;
+   record_layers_use(cmd, image, &r->imageSubresource, op == OP_COPY_BT);
    for (uint32_t l = 0; l < layers; l++) {
       const VkDeviceSize offset = buffer->offset + r->bufferOffset + (VkDeviceSize)l * bpr * rows;
       struct op_copy_bt c = {
@@ -1688,6 +1740,8 @@ wg_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *info)
       const struct wg_image_plane *dp = &dst->planes[wg_image_plane(dst, r->dstSubresource.aspectMask)];
       /* Size-compatible formats copy block for block: a compressed block is one texel of an uncompressed format. */
       const uint32_t cols = DIV_ROUND_UP(r->extent.width, sp->fmt->bw), rows = DIV_ROUND_UP(r->extent.height, sp->fmt->bh);
+      record_layers_use(cmd, src, &r->srcSubresource, false);
+      record_layers_use(cmd, dst, &r->dstSubresource, true);
       emit(cmd, OP_COPY_TT,
            &(struct op_copy_tt){ .src = sp->tex, .src_mip = r->srcSubresource.mipLevel, .sx = r->srcOffset.x,
                                  .sy = r->srcOffset.y, .sz = s3 ? r->srcOffset.z : r->srcSubresource.baseArrayLayer,
@@ -1722,6 +1776,8 @@ wg_CmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2 *info)
       const VkImageBlit2 *r = &info->pRegions[i];
       const uint32_t layers = vk_image_subresource_layer_count(&src->vk, &r->srcSubresource);
       const VkExtent3D se = vk_image_mip_level_extent(&src->vk, r->srcSubresource.mipLevel);
+      record_layers_use(cmd, src, &r->srcSubresource, false);
+      record_layers_use(cmd, dst, &r->dstSubresource, true);
       for (uint32_t l = 0; l < layers; l++) {
          struct wg_json j = { 0 };
          wg_json_printf(&j, "{\"op\":\"blit\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"srcFormat\":\"%s\",\"dst\":%u,"
@@ -1748,6 +1804,8 @@ wg_CmdResolveImage2(VkCommandBuffer commandBuffer, const VkResolveImageInfo2 *in
       const VkImageResolve2 *r = &info->pRegions[i];
       const bool d3 = dst->vk.image_type == VK_IMAGE_TYPE_3D;
       const uint32_t layers = vk_image_subresource_layer_count(&src->vk, &r->srcSubresource);
+      record_layers_use(cmd, src, &r->srcSubresource, false);
+      record_layers_use(cmd, dst, &r->dstSubresource, true);
       for (uint32_t l = 0; l < layers; l++) {
          struct wg_json j = { 0 };
          wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
@@ -1770,6 +1828,7 @@ clear_image(struct wg_cmd_buffer *cmd, struct wg_image *image, const VkClearColo
       const uint32_t levels = vk_image_subresource_level_count(&image->vk, &ranges[i]);
       const uint32_t layers = image->vk.image_type == VK_IMAGE_TYPE_3D
                                  ? 1 : vk_image_subresource_layer_count(&image->vk, &ranges[i]);
+      record_image_use(cmd, image, 0, 0, ranges[i].baseMipLevel, levels, ranges[i].baseArrayLayer, layers, true);
       for (uint32_t m = 0; m < levels; m++)
          for (uint32_t l = 0; l < layers; l++) {
             struct wg_json j = { 0 };
@@ -2032,6 +2091,7 @@ struct replay {
    bool shadowed[2][WGSL_MAX_GROUPS];
    bool no_readback;
    struct util_dynarray uses, written, shadows; /* `written`: the GPUBuffers among `uses` bound writable (uint32_t) */
+   struct util_dynarray images;                 /* struct op_image_use: what the scope binds of aliased images */
 };
 
 enum { RD_PIPELINE = 1, RD_DYN = 2, RD_GROUPS = 4, RD_VB = 8, RD_IB = 16, RD_PUSH = 32, RD_ALL = 63 };
@@ -2408,6 +2468,79 @@ use(struct replay *r, uint32_t buffer, double at, double size, bool writable)
       util_dynarray_append_typed(&r->uses, struct scope_use, ((struct scope_use){ buffer, writable, at, size }));
 }
 
+/* A mutable image's subresources used in its texture `alias` (0 its own): their bytes copied there from a texture
+ * that holds them where this one doesn't (the encoder's order, so outside a pass; bytes for bytes, as views see them);
+ * written, only this one holds them after. */
+static void
+image_use(struct replay *r, const struct op_image_use *u)
+{
+   struct wg_image *image = u->image;
+   if (!image->valid)
+      return;
+   const struct wg_image_plane *plane = &image->planes[u->plane];
+   const uint32_t bit = 1u << u->alias;
+   for (uint32_t m = u->level; m < u->level + u->levels; m++)
+      for (uint32_t l = u->layer; l < u->layer + u->layers; l++) {
+         uint8_t *v = wg_image_valid(image, u->plane, m, l);
+         if (!(*v & bit) && !u->discard) {
+            const uint32_t from = ffs(*v) - 1;
+            const struct wg_texture_format *f = from ? image->aliases[from - 1].fmt : plane->fmt;
+            const uint32_t src = from ? image->aliases[from - 1].tex : plane->tex;
+            const uint32_t dst = u->alias ? image->aliases[u->alias - 1].tex : plane->tex;
+            const uint32_t w = u_minify(image->plane_count > 1 ? plane->extent.width : image->vk.extent.width, m);
+            const uint32_t h = u_minify(image->plane_count > 1 ? plane->extent.height : image->vk.extent.height, m);
+            const uint32_t d = image->vk.image_type == VK_IMAGE_TYPE_3D ? u_minify(image->vk.extent.depth, m) : 1;
+            const uint32_t cols = DIV_ROUND_UP(w, f->bw), rows = DIV_ROUND_UP(h, f->bh);
+            end_pass(r);
+            gpu_copy_tt(src, m, 0, 0, l, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0, cols * f->bw, rows * f->bh,
+                        cols, rows, f->bytes);
+            *v |= bit;
+         }
+         if (u->write)
+            *v = bit;
+      }
+}
+
+/* The images a bind group binds, for `scope_images`. */
+static void
+bind_images(struct replay *r, const struct op_bind *b)
+{
+   const struct wg_program *p = b->program;
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      const struct wgsl_resource *res = &p->resources[k];
+      if (res->group != b->group || (res->kind != WGSL_TEXTURE && res->kind != WGSL_STORAGE_TEXTURE))
+         continue;
+      const struct wg_descriptor *d = bound_descriptor(b, p, k);
+      const struct wg_image_view *v = d ? d->view : NULL;
+      struct wg_image *image = v ? container_of(v->vk.image, struct wg_image, vk) : NULL;
+      if (!image || !image->valid)
+         continue;
+      const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
+      const bool write = res->kind == WGSL_STORAGE_TEXTURE && res->access != WGSL_ACCESS_READ;
+      for (uint32_t i = 0; i < MAX2(v->plane_count, 1); i++)
+         util_dynarray_append_typed(&r->images, struct op_image_use,
+                                    ((struct op_image_use){ image, v->first_plane + i, v->alias, v->vk.base_mip_level,
+                                                            v->vk.level_count, is3d ? 0 : v->vk.base_array_layer,
+                                                            is3d ? 1 : v->vk.layer_count, write }));
+   }
+}
+
+/* A scope's images: all of them brought up to date first, then what it writes held by its texture alone (a scope may
+ * read a subresource in one texture and write another's). */
+static void
+scope_images(struct replay *r)
+{
+   util_dynarray_foreach (&r->images, struct op_image_use, u) {
+      struct op_image_use read = *u;
+      read.write = false;
+      image_use(r, &read);
+   }
+   util_dynarray_foreach (&r->images, struct op_image_use, u)
+      if (u->write)
+         image_use(r, u);
+   util_dynarray_clear(&r->images);
+}
+
 /* The buffers a bind group binds, at its dynamic offsets (which go by resource, as record_sets puts them). */
 static void
 bind_uses(struct replay *r, const struct op_bind *b)
@@ -2484,6 +2617,8 @@ scan_pass(struct replay *r, struct scan *s, const uint8_t *p, const uint8_t *end
          for (uint32_t g = 0; g < s->group_count; g++)
             if (s->binds[g] && !s->added[g]) {
                bind_uses(r, s->binds[g]);
+               if (r->dev->aliased)
+                  bind_images(r, s->binds[g]);
                s->added[g] = true;
             }
          u_foreach_bit (v, s->vb_mask & ~s->vb_added)
@@ -2862,6 +2997,7 @@ scope_pass(struct replay *r, const uint8_t *p, const uint8_t *end)
    memcpy(s.binds, r->binds[0], sizeof(s.binds));
    memcpy(s.vb, r->vb, sizeof(s.vb));
    scan_pass(r, &s, p, end, true);
+   scope_images(r);
    if (scope_conflicts(r) && scope_shadows(r))
       rebind(r, 0, WGSL_MAX_GROUPS);
 }
@@ -3225,6 +3361,12 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          if (r->pass == RENDER)
             break;
          const struct op_indirect *a = h->op == OP_DISPATCH_INDIRECT ? d : NULL;
+         if (r->dev->aliased) {
+            for (uint32_t g = 0; g < r->group_count[1]; g++)
+               if (r->binds[1][g])
+                  bind_images(r, r->binds[1][g]);
+            scope_images(r);
+         }
          const bool scoped = scope_dispatch(r, a);
          if (r->pass == NONE) {
             gpu_compute_pass();
@@ -3262,6 +3404,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             readback(r, c->mem, c->mem_offset, c->mem_size);
          break;
       }
+      case OP_IMAGE_USE:
+         image_use(r, d);
+         break;
       case OP_COPY_TT: {
          const struct op_copy_tt *c = d;
          end_pass(r);
@@ -3717,6 +3862,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    util_dynarray_fini(&r.uses);
    util_dynarray_fini(&r.written);
    util_dynarray_fini(&r.shadows);
+   util_dynarray_fini(&r.images);
    /* Ordered after the earlier submits' work and before this one's (queue.writeBuffer). */
    if (dev->push_used)
       gpu_write(dev->push_buffer, 0, dev->push_data, dev->push_used);

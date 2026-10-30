@@ -234,7 +234,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
   `rg11b10ufloat` attachments), `rg11b10ufloat-renderable` and `bgra8unorm-storage`; linear tiling only copies; buffers
   vertex input and texel buffers: "The shader path"), samples 1 and 4 (1 for the 32-bit integer formats and the float ones of two or four
-  channels, which WebGPU doesn't multisample), views of a mutable image in its format's sRGB twin only (WebGPU's `viewFormats`: a format list naming
+  channels, which WebGPU doesn't multisample), views of a mutable image in any format of its size (below, "Views in another format"; WebGPU's `viewFormats` alone gives the sRGB twin: a format list naming
   another format is refused by the image-format query, and such a view warned of; a multi-planar image's list may
   name its planes' formats, VK3 L7b), no multi-planar image on external memory (its planes' textures are neither
   imported nor exported: refused by the image-format query, VK3 L7b); plus the extensions
@@ -413,6 +413,19 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
+- **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
+  format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
+  image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).
+  `wg_image.valid` says, for each plane, level and layer, which textures hold its bytes; the replay keeps it in
+  queue order, and copies a subresource between textures, bytes for bytes, where it is used in one that doesn't hold
+  it (`image_use`, through the copy between formats). Transfers and attachments say what they use by `OP_IMAGE_USE`
+  (an attachment's old bytes aren't copied if the pass can't read them); descriptors are found by the scope's scan
+  (`scope_images`: a render pass's before it begins, each dispatch's, read first, then what's written held alone).
+  Only images with such a view pay: `wg_device.aliased` skips the scan, an image without an alias has no `valid`.
+  `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT`'s usage comes from the formats its views can have (`wg_view_formats_features`), and a
+  sampled image takes samples where its format renders. Not backed (docs/backlog.md "Views in another format's
+  leftovers"): shared and linear images, a block-size change, a multisampled copy between formats, a view format
+  WebGPU can't multisample, and within one render pass a write in one texture read in another.
 - **Pulled vertices** (VK4 T5): WebGPU wants strides and bound offsets in multiples of 4 and an attribute's offset in
   multiples of its size up to 4, and Vulkan doesn't. A binding that breaks one (`wg_vertex_pull`, at each draw: the
   bound offset is part of the key, `vb[b].pull`), or with an attribute past its stride that no slot serves, is read by
