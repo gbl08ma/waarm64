@@ -1729,7 +1729,7 @@ times the JIT's cost each. `bench/interp/ab.sh`, dev VM, 3 alternated rounds, JS
 | `boot_alpine_dec_mips` | 221.2 | 220.3 | −0.4% |
 
 Dropped. A probe here is two loads and a compare in a handler that does much more; what the pair gives back is less than
-the extra tests and the code the inlined path adds to `hot`, whose speed rests on what V8 keeps in registers across
-the loop (the flat guest's −19.5% is that, not the probes: it has no TLB). Anything that adds a path to `hot` for a
-probe's sake should expect the same. On x86_64 the atomics remain the larger lever (docs/cpu.md, backlog "Interpreter").
+the extra tests and the code the inlined path adds to `hot`. The likely cause, not profiled: `hot`'s speed rests on what
+V8 keeps in registers across the loop, and the flat guest, which has no TLB to save on, lost most. A new path in `hot`
+for a probe's sake may well do the same. On x86_64 the atomics remain the larger lever (docs/cpu.md, backlog "Interpreter").
 
