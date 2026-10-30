@@ -396,8 +396,20 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   the depth into them (D24 as a word's low 24 bits, Vulkan's X8_D24 layout; an image copy through a temporary buffer);
   stencil WebGPU won't copy (part of a subresource, an offset not 4-aligned) is read out through a whole subresource's
   copy and written by draws over the region, one zeroing it and one a bit (`stencilByDraws`: each discards the texels
-  whose byte lacks its bit and replaces that bit); what's left (multisampled textures, depth16unorm's part) or what
-  WebGPU can't resolve (integer formats) is skipped with a warning, since one invalid command invalidates the whole submit. Barriers and events wait for nothing (WebGPU orders
+  whose byte lacks its bit and replaces that bit), and depth16unorm's part the same way, its half words read by the
+  draw (VK4 T10). Whole depth and stencil subresources take WebGPU's own copy where the textures have the copy usages and
+  every aspect is copied. A copy between size-compatible formats, which WebGPU's texture copies refuse, is the blocks'
+  bytes through a temporary buffer (`copyBetweenFormats`: a compressed block is one texel of an uncompressed format, and
+  no bytes change on the way). A multisampled copy is WebGPU's own of a whole subresource, else draws shaded per sample
+  (`sample_index`) reading the source's same sample, stencil by a draw a bit (`copyMultisampled`; multisampled images
+  are sampled for it, so they carry `TEXTURE_BINDING`); within one image through a temporary texture. A resolve is
+  WebGPU's own of a whole level of one size, into a 2D texture, of a format it resolves; else a draw over the region
+  (`resolveByDraw`: the samples' average, or sample 0 of an integer format), for `vkCmdResolveImage` and for a render
+  pass's attachment, which the pass's end resolves that way within its render area, stored whatever its store op, as
+  depth's. Formats a multisampled copy can't cross (they differ other than by sRGB: bit patterns don't survive a draw)
+  are skipped with a warning, since one invalid command invalidates the whole submit. A fragment stage writing depth
+  into a pass without a depth aspect (Vulkan drops the write, WebGPU refuses the pipeline) gets a module with that output
+  at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
 - **Draws through indices of their own** (VK3 L7.4): the provoking vertex's last (`VK_EXT_provoking_vertex`,

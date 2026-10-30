@@ -53,7 +53,8 @@ WG_IMPORT(gpu_copy_tb) void gpu_copy_tb(uint32_t buffer, double offset, uint32_t
                                         uint32_t d, uint32_t aspect);
 WG_IMPORT(gpu_copy_tt) void gpu_copy_tt(uint32_t src, uint32_t src_mip, uint32_t sx, uint32_t sy, uint32_t sz,
                                         uint32_t dst, uint32_t dst_mip, uint32_t dx, uint32_t dy, uint32_t dz,
-                                        uint32_t w, uint32_t h, uint32_t d, uint32_t aspect);
+                                        uint32_t w, uint32_t h, uint32_t d, uint32_t aspect, uint32_t dst_w,
+                                        uint32_t dst_h, uint32_t cols, uint32_t rows, uint32_t bytes);
 /* A buffer's range filled with a 32-bit value, or written with bytes from memory 0, in the encoder's order. */
 WG_IMPORT(gpu_fill) void gpu_fill(uint32_t buffer, double offset, double size, uint32_t value);
 WG_IMPORT(gpu_update) void gpu_update(uint32_t buffer, double offset, const void *data, uint32_t size);

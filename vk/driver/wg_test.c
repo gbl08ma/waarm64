@@ -2421,11 +2421,12 @@ static struct {
 static VkQueryPool misc21_pool;
 
 static int
-misc_image(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags usage, VkImage *out)
+misc_image_samples(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags usage,
+                   VkSampleCountFlagBits samples, VkImage *out)
 {
    const VkImageCreateInfo info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = type, .format = format, .extent = { 4, 4, depth },
-      .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .mipLevels = 1, .arrayLayers = 1, .samples = samples, .tiling = VK_IMAGE_TILING_OPTIMAL,
       .usage = usage,
    };
    CHECK(CreateImage(dev, &info, NULL, out));
@@ -2436,6 +2437,12 @@ misc_image(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags 
       return 1;
    CHECK(BindImageMemory(dev, *out, mem, 0));
    return 0;
+}
+
+static int
+misc_image(VkFormat format, VkImageType type, uint32_t depth, VkImageUsageFlags usage, VkImage *out)
+{
+   return misc_image_samples(format, type, depth, usage, VK_SAMPLE_COUNT_1_BIT, out);
 }
 
 static void
@@ -2761,6 +2768,46 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
  * 31: a 4×4 RGBA8 image (texel i 0xff000000 | i), in GENERAL: its (0, 0) 2×2 copied to (2, 2) and blitted (NEAREST, the
  *     same size) to (2, 0) of the same subresource; the image at [0, 64).
  */
+/* VK4 T10, what no dEQP-VK case of the direct set runs. 36: a blue multisampled 4×4 image resolved into slice 1 of a
+ * red 3D image. 37: red and blue multisampled images, the blue one's (0, 0) 2×2 copied into the
+ * red one's, that copied within the image to (2, 2), and the image resolved. The result's texels at `out`'s start. */
+static int
+t10_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdResolveImage CmdResolveImage = (PFN_vkCmdResolveImage)GetDeviceProcAddr(dev, "vkCmdResolveImage");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   const VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   const VkImageUsageFlags ms_usage = usage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+   const VkImageLayout general = VK_IMAGE_LAYOUT_GENERAL;
+   const VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+   const VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   const VkImageSubresourceLayers layer = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+   const VkClearColorValue red = { .float32 = { 1, 0, 0, 1 } }, blue = { .float32 = { 0, 0, 1, 1 } };
+   VkImage a, b, c;
+   if (misc_image_samples(format, VK_IMAGE_TYPE_2D, 1, ms_usage, VK_SAMPLE_COUNT_4_BIT, &a) ||
+       misc_image_samples(format, VK_IMAGE_TYPE_2D, 1, ms_usage, VK_SAMPLE_COUNT_4_BIT, &b) ||
+       misc_image(format, scenario == 36 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D, scenario == 36 ? 2 : 1, usage, &c))
+      return 1;
+   CmdClearColorImage(cmd, a, general, &blue, 1, &all);
+   CmdClearColorImage(cmd, b, general, &red, 1, &all);
+   CmdClearColorImage(cmd, c, general, &red, 1, &all);
+   if (scenario == 36) {
+      CmdResolveImage(cmd, a, general, c, general, 1,
+                      &(VkImageResolve){ layer, { 0, 0, 0 }, layer, { 0, 0, 1 }, { 4, 4, 1 } });
+      CmdCopyImageToBuffer(cmd, c, general, out, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 2 } });
+   } else {
+      CmdCopyImage(cmd, a, general, b, general, 1, &(VkImageCopy){ layer, { 0, 0, 0 }, layer, { 0, 0, 0 }, { 2, 2, 1 } });
+      CmdCopyImage(cmd, b, general, b, general, 1, &(VkImageCopy){ layer, { 0, 0, 0 }, layer, { 2, 2, 0 }, { 2, 2, 1 } });
+      CmdResolveImage(cmd, b, general, c, general, 1,
+                      &(VkImageResolve){ layer, { 0, 0, 0 }, layer, { 0, 0, 0 }, { 4, 4, 1 } });
+      CmdCopyImageToBuffer(cmd, c, general, out, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = layer, .imageExtent = { 4, 4, 1 } });
+   }
+   return 0;
+}
+
 static int
 l8a_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
 {
@@ -3672,6 +3719,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 30 || scenario == 31) {
       if (l8a_misc(scenario, cmd, out))
+         return 1;
+   } else if (scenario == 36 || scenario == 37) {
+      if (t10_misc(scenario, cmd, out))
          return 1;
    } else if (scenario == 23) {
       /* More uniform buffers than WebGPU binds a stage (VK3 L7.4): the device's maximum, 13 or more. */

@@ -130,6 +130,7 @@ program_free(struct wg_program *p)
       wg_id_release(p->compute_module);
    wg_id_release(p->vs_module);
    wg_id_release(p->fs_module);
+   wg_id_release(p->fs_no_depth);
    free(p->compute_wgsl);
    free(p);
 }
@@ -1209,6 +1210,28 @@ wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vert
    }
 }
 
+/* A fragment stage that writes depth into an attachment without a depth aspect: Vulkan drops the write, WebGPU refuses the
+ * pipeline. The output, at a location no target takes, goes nowhere (a location past the stage's own). */
+static uint32_t
+fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
+{
+   if (p->fs_no_depth && p->fs_no_depth_of == fs)
+      return p->fs_no_depth;
+   char *text = p->split_count ? variant_text(p->base, p, p->mask, fs->wgsl) : NULL;
+   if (!text)
+      text = strdup(fs->wgsl);
+   static const char from[] = "@builtin(frag_depth)", to[] = "@location(7)        ";
+   char *at = strstr(text, from);
+   if (at)
+      memcpy(at, to, sizeof(to) - 1);
+   wg_id_release(p->fs_no_depth);
+   p->fs_no_depth = wg_id();
+   p->fs_no_depth_of = fs;
+   gpu_shader(p->fs_no_depth, text, strlen(text));
+   free(text);
+   return p->fs_no_depth;
+}
+
 uint32_t
 wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
 {
@@ -1279,8 +1302,10 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    wg_json_printf(&j, ",\"multisample\":{\"count\":%u,\"mask\":%u,\"alphaToCoverageEnabled\":%s}", MAX2(k->samples, 1),
                   k->sample_mask, k->alpha_to_coverage ? "true" : "false");
    if (k->fs) {
+      const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
+      const bool depth_dropped = k->fs->info.writes_depth && !(ds && (ds->flags & WG_FMT_DEPTH));
       wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
-                     p->fs_module ? p->fs_module : k->fs->module);
+                     depth_dropped ? fragment_without_depth(p, k->fs) : p->fs_module ? p->fs_module : k->fs->module);
       /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`). */
       if (k->fs->info.per_sample)
          wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u},", k->samples);

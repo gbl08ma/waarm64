@@ -352,6 +352,9 @@ for (const [scenario, what] of [
   ['uniformWritten', 'a dispatch whose uniform buffer shares a memory with storage it writes'],
   ['indirectWritten', 'a dispatch whose indirect arguments share a memory with storage it writes'],
   ['readInPlace', 'a dispatch whose read-only storage buffer is the range it writes through another binding'],
+  // VK4 T10: what no dEQP-VK case of the direct set runs.
+  ['resolve3d', 'a resolve of a multisampled image into a slice of a 3D image'],
+  ['msCopyWithin', 'multisampled copies of part of an image, into another and within itself'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

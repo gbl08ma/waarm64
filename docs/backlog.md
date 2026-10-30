@@ -713,26 +713,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     wrong, and a cube view of it is refused (width and height not equal). ASTC 4×4 and 8×8, whose blocks divide
     dEQP's sizes, pass. A fix would sample through coordinates scaled to the image (the view's size in the shader's
     uniforms) and make cubes of a texture per face, or decode such images into an uncompressed texture.
-  - **Stencil8's resolves**: a multisampled `S8_UINT` attachment's SAMPLE_ZERO stencil resolve reads 0 at the
-    resolved pixels (and writes outside the render area with a sample mask:
-    `depth_stencil_resolve.*.samples_4.s8_uint.*stencil*`, VK3 L7.1's samples, all 6 that ran); depth24plus-stencil8's
-    and depth32float-stencil8's pass.
-  - **Copies WebGPU refuses**, skipped with a warning (the worker's `depthStencilCopy`; depth's done by the worker's
-    draws and compute passes since VK3 L6b, stencil's by a whole subresource's copy and a draw a bit, D24's copies
-    advertised with them): depth16unorm's part and offsets (its texels are half words: 1
-    `buffer_to_depthstencil.buffer_offset_d16_unorm_D`, its partial image copies), copies of multisampled images; copies
-    between formats (Vulkan's size-compatible copies:
-    compressed ↔ uncompressed, a 32-bit format into another: a compute copy), integer resolves (a draw of sample 0).
-    GFXReconstruct's trimmed captures restore their depth images this way (vkQuake's first replayed frame).
-    `depthStencilTT`'s native path for whole subresources is never taken: it tests the textures' usage against the
-    buffer usages' `COPY_SRC`/`COPY_DST` (4 and 8, a texture's `TEXTURE_BINDING` and `STORAGE_BINDING`), so whole depth
-    and stencil image copies go through the worker's passes too (right, slower; found in VK3 L8a). Taking it needs the
-    texture usages and an aspect of `all` (WebGPU's rule for depth-stencil copies).
+  - **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats that differ other than by sRGB
+    is skipped with a warning (a draw can't carry bit patterns across formats; no dEQP-VK case of the sample met it, a
+    storage-buffer round trip would do it). Everything of multisampled images of several layers fails with them
+    ("Multisampled images of several layers" in T1's table, T12): `resolve_image`'s `whole_array_image`,
+    `layer_copy_before_resolving`, `diff_image_size.*_11_*`, `multisample_resolve.*.samples_4_baseLayer1`, 67 of the
+    84 failures of T10's sample. GFXReconstruct's trimmed captures restore their depth images through the worker's
+    paths (vkQuake's first replayed frame). `multisample_resolve.*.max_attachments_4_samples_4` (17 of the sample) reads
+    an attachment of its pass as an input attachment: the feedback loop under "Rendering".
   - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); 3D images
     sampled through 2D views (`2D_ARRAY_COMPATIBLE`); D24 depth tests fail by one unit (depth24plus's precision);
     3-component formats in images (`glsl.440.linkage` makes RGB32 attachments: `VK_ERROR_FORMAT_NOT_SUPPORTED`);
     vertex strides that aren't multiples of 4 (WebGPU's; VK4 T1: 22 `vertex_input.multiple_attributes` cases of 8- and
-    16-bit attributes, the pipeline refused); copy regions past a level's end (a few `copy_and_blit`); 16-bit packed
+    16-bit attributes, the pipeline refused); 16-bit packed
     colour formats beside a depth format refused at image creation though advertised
     (`render_to_image.*.a1r5g5b5_unorm_pack16_d32_sfloat_s8_uint`, `r5g6b5_unorm_pack16_d24_unorm_s8_uint`:
     `VK_ERROR_FORMAT_NOT_SUPPORTED`, VK4 T1).
@@ -780,10 +773,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     and back primitives is lost where they overlap (not seen in dEQP-VK); depth clipping with clamping on (WebGPU's `unclippedDepth` does both or neither), layered rendering and
     multi-view, depth and stencil blits, 34 of
     `renderpasses.*.load_store_op_none`'s 149 supported cases (VK3 L6a, after DONT_CARE stores over a partial render
-    area were made stores: WebGPU's discard is the whole attachment's): the 20 `stencil_s8_uint_*` and the colour-only
-    ones whose fragment shader writes `gl_FragDepth` without a depth aspect (Vulkan drops the write, WebGPU refuses the
-    pipeline: "Depth stencil state format (Stencil8) has no depth aspect when fragment stage is writing to frag_depth";
-    a program variant printed without the output would do it), 5 `*_resolve` (an integer resolve), 5 `*_alphablend` and
+    area were made stores: WebGPU's discard is the whole attachment's): those of its 34 whose cause was a depth output
+    without a depth aspect or an integer resolve are fixed since VK4 T10 (not re-counted), 5 `*_alphablend` and
     4 `color_load_op_load_store_op_none`/`color_load_op_none_store_op_dontcare` (an attachment also read as an input
     attachment) not looked into, vertex buffer offsets that aren't
     multiples of 4, early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
@@ -855,6 +846,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     blitted from the one the previous blit wrote, over 6 layers; other layer counts pass: a hazard between the
     worker's blit draws on Metal?), `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
     occlusion count of 496, out of range) and `texture.mipmap.3d.projected.nearest_linear_mirror`; not looked into.
+    VK4 T10's sample found more, out of `tests/deqp/vk.txt` (bench/vulkan/REPORT.md "VK4 T10"): 22 more
+    `generate_mipmaps.from_previous_level` cases, other layer counts too; 11 copies to or from `e5b9g9r9_ufloat_pack32`,
+    compared bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would
+    keep them); 4 `depth_stencil_resolve.*_stencil_samplemask` (the stencil reads 255 where 1 is right).
   - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
     `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
@@ -896,10 +891,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (the format's encode and decode in the shader, a copy in and out around the pass), or advertise per-use what can't
     be advertised per-format. With `texture-formats-tier2` tier2's formats are read-write (VK3 L5: checked on the
     Mac).
-  - **Transfers**: a resolve into a 3D image is skipped with a warning (WebGPU resolves into 2D views only). VK3
-    L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left 13 failing, all failing before too, not
-    looked into: linear 3D blits of `r32_sfloat`/`r32g32_sfloat` (unfilterable without `float32-filterable`), a
-    4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255),
+  - **Transfers**: VK3 L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left, not looked into: a 4-sample
+    `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255),
     `push_constant.graphics_pipeline.overwrite`.
   - **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
     what Vulkan counts with it is refused when a pipeline is made, saying why: a fragment stage's input attachments

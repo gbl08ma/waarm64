@@ -143,7 +143,13 @@ T2–T14; the rest of the order is judgement, said with each.
   uncompressed: texture tools, DXVK), multisampled copies, integer resolves, Stencil8's resolves, depth16's offsets,
   a resolve into a 3D image; whole depth and stencil copies through WebGPU's own path (taken never today: slower).
   *Done:* `copy_and_blit`'s and `depth_stencil_resolve`'s cases of those causes. *Start:* backlog "Copies WebGPU
-  refuses", "Stencil8's resolves", "Transfers".
+  refuses", "Stencil8's resolves", "Transfers". **Done 2026-10-30** (REPORT.md "VK4 T10"): copies between formats as bytes
+  through a temporary buffer; multisampled copies and the resolves WebGPU refuses (integer formats, parts of an image,
+  3D images, formats it doesn't resolve) as draws; depth16's parts and offsets; whole depth and stencil copies through
+  WebGPU's path; `vkCmdResolveImage`'s regions, which it had dropped; Stencil8's resolves were a pipeline refused for a
+  depth output (fixed for every such stage: T9's item); 32-bit float and 16-bit norm linear blits, integer blits clamped.
+  A sample's 189 failures left 13, none of these causes; the wide sample's 84 are T12's (multisampled arrays, feedback
+  loops). The list 7,509 → 8,600; on the M4 37 of the new cases fail and stayed out (backlog "The M4's own failures").
 - **T11. Storage images WebGPU gives one way** (M–L): load and store of a format WebGPU allows only one way (most
   formats without tier2) fails the stage. A storage buffer of the texels with the format's encode and decode in the
   shader. *Done:* the cases, libplacebo's compute paths on such formats. *Start:* backlog "Storage images WebGPU

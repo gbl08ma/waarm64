@@ -771,6 +771,42 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T10: copies and resolves WebGPU refuses — 189 of a sample's failures to 0 of those causes
+
+**2026-10-30.** JSON in `results/vk4/t10/`: `base/` before (2,509 cases: samples of `image_to_image`, `resolve_image`,
+`depth_stencil_msaa_copy`, buffer ↔ depth and stencil copies, `depth_stencil_resolve` and `multisample_resolve`),
+`wide/` after (13,879: larger samples of the same and of `blit_image`), `m4/` the list's new cases on the M4 (Metal,
+Chrome for Testing 153.0.8010.12). `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| before | 2,509 | 76 | 189 | 2,244 |
+| after, the same 189 alone | 189 | 176 | 13 | 0 |
+| after, the wide sample | 13,879 | 1,170 | 84 | 12,625 |
+| the M4, the 1,128 new cases | 1,128 | 1,091 | 37 | 0 |
+
+- **What changed:** copies between formats go as bytes through a temporary buffer (no compute copy was needed: the
+  buffer forms take any format, and a block maps to a texel); multisampled copies and the resolves WebGPU refuses are
+  draws, a single draw shaded per sample for a copy (`sample_index`, not a mask and a pipeline a sample); depth16's parts
+  and offsets; whole depth and stencil copies through WebGPU's path (`depthStencilTT` had tested buffer usages).
+  **Beside the brief:** partial resolves were wrong, not refused: `vkCmdResolveImage` dropped its offsets and extent.
+- **Stencil8's resolves were never about stencil:** the test's fragment stage writes `gl_FragDepth`, and WebGPU refuses
+  that pipeline against `stencil8`, so nothing was drawn. A module with the output at a location no target takes fixed
+  those and the colour-only `load_store_op_none` cases, T9's item.
+- **Blits, the census's "other blits":** 32-bit float and 16-bit norm linear blits are filtered in the shader, integer
+  blits clamped into the destination's range, Vulkan's rule (`r32g32b32a32_sint` into `r16g16b16a16_sint`).
+- **The 84 left of the wide sample are others':** 67 multisampled images of several layers (T12: WebGPU has no
+  multisampled arrays) and 17 `max_attachments_4_samples_4`, an input attachment of its own pass (T12's feedback loops).
+  None of T10's causes is left among them.
+- **The M4's 37** are out of the list (backlog "The M4's own failures"): 22 `generate_mipmaps.from_previous_level` (the
+  census's M4 cause, T12), 11 copies of `e5b9g9r9`, 4 stencil resolves with a sample mask.
+- **Cost:** not measured: no program of the replays runs these paths. Whole depth and stencil copies should be cheaper
+  than the passes they replace; that is expected, not a measured speedup. A buffer round trip per copy between formats
+  costs what a temporary buffer of the region costs.
+- **A resolve into a 3D image** has no dEQP-VK case the device runs (`m10_resolve` asks for what isn't advertised): it
+  and a multisampled copy within one image are driver tests (`misc: …`, tests/venus-driver.test.ts). Planted: 3D kept
+  to WebGPU's resolve, and the within-image copy without its temporary texture: both tests failed.
+
 ## VK4 T3: usage scopes — a pass or dispatch that writes storage of a memory it reads otherwise is no longer dropped
 
 **2026-10-30**, the dev VM's SwiftShader (Chromium 153.0.8010.52); JSON in `results/vk4/t3/`. Each `VkDeviceMemory` is

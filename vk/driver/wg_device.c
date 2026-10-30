@@ -964,8 +964,9 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 8;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
-   /* A multisampled depth or stencil attachment is read by its resolve's draw (the worker's resolveDepth). */
-   if (vi->samples > 1 && (vi->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+   /* A multisampled image is read by the draws of its resolves and copies (the worker's resolveDepth, resolveByDraw,
+    * copyMultisampled). */
+   if (vi->samples > 1)
       usage |= 4;
    /* A linear image may be bound to host-visible memory: copied to and from it at each submit. */
    if (vi->tiling == VK_IMAGE_TILING_LINEAR)
@@ -1248,6 +1249,11 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    };
    const char *dim = view->vk.view_type <= VK_IMAGE_VIEW_TYPE_CUBE_ARRAY ? dims[view->vk.view_type] : "2d";
    if (!strcmp(dim, "1d") && strcmp(wg_dimension(&image->vk), "1d"))
+      dim = "2d";
+   /* WebGPU has no multisampled arrays, and an input attachment is declared 2D: one layer's array view is its 2D view. */
+   if (!strcmp(dim, "2d-array") && view->vk.layer_count == 1 &&
+       (image->vk.samples > 1 || (view->vk.usage & (VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) ==
+                                    VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
    struct wg_json j = { 0 };

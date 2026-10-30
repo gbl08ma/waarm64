@@ -420,6 +420,8 @@ struct wg_program {
    uint32_t splits[8][3];
    uint32_t vs_module, fs_module;
    bool stage_modules_made;
+   uint32_t fs_no_depth;    /* the fragment module without its depth output, and whose it is (fragment_without_depth) */
+   const struct wg_shader *fs_no_depth_of;
    uint32_t compute;        /* a compute pipeline */
    struct hash_table *pipelines;
    /* What identifies the program across shaders (wg_shader.c `program_link`): its data and its stages' WGSL. Stages
@@ -566,6 +568,7 @@ struct wg_cmd_buffer {
       bool depth_ro, stencil_ro; /* attached in a read-only layout: WebGPU's depthReadOnly, stencilReadOnly */
       /* The depth and stencil resolves at the pass's end (WebGPU resolves colour only: the worker's draws). */
       struct wg_image_view *resolve_src[2], *resolve_dst[2]; /* depth, stencil */
+      struct wg_image_view *resolve_color_src[8], *resolve_color_dst[8]; /* what WebGPU's resolve can't make */
       VkRect2D area; /* the render area (depth and stencil resolves keep to it) */
       bool suspending;
       uint32_t samples;

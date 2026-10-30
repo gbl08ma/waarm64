@@ -45,7 +45,7 @@ only edits docs: `.md` files or code comments):
   dEQP's every 50th case plus groups that caught regressions the subset didn't (graphics.md "Testing"). CI's Chromium is
   SwiftShader; a real GPU differs (graphics.md "Testing": on the Mac's, ANGLE on Metal, 85 GLES2 and 129 GLES3 cases fail,
   all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
-  GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2` or `gles3`, `STRIDE`/`OFFSET`/`CASES`
+  GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2`, `gles3` or `vk`, the last with `VIRGL_GPU=virgl,vulkan`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
 - **`scripts/ci-deqp-vk.sh`** (~19 min) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
   every case expected to pass, one guest boot; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a

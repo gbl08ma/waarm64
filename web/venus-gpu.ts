@@ -461,11 +461,13 @@ export class VenusGpu {
           self.enc!.copyTextureToBuffer(self.texCopy(T, mip, x, y, z, aspect), self.layout(B, offset, bpr, rows, h, depth), { width: w, height: h, depthOrArrayLayers: depth });
         });
       },
-      gpu_copy_tt(src: number, sm: number, sx: number, sy: number, sz: number, dst: number, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number) {
+      gpu_copy_tt(src: number, sm: number, sx: number, sy: number, sz: number, dst: number, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, aspect: number, dw: number, dh: number, cols: number, rows: number, bytes: number) {
         const S = self.get<GPUTexture>(src), D = self.get<GPUTexture>(dst);
         later(() => {
           self.touched.add(D);
+          if (S.sampleCount > 1) return self.copyMultisampled(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, aspect);
           if (/^depth|^stencil/.test(S.format) && !self.depthStencilTT(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect)) return;
+          if (S.format.replace('-srgb', '') !== D.format.replace('-srgb', '')) return self.copyBetweenFormats(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, dw, dh, cols, rows, bytes);
           if (S === D && sm === dm && (S.dimension === '3d' || (sz < dz + depth && dz < sz + depth))) return self.copyTextureWithin(S, sm, sx, sy, sz, dx, dy, dz, w, h, depth, aspect);
           self.enc!.copyTextureToTexture(self.texCopy(S, sm, sx, sy, sz, aspect), self.texCopy(D, dm, dx, dy, dz, aspect), { width: w, height: h, depthOrArrayLayers: depth });
         });
@@ -841,8 +843,8 @@ export class VenusGpu {
    * skipped with a warning (one bad copy would invalidate the submit's whole command buffer). */
   private depthStencilCopy(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
     const f = t.format;
-    const stencil = aspect === 2 || f === 'stencil8';
-    const bytes = stencil ? 1 : f === 'depth16unorm' ? 2 : 4;
+    const stencil = aspect === 2 || f === 'stencil8', d16 = f === 'depth16unorm';
+    const bytes = stencil ? 1 : d16 ? 2 : 4;
     const whole = x === 0 && y === 0 && w === Math.max(1, t.width >> mip) && h === Math.max(1, t.height >> mip);
     const allowed = stencil || f === 'depth16unorm' || (!toTexture && f.startsWith('depth32float'));
     const row = w * bytes;
@@ -851,8 +853,8 @@ export class VenusGpu {
     // through a whole one's copy.
     const native = whole && allowed && t.sampleCount === 1 && offset % 4 === 0 && !(realign && (row % 4 || bpr % 4));
     if (!native && t.sampleCount === 1) {
-      if (!stencil && this.depthByShader(toTexture, b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
-      if (stencil && !toTexture && this.stencilPart(b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
+      if (!stencil && (toTexture || !d16) && this.depthByShader(toTexture, b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
+      if ((stencil || d16) && !toTexture && this.partThroughBuffer(b, offset, bpr, rows, t, mip, x, y, z, w, h, depth, stencil)) return;
       if (stencil && toTexture && this.stencilByDraws(b, offset, bpr, rows, t, mip, x, y, z, w, h, depth)) return;
     }
     if (!native) {
@@ -895,15 +897,16 @@ export class VenusGpu {
    * Depth WebGPU won't copy between a buffer and a texture (VK3 L6b): into depth32float's or depth24plus's depth, out of
    * depth24plus's, part of a subresource. Into the texture a draw over the region writes `frag_depth` from the buffer's
    * words (the other aspect loaded and stored); out of it a compute pass loads the depth into them. A D24 texel is a
-   * word's low 24 bits as unorm (Vulkan's X8_D24 layout; the X8 bits written 0), a D32 one the float's bits. False (the
-   * caller warns) where the words aren't 4-aligned or the texture lacks the usage.
+   * word's low 24 bits as unorm (Vulkan's X8_D24 layout; the X8 bits written 0), a D32 one the float's bits, a D16 one
+   * a half word as unorm (into the texture only: `partThroughBuffer` reads it). False (the caller warns) where the
+   * texels aren't aligned or the texture lacks the usage.
    */
   private depthByShader(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number): boolean {
     const d = this.device!, enc = this.enc!;
-    const f = t.format, d24 = f.startsWith('depth24plus') ? 1 : 0;
-    if (f === 'depth16unorm' || offset % 4 || bpr % 4 || !(t.usage & (toTexture ? RENDER_ATTACHMENT : TEXTURE_BINDING))) return false;
+    const f = t.format, d16 = f === 'depth16unorm', d24 = f.startsWith('depth24plus') ? 1 : 0, bytes = d16 ? 2 : 4;
+    if ((d16 && !toTexture) || offset % bytes || bpr % bytes || !(t.usage & (toTexture ? RENDER_ATTACHMENT : TEXTURE_BINDING))) return false;
     const rowsPer = Math.max(rows, h);
-    const from = offset & ~255, end = offset + ((layers - 1) * rowsPer + h - 1) * bpr + w * 4;
+    const from = offset & ~255, end = offset + ((layers - 1) * rowsPer + h - 1) * bpr + w * bytes;
     if (end - from > d.limits.maxStorageBufferBindingSize || end > b.size) return false;
     const key = toTexture ? `depth-up:${f}` : 'depth-down';
     const P = 'struct P { base: u32, pitch: u32, x: u32, y: u32, d24: u32, w: u32, h: u32, pad: u32 }';
@@ -918,6 +921,10 @@ export class VenusGpu {
 }
 @fragment fn fs(@builtin(position) pos: vec4<f32>) -> @builtin(frag_depth) f32 {
   let c = vec2<u32>(pos.xy) - vec2<u32>(p.x, p.y);
+  if (p.d24 == 2u) {
+    let a = p.base + c.y * p.pitch + c.x * 2u;
+    return f32((s[a >> 2u] >> ((a & 2u) * 8u)) & 0xffffu) / 65535.0;
+  }
   let v = s[p.base + c.y * p.pitch + c.x];
   if (p.d24 != 0u) { return f32(v & 0xffffffu) / 16777215.0; }
   return bitcast<f32>(v);
@@ -928,7 +935,9 @@ export class VenusGpu {
       }
       const stencil = f.includes('stencil8');
       for (let l = 0; l < layers; l++) {
-        const u = this.params([(offset - from) / 4 + l * rowsPer * bpr / 4, bpr / 4, x, y, d24, w, h, 0]);
+        // A D16 texel's place in bytes (it needn't start a word), the others' in words.
+        const unit = d16 ? 1 : 4;
+        const u = this.params([(offset - from + l * rowsPer * bpr) / unit, bpr / unit, x, y, d16 ? 2 : d24, w, h, 0]);
         const view = t.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: z + l, arrayLayerCount: 1 });
         const pass = enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view, depthLoadOp: 'load', depthStoreOp: 'store', ...(stencil ? { stencilLoadOp: 'load', stencilStoreOp: 'store' } : {}) } });
         pass.setPipeline(pipeline);
@@ -975,25 +984,25 @@ export class VenusGpu {
   }
 
   /** A copy between depth or stencil textures, which WebGPU makes only of whole subresources (VK3 L6b): true for the
-   * caller to make it; part of a depth one (or any of depth24plus) goes through a temporary buffer by the worker's passes (`depthByShader`),
-   * part of a stencil one the same way (`stencilPart`, `stencilByDraws`). */
+   * caller to make it (`aspect` 0, the texture's every aspect: WebGPU's rule); part of a depth one (or any of depth24plus) goes through a temporary buffer by the worker's passes (`depthByShader`),
+   * part of a stencil one the same way (`partThroughBuffer`, `stencilByDraws`). */
   private depthStencilTT(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, layers: number, aspect: number): boolean {
     const whole = (t: GPUTexture, m: number, x: number, y: number) => x === 0 && y === 0 && w === Math.max(1, t.width >> m) && h === Math.max(1, t.height >> m);
     // depth24plus's textures can't be copied at all (the driver makes them without the copy usages).
-    if (whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & COPY_SRC && D.usage & COPY_DST) return true;
+    if (!aspect && whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST) return true;
     const f = S.format, depthAspect = !f.startsWith('stencil') && aspect !== 2, stencilAspect = f.includes('stencil') && aspect !== 1;
     let ok = S.sampleCount === 1 && D.sampleCount === 1;
     if (ok && depthAspect) {
-      const pitch = Math.ceil(w * 4 / 256) * 256;
+      const d16 = f === 'depth16unorm', pitch = Math.ceil(w * (d16 ? 2 : 4) / 256) * 256;
       const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
       this.temps.push(temp);
-      ok = this.depthByShader(false, temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers) && this.depthByShader(true, temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
+      ok = (d16 ? this.partThroughBuffer(temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers, false) : this.depthByShader(false, temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers)) && this.depthByShader(true, temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
     }
     if (ok && stencilAspect) {
       const pitch = Math.ceil(w / 256) * 256;
       const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
       this.temps.push(temp);
-      ok = this.stencilPart(temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers) && this.stencilByDraws(temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
+      ok = this.partThroughBuffer(temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers, true) && this.stencilByDraws(temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
     }
     if (!ok) this.warn(`a copy of part of a ${f} texture WebGPU can't make (${w}x${h} at ${sx},${sy} into ${dx},${dy}): skipped`);
     return false;
@@ -1058,21 +1067,124 @@ override bit: u32 = 8u;
     return true;
   }
 
-  /** Part of a stencil subresource into a buffer (VK3 L6b): the whole subresource copied to a temporary buffer, then
-   * the region's rows out of it (unaligned rows by the worker's compute copy). */
-  private stencilPart(b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number): boolean {
+  /** Part of a stencil subresource, or of a depth16unorm one, into a buffer (VK3 L6b): the whole subresource copied to a
+   * temporary buffer, then the region's rows out of it (unaligned rows by the worker's compute copy). */
+  private partThroughBuffer(b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number, stencil: boolean): boolean {
     const mw = Math.max(1, t.width >> mip), mh = Math.max(1, t.height >> mip);
-    const pitch = Math.ceil(mw / 256) * 256, rowsPer = Math.max(rows, h);
+    const bytes = stencil ? 1 : 2, pitch = Math.ceil(mw * bytes / 256) * 256, rowsPer = Math.max(rows, h);
     const temp = this.device!.createBuffer({ size: pitch * mh * layers, usage: COPY_SRC | COPY_DST | STORAGE });
     this.temps.push(temp);
-    this.enc!.copyTextureToBuffer({ texture: t, mipLevel: mip, origin: { x: 0, y: 0, z }, aspect: 'stencil-only' }, { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: mh }, { width: mw, height: mh, depthOrArrayLayers: layers });
+    this.enc!.copyTextureToBuffer({ texture: t, mipLevel: mip, origin: { x: 0, y: 0, z }, aspect: stencil ? 'stencil-only' : 'depth-only' }, { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: mh }, { width: mw, height: mh, depthOrArrayLayers: layers });
+    const row = w * bytes;
     for (let l = 0; l < layers; l++)
       for (let r = 0; r < h; r++) {
-        const so = (l * mh + y + r) * pitch + x, dO = offset + (l * rowsPer + r) * bpr;
-        if ((so | dO | w) & 3) this.copyUnaligned(temp, so, b, dO, w);
-        else this.enc!.copyBufferToBuffer(temp, so, b, dO, w);
+        const so = (l * mh + y + r) * pitch + x * bytes, dO = offset + (l * rowsPer + r) * bpr;
+        if ((so | dO | row) & 3) this.copyUnaligned(temp, so, b, dO, row);
+        else this.enc!.copyBufferToBuffer(temp, so, b, dO, row);
       }
     return true;
+  }
+
+  /** Vulkan's copy between size-compatible formats, which WebGPU's texture copies refuse: the blocks' bytes through a
+   * temporary buffer, one source block to one destination block or texel (`dw`×`dh` texels there). */
+  private copyBetweenFormats(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number, dw: number, dh: number, cols: number, rows: number, bytes: number) {
+    if (!(S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST)) {
+      this.warn(`a copy of ${S.format} into ${D.format} without the textures' copy usages: skipped`);
+      return;
+    }
+    const bytesPerRow = Math.ceil(cols * bytes / 256) * 256;
+    const buffer = this.device!.createBuffer({ size: bytesPerRow * rows * depth, usage: COPY_SRC | COPY_DST });
+    this.temps.push(buffer);
+    const layout = { buffer, bytesPerRow, rowsPerImage: rows };
+    this.enc!.copyTextureToBuffer(this.texCopy(S, sm, sx, sy, sz, 0), layout, { width: w, height: h, depthOrArrayLayers: depth });
+    this.enc!.copyBufferToTexture(layout, this.texCopy(D, dm, dx, dy, dz, 0), { width: dw, height: dh, depthOrArrayLayers: depth });
+  }
+
+  /**
+   * A copy between multisampled textures: WebGPU's own for a whole subresource, else a draw per aspect, shaded per
+   * sample (`sample_index`) so each sample takes the source's same sample; stencil, which a shader can't write, by a
+   * draw zeroing it and a draw a bit, as `stencilByDraws`. Within one texture through a temporary one. Formats must
+   * match but for sRGB (bit patterns can't cross a draw): what doesn't is skipped with a warning.
+   */
+  private copyMultisampled(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, aspect: number) {
+    const d = this.device!, f = D.format;
+    const whole = (t: GPUTexture, m: number, x: number, y: number) => x === 0 && y === 0 && w === Math.max(1, t.width >> m) && h === Math.max(1, t.height >> m);
+    if (S !== D && S.format === f && !aspect && whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST) {
+      this.enc!.copyTextureToTexture(this.texCopy(S, sm, sx, sy, sz, 0), this.texCopy(D, dm, dx, dy, dz, 0), { width: w, height: h, depthOrArrayLayers: 1 });
+      return;
+    }
+    if (S.format.replace('-srgb', '') !== f.replace('-srgb', '') || D.sampleCount !== S.sampleCount || !(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
+      this.warn(`a multisampled copy of ${S.format} into ${f} that WebGPU can't make: skipped`);
+      return;
+    }
+    if (S === D) {
+      const temp = d.createTexture({ size: { width: w, height: h }, format: f, sampleCount: S.sampleCount, usage: TEXTURE_BINDING | RENDER_ATTACHMENT });
+      this.temps.push(temp);
+      this.copyMultisampled(S, sm, sx, sy, sz, temp, 0, 0, 0, 0, w, h, aspect);
+      this.copyMultisampled(temp, 0, 0, 0, 0, D, dm, dx, dy, dz, w, h, aspect);
+      return;
+    }
+    const depthy = /depth|stencil/.test(f), hasDepth = /depth/.test(f), hasStencil = /stencil/.test(f);
+    const P = `struct P { at: vec2<i32> }
+@group(0) @binding(0) var<uniform> p: P;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return vec4<f32>(f32((i << 1u) & 2u) * 2.0 - 1.0, f32(i & 2u) * 2.0 - 1.0, 0.0, 1.0);
+}`;
+    const u = this.params([(sx - dx) >>> 0, (sy - dy) >>> 0]);
+    const pipelineFor = (key: string, code: string, depthStencil: GPUDepthStencilState | undefined, targets: GPUColorTargetState[]) => {
+      let pipeline = this.metaPipelines.get(key);
+      if (!pipeline) {
+        const m = d.createShaderModule({ code });
+        pipeline = d.createRenderPipeline({ layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets }, primitive: { topology: 'triangle-list' }, multisample: { count: S.sampleCount }, ...(depthStencil ? { depthStencil } : {}) });
+        this.metaPipelines.set(key, pipeline);
+      }
+      return pipeline;
+    };
+    const draw = (pass: GPURenderPassEncoder, pipeline: GPURenderPipeline, view: GPUTextureView) => {
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: u } }, { binding: 1, resource: view }] }));
+      pass.draw(3);
+    };
+    const srcView = (a: GPUTextureAspect) => S.createView({ dimension: '2d', aspect: a, baseMipLevel: sm, mipLevelCount: 1, baseArrayLayer: sz, arrayLayerCount: 1 });
+    const dstView = D.createView({ dimension: '2d', baseMipLevel: dm, mipLevelCount: 1, baseArrayLayer: dz, arrayLayerCount: 1 });
+    if (!depthy) {
+      const kind = sampleKind(f);
+      const pipeline = pipelineFor(`mscopy:${f}`, `${P}
+@group(0) @binding(1) var t: texture_multisampled_2d<${kind}>;
+@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @location(0) vec4<${kind}> { return textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i)); }`, undefined, [{ format: f }]);
+      const pass = this.enc!.beginRenderPass({ colorAttachments: [{ view: dstView, loadOp: 'load', storeOp: 'store' }] });
+      pass.setScissorRect(dx, dy, w, h);
+      draw(pass, pipeline, srcView('all'));
+      pass.end();
+      return;
+    }
+    const ds: GPURenderPassDepthStencilAttachment = { view: dstView };
+    if (hasDepth) Object.assign(ds, { depthLoadOp: 'load', depthStoreOp: 'store' });
+    if (hasStencil) Object.assign(ds, { stencilLoadOp: 'load', stencilStoreOp: 'store' });
+    const pass = this.enc!.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds });
+    pass.setScissorRect(dx, dy, w, h);
+    if (hasDepth && aspect !== 2) {
+      const keep: GPUStencilFaceState = { compare: 'always', passOp: 'keep' };
+      const pipeline = pipelineFor(`mscopy-depth:${f}`, `${P}
+@group(0) @binding(1) var t: texture_depth_multisampled_2d;
+@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @builtin(frag_depth) f32 { return textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i)); }`,
+      { format: f, depthWriteEnabled: true, depthCompare: 'always', ...(hasStencil ? { stencilFront: keep, stencilBack: keep, stencilWriteMask: 0 } : {}) }, []);
+      draw(pass, pipeline, srcView('depth-only'));
+    }
+    if (hasStencil && aspect !== 1) {
+      const code = (test: string) => `${P}
+@group(0) @binding(1) var t: texture_multisampled_2d<u32>;
+@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) { ${test} }`;
+      const view = srcView('stencil-only');
+      for (const bit of [8, 0, 1, 2, 3, 4, 5, 6, 7]) {
+        const face: GPUStencilFaceState = { compare: 'always', passOp: bit < 8 ? 'replace' : 'zero' };
+        const test = bit < 8 ? `if ((textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i)).x & ${1 << bit}u) == 0u) { discard; }` : '_ = textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i));';
+        const pipeline = pipelineFor(`mscopy-stencil:${f}:${bit}`, code(test), { format: f, ...(hasDepth ? { depthWriteEnabled: false, depthCompare: 'always' } : {}), stencilFront: face, stencilBack: face, stencilWriteMask: bit < 8 ? 1 << bit : 0xff }, []);
+        pass.setStencilReference(0xff);
+        draw(pass, pipeline, view);
+      }
+    }
+    pass.end();
   }
 
   private texCopy(tex: GPUTexture, mip: number, x: number, y: number, z: number, aspect: number): GPUTexelCopyTextureInfo {
@@ -1230,25 +1342,26 @@ override bit: u32 = 8u;
       this.resolveDepth(j);
       return;
     }
-    if (j.op === 'resolve' && /int$/.test(fmt)) {
-      this.warn(`a resolve of ${fmt}, which WebGPU can't resolve: skipped`);
-      return;
-    }
-    if (j.op === 'resolve' && tex.dimension === '3d') {
-      this.warn('a resolve into a 3D image, which WebGPU can\'t resolve into: skipped');
-      return;
-    }
     if (j.op === 'resolve') {
-      enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] }).end();
+      const S = j.src as GPUTexture;
+      const [sx, sy] = j.from as number[], [dx, dy] = j.to as number[], [w, h] = j.size as number[];
+      const sw = Math.max(1, S.width >> j.srcMip), sh = Math.max(1, S.height >> j.srcMip);
+      const dw = Math.max(1, tex.width >> j.dstMip), dh = Math.max(1, tex.height >> j.dstMip);
+      // WebGPU's own resolve is of a whole level of one size, into a 2D texture, of what isn't an integer format.
+      if (!/int$|^r(g|gba)?32float$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT)
+        enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] }).end();
+      else this.resolveByDraw(j, sx, sy, dx, dy, w, h);
       return;
     }
     // A blit: the source's region drawn into the destination's.
     const kind = sampleKind(fmt);
     const srcKind = sampleKind(j.srcFormat);
-    const linear = j.filter === 'linear' && srcKind === 'f32' && !/32float/.test(j.srcFormat);
+    // WebGPU doesn't filter these: weighed in the shader. An integer is clamped into the destination's range (Vulkan's).
+    const byHand = j.filter === 'linear' && srcKind === 'f32' && /32float|16[us]norm/.test(j.srcFormat);
+    const linear = j.filter === 'linear' && srcKind === 'f32' && !byHand;
     // A 3D source is sampled as one (its view is 3D) at the slice each destination slice maps to (VK3 L4c-F).
     const src3d = (j.src as GPUTexture).dimension === '3d';
-    const key = `blit:${fmt}:${srcKind}:${linear}:${src3d}`;
+    const key = `blit:${fmt}:${srcKind}:${linear}:${byHand}:${src3d}`;
     let pipeline = this.metaPipelines.get(key);
     if (!pipeline) {
       const out = kind === 'f32' ? 'vec4<f32>' : kind === 'u32' ? 'vec4<u32>' : 'vec4<i32>';
@@ -1256,11 +1369,13 @@ override bit: u32 = 8u;
       const read = src3d
         ? (linear ? 'textureSampleLevel(t, s, vec3<f32>(uv, u.z.x), 0.0)' : 'textureLoad(t, vec3<i32>(floor(vec3<f32>(uv, u.z.x) * vec3<f32>(textureDimensions(t)))), 0)')
         : (linear ? 'textureSampleLevel(t, s, uv, 0.0)' : 'textureLoad(t, vec2<i32>(floor(uv * vec2<f32>(textureDimensions(t)))), 0)');
-      const conv = kind === srcKind ? 'v' : kind === 'f32' ? 'vec4<f32>(v)' : `${out}(v)`;
+      const range = integerRange(fmt);
+      const conv = range ? `clamp(v, ${out}(${range[0]}), ${out}(${range[1]}))` : kind === srcKind ? 'v' : kind === 'f32' ? 'vec4<f32>(v)' : `${out}(v)`;
       const code = `struct U { r: vec4<f32>, flip: vec4<f32>, z: vec4<f32> }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var t: ${tex};
 ${linear ? '@group(0) @binding(2) var s: sampler;' : ''}
+${byHand ? (src3d ? BLIT_FILTER_3D : BLIT_FILTER_2D) : ''}
 struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
 @vertex fn vs(@builtin(vertex_index) i: u32) -> V {
   let q = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
@@ -1269,7 +1384,7 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
 @fragment fn fs(v_in: V) -> @location(0) ${out} {
   let t01 = select(v_in.q, 1.0 - v_in.q, u.flip.xy > vec2<f32>(0.5));
   let uv = u.r.xy + t01 * u.r.zw;
-  let v = ${read};
+  let v = ${byHand ? (src3d ? 'blit(uv, u.z.x)' : 'blit(uv)') : read};
   return ${conv};
 }`;
       const m = this.device!.createShaderModule({ code });
@@ -1313,6 +1428,44 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       pass.draw(3);
       pass.end();
     }
+  }
+
+  /**
+   * A colour resolve WebGPU can't make: a draw over the region reading the source's samples, their average, or sample 0
+   * of an integer format (Vulkan's "a single sample's value").
+   */
+  private resolveByDraw(j: Json, sx: number, sy: number, dx: number, dy: number, w: number, h: number) {
+    const d = this.device!, S = j.src as GPUTexture, D = j.dst as GPUTexture, fmt = j.format as GPUTextureFormat;
+    if (!(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
+      this.warn(`a resolve of ${fmt} that can't be read or drawn into: skipped`);
+      return;
+    }
+    const kind = sampleKind(fmt), key = `resolve:${fmt}`;
+    let pipeline = this.metaPipelines.get(key);
+    if (!pipeline) {
+      const read = kind === 'f32'
+        ? 'var v = vec4<f32>(0.0);\n  for (var i = 0; i < i32(textureNumSamples(t)); i++) { v += textureLoad(t, c, i); }\n  return v / f32(textureNumSamples(t));'
+        : 'return textureLoad(t, c, 0);';
+      const m = d.createShaderModule({ code: `struct P { at: vec2<i32> }
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var t: texture_multisampled_2d<${kind}>;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return vec4<f32>(f32((i << 1u) & 2u) * 2.0 - 1.0, f32(i & 2u) * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) q: vec4<f32>) -> @location(0) vec4<${kind}> {
+  let c = vec2<i32>(q.xy) + p.at;
+  ${read}
+}` });
+      pipeline = d.createRenderPipeline({ layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets: [{ format: fmt }] }, primitive: { topology: 'triangle-list' } });
+      this.metaPipelines.set(key, pipeline);
+    }
+    const u = this.params([(sx - dx) >>> 0, (sy - dy) >>> 0]);
+    const pass = this.enc!.beginRenderPass({ colorAttachments: [{ ...this.attachment(D, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] });
+    pass.setScissorRect(dx, dy, w, h);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: u } }, { binding: 1, resource: this.viewOf(S, j.srcMip, j.srcLayer) }] }));
+    pass.draw(3);
+    pass.end();
   }
 
   /**
@@ -2028,6 +2181,38 @@ export function vertexDecode(format: string, word: (byte: number) => string, T: 
   if (bgra) [comps[0], comps[2]] = [comps[2], comps[0]];
   const one = T === 'f32' ? '1.0' : T === 'i32' ? '1i' : '1u', zero = T === 'f32' ? '0.0' : T === 'i32' ? '0i' : '0u';
   return `vec4<${T}>(${[0, 1, 2, 3].map((k) => (comps[k] ? `${T}(${comps[k]})` : k === 3 ? one : zero)).join(', ')})`;
+}
+
+/** Linear filtering of a blit's source (`t`), clamped to its edges, for formats WebGPU doesn't filter. */
+const BLIT_FILTER_2D = `fn at(x: i32, y: i32) -> vec4<f32> {
+  return textureLoad(t, clamp(vec2<i32>(x, y), vec2<i32>(0), vec2<i32>(textureDimensions(t)) - 1), 0);
+}
+fn blit(uv: vec2<f32>) -> vec4<f32> {
+  let c = uv * vec2<f32>(textureDimensions(t)) - 0.5;
+  let b = vec2<i32>(floor(c));
+  let f = c - floor(c);
+  return mix(mix(at(b.x, b.y), at(b.x + 1, b.y), f.x), mix(at(b.x, b.y + 1), at(b.x + 1, b.y + 1), f.x), f.y);
+}`;
+const BLIT_FILTER_3D = `fn at(x: i32, y: i32, z: i32) -> vec4<f32> {
+  return textureLoad(t, clamp(vec3<i32>(x, y, z), vec3<i32>(0), vec3<i32>(textureDimensions(t)) - 1), 0);
+}
+fn plane(b: vec3<i32>, f: vec2<f32>, z: i32) -> vec4<f32> {
+  return mix(mix(at(b.x, b.y, z), at(b.x + 1, b.y, z), f.x), mix(at(b.x, b.y + 1, z), at(b.x + 1, b.y + 1, z), f.x), f.y);
+}
+fn blit(uv: vec2<f32>, w: f32) -> vec4<f32> {
+  let c = vec3<f32>(uv, w) * vec3<f32>(textureDimensions(t)) - 0.5;
+  let b = vec3<i32>(floor(c));
+  let f = c - floor(c);
+  return mix(plane(b, f.xy, b.z), plane(b, f.xy, b.z + 1), f.z);
+}`;
+
+/** A narrower integer format's limits, as WGSL's vector arguments. */
+function integerRange(f: string): [string, string] | undefined {
+  if (f === 'rgb10a2uint') return ['0', '1023, 1023, 1023, 3'];
+  const m = /^r(?:g|gba)?(8|16)(u|s)int$/.exec(f);
+  if (!m) return undefined;
+  const bits = Number(m[1]);
+  return m[2] === 'u' ? ['0', String(2 ** bits - 1)] : [String(-(2 ** (bits - 1))), String(2 ** (bits - 1) - 1)];
 }
 
 function sampleKind(f: string): 'f32' | 'u32' | 'i32' {

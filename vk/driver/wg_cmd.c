@@ -133,6 +133,7 @@ struct op_copy_bt {
 
 struct op_copy_tt {
    uint32_t src, src_mip, sx, sy, sz, dst, dst_mip, dx, dy, dz, w, h, d, aspect;
+   uint32_t dst_w, dst_h, cols, rows, bytes; /* the region at the destination, in its blocks; a block's bytes */
 };
 
 struct op_fill {
@@ -638,12 +639,21 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
       else
          snprintf(value, sizeof(value), "%.9g,%.9g,%.9g,%.9g", c->float32[0], c->float32[1], c->float32[2],
                   c->float32[3]);
+      VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
+      const bool resolves = r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE;
+      /* What WebGPU's resolve can't make (a format it doesn't resolve, part of the attachment, a 3D image) is the worker's draw
+       * at the pass's end, which reads the attachment: stored. */
+      const bool drawn = resolves && (!(v->fmt->flags & WG_FMT_BLEND) || (v->fmt->flags & WG_FMT_FLOAT32) || partial ||
+                                      r->slice >= 0);
+      if (drawn) {
+         cmd->pass.resolve_color_src[i] = v;
+         cmd->pass.resolve_color_dst[i] = r;
+      }
       wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":[%s]", i ? "," : "", v->att,
-                     load_op(a->loadOp, partial, resumed), store_op(a->storeOp, suspending, partial), value);
+                     load_op(a->loadOp, partial, resumed), drawn ? "store" : store_op(a->storeOp, suspending, partial), value);
       if (v->slice >= 0)
          wg_json_printf(&j, ",\"depthSlice\":%d", v->slice);
-      VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
-      if (r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE)
+      if (resolves && !drawn)
          wg_json_printf(&j, ",\"resolveTarget\":%u", r->att);
       wg_json_printf(&j, "}");
       if (partial && clear) {
@@ -741,6 +751,21 @@ end_rendering(struct wg_cmd_buffer *cmd)
    cmd->pass.active = false;
    forget(cmd);
    /* A suspended pass's resolves are its last part's. */
+   for (uint32_t a = 0; a < 8 && !cmd->pass.suspending; a++) {
+      const struct wg_image_view *src = cmd->pass.resolve_color_src[a], *dst = cmd->pass.resolve_color_dst[a];
+      if (!src)
+         continue;
+      const struct wg_image *si = container_of(src->vk.image, struct wg_image, vk);
+      const struct wg_image *di = container_of(dst->vk.image, struct wg_image, vk);
+      const VkRect2D *ra = &cmd->pass.area;
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
+                     "\"dstLayer\":%u,\"format\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
+                     si->tex, src->vk.base_mip_level, src->vk.base_array_layer, di->tex, dst->vk.base_mip_level,
+                     dst->slice >= 0 ? dst->slice : dst->vk.base_array_layer, dst->fmt->name, ra->offset.x, ra->offset.y,
+                     ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
+      meta(cmd, &j);
+   }
    for (uint32_t a = 0; a < 2 && !cmd->pass.suspending; a++) {
       const struct wg_image_view *src = cmd->pass.resolve_src[a], *dst = cmd->pass.resolve_dst[a];
       if (!src)
@@ -1656,14 +1681,16 @@ wg_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *info)
       /* Planes of multi-planar images (VK3 L7.2): their own textures. */
       const struct wg_image_plane *sp = &src->planes[wg_image_plane(src, aspect)];
       const struct wg_image_plane *dp = &dst->planes[wg_image_plane(dst, r->dstSubresource.aspectMask)];
+      /* Size-compatible formats copy block for block: a compressed block is one texel of an uncompressed format. */
+      const uint32_t cols = DIV_ROUND_UP(r->extent.width, sp->fmt->bw), rows = DIV_ROUND_UP(r->extent.height, sp->fmt->bh);
       emit(cmd, OP_COPY_TT,
            &(struct op_copy_tt){ .src = sp->tex, .src_mip = r->srcSubresource.mipLevel, .sx = r->srcOffset.x,
                                  .sy = r->srcOffset.y, .sz = s3 ? r->srcOffset.z : r->srcSubresource.baseArrayLayer,
                                  .dst = dp->tex, .dst_mip = r->dstSubresource.mipLevel, .dx = r->dstOffset.x,
                                  .dy = r->dstOffset.y, .dz = d3 ? r->dstOffset.z : r->dstSubresource.baseArrayLayer,
-                                 .w = DIV_ROUND_UP(r->extent.width, sp->fmt->bw) * sp->fmt->bw,
-                                 .h = DIV_ROUND_UP(r->extent.height, sp->fmt->bh) * sp->fmt->bh,
-                                 .d = layers,
+                                 .w = cols * sp->fmt->bw, .h = rows * sp->fmt->bh, .d = layers,
+                                 .dst_w = cols * dp->fmt->bw, .dst_h = rows * dp->fmt->bh, .cols = cols, .rows = rows,
+                                 .bytes = sp->fmt->bytes,
                                  .aspect = (src->fmt->flags & WG_FMT_DEPTH) && (src->fmt->flags & WG_FMT_STENCIL)
                                               ? (aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : aspect == VK_IMAGE_ASPECT_DEPTH_BIT ? 1 : 0)
                                               : 0 },
@@ -1714,12 +1741,18 @@ wg_CmdResolveImage2(VkCommandBuffer commandBuffer, const VkResolveImageInfo2 *in
    VK_FROM_HANDLE(wg_image, dst, info->dstImage);
    for (uint32_t i = 0; i < info->regionCount; i++) {
       const VkImageResolve2 *r = &info->pRegions[i];
-      struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
-                     "\"dstLayer\":%u,\"format\":\"%s\"}",
-                     src->tex, r->srcSubresource.mipLevel, r->srcSubresource.baseArrayLayer, dst->tex,
-                     r->dstSubresource.mipLevel, r->dstSubresource.baseArrayLayer, dst->fmt->name);
-      meta(cmd, &j);
+      const bool d3 = dst->vk.image_type == VK_IMAGE_TYPE_3D;
+      const uint32_t layers = vk_image_subresource_layer_count(&src->vk, &r->srcSubresource);
+      for (uint32_t l = 0; l < layers; l++) {
+         struct wg_json j = { 0 };
+         wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
+                        "\"dstLayer\":%u,\"format\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
+                        src->tex, r->srcSubresource.mipLevel, r->srcSubresource.baseArrayLayer + l, dst->tex,
+                        r->dstSubresource.mipLevel, d3 ? r->dstOffset.z + l : r->dstSubresource.baseArrayLayer + l,
+                        dst->fmt->name, r->srcOffset.x, r->srcOffset.y, r->dstOffset.x, r->dstOffset.y, r->extent.width,
+                        r->extent.height);
+         meta(cmd, &j);
+      }
    }
 }
 
@@ -3214,7 +3247,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_copy_tt *c = d;
          end_pass(r);
          gpu_copy_tt(c->src, c->src_mip, c->sx, c->sy, c->sz, c->dst, c->dst_mip, c->dx, c->dy, c->dz, c->w, c->h, c->d,
-                     c->aspect);
+                     c->aspect, c->dst_w, c->dst_h, c->cols, c->rows, c->bytes);
          break;
       }
       case OP_FILL:
