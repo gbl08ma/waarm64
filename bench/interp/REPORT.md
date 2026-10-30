@@ -1799,9 +1799,9 @@ worth under the JIT, where the interpreter runs the cold code.
 `rd` tests `n == 31` on every operand. `pack` now stores a slot that holds zero for the register bytes that are only read
 (`reads`, per kind), and `hot` reads those with `ra`, a plain indexed load. Left with the compare: what's written through the
 same byte (BFM's and MOVK's Rd, CAS's Rs) and what's no byte (MADD's Ra, MSR's Rt). Writes keep `wr`'s. `Uop::wide` maps
-back for `run`. The slot is `afsr0_el1`, which no instruction writes: a spike's shortcut, no layout change. A slot that
-held a live register fails the differential test. `bench/interp/ab.sh`, dev VM, Chromium 153.0.8010.52, 3 alternated
-rounds, medians, JSON in `results/xzr-spike/`:
+back for `run`. The slot is `Cpu::zero`, not saved. A slot that held a live register fails the differential test.
+`bench/interp/ab.sh`, dev VM, Chromium 153.0.8010.52, 3 alternated rounds, medians, JSON in `results/xzr-spike/`. The
+first two tables are a spike's, with `afsr0_el1` for a slot (no layout change); the third has the field:
 
 | | base | zero slot | |
 |---|---|---|---|
@@ -1819,4 +1819,22 @@ under that build's result that morning): the fixes cost nothing, and that was th
 | `boot_alpine_dec_mips` | 219.7 | 219.5 | 227.1 | +3.4% |
 | `boot_dec_mips` (Buildroot) | 182.0 | 181.9 | 186.1 | +2.3%, inside its noise |
 
-Not measured: x86_64. Before it lands: a slot of its own, or `Cpu::restore` zeroing this one (a snapshot's bytes reach it).
+The field moves everything after `Cpu` in `Vcpu` by 16 bytes, so it was measured under the JIT too (the default config's
+compiled benchmarks, `results/xzr-spike/field/`, one session). Against the spike it costs nothing, and compiled code isn't
+hurt. The boots under the JIT interpret their cold code, so they share the gain.
+
+| | base | `afsr0_el1` | `Cpu::zero` | |
+|---|---|---|---|---|
+| `boot_alpine_dec_mips` | 219.9 | 226.6 | 226.7 | +3.1% |
+| `boot_dec_mips` (Buildroot) | 182.2 | 186.3 | 186.5 | +2.4%, inside its noise |
+| `dec_mips` | 476.8 | 491.1 | 491.6 | +3.1% |
+| `vm_dec_flat_mips` | 475.3 | 482.0 | 490.5 | +3.2% (flat in the first session) |
+| `vm_dec_mmu_mips` | 482.1 | 490.2 | 488.3 | +1.3% |
+| `boot_alpine_jit_mips` | 486.0 | 494.7 | 497.2 | +2.3%, rounds 0.1 apart |
+| `boot_jit_mips` (Buildroot) | 167.6 | 169.5 | 169.6 | +1.2%, inside its noise |
+| `jit_mips` | 5563 | 5579 | 5567 | +0.1%, rounds overlap |
+| `vm_jit_flat_mips` | 5384 | 5384 | 5427 | +0.8%, rounds overlap |
+| `vm_jit_mmu_mips` | 4849 | 4908 | 4920 | +1.5% |
+
+The field kept: nothing can write it, where a system register's field would be zero by convention (a snapshot's bytes
+reach those). Its ABI: `Cpu` is 1168 bytes, ABI 57. Not measured: x86_64.

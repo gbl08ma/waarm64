@@ -367,7 +367,9 @@ test it against `tests/steps.txt`.
   guests, +1.4% on Alpine's boot (`bench/interp/REPORT.md` "M8-INTERP loop 8"). A pair (LDP, STP, their SIMD&FP forms)
   takes one TLB probe of both registers' bytes; one across pages takes the slow path. With the register indexes'
   masks gone, +1.6% on Alpine's boot, +2.5-3.0% on the small guests (`bench/interp/REPORT.md` "No index masks, one
-  probe for a pair").
+  probe for a pair"). A register only read needs no compare for XZR: `pack` stores `Cpu::zero`'s slot for it (`reads`),
+  `hot` reads it with a plain load and `Uop::wide` maps it back: +3.1% on Alpine's boot and the user-mode guest
+  (`bench/interp/REPORT.md` "XZR's reads without a compare").
 - **One call-free loop** (`interp::block::hot`): the blocks run, and chain from one to the next, in a
   loop with no call on any path (no generic micro-op, no slow load or store, no TLB walk, no panic:
   a micro-op's register bytes trusted, as `pack` makes them, the slots a fixed-size array), so V8 keeps its state in

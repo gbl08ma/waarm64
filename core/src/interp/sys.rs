@@ -962,6 +962,6 @@ mod tests {
             ),
             (832, 888, 272)
         );
-        assert_eq!(size_of::<Cpu>(), 1152);
+        assert_eq!(size_of::<Cpu>(), 1168);
     }
 }

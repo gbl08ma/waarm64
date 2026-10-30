@@ -83,6 +83,9 @@ pub struct Cpu {
     /// SCTLR_EL1's A and M were. Derived (`debug::arm`, [`Cpu::set_pstate`]), not saved.
     pub dispatch: u8,
     pub reserved: [u8; 5],
+    /// Always 0, not saved: where the block interpreter reads XZR without a
+    /// compare (`interp::block::ZERO`). Two to leave no padding.
+    pub zero: [u64; 2],
 }
 
 /// `Cpu::interp_only`: `SCTLR_EL1.A` is set (the JIT doesn't check alignment).
@@ -467,7 +470,7 @@ mod tests {
     fn save_and_restore_keep_every_register_but_the_vms() {
         // Every byte of the struct distinct, then what a guest couldn't have written fixed up.
         let mut c = Cpu::reset();
-        // SAFETY: `Cpu` is plain integers without padding (1152 bytes of u64s, u128s and bytes).
+        // SAFETY: `Cpu` is plain integers without padding (1168 bytes of u64s, u128s and bytes).
         let b = unsafe {
             core::slice::from_raw_parts_mut(&mut c as *mut Cpu as *mut u8, size_of::<Cpu>())
         };
@@ -487,7 +490,7 @@ mod tests {
         c.dbgbcr = c.dbgbcr.map(|v| v & crate::interp::debug::BCR_MASK);
         c.dbgwcr = c.dbgwcr.map(|v| v & crate::interp::debug::WCR_MASK);
         c.step_syn &= crate::interp::debug::STEP_SYN;
-        c.reserved = [0; 5];
+        (c.reserved, c.zero) = ([0; 5], [0; 2]);
         crate::interp::debug::arm(&mut c);
         let mut w = Writer::default();
         c.save(&mut w);

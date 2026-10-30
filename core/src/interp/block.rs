@@ -1285,9 +1285,10 @@ pub const SLOW: u32 = 1;
 /// found no next block inline: its caller looks for one.
 pub const NEXT: u32 = 2;
 
-/// The slot XZR's reads go to in [`hot`] ([`reads`]): a `Cpu` field no instruction
-/// writes (`AFSR0_EL1` is RAZ/WI), as an index of the `Cpu`'s u64s.
-const ZERO: u8 = (core::mem::offset_of!(Cpu, afsr0_el1) / 8) as u8;
+/// The slot XZR's reads go to in [`hot`] ([`reads`]): `Cpu::zero`, as an index of
+/// the `Cpu`'s u64s.
+const ZERO: u8 = (core::mem::offset_of!(Cpu, zero) / 8) as u8;
+const _: () = assert!(core::mem::offset_of!(Cpu, zero) / 8 < 256);
 
 /// Which of a micro-op's `d`, `n` and `m` are registers only read, 31 being XZR: [`pack`]
 /// stores [`ZERO`] for them, and [`hot`] reads them with [`ra`]. `x` is the micro-op's `x`

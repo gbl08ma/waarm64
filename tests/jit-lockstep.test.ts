@@ -10,7 +10,7 @@ import { JIT_DEFAULT, JIT_STRESS, setup, setupVm } from '../bench/interp/suite.t
 
 const STEPS = Number(process.env.WEBPC_LOCKSTEP_STEPS ?? 20_000_000);
 const RAM = 16 << 20; // bench/interp/suite.ts
-const CPU_BYTES = 1152; // size_of::<cpu::Cpu>()
+const CPU_BYTES = 1168; // size_of::<cpu::Cpu>()
 
 type Side = { run(n: number): number; memory: WebAssembly.Memory; cpu: number; ram: number };
 

@@ -68,7 +68,7 @@ Design notes for an ABI change go in this file before the code.
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
   at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
-  1056; `Cpu` is 1152 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
+  1056; `Cpu` is 1168 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
   flash bank's bytes, null without one; ABI 29), `vm_xhci(vm)` (the xHCI's shared block, null without one;
   ABI 38, "USB" below).
