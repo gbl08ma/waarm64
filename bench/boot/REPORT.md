@@ -2956,3 +2956,42 @@ preview server.
 The build loads in a third of the time and starts a machine ~150 ms sooner (its workers are one file each); the dev
 server is the old server's speed (its first load per process compiles; later loads are cached). The tests stay on the
 dev server (their harness pages and in-page imports aren't build entries; docs/backlog.md "Page tests on the build").
+
+## Groups of accesses: one TLB probe for loads or stores off one base (2026-10-30)
+
+docs/jit.md "Loads and stores" (`emit::plan`): two or more loads (or stores) with immediate offsets off one base,
+unchanged between them but by writebacks and immediates added to it, over at most 256 bytes, share the leader's
+probe, widened to the group's span; a follower emits no address, probe or slow arm. A miss runs the span's
+instructions through the helper; on a spill machine the group has one spill arm (the span again on memory k)
+instead of one per access. The backlog's question, with `ADD`/`SUB` of the base and flagless integer instructions
+allowed between the accesses (fewer of them than followers: each costs a helper call in the cold arm).
+
+The Mac host (Apple M4, macOS), Chromium 153.0.8010.12 headless, `bench/interp/ab-mac.sh grp2 3`: a = groups off
+(`emit::GROUPS` false), b = on, the same source otherwise; alternated, 3 rounds, nothing else running. Medians of
+the rounds' medians (ms; rounds in `results/groups/`):
+
+| | a | b | |
+|---|---|---|---|
+| `alpine_user_jit` total | 11,579 · 12,021 · 12,029 | 11,904 · 11,953 · 11,972 | −0.6% |
+| compress / Lua / churn / SQLite | | | −0.4 / +0.8 / −2.1 / 0.0% |
+| `alpine_user_spill_jit` total | 12,046 · 12,352 · 12,363 | 12,067 · 12,114 · 12,427 | −1.9% |
+| `boot_alpine_jit` (to the script) | 3,768 · 3,812 · 3,838 | 3,753 · 3,770 · 3,789 | −1.1% |
+| JIT wasm, `alpine_user_jit` | 16.65 MB | 16.07 MB | **−3.5%** |
+| JIT wasm, `alpine_user_spill_jit` | 19.24 MB | 18.35 MB | **−4.6%** |
+| JIT wasm, Alpine's boot | 12.04 MB | 11.62 MB | **−3.5%** |
+| emission, `alpine_user_jit` (ms a run) | 190-196 | 200-202 | +3-5% |
+
+The rounds overlap everywhere (a's first round ran ~4% faster than its others: the host's drift), so no time
+difference counts: neither the speedup the backlog hoped for nor the memo's loss. The wasm is 3.5-4.6% smaller,
+which is V8's code and metadata (~10× the bytes, docs/jit.md "Memory"); the spill machine gains most, its
+followers' spill arms gone. Emission costs ~10 ms more a run (the plan emits each instruction it would put
+between accesses once on its own to check it is inline and leaves the flags and `HOST` alone); V8's compile time is
+unchanged. Kept. An earlier session of the same A/B (`groups-*`, not kept) ran while the dev VM built and tested
+beside it and its a rounds 2-3 came out 7% slow: discarded. On the dev VM one round each: +0.8% (inside its noise),
+wasm the same −3.5%.
+
+Tests: `jit::emit::tests::groups_of_accesses` (the plan), `tests/baremetal/mmu.c` checks 35-38 (a group across the
+swapped pages, with a writeback and an add between; a group's second store faulting; a load into the base ending
+its group), `tests/jit-diff.test.ts` "groups of accesses" on spill memories. Planted: the probe checking the
+leader's first byte only (mmu checks 35 and 36 fail; jit-diff's VA = PA pages are contiguous, so it passes), the
+cold arm running only the leader (check 36), the spill arm naming memory 0 (jit-diff).

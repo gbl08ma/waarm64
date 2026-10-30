@@ -76,6 +76,13 @@ static u64 at_s1e1r(u64 va) {
 
 #define DATA_ABORT_EL1(fsc, wnr) (0x96000000UL | (wnr) << 6 | (fsc))
 
+// The word at `va` in TEST_VA's first two pages (on swapped PAs), from the
+// identity map.
+static u64 test_word(u64 va) {
+  u64 off = va - TEST_VA;
+  return pages[off < PAGE_SZ ? 1 : 0][(off % PAGE_SZ) / 8];
+}
+
 static u64 user_read_kernel(void) { return *(volatile u64 *)&pages[0][0]; }
 static u64 user_write_ro(void) {
   *(volatile u64 *)(TEST_VA + 3 * PAGE_SZ) = 1;
@@ -149,6 +156,42 @@ int main(void) {
   *(volatile u64 *)(TEST_VA + PAGE_SZ - 4) = 0x8877665544332211UL;
   check(((volatile u32 *)pages[1])[1023] == 0x44332211 && ((volatile u32 *)pages[0])[0] == 0x88776655, 30);
   check(*(volatile u32 *)(TEST_VA + PAGE_SZ - 2) == 0x66554433, 31);
+
+  // Accesses off one base share a TLB probe in the JIT (docs/jit.md "Loads and
+  // stores"): each must still reach its own page when they span two (the
+  // swapped pages), with a writeback and an add to the base between them.
+  for (u64 j = 0; j < 512; j++) {
+    pages[1][j] = 0x1000 + j;
+    pages[0][j] = 0x2000 + j;
+  }
+  for (int i = 0; i < 64; i++) {
+    u64 b0 = TEST_VA + PAGE_SZ - 32 + 8 * (i % 5), b = b0, x, y, z;
+    __asm__ volatile("ldr %0, [%3]; ldr %1, [%3, #8]; ldr %2, [%3, #-8]"
+                     : "=&r"(x), "=&r"(y), "=&r"(z)
+                     : "r"(b)
+                     : "memory");
+    check(x == test_word(b) && y == test_word(b + 8) && z == test_word(b - 8), 35);
+    __asm__ volatile("ldr %0, [%3], #8; add %3, %3, #8; ldr %1, [%3]; ldr %2, [%3, #-16]"
+                     : "=&r"(x), "=&r"(y), "=&r"(z), "+r"(b)
+                     :
+                     : "memory");
+    check(b == b0 + 16 && x == test_word(b0) && y == test_word(b0 + 16) && z == test_word(b0), 36);
+  }
+  // A group's second store faults (page 3 is read-only, page 2 maps pages[3]
+  // writable since check 22): the first is done, the second not.
+  for (int i = 0; i < 64; i++) {
+    u64 n1 = n_exc, b = TEST_VA + 3 * PAGE_SZ - 8, v = 0x77 + i;
+    pages[3][511] = 0;
+    __asm__ volatile("str %1, [%0]; str %1, [%0, #8]" : : "r"(b), "r"(v) : "memory");
+    check(n_exc == n1 + 1 && last_esr == DATA_ABORT_EL1(0x0f, 1) && last_far == b + 8 && pages[3][511] == v, 37);
+  }
+  // A load into the base ends its group: the next load uses the new base.
+  pages[1][0] = TEST_VA + 0x100;
+  for (int i = 0; i < 64; i++) {
+    u64 b = TEST_VA, x, y;
+    __asm__ volatile("ldr %0, [%2, #8]; ldr %2, [%2]; ldr %1, [%2]" : "=&r"(x), "=&r"(y), "+r"(b) : : "memory");
+    check(x == 0x1001 && b == TEST_VA + 0x100 && y == 0x1020, 38);
+  }
 
   // LDTR/STTR at EL1 have EL0's permissions: they fault on EL1-only pages
   // (permission, level 3) and reach the user stack.

@@ -203,6 +203,11 @@ impl Code {
         self.local(0x22, i)
     }
 
+    /// Whether the code reads or writes local `i`.
+    pub fn uses_local(&self, i: u32) -> bool {
+        self.locals.iter().any(|&p| self.b[p] as u32 == i)
+    }
+
     /// Renumbers the locals the code uses so that only those are declared:
     /// `params[k]` (as emitted) becomes parameter `k`, `ty(i)` is local `i`'s
     /// type, and the other locals are grouped by type in order (every

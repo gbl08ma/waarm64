@@ -988,6 +988,47 @@ for (const [name, [mask, bits]] of Object.entries(MEMORY)) test(`JIT vs interpre
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SPILL_WORDS} words differ`);
 });
 
+// Groups of accesses (docs/jit.md "Loads and stores"): three loads or three stores off one base share a probe, their
+// span in memory 0 (read-only: the stores fault), in spill memory 1 (the group's spill arm), in memory 2 (the helper),
+// or across a page of the data areas.
+test('JIT vs interpreter on spill memories, MMU on: groups of accesses', () => {
+  const N = SPILL_WORDS >> 1;
+  const { a, b, run, pc } = setupSpill(16 * N);
+  const access = (store: boolean, rn: number) => {
+    const rt = rand32() % 32, s = store ? 0 : 1 << 22;
+    switch (rand32() % 3) {
+      case 0: return 0xf9000000 | s | (rand32() % 8) << 10 | rn << 5 | rt; // LDR/STR X, unsigned offset
+      case 1: return 0xf8000000 | s | ((rand32() % 64) - 32 & 0x1ff) << 12 | rn << 5 | rt; // LDUR/STUR X
+      default: return 0xa9000000 | s | ((rand32() % 16) - 8 & 0x7f) << 15 | (rand32() % 32) << 10 | rn << 5 | rt; // LDP/STP X
+    }
+  };
+  const words: number[][] = [];
+  for (let k = 0; k < N; k++) {
+    const store = rand32() % 2 === 0, rn = rand32() % 31;
+    const w = [access(store, rn), access(store, rn), access(store, rn), 0x14000000].map((x) => x >>> 0);
+    words.push(w);
+    a.code32.set(w, 4 * k);
+    b.code32.set(w, 4 * k);
+  }
+  const failures: string[] = [];
+  for (let k = 0; k < N; k++) {
+    for (let s = 0; s < STATES; s++) {
+      const fa = new BigUint64Array(a.memory.buffer, a.cpu, CPU_BYTES / 8);
+      const data = SPILL_DATA[rand32() % 4 === 0 ? 1 : 0];
+      for (let r = 0; r < 32; r++) fa[r] = value(true, data);
+      fa[32] = pc + BigInt(16 * k);
+      fa[33] = BigInt(rand32() & 0xf) << 28n;
+      new Uint8Array(b.memory.buffer, b.cpu, CPU_BYTES).set(new Uint8Array(a.memory.buffer, a.cpu, CPU_BYTES));
+      const what = run(4n);
+      if (what) {
+        failures.push(`${words[k].slice(0, 3).map((w) => w.toString(16).padStart(8, '0')).join(' ')}: ${what} differs`);
+        break;
+      }
+    }
+  }
+  assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${N} groups differ`);
+});
+
 // The arm runs: a load from a page in spill memory 1, its TLB entry filled, stays in the block, while one from
 // spill memory 2 takes the helper each time (the tests above pass either way).
 test('JIT on spill memories: memory 1 inline, memory 2 through the helper', () => {

@@ -212,6 +212,16 @@ pub struct Func {
     pub ireads: u64,
     /// The open chain of load and store failure exits ([`Chain`]).
     chain: Option<Chain>,
+    /// The block's words and the groups of accesses that share one TLB probe
+    /// ([`plan`]), by instruction; the group open, and the registers its span
+    /// has read and written so far ([`access`]).
+    pub words: Vec<u32>,
+    pub plan: Vec<Role>,
+    group: Option<Open>,
+    /// [`close`] emits a group's span again (a spill arm).
+    replay: bool,
+    sreads: u64,
+    swrites: u64,
 }
 
 /// Load and store failure exits that share their write-backs (docs/jit.md
@@ -333,6 +343,7 @@ impl Func {
         self.reused |= self.read & 1 << n;
         self.read |= 1 << n;
         self.ireads |= 1 << n;
+        self.sreads |= 1 << n;
         if self.plain & 1 << n != 0 {
             self.load_cpu(n);
         } else if self.regs.valid & 1 << n != 0 {
@@ -410,6 +421,7 @@ impl Func {
     /// Pops an i64 into register `n` (31 is SP; from 32, a v128 into a V register).
     fn set_reg(&mut self, n: u32) {
         self.reused |= 1 << n;
+        self.swrites |= 1 << n;
         let l = self.local(n);
         self.c.local_set(l);
         self.regs.valid |= 1 << n;
@@ -574,6 +586,7 @@ impl Func {
     /// its registers, and the shared return of acc + the retired count the
     /// failing site passed.
     pub fn chain_close(&mut self) {
+        debug_assert!(self.group.is_none(), "a group open at the chain's close");
         let Some(ch) = self.chain.take() else {
             return;
         };
@@ -594,6 +607,31 @@ impl Func {
         }
         self.c.local_get(ACC).op(0x6a).return_(); // i32.add
         self.c.end();
+    }
+
+    /// Drops the address a load or store `k` computed since `m` (the code's
+    /// mark and the registers then) if it follows in a group, whose HOST it
+    /// takes ([`access`]), and the code left the registers as they were; BASE
+    /// stays set for a writeback.
+    fn skip_addr(&mut self, k: usize, rn: u32, wb: bool, m: ((usize, usize, usize), Regs)) {
+        let skip = match self.plan.get(k) {
+            Some(Role::Follow { .. }) => true,
+            Some(Role::Lead { .. }) => self.replay,
+            _ => false,
+        };
+        if !skip || self.regs != m.1 {
+            return;
+        }
+        self.c.rewind(m.0);
+        if wb {
+            get_sp(self, true, rn);
+            self.c.local_set(BASE);
+        }
+    }
+
+    /// Whether a group is open (the span's instructions are all inline).
+    pub fn grouped(&self) -> bool {
+        self.group.is_some()
     }
 
     /// Loads the registers in `mask` whose locals aren't valid.
@@ -1160,6 +1198,8 @@ pub struct Ctx {
     /// Spill memories 1 to `spill` have a load's or store's arm inline
     /// ([`access`]): the module imports them as memories 1 to `spill`.
     pub spill: u32,
+    /// Accesses off one base share a TLB probe ([`plan`]; with the MMU on).
+    pub groups: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1441,7 +1481,7 @@ pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
 /// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1) at index 0:
 /// the offset its loads take from [`tlb_entry`]'s pointer (`mmu::Tlb`: the
 /// arrays are interleaved, so it's small enough for V8 to fold).
-pub fn tlb_array(el: u64, u: u64) -> u32 {
+pub const fn tlb_array(el: u64, u: u64) -> u32 {
     TLB_E + (3 * el + u) as u32 * 16
 }
 
@@ -1546,6 +1586,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 _ if size == 3 || (size == 2 && opc == 3) => return false, // UNDEFINED
                 _ => (false, true, opc == 3),
             };
+            let m = (c.c.mark(), c.regs);
             base(c);
             let mut wb = false;
             match op {
@@ -1577,6 +1618,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
             }
             c.local_set(ADDR);
+            c.skip_addr(k, rn, wb, m);
             let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
             let written = if store { 0 } else { xmask(rt) } | if wb { 1 << rn } else { 0 };
             access(
@@ -1614,12 +1656,14 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(len as u64) as i64;
             // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
             let mode = bits(i, 24, 23);
+            let m = (c.c.mark(), c.regs);
             base(c);
             c.local_get(BASE);
             if mode != 1 {
                 c.i64_const(off).i64_add();
             }
             c.local_set(ADDR);
+            c.skip_addr(k, rn, mode & 1 == 1, m);
             let written = if load { xmask(rt) | xmask(rt2) } else { 0 }
                 | if mode & 1 == 1 { 1 << rn } else { 0 };
             access(
@@ -2090,12 +2134,14 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(len as u64) as i64;
             // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
             let mode = bits(i, 24, 23);
+            let m = (c.c.mark(), c.regs);
             get_sp(c, true, rn);
             c.local_tee(BASE);
             if mode != 1 {
                 c.i64_const(off).i64_add();
             }
             c.local_set(ADDR);
+            c.skip_addr(k, rn, mode & 1 == 1, m);
             let wb = mode & 1 == 1;
             let guards = [Guard::sp(rn)];
             access(
@@ -2122,6 +2168,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             );
         }
         _ => {
+            let m = (c.c.mark(), c.regs);
             get_sp(c, true, rn);
             c.local_tee(BASE);
             let wb = matches!(op, STR_imm_fpsimd_1 | LDR_imm_fpsimd_1);
@@ -2145,6 +2192,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
             }
             c.local_set(ADDR);
+            c.skip_addr(k, rn, wb, m);
             let guards = [Guard::sp(rn)];
             access(
                 c,
@@ -2610,6 +2658,41 @@ fn access(
     written: u64,
     body: impl Fn(&mut Func, u32),
 ) {
+    let k = (here / 4) as usize;
+    match c.plan.get(k).copied().unwrap_or_default() {
+        Role::None => {}
+        // A spill arm's span ([`close`]): HOST is set.
+        Role::Lead { off, .. } | Role::Follow { off } if c.replay => return body(c, off),
+        Role::Lead {
+            last,
+            lo,
+            span,
+            off,
+            fp,
+        } => {
+            return lead(
+                c,
+                cx,
+                i,
+                k,
+                write,
+                guards,
+                written,
+                (last, lo, span, off, fp),
+                body,
+            );
+        }
+        Role::Follow { off } => {
+            // HOST holds the group's lowest address: nothing between changes it.
+            c.swrites |= written;
+            body(c, off);
+            let g = c.group.expect("a follower's group is open");
+            if g.last == k {
+                close(c, cx, g, here);
+            }
+            return;
+        }
+    }
     c.chain_open();
     let off = match cx.bus {
         Bus::Flat { base, phys, size } => {
@@ -2696,6 +2779,455 @@ fn access(
     }
     c.regs = fast;
     c.end();
+}
+
+/// [`access`] for a group's leader `i` (the `k`-th instruction): one probe
+/// for the group's span (`g`: its [`Role::Lead`]'s fields) from the lowest
+/// address, into `ADDR`, and the leader's body in the fast arm, which stays
+/// open over the span (HOST the lowest address's host address) until the last
+/// access closes it ([`close`]).
+#[allow(clippy::too_many_arguments)]
+fn lead(
+    c: &mut Func,
+    cx: &Ctx,
+    i: u32,
+    k: usize,
+    write: bool,
+    guards: &[Guard],
+    written: u64,
+    g: (usize, i64, u32, u32, bool),
+    body: impl Fn(&mut Func, u32),
+) {
+    let (last, lo, span, off, fp) = g;
+    let Bus::Tlb { read } = cx.bus else {
+        unreachable!("groups need the TLB");
+    };
+    if fp {
+        // Here, not at a SIMD&FP access in the span (whose check would leave
+        // through its helper): the helper runs the leader if FP is off.
+        fp_guard(c, cx, i, k);
+    }
+    c.chain_open();
+    let arr = read + if write { 16 } else { 0 };
+    c.local_get(ADDR);
+    if lo != 0 {
+        c.i64_const(lo).i64_add().local_tee(ADDR);
+    }
+    tlb_entry(c);
+    c.i64_load(arr).local_get(ADDR);
+    c.i64_const(span as i64 - 1).i64_add();
+    c.i64_const(0xfff).op(OR + W).op(EQ + WC);
+    for &g in guards {
+        guard(c, g, span);
+    }
+    c.hint(true).if_();
+    c.local_get(TLBE)
+        .i64_load(arr + 8)
+        .local_get(ADDR)
+        .i64_add()
+        .i32_wrap_i64()
+        .local_set(HOST);
+    debug_assert!(guards.len() <= 1);
+    c.group = Some(Open {
+        first: k,
+        last,
+        before: c.regs,
+        arr,
+        span,
+        guard: guards.first().copied().unwrap_or(Guard::None),
+    });
+    c.sreads = c.ireads;
+    c.swrites = written;
+    body(c, off);
+}
+
+/// Closes group `g` after its last access (at `here`): the probe's `else`,
+/// where the helper runs each of the span's instructions in turn, the block
+/// returning at the first that doesn't retire (to the leader's segment of
+/// the failure chain), with what the span reads or writes written back
+/// before and what it writes reloaded after, as [`fallback_arm`] for one.
+fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
+    debug_assert_eq!(g.last, (here / 4) as usize);
+    c.group = None;
+    let fast = c.regs;
+    c.else_();
+    c.regs = g.before;
+    // The span again for each spill memory, its accesses naming it (as
+    // `access`'s arms): in the `else`, ADDR, BASE and TLBE are still the
+    // leader's, the fast arm not having run.
+    let (read_, reused) = (c.read, c.reused);
+    let (sreads, written) = (c.sreads, c.swrites);
+    for m in 1..=cx.spill {
+        c.local_get(TLBE).i64_load(g.arr).local_get(ADDR);
+        c.i64_const(g.span as i64 - 1).i64_add();
+        c.i64_const(0xfff).op(OR + W).op(XOR + W);
+        c.i64_const((m as i64) << 3).op(EQ + WC);
+        guard(c, g.guard, g.span);
+        c.if_();
+        c.local_get(TLBE)
+            .i64_load(g.arr + 8)
+            .local_get(ADDR)
+            .i64_add()
+            .i32_wrap_i64()
+            .local_set(HOST);
+        c.ram_mem = m;
+        c.replay = true;
+        for j in g.first..=g.last {
+            let w = c.words[j];
+            let ok = inline(c, w, crate::decode::decode(w), j, cx);
+            debug_assert!(ok, "a group's instruction again");
+        }
+        c.replay = false;
+        c.ram_mem = 0;
+        debug_assert_eq!(c.regs, fast, "a group's spill arm's registers");
+        c.else_();
+        c.regs = g.before;
+    }
+    (c.read, c.reused, c.sreads, c.swrites) = (read_, reused, sreads, written);
+    let mut need = (c.sreads | written) & c.regs.dirty;
+    c.regs.dirty &= !need;
+    while need != 0 {
+        let n = need.trailing_zeros();
+        need &= need - 1;
+        c.store_cpu(n);
+    }
+    let dirty = c.regs.dirty;
+    let ch = c.chain.as_mut().expect("the leader opens a chain");
+    let d = dirty & !ch.cum;
+    *ch.segs.last_mut().expect("a segment") = d;
+    ch.cum |= d;
+    for j in g.first..=g.last {
+        let w = c.words[j];
+        c.local_get(VCPU).i32_const(w as i32);
+        pc_plus(c, 4 * j as i64);
+        c.call(cx.helper).hint(false).if_();
+        c.i32_const(j as i32).br(2 + cx.spill);
+        c.end();
+    }
+    c.touched.get_or_insert(true);
+    if let Flags::Lazy { stored, .. } = &mut c.flags {
+        *stored = true;
+    }
+    c.forget(written);
+    c.reload(fast.valid);
+    for _ in 0..cx.spill {
+        c.end();
+    }
+    c.regs = fast;
+    c.end();
+}
+
+/// Groups of accesses share one TLB probe (docs/jit.md "Loads and stores").
+pub const GROUPS: bool = true;
+
+/// A group's span (from its lowest byte to past its highest), at most.
+const SPAN_MAX: i64 = 256;
+
+/// An instruction's part in a group of accesses ([`plan`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Role {
+    #[default]
+    None,
+    /// The first access: its probe covers the group's `span` bytes from its
+    /// address + `lo`, the lowest the group accesses, its own at `off` from
+    /// there; the group ends at instruction `last`; `fp`: an access is SIMD&FP.
+    Lead {
+        last: usize,
+        lo: i64,
+        span: u32,
+        off: u32,
+        fp: bool,
+    },
+    /// A later access, at `off` from the group's lowest address.
+    Follow { off: u32 },
+}
+
+/// The open group ([`access`]): its first instruction, last, and the
+/// register state at its probe's `if`.
+#[derive(Clone, Copy)]
+struct Open {
+    first: usize,
+    last: usize,
+    before: Regs,
+    /// The leader's TLB array, span and guard, for the spill arms.
+    arr: u32,
+    span: u32,
+    guard: Guard,
+}
+
+/// A load or store a group can take: the base register, the address's
+/// offset from it, the bytes accessed, a store, the base's change after it
+/// (writeback), SIMD&FP, and the X registers it loads.
+struct Shape {
+    rn: u32,
+    off: i64,
+    len: u32,
+    write: bool,
+    wb: i64,
+    fp: bool,
+    loads: u64,
+}
+
+/// The [`Shape`] of a load or store with an immediate offset ([`ldst`],
+/// [`ldst_fp`]), none for the rest: what they emit inline (their reasons to
+/// leave a word to the helper are this one's for none).
+fn shape(i: u32) -> Option<Shape> {
+    use Op::*;
+    let (rt, rn, rt2) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 14, 10));
+    let size = bits(i, 31, 30);
+    let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
+    let op = crate::decode::decode(i);
+    // Pre-index (bit 11) accesses base + imm9, post-index the base.
+    let indexed = || (if bit(i, 11) { imm9 } else { 0 }, imm9);
+    // Pairs: 24:23 is 01 post-index, 11 pre-index, 10 (or 00) offset.
+    let pair = |off: i64| {
+        let mode = bits(i, 24, 23);
+        (
+            if mode != 1 { off } else { 0 },
+            if mode & 1 == 1 { off } else { 0 },
+        )
+    };
+    let s = match op {
+        STRx_LDRx_imm_2 | STURx_LDURx | STRx_LDRx_imm_1 => {
+            let opc = bits(i, 23, 22);
+            if opc >= 2 && (size == 3 || (size == 2 && opc == 3)) {
+                return None; // PRFM, or UNDEFINED
+            }
+            let ((off, wb), write) = match op {
+                STRx_LDRx_imm_2 => (((bits(i, 21, 10) << size) as i64, 0), opc == 0),
+                STURx_LDURx => ((imm9, 0), opc == 0),
+                _ => (indexed(), opc == 0),
+            };
+            let loads = if write { 0 } else { xmask(rt) };
+            Shape {
+                rn,
+                off,
+                len: 1 << size,
+                write,
+                wb,
+                fp: false,
+                loads,
+            }
+        }
+        STP_LDP_gen | STNP_LDNP_gen => {
+            let load = bit(i, 22);
+            let len = match (size, load) {
+                (0, _) => 4,
+                (2, _) => 8,
+                (1, true) if op == STP_LDP_gen => 4,
+                _ => return None,
+            };
+            let (off, wb) = pair(sext(bits(i, 21, 15) as u64, 7) as i64 * len as i64);
+            let loads = if load { xmask(rt) | xmask(rt2) } else { 0 };
+            Shape {
+                rn,
+                off,
+                len: 2 * len as u32,
+                write: !load,
+                wb,
+                fp: false,
+                loads,
+            }
+        }
+        STP_LDP_fpsimd | STNP_LDNP_fpsimd => {
+            if size == 3 {
+                return None;
+            }
+            let len = 4i64 << size;
+            let (off, wb) = pair(sext(bits(i, 21, 15) as u64, 7) as i64 * len);
+            Shape {
+                rn,
+                off,
+                len: 2 * len as u32,
+                write: !bit(i, 22),
+                wb,
+                fp: true,
+                loads: 0,
+            }
+        }
+        STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 | STUR_fpsimd | LDUR_fpsimd | STR_imm_fpsimd_1
+        | LDR_imm_fpsimd_1 => {
+            let len = match (size, bit(i, 23)) {
+                (0, true) => 16,
+                (s, false) => 1 << s,
+                _ => return None,
+            };
+            let (off, wb) = match op {
+                STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 => (bits(i, 21, 10) as i64 * len as i64, 0),
+                STUR_fpsimd | LDUR_fpsimd => (imm9, 0),
+                _ => indexed(),
+            };
+            Shape {
+                rn,
+                off,
+                len,
+                write: !bit(i, 22),
+                wb,
+                fp: true,
+                loads: 0,
+            }
+        }
+        _ => return None,
+    };
+    Some(s)
+}
+
+/// Whether instruction `i` may sit between a group's accesses: an integer
+/// operation without flags that is inline and leaves `HOST` alone; a write to
+/// the base `rn` must add an immediate to it (into `delta`), any other ends the
+/// group.
+fn between(i: u32, k: usize, cx: &Ctx, rn: u32, delta: &mut i64) -> bool {
+    use Op::*;
+    let op = crate::decode::decode(i);
+    let (rd, rs) = (bits(i, 4, 0), bits(i, 9, 5));
+    // Rd 31 is SP for these, XZR for the rest.
+    let sp = matches!(
+        op,
+        ADD_imm | SUB_imm | ADD_ext | SUB_ext | AND_imm | ORR_imm | EOR_imm
+    );
+    let ok = matches!(
+        op,
+        MOVZ | MOVN
+            | MOVK
+            | ADR
+            | ADRP
+            | ADD_imm
+            | SUB_imm
+            | ADD_shift
+            | SUB_shift
+            | ADD_ext
+            | SUB_ext
+            | AND_imm
+            | ORR_imm
+            | EOR_imm
+            | AND_shift
+            | BIC_shift
+            | ORR_shift
+            | ORN_shift
+            | EOR_shift
+            | EON
+            | SBFM
+            | BFM
+            | UBFM
+            | ASR_1
+            | ASR_2
+            | SXTB_1
+            | SXTB_2
+            | SXTH_1
+            | SXTH_2
+            | SXTW
+            | EXTR
+            | MADD
+            | MSUB
+            | NOP
+    );
+    if !ok || !pure(i, k, cx) {
+        return false;
+    }
+    if op == NOP || rd != rn || (rd == 31 && !sp) {
+        return true;
+    }
+    let imm = match bits(i, 23, 22) {
+        0 => bits(i, 21, 10) as i64,
+        _ => (bits(i, 21, 10) as i64) << 12,
+    };
+    match op {
+        ADD_imm if rs == rn && bit(i, 31) => *delta = delta.wrapping_add(imm),
+        SUB_imm if rs == rn && bit(i, 31) => *delta = delta.wrapping_sub(imm),
+        _ => return false,
+    }
+    true
+}
+
+/// Whether instruction `i` (the `k`-th of its block) is inline, leaving the
+/// flags, the failure chain and `HOST` alone: emitted once on its own.
+fn pure(i: u32, k: usize, cx: &Ctx) -> bool {
+    let mut c = Func::default();
+    let flags = c.flags;
+    inline(&mut c, i, crate::decode::decode(i), k, cx)
+        && c.flags == flags
+        && c.chain.is_none()
+        && !c.c.uses_local(HOST)
+}
+
+/// The groups of a block's loads or stores that share one TLB probe: each
+/// one of two or more accesses of one kind (loads, or stores) off the same
+/// base register, unchanged between them but by writebacks and immediates
+/// added to it, over a span within [`SPAN_MAX`] bytes, with only [`between`]
+/// instructions among them, at most one fewer than the accesses. The leader's
+/// probe covers the whole span; on a miss, the span's instructions run
+/// through the helper ([`access`]).
+pub fn plan(words: &[u32], cx: &Ctx) -> Vec<Role> {
+    let mut roles = vec![Role::None; words.len()];
+    if !cx.groups || !matches!(cx.bus, Bus::Tlb { .. }) {
+        return roles;
+    }
+    let mut k = 0;
+    while k < words.len() {
+        k = group(words, k, cx, &mut roles) + 1;
+    }
+    roles
+}
+
+/// The group led by instruction `first`, if any, into `roles`; returns its last
+/// instruction (`first` if none).
+fn group(words: &[u32], first: usize, cx: &Ctx, roles: &mut [Role]) -> usize {
+    let Some(s) = shape(words[first]) else {
+        return first;
+    };
+    if s.loads & 1 << s.rn != 0 {
+        return first;
+    }
+    let (rn, write) = (s.rn, s.write);
+    let (mut lo, mut hi) = (s.off, s.off + s.len as i64);
+    let mut fp = s.fp;
+    let mut delta = s.wb;
+    // Each access's address from the leader's base, and the best end so far.
+    let mut at = vec![(first, s.off)];
+    let (mut others, mut best) = (0, None);
+    for (k, &w) in words.iter().enumerate().skip(first + 1) {
+        let Some(t) = shape(w) else {
+            if !between(w, k, cx, rn, &mut delta) {
+                break;
+            }
+            others += 1;
+            continue;
+        };
+        if t.rn != rn || t.write != write || (rn == 31 && delta % 16 != 0) {
+            break;
+        }
+        let a = delta.wrapping_add(t.off);
+        let (l, h) = (lo.min(a), hi.max(a.saturating_add(t.len as i64)));
+        if h - l > SPAN_MAX {
+            break;
+        }
+        (lo, hi, fp) = (l, h, fp || t.fp);
+        at.push((k, a));
+        if others < at.len() - 1 {
+            best = Some((at.len(), lo, hi, fp));
+        }
+        delta = delta.wrapping_add(t.wb);
+        if t.loads & 1 << rn != 0 {
+            break;
+        }
+    }
+    let Some((n, lo, hi, fp)) = best else {
+        return first;
+    };
+    let last = at[n - 1].0;
+    roles[first] = Role::Lead {
+        last,
+        lo: lo - s.off,
+        span: (hi - lo) as u32,
+        off: (s.off - lo) as u32,
+        fp,
+    };
+    for &(k, a) in &at[1..n] {
+        roles[k] = Role::Follow {
+            off: (a - lo) as u32,
+        };
+    }
+    last
 }
 
 /// ANDs the condition of `g` into the i32 on the stack (an access of `len` bytes).
@@ -3564,7 +4096,110 @@ mod tests {
         pair_locks: 0x100,
         clock: None,
         spill: 0,
+        groups: true,
     };
+
+    /// Through the TLB at EL1.
+    const TLB: Ctx = Ctx {
+        bus: Bus::Tlb {
+            read: tlb_array(1, 0),
+        },
+        el1: true,
+        ..FLAT
+    };
+
+    #[test]
+    fn groups_of_accesses() {
+        use Role::*;
+        let lead = |last, lo, span, off| Lead {
+            last,
+            lo,
+            span,
+            off,
+            fp: false,
+        };
+        // ldr x2, [x15]; ldr x1, [x15, #8]; ldur x0, [x15, #-8]; ubfx; ldr x3, [x17, x18, lsl #3]
+        let w = [0xf94001e2, 0xf94005e1, 0xf85f81e0, 0xd3432df2, 0xf8727a23];
+        assert_eq!(
+            plan(&w, &TLB),
+            [
+                lead(2, -8, 24, 8),
+                Follow { off: 16 },
+                Follow { off: 0 },
+                None,
+                None
+            ]
+        );
+        // Nothing with the MMU off, or switched off.
+        assert!(plan(&w, &FLAT).iter().all(|&r| r == None));
+        assert!(
+            plan(
+                &w,
+                &Ctx {
+                    groups: false,
+                    ..TLB
+                }
+            )
+            .iter()
+            .all(|&r| r == None)
+        );
+        // ldr x0, [x15], #8; add x15, x15, #8; ldr x1, [x15]; ldur x2, [x15, #-16]:
+        // the base moves by 16 before the second access.
+        let w = [0xf84085e0, 0x910021ef, 0xf94001e1, 0xf85f01e2];
+        assert_eq!(
+            plan(&w, &TLB),
+            [
+                lead(3, 0, 24, 0),
+                None,
+                Follow { off: 16 },
+                Follow { off: 0 }
+            ]
+        );
+        // One instruction between two accesses: not worth it.
+        assert!(plan(&w[..3], &TLB).iter().all(|&r| r == None));
+        // ldr x1, [x0, #8]; ldr x0, [x0]; ldr x2, [x0]: a load of the base ends the group.
+        let w = [0xf9400401, 0xf9400000, 0xf9400002];
+        assert_eq!(
+            plan(&w, &TLB),
+            [lead(1, -8, 16, 8), Follow { off: 0 }, None]
+        );
+        // Loads and stores apart; another base apart: str x1, [x0]; ldr x2, [x0, #8];
+        // ldr x3, [x0, #16]; ldr x4, [x5]
+        let w = [0xf9000001, 0xf9400402, 0xf9400803, 0xf94000a4];
+        assert_eq!(
+            plan(&w, &TLB),
+            [None, lead(2, 0, 16, 0), Follow { off: 8 }, None]
+        );
+        // stp x29, x30, [sp, #-32]!; mov x29, sp; stp x19, x20, [sp, #16]: the
+        // prologue, SP's writeback a multiple of 16.
+        let w = [0xa9be7bfd, 0x910003fd, 0xa90153f3];
+        assert_eq!(plan(&w, &TLB), [None; 3]); // one between, one follower
+        let w = [0xa9be7bfd, 0x910003fd, 0xa90153f3, 0xa9025bf5];
+        assert_eq!(
+            plan(&w, &TLB),
+            [
+                lead(3, 0, 48, 0),
+                None,
+                Follow { off: 16 },
+                Follow { off: 32 }
+            ]
+        );
+        // SIMD&FP members: ldp q0, q1, [x1]; ldp q2, q3, [x1, #32]
+        let w = [0xad400420, 0xad410c22];
+        assert_eq!(
+            plan(&w, &TLB),
+            [
+                Lead {
+                    last: 1,
+                    lo: 0,
+                    span: 64,
+                    off: 0,
+                    fp: true
+                },
+                Follow { off: 32 }
+            ]
+        );
+    }
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
         emit_in(i, k, &FLAT)
@@ -4077,6 +4712,7 @@ mod tests {
             pair_locks: 0x100,
             clock: None,
             spill: 0,
+            groups: true,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

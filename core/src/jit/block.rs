@@ -471,6 +471,8 @@ struct Env<'a> {
     /// RAM's host base and guest PA.
     base: u64,
     phys: u64,
+    /// Each member's groups of accesses ([`emit::plan`]).
+    plans: Vec<Vec<emit::Role>>,
 }
 
 impl Env<'_> {
@@ -613,6 +615,7 @@ pub fn module(
                 pair_locks,
                 clock,
                 spill,
+                groups: emit::GROUPS,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -626,6 +629,7 @@ pub fn module(
                 pair_locks,
                 clock,
                 spill: 0,
+                groups: false,
             }
         };
         let env = Env {
@@ -638,6 +642,7 @@ pub fn module(
             xmiss: misses,
             base: base as usize as u64,
             phys,
+            plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -810,6 +815,8 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         c.regs = entry[i];
         c.fp_ok = false;
         c.fpa_ok = false;
+        c.words.clone_from(&b.words);
+        c.plan.clone_from(&e.plans[i]);
         c.enter_flags(match fin[i] {
             In::Lazy(k, sf) => Some((k, sf)),
             _ => None,
@@ -872,6 +879,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                 last = end(w) == End::No;
                 continue;
             }
+            assert!(!c.grouped(), "a helper call inside a group of accesses");
             c.flush();
             c.sync_flags();
             c.local_get(0).i32_const(w as i32);
