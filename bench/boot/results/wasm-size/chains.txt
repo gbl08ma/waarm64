@@ -1,0 +1,4 @@
+none+jc                n=  35700 bytes   2177449 ( 6.2%) avg   61.0
+direct                 n=  13650 bytes    300414 ( 0.9%) avg   22.0
+none+xc                n=  10604 bytes   1230064 ( 3.5%) avg  116.0
+direct+guard+xc        n=   6240 bytes   1185651 ( 3.4%) avg  190.0
