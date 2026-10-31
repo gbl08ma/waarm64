@@ -432,11 +432,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
-- **Shared folders, not measured:** what writing a real folder of the user's computer costs, and whether its renames go
-  through `move()` or its copy fallback. Writing one from an Arch guest works, and so do renaming a file, moving it into
-  a subfolder and renaming a directory of files, tried by hand (2026-10-31); write permission can't be granted headless,
-  so the tests' host backend writes OPFS directories. `bench/shares/index.html`, opened by hand on a real folder, gives
-  the numbers (bench/shares/REPORT.md) and the answer.
+- **Shared folders, long names on a host folder:** past 248 bytes Linux's errno is wrong: a write to a file of 249 to 255
+  bytes answers `EIO` (its session can't open), and creating a name past 255 `EIO` rather than `ENAMETOOLONG`
+  (bench/shares/REPORT.md). Write permission can't be granted headless, so the tests' host backend writes OPFS directories
+  and `bench/shares/index.html` is opened by hand.
 - 9p: no HTTP-served tree, as v86's lazy filesystem; no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
   entry indices; whole-second timestamps.
 - Input: the keyboard layout reaches only guests with systemd 256+ (the firmware, GRUB and older guests type a US

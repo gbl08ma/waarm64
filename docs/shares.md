@@ -109,9 +109,13 @@ after the request it names**. What changes while the machine runs comes over the
 - **Times:** a file's `lastModified` (ms); directories have none and answer the folder's attach time.
 - **No symlinks, hard links or device nodes:** `symlink`, `link`, `mknod` answer `EPERM`. Entries that aren't files
   or directories don't appear.
-- **Names:** what Chromium refuses (`/`, `\`, `.`/`..`, and on Windows its reserved characters) answers `EINVAL`; on
-  a case-insensitive host, a name differing only in case from an existing one `EEXIST` (what the host does).
-- **Renames:** `FileSystemFileHandle.move()` for files, or a copy and a remove where a host file has none. Directories
+- **Names:** what Chromium refuses answers `EINVAL`. In a folder in the browser that's `/`, `\`, `.` and `..`; a host
+  folder refuses more, measured on Linux: `:` in a name, a trailing dot or space, control characters, Windows' device names
+  (`nul`, `CON`), `.lnk`, `.url`, `desktop.ini`. A host file with a name past 248 bytes can't be written, its swap file's
+  name being too long (bench/shares/REPORT.md). On a case-insensitive host, a name differing
+  only in case from an existing one `EEXIST` (what the host does).
+- **Renames:** `FileSystemFileHandle.move(directory, name)` for files (a host folder refuses `move(name)`), or a copy
+  and a remove where a host file has none. Directories
   have no `move()` (Chromium 153): the new tree is made and its files are moved into it, entries not bytes; on a failure
   what moved goes back, and a machine's end in the middle of it leaves the tree split: such a rename isn't atomic. A rename
   from one folder to another, or into or out of the root, is `EXDEV`.
@@ -131,7 +135,7 @@ after the request it names**. What changes while the machine runs comes over the
   the read closes the session). Truncation is `truncate()` on the session; a truncate to 0 starts a session without
   copying.
 - So writing small or whole files is cheap and one write into a big file costs a copy of it (~2 ms/MiB on the M4's VM
-  on OPFS; a real disk's cost is what the page in `bench/shares/` measures by hand): SQLite databases or disk images on a
+  on OPFS, ~1 ms/MiB on a real folder of the desktop's: `bench/shares/REPORT.md`): SQLite databases or disk images on a
   host folder are slow, and the wizard says so. A folder in the browser has no such cost.
 - A write that fails ends the session (a stream that errored takes the acknowledged writes with it): the file stays as it
   was, and `EIO` answers later writes and `Tfsync` until the last clunk.

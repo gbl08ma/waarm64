@@ -1,0 +1,201 @@
+{
+ "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+ "platform": "Linux x86_64",
+ "kind": "host",
+ "cores": 16,
+ "behaviour": {
+  "hasMove": true,
+  "moveFileRename": {
+   "error": "NotAllowedError: Failed to execute 'move' on 'FileSystemFileHandle': The request is not allowed by the user agent or the platform in the current context."
+  },
+  "moveFileRenameInDir": {
+   "ok": [
+    "m5",
+    1
+   ]
+  },
+  "moveFileNewExtension": {
+   "ok": "m6.sh"
+  },
+  "moveFileAcross": {
+   "ok": "m3"
+  },
+  "moveFileOverExisting": {
+   "ok": 2
+  },
+  "moveDirRename": {
+   "error": "TypeError: d.move is not a function"
+  },
+  "moveDirAcross": {
+   "error": "TypeError: d.move is not a function"
+  },
+  "moveWithSessionOpen": {
+   "error": "NoModificationAllowedError: Failed to execute 'move' on 'FileSystemFileHandle': Failed to move s1. A FileSystemHandle cannot be moved while it is locked."
+  },
+  "removeWithSessionOpen": {
+   "error": "NoModificationAllowedError: Failed to execute 'removeEntry' on 'FileSystemDirectoryHandle': An attempt was made to modify an object where modifications are not allowed."
+  },
+  "readOldFileAfterChange": {
+   "error": "NotReadableError: The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired."
+  },
+  "readOldFileAfterRemove": {
+   "error": "NotFoundError: A requested file or directory could not be found at the time an operation was processed."
+  },
+  "twoSessions": {
+   "ok": true
+  },
+  "longNames": {
+   "240": {
+    "ok": "ok"
+   },
+   "248": {
+    "ok": "ok"
+   },
+   "249": {
+    "ok": "InvalidStateError"
+   },
+   "255": {
+    "ok": "InvalidStateError"
+   },
+   "256": {
+    "error": "InvalidStateError: An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk."
+   }
+  },
+  "badNames": {
+   "a/b": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "a\\b": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "..": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "nul": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "a:b": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "trailing.": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "trailing ": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "CON": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "x.lnk": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "x.url": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "x.crswap": {
+    "ok": true
+   },
+   ".DS_Store": {
+    "ok": true
+   },
+   "desktop.ini": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   },
+   "é": {
+    "ok": true
+   },
+   "a×255": {
+    "error": "InvalidStateError: An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk."
+   },
+   "a×300": {
+    "error": "InvalidStateError: An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk."
+   },
+   "ctrl\u0001": {
+    "error": "TypeError: Failed to execute 'getFileHandle' on 'FileSystemDirectoryHandle': Name is not allowed."
+   }
+  },
+  "caseFold": {
+   "ok": "NotFoundError"
+  },
+  "createDirOverFile": {
+   "error": "TypeMismatchError: The path supplied exists, but was not an entry of requested type."
+  },
+  "removeNonEmptyDir": {
+   "error": "InvalidModificationError: The object can not be modified in this way."
+  },
+  "lastModified": {
+   "ok": [
+    1793444701441,
+    1793444701442
+   ]
+  },
+  "queryPermissionInWorker": {
+   "ok": "granted"
+  },
+  "requestPermissionInWorker": "function",
+  "estimateInWorker": {
+   "ok": {
+    "quota": 10737430397,
+    "usage": 12157,
+    "usageDetails": {
+     "fileSystem": 630,
+     "indexedDB": 11527
+    }
+   }
+  }
+ },
+ "small": {
+  "create4k": {
+   "ms": 3192.86,
+   "usPerOp": 638.6
+  },
+  "lookup": {
+   "ms": 752.18,
+   "usPerOp": 150.4
+  },
+  "lookupMissing": {
+   "ms": 651.64,
+   "usPerOp": 130.3
+  },
+  "lookupDirAsFile": {
+   "ms": 57.28,
+   "usPerOp": 114.6
+  },
+  "getFile": {
+   "ms": 465.2,
+   "usPerOp": 93
+  },
+  "getFileParallel32": {
+   "ms": 119.74,
+   "usPerOp": 23.9
+  },
+  "entries": {
+   "ms": 99.66,
+   "usPerOp": 19.9
+  },
+  "read4k": {
+   "ms": 332.49,
+   "usPerOp": 332.5
+  },
+  "remove": {
+   "ms": 575.3,
+   "usPerOp": 115.1
+  }
+ },
+ "big": {
+  "cpIn100MiB": 171.72,
+  "cpOut100MiB": 325.77,
+  "cpOverwriteSameFile100MiB": 184.33,
+  "session100MiB": {
+   "open": 104.85,
+   "one4kWrite": 0.4,
+   "close": 7.88
+  },
+  "sessionNoKeep": 7.49,
+  "session1024MiB": {
+   "open": 999.95,
+   "one4kWrite": 0.36,
+   "close": 70.07
+  }
+ }
+}

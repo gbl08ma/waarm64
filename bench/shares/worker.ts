@@ -86,22 +86,29 @@ async function big(dir: FileSystemDirectoryHandle, opfs: boolean) {
 async function behaviour(dir: FileSystemDirectoryHandle, opfs: boolean) {
   const r: Record<string, unknown> = {};
   const file = async (name: string, text = 'x') => { const h = await dir.getFileHandle(name, { create: true }); const w = await h.createWritable(); await w.write(text); await w.close(); return h; };
-  r.hasMove = typeof (FileSystemHandle.prototype as unknown as Movable).move === 'function';
+  r.hasMove = typeof (FileSystemFileHandle.prototype as unknown as Movable).move === 'function';
   r.moveFileRename = await note(async () => { const h = await file('m1'); await (h as unknown as Movable).move('m2'); return [h.name, (await h.getFile()).size]; });
   const sub = await dir.getDirectoryHandle('sub', { create: true });
-  r.moveFileAcross = await note(async () => { const h = await dir.getFileHandle('m2'); await (h as unknown as Movable).move(sub, 'm3'); return h.name; });
-  r.moveFileOverExisting = await note(async () => { const a = await file('o1', 'aa'); await file('o2', 'bbb'); await (a as unknown as Movable).move('o2'); return (await a.getFile()).size; });
+  // `move(dir, name)` is the server's call; a real folder refuses `move(name)`, so each probe makes its own file.
+  r.moveFileRenameInDir = await note(async () => { const h = await file('m4'); await (h as unknown as Movable).move(dir, 'm5'); return [h.name, (await h.getFile()).size]; });
+  r.moveFileNewExtension = await note(async () => { const h = await file('m6.txt'); await (h as unknown as Movable).move(dir, 'm6.sh'); return h.name; });
+  r.moveFileAcross = await note(async () => { const h = await file('m7'); await (h as unknown as Movable).move(sub, 'm3'); return h.name; });
+  r.moveFileOverExisting = await note(async () => { const a = await file('o1', 'aa'); await file('o2', 'bbb'); await (a as unknown as Movable).move(dir, 'o2'); return (await a.getFile()).size; });
   r.moveDirRename = await note(async () => { const d = await dir.getDirectoryHandle('d1', { create: true }); await (d as unknown as Movable).move('d2'); return d.name; });
   r.moveDirAcross = await note(async () => { const d = await dir.getDirectoryHandle('d3', { create: true }); await (d as unknown as Movable).move(sub, 'd4'); return d.name; });
-  r.moveWithSessionOpen = await note(async () => { const h = await file('s1'); const w = await h.createWritable({ keepExistingData: true }); try { await (h as unknown as Movable).move('s2'); } finally { await w.abort(); } });
+  r.moveWithSessionOpen = await note(async () => { const h = await file('s1'); const w = await h.createWritable({ keepExistingData: true }); try { await (h as unknown as Movable).move(dir, 's2'); } finally { await w.abort(); } });
   r.removeWithSessionOpen = await note(async () => { const h = await file('s3'); const w = await h.createWritable({ keepExistingData: true }); try { await dir.removeEntry('s3'); await w.write('y'); await w.close(); return (await h.getFile().catch((e) => e.name)); } finally { await w.abort().catch(() => {}); } });
   r.readOldFileAfterChange = await note(async () => { const h = await file('r1', 'aaaa'); const old = await h.getFile(); await new Promise((f) => setTimeout(f, 20)); await file('r1', 'bbbbbb'); return old.slice(0, 2).text(); });
   r.readOldFileAfterRemove = await note(async () => { const h = await file('r2', 'aaaa'); const old = await h.getFile(); await dir.removeEntry('r2'); return old.slice(0, 2).text(); });
   r.twoSessions = await note(async () => { const h = await file('t1'); const a = await h.createWritable({ keepExistingData: true }); const b = await h.createWritable({ keepExistingData: true }); await a.abort(); await b.abort(); });
+  // On a real folder a session's swap file takes the name's `.crswap`: the handle alone, then a session.
+  r.longNames = {};
+  for (const k of [240, 248, 249, 255, 256]) (r.longNames as Record<string, unknown>)[k] = await note(async () => { const n = 'b'.repeat(k); const h = await dir.getFileHandle(n, { create: true }); const session = await h.createWritable().then((w) => w.close().then(() => 'ok'), (e) => e.name); await dir.removeEntry(n); return session; });
   r.badNames = {};
   for (const n of ['a/b', 'a\\b', '..', 'nul', 'a:b', 'trailing.', 'trailing ', 'CON', 'x.lnk', 'x.url', 'x.crswap', '.DS_Store', 'desktop.ini', 'é', 'a'.repeat(255), 'a'.repeat(300), 'ctrl\x01']) (r.badNames as Record<string, unknown>)[n.length > 20 ? `a×${n.length}` : n] = await note(async () => { const h = await file(n); await dir.removeEntry(h.name); });
   r.caseFold = await note(async () => { await file('CaSe'); const other = await dir.getFileHandle('case').then(() => 'same file', (e) => e.name); await dir.removeEntry('CaSe'); return other; });
   r.createDirOverFile = await note(async () => { await file('e1'); return dir.getDirectoryHandle('e1', { create: true }); });
+  await sub.getFileHandle('kept', { create: true });
   r.removeNonEmptyDir = await note(async () => dir.removeEntry('sub'));
   r.lastModified = await note(async () => { const h = await file('t2'); const f = await h.getFile(); return [f.lastModified, Date.now()]; });
   if (opfs) {
