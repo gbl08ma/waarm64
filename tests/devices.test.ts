@@ -273,7 +273,7 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
   assert.equal(await ask(b, ZEROES, 0, seg(24, 8)), OK); // block 3: the last slot goes
   assert.equal(data.getSize(), 1 * 4096);
   // A snapshot's `written` pins the generation (1: this opening's first change moved it) and sets the next change to
-  // move it again (docs/plans/machines.md §3.3): writes after a snapshot are another generation.
+  // move it again (docs/machines.md §3.3): writes after a snapshot are another generation.
   const pinned = b.written!();
   assert.deepEqual(pinned, { blocks: [0, 1, 2, 3, 10], generation: 1 });
   assert.equal(await ask(b, OUT, 0, new Uint8Array(512).fill(9)), OK);

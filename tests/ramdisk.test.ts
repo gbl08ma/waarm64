@@ -1,4 +1,4 @@
-// The ramdisk (web/ramdisk.ts, docs/plans/machines.md §4.3) against a plain byte array: reads,
+// The ramdisk (web/ramdisk.ts, docs/machines.md §4.3) against a plain byte array: reads,
 // writes, zeroes and discards across chunk edges, and the chunks given back.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

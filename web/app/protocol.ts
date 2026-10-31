@@ -95,7 +95,7 @@ export type ToWorker =
      * ones boot Debian unattended). The release page passes none.
      */
     credentials?: Credential[];
-    /** The machine's disks in slot order (docs/plans/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
+    /** The machine's disks in slot order (docs/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
     disks: StartDisk[];
     /**
      * The OPFS directory of the machine's own files: the firmware's variable store (`flash`) and a suspended machine
@@ -136,7 +136,7 @@ export type ToWorker =
      */
     resume?: boolean;
     /**
-     * The machine as its snapshots describe it (docs/plans/machines.md §5.1): its name, shape and the shape's hash, and
+     * The machine as its snapshots describe it (docs/machines.md §5.1): its name, shape and the shape's hash, and
      * the URLs of its URL disks by slot (a file restored elsewhere can make its machine). A snapshot whose shape hash
      * isn't this one is refused. Transient machines (the tests') have none: their snapshots are checked by devices.
      */
@@ -155,7 +155,7 @@ export type ToWorker =
   /**
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
-   * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/plans/machines.md
+   * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/machines.md
    * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). Answered by
    * `snapshot-done` or `snapshot-error`. `sleep`: as `suspend`'s; the guest is woken once the file is written.
    */
@@ -180,7 +180,7 @@ export type ToWorker =
 export type DiskSource = { url: string } | { file: File } | { blank: number } | { ramdisk: number } | { stored: string; size: number };
 
 /**
- * A disk of the machine being started (docs/plans/machines.md §4.2): where its bytes come from (a URL read by
+ * A disk of the machine being started (docs/machines.md §4.2): where its bytes come from (a URL read by
  * ranges, a `File` read in slices in the device worker, a blank disk of `blank` bytes reading as zeros, a ramdisk
  * of `ramdisk` bytes, empty at every start), and the OPFS overlay its writes go to. Without an overlay a disk is
  * read-only, unless it is a ramdisk.

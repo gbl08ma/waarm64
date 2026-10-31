@@ -1,9 +1,9 @@
-// Machines as the unit (docs/plans/machines.md §2, §5.1): what a machine, a disk and an attachment
+// Machines as the unit (docs/machines.md §2, §5.1): what a machine, a disk and an attachment
 // are, the slots a machine's devices take, and the shape: a canonical description of what the guest
 // sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
 // tests use it alike. web/app/store.ts keeps these records.
 
-/** The most disks a machine has (docs/plans/machines.md §4.1: room left of the core's 32 transports for devices to come). */
+/** The most disks a machine has (docs/machines.md §4.1: room left of the core's 32 transports for devices to come). */
 export const MAX_DISKS = 16;
 /** The most network adapters a machine has (docs/network-adapters.md §1.1). */
 export const MAX_ADAPTERS = 4;

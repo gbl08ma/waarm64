@@ -1,4 +1,4 @@
-// The browser's machines, disks, overlays, snapshots and network connections (docs/plans/machines.md §2,
+// The browser's machines, disks, overlays, snapshots and network connections (docs/machines.md §2,
 // docs/network-adapters.md §2): records in IndexedDB (database `webpc`, a store per kind, keyed by `id`), bytes
 // in OPFS (`overlays/<id>/`,
 // `disks/<id>/`, `machines/<id>/` with its `flash`, `suspend` and `snapshots/<id>`). **A record is

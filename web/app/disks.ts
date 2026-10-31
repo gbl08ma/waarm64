@@ -1,4 +1,4 @@
-// What the page does with disks and their overlays (docs/plans/machines.md §3, §4): a disk's bytes for a machine or a
+// What the page does with disks and their overlays (docs/machines.md §3, §4): a disk's bytes for a machine or a
 // job (`diskRef`), the overlays as named variants of a base (new, rename, switch, delete, refreshed from their meta
 // after a machine stops), changes loaded into a new overlay, a file imported into the browser as a stored disk, an
 // overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before

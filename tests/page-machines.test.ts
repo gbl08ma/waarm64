@@ -1,4 +1,4 @@
-// Machines as the unit on the page (docs/plans/machines.md), on Debian: a machine kept in this browser
+// Machines as the unit on the page (docs/machines.md), on Debian: a machine kept in this browser
 // (IndexedDB and OPFS, web/app/store.ts) opened by `?m=<id>`, with several disks from several sources.
 // Each test makes its machine's records in a fresh profile, as the modal would, then drives the guest
 // on the serial terminal. Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh); a Debian page

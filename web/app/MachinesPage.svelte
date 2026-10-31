@@ -1,5 +1,5 @@
 <!--
-  The Machines page (docs/plans/machines.md §7): it takes the machine's place on the page (which runs on behind it).
+  The Machines page (docs/machines.md §7): it takes the machine's place on the page (which runs on behind it).
   The machines kept in this browser (new, from a disk image, import a definition), and one machine: open it here,
   duplicate, export its definition, delete; its Settings, Disks and Snapshots as tabs. A transient machine (a test's
   `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's network connections

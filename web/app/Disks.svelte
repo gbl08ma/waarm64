@@ -1,5 +1,5 @@
 <!--
-  A machine's disks on the Machines page (docs/plans/machines.md §4): in slot order, read-only or not, moved, detached;
+  A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, moved, detached;
   per writable disk its overlays (switch, new empty, rename, delete, merge into a stored disk), export (the changes or
   the whole disk) and import (a changes file becomes a new overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->

@@ -1063,7 +1063,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * The writable disks' changes, for a snapshot (the VM as for `snapshot()`): for each disk with
      * an overlay, and each ramdisk, its slot, what its overlay belongs to (`diskIdentity`), its size, the blocks
      * (4 KiB, ascending) the overlay (or the ramdisk) holds, and the overlay's path and generation
-     * (docs/plans/machines.md §5.1: what the snapshot pins; asking moves the next change's generation on);
+     * (docs/machines.md §5.1: what the snapshot pins; asking moves the next change's generation on);
      * `diskBlocks` reads some of them.
      */
     async disks(): Promise<{ slot: number; identity: string; size: number; blocks: number[]; overlay?: string; generation?: number; ram?: boolean }[]> {

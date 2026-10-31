@@ -1,4 +1,4 @@
-// A disk's URL, checked when it is added (docs/plans/machines.md §4.2; what a host must give: docs/remote-disks.md
+// A disk's URL, checked when it is added (docs/machines.md §4.2; what a host must give: docs/remote-disks.md
 // §3; a chunked image's manifest, web/chunked.ts, needs no ranges): reachable over HTTPS (or from the page's own
 // origin), with CORS for the page's origin (the page is cross-origin isolated: a response without CORS doesn't reach
 // it), byte ranges answered with 206, `Content-Range` exposed, and a suffix range (the end of a qcow2 is read that way
@@ -79,7 +79,7 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
 /**
  * A chunked image (web/chunked.ts): its manifest, and its first piece's first bytes (by range, or the whole piece
  * where the host has no ranges, which a chunked image allows). The manifest's id stands as the disk's `etag`, so the
- * disk's identity follows the content (docs/plans/machines.md §3.1).
+ * disk's identity follows the content (docs/machines.md §3.1).
  */
 async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
   const fail = (why: string) => (out.problems.push(why), out);

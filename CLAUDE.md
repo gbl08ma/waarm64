@@ -31,7 +31,7 @@ its doc, never here. Facts most sessions need:
   through UEFI is the tests' guest (`?machine=debian`, `images/build.sh debian`); the desktop guest is Arch Linux with
   sway, PipeWire and Firefox (`images/arch/desktop.sh`). The page is deployed at `https://vm.tny.im` (`npm run dist`;
   deploy only when the user asks).
-- Machines are stored in the browser with their disks and snapshots ([docs/plans/machines.md](docs/plans/machines.md));
+- Machines are stored in the browser with their disks and snapshots ([docs/machines.md](docs/machines.md));
   3D goes through virgl onto WebGL2, Vulkan through Venus onto WebGPU (`?gpu=vulkan`, in progress: `vk/README.md`).
 
 ## Development environment

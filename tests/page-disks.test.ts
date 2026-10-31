@@ -1,4 +1,4 @@
-// Disks kept in the browser, without a guest (docs/plans/machines.md §3, §4): web/app/disks.ts in Chromium over
+// Disks kept in the browser, without a guest (docs/machines.md §3, §4): web/app/disks.ts in Chromium over
 // IndexedDB and OPFS. An image imported as a stored disk (qcow2 with compressed clusters, and raw) exports as the
 // same disk (`qemu-img compare` against the file, raw, qcow2 compressed or not); a disk's overlays as named variants
 // (new, rename, switch, delete). The flows with a guest are tests/page-machines.test.ts's.

@@ -1,4 +1,4 @@
-// The machines model (docs/plans/machines.md §2, §5.1): web/app/shape.ts's shape and its hash, and
+// The machines model (docs/machines.md §2, §5.1): web/app/shape.ts's shape and its hash, and
 // web/app/store.ts's records, deletions, sweep and change notices, in Node over memory and in
 // Chromium over IndexedDB and OPFS (the same flows, so the browser's backends are the ones tested).
 import assert from 'node:assert/strict';

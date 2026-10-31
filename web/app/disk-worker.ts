@@ -1,4 +1,4 @@
-// The stored disks' jobs (docs/plans/machines.md §4.4): an image's estimate and its import into the browser, and an
+// The stored disks' jobs (docs/machines.md §4.4): an image's estimate and its import into the browser, and an
 // overlay merged into its stored disk. A worker for the sync access handles and the synchronous reads of a `File`
 // (web/stored.ts); the page (web/app/disks.ts) runs one per job.
 import { blobSource } from '../devices.ts';

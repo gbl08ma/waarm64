@@ -1,4 +1,4 @@
-// Stored disks (docs/plans/machines.md §4.4): an image copied into the browser, kept in the overlay's sparse block
+// Stored disks (docs/machines.md §4.4): an image copied into the browser, kept in the overlay's sparse block
 // format over nothing (web/overlay.ts: `data`, `map`, `meta` in OPFS `disks/<id>/`; a block without a slot reads as
 // zeros). The same code reads, writes and exports them: an attachment writes into one of the disk's overlays, whose
 // base is the store read here (`openStored`), or into the store itself ("in place": it is then an overlay over
@@ -116,7 +116,7 @@ function qcow2Allocated(src: Source) {
 }
 
 /**
- * Writes overlay `overlayPath`'s blocks into stored disk `diskPath` and deletes the overlay (docs/plans/machines.md
+ * Writes overlay `overlayPath`'s blocks into stored disk `diskPath` and deletes the overlay (docs/machines.md
  * §4.4: the page has deleted its record, and the disk's other overlays, first). The store's generation moves on and
  * its meta names the overlay while the blocks are copied: interrupted, the next opening of the store does it again
  * (`resumeMerge`: the same blocks written again are harmless). Returns the blocks merged.

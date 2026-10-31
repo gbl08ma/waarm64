@@ -1,4 +1,4 @@
-// Snapshots of a machine kept in the browser (docs/plans/machines.md §5), on Debian, through the page and its modal:
+// Snapshots of a machine kept in the browser (docs/machines.md §5), on Debian, through the page and its modal:
 // three kept; an older one restored forks the newer state into an overlay of its own (nothing lost), the ramdisk comes
 // back with the snapshot; Suspend resumes while its pins match and boots instead once the disk moved on; a change of
 // RAM orphans the snapshots, and one action deletes them. Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh).

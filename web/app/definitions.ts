@@ -1,4 +1,4 @@
-// Machine definitions in and out (docs/plans/machines.md §6): a machine's shape as a small JSON file (`webpc-machine`,
+// Machine definitions in and out (docs/machines.md §6): a machine's shape as a small JSON file (`webpc-machine`,
 // version 1): its settings, and per attachment the disk's kind, name, size and identity (a URL as is; a file's name,
 // size, date and hash where known; a blank disk's or ramdisk's size), read-only, written in place, its serial. No
 // overlays, snapshots or file contents ("export a machine", the bundle, is later and named apart). An import makes a
