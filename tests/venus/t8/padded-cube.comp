@@ -1,0 +1,10 @@
+#version 450
+// VK4 T18: a padded cube, bound as its faces (tests/wgsl.test.ts): one texel inside a face, one across its edge, where
+// a linear filter reads the next face.
+layout(local_size_x = 2) in;
+layout(set = 0, binding = 0) uniform samplerCube img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[2]; };
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  o[i] = textureLod(img, i == 0u ? vec3(1, 0, 0) : vec3(1, 0, 0.99), 0.0);
+}

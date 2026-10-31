@@ -151,10 +151,16 @@ struct wgsl_sampler_key {
    uint8_t unnormalized;
    uint8_t compare;                /* VkCompareOp */
    uint8_t levels;                 /* the view's (0: asked of the texture) */
-   uint8_t pad[3];
+   uint8_t padded;                 /* a compressed image larger in its texture (whole blocks): `size` is what it is */
+   uint8_t faces;                  /* a padded cube, bound as its faces */
+   uint8_t pad;
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
+   uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */
 };
+
+/* A key's `sampler` where the texture is what it's about (a padded texture's size queries, whatever samples it). */
+#define WGSL_NO_SAMPLER 0xffffffffu
 
 /* The NIR options every stage is compiled with, and spirv_to_nir's. */
 const struct nir_shader_compiler_options *wgsl_nir_options(void);
@@ -214,7 +220,7 @@ void wgsl_test_device(unsigned features, unsigned subgroup_size);
 void wgsl_test_ycbcr(int set, unsigned binding, unsigned format, unsigned model, unsigned range, unsigned x_offset,
                      unsigned y_offset, unsigned filter);
 void wgsl_test_sampler(unsigned u, unsigned v, unsigned w, unsigned flags, unsigned compare, unsigned levels, float bias,
-                       float min_lod, float max_lod, uint32_t b0, uint32_t b1, uint32_t b2, uint32_t b3);
+                       float min_lod, float max_lod, uint32_t b0, uint32_t b1, uint32_t b2, uint32_t b3, uint32_t sx, uint32_t sy);
 int wgsl_test_translate(const uint32_t *words, size_t nwords, int stage);
 const char *wgsl_test_result(void);
 uint32_t wgsl_test_kept(void);

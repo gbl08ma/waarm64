@@ -400,6 +400,9 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
          touched |= info->pairs[i][0] == v->keys[k].texture && info->pairs[i][1] == v->keys[k].sampler;
       for (uint32_t i = 0; i < info->int_pair_count; i++)
          touched |= info->int_pairs[i][0] == v->keys[k].texture && info->int_pairs[i][1] == v->keys[k].sampler;
+      /* A padded texture's size queries, a stage that doesn't sample it (no NIR kept if it samples nothing at all). */
+      for (uint32_t i = 0; v->keys[k].padded && i < info->resource_count; i++)
+         touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
    }
    if (!touched)
       return NULL;
@@ -479,8 +482,10 @@ compute_pairs(const struct wg_program *p)
    struct wgsl_info i;
    i.pair_count = p->pair_count;
    i.int_pair_count = p->int_pair_count;
+   i.resource_count = p->resource_count;
    memcpy(i.pairs, p->pairs, sizeof(i.pairs));
    memcpy(i.int_pairs, p->int_pairs, sizeof(i.int_pairs));
+   memcpy(i.resources, p->resources, sizeof(i.resources));
    return i;
 }
 
@@ -580,6 +585,11 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
       insert_resource(v, at, &twin);
    }
 #undef MASKED
+   /* A padded cube is bound as its faces (wgsl_sampler.c fetches from them). */
+   for (uint32_t i = 0; i < key_count; i++)
+      for (uint32_t k = 0; keys[i].faces && k < v->resource_count; k++)
+         if (res_index(&v->resources[k]) == keys[i].texture)
+            v->resources[k].dim = WGSL_DIM_2D_ARRAY;
    program_layouts(v);
    if ((widened || v->split_count || v->key_count) && p->compute_wgsl) {
       const struct wgsl_info keyed = compute_pairs(p);
@@ -944,14 +954,13 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
 static struct wg_stage_nir *
 stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
 {
+   /* Any texture op: a padded texture's size query is printed against its key too. */
    bool samples = false;
    nir_foreach_function_impl (impl, nir)
       nir_foreach_block (block, impl)
          nir_foreach_instr (instr, block)
             if (instr->type == nir_instr_type_tex) {
-               const nir_texop op = nir_instr_as_tex(instr)->op;
-               samples |= op == nir_texop_tex || op == nir_texop_txb || op == nir_texop_txl || op == nir_texop_txd ||
-                          op == nir_texop_tg4;
+               samples |= nir_instr_as_tex(instr)->sampler_dim != GLSL_SAMPLER_DIM_BUF;
             }
    if (!samples)
       return NULL;

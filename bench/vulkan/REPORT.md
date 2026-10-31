@@ -771,6 +771,45 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T18: compressed images that aren't whole blocks — sampled in the shader, 648 cases to SwiftShader's own 146
+
+**2026-10-31.** JSON in `results/vk4/t18/`: `cases` the 648 (T1's cause, and T8's sample's 560 compressed failures), `cases-m4`
+them on the M4 (Metal, Chrome for Testing 153.0.8010.12), `wide` T8's sample again, `list-new` and `list-new-m4` the list's
+change. `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| the 648, before | 648 | 0 | 648 | 0 |
+| the 648, after | 648 | 502 | 146 | 0 |
+| the 648 on the M4 | 648 | 648 | 0 | 0 |
+| T8's sample, 900 failures before | 57,066 | 10,338 | 508 | 46,220 |
+| the list's new cases and its padded base-level views | 537 | 532 | 5 | 0 |
+| the same on the M4 | 537 | 537 | 0 | 0 |
+
+- **`texture-compression-unaligned` was the obvious way and isn't one.** Dawn takes such a texture with it, on SwiftShader
+  and on the M4, but Chromium offers it only behind `--enable-unsafe-webgpu`: CI, which runs with that flag, would have passed
+  and no user would have had it. Probing the M4 without the flag said so.
+- **Scaled coordinates, the brief's first idea, can't work**: a padded texture's levels aren't in proportion to the
+  image's (13×13 of ASTC 8×5 in 16×20: level 1 is 6×6 in 8×10), and clamping or wrapping reads padding. Decoding to an
+  uncompressed texture needs decoders for three families and the bytes at every copy, which may be on the GPU.
+- **The way taken**: T8's keys, with the view's size: the shader does Vulkan's LOD and filter by the image's own levels from
+  texel fetches (`padded_sample`), so such an image alone pays (4 fetches a level, anisotropy lost), a cube bound as its
+  faces, a linear filter finding the next face through the texel's direction.
+- **The 146, and 5 cases the list had**: all `lod_base_mip_level`: fetched now, they meet SwiftShader's bug T8 found, a
+  `textureLoad` on a view from a base level reading further down (from one test, consistent with the base added twice).
+  The M4 passes all 648 and the 5. The 5 had passed natively, so they left the list, and `bench/vulkan/nvidia.sh`
+  `VK2_STEPS=t18` runs 84 such cases by name: Lavapipe couldn't be put under Chromium, so whether this is
+  SwiftShader's or Dawn's Vulkan backend's is open until NVIDIA answers. Sampling at texel centres would dodge it, but a
+  sampler's LOD clamps would then cut into a level the shader chose.
+- **What's left of T8's 900**: no compressed case but those; 186 integer base-level views, 151 of T9's, 3
+  `explicit_lod`, the rest T12's multisampled arrays.
+- **What it costs elsewhere**: draws look for padded views only once one was made (`padded_views`), so programs without
+  such an image do what T8 measured. Neither T18's filter nor a variant per size is measured on a program: none
+  replayed has such an image.
+- **Tests**: `tests/wgsl.test.ts` (a key's smaller size on a plain texture: clamp, repeat, linear at the image's edge, its
+  size at each level; a cube's edge read across faces). Planted: the seam kept on one face, size queries unminified;
+  both fail. The list 16,711 → 17,208.
+
 ## VK4 T8: samplers — what WebGPU's samplers can't say, in the shader, 203 of T1's failures to those of other tasks
 
 **2026-10-31.** JSON in `results/vk4/t8/`: `base` and `census-first` T1's sampler failures before and after the first

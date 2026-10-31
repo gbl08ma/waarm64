@@ -54,14 +54,14 @@ type Exports = {
   _initialize(): void; wgsl_test_init(): void; wgsl_test_translate(words: number, n: number, stage: number): number;
   wgsl_test_device(features: number, subgroupSize: number): void;
   wgsl_test_ycbcr(set: number, binding: number, format: number, model: number, range: number, x: number, y: number, filter: number): void;
-  wgsl_test_sampler(u: number, v: number, w: number, flags: number, compare: number, levels: number, bias: number, min: number, max: number, b0: number, b1: number, b2: number, b3: number): void;
+  wgsl_test_sampler(u: number, v: number, w: number, flags: number, compare: number, levels: number, bias: number, min: number, max: number, b0: number, b1: number, b2: number, b3: number, sx: number, sy: number): void;
   wgsl_test_result(): number; venus_alloc(n: number): number; venus_free(p: number): void;
 };
 
 /** What a stage is translated for: the device's WGSL features, its subgroups' size, and (VK3 L7.2) a binding sampled
  * through a YCbCr conversion (VkFormat, VkSamplerYcbcrModelConversion, VkSamplerYcbcrRange, VkChromaLocation x and y,
  * the chroma VkFilter), as an immutable sampler in its set layout. */
-type Device = { features?: number; subgroupSize?: number; sampler?: { u: number; v: number; w: number; flags: number; compare: number; levels: number; bias: number; min: number; max: number; border: number[] }; ycbcr?: { set: number; binding: number; format: number; model: number; range: number; x: number; y: number; filter: number } };
+type Device = { features?: number; subgroupSize?: number; sampler?: { u: number; v: number; w: number; flags: number; compare: number; levels: number; bias: number; min: number; max: number; border: number[]; size?: number[] }; ycbcr?: { set: number; binding: number; format: number; model: number; range: number; x: number; y: number; filter: number } };
 
 /** The module's translator, on a memory like the VM's memory 0 (its arena at the top). */
 async function translator() {
@@ -102,7 +102,7 @@ async function translator() {
     const y = device.ycbcr;
     ex.wgsl_test_ycbcr(y ? y.set : -1, y?.binding ?? 0, y?.format ?? 0, y?.model ?? 0, y?.range ?? 0, y?.x ?? 0, y?.y ?? 0, y?.filter ?? 0);
     const k = device.sampler;
-    ex.wgsl_test_sampler(k?.u ?? 0, k?.v ?? 0, k?.w ?? 0, k?.flags ?? 0, k?.compare ?? 0, k?.levels ?? 0, k?.bias ?? 0, k?.min ?? 0, k?.max ?? 0, k?.border[0] ?? 0, k?.border[1] ?? 0, k?.border[2] ?? 0, k?.border[3] ?? 0);
+    ex.wgsl_test_sampler(k?.u ?? 0, k?.v ?? 0, k?.w ?? 0, k?.flags ?? 0, k?.compare ?? 0, k?.levels ?? 0, k?.bias ?? 0, k?.min ?? 0, k?.max ?? 0, k?.border[0] ?? 0, k?.border[1] ?? 0, k?.border[2] ?? 0, k?.border[3] ?? 0, k?.size?.[0] ?? 0, k?.size?.[1] ?? 0);
     const p = ex.venus_alloc(s.words.byteLength) >>> 0;
     new Uint8Array(memory.buffer, p, s.words.byteLength).set(new Uint8Array(s.words.buffer, s.words.byteOffset, s.words.byteLength));
     const t0 = performance.now();
@@ -1037,6 +1037,55 @@ test('an integer texture only asked its size is declared integer, so that its vi
     const r = glslStage(await translator(), tmp, 'tests/venus/t8/size-only.frag');
     assert.equal(r.rc, 0, r.text);
     assert.match(r.text, /texture_2d<u32>/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// VK4 T18: a padded image: a key's smaller size on a plain texture stands for a compressed one's blocks.
+test('an image that is a corner of its texture is wrapped and filtered at its own size (VK4 T18)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // 4×4, a row's reds 0, 80, 160, 240: only the first three are the image's.
+    const data = Array.from({ length: 16 }, (_, i) => [(i % 4) * 80, 0, 0, 255]).flat();
+    const reds = async (sampler: Device['sampler']) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t8/padded.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, data, mips: [Array(16).fill(0)] }], undefined, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return { red: [...res.out].filter((_, i) => i % 4 === 0).slice(0, 7).map((v) => Math.round(v * 255)), size: [...res.out.slice(7 * 4, 7 * 4 + 4)] };
+    };
+    const padded = { flags: 16 | 32, size: [3, 3], levels: 2 };
+    const clamp = await reds(key(ADDRESS.edge, padded));
+    if (!clamp) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    // x·3: 0.3, 1.5, 2.7, 3.3, -0.3, 1.02, 1.5. Never texel 3, whose 240 is past the image.
+    assert.deepEqual(clamp.red, [0, 80, 160, 160, 0, 80, 80], 'clamp-to-edge stops at the image');
+    assert.deepEqual(clamp.size, [3, 3, 1, 1], 'its size is the image\'s, each level\'s');
+    assert.deepEqual((await reds(key(ADDRESS.repeat, padded)))!.red, [0, 80, 160, 0, 160, 80, 80], 'repeat wraps at the image');
+    // Linear, x·3 - 0.5: -0.2, 1.0, 2.2, 2.8: 0.1 reads texels 2 (wrapped, 0.2) and 0, 1.1 likewise.
+    assert.deepEqual((await reds(key(ADDRESS.repeat, { ...padded, flags: padded.flags | 1 | 2 })))!.red.slice(0, 4), [32, 80, 128, 32], 'linear repeat at the image');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t8/padded-cube.comp', { sampler: key(ADDRESS.edge, { flags: 16 | 32 | 64 | 1 | 2, size: [2, 2], levels: 1 }) });
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /texture_2d_array<f32>/);
+    // Faces' reds 0, 40, 80, 120, 160, 200, in a texture wider than the image.
+    const data = Array.from({ length: 6 }, (_, f) => Array.from({ length: 16 }, () => [f * 40, 0, 0, 255]).flat()).flat();
+    const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, layers: 6, data }], undefined, { binding: 2, size: 2 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    assert.equal(Math.round(res.out[0] * 255), 0, 'within +X');
+    // (1, 0, 0.99) is 0.01 of a texel from +X's edge with +Z: 0.51 of +X's 0, 0.49 of +Z's 160.
+    assert.ok(Math.abs(res.out[4] * 255 - 78.4) < 1.5, `across the edge: ${res.out[4] * 255}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

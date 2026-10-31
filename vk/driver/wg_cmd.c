@@ -1024,22 +1024,37 @@ sampler_border(const struct wg_image_view *view, const struct wg_sampler *sample
                                                              : i];
 }
 
+static void
+padded_key_fill(const struct wg_image_view *view, struct wgsl_sampler_key *key)
+{
+   key->padded = 1;
+   key->faces = view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+   key->size[0] = view->vk.extent.width;
+   key->size[1] = view->vk.extent.height;
+   key->size[2] = view->vk.extent.depth;
+   key->levels = MIN2(view->vk.level_count, 255);
+}
+
 /* What the sampler needs of the shader for a (texture, sampler) pair (false: nothing). An integer texture is fetched at
  * clamp-to-edge from the level its LOD selects unless a key says otherwise. */
 static bool
 pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, const uint32_t *pair, bool integer,
          struct wgsl_sampler_key *key)
 {
+   const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
    const struct wg_descriptor *s = pair_descriptor(cmd, point, p, pair[1]);
    const struct wg_sampler *sampler = s ? s->sampler : NULL;
-   if (!sampler || (!integer && !sampler->emulated))
+   if (!sampler || (!integer && !sampler->emulated && !dev->padded_views))
       return false;
    const struct wg_descriptor *t = pair_descriptor(cmd, point, p, pair[0]);
    const struct wg_image_view *view = t ? t->view : NULL;
+   const bool padded = view && view->padded;
+   if (!integer && !sampler->emulated && !padded)
+      return false;
    if (!view)
       return false;
    const struct wgsl_sampler_key *k = &sampler->key;
-   if (integer && !sampler->emulated && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
+   if (integer && !sampler->emulated && !padded && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
        k->address[2] == WGSL_ADDRESS_EDGE && k->min_lod <= 0.0f && k->max_lod >= view->vk.level_count - 1.0f)
       return false;
    *key = *k;
@@ -1049,7 +1064,15 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    if (!wg_format_filterable(view->fmt) || integer)
       key->mag_linear = key->min_linear = key->mip_linear = 0;
    sampler_border(view, sampler, integer, key->border);
+   if (padded)
+      padded_key_fill(view, key);
    return true;
+}
+
+static bool
+dev_padded(const struct wg_cmd_buffer *cmd)
+{
+   return container_of(cmd->vk.base.device, struct wg_device, vk)->padded_views;
 }
 
 /* The keys of a program's pairs at this draw or dispatch (`keys` has room for all of them). */
@@ -1067,6 +1090,25 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
    }
    for (uint32_t i = 0; i < p->int_pair_count; i++)
       n += pair_key(cmd, point, p, p->int_pairs[i], true, &keys[n]);
+   /* A padded texture only asked its size: what it answers is the image's. */
+   const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
+   for (uint32_t k = 0; dev->padded_views && k < p->resource_count; k++) {
+      const uint32_t index = (uint32_t)p->resources[k].group << 16 | p->resources[k].binding;
+      if (p->resources[k].kind != WGSL_TEXTURE)
+         continue;
+      const struct wg_descriptor *t = pair_descriptor(cmd, point, p, index);
+      if (!t || !t->view || !t->view->padded)
+         continue;
+      bool keyed = false;
+      for (uint32_t i = 0; i < n; i++)
+         keyed |= keys[i].texture == index;
+      if (keyed)
+         continue;
+      memset(&keys[n], 0, sizeof(keys[n]));
+      keys[n].texture = index;
+      keys[n].sampler = WGSL_NO_SAMPLER;
+      padded_key_fill(t->view, &keys[n++]);
+   }
    return n;
 }
 
@@ -1103,8 +1145,8 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       if (view && !wg_format_filterable(view->fmt))
          mask[k / 64] |= 1ull << (k % 64);
    }
-   struct wgsl_sampler_key keys[2 * WGSL_MAX_PAIRS];
-   const uint32_t key_count = p->pair_count || p->int_pair_count ? program_keys(cmd, point, p, keys) : 0;
+   struct wgsl_sampler_key keys[2 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
+   const uint32_t key_count = p->pair_count || p->int_pair_count || dev_padded(cmd) ? program_keys(cmd, point, p, keys) : 0;
    return mask[0] | mask[1] || key_count ? wg_program_variant(p, mask, keys, key_count) : p;
 }
 

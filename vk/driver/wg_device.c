@@ -1322,6 +1322,13 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                                     VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
+   /* A compressed image that isn't whole blocks is a corner of its texture (below, wg_CreateImage): sampled by the shader
+    * (wgsl_sampler.c), which sees a cube's faces as a 2D array: such a texture needn't be square. */
+   view->padded = image->fmt && (image->fmt->bw > 1 || image->fmt->bh > 1) &&
+                  ((image->vk.extent.width % image->fmt->bw) || (image->vk.extent.height % image->fmt->bh));
+   dev->padded_views |= view->padded;
+   if (view->padded && (view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY))
+      dim = "2d-array";
    struct wg_json j = { 0 };
    /* A multi-planar image's (VK3 L7.2): a view of one plane (a format compatible with the plane's), or of every plane,
     * each in its plane's format, which a sampler's YCbCr conversion samples together. Only sampled and copied. */

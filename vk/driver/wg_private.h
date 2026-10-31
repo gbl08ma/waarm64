@@ -186,6 +186,7 @@ struct wg_queue {
 struct wg_device {
    struct vk_device vk;
    struct wg_queue queue;
+   bool padded_views;   /* a view of a padded image was made: draws look for them (wg_cmd.c `program_keys`) */
    /* Host-visible memories (their writes are uploaded at each submit). */
    struct list_head host_memories;
    /* Memories with a shared image bound (wg_device_memory.image). */
@@ -328,6 +329,8 @@ struct wg_image_view {
                       * views); 0: `view` serves */
    uint32_t sampled; /* `view` with the component mapping, which WebGPU allows only on a view that's just sampled (0: none) */
    uint32_t faces;   /* an integer cube view's faces as a 2D array, sampled (the translator fetches: wgsl_sampler.c) */
+   bool padded;      /* of a compressed image larger in its texture (whole blocks: the filter is the shader's, and a
+                      * cube's `view` is its faces, a texture not square having no cube view) */
    uint32_t att;
    int32_t slice;   /* a 3D image's: the attachment is its level's 3D view, drawn into at this depth slice (else -1) */
    /* A multi-planar view's planes (VK3 L7.2: each plane's texture's, plane 0's `view`); a sampler's YCbCr conversion

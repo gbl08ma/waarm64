@@ -280,8 +280,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   them.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
-  be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it, so it samples wrong
-  and its cube views are refused where the size isn't whole blocks: docs/backlog.md; a 1D one 2D),
+  be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it, the shader sampling
+  the corner that's the image ("Samplers in the shader"); a 1D one 2D),
   with views made as Vulkan made them (a depth or stencil aspect's with the image's format and the aspect) and, for
   attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`). Host-visible memory's bytes
   are in the module's memory (vkr's storage in the arena, or the window while its blob is mapped); at each submit the driver uploads the
@@ -445,6 +445,17 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   - **Unnormalized coordinates**: divided by the view's size (Vulkan allows them only at one level, clamped).
   - **The sampler's LOD bias**: a shader bias, added to an explicit LOD, or the derivatives scaled by 2^bias; none on
     a shadow sample (`textureSampleCompare` takes none: T9's). `maxSamplerLodBias` is 15.
+  - **Compressed images that aren't whole blocks** (VK4 T18): WebGPU wants a compressed texture's first level in whole
+    blocks, so such an image is a corner of a larger texture (13×13 of ASTC 8×5 in 16×20), whose levels aren't even in
+    proportion to the image's (level 1 is 6 of 8), and padding lies past its edges: no scaled coordinate would serve. A
+    view of one is `padded`, which gives every pair a key with the view's size: the shader does Vulkan's LOD and
+    the whole filter itself (`padded_sample`: 4 fetches for each level a linear filter reads, 8 in 3D, wrapped by the
+    address modes at the image's size), so such an image alone pays, and loses anisotropy. Size and level queries
+    answer the image's, a key with no sampler (`WGSL_NO_SAMPLER`) for a texture a stage only asks. A cube of one is bound
+    as its faces (its texture needn't be square), a linear filter past a face's edge finding the neighbour by the texel's
+    centre as a direction; the variant's layout says `2d-array`. A size is part of the key, so each size of such image
+    a program samples is a variant. `texture-compression-unaligned` would do without all this, but Chromium offers it
+    only behind `--enable-unsafe-webgpu`: tests would pass on it and users wouldn't.
   **Component swizzles** are WebGPU's (`texture-component-swizzle`): such a view has a twin with the mapping (`sampled`,
   allowed only on a view that's just sampled), which sampled bindings take. Without the feature they are ignored and
   said once: it is in Chromium on every backend, and a fallback in the shader would need texel fetches too.

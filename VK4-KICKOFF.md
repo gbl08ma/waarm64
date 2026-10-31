@@ -185,7 +185,12 @@ T2–T14; the rest of the order is judgement, said with each.
   and cube views of it are refused; ASTC's 5-, 6-, 10- and 12-texel blocks meet it at most sizes. Coordinates scaled
   to the image in the shader and a cube's faces apart, or such images decoded to an uncompressed texture. *Done:* the
   `pipeline.*.image`, `image_view`, `sampler` and `texture.compressed` cases of that cause in the list. *Start:*
-  backlog "Compressed images whose size isn't whole blocks".
+  backlog "Compressed images whose size isn't whole blocks". **Done 2026-10-31** (REPORT.md "VK4 T18"): such an image is
+  sampled in the shader through T8's keys, by its own size and levels from texel fetches, its cubes bound as faces with a
+  filter across their edges (`texture-compression-unaligned` is behind Chromium's unsafe flag; scaled coordinates can't
+  work). 648 failures to 146 on SwiftShader, all its own `textureLoad` bug, 0 on the M4 (5 cases left the list for that bug;
+  `nvidia.sh VK2_STEPS=t18` asks NVIDIA). The list 16,711 → 17,208. Left: backlog "Compressed images that aren't whole
+  blocks' leftovers".
 
 ### Tier 3: performance on real workloads
 

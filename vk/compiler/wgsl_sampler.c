@@ -19,6 +19,7 @@ struct sampler_pass {
    uint32_t cubes[WGSL_MAX_PAIRS];
    uint32_t cube_count;
    bool cube_gathered;
+   bool padded_cube_gather; /* can't be fetched: refused */
 };
 
 static const struct wgsl_sampler_key plain_key = {
@@ -31,6 +32,16 @@ find_key(const struct sampler_pass *s, const nir_tex_instr *tex)
 {
    for (uint32_t i = 0; i < s->key_count; i++)
       if (s->keys[i].texture == tex->texture_index && s->keys[i].sampler == tex->sampler_index)
+         return &s->keys[i];
+   return NULL;
+}
+
+/* The key of a padded texture, whatever the instruction. */
+static const struct wgsl_sampler_key *
+padded_key(const struct sampler_pass *s, const nir_tex_instr *tex)
+{
+   for (uint32_t i = 0; i < s->key_count; i++)
+      if (s->keys[i].texture == tex->texture_index && s->keys[i].padded)
          return &s->keys[i];
    return NULL;
 }
@@ -349,6 +360,25 @@ int_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *ke
    return uses_address(tex, key, WGSL_ADDRESS_BORDER) ? nir_bcsel(b, outside, border_vec(b, tex, key), res) : res;
 }
 
+/* A padded texture's size at a level (NULL: its first) as a size query gives it, the layers the texture's: what the
+ * image is, not the whole blocks its texture has. */
+static nir_def *
+padded_size(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key, nir_def *level)
+{
+   nir_def *c[3];
+   const unsigned n = tex->sampler_dim == GLSL_SAMPLER_DIM_3D ? 3 : tex->sampler_dim == GLSL_SAMPLER_DIM_1D ? 1 : 2;
+   for (unsigned i = 0; i < n; i++)
+      c[i] = level ? nir_imax(b, nir_ishr(b, nir_imm_int(b, key->size[i]), level), nir_imm_int(b, 1))
+                   : nir_imm_int(b, key->size[i]);
+   unsigned count = n;
+   if (tex->is_array) {
+      nir_tex_instr view = *tex;
+      nir_def *real = query(b, &view, nir_texop_txs, nir_imm_int(b, 0), n + 1);
+      c[count++] = nir_channel(b, real, n);
+   }
+   return nir_vec(b, c, count);
+}
+
 /* A VkCompareOp of a reference and a texel, as 0 or 1. */
 static nir_def *
 compare_of(nir_builder *b, nir_def *dref, nir_def *texel, unsigned op)
@@ -374,7 +404,7 @@ gather_fetch(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
 {
    nir_def *coord = tex_source(tex, nir_tex_src_coord), *dref = tex_source(tex, nir_tex_src_comparator);
    const unsigned n = spatial(tex);
-   nir_def *size = query(b, tex, nir_texop_txs, nir_imm_int(b, 0), tex->coord_components);
+   nir_def *size = key->padded ? padded_size(b, tex, key, NULL) : query(b, tex, nir_texop_txs, nir_imm_int(b, 0), tex->coord_components);
    nir_def *lo[2], *hi[2], *out_lo[2], *out_hi[2];
    for (unsigned i = 0; i < n; i++) {
       nir_def *extent = nir_channel(b, size, i);
@@ -401,6 +431,167 @@ gather_fetch(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
       res[k] = dref ? compare_of(b, dref, v, key->compare) : v;
    }
    return nir_vec4(b, res[0], res[1], res[2], res[3]);
+}
+
+/* Padded textures (T18): WebGPU wants a compressed texture's first level in whole blocks, so an image that isn't is a
+ * corner of a larger texture, whose levels aren't even in proportion to the image's (13 in blocks of 8 is 16: its level
+ * 1 is 6 of 8). WebGPU's sampler can only see the texture, so the filter is the shader's: Vulkan's texels at each level
+ * of the image, wrapped by the address modes, weighted here. */
+struct padded {
+   const nir_tex_instr *tex;
+   const struct wgsl_sampler_key *key;
+   nir_def *level, *extent[3], *layer;
+   unsigned n;
+   bool cube;
+};
+
+/* One texel (`i`, on `face` for a cube, in the image's level); a cube's neighbour past an edge is on the next face:
+ * the texel's centre as a direction, found again by Vulkan's table. */
+static nir_def *
+padded_texel(nir_builder *b, const struct padded *p, nir_def *const *i, nir_def *face, nir_def *du, nir_def *dv)
+{
+   const nir_tex_instr *tex = p->tex;
+   nir_def *c[4];
+   unsigned count = 0;
+   nir_def *outside = nir_imm_false(b);
+   if (p->cube) {
+      /* The centre on its face's plane, -1..1 within it; a past-the-edge one lands on another face. */
+      nir_def *size = nir_i2f32(b, p->extent[0]);
+      nir_def *sc = nir_fadd_imm(b, nir_fmul(b, nir_fmul_imm(b, nir_fadd_imm(b, nir_i2f32(b, i[0]), 0.5), 2.0), nir_frcp(b, size)), -1.0);
+      nir_def *tc = nir_fadd_imm(b, nir_fmul(b, nir_fmul_imm(b, nir_fadd_imm(b, nir_i2f32(b, i[1]), 0.5), 2.0), nir_frcp(b, size)), -1.0);
+      nir_def *one = nir_imm_float(b, 1.0f), *m1 = nir_imm_float(b, -1.0f), *ntc = nir_fneg(b, tc), *nsc = nir_fneg(b, sc);
+      nir_def *f0 = nir_ieq_imm(b, face, 0), *f1 = nir_ieq_imm(b, face, 1), *f2 = nir_ieq_imm(b, face, 2);
+      nir_def *f3 = nir_ieq_imm(b, face, 3), *f4 = nir_ieq_imm(b, face, 4);
+#define BY_FACE(a, b_, c_, d, e, f)                                                                                    \
+   nir_bcsel(b, f0, a, nir_bcsel(b, f1, b_, nir_bcsel(b, f2, c_, nir_bcsel(b, f3, d, nir_bcsel(b, f4, e, f)))))
+      nir_def *rx = BY_FACE(one, m1, sc, sc, sc, nsc);
+      nir_def *ry = BY_FACE(ntc, ntc, one, m1, ntc, ntc);
+      nir_def *rz = BY_FACE(nsc, sc, tc, ntc, one, m1);
+#undef BY_FACE
+      const struct cube_place q = cube_place(b, nir_vec3(b, rx, ry, rz), NULL, NULL);
+      nir_def *last = nir_iadd_imm(b, p->extent[0], -1);
+      c[count++] = nir_imin(b, nir_imax(b, nir_f2i32(b, nir_ffloor(b, nir_fmul(b, q.s, size))), nir_imm_int(b, 0)), last);
+      c[count++] = nir_imin(b, nir_imax(b, nir_f2i32(b, nir_ffloor(b, nir_fmul(b, q.t, size))), nir_imm_int(b, 0)), last);
+      c[count++] = p->layer ? nir_iadd(b, nir_imul_imm(b, p->layer, 6), q.face) : q.face;
+   } else {
+      for (unsigned k = 0; k < p->n; k++)
+         c[count++] = wrap(b, i[k], p->extent[k], p->key->address[k], &outside);
+      if (p->layer)
+         c[count++] = p->layer;
+   }
+   nir_def *texel = fetch(b, tex, nir_vec(b, c, count), p->level, 4, p->cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
+                          p->cube || tex->is_array, count);
+   return uses_address(tex, p->key, WGSL_ADDRESS_BORDER) ? nir_bcsel(b, outside, border_vec(b, tex, p->key), texel) : texel;
+}
+
+/* The image's sample at one level, nearest or linear. `u` in texels of the level: a cube's on `face`. */
+static nir_def *
+padded_filter(nir_builder *b, const struct padded *p, nir_def *const *u, nir_def *face, bool linear)
+{
+   nir_def *lo[3], *hi[3], *weight[3];
+   const unsigned n = p->cube ? 2 : p->n;
+   for (unsigned k = 0; k < n; k++) {
+      nir_def *offset = p->cube ? nir_imm_int(b, 0) : offset_of(b, p->tex, k);
+      if (linear) {
+         nir_def *v = nir_fadd_imm(b, u[k], -0.5), *t = nir_ffloor(b, v);
+         weight[k] = nir_fsub(b, v, t);
+         lo[k] = nir_iadd(b, nir_f2i32(b, t), offset);
+         hi[k] = nir_iadd_imm(b, lo[k], 1);
+      } else {
+         lo[k] = hi[k] = nir_iadd(b, nir_f2i32(b, nir_ffloor(b, u[k])), offset);
+         weight[k] = nir_imm_float(b, 0.0f);
+      }
+   }
+   if (!linear)
+      return padded_texel(b, p, lo, face, NULL, NULL);
+   nir_def *sum = NULL;
+   for (unsigned corner = 0; corner < (1u << n); corner++) {
+      nir_def *i[3], *w = nir_imm_float(b, 1.0f);
+      for (unsigned k = 0; k < n; k++) {
+         const bool high = corner & (1u << k);
+         i[k] = high ? hi[k] : lo[k];
+         w = nir_fmul(b, w, high ? weight[k] : nir_fsub_imm(b, 1.0f, weight[k]));
+      }
+      nir_def *texel = nir_fmul(b, padded_texel(b, p, i, face, NULL, NULL), nir_vec4(b, w, w, w, w));
+      sum = sum ? nir_fadd(b, sum, texel) : texel;
+   }
+   return sum;
+}
+
+/* A sample of a padded texture: Vulkan's LOD, then the filter above at its level or levels. */
+static nir_def *
+padded_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *key)
+{
+   nir_def *coord = tex_source(tex, nir_tex_src_coord);
+   const bool cube = tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE;
+   const unsigned n = spatial(tex);
+   struct padded p = { .tex = tex, .key = key, .n = n, .cube = cube };
+   nir_def *dx[3], *dy[3], *lambda = NULL;
+   struct cube_place place = { 0 };
+   const bool derivatives = coord_derivatives(b, tex, coord, dx, dy);
+   if (cube) {
+      place = cube_place(b, coord, derivatives ? dx : NULL, derivatives ? dy : NULL);
+      if (derivatives) {
+         nir_def *size = nir_imm_float(b, (float)key->size[0]);
+         nir_def *x[2] = { nir_fmul(b, place.ds[0], size), nir_fmul(b, place.dt[0], size) };
+         nir_def *y[2] = { nir_fmul(b, place.ds[1], size), nir_fmul(b, place.dt[1], size) };
+         lambda = lambda_of(b, x, y, 2);
+      }
+   } else if (derivatives) {
+      nir_def *x[3], *y[3];
+      for (unsigned i = 0; i < n; i++) {
+         nir_def *size = nir_imm_float(b, (float)key->size[i]);
+         x[i] = nir_fmul(b, dx[i], size);
+         y[i] = nir_fmul(b, dy[i], size);
+      }
+      lambda = lambda_of(b, x, y, n);
+   }
+   nir_def *lod = clamped_lod(b, key, biased_lod(b, tex, key, lambda));
+   if (tex->is_array) {
+      nir_def *layers = nir_channel(b, query(b, &(nir_tex_instr){ .sampler_dim = cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
+                                                                  .is_array = true, .texture_index = tex->texture_index,
+                                                                  .sampler_index = tex->sampler_index },
+                                             nir_texop_txs, nir_imm_int(b, 0), cube ? 3 : n + 1), cube ? 2 : n);
+      if (cube)
+         layers = nir_udiv(b, layers, nir_imm_int(b, 6));
+      p.layer = nir_imin(b, nir_imax(b, nir_f2i32(b, nir_fround_even(b, nir_channel(b, coord, n))), nir_imm_int(b, 0)),
+                         nir_iadd_imm(b, layers, -1));
+   }
+   const float last = (float)(MAX2(key->levels, 1) - 1);
+   nir_def *at[2], *f = NULL;
+   unsigned levels = 1;
+   if (key->mip_linear && key->levels > 1) {
+      nir_def *l = nir_fmin(b, nir_fmax(b, lod, nir_imm_float(b, 0.0f)), nir_imm_float(b, last));
+      nir_def *l0 = nir_ffloor(b, l);
+      f = nir_fsub(b, l, l0);
+      at[0] = nir_f2i32(b, l0);
+      at[1] = nir_f2i32(b, nir_fmin(b, nir_fadd_imm(b, l0, 1.0f), nir_imm_float(b, last)));
+      levels = 2;
+   } else {
+      at[0] = nearest_level(b, tex, key, lod);
+   }
+   nir_def *res[2];
+   for (unsigned m = 0; m < levels; m++) {
+      p.level = at[m];
+      for (unsigned i = 0; i < 3; i++)
+         p.extent[i] = i < (cube ? 2 : n) ? nir_imax(b, nir_ishr(b, nir_imm_int(b, key->size[i]), at[m]), nir_imm_int(b, 1)) : NULL;
+      nir_def *u[3];
+      nir_def *face = cube ? place.face : NULL;
+      for (unsigned i = 0; i < (cube ? 2 : n); i++) {
+         nir_def *c = cube ? (i ? place.t : place.s) : nir_channel(b, coord, i);
+         u[i] = key->unnormalized ? c : nir_fmul(b, c, nir_i2f32(b, p.extent[i]));
+      }
+      if (key->mag_linear == key->min_linear) {
+         res[m] = padded_filter(b, &p, u, face, key->min_linear);
+      } else {
+         nir_def *x = padded_filter(b, &p, u, face, key->mag_linear), *y = padded_filter(b, &p, u, face, key->min_linear);
+         res[m] = nir_bcsel(b, nir_fle_imm(b, lod, 0.0f), x, y);
+      }
+   }
+   if (levels == 1)
+      return res[0];
+   nir_def *g = nir_fsub_imm(b, 1.0f, f);
+   return nir_fadd(b, nir_fmul(b, res[0], nir_vec4(b, g, g, g, g)), nir_fmul(b, res[1], nir_vec4(b, f, f, f, f)));
 }
 
 /* `tex` sampled at a level, explicit: what border emulation does for each mip of a blend. */
@@ -661,9 +852,49 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
       return true;
    }
+   /* A padded texture's size and levels are the image's. */
+   const struct wgsl_sampler_key *padded = padded_key(s, tex);
+   if (padded && !samples(tex) && (tex->op == nir_texop_txs || tex->op == nir_texop_query_levels)) {
+      if (tex->op == nir_texop_query_levels) {
+         nir_def_replace(&tex->def, nir_imm_int(b, padded->levels));
+         return true;
+      }
+      nir_def *lod = tex_source(tex, nir_tex_src_lod);
+      nir_def *level = lod ? lod : nir_imm_int(b, 0);
+      nir_def *c[3];
+      const unsigned n = tex->sampler_dim == GLSL_SAMPLER_DIM_3D ? 3 : tex->sampler_dim == GLSL_SAMPLER_DIM_1D ? 1 : 2;
+      for (unsigned i = 0; i < n; i++)
+         c[i] = nir_imax(b, nir_ishr(b, nir_imm_int(b, padded->size[i]), level), nir_imm_int(b, 1));
+      unsigned count = n;
+      if (tex->is_array) {
+         /* The texture's layers: a padded cube's are its faces, in a 2D array. */
+         nir_tex_instr view = *tex;
+         if (padded->faces) {
+            view.sampler_dim = GLSL_SAMPLER_DIM_2D;
+            view.is_array = true;
+         }
+         nir_def *layers = nir_channel(b, query(b, &view, nir_texop_txs, nir_imm_int(b, 0), n + 1), n);
+         c[count++] = padded->faces ? nir_udiv(b, layers, nir_imm_int(b, 6)) : layers;
+      }
+      nir_def_replace(&tex->def, nir_trim_vector(b, nir_vec(b, c, count), tex->def.num_components));
+      return true;
+   }
    if (!samples(tex) || tex->sampler_dim == GLSL_SAMPLER_DIM_MS)
       return false;
    const struct wgsl_sampler_key *key = find_key(s, tex);
+   if (key && key->padded) {
+      if (tex->op == nir_texop_tg4) {
+         /* A cube's gather would need the corners' faces: rare enough on such an image to take the nearest face's. */
+         if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE) {
+            nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key), tex->def.num_components));
+            return true;
+         }
+         s->padded_cube_gather = true;
+         return false;
+      }
+      nir_def_replace(&tex->def, nir_trim_vector(b, padded_sample(b, tex, key), tex->def.num_components));
+      return true;
+   }
    if (is_integer(tex)) {
       bool known = false;
       for (uint32_t i = 0; i < s->info->int_pair_count; i++)
@@ -717,5 +948,5 @@ wgsl_lower_samplers(nir_shader *nir, const struct wgsl_sampler_key *keys, uint32
    nir_shader_tex_pass(nir, find_cubes, nir_metadata_all, &s);
    nir_shader_tex_pass(nir, find_gathered, nir_metadata_all, &s);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_tex, nir_metadata_control_flow, &s);
-   return !s.cube_gathered;
+   return !s.cube_gathered && !s.padded_cube_gather;
 }

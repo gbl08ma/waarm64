@@ -757,12 +757,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     its own whose bytes aren't shared (vkr's patch, `wg_AllocateMemory`; not met by dEQP-VK). Images on external
     memory (`api.external.memory.*.image.*`) aren't offered: an image is a texture of its own, which an import can't
     share.
-  - **Compressed images whose size isn't whole blocks** (VK4 T1: 102 failures on each host, a fifth of the census's):
-    WebGPU wants a compressed texture's level 0 in whole blocks, so the driver makes the texture padded to them (a
-    13×13 image of ASTC 8×5 is 16×20): sampling reads a texture larger than the image, so normalized coordinates land
-    wrong, and a cube view of it is refused (width and height not equal). ASTC 4×4 and 8×8, whose blocks divide
-    dEQP's sizes, pass. A fix would sample through coordinates scaled to the image (the view's size in the shader's
-    uniforms) and make cubes of a texture per face, or decode such images into an uncompressed texture.
+  - **Compressed images that aren't whole blocks' leftovers** (VK4 T18; vk/README.md "Samplers in the shader"): each
+    size of such an image a program samples is a variant of its program (the size is in the key; a texture's real size
+    can't tell it, a uniform would cost a binding); a padded cube's gather is refused; anisotropy is lost on them; the
+    shader's filter's cost on a program is unmeasured (none replayed has such an image). A corner of the cube's seam
+    takes one face's texel, not Vulkan's three. `texture-compression-unaligned`, if Chromium ships it, replaces all of
+    it (`padded` false).
   - **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats that differ other than by sRGB
     is skipped with a warning (a draw can't carry bit patterns across formats; no dEQP-VK case of the sample met it, a
     storage-buffer round trip would do it). Everything of multisampled images of several layers fails with them
@@ -814,8 +814,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **SwiftShader's fetch from a view with a base level** (VK4 T8): `textureLoad` at a view's level 0 reads the level
     after it (a 16×16 image's view from level 2 reads level 3's texels, zeros past its size; level 1 reads right), where
     sampling is right and the M4 is too, so
-    `image_view.*.subresource_range.lod_base_mip_level*` of integer formats fail there only and stay out of
-    `tests/deqp/vk.txt`, which SwiftShader runs. Not looked for in SwiftShader's sources.
+    `image_view.*.subresource_range.lod_base_mip_level*` of integer and (VK4 T18, fetched too) padded compressed formats
+    fail there only and stay out of `tests/deqp/vk.txt`, which SwiftShader runs. Lavapipe couldn't be put under Chromium
+    to tell SwiftShader from Dawn's Vulkan backend: `bench/vulkan/nvidia.sh` `VK2_STEPS=t18` asks NVIDIA, in the next
+    batch of the user's runs. Not looked for in SwiftShader's sources.
   - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),

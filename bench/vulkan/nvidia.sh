@@ -61,6 +61,8 @@
 # alternated rounds of the scene at 1 fish and the toolkit with a trace's summary each (Dawn's Queue::Submit).
 # And VK2_STEPS="l9b" (~5 min): VK3 L9b's check, the first dEQP-VK run's two fails and their neighbours by name
 # (bench/vulkan/l9b-cases.txt) with the page's completion faults.
+# And VK2_STEPS="t18" (~4 min): VK4 T8 and T18's check, fetches from views with a base level by name
+# (bench/vulkan/t18-cases.txt), which fail on SwiftShader and pass on the M4: whether NVIDIA's Vulkan meets them.
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
 # page held the adapter's subgroups, VK3 L5): send that file back. VK2_KEEP=1 keeps an earlier run's results and adds
 # to them (VK2_KEEP=1 VK2_STEPS=none only writes the summary's last line, host.txt and the tarball). VK2_DRY=1 prints what each step would run (no bundle
@@ -264,6 +266,9 @@ if [ "${1:-}" = page ]; then
     else
       echo "deqp: skipped (the bundle has no target/deqp/guest-vk.qcow2)" | tee -a "$R/summary.txt"
     fi
+  fi
+  if [[ " ${VK2_STEPS:-} " == *" t18 "* ]]; then
+    step deqp-t18 600 env CASES="$REPO/bench/vulkan/t18-cases.txt" LIMIT_S=400 DETAIL=20 PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-t18"
   fi
   if [[ " ${VK2_STEPS:-} " == *" l9b "* ]]; then
     # VK3 L9b (only when asked: VK2_STEPS=l9b, ~5 min): the first run's two fails and their neighbours by name
