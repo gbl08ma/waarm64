@@ -479,6 +479,9 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   FADD/FSUB/FMUL/FDIV on the JIT's fast-path rules; loop 10): the small guests −1-2%, Firefox's pages session no
   faster. Its generic path is 1.9% of what it interprets, spread over dozens of classes; the code costs `hot` more
   than it wins there.
+- **XZR's writes through a sink slot,** as its reads go through `Cpu::zero` (`bench/interp/REPORT.md` "XZR's writes without
+  a compare"): nothing past noise on the boots, the flat guest −23%. A shared TLB probe for pairs of LdOs and StOs
+  lost it −19.5% the same way: a change to `hot` that reads as smaller can still cross what V8's register allocation holds.
 - **LDTR and STTR as handlers** (EL0's TLB array taken in the single-register handler; loop 13): Alpine's boot
   1-4% slower in Node, the branch costing more than the uaccess loads it took off the slow path.
 - **One decoded-block store for every table** (loop 7's design, not built): decoding is ~0.6% of a vCPU in Firefox's

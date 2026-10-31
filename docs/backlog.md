@@ -85,9 +85,7 @@ left open, most promising first.
   check and the handler's first instruction (the indirect branch's redirect). Every store to wasm memory carries an
   explicit bounds check on arm64 (V8 reloads the memory's size: shared memory can grow; loads use the trap
   handler), so a register write costs four more instructions; x86_64 wasn't looked at. Untried: register caching;
-  ADRP+ADD as a pair (0.5% of the pairs); XZR's writes without `wr`'s compare, as its reads (`reads`, `Cpu::zero`;
-  `bench/interp/REPORT.md` "XZR's reads without a compare"): a write sink and a table of the bytes each kind writes,
-  the bytes both read and written left as they are; SUBS's flags in
+  ADRP+ADD as a pair (0.5% of the pairs); SUBS's flags in
   `hot` from its operands, as the JIT's (`x >= y` for `add_with_carry`'s two carries). Not tried, settled by a measurement: tail-call dispatch (`become`), since
   V8's `return_call_indirect` costs ~15 ns an entry even among 16 functions (`bench/boot/REPORT.md` "M8: where a busy
   vCPU's time goes in Firefox"), several times a whole micro-op now. Lost before: a sentinel instead of the `u ==

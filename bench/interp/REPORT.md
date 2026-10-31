@@ -1838,3 +1838,24 @@ hurt. The boots under the JIT interpret their cold code, so they share the gain.
 
 The field kept: nothing can write it, where a system register's field would be zero by convention (a snapshot's bytes
 reach those). Its ABI: `Cpu` is 1168 bytes, ABI 57. Not measured: x86_64.
+
+## XZR's writes without a compare: a loss (2026-10-31)
+
+The same for writes: `pack` stores a slot of its own (`Cpu::sink`, 0 again when `hot` returns, as tests compare whole `Cpu`s)
+for the bytes only written, and `hot` stores through it with no compare. The flag setters kept theirs: CMP and TST would pay a
+store that goes nowhere, and a store to wasm memory carries an explicit bounds check. `bench/interp/ab.sh`, dev VM,
+Chromium 153.0.8010.52, 3 alternated rounds, medians, JSON and the patch in `results/xzr-spike/sink/`:
+
+| | base | sink | |
+|---|---|---|---|
+| `boot_alpine_dec_mips` | 226.5 | 227.3 | +0.3% |
+| `boot_dec_mips` (Buildroot) | 186.2 | 185.7 | −0.3% |
+| `dec_mips` | 489.1 | 482.1 | −1.4% |
+| `vm_dec_flat_mips` | 482.5 | 371.6 | **−23.0%** |
+| `vm_dec_mmu_mips` | 489.6 | 492.0 | +0.5% |
+| `boot_alpine_jit_mips` | 498.5 | 485.7 | −2.6%, rounds overlap |
+| `boot_jit_mips` (Buildroot) | 170.7 | 168.4 | −1.3%, inside its noise |
+
+Dropped. Nothing gained past noise, and the flat guest fell as it did for the shared probe above (−19.5%). Not profiled, but
+the two look alike: `hot<Flat>` sits close to something in V8's register allocation, and a change that reads as smaller can
+cross it. A change to `hot` has to be measured on the flat guest whatever it looks like.
