@@ -2,8 +2,8 @@
 // runs and finds nothing to boot, which is all a folder's lock needs): the Machines page's tab and pane, the wizard, the
 // lock's Use it here between two tabs, Delete. On Debian (opt-in with WEBPC_DISTROS=debian, scripts/ci-machines.sh): the
 // guest's side, through the mount the page sets up: read and write under the mount point, whose files the page sees;
-// owners per attach; a workload (a tree of files, git if the image has it, a build with gcc if it has it, rm -r, a
-// rename across folders); a folder attached while running; another mount point after a restart.
+// owners per attach; a workload (a tree of files, rm -r, a rename across folders; a C project built and a git repository
+// on images/debian-tools/build.sh's Debian, on demand); a folder attached while running; another mount point after a restart.
 // Needs the firmware (images/build.sh edk2), and for the guest images/build.sh debian.
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,6 +19,7 @@ import { PAGE_QUERY } from './page-query.ts';
 
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
+const TOOLS = new URL('../target/images/debian-tools/disk.qcow2', import.meta.url);
 const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : undefined;
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const skipGuest = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : !existsSync(IMAGE) ? 'SKIPPED: run images/build.sh debian' : skip;
@@ -211,10 +212,11 @@ async function login(page: Page) {
 }
 
 /** A machine with shared folders on the tests' Debian. */
-async function debianMachine(page: Page, folders: { id: string; readOnly: boolean }[]) {
-  const bytes = readFileSync(IMAGE);
+async function debianMachine(page: Page, folders: { id: string; readOnly: boolean }[], image = IMAGE) {
+  const bytes = readFileSync(image);
   const size = Number(bytes.readBigUInt64BE(24));
-  return makeMachine(page, { name: 'Debian', folders, disk: { id: 'd00000000001', kind: 'url', name: 'disk.qcow2', size, url: '/target/images/debian/disk.qcow2', identity: { kind: 'url', path: '/target/images/debian/disk.qcow2', bytes: bytes.length } } });
+  const url = new URL(image).pathname.slice(new URL('..', import.meta.url).pathname.length - 1);
+  return makeMachine(page, { name: 'Debian', folders, disk: { id: 'd00000000001', kind: 'url', name: 'disk.qcow2', size, url, identity: { kind: 'url', path: url, bytes: bytes.length } } });
 }
 
 test('the guest: the mount, owners, a workload, a folder attached while running, another mount point', { skip: skipGuest, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
@@ -265,12 +267,6 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
   assert.equal(await ok(page, `perl -e 'rename("/mnt/shared/Work/g.txt", "/mnt/shared/Other/g.txt") or print $!+0'`), '18');
   await ok(page, 'mv /mnt/shared/Work/g.txt /mnt/shared/Other/g.txt');
   assert.equal(await folderFile(page, other, 'g.txt'), 'from-the-guest\n');
-  if ((await sh(page, 'command -v gcc')).status === 0) {
-    await ok(page, 'cd /mnt/shared/Work && mkdir c && cd c && printf "int f(void);\\nint main(void){return f();}\\n" > m.c && echo "int f(void){return 0;}" > f.c && gcc -o p m.c f.c && ./p && cd');
-  }
-  if ((await sh(page, 'command -v git')).status === 0) {
-    await ok(page, 'cd /mnt/shared/Work && git init -q r && cd r && git config user.email a@b && git config user.name a && echo x > f && git add f && git commit -qm x && git status --porcelain && cd');
-  }
 
   // A folder attached while running is in the next ls.
   await page.evaluate(() => { (document.querySelector('#folders summary') as HTMLElement).click(); });
@@ -380,6 +376,33 @@ test('snapshots: restored with a file open for writing, and into a folder detach
   assert.equal(await ok(page, 'cat /mnt/shared/Host/open.txt'), 'one three');
   assert.match((await sh(page, 'cat <&8')).out, /Stale file handle/);
   assert.equal(await folderFile(page, gone, 'kept.txt'), 'kept');
+  assert.deepEqual(errors, []);
+  await context.close();
+  rmSync(dir, { recursive: true, force: true });
+}));
+
+test('a real workload: make, gcc and git in a share, both backends', { skip: skipGuest || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 15 * 60_000 }, () => withDebianLock(async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  const [work, host] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host')];
+  const id = await debianMachine(page, [{ id: work, readOnly: false }, { id: host, readOnly: false }], TOOLS);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&sharesasync=Host&${credentialsQuery()}`);
+  await running(page);
+  await login(page);
+  for (const W of ['/mnt/shared/Work', '/mnt/shared/Host']) {
+    await ok(page, `mkdir ${W}/c && cd ${W}/c && printf "int f(void);\\nint main(void){return f();}\\n" > m.c && echo "int f(void){return 0;}" > f.c && printf "p: m.o f.o\\n\\tgcc -o p m.o f.o\\n" > Makefile && make -s && ./p && touch f.c && make -s && ./p`);
+    await ok(page, `cd ${W} && git init -q r && cd r && git config user.email a@b && git config user.name a && for k in 1 2 3 4 5; do echo $k > f$k; done && git add . && git commit -qm one && echo more >> f1 && mkdir d && git mv f2 d/ && git add -A && git commit -qm two && git status --porcelain && git log --oneline | wc -l && git fsck --strict 2>&1 | tail -1 && git gc -q && git log --oneline | wc -l`);
+    assert.equal(await ok(page, `cd ${W}/r && git log --oneline | wc -l; git status --porcelain | wc -l`), '2 0');
+    await ok(page, `cd; rm -r ${W}/c ${W}/r`);
+    assert.equal(await ok(page, `ls ${W} | wc -l`), '0');
+  }
+  await type(page, 'poweroff\n');
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 120_000 });
   assert.deepEqual(errors, []);
   await context.close();
   rmSync(dir, { recursive: true, force: true });

@@ -432,6 +432,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
+- **Shared folders, not checked:** writing a real folder of the user's computer: write permission can't be granted
+  headless, so the host backend's writes ran on OPFS directories, and a real folder only read-only; `move()` on a real
+  file is assumed, with a copy as its fallback. `bench/shares/index.html`, opened by hand on a real folder, gives the
+  numbers (bench/shares/REPORT.md) and the answer. Arch's desktop by hand: the mount has only run on Debian 13.
 - 9p: no HTTP-served tree, as v86's lazy filesystem; no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
   entry indices; whole-second timestamps.
 - Input: the keyboard layout reaches only guests with systemd 256+ (the firmware, GRUB and older guests type a US

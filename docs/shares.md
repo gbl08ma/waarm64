@@ -191,7 +191,8 @@ on OPFS: the asynchronous API alone, `tests/browser/folders-worker.ts`), and ove
 the mount unit (against `systemd-escape`) and the live side. `tests/page-folders.test.ts`: the wizard, the lock between
 two tabs, the tab and the pane without a guest; on Debian (`scripts/ci-machines.sh`) the mount, owners, a workload through
 both backends (`?sharesasync=<name>` serves a browser's folder through the host backend), a folder attached and one
-detached with a file open, another mount point, snapshots; a real folder, dropped through CDP, read-only (write permission
+detached with a file open, another mount point, snapshots; make, gcc and git in a share on the on-demand
+`images/debian-tools/build.sh` Debian; a real folder, dropped through CDP, read-only (write permission
 can't be granted headless, so a real folder's writes are `bench/shares/index.html`'s, by hand).
 
 ## 8. Not built
