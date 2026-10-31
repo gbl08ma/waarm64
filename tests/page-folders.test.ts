@@ -118,6 +118,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.click('#folder-attach');
   await b.click('#folder-kind-opfs');
   await b.fill('#folder-name', 'Made here');
+  assert.equal(await b.locator('#folder-form').evaluate((e) => getComputedStyle(e).padding), '16px', "the wizard's layout");
   await b.click('#folder-ok');
   await b.waitForFunction(() => /Made here/.test(document.getElementById('folders')?.textContent ?? ''), null, { timeout: 10_000 });
   const records = await withStore<{ id: string; name: string }[]>(b, '(({ store }) => store.all("folders"))');
@@ -130,12 +131,15 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.locator('.machines .pick', { hasText: 'Bravo' }).click();
   await b.click('[data-tab="folders"]');
   await b.waitForSelector(`.folders-list [data-folder="${made.id}"]`);
+  // A Svelte component's styles stop at its own markup: the settings and the pane's frame have the Machines page's.
+  assert.equal(await b.locator('.folders-switch').evaluate((e) => getComputedStyle(e).rowGap), '10px', "the settings' layout");
   await b.fill('[data-field="shares-path"]', '/etc');
   await b.waitForSelector('[data-shares-path-error]');
   await b.fill('[data-field="shares-path"]', '/mnt/elsewhere');
   await b.locator('[data-action="save"]').first().click().catch(() => {});
   await b.click('[data-machine="folders"]');
   await b.waitForSelector(`[data-selected="folders"] [data-folder="${data}"]`);
+  assert.equal(await b.locator('[data-selected="folders"] .tab').evaluate((e) => getComputedStyle(e).paddingTop), '16px', "the pane's frame");
   await b.locator(`[data-selected="folders"] [data-folder="${data}"] [data-action="folder-files"]`).click();
   await b.waitForFunction(() => /hello\.txt/.test(document.querySelector('[data-files]')?.textContent ?? ''), null, { timeout: 5_000 });
   await b.locator(`[data-selected="folders"] [data-folder="${data}"] [data-action="delete-folder"]`).click();

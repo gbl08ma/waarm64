@@ -80,7 +80,7 @@
 </script>
 
 <dialog id="folder-wizard" aria-labelledby="folder-title" bind:this={wizard} onclose={() => { ui.folderWizard = undefined; }}>
-  <form onsubmit={makeOpfs}>
+  <form id="folder-form" onsubmit={makeOpfs}>
     <h2 id="folder-title">{title}</h2>
     {#if step === 'pick'}
       <section class="net-step">

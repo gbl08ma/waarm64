@@ -149,6 +149,11 @@ main.ts fills in before the first start. Records the components read come from t
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`). **Sizes are in binary units**
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
+**Styles** are scoped to the component that writes them, and nothing warns when they don't arrive: the Machines page's
+`.settings`, `.head`, `.tab`, `.meta` and button rules reach only its own markup (its snippets too), so a tab's settings
+stay in `MachinesPage.svelte` and a child component holds a list with styles of its own (`Usb.svelte`, `Folders.svelte`).
+The wizards' rules are `index.html`'s, by id: a new wizard is added to each of them.
+
 **Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~2 s) checks them
 with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10) and
 the Svelte options in `vite.config.ts` (`--config`: without it, svelte-check crawls the whole repository, `target/`
@@ -273,9 +278,9 @@ Duplicate, Export the definition, Delete; then tabs:
   connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. **Add a
   device…** opens a wizard (`AddUsb.svelte`): the kind first, a USB device (WebUSB) or a HID device (WebHID), each
   explained, then the browser's chooser. [usb.md](usb.md) "The page".
-- **Shared folders** (`Folders.svelte`): the machine's switch (in the shape), **Mount shared folders in the guest** and
-  its **Mount point**, and the attached folders (order, Read-only, Allow…, Use it here, Detach), changed at once, running
-  or not. **Attach a folder…** opens the Folder wizard (`FolderWizard.svelte`). **Shared folders** in the list of machines
+- **Shared folders:** the machine's switch (in the shape), **Mount shared folders in the guest** and its **Mount
+  point**, and the attached folders (`Folders.svelte`: order, Read-only, Allow…, Use it here, Detach), changed at once,
+  running or not. **Attach a folder…** opens the Folder wizard (`FolderWizard.svelte`). **Shared folders** in the list of machines
   is the browser's (`FoldersPane.svelte`): rename, Read-only, Delete, a folder in the browser's files. The toolbar has a
   **Folders** menu while the page's machine runs with them. [shares.md](shares.md) §4.
 - **Snapshots:** the kept ones (below, "A stored machine's snapshots").

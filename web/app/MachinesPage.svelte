@@ -22,7 +22,7 @@
   import Folders from './Folders.svelte';
   import FoldersPane from './FoldersPane.svelte';
   import type { PageFolders } from './folders-live.ts';
-  import { sharesPathError } from './shares-mount.ts';
+  import { DEFAULT_SHARES_PATH, sharesPathError } from './shares-mount.ts';
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { clearCaches } from '../diskcache.ts';
@@ -299,7 +299,15 @@
         </div>
       </section>
     {:else if ui.machinesSelected === FOLDERS}
-      <FoldersPane {folders} {store} {act} />
+      <section class="machine" data-selected={FOLDERS}>
+        <div class="head">
+          <span class="title"><h3>Shared folders</h3>
+          <span class="meta">Kept by this browser for any machine; one that writes a folder has it alone.</span></span>
+          <span class="grow"></span>
+          <button onclick={() => page.folderWizard(undefined, [])} data-action="new-folder"><Icon name="plus" size={16} />New folder…</button>
+        </div>
+        <div class="tab"><FoldersPane {folders} {store} {act} /></div>
+      </section>
     {:else if ui.machinesSelected === CONNECTIONS}
       <section class="machine" data-selected={CONNECTIONS}>
         <div class="head">
@@ -459,7 +467,22 @@
             </div>
             <Usb machine={machines.find((x) => x.id === m.id) ?? m} running={isOn(m.id)} {act} />
           {:else if ui.machinesTab === 'folders'}
-            <Folders {folders} machine={machines.find((x) => x.id === m.id) ?? m} bind:draft {act} changed={() => (dirty = true)}>{#if dirty}{@render saveRow()}{/if}</Folders>
+            {@const rec = machines.find((x) => x.id === m.id) ?? m}
+            {@const pathError = sharesPathError(draft.sharesPath ?? DEFAULT_SHARES_PATH)}
+            <div class="settings folders-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
+              <Check bind:checked={draft.shares} field="shares" title="One virtio-9p device through which the guest reaches this machine's folders: the guest sees it, so turning it on or off changes the machine's shape">Shared folders</Check>
+              {#if !!draft.shares !== !!rec.shares}<p class="note warn" data-shares-orphans>Turning shared folders {draft.shares ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+              {#if draft.shares}
+                <Check checked={draft.sharesMount !== false} onchange={(on) => { draft!.sharesMount = on ? undefined : false; dirty = true; }} field="shares-mount" title="At every boot the page has the guest's systemd mount the device, at the first access">Mount shared folders in the guest</Check>
+                {#if draft.sharesMount !== false}
+                  <label>Mount point <input value={draft.sharesPath ?? DEFAULT_SHARES_PATH} oninput={(e) => { const v = e.currentTarget.value; draft!.sharesPath = v === DEFAULT_SHARES_PATH ? undefined : v; }} data-field="shares-path" spellcheck="false"></label>
+                  {#if pathError}<p class="note warn" data-shares-path-error>{pathError}</p>{/if}
+                  <p class="note" data-shares-path-note>Mounting over a directory that has files hides them.{m.id === ui.current && ui.state === 'running' ? ' A new mount point takes effect at the next start.' : ''} On a guest with systemd 256 or newer; nothing is written to its disk.</p>
+                {/if}
+              {/if}
+              {#if dirty}{@render saveRow()}{/if}
+            </div>
+            <Folders {folders} machine={rec} {act} />
           {:else if ui.machinesTab === 'disks'}
             <Disks {store} machine={m} {disks} {overlays} running={isOn(m.id)} {act} {offFirst} />
           {:else}
@@ -527,7 +550,7 @@
   .advanced summary { color: var(--dim); cursor: pointer; }
   .advanced .split { display: grid; grid-template-columns: max-content minmax(0, 200px); gap: 8px 16px; align-items: center; }
   .advanced .split label { display: contents; color: var(--dim); }
-  .usb-switch { margin-bottom: 12px; }
+  .usb-switch, .folders-switch { margin-bottom: 12px; }
   .disk { display: flex; flex-direction: column; gap: 8px; }
   .network { display: flex; flex-direction: column; gap: 12px; }
   .adapters { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
