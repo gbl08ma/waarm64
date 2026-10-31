@@ -5,6 +5,7 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
 import { p9, type P9Files } from './9p.ts';
+import { folders9p, type FolderSpec } from './9p-folders.ts';
 import { echoBackend, echoLease, gateway, gatewayOf, portBackend } from './gateway.ts';
 import { busy, gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d } from './gpu-present.ts';
@@ -83,8 +84,11 @@ export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSecond
  * itself lasts two minutes, so a gateway that stops answering for a while (its client reconnecting) costs no address.
  */
 export const SEVERAL_ADAPTERS = { leaseSeconds: 120, renewSeconds: 10 };
-/** virtio-9p (web/9p.ts): an in-memory tree, mounted by the guest by `tag`, starting with `files` (path → contents). */
-export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
+/**
+ * virtio-9p (web/9p.ts), mounted by the guest by `tag`: an in-memory tree starting with `files` (path → contents), or with
+ * `folders` the page's shared folders (web/9p-folders.ts), `port` carrying what changes while the machine runs.
+ */
+export type P9Spec = { type: '9p'; tag: string; files?: P9Files; folders?: FolderSpec[]; port?: MessagePort };
 /**
  * virtio-input: a keyboard, a tablet (absolute pointer, 0–32767 on both
  * axes), a mouse (relative: the pointer while the page holds the mouse) or a
@@ -149,7 +153,7 @@ export type SndSpec = {
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : (d.type === 'input' || d.type === 'snd') && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : (d.type === 'input' || d.type === 'snd' || d.type === '9p') && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -264,6 +268,8 @@ type Backend = {
   request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void;
   /** Its requests may complete in any order (a remote disk's, R4): in realtime mode `Devices.poll` doesn't wait for them. */
   concurrent?: boolean;
+  /** Lands what it holds back (a shared folder's write sessions): before a snapshot and at the end of the machine. */
+  flush?(): Promise<void>;
   /** Runs after the device's requests of a DEVICE exit were taken (every exit, even without any): virtio-snd's deterministic sink completes there. */
   polled?(): void;
   /**
@@ -976,7 +982,7 @@ export class Devices {
           return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic);
         }
         case 'net': return net(ctx, d);
-        case '9p': return p9(ctx, d.files ?? {}, deterministic);
+        case '9p': return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
         case 'gpu': {
           const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats, d.probe, d.screen2d) : {});
@@ -1029,9 +1035,10 @@ export class Devices {
     return Promise.all(this.backends.map((b) => b.save?.() ?? null));
   }
 
-  /** Resolves once no request of a `concurrent` backend runs (a snapshot's quiesce: their completions land first). */
+  /** Resolves once no request of a `concurrent` backend runs (a snapshot's quiesce: their completions land first) and what the backends hold back landed. */
   async drain() {
     while (this.detached.size) await Promise.all(this.detached);
+    await Promise.all(this.backends.map((b) => b.flush?.()));
   }
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */

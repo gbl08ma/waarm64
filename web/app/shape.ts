@@ -59,6 +59,9 @@ export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?
 /** The machine's display: a virtio-gpu, 2D or with virgl (3D, rendered with WebGL2): the guest sees different devices. */
 export type Display = '2d' | '3d';
 
+/** A folder attached to a machine (web/app/folders.ts): its id, and whether this machine only reads it. */
+export type FolderAttachment = { id: string; readOnly: boolean };
+
 /** A machine (IndexedDB `machines`). */
 export type MachineRecord = {
   id: string;
@@ -120,6 +123,17 @@ export type MachineRecord = {
    * made before it: off, their shape as it was. New machines have it.
    */
   clock?: boolean;
+  /**
+   * Shared folders (docs/shares.md): one virtio-9p device, whatever is attached. Absent on machines made before it: off,
+   * their shape as it was. New machines have it.
+   */
+  shares?: boolean;
+  /** False: the page doesn't mount them in the guest; absent: it does, at `sharesPath`. Not in the shape: the guest's disk decides what a path means. */
+  sharesMount?: false;
+  /** Where the guest finds them; absent: `DEFAULT_SHARES_PATH` (web/app/shares-mount.ts). Not in the shape. */
+  sharesPath?: string;
+  /** The folders attached, in the root's order (changed while the machine runs: not in the shape). Absent: none. */
+  folders?: FolderAttachment[];
   /** In slot order (the guest's vda, vdb…). */
   attachments: Attachment[];
   created: number;
@@ -174,7 +188,7 @@ export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
-export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | 'blk';
+export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'blk';
 /** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`). */
 export type CpuFeature = 'rng' | 'e0pd' | 'sha3';
 export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3'];
@@ -192,7 +206,7 @@ const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.include
  * that have it. The network adapters are where the one card was (network-adapters.md §4). `attachment` is the disk's
  * index in the machine's list, `adapter` the adapter's.
  */
-export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boolean; touch?: boolean; clock?: boolean; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
+export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boolean; touch?: boolean; clock?: boolean; shares?: boolean; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
     { kind: 'rng' }, { kind: 'keyboard' }, { kind: 'tablet' },
     ...Array.from({ length: m.nets }, (_, i) => ({ kind: 'net' as const, adapter: i })),
@@ -201,6 +215,7 @@ export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boo
     ...(m.mouse ? [{ kind: 'mouse' as const }] : []),
     ...(m.touch ? [{ kind: 'touch' as const }] : []),
     ...(m.clock ? [{ kind: 'clock' as const }] : []),
+    ...(m.shares ? [{ kind: '9p' as const }] : []),
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
   ];
 }
@@ -249,7 +264,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
   // Vulkan needs 3D (`vulkan`: what the machine runs with when the page asks for it beside its record's).
   const vulkan = display === '3d' && (opts.vulkan ?? !!m.vulkan);
   const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
-  const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, clock: m.clock, attachments: m.attachments });
+  const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, clock: m.clock, shares: m.shares, attachments: m.attachments });
   return {
     version: SHAPE_VERSION,
     ncpus: m.ncpus,
@@ -308,7 +323,7 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
   if (macsWas.length !== macsNow.length) out.push(`network adapters: ${macsWas.length} then, ${macsNow.length} now`);
   else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(`network adapter ${i + 1}: MAC ${macsWas[i]} then, ${macsNow[i]} now`);
   if (!!was.usb !== !!now.usb) out.push(was.usb ? 'it had a USB controller' : 'it had no USB controller');
-  for (const [k, name] of [['mouse', 'a relative mouse'], ['touch', 'a touchscreen'], ['clock', 'a clock device']] as const) {
+  for (const [k, name] of [['mouse', 'a relative mouse'], ['touch', 'a touchscreen'], ['clock', 'a clock device'], ['9p', 'a shared folders device']] as const) {
     if (was.devices.includes(k) !== now.devices.includes(k)) out.push(was.devices.includes(k) ? `it had ${name}` : `it had no ${name.replace(/^an? /, '')}`);
   }
   if (was.disks.length !== now.disks.length) out.push(`disks: ${was.disks.length} then, ${now.disks.length} now`);

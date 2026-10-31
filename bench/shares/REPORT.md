@@ -1,6 +1,6 @@
 # What a directory handle costs
 
-For shared folders ([docs/plans/shares.md](../../docs/plans/shares.md) §7 L0). `bench/shares/index.html` runs
+For shared folders ([docs/shares.md](../../docs/shares.md)). `bench/shares/index.html` runs
 `worker.ts` on a directory: picked by hand, or by `run.ts` headless on OPFS and on a real folder of the machine. A
 folder dropped through CDP (`Input.dispatchDragEvent`) gives a real `FileSystemDirectoryHandle` with **read** permission:
 write permission's prompt can't be answered headless (no CDP permission name for it, `requestPermission` hangs), so a
@@ -53,3 +53,5 @@ What these set:
   characters, 300 bytes). `getDirectoryHandle` on a file and `getFileHandle` on a directory are `TypeMismatchError`;
   `removeEntry` on a non-empty directory `InvalidModificationError`.
 - `queryPermission` works in a worker. `navigator.storage.estimate()` too.
+- Off the record, reading a stored handle back from IndexedDB takes Chromium down (docs/backlog.md "A handle read back
+  off the record"); on a disk profile handles round-trip.

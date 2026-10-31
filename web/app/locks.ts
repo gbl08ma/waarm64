@@ -1,5 +1,6 @@
 // Locks on things one running machine has at a time (a USB device, docs/usb.md "The page"; a network connection,
-// docs/network-adapters.md §2.3): a Web Lock per thing, held while this page's machine has it. Other tabs ask
+// docs/network-adapters.md §2.3; a shared folder, docs/shares.md, which several can read): a Web Lock per thing, held
+// while this page's machine has it. Other tabs ask
 // who holds one (`<topic>-who`, answered `<topic>-held` with the machine's name) and ask the holder to let it go
 // (`<topic>-release`), over the store's channel. Without Web Locks (Node's tests may lack them) every take succeeds.
 import type { Note, Store } from './store.ts';
@@ -26,14 +27,14 @@ export class Locks {
 
   mine(lock: string) { return this.held.has(lock); }
 
-  /** Takes `lock` if no one holds it: false if another machine does. */
-  async take(lock: string): Promise<boolean> {
+  /** Takes `lock` if no one holds it (`shared`: or others only read): false if another machine does. */
+  async take(lock: string, o: { shared?: boolean } = {}): Promise<boolean> {
     if (this.held.has(lock)) return true;
     if (!globalThis.navigator?.locks) return true;
     let release!: () => void;
     const kept = new Promise<void>((resolve) => { release = resolve; });
     const got = await new Promise<boolean>((resolve) => {
-      void navigator.locks.request(lock, { ifAvailable: true }, (l) => {
+      void navigator.locks.request(lock, { ifAvailable: true, mode: o.shared ? 'shared' : 'exclusive' }, (l) => {
         resolve(!!l);
         return l ? kept : undefined;
       });
@@ -58,11 +59,12 @@ export class Locks {
   }
 
   /** Asks the tab that holds `lock` to let it go, then takes the lock (false if it isn't let go within `ms`). */
-  async takeFrom(lock: string, ms = 8000): Promise<boolean> {
+  async takeFrom(lock: string, o: { shared?: boolean; ms?: number } = {}): Promise<boolean> {
+    const ms = o.ms ?? 8000;
     this.store.tell({ topic: `${this.topic}-release`, lock });
     const until = Date.now() + ms;
     while (Date.now() < until) {
-      if (await this.take(lock)) return true;
+      if (await this.take(lock, o)) return true;
       await new Promise((r) => setTimeout(r, 200));
     }
     return false;

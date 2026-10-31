@@ -31,10 +31,13 @@ import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { HeldError, PageNetwork } from './net-live.ts';
 import { connectionLock, migrateLegacy, type Connection, type NewConnection } from './connections.ts';
+import { createFolder, type Folder, type NewFolder } from './folders.ts';
+import { PageFolders } from './folders-live.ts';
+import { DEFAULT_SHARES_PATH } from './shares-mount.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../tailcat.ts';
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
+import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type FolderAttachment, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
 import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
 import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
@@ -282,8 +285,10 @@ const audio = new PageAudio();
 ui.current = stored?.record.id;
 ui.firmware = !!spec.firmware;
 ui.hasNetwork = !!spec.network;
-store.onChange(() => { ui.records++; void net.refresh(); });
-mount(App, { target: document.body, props: { store, audio, net } });
+const folders = new PageFolders({ store, me: () => machineTitle(), onChange: () => { ui.folders.on = folders.running; ui.folders.tick++; } });
+void folders.refresh();
+store.onChange(() => { ui.records++; void net.refresh(); void folders.refresh(); });
+mount(App, { target: document.body, props: { store, audio, net, folders } });
 flushSync();
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
@@ -631,6 +636,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const sound = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
   const usb = usbOn() ? new MessageChannel() : undefined;
+  // A machine with shared folders: the port what's attached while it runs goes over (docs/shares.md).
+  const shares = stored?.record.shares ? new MessageChannel() : undefined;
   // A relative mouse (the pointer while the screen holds the mouse) and a touchscreen, on machines that have them.
   const mouse = pointerOn('mouse') ? new MessageChannel() : undefined;
   const touch = pointerOn('touch') ? new MessageChannel() : undefined;
@@ -676,6 +683,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         clearAlive(aliveKey());
         r.usb?.close();
         dropLock();
+        folders.end();
         void refreshRecords();
       }
     } else if (m.type === 'serial') {
@@ -750,10 +758,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       return;
     }
     holdLock();
+    const list = shares ? await folders.begin(stored!.record, shares.port1) : undefined;
+    ui.folders.path = stored ? sharesPath(stored.record) ?? '' : '';
+    if (folders.views().some((v) => v.problem)) ui.folders.open++; // Allow access…, Use it here
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -831,6 +842,7 @@ async function stop() {
   r.worker.terminate();
   r.gpu?.terminate();
   dropLock();
+  folders.end();
   await refreshRecords();
 }
 
@@ -1432,10 +1444,24 @@ document.addEventListener('drop', (e) => {
   const handle = item?.getAsFileSystemHandle?.().catch(() => null);
   void (async () => {
     const h = await handle;
+    if (h?.kind === 'directory') return void droppedFolder(h as FileSystemDirectoryHandle).catch((err) => notify(String((err as Error).message ?? err), 'error'));
     void chooseDisk({ file, handle: h?.kind === 'file' ? h as FileSystemFileHandle : undefined });
   })();
 });
 
+
+/** A directory dropped on the page: a folder of this browser's, offered to the running machine if the page's has shared folders. */
+async function droppedFolder(handle: FileSystemDirectoryHandle) {
+  const here = !ui.machinesOpen && folders.running ? stored?.record : undefined;
+  if (here && !(await ask.confirm(`Attach ${handle.name} to ${here.name}? The folder is kept in this browser, for this or any machine.`, { title: 'A shared folder', ok: 'Attach' }))) return;
+  const f = await createFolder(store, { kind: 'host', name: handle.name, handle });
+  if (here) await folderPage.folderAttach(here.id, f, false);
+  else await folders.refresh();
+  if (here) ui.folders.open++;
+}
+
+/** Where the guest finds the machine's shared folders; undefined: the page doesn't mount them. */
+const sharesPath = (m: MachineRecord) => (m.sharesMount === false ? undefined : m.sharesPath ?? DEFAULT_SHARES_PATH);
 
 // Keys typed into the terminal go to the PL011 (xterm.js sends what a terminal would: \r for Enter, escape sequences).
 let replaying = false;
@@ -2019,6 +2045,33 @@ const usbPage = {
 syncUsb();
 
 // What the components ask of the page (web/app/ui.svelte.ts `Page`).
+/** Reads the page's machine's record again, if `machine` is it. */
+const rereadRecord = async (machine: string) => {
+  if (stored?.record.id === machine) stored.record = (await store.get('machines', machine)) ?? stored.record;
+  ui.records++; // this tab's own writes aren't announced to it
+};
+const folderPage = {
+  folderWizard: (machine: string | undefined, attached: FolderAttachment[]) => { ui.folderWizard = { machine, attached, tick: (ui.folderWizard?.tick ?? 0) + 1 }; },
+  folderPick: async (readOnly: boolean) => {
+    const handle = await (globalThis as unknown as { showDirectoryPicker(o: object): Promise<FileSystemDirectoryHandle> }).showDirectoryPicker({ mode: readOnly ? 'read' : 'readwrite' });
+    return folderPage.folderCreate({ kind: 'host', name: handle.name, readOnly, handle });
+  },
+  folderCreate: async (n: NewFolder) => {
+    const f = await createFolder(store, n);
+    await folders.refresh();
+    return f;
+  },
+  folderAttach: async (machine: string, f: Folder, readOnly: boolean) => { await folders.attach(machine, f, readOnly); await rereadRecord(machine); },
+  folderDetach: async (machine: string, id: string) => { await folders.detach(machine, id); await rereadRecord(machine); },
+  folderMove: async (machine: string, id: string, by: number) => { await folders.move(machine, id, by); await rereadRecord(machine); },
+  folderReadOnly: async (machine: string, id: string, readOnly: boolean) => { await folders.setReadOnly(machine, id, readOnly); await rereadRecord(machine); },
+  folderAllow: (id: string) => folders.allow(id),
+  folderUseHere: async (id: string) => {
+    const v = folders.views().find((x) => x.id === id);
+    if (!(await ask.confirm(`${v?.name ?? 'The folder'} is in use by ${v?.holder ?? 'a machine in another tab'}. Use it here instead? That machine loses it while it runs.`, { title: 'The folder is in use', ok: 'Use it here' }))) return;
+    if (!(await folders.useHere(id))) throw new Error(`${v?.holder ?? 'That machine'} didn't let it go.`);
+  },
+};
 Object.assign(page, {
   restart: () => void restartAsked(),
   suspend: () => void suspend(),
@@ -2050,6 +2103,7 @@ Object.assign(page, {
   closeMachines,
   dismiss: () => { clearTimeout(messageTimer); note = ''; showMessage('', [], 'warn'); },
   ...usbPage,
+  ...folderPage,
   netWizard: (o: NonNullable<typeof ui.netWizard>) => { ui.netWizard = { ...o, tick: (ui.netWizard?.tick ?? 0) + 1 }; },
   netCreate: (n: NewConnection) => net.conns.create(n).then(async (c) => { await net.refresh(); return c; }),
   netAttach,

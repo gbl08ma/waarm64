@@ -19,6 +19,10 @@
   import { machineDir, type Store, type OverlayRecord } from './store.ts';
   import { suspended as suspendedCopy } from '../overlay.ts';
   import type { Connection } from './connections.ts';
+  import Folders from './Folders.svelte';
+  import FoldersPane from './FoldersPane.svelte';
+  import type { PageFolders } from './folders-live.ts';
+  import { sharesPathError } from './shares-mount.ts';
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { clearCaches } from '../diskcache.ts';
@@ -30,7 +34,7 @@
   import { browserLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS } from './keyboard.ts';
   import { JIT_CHOICES, JIT_DEFAULT_MIB, MEMORY0_MIB, numaNote, RAM_CHOICES, ramSplitError, ramSplitMiB } from './machine.ts';
 
-  let { store, net }: { store: Store; net: PageNetwork } = $props();
+  let { store, net, folders }: { store: Store; net: PageNetwork; folders: PageFolders } = $props();
 
   let machines = $state<MachineRecord[]>([]);
   let disks = $state<Map<string, DiskRecord>>(new Map());
@@ -47,6 +51,7 @@
   /** The page's own machine (transient) is chosen: `ui.machinesSelected` is `page`; the connections: `connections`. */
   const PAGE = 'page';
   const CONNECTIONS = 'connections';
+  const FOLDERS = 'folders';
   /** The page's preferences (this browser's, for every machine). */
   const PREFERENCES = 'preferences';
   let warnOnLeave = $state(leaveWarning());
@@ -63,7 +68,7 @@
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
     suspended = new Set((await Promise.all(machines.map(async (m) => ((await suspendedCopy(machineDir(m.id)).catch(() => undefined)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
-    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
+    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== FOLDERS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);
     // The draft follows the record, unless the user is editing its settings.
     if (!m || !draft || draft.id !== m.id || !dirty) draft = m ? structuredClone($state.snapshot(m)) as MachineRecord : undefined;
@@ -108,7 +113,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || !!a.vulkan !== !!b.vulkan || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch || !!a.clock !== !!b.clock;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || !!a.vulkan !== !!b.vulkan || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch || !!a.clock !== !!b.clock || !!a.shares !== !!b.shares;
   /** What takes a restart: the shape, and the JIT's budget (the guest doesn't see it: no snapshot is orphaned). */
   const restartChanged = (a: MachineRecord, b: MachineRecord) => shapeChanged(a, b) || (a.jitMiB ?? 0) !== (b.jitMiB ?? 0);
   async function saveSettings() {
@@ -116,7 +121,11 @@
     if (!m.jitMiB) delete m.jitMiB;
     if (!m.keyboard) delete m.keyboard;
     if (m.netConfig !== false) delete m.netConfig;
+    if (!m.shares) delete m.shares;
+    if (m.sharesMount !== false) delete m.sharesMount;
+    if (!m.sharesPath) delete m.sharesPath;
     await act('Saving', async () => {
+      if (m.sharesPath && sharesPathError(m.sharesPath)) throw new Error(sharesPathError(m.sharesPath));
       const was = machines.find((x) => x.id === m.id)!;
       if (shapeChanged(was, m) && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('This change orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Save' }))) return;
       // The machine on this page, running: it restarts with them (the page asks).
@@ -262,6 +271,7 @@
         <input type="file" accept=".json,application/json" hidden bind:this={defInput} onchange={importDef} data-field="import-definition">
       </div>
       <div class="new">
+        <button class:chosen={ui.machinesSelected === FOLDERS} onclick={() => choose(FOLDERS)} data-machine={FOLDERS} title="The shared folders this browser keeps, for any machine"><Icon name="folder" size={16} />Shared folders ({(void ui.folders.tick, folders.folders.length)})</button>
         <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title="The network connections this browser keeps (tailnets, tailcat), for any machine's adapters"><Icon name="network" size={16} />Connections ({conns.length})</button>
         <button class:chosen={ui.machinesSelected === PREFERENCES} onclick={() => choose(PREFERENCES)} data-machine={PREFERENCES} title="How the page behaves in this browser, for every machine"><Icon name="adjustments-horizontal" size={16} />Preferences</button>
       </div>
@@ -288,6 +298,8 @@
           </div>
         </div>
       </section>
+    {:else if ui.machinesSelected === FOLDERS}
+      <FoldersPane {folders} {store} {act} />
     {:else if ui.machinesSelected === CONNECTIONS}
       <section class="machine" data-selected={CONNECTIONS}>
         <div class="head">
@@ -370,6 +382,7 @@
           <button role="tab" aria-selected={ui.machinesTab === 'disks'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks ({m.attachments.length})</button>
           <button role="tab" aria-selected={ui.machinesTab === 'network'} onclick={() => tab('network')} data-tab="network"><Icon name="network" size={16} />Network</button>
           <button role="tab" aria-selected={ui.machinesTab === 'usb'} onclick={() => tab('usb')} data-tab="usb"><Icon name="usb" size={16} />USB{m.usbDevices?.length ? ` (${m.usbDevices.length})` : ''}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'folders'} onclick={() => tab('folders')} data-tab="folders"><Icon name="folder" size={16} />Shared folders{m.folders?.length ? ` (${m.folders.length})` : ''}</button>
           <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />Snapshots</button>
         </div>
         <div class="tab">
@@ -401,7 +414,7 @@
               {@render usbSwitch()}
               {@render pointerSwitches()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse, the touchscreen and the clock device make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
+              <p class="note">vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse, the touchscreen, the clock device and shared folders make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">
@@ -445,6 +458,8 @@
               {#if dirty}{@render saveRow()}{/if}
             </div>
             <Usb machine={machines.find((x) => x.id === m.id) ?? m} running={isOn(m.id)} {act} />
+          {:else if ui.machinesTab === 'folders'}
+            <Folders {folders} machine={machines.find((x) => x.id === m.id) ?? m} bind:draft {act} changed={() => (dirty = true)}>{#if dirty}{@render saveRow()}{/if}</Folders>
           {:else if ui.machinesTab === 'disks'}
             <Disks {store} machine={m} {disks} {overlays} running={isOn(m.id)} {act} {offFirst} />
           {:else}

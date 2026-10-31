@@ -24,6 +24,7 @@ import IconKeyboard from '@tabler/icons-svelte-runes/icons/keyboard';
 import IconLayoutColumns from '@tabler/icons-svelte-runes/icons/layout-columns';
 import IconMaximize from '@tabler/icons-svelte-runes/icons/maximize';
 import IconMicrophone from '@tabler/icons-svelte-runes/icons/microphone';
+import IconFolder from '@tabler/icons-svelte-runes/icons/folder';
 import IconNetwork from '@tabler/icons-svelte-runes/icons/network';
 import IconPencil from '@tabler/icons-svelte-runes/icons/pencil';
 import IconPlayerPause from '@tabler/icons-svelte-runes/icons/player-pause';
@@ -83,6 +84,7 @@ export const ICONS = {
   'layout-columns': IconLayoutColumns,
   'maximize': IconMaximize,
   'microphone': IconMicrophone,
+  'folder': IconFolder,
   'network': IconNetwork,
   'pencil': IconPencil,
   'player-pause': IconPlayerPause,

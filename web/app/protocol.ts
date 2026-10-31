@@ -3,6 +3,7 @@
 import type { VcpuLiveness } from '../liveness.ts';
 import type { Timeline } from '../profiler.ts';
 import type { Vm } from '../vm.ts';
+import type { FolderSpec } from '../9p-folders.ts';
 import type { Credential, MachineName } from './machine.ts';
 import type { Shape } from './shape.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
@@ -116,6 +117,13 @@ export type ToWorker =
      * empty). None: no controller (a stored machine's `usb`, a transient one's `?usb=1`).
      */
     usb?: MessagePort;
+    /**
+     * The machine has shared folders (docs/shares.md): the one virtio-9p device, on what can be served now (`list`); `port`
+     * carries the page's attachments and grants to the device worker (web/9p-folders.ts `FoldersToDevice`). None: no device.
+     */
+    folders?: { list: FolderSpec[]; port: MessagePort };
+    /** The mount point the page sets in the guest (`MachineRecord.sharesPath`, web/app/shares-mount.ts), for a `firmware` machine; none: not mounted. */
+    sharesPath?: string;
     /**
      * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
      * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's

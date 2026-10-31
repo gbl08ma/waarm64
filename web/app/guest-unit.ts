@@ -2,7 +2,7 @@
 // systemd unit and its POSIX sh script, given as SMBIOS credentials (systemd 256+: `systemd.extra-unit.*`,
 // `systemd.unit-dropin.*`), which PID 1 imports before anything else runs. Nothing is installed: a boot without the
 // setting has no unit. Guests without systemd 256 ignore them. The keyboard layout (web/app/keyboard.ts) and the
-// network's settings (web/app/guest-net.ts) are two.
+// network's settings (web/app/guest-net.ts) are two; shared folders' mount (web/app/shares-mount.ts) gives units of its own.
 
 import type { Credential } from './machine.ts';
 

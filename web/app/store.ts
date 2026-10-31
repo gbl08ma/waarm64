@@ -8,6 +8,7 @@
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
 import type { Connection } from './connections.ts';
+import type { Folder } from './folders.ts';
 import { isId, type DiskIdentity, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
 
 /**
@@ -52,9 +53,9 @@ export type SnapshotRecord = {
   urls?: Record<number, string>;
 };
 
-export type Kinds = { machines: MachineRecord; disks: DiskRecord; overlays: OverlayRecord; snapshots: SnapshotRecord; connections: Connection };
+export type Kinds = { machines: MachineRecord; disks: DiskRecord; overlays: OverlayRecord; snapshots: SnapshotRecord; connections: Connection; folders: Folder };
 export type Kind = keyof Kinds;
-const KINDS: Kind[] = ['machines', 'disks', 'overlays', 'snapshots', 'connections'];
+const KINDS: Kind[] = ['machines', 'disks', 'overlays', 'snapshots', 'connections', 'folders'];
 
 /** Where records live: IndexedDB in a browser, a Map in Node. Values are copied in and out (structured clone). */
 export type Records = {
@@ -85,6 +86,7 @@ export type Note = { topic: string; [k: string]: unknown };
 export const overlayDir = (id: string) => `overlays/${id}`;
 export const diskDir = (id: string) => `disks/${id}`;
 export const machineDir = (id: string) => `machines/${id}`;
+export const folderDir = (id: string) => `folders/${id}`;
 export const snapshotPath = (machine: string, id: string) => `machines/${machine}/snapshots/${id}`;
 export const flashPath = (machine: string) => `machines/${machine}/flash`;
 export const suspendPath = (machine: string) => `machines/${machine}/suspend`;
@@ -266,10 +268,10 @@ const sharedMemory = { records: memoryRecords(), files: memoryFiles() };
 const DB = 'webpc';
 const idb = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 
-/** Records in IndexedDB `webpc`: an object store per kind, keyed by `id` (version 2 added `connections`). */
+/** Records in IndexedDB `webpc`: an object store per kind, keyed by `id` (version 2 added `connections`, 3 `folders`). */
 export async function idbRecords(name = DB): Promise<Records> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const r = indexedDB.open(name, 2);
+    const r = indexedDB.open(name, 3);
     r.onupgradeneeded = () => { for (const k of KINDS) if (!r.result.objectStoreNames.contains(k)) r.result.createObjectStore(k, { keyPath: 'id' }); };
     // A tab of a newer page upgrading the database: this one lets go (its page is out of date; a reload has the new one).
     r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); resolve(r.result); };

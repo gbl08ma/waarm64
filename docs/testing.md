@@ -29,7 +29,7 @@ only edits docs: `.md` files or code comments):
   vk/README.md "Checking frames"; skipped without that image or vk/build.sh's renderer). It must pass too when a change
   touches the display or 3D (virtio-gpu, its presenter, the GPU worker, the Machine menu's graphics, Venus's device), and
   at the end of a milestone or a track. Split from `ci-debian.sh` on 2026-10-30, with `--platform`: together they took 476 s; now 291 s, 390 s with `--platform`, and this script 169 s.
-- **`scripts/ci-machines.sh`** boots Debian on the page for machines as the unit: `page-machines` (four disks: blank,
+- **`scripts/ci-machines.sh`** boots Debian on the page for machines as the unit: `page-folders` (shared folders, [shares.md](shares.md) §7), `page-machines` (four disks: blank,
   ramdisk, read-only, serials, a reboot), `page-stored` (a disk stored in the browser in two steps: import, variants,
   merge, in place) and `page-snapshots` (kept snapshots, forks, the ramdisk, Suspend on pins, orphaned ones), three at a
   time (`WEBPC_DEBIAN_SLOTS=3`), ~3.5 min. It must pass too when a change touches stored machines, their disks (stored,

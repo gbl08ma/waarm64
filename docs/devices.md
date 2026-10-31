@@ -38,8 +38,8 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   order. A completion is taken only for one of them, and a VM restored from a snapshot posts
   them again ([platform.md](platform.md) "Snapshots"): a backend that only holds buffers has
   nothing to save. One with state of its own gives it as JSON (`Backend.save`) and takes it back
-  in a new VM (`restore`): the deterministic rng's position. 9p's tree and fids aren't saved yet:
-  a VM with a 9p device refuses a snapshot.
+  in a new VM (`restore`): the deterministic rng's position, a shared folders device's fids and qids. The in-memory 9p
+  tree's aren't saved: a VM with one refuses a snapshot.
 
 ## Threads and determinism
 
@@ -331,7 +331,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   answers pings to its own address. Tests: tests/gateway.test.ts (bytes of ARP, DHCP, framing, router advertisements, neighbor discovery, DHCPv6).
 
 ### 9p (ID 9)
-- **Our own `9P2000.L` server** (`web/9p.ts`, twin `core/tests/common/p9.rs`), **not a port of
+- **Our own `9P2000.L` server** (`web/9p.ts`, its memory tree's twin `core/tests/common/p9.rs`), **not a port of
   v86's**: v86's `lib/9p.js` is built on its large `FS` inode store, and the native runner needs a
   Rust twin anyway; ours was written from the protocol as Linux's v9fs speaks it (v86 and TinyEMU
   read as references, no code copied).
@@ -341,10 +341,13 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   getattr, setattr, mkdir, symlink, mknod, readlink, link, renameat, unlinkat, remove, clunk,
   flush, fsync, statfs, lock (always granted), getlock (always unlocked); xattrs and the rest
   `EOPNOTSUPP`, malformed messages `EINVAL`.
-- **An in-memory tree** seeded from the spec (`{type: '9p', tag, files: {path: text}}`); qid paths
+- **`P9Server` asks a tree.** A synchronous tree answers at the step it was asked; an asynchronous one's requests overlap
+  (`concurrent`), and a Tflush is answered after the request it names.
+- **The in-memory tree** seeded from the spec (`{type: '9p', tag, files: {path: text}}`, `MemoryTree`); qid paths
   in creation order; in deterministic mode every timestamp is 2026-09-01, so native and Chromium
   boots see the same bytes. `qid.version` is always 0 (only `cache=none` is coherent);
   whole-second timestamps.
+- **The page's shared folders** (`{type: '9p', tag: 'webpc', folders, port}`, `FolderTree`): [shares.md](shares.md).
 
 ### input (ID 18)
 - `{type: 'input', kind: 'keyboard' | 'tablet' | 'mouse' | 'touch', port?}`; eventq and statusq of 64. The keyboard

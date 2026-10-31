@@ -273,6 +273,11 @@ Duplicate, Export the definition, Delete; then tabs:
   connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. **Add a
   device…** opens a wizard (`AddUsb.svelte`): the kind first, a USB device (WebUSB) or a HID device (WebHID), each
   explained, then the browser's chooser. [usb.md](usb.md) "The page".
+- **Shared folders** (`Folders.svelte`): the machine's switch (in the shape), **Mount shared folders in the guest** and
+  its **Mount point**, and the attached folders (order, Read-only, Allow…, Use it here, Detach), changed at once, running
+  or not. **Attach a folder…** opens the Folder wizard (`FolderWizard.svelte`). **Shared folders** in the list of machines
+  is the browser's (`FoldersPane.svelte`): rename, Read-only, Delete, a folder in the browser's files. The toolbar has a
+  **Folders** menu while the page's machine runs with them. [shares.md](shares.md) §4.
 - **Snapshots:** the kept ones (below, "A stored machine's snapshots").
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
@@ -853,7 +858,8 @@ units the page adds (`web/app/guest-unit.ts` `guestUnit`): `systemd.extra-unit.w
 runs a POSIX sh script given as a credential of its own (`webpc.<what>.sh`, `ImportCredential=`), and a
 `systemd.unit-dropin.*` that has the unit it serves want it (the generator reads no `[Install]`), all as SMBIOS type 11
 strings (systemd 256+; the keyboard's paragraph above says how they get there). Nothing is installed: a boot without
-the setting has no unit. Guests without systemd 256 ignore them.
+the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **Mount shared folders in the guest**
+gives a `.mount` and an `.automount` the same way ([shares.md](shares.md) §5).
 
 - **The network's settings** (`web/app/guest-net.ts`): `webpc-network.service`, wanted by and ordered before
   `systemd-networkd.service` (no default dependencies; after `local-fs.target` and `systemd-network-generator.service`,

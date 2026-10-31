@@ -5,9 +5,10 @@
 // new machine (its name made unique): URL, blank and ramdisk disks come back as they were (a disk this browser has, by
 // identity, is attached again); file disks, and stored disks this browser doesn't have, are files to pick at its first
 // start, checked by name, size and date, then by hash where the definition has one. A machine with a USB controller says
-// so (`machine.usb`; a relative mouse, a touchscreen and the clock device, `mouse`, `touch` and `clock`, likewise), and its remembered USB devices go as identities (`usbDevices`): no grant travels, so on another
+// so (`machine.usb`; a relative mouse, a touchscreen and the clock device, `mouse`, `touch` and `clock`, likewise; shared folders, `shares` with `sharesMount` and `sharesPath`, never the folders themselves), and its remembered USB devices go as identities (`usbDevices`): no grant travels, so on another
 // browser the first start offers one click each (docs/usb.md "The page"). All are left out when there's nothing to say.
 // The network adapters go as their MACs (`machine.macs`, left out for one at the default), without their connections.
+import { sharesPathError } from './shares-mount.ts';
 import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
 import { validKeyboard } from './keyboard.ts';
 import { adaptersOf, canonical, DEFAULT_MAC, isMac, MAX_ADAPTERS, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskKind, type DiskRecord, type Display, type MachineRecord } from './shape.ts';
@@ -22,7 +23,7 @@ export type Definition = {
   type: typeof DEFINITION_TYPE;
   version: number;
   /** `network`: whether it has an adapter; `macs`: the adapters' MACs, left out for none or one at the default (as before adapters). */
-  machine: { name: string; ncpus: number; ramMiB: number; ramSplit?: number[]; jitMiB?: number; keyboard?: string; netConfig?: false; display: Display; vulkan?: boolean; network: boolean; macs?: string[]; usb?: boolean; mouse?: boolean; touch?: boolean; clock?: boolean };
+  machine: { name: string; ncpus: number; ramMiB: number; ramSplit?: number[]; jitMiB?: number; keyboard?: string; netConfig?: false; display: Display; vulkan?: boolean; network: boolean; macs?: string[]; usb?: boolean; mouse?: boolean; touch?: boolean; clock?: boolean; shares?: boolean; sharesMount?: false; sharesPath?: string };
   disks: DefinitionDisk[];
   usbDevices?: DefinitionUsb[];
 };
@@ -39,7 +40,7 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
   }
   const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
   const macs = adaptersOf(m).map((a) => a.mac);
-  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, ...(m.ramSplit ? { ramSplit: m.ramSplit } : {}), ...(m.jitMiB ? { jitMiB: m.jitMiB } : {}), ...(m.keyboard ? { keyboard: m.keyboard } : {}), ...(m.netConfig === false ? { netConfig: false } : {}), display: m.display, ...(m.vulkan ? { vulkan: true } : {}), network: macs.length > 0, ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}), ...(m.usb ? { usb: true } : {}), ...(m.mouse ? { mouse: true } : {}), ...(m.touch ? { touch: true } : {}), ...(m.clock ? { clock: true } : {}) }, disks, ...usb };
+  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, ...(m.ramSplit ? { ramSplit: m.ramSplit } : {}), ...(m.jitMiB ? { jitMiB: m.jitMiB } : {}), ...(m.keyboard ? { keyboard: m.keyboard } : {}), ...(m.netConfig === false ? { netConfig: false } : {}), display: m.display, ...(m.vulkan ? { vulkan: true } : {}), network: macs.length > 0, ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}), ...(m.usb ? { usb: true } : {}), ...(m.mouse ? { mouse: true } : {}), ...(m.touch ? { touch: true } : {}), ...(m.clock ? { clock: true } : {}), ...(m.shares ? { shares: true } : {}), ...(m.sharesMount === false ? { sharesMount: false } : {}), ...(m.sharesPath ? { sharesPath: m.sharesPath } : {}) }, disks, ...usb };
 }
 
 /** Parses a definition file's text; throws a message for the user when it isn't one this page reads. */
@@ -53,7 +54,7 @@ export function parseDefinition(text: string): Definition {
   if (d?.type !== DEFINITION_TYPE) throw new Error("this file isn't a machine definition");
   if (d.version !== DEFINITION_VERSION) throw new Error(`this definition is version ${d.version}; this page reads version ${DEFINITION_VERSION}`);
   const m = d.machine;
-  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.ramSplit === undefined || (Array.isArray(m.ramSplit) && !ramSplitError(m.ramSplit) && m.ramSplit.reduce((a, b) => a + b, 0) === m.ramMiB)) && (m.jitMiB === undefined || (Number.isInteger(m.jitMiB) && m.jitMiB >= 1 && m.jitMiB <= 4096)) && (m.keyboard === undefined || validKeyboard(m.keyboard)) && (m.netConfig === undefined || m.netConfig === false) && (m.display === '2d' || m.display === '3d') && (m.vulkan === undefined || typeof m.vulkan === 'boolean') && typeof m.network === 'boolean' && (m.macs === undefined || (Array.isArray(m.macs) && m.macs.length >= 1 && m.macs.length <= MAX_ADAPTERS && m.macs.every((x) => typeof x === 'string' && isMac(x)) && m.network)) && (m.usb === undefined || typeof m.usb === 'boolean') && (m.mouse === undefined || typeof m.mouse === 'boolean') && (m.touch === undefined || typeof m.touch === 'boolean') && (m.clock === undefined || typeof m.clock === 'boolean') && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
+  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.ramSplit === undefined || (Array.isArray(m.ramSplit) && !ramSplitError(m.ramSplit) && m.ramSplit.reduce((a, b) => a + b, 0) === m.ramMiB)) && (m.jitMiB === undefined || (Number.isInteger(m.jitMiB) && m.jitMiB >= 1 && m.jitMiB <= 4096)) && (m.keyboard === undefined || validKeyboard(m.keyboard)) && (m.netConfig === undefined || m.netConfig === false) && (m.display === '2d' || m.display === '3d') && (m.vulkan === undefined || typeof m.vulkan === 'boolean') && typeof m.network === 'boolean' && (m.macs === undefined || (Array.isArray(m.macs) && m.macs.length >= 1 && m.macs.length <= MAX_ADAPTERS && m.macs.every((x) => typeof x === 'string' && isMac(x)) && m.network)) && (m.usb === undefined || typeof m.usb === 'boolean') && (m.mouse === undefined || typeof m.mouse === 'boolean') && (m.touch === undefined || typeof m.touch === 'boolean') && (m.clock === undefined || typeof m.clock === 'boolean') && (m.shares === undefined || typeof m.shares === 'boolean') && (m.sharesMount === undefined || m.sharesMount === false) && (m.sharesPath === undefined || (typeof m.sharesPath === 'string' && !sharesPathError(m.sharesPath))) && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
     && Array.isArray(d.disks) && d.disks.length <= MAX_DISKS && d.disks.every((x) => ['url', 'file', 'stored', 'blank', 'ramdisk'].includes(x?.kind) && Number.isSafeInteger(x.size) && x.size > 0 && typeof x.name === 'string' && x.identity?.kind && typeof x.serial === 'string' && /^[0-9a-f]{12}$/.test(x.serial));
   if (!ok) throw new Error('this machine definition is damaged (a field is missing or out of range)');
   return d;
@@ -106,6 +107,9 @@ export async function importDefinition(store: Store, def: Definition): Promise<{
     mouse: def.machine.mouse ?? false,
     ...(def.machine.touch ? { touch: true } : {}),
     ...(def.machine.clock ? { clock: true } : {}),
+    ...(def.machine.shares ? { shares: true } : {}),
+    ...(def.machine.sharesMount === false ? { sharesMount: false as const } : {}),
+    ...(def.machine.sharesPath ? { sharesPath: def.machine.sharesPath } : {}),
     ...(def.usbDevices?.length ? { usbDevices: fromDefinition(def.usbDevices) } : {}),
     attachments,
     created: now,

@@ -19,6 +19,7 @@ import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
 import { netCredentials } from './guest-net.ts';
 import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
+import { SHARES_TAG, sharesCredentials } from './shares-mount.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
@@ -176,7 +177,7 @@ type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 
 /** The machine's transports in slot order (web/app/shape.ts `slots`): the kinds a snapshot's header lists, so a restore makes the same. */
 const layout = (m: StartMessage, machine: Machine): Slot[] =>
-  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', mouse: !!m.mouse, touch: !!m.touch, clock: !!m.clock, attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
+  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', mouse: !!m.mouse, touch: !!m.touch, clock: !!m.clock, shares: !!m.folders, attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
 
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
 function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
@@ -190,6 +191,11 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
   switch (slot.kind) {
     case 'rng': return { type: 'rng' };
     case 'clock': return { type: 'clock' };
+    case '9p': {
+      // `?sharesasync=<name>,…` (tests, measurements): folders in the browser served as a folder on the computer is.
+      const asHost = (query.get('sharesasync') ?? '').split(',');
+      return { type: '9p', tag: SHARES_TAG, folders: (m.folders?.list ?? []).map((f) => (asHost.includes(f.name) ? { ...f, kind: 'host' as const } : f)), port: m.folders?.port };
+    }
     case 'blk': return blkSpec(slot.disk!, m.ioStats, m.noDiskCache ? false : undefined);
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
@@ -402,7 +408,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   savedFlash = await flash;
   // The units' credentials (the keyboard layout, the network's settings) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
   const keys = keyboardLayout(m.keyLayout);
-  const units = [...(keys ? keyboardCredentials(keys) : []), ...(net ? netCredentials() : [])];
+  const units = [...(keys ? keyboardCredentials(keys) : []), ...(net ? netCredentials() : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath) : [])];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem] } : undefined;
   if (stopping) return;

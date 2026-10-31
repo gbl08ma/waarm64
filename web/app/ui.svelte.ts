@@ -2,8 +2,9 @@
 // writes here; App.svelte and the components under it read it, and call `page`'s actions, which main.ts provides.
 import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
+import type { Folder, NewFolder } from './folders.ts';
 import type { PowerState } from './protocol.ts';
-import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
+import type { DiskRecord, FolderAttachment, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
 import type { ProblemWords } from './usb-ports.ts';
 import type { LockMode } from '../input.ts';
@@ -14,7 +15,7 @@ export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
 export type PageState = PowerState | 'idle';
 export type Action = { label: string; run: (button: HTMLButtonElement) => void };
-export type MachinesTab = 'settings' | 'disks' | 'network' | 'usb' | 'snapshots';
+export type MachinesTab = 'settings' | 'disks' | 'network' | 'usb' | 'folders' | 'snapshots';
 
 export const ui = $state({
   /** What the toolbar calls the machine. */
@@ -69,6 +70,13 @@ export const ui = $state({
   /** Bumped to open the Network menu (a connection was just attached here: it shows how it goes). */
   netMenu: 0,
   netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number },
+  /**
+   * The page's machine's shared folders (docs/shares.md §4): `on` while it runs with them (the toolbar's Folders menu);
+   * `path` is where the guest finds them; `open` is bumped to open the menu; `tick` when any of it changes.
+   */
+  folders: { on: false, path: '', open: 0, tick: 0 },
+  /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
+  folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
   /**
    * The status bar (web/app/StatusBar.svelte): the last status as JSON (`data`, for tools), the last second's numbers,
@@ -184,5 +192,20 @@ export type Page = {
   netNewAddress(c: Connection): Promise<boolean>;
   /** The name of the machine (in another tab) that has connection `id`. */
   netHolder(id: string): Promise<string | undefined>;
+  /**
+   * Shared folders (docs/shares.md). Attaching, detaching and the list's order are saved at once, running or not; the
+   * page's machine takes them while it runs. `folderPick` opens the browser's picker (from a click).
+   */
+  folderWizard(machine: string | undefined, attached: FolderAttachment[]): void;
+  folderPick(readOnly: boolean): Promise<Folder>;
+  folderCreate(n: NewFolder): Promise<Folder>;
+  folderAttach(machine: string, f: Folder, readOnly: boolean): Promise<void>;
+  folderDetach(machine: string, id: string): Promise<void>;
+  folderMove(machine: string, id: string, by: number): Promise<void>;
+  folderReadOnly(machine: string, id: string, readOnly: boolean): Promise<void>;
+  /** Asks for a folder's grant (from a click). */
+  folderAllow(id: string): Promise<void>;
+  /** Asks the user, then takes a folder another machine has. */
+  folderUseHere(id: string): Promise<void>;
 };
 export const page = {} as Page;

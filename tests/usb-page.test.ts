@@ -136,7 +136,7 @@ test('the ports: attach, refuse, detach all and attach again, a device unplugged
     assert.deepEqual(gone, ['1:Pico:unplugged']);
     // Detach there: tab B asks, A lets it go (the page detaches it), B takes it.
     await ports.attach(1, pico, 'e1');
-    assert.equal(await locksB.takeFrom(usbLock(pico), 2000), true);
+    assert.equal(await locksB.takeFrom(usbLock(pico), { ms: 2000 }), true);
     assert.deepEqual(released, [usbLock(pico)]);
     assert.deepEqual(seen.map((m) => m.type), ['usb-attach', 'usb-attach', 'usb-detach', 'usb-detach', 'usb-attach', 'usb-attach', 'usb-attach', 'usb-attach']);
   } finally {

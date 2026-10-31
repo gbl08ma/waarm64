@@ -20,6 +20,9 @@ if (nav.hid) registerUsbOpener('hid', webHidOpener(nav.hid));
 
 let devices: Devices | undefined;
 
+/** How long a close waits for what the backends hold back, ms. */
+const CLOSE_MS = 2500;
+
 self.onmessage = (e: MessageEvent) => {
   if (e.data.type === 'init') start(e.data as Init).catch((err) => self.postMessage({ type: 'error', message: String(err) }));
   else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' }); // after every earlier message
@@ -45,10 +48,13 @@ self.onmessage = (e: MessageEvent) => {
     }
   }
   else if (e.data.type === 'close') {
-    const stats = devices?.stats(); // the blk devices' timers (spec `stats`), before close
-    devices?.close();
-    self.postMessage({ type: 'closed', stats });
-    self.close();
+    // What the backends hold back (a shared folder's write sessions) lands first, bounded: a host that doesn't answer doesn't keep the page.
+    void Promise.race([devices?.drain().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_MS))]).then(() => {
+      const stats = devices?.stats(); // the blk devices' timers (spec `stats`), before close
+      devices?.close();
+      self.postMessage({ type: 'closed', stats });
+      self.close();
+    });
   }
 };
 

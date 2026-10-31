@@ -6,17 +6,19 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import Check from './Check.svelte';
+  import FoldersMenu from './FoldersMenu.svelte';
   import Network from './Network.svelte';
   import Sound from './Sound.svelte';
   import UsbMenu from './UsbMenu.svelte';
   import type { PageAudio } from '../audio.ts';
+  import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
   import type { Store, SnapshotRecord } from './store.ts';
   import { remember, settings } from './settings.ts';
   import { page, ui, type View } from './ui.svelte.ts';
   import { numaNote } from './machine.ts';
 
-  let { store, audio, net }: { store: Store; audio: PageAudio; net: PageNetwork } = $props();
+  let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
   const running = $derived(ui.state === 'running' || ui.state === 'booting');
   const startLabel = $derived(ui.state === 'off' || ui.state === 'idle' || ui.state === 'suspended' ? 'Start' : ui.state === 'failed' ? 'Retry' : 'Restart');
@@ -132,6 +134,7 @@
   <Sound {audio} />
   {#if ui.hasNetwork}<Network {net} />{/if}
   {#if ui.usb.on}<UsbMenu />{/if}
+  {#if ui.folders.on}<FoldersMenu {folders} />{/if}
   {#if !ui.current}
     <Menu id="machine-menu" icon="cpu" title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart" bind:open={sizeOpen} panel>
       <label>Processors<select id="machine-cpus" bind:value={ncpus}>{#each ui.size.cpuChoices as n (n)}<option value={n}>{n} vCPU{n > 1 ? 's' : ''}</option>{/each}</select></label>
