@@ -74,7 +74,8 @@ export const HELD_FEATURES = ['float32-blendable', 'tier1-storage'];
 
 /**
  * The device's optional features the driver uses (vk/driver/wg_private.h `wg_feature`), and whether there is a device.
- * Bit 14 is storage for texture-formats-tier1's formats, a part of that feature the driver can take apart (`tier1-storage`);
+ * Bit 14 is storage for texture-formats-tier1's formats, on every adapter (without the feature they go by their words:
+ * vk/README.md "Storage images as words") unless held (`tier1-storage`);
  * `MORE_FEATURES` follow it from bit 15 (the translator's: VK3 L5).
  * `hold` names features the driver doesn't take, as if the adapter lacked them (`HELD_FEATURES` with `?gpu=vkformats=held`; `?gpu=vkhold=<name>`).
  */
@@ -86,7 +87,7 @@ export function gpuFeatures(caps: GpuCaps | undefined, device: boolean, hold: re
   let flags = device ? 1 << 31 : 0;
   const has = (f: string) => !!caps?.features.has(f) && !hold.includes(f);
   FEATURES.forEach((f, i) => { if (has(f)) flags |= 1 << i; });
-  if (has('texture-formats-tier1') && !hold.includes('tier1-storage')) flags |= 1 << FEATURES.length;
+  if (caps && !hold.includes('tier1-storage')) flags |= 1 << FEATURES.length;
   MORE_FEATURES.forEach((f, i) => { if (has(f)) flags |= 1 << (FEATURES.length + 1 + i); });
   return flags;
 }

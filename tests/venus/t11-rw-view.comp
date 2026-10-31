@@ -1,0 +1,12 @@
+#version 450
+// tests/venus-driver.test.ts (misc: rwImage): wg_test.c's scenario 41: an RG8 view's texels loaded and stored by one
+// shader, their channels swapped, four invocations sharing each word of the image; what it saw of the view's size kept.
+layout(local_size_x = 2, local_size_y = 2) in;
+layout(set = 0, binding = 0, rg8) uniform image2D img;
+layout(set = 0, binding = 1) buffer B { ivec2 size; } b;
+void main() {
+  ivec2 p = ivec2(gl_LocalInvocationID.xy);
+  vec4 v = imageLoad(img, p);
+  imageStore(img, p, vec4(v.g, v.r, 0.0, 1.0));
+  b.size = imageSize(img);
+}

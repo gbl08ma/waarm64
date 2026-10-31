@@ -35,6 +35,7 @@ struct ctx {
    size_t error_size;
    struct wgsl_info *info;
    const struct wgsl_varyings *fs;
+   bool tier1; /* texture-formats-tier1: storage textures of more formats */
    bool tier2; /* texture-formats-tier2: read-write storage for more formats */
    uint32_t max_uniform_size; /* a uniform block's declared bytes at most (maxUniformBufferBindingSize) */
    bool dual_source; /* dual-source-blending */
@@ -42,8 +43,10 @@ struct ctx {
    bool f16;         /* shader-f16 */
    bool uses_subgroup_ops, uses_sg_inv, uses_sg_size;
    bool uses_texel_buffers;
-   /* Storage images with an atomic in this stage (their index: image_words). */
+   /* Storage images this stage reaches as words (their index, whether it writes them, their format: image_words). */
    unsigned word_images[WGSL_MAX_RESOURCES];
+   bool word_image_written[WGSL_MAX_RESOURCES];
+   uint16_t word_image_format[WGSL_MAX_RESOURCES];
    unsigned word_image_count;
 
    struct res_use res[WGSL_MAX_RESOURCES];
@@ -290,22 +293,31 @@ tex_dim(struct ctx *c, enum glsl_sampler_dim dim, bool array)
    }
 }
 
-/* Whether WebGPU lets a storage texture of this format be bound with `access` (WebGPU's format tables): read-write
- * only for r32 in core and tier2's formats with texture-formats-tier2; bgra8unorm (bgra8unorm-storage) write-only. */
+/* Whether WebGPU lets a storage texture of this format be bound with `access` (WebGPU's format tables): core's formats
+ * read-only and write-only, the others with texture-formats-tier1; read-write only for r32 in core and tier2's formats
+ * with texture-formats-tier2; bgra8unorm (bgra8unorm-storage) write-only. */
 static bool
-storage_access_ok(const char *format, uint8_t access, bool tier2)
+storage_access_ok(const char *format, uint8_t access, bool tier1, bool tier2)
 {
    if (!strcmp(format, "bgra8unorm"))
       return access == WGSL_ACCESS_WRITE;
+   static const char *const r32[] = { "r32uint", "r32sint", "r32float" };
+   for (unsigned i = 0; i < ARRAY_SIZE(r32); i++)
+      if (!strcmp(format, r32[i]))
+         return true;
+   static const char *const core[] = { "rgba8unorm", "rgba8snorm", "rgba8uint", "rgba8sint", "rgba16uint", "rgba16sint",
+                                       "rgba16float", "rg32uint", "rg32sint", "rg32float", "rgba32uint", "rgba32sint",
+                                       "rgba32float" };
+   bool in_core = false;
+   for (unsigned i = 0; i < ARRAY_SIZE(core); i++)
+      in_core |= !strcmp(format, core[i]);
+   if (!in_core && !tier1 && !tier2) /* WebGPU's tier2 brings tier1 */
+      return false;
    if (access != (WGSL_ACCESS_READ | WGSL_ACCESS_WRITE))
       return true;
-   static const char *const core[] = { "r32uint", "r32sint", "r32float" };
    static const char *const t2[] = { "r8unorm", "r8uint", "r8sint", "rgba8unorm", "rgba8uint", "rgba8sint",
                                      "r16uint", "r16sint", "r16float", "rgba16uint", "rgba16sint", "rgba16float",
                                      "rgba32uint", "rgba32sint", "rgba32float" };
-   for (unsigned i = 0; i < ARRAY_SIZE(core); i++)
-      if (!strcmp(format, core[i]))
-         return true;
    for (unsigned i = 0; tier2 && i < ARRAY_SIZE(t2); i++)
       if (!strcmp(format, t2[i]))
          return true;
@@ -362,6 +374,13 @@ storage_format(enum pipe_format f)
    }
 }
 
+bool
+wgsl_image_as_words(unsigned format, uint8_t access, unsigned features)
+{
+   const char *name = storage_format(format);
+   return name && !storage_access_ok(name, access, features & WGSL_TIER1, features & WGSL_TIER2);
+}
+
 static unsigned
 image_dim(struct ctx *c, enum glsl_sampler_dim dim, bool array)
 {
@@ -402,28 +421,39 @@ texel_buffer(struct ctx *c, unsigned index, bool writes)
    c->uses_texel_buffers = true;
 }
 
-/* WGSL has no atomics on textures, so a storage image an atomic reaches is, in that stage, its view's words: a storage
- * buffer (of atomics) at its binding, and at the next the view's parameters, a uniform buffer of two vec4s
+/* WGSL has no atomics on textures, and WebGPU binds most formats' storage textures one way or, without tier1, not at all,
+ * so a storage image an atomic reaches, or one this stage accesses in a way WebGPU's texture of its format doesn't allow,
+ * is in that stage its view's words: a storage buffer at its binding (of atomics where the stage writes it: a store under
+ * a word shares it with other invocations' texels) and at the next the view's parameters, a uniform buffer of two vec4s
  * (p0 = (width, height, depth or layers, words between rows), p1.x = words between slices): the driver's, whose replay
- * keeps the words and the image's textures in step (vk/README.md "Image atomics"). Every access of that binding in the
- * stage goes through them, since the words hold what the image holds there. */
-static bool
-is_word_image(const struct ctx *c, unsigned index)
+ * keeps the words and the image's textures in step (vk/README.md "Storage images as words"). Every access of that
+ * binding in the stage goes through them, the format's encoding printed from its description (declare_word_images). */
+static int
+word_image(const struct ctx *c, unsigned index)
 {
    for (unsigned i = 0; i < c->word_image_count; i++)
       if (c->word_images[i] == index)
-         return true;
-   return false;
+         return i;
+   return -1;
+}
+
+static bool
+is_word_image(const struct ctx *c, unsigned index)
+{
+   return word_image(c, index) >= 0;
 }
 
 static struct res_use *
 image_words(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
 {
-   struct res_use *r = resource(c, index, WGSL_STORAGE);
-   r->r.kind = WGSL_STORAGE;
-   r->r.atomic = r->r.written = r->r.image_words = true;
+   const int w = word_image(c, index);
+   const bool written = w < 0 || c->word_image_written[w]; /* w < 0: an index that isn't constant, failed already */
+   struct res_use *r = resource(c, index, written ? WGSL_STORAGE : WGSL_STORAGE_READ);
+   r->r.kind = written ? WGSL_STORAGE : WGSL_STORAGE_READ;
+   r->r.atomic = r->r.written = written;
+   r->r.image_words = true;
    r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
-   r->r.format = nir_intrinsic_format(intr);
+   r->r.format = w < 0 ? nir_intrinsic_format(intr) : c->word_image_format[w];
    struct res_use *p = resource(c, index + 1, WGSL_UNIFORM);
    p->r.size = 32;
    return r;
@@ -753,17 +783,50 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
 static void
 gather(struct ctx *c, nir_function_impl *impl)
 {
-   /* First which images an atomic reaches: their loads and stores, wherever they are, go by their words. */
+   /* First which images go by their words: how the stage accesses each, wherever it does (image_words). */
+   struct {
+      unsigned index;
+      uint8_t access;
+      uint16_t format;
+      bool atomic;
+   } images[WGSL_MAX_RESOURCES];
+   unsigned image_count = 0;
    nir_foreach_block(block, impl) {
       nir_foreach_instr(instr, block) {
          if (instr->type != nir_instr_type_intrinsic)
             continue;
          nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-         if ((intr->intrinsic == nir_intrinsic_image_atomic || intr->intrinsic == nir_intrinsic_image_atomic_swap) &&
-             nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_BUF && nir_src_is_const(intr->src[0]) &&
-             !is_word_image(c, nir_src_as_uint(intr->src[0])) && c->word_image_count < WGSL_MAX_RESOURCES)
-            c->word_images[c->word_image_count++] = nir_src_as_uint(intr->src[0]);
+         const bool atomic = intr->intrinsic == nir_intrinsic_image_atomic || intr->intrinsic == nir_intrinsic_image_atomic_swap;
+         if (!atomic && intr->intrinsic != nir_intrinsic_image_load && intr->intrinsic != nir_intrinsic_image_store &&
+             intr->intrinsic != nir_intrinsic_image_size)
+            continue;
+         if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF || !nir_src_is_const(intr->src[0]))
+            continue;
+         const unsigned index = nir_src_as_uint(intr->src[0]);
+         unsigned i = 0;
+         while (i < image_count && images[i].index != index)
+            i++;
+         if (i == WGSL_MAX_RESOURCES)
+            continue;
+         if (i == image_count)
+            images[image_count++] = (__typeof__(images[0])){ .index = index };
+         images[i].access |= atomic ? WGSL_ACCESS_READ | WGSL_ACCESS_WRITE
+                             : intr->intrinsic == nir_intrinsic_image_store ? WGSL_ACCESS_WRITE
+                             : intr->intrinsic == nir_intrinsic_image_load ? WGSL_ACCESS_READ : 0;
+         images[i].atomic |= atomic;
+         if (nir_intrinsic_format(intr) != PIPE_FORMAT_NONE)
+            images[i].format = nir_intrinsic_format(intr);
       }
+   }
+   for (unsigned i = 0; i < image_count; i++) {
+      const unsigned features = (c->tier1 ? WGSL_TIER1 : 0) | (c->tier2 ? WGSL_TIER2 : 0);
+      /* An image only asked its size is bound as read-only (declare_resources). */
+      const uint8_t access = images[i].access ? images[i].access : WGSL_ACCESS_READ;
+      if (!images[i].atomic && !wgsl_image_as_words(images[i].format, access, features))
+         continue;
+      c->word_images[c->word_image_count] = images[i].index;
+      c->word_image_written[c->word_image_count] = images[i].access & WGSL_ACCESS_WRITE;
+      c->word_image_format[c->word_image_count++] = images[i].format;
    }
    nir_foreach_block(block, impl) {
       nir_foreach_instr(instr, block) {
@@ -835,10 +898,6 @@ declare_resources(struct ctx *c)
          const char *access = r->access == WGSL_ACCESS_READ    ? "read"
                               : r->access == WGSL_ACCESS_WRITE ? "write"
                                                                : "read_write";
-         /* A shader that loads and stores an image WebGPU gives only one way (VK3 L4c-F): refused (it would make an
-          * invalid module, and its submits would be dropped). */
-         if (storage_format(r->format) && !storage_access_ok(storage_format(r->format), r->access, c->tier2))
-            failf(c, "a %s storage image of format %s", access, storage_format(r->format));
          line(c, "%s var %s: texture_storage_%s<%s, %s>;", at, name, dims[r->dim], storage_format(r->format), access);
          break;
       }
@@ -939,33 +998,167 @@ declare_texel_buffers(struct ctx *c)
    }
 }
 
-/* Storage images as their views' words (image_words). A texel past the view reads 0 and isn't written. */
+/* A channel's bits in a texel's words, w0 and on. */
+static const char *
+channel_bits(struct ctx *c, const struct util_format_channel_description *ch)
+{
+   if (ch->size == 32)
+      return fmt(c, "w%u", ch->shift / 32);
+   return fmt(c, "((w%u >> %uu) & 0x%xu)", ch->shift / 32, ch->shift % 32, (1u << ch->size) - 1);
+}
+
+/* Component `comp` of a texel as a shader loads it, a u32 of its bits. */
+static const char *
+channel_load(struct ctx *c, const struct util_format_description *d, unsigned comp, bool pure)
+{
+   const unsigned s = d->swizzle[comp];
+   if (s == PIPE_SWIZZLE_0)
+      return "0u";
+   if (s == PIPE_SWIZZLE_1)
+      return pure ? "1u" : "0x3f800000u";
+   const struct util_format_channel_description *ch = &d->channel[s];
+   const char *bits = channel_bits(c, ch);
+   switch (ch->type) {
+   case UTIL_FORMAT_TYPE_FLOAT:
+      /* 11- and 10-bit floats are 16-bit ones without a sign and the mantissa's low bits. */
+      return ch->size == 32 ? bits : fmt(c, "wg_f16_to_f32(%s << %uu)", bits, ch->size == 16 ? 0 : 15 - ch->size);
+   case UTIL_FORMAT_TYPE_UNSIGNED:
+      return ch->normalized ? fmt(c, "bitcast<u32>(f32(%s) / %u.0)", bits, (1u << ch->size) - 1) : bits;
+   default: {
+      if (ch->size == 32)
+         return bits;
+      const char *wide = fmt(c, "(bitcast<i32>(%s << %uu) >> %uu)", bits, 32 - ch->size, 32 - ch->size);
+      return ch->normalized ? fmt(c, "bitcast<u32>(max(f32(%s) / %u.0, -1.0))", wide, (1u << (ch->size - 1)) - 1)
+                            : fmt(c, "bitcast<u32>(%s)", wide);
+   }
+   }
+}
+
+/* A channel's bits from the component `v` a shader stores (Vulkan's conversions: normalized values clamped and rounded,
+ * integers cut to the channel). */
+static const char *
+channel_store(struct ctx *c, const struct util_format_channel_description *ch, const char *v)
+{
+   const unsigned mask = ch->size == 32 ? ~0u : (1u << ch->size) - 1;
+   switch (ch->type) {
+   case UTIL_FORMAT_TYPE_FLOAT:
+      return ch->size == 32 ? v
+             : ch->size == 16 ? fmt(c, "wg_f32_to_f16(%s)", v)
+                              : fmt(c, "wg_f32_to_ufloat(%s, %uu)", v, ch->size - 5);
+   case UTIL_FORMAT_TYPE_UNSIGNED:
+      if (ch->normalized)
+         return fmt(c, "u32(clamp(bitcast<f32>(%s), 0.0, 1.0) * %u.0 + 0.5)", v, mask);
+      break;
+   default:
+      if (ch->normalized)
+         return fmt(c, "(bitcast<u32>(i32(floor(clamp(bitcast<f32>(%s), -1.0, 1.0) * %u.0 + 0.5))) & 0x%xu)", v, mask >> 1, mask);
+      break;
+   }
+   return ch->size == 32 ? v : fmt(c, "(%s & 0x%xu)", v, mask);
+}
+
+/* Floats of fewer bits, from and to their 32 bits by hand: WGSL's pack2x16float is indeterminate past 16 bits' range,
+ * and a NaN keeps its bits only so. */
+static void
+declare_small_floats(struct ctx *c)
+{
+   line(c, "fn wg_f16_to_f32(h: u32) -> u32 {");
+   line(c, "  let s = (h & 0x8000u) << 16u; let e = (h >> 10u) & 31u; let m = h & 0x3ffu;");
+   line(c, "  if (e == 31u) { return s | 0x7f800000u | (m << 13u); }");
+   line(c, "  if (e == 0u) { return s | bitcast<u32>(f32(m) * 5.9604644775390625e-8); }");
+   line(c, "  return s | ((e + 112u) << 23u) | (m << 13u);");
+   line(c, "}");
+   line(c, "fn wg_f32_to_f16(f: u32) -> u32 {");
+   line(c, "  let s = (f >> 16u) & 0x8000u; let e = (f >> 23u) & 255u; let m = f & 0x7fffffu;");
+   line(c, "  if (e == 255u) { return s | 0x7c00u | select(0u, 0x200u, m != 0u); }");
+   line(c, "  if (e < 102u) { return s; }");
+   line(c, "  if (e <= 112u) { let w = m | 0x800000u; let n = 126u - e; return s | ((w >> n) + ((w >> (n - 1u)) & 1u)); }");
+   line(c, "  return s | min((((e - 112u) << 10u) | (m >> 13u)) + ((m >> 12u) & 1u), 0x7c00u);");
+   line(c, "}");
+   line(c, "fn wg_f32_to_ufloat(f: u32, mantissa: u32) -> u32 {");
+   line(c, "  if ((f & 0x7fffffffu) > 0x7f800000u) { return (32u << mantissa) - 1u; }");
+   line(c, "  if ((f >> 31u) != 0u) { return 0u; }");
+   line(c, "  let n = 10u - mantissa;");
+   line(c, "  return min((wg_f32_to_f16(f) + (1u << (n - 1u))) >> n, 31u << mantissa);");
+   line(c, "}");
+}
+
+/* Storage images as their views' words (image_words). A texel past the view reads 0 and isn't written. A texel of a word
+ * or more is at a whole word; under a word, `wg_im_word` gives bytes, and a store is two atomics on the word, as a 16-bit
+ * store to a storage buffer is: another invocation's texel may share it. */
 static void
 declare_word_images(struct ctx *c)
 {
+   bool small_floats = false;
    for (unsigned i = 0; i < c->res_count; i++) {
       const struct wgsl_resource *r = &c->res[i].r;
       if (!r->image_words)
          continue;
-      const char *words = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
+      const struct util_format_description *d = util_format_description((enum pipe_format)r->format);
+      const unsigned bytes = d->block.bits / 8, words = DIV_ROUND_UP(bytes, 4);
+      const bool writes = r->kind == WGSL_STORAGE, pure = util_format_is_pure_integer((enum pipe_format)r->format);
+      const char *array = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
       const char *name = fmt(c, "%u_%u", r->group, r->binding);
       const bool is_signed = c->res[i].signed_atomic;
+      for (unsigned k = 0; k < d->nr_channels; k++)
+         small_floats |= d->channel[k].type == UTIL_FORMAT_TYPE_FLOAT && d->channel[k].size < 32;
       line(c, "fn wg_im_size_%s() -> vec3<u32> { return %s[0].xyz; }", name, params);
       line(c, "fn wg_im_word_%s(x: i32, y: i32, z: i32) -> u32 {", name);
       line(c, "  let p0 = %s[0]; let a = vec3<u32>(bitcast<u32>(x), bitcast<u32>(y), bitcast<u32>(z));", params);
       line(c, "  if (any(a >= p0.xyz)) { return 0xffffffffu; }");
-      line(c, "  return a.x + a.y * p0.w + a.z * %s[1].x;", params);
+      if (bytes < 4)
+         line(c, "  return a.x * %uu + (a.y * p0.w + a.z * %s[1].x) * 4u;", bytes, params);
+      else
+         line(c, "  return a.x * %uu + a.y * p0.w + a.z * %s[1].x;", words, params);
       line(c, "}");
+      /* The word at `i`, as a u32. */
+      const char *word = writes ? fmt(c, "%s(atomicLoad(&%s[%%s]))", is_signed ? "bitcast<u32>" : "", array)
+                                : fmt(c, "%s[%%s]", array);
       line(c, "fn wg_im_load_%s(x: i32, y: i32, z: i32) -> vec4<u32> {", name);
-      line(c, "  let w = wg_im_word_%s(x, y, z);", name);
-      line(c, "  if (w == 0xffffffffu) { return vec4<u32>(0u); }");
-      line(c, "  return vec4<u32>(%s(atomicLoad(&%s[w])), 0u, 0u, 1u);", is_signed ? "bitcast<u32>" : "", words);
+      line(c, "  let a = wg_im_word_%s(x, y, z);", name);
+      line(c, "  if (a == 0xffffffffu) { return vec4<u32>(0u); }");
+      if (bytes < 4) {
+         line(c, "  let w0 = %s >> ((a & 3u) * 8u);", fmt(c, word, "a >> 2u"));
+      } else {
+         for (unsigned k = 0; k < words; k++)
+            line(c, "  let w%u = %s;", k, fmt(c, word, fmt(c, "a + %uu", k)));
+      }
+      line(c, "  return vec4<u32>(%s, %s, %s, %s);", channel_load(c, d, 0, pure), channel_load(c, d, 1, pure),
+           channel_load(c, d, 2, pure), channel_load(c, d, 3, pure));
       line(c, "}");
-      line(c, "fn wg_im_store_%s(x: i32, y: i32, z: i32, v: u32) {", name);
-      line(c, "  let w = wg_im_word_%s(x, y, z);", name);
-      line(c, "  if (w != 0xffffffffu) { atomicStore(&%s[w], %s(v)); }", words, is_signed ? "bitcast<i32>" : "");
+      if (!writes)
+         continue;
+      line(c, "fn wg_im_store_%s(x: i32, y: i32, z: i32, v: vec4<u32>) {", name);
+      line(c, "  let a = wg_im_word_%s(x, y, z);", name);
+      line(c, "  if (a == 0xffffffffu) { return; }");
+      for (unsigned k = 0; k < words; k++) {
+         const char *e = "0u";
+         for (unsigned j = 0; j < d->nr_channels; j++) {
+            const struct util_format_channel_description *ch = &d->channel[j];
+            if (ch->shift / 32 != k)
+               continue;
+            unsigned comp = 0;
+            while (comp < 4 && d->swizzle[comp] != j)
+               comp++;
+            if (comp == 4)
+               continue;
+            const char *bits = channel_store(c, ch, fmt(c, "v.%c", "xyzw"[comp]));
+            const unsigned low = ch->shift % 32;
+            e = !strcmp(e, "0u") ? (low ? fmt(c, "(%s << %uu)", bits, low) : bits)
+                : fmt(c, "%s | (%s << %uu)", e, bits, low);
+         }
+         if (bytes < 4) {
+            line(c, "  let s = (a & 3u) * 8u;");
+            line(c, "  atomicAnd(&%s[a >> 2u], ~(0x%xu << s));", array, (1u << (bytes * 8)) - 1);
+            line(c, "  atomicOr(&%s[a >> 2u], (%s) << s);", array, e);
+         } else {
+            line(c, "  atomicStore(&%s[a + %uu], %s(%s));", array, k, is_signed ? "bitcast<i32>" : "", e);
+         }
+      }
       line(c, "}");
    }
+   if (small_floats)
+      declare_small_floats(c);
 }
 
 static const char *
@@ -2064,8 +2257,12 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          return;
       }
       if (is_word_image(c, index)) {
-         line(c, "wg_im_store_%u_%u(%s, %s);", index >> 16, index & 0xffff, word_coords(c, intr, &intr->src[1]),
-              src_comp(c, &intr->src[3], 0));
+         nir_src *value = &intr->src[3];
+         const unsigned n = value->ssa->num_components;
+         const char *v = n == 4 ? src_name(c, value)
+                         : n == 1 ? fmt(c, "vec4<u32>(%s, 0u, 0u, 0u)", src_name(c, value))
+                                  : fmt(c, "vec4<u32>(%s, %s)", src_name(c, value), n == 2 ? "0u, 0u" : "0u");
+         line(c, "wg_im_store_%u_%u(%s, %s);", index >> 16, index & 0xffff, word_coords(c, intr, &intr->src[1]), v);
          return;
       }
       const char *xy, *layer;
@@ -2496,6 +2693,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       .error_size = error_size,
       .info = info,
       .fs = nir->info.stage == MESA_SHADER_VERTEX ? fs : NULL,
+      .tier1 = features & WGSL_TIER1,
       .tier2 = features & WGSL_TIER2,
       .max_uniform_size = o->max_uniform_size ? o->max_uniform_size & ~15u : 65536,
       .dual_source = features & WGSL_DUAL_SOURCE,

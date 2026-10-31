@@ -1,0 +1,29 @@
+// VK4 T11: libplacebo's compute path on a format WebGPU gives one way (bench/vulkan/REPORT.md "VK4 T11"): a storage
+// texture of rg16f, which no tier of WebGPU loads and stores as a texture, loaded and stored by both hooks; the second
+// paints what it found, so a picture of (0.25, 0.75, 0) says the first hook's stores reached the second's loads.
+//!TEXTURE WGRW
+//!SIZE 64 64
+//!FORMAT rg16f
+//!STORAGE
+
+//!HOOK MAIN
+//!BIND HOOKED
+//!BIND WGRW
+//!COMPUTE 8 8
+void hook() {
+  ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+  vec4 old = imageLoad(WGRW, p % 64);
+  imageStore(WGRW, p % 64, vec4(0.25, 0.75, 0.0, 0.0) + 0.0 * old);
+  imageStore(out_image, p, HOOKED_tex(HOOKED_pos));
+}
+
+//!HOOK MAIN
+//!BIND HOOKED
+//!BIND WGRW
+//!COMPUTE 8 8
+void hook() {
+  ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+  vec4 v = imageLoad(WGRW, p % 64);
+  imageStore(WGRW, p % 64, v);
+  imageStore(out_image, p, vec4(v.r, v.g, 0.0, 1.0));
+}

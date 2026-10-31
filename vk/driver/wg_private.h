@@ -55,8 +55,8 @@ enum wg_feature {
    WG_FEATURE_RG11B10_RENDER = 1 << 11, /* rg11b10ufloat-renderable */
    WG_FEATURE_FLOAT32_BLEND = 1 << 12, /* float32-blendable */
    WG_FEATURE_BGRA8_STORAGE = 1 << 13, /* bgra8unorm-storage */
-   WG_FEATURE_TIER1_STORAGE = 1 << 14, /* storage for tier1's formats: the worker sets it with texture-formats-tier1 unless
-                                        * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
+   WG_FEATURE_TIER1_STORAGE = 1 << 14, /* storage offered for tier1's formats: the worker sets it unless held back
+                                        * (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
    WG_FEATURE_SWIZZLE = 1 << 17,       /* texture-component-swizzle (image views' component mappings) */
@@ -138,6 +138,8 @@ enum wg_format_flags {
    WG_FMT_TIER1 = 1 << 18,      /* the format itself only with texture-formats-tier1 (16-bit normalized) */
    WG_FMT_RG11B10 = 1 << 19,    /* render and blend with rg11b10ufloat-renderable */
    WG_FMT_BGRA8 = 1 << 20,      /* storage with bgra8unorm-storage */
+   /* WebGPU has storage textures of it. WG_FMT_STORAGE alone: offered for storage all the same, by the image's words. */
+   WG_FMT_STORAGE_TEXTURE = 1 << 21,
 };
 
 struct wg_texture_format {
@@ -194,6 +196,8 @@ struct wg_device {
    struct list_head shared_memories;
    /* Linear images bound to host-visible memory (wg_image.linear_link): the guest reads and writes their bytes there. */
    struct list_head linear_images;
+   /* Shared images with words (wg_image.words_link): a submit's writes to the words go back to the texture others read. */
+   struct list_head shared_words;
    /* Submits whose work isn't done yet, oldest first (struct wg_submit). */
    struct list_head pending;
    /* Submits held for a timeline value nothing has signalled or will signal yet (wg_cmd.c `struct held`), oldest
@@ -308,8 +312,9 @@ struct wg_image {
       uint32_t plane;
    } aliases[WG_IMAGE_ALIASES];
    uint16_t *valid;
-   /* Atomics reach a storage image as words in a buffer (VK4 T7; vk/README.md "Image atomics"), made at their first
+   /* A storage image can go by words in a buffer (VK4 T7, T11; vk/README.md "Storage images as words"), made at their first
     * binding: rows 256-aligned as WebGPU's copies want them, a level and a slice at whole rows from `words_at[level]`. */
+   struct list_head words_link; /* a shared image's, on wg_device.shared_words */
    uint32_t words;
    uint64_t words_at[15];
    /* A multi-planar format's planes (VK3 L7.2), each a texture of its own (plane 0's are `tex` and `fmt` above), and
@@ -344,12 +349,14 @@ wg_atomic_format(VkFormat format)
 {
    return format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R32_SINT;
 }
-/* The image's words (made at the first call), a row's bytes at a level. */
+/* Whether a storage image of this format can go by its words (atomics, or an access WebGPU has no texture for). */
+bool wg_storage_words(VkFormat format);
+/* The image's words (made at the first call), a row's bytes and the rows of a slice at a level. */
 uint32_t wg_image_words(struct wg_image *image);
 static inline uint32_t
 wg_image_row_bytes(const struct wg_image *image, uint32_t level)
 {
-   return align(u_minify(image->vk.extent.width, level) * 4, 256);
+   return align(DIV_ROUND_UP(u_minify(image->vk.extent.width, level), image->fmt->bw) * image->fmt->bytes, 256);
 }
 /* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
 void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);

@@ -15,6 +15,7 @@
 //   <tag>-diag.txt, with gdb's stacks if the guest has gdb; DIAG=<n> its last n lines, DIAG_GREP=<re> those matching, DIAG_FROM=<re>
 //   the first n from the first line matching; MPV_ENV='VAR=x …' sets mpv's environment, GUEST_ENV='VAR=x …' adds lines to
 //   the guest's /etc/environment (shot.sh reads it), PRE='cmd' runs as root first, DISK2 replaces the media disk's URL);
+//   LOG_GREP=<re> keeps those lines of mpv's log with the 50 before each, in order (`placebo`, its complaints by default);
 //   each arm records mpv's exit (`mpvExit`: 0 by itself, 124/137 ended by the limit), and CHECK=1 fails the run when an
 //   arm's mpv didn't exit by itself (VK3 L4e: on SwiftShader the session's first mpv on Vulkan without the desktop
 //   image's VN_PERF=no_async_present);
@@ -151,7 +152,7 @@ chmod 755 /root/shot.sh /home/arch/shot.lua`);
     // shot.sh's own words are the last two: a killed mpv (VK3 L4d: one that doesn't exit) puts the shell's "Killed" before them.
     const [, size, hw] = /(\d{1,4},\d{1,4}) (\d+)\s*$/.exec(line) ?? [, line.trim(), '0'];
     // libplacebo's own complaints (its advanced path: "Failed creating FBO texture", "Failed dispatching scaler").
-    const placebo = (await s.run(`grep -iE 'disabling|failed|error' /tmp/${tag}.log | sort | uniq -c | head -20 | tr '\\n' ';'`)).trim();
+    const placebo = (await s.run(`grep ${process.env.LOG_GREP ? '-B50 ' : ''}-iE '${process.env.LOG_GREP ?? 'disabling|failed|error'}' /tmp/${tag}.log | ${process.env.LOG_GREP ? 'head -80' : 'sort | uniq -c | head -20'} | tr '\\n' ';'`)).trim();
     const venus = (await s.display()).renderer?.venus as { submits?: number; perSubmit?: Record<string, number> } | undefined;
     // An arm that asked for VA-API and didn't get it (VK3 L4d saw one): mpv's own log's end, to tell why.
     const mpvLog = hw !== '1' && a.includes('vaapi') ? (await s.run(`tail -n 40 /tmp/${tag}.log | cut -c1-200; cat /tmp/${tag}.out 2>/dev/null | head -5`)).trim() : undefined;

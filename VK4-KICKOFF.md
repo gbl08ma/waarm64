@@ -182,7 +182,11 @@ T2–T14; the rest of the order is judgement, said with each.
 - **T11. Storage images WebGPU gives one way** (M–L): load and store of a format WebGPU allows only one way (most
   formats without tier2) fails the stage. A storage buffer of the texels with the format's encode and decode in the
   shader. *Done:* the cases, libplacebo's compute paths on such formats. *Start:* backlog "Storage images WebGPU
-  gives one way".
+  gives one way". **Done 2026-10-31** (REPORT.md "VK4 T11"): such an image is, in that stage, its view's words (T7's), any format's encoding
+  printed from its description; tier1's formats offered on every adapter, by words where WebGPU has no storage texture of them, so SwiftShader
+  runs the encodings. No dEQP-VK case had the cause (1,156 of a sample were not supported, none failed): 194 to 426 passes of it, 0 failures, the
+  list 21,198 → 23,083, all of 3,481 new passes on the M4. libplacebo's compute on `rg16f` right on both hosts (refused before). Left: backlog
+  "Storage images as words' leftovers"; the words' cost on a program unmeasured.
 - **T12. The smaller rendering gaps** (S each, one task): queries (clears counted inside an occlusion query, two
   pools in one pass), depth clamping without clipping, 3D images through 2D views, feedback loops through an input
   attachment, indirect fans, the M4's 7 Metal-only failures, vkQuake's 1.7%; T1's smaller causes (clears of image

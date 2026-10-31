@@ -966,15 +966,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     format (images do: 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases NotSupported; advertising them
     for images needs the image's format at the bind); storage texel buffers of formats under a word (r8, rg8, r16) and
     texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
-  - **Storage images WebGPU gives one way** (VK3 L4c-F refuses them): a shader that loads and stores an image of a
-    format WebGPU allows only read-only or write-only (every format but r32's without `texture-formats-tier2`, and
-    rg8/rg16/rg32, the snorm and 16-bit unorm formats, `rgb10a2*`, `rg11b10ufloat` even with it) fails its stage, and
-    a read-only `bgra8unorm` too; so does a pipeline whose stages access one storage image differently (no test of its
-    own: the refusal is the translation failures' path). The formats stay advertised as `STORAGE_IMAGE`, since their
-    write-only and read-only uses are right; a full fix would bind such an image as a storage buffer of its texels
-    (the format's encode and decode in the shader, a copy in and out around the pass), or advertise per-use what can't
-    be advertised per-format. With `texture-formats-tier2` tier2's formats are read-write (VK3 L5: checked on the
-    Mac).
+  - **Storage images as words' leftovers** (VK4 T11; vk/README.md "Storage images as words"): a view past
+    `maxStorageBufferBindingSize` makes an invalid bind group, its submit dropped (WebGPU's minimum is 128 MiB: a 4096x4096
+    `rgba16float` level, loaded and stored); a stage of many such images meets the storage and uniform buffers a stage has
+    (refused, saying why, where it doesn't fit: `wg_bindings_fit`); two views of one image bound writable in one scope
+    (WebGPU's writable aliasing, as "Usage scopes' leftovers"); a vertex stage reading a storage image the fragment stage
+    writes stays refused (a second binding of the same image would take it); planes of multi-planar images aren't words; a
+    shared image's flush has no test of its own; the words' and copies' cost on a real program is unmeasured (`rw.hook` shows
+    it working, nothing in the images leans on it). With words, the formats Vulkan's storage doesn't need (sRGB, packed
+    16-bit) and `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` for images become possible: a word binding needs
+    the view's format at the bind, or a variant per format.
+  - **`mismatched_formats`** (VK4 T11): a shader whose format isn't its view's (Vulkan leaves the values undefined): the bind
+    group is invalid (WebGPU wants the layout's format) and its submit dropped, where dEQP-VK only asks that nothing crashes:
+    not in the list, though they pass. A variant by the view's format, or words, would keep the rest of the submit.
+  - **Storage images' cases failing before T11** (VK4 T11: the same on a build without it, 27 of a sample): `robustness.image_robustness`'s
+    out-of-bounds accesses (`sampled_image` of `1d_array` and `3d`, `storage_image` of `r32f`), and `memory_model.message_passing.ext`'s
+    `atomicwrite` with an image as the guard (invocations seeing the guard but not the payload). Neither group is in the list.
   - **Transfers**: VK3 L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left, not looked into: a 4-sample
     `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255),
     `push_constant.graphics_pipeline.overwrite`.

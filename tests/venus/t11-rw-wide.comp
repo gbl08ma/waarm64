@@ -1,0 +1,11 @@
+#version 450
+// tests/venus-driver.test.ts (misc: rwImageWide): wg_test.c's scenario 42: as t11-rw-view.comp, of 8 bytes a texel.
+layout(local_size_x = 2, local_size_y = 2) in;
+layout(set = 0, binding = 0, rg32f) uniform image2D img;
+layout(set = 0, binding = 1) buffer B { ivec2 size; } b;
+void main() {
+  ivec2 p = ivec2(gl_LocalInvocationID.xy);
+  vec4 v = imageLoad(img, p);
+  imageStore(img, p, vec4(v.g, v.r, 0.0, 1.0));
+  b.size = imageSize(img);
+}

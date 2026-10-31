@@ -13,7 +13,7 @@
 #define CS (WG_FMT_COLOR | WG_FMT_SAMPLE)
 #define FL (WG_FMT_FILTER)
 #define RB (WG_FMT_RENDER | WG_FMT_BLEND)
-#define ST (WG_FMT_STORAGE)
+#define ST (WG_FMT_STORAGE | WG_FMT_STORAGE_TEXTURE)
 #define U (WG_FMT_UINT)
 #define S (WG_FMT_SINT)
 #define T1R (WG_FMT_T1_RENDER)
@@ -123,13 +123,23 @@ wg_format_init(uint32_t features)
          f->flags |= WG_FMT_RENDER | WG_FMT_BLEND;
       /* Both off by default (the worker holds them back: web/venus-gpu.ts `HELD_FEATURES`, mpv's VA-API chroma on the
        * M4 under libplacebo's advanced rendering, VK3 L4); `?gpu=vkformats=all` passes them on. */
+      /* Offered unless held, on an adapter without tier1 too: such an image goes by its words (vk/README.md). */
       if ((features & WG_FEATURE_TIER1_STORAGE) && (f->flags & WG_FMT_T1_STORAGE))
-         f->flags |= WG_FMT_STORAGE;
+         f->flags |= WG_FMT_STORAGE | (tier1 ? WG_FMT_STORAGE_TEXTURE : 0);
       if ((features & WG_FEATURE_FLOAT32_BLEND) && (f->flags & WG_FMT_FLOAT32))
          f->flags |= WG_FMT_BLEND;
       if ((features & WG_FEATURE_BGRA8_STORAGE) && (f->flags & WG_FMT_BGRA8))
-         f->flags |= WG_FMT_STORAGE;
+         f->flags |= WG_FMT_STORAGE | WG_FMT_STORAGE_TEXTURE;
    }
+}
+
+bool
+wg_storage_words(VkFormat format)
+{
+   const unsigned features = ((device_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
+                             ((device_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0);
+   return wg_atomic_format(format) ||
+          wgsl_image_as_words(vk_format_to_pipe_format(format), WGSL_ACCESS_READ | WGSL_ACCESS_WRITE, features);
 }
 
 const struct wg_texture_format *

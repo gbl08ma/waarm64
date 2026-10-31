@@ -91,7 +91,7 @@ struct wgsl_resource {
    bool written;          /* storage buffers: the stage writes it (what the driver reads back of host-visible memory;
                            * the kind is the declared access: atomics' are read_write written or not) */
    bool nonfiltering;     /* samplers: bound as non-filtering (the driver's, for unfilterable views) */
-   bool image_words;      /* a storage image with atomics, as its view's words (kind WGSL_STORAGE, its parameters a
+   bool image_words;      /* a storage image as its view's words (kind WGSL_STORAGE, or _READ if the stage only reads it; its parameters a
                            * uniform buffer at the next binding: wgsl_print.c `image_words`); `dim`, `format` as a
                            * storage texture's */
    uint8_t access;        /* storage textures */
@@ -207,6 +207,11 @@ void wgsl_link(nir_shader *vs, nir_shader *fs);
 #define WGSL_DUAL_SOURCE (1u << 1) /* dual-source-blending */
 #define WGSL_SUBGROUPS   (1u << 2) /* subgroups (as wgsl_lower's subgroup_size over 1) */
 #define WGSL_F16         (1u << 3) /* shader-f16 */
+#define WGSL_TIER1       (1u << 4) /* texture-formats-tier1 */
+
+/* Whether a stage's `access` (WGSL_ACCESS_*) of a storage image of this enum pipe_format goes by the image's words,
+ * WebGPU having no storage texture of the format with that access. */
+bool wgsl_image_as_words(unsigned format, uint8_t access, unsigned features);
 
 /* What a stage is printed for besides itself. */
 struct wgsl_print_options {
@@ -218,7 +223,7 @@ struct wgsl_print_options {
    uint32_t max_workgroup_storage;
    /* WebGPU's maxUniformBufferBindingSize: a uniform block's declared bytes at most (0: 65536). */
    uint32_t max_uniform_size;
-   /* The device's WGSL_* (WGSL_TIER2: read-write storage images of more formats; WGSL_DUAL_SOURCE: @blend_src). */
+   /* The device's WGSL_* (WGSL_TIER1, WGSL_TIER2: what storage textures of which formats allow; WGSL_DUAL_SOURCE: @blend_src). */
    unsigned features;
    /* What a variant's samplers need of the shader (none: the stage's own module). */
    const struct wgsl_sampler_key *keys;

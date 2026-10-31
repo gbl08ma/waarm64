@@ -593,6 +593,7 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
    list_inithead(&dev->host_memories);
    list_inithead(&dev->address_memories);
    list_inithead(&dev->linear_images);
+   list_inithead(&dev->shared_words);
    list_inithead(&dev->shared_memories);
    list_inithead(&dev->pending);
    list_inithead(&dev->held);
@@ -1076,7 +1077,7 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 2 | ((flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL)) && !one_d ? 16 : 0);
    if (vi->usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       usage |= 4;
-   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && (flags & WG_FMT_STORAGE))
+   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && (flags & WG_FMT_STORAGE_TEXTURE))
       usage |= 8;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
@@ -1087,8 +1088,8 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    /* A linear image may be bound to host-visible memory: copied to and from it at each submit. */
    if (vi->tiling == VK_IMAGE_TILING_LINEAR)
       usage |= 1 | 2;
-   /* Atomics reach such an image as words, copied to and from its texture (VK4 T7). */
-   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_atomic_format(fmt->vk))
+   /* Such an image can go by its words, copied to and from its texture (VK4 T7, T11). */
+   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_storage_words(fmt->vk))
       usage |= 1 | 2;
    /* A mutable image's textures of different formats copy between them (VK4 T4), and its usage may be its views'. */
    if (vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) {
@@ -1179,8 +1180,8 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
                                                   .extent = { image->vk.extent.width, image->vk.extent.height },
                                                   .size = image->size };
    }
-   /* Atomics can reach it as words: commands recorded before its view count. */
-   if ((image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_atomic_format(image->vk.format))
+   /* It can go by its words: commands recorded before its view count. */
+   if ((image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_storage_words(image->vk.format))
       image_track(dev, image);
    *pImage = wg_image_to_handle(image);
    return VK_SUCCESS;
@@ -1200,6 +1201,10 @@ wg_image_words(struct wg_image *image)
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)at, 0x80 | 4 | 8); /* STORAGE | COPY_* */
       image->words = wg_create_json(WG_KIND_BUFFER, &j);
+      if (image->shared) {
+         struct wg_device *dev = container_of(image->vk.base.device, struct wg_device, vk);
+         list_addtail(&image->words_link, &dev->shared_words);
+      }
    }
    return image->words;
 }
@@ -1212,7 +1217,7 @@ image_alias(struct wg_device *dev, struct wg_image *image, uint32_t plane, VkFor
    const struct wg_texture_format *own = image->planes[plane].fmt, *view = wg_texture_format(format);
    /* A storage view of an sRGB image's linear twin: WebGPU's usage is the texture's, and sRGB formats have no storage. */
    const bool storage = (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && image->vk.samples == 1 && view &&
-                        (view->flags & WG_FMT_STORAGE) && !(own->flags & WG_FMT_STORAGE);
+                        (view->flags & WG_FMT_STORAGE_TEXTURE) && !(own->flags & WG_FMT_STORAGE_TEXTURE);
    if (view_format_ok(own->vk, format) && !storage)
       return 0;
    for (uint32_t i = 0; i < image->alias_count; i++)
@@ -1256,6 +1261,8 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
    }
    if (image->linear_host)
       list_del(&image->linear_link);
+   if (image->shared && image->words)
+      list_del(&image->words_link);
    if (image->imported)
       gpu_texture_import(image->tex, 0);
    wg_id_release(image->tex);
@@ -1426,8 +1433,8 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    view->fmt = wg_texture_format(view->vk.view_format);
    if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
       view->alias = image_alias(dev, image, 0, view->vk.view_format);
-   /* A mutable image's view atomics can reach. */
-   if ((view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_atomic_format(view->vk.view_format))
+   /* A mutable image's view that can go by the words. */
+   if ((view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_storage_words(view->vk.view_format))
       image_track(dev, image);
    const uint32_t tex = view->alias ? image->aliases[view->alias - 1].tex : image->tex;
    /* A depth or stencil aspect of a combined format is the image's format with an aspect in WebGPU (the runtime's

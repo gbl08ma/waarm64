@@ -2666,12 +2666,13 @@ view_words(const struct wg_image_view *v, uint32_t *buffer, VkDeviceSize *at, Vk
 {
    struct wg_image *image = container_of(v->vk.image, struct wg_image, vk);
    *buffer = wg_image_words(image);
-   const uint32_t m = v->vk.base_mip_level, row = wg_image_row_bytes(image, m), h = u_minify(image->vk.extent.height, m);
+   const uint32_t m = v->vk.base_mip_level, row = wg_image_row_bytes(image, m);
+   const uint32_t h = DIV_ROUND_UP(u_minify(image->vk.extent.height, m), image->fmt->bh);
    const bool is3d = v->vk.view_type == VK_IMAGE_VIEW_TYPE_3D;
    const uint32_t n = is3d ? u_minify(image->vk.extent.depth, m) : v->vk.layer_count;
    *at = image->words_at[m] + (VkDeviceSize)row * h * (is3d ? 0 : v->vk.base_array_layer);
    *size = (VkDeviceSize)row * h * n;
-   params[0] = u_minify(image->vk.extent.width, m), params[1] = h, params[2] = n;
+   params[0] = DIV_ROUND_UP(u_minify(image->vk.extent.width, m), image->fmt->bw), params[1] = h, params[2] = n;
    params[3] = row / 4, params[4] = row / 4 * h;
 }
 
@@ -2769,11 +2770,11 @@ image_use(struct replay *r, const struct op_image_use *u)
             end_pass(r);
             if (to_words || from_words) {
                const uint32_t words = wg_image_words(image), row = wg_image_row_bytes(image, m);
-               const double at = image->words_at[m] + (double)row * h * l;
+               const double at = image->words_at[m] + (double)row * rows * l;
                if (to_words)
-                  gpu_copy_tb(words, at, row, h, src, m, 0, 0, l, w, h, d, 0);
+                  gpu_copy_tb(words, at, row, rows, src, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0);
                else
-                  gpu_copy_bt(words, at, row, h, dst, m, 0, 0, l, w, h, d, 0);
+                  gpu_copy_bt(words, at, row, rows, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0);
             } else {
                gpu_copy_tt(src, m, 0, 0, l, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0, cols * f->bw,
                            rows * f->bh, cols, rows, f->bytes);
@@ -2801,7 +2802,7 @@ bind_images(struct replay *r, const struct op_bind *b)
       if (!image || !image->valid)
          continue;
       const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
-      const bool write = res->image_words || (res->kind == WGSL_STORAGE_TEXTURE && res->access != WGSL_ACCESS_READ);
+      const bool write = res->image_words ? res->written : res->kind == WGSL_STORAGE_TEXTURE && res->access != WGSL_ACCESS_READ;
       for (uint32_t i = 0; i < MAX2(v->plane_count, 1); i++)
          util_dynarray_append_typed(&r->images, struct op_image_use,
                                     ((struct op_image_use){ image, v->first_plane + i,
@@ -4228,6 +4229,11 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
       r.dirty = RD_ALL;
    }
    linear_images(dev, false, &r);
+   /* What another renderer reads of a shared image is its texture. */
+   list_for_each_entry (struct wg_image, image, &dev->shared_words, words_link) {
+      const struct op_image_use u = { image, 0, 0, 0, image->vk.mip_levels, 0, wg_image_valid_layers(image), false, false };
+      image_use(&r, &u);
+   }
    /* The bases, then the look at the write-watch and the uploads: queue.writeBuffer, so ahead of the commands. */
    snapshot(s);
    upload(dev);

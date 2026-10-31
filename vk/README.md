@@ -168,20 +168,17 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's, and
-storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
-and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
-its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
-A pipeline whose stages access one storage image differently is refused the same way (one layout entry can't match
-both modules' access), and so is one whose fragment stage writes a storage buffer its vertex stage reads (WebGPU has no
-writable storage in vertex shaders). A pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
+16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's.
+A pipeline whose vertex stage reads a storage image its fragment stage writes is refused (one layout entry can't match
+both modules' access, and WebGPU has no writable storage in vertex shaders), and so is one whose fragment stage writes a
+storage buffer its vertex stage reads. A pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
 pipeline without waiting for its result, and a pipeline that failed would fail the guest's whole context.
 
 `tests/wgsl.test.ts` runs VK0's scene's shaders (glslc) and VK1 step 1's 108 stages (`target/vk1/spirv`, dumped by
 `SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 124 of 127
 translate (0.47 ms a stage at the median in Node, 28 ms GTK4's largest) and all 124 compile in Chromium; the three
 others are vkQuake's variants for a device with 16-bit floats (dumped through the Mac profile: translated for
-SwiftShader, without `shader-f16`, two stop at their 16-bit arithmetic, the other at a read-write `rg16float` storage image (T11's); its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
+SwiftShader, without `shader-f16`, all three stop at their 16-bit arithmetic; its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
 WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's runs of translated compute shaders
 (`runCompute`: subgroup operations against each subgroup's members, 16-bit storage, scratch arrays).
 **Subgroups on Metal** (Chromium 153 on the M4): a ballot that is an `if`'s only subgroup operation is computed with
@@ -226,7 +223,7 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
 `sampleRateShading`; "The shader path"); ANGLE's row (VK3 L7.4): the last vertex provoking, transform feedback and
 uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5): draw parameters;
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
-  `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
+  from the features; `shaderStorageImageExtendedFormats` unless held (below; an adapter without tier1 backs it by words: "Storage images as words"); `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
   translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
@@ -251,7 +248,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   SwiftShader's recorded adapters.
 - **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
   tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
-  `shaderStorageImageExtendedFormats`). Either gives mpv's libplacebo a family of FBO formats (32-bit floats, or
+  `shaderStorageImageExtendedFormats`; set on every adapter unless held). Either gives mpv's libplacebo a family of FBO formats (32-bit floats, or
   16-bit floats with tier1's storage), and with them its advanced rendering (scalers, debanding, its frame cache). The
   driver takes both where the adapter has them, by default since VK3 L4e. They were held while mpv's VA-API chroma
   read as zeros on the M4 in about a third of fresh sessions (the window's pages lost between devices, fixed in VK3
@@ -476,18 +473,33 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   **Component swizzles** are WebGPU's (`texture-component-swizzle`): such a view has a twin with the mapping (`sampled`,
   allowed only on a view that's just sampled), which sampled bindings take. Without the feature they are ignored and
   said once: it is in Chromium on every backend, and a fallback in the shader would need texel fetches too.
-- **Image atomics** (VK4 T7; `image_words` in wgsl_print.c, `image_use` in wg_cmd.c): WGSL has no atomics on textures, so a
-  storage image an atomic reaches is, in that stage, its view's words: a storage buffer of atomics at its binding and the
-  view's parameters (`view_word_params`: size, words between rows and slices) a uniform buffer at the next, every load,
-  store and size of that binding going through them (`wg_im_*`; a texel past the view is left alone and reads 0). The
-  buffer is the image's own (`wg_image_words`, made at the first such binding: every level and layer, rows 256-aligned as
-  WebGPU's copies want them) and one more place `wg_image.valid` tracks, alongside the alias textures (below): the scan of
-  a scope's descriptors copies a subresource from its texture before a word binding uses it, and a later use elsewhere
-  copies it back, in the encoder's order, so a program whose images stay words pays one copy. An image of R32_UINT or
-  R32_SINT with storage usage is tracked from its making (a mutable image from such a view), and has the copy usages. Only
-  R32 (`wg_atomic_format`, what Vulkan requires; no float or 64-bit atomics), optimal tiling, no sparse images. A pipeline
-  with atomics on an image in one stage and a texture access of it in another is refused. Within one scope a binding of
-  the words and a binding of the texture don't see each other's writes (as T4's views).
+- **Storage images as words** (VK4 T7, T11; `image_words` and `declare_word_images` in wgsl_print.c, `image_use` in
+  wg_cmd.c). WGSL has no atomics on textures, and WebGPU's storage textures come one way for most formats: read-only and
+  write-only in core or with `texture-formats-tier1`, read-write only for r32's and, with tier2, tier2's list; no format at all
+  of tier1's without it. So a storage image a stage reaches by an atomic, or by an access its format has no texture for
+  (`wgsl_image_as_words`: a load and a store in one stage, or any access of a tier1 format without tier1), is in that
+  stage its view's words: a storage buffer at its binding and the view's parameters (`view_word_params`: size, words
+  between rows and slices) a uniform buffer at the next, every load, store and size of that binding going through them
+  (`wg_im_*`; a texel past the view is left alone and reads 0). The buffer holds the texels as Vulkan lays them out, and
+  the format's encoding is printed from its `util_format_description`: normalized values clamped and rounded, integers cut
+  to the channel, 16-bit and packed floats by hand from their bits (WGSL's `pack2x16float` is indeterminate past its range;
+  a NaN keeps being a NaN). It is `array<atomic<u32>>` where the stage writes it: a texel under a word shares it with other
+  invocations' texels, so such a store is an `atomicAnd` and an `atomicOr`, as a 16-bit store to a storage buffer is; a texel of
+  several words isn't atomic, nor need it be. A stage that only reads it (a tier1 format without tier1) binds it read-only,
+  plain `u32`s, which a vertex stage can too.
+  The buffer is the image's own (`wg_image_words`, made at the first such binding: every level and layer, rows 256-aligned
+  as WebGPU's copies want them) and one more place `wg_image.valid` tracks, alongside the alias textures (below): the scan
+  of a scope's descriptors copies a subresource from its texture before a word binding uses it, and a later use elsewhere
+  copies it back, in the encoder's order, so a program whose images stay words pays one copy. An image of a format that
+  can go by words (`wg_storage_words`) with storage usage is tracked from its making (a mutable image from such a view),
+  and has the copy usages; with tier2, tier2's formats aren't, and r32float never is. A shared image's words go back to its
+  texture at each submit's end, what the other renderer reads (`shared_words`; no test of its own: nothing in the tests
+  reads such a texture without going through the replay). Tier1's formats are offered for storage on every adapter
+  (`WG_FMT_STORAGE`; `WG_FMT_STORAGE_TEXTURE` is what WebGPU binds), which is also how SwiftShader, without tier1, runs
+  every encoding in dEQP-VK. Only R32 takes atomics (`wg_atomic_format`, what Vulkan requires; no float or 64-bit atomics);
+  optimal tiling, no sparse images, no planes of multi-planar images. A pipeline with an image as words in one stage and
+  a texture in another is refused. Within one scope a binding of the words and a binding of the texture don't see each other's
+  writes (as T4's views). libplacebo's compute path on `rg16f`: `bench/vulkan/t11-rw.hook`, bench/vulkan/REPORT.md "VK4 T11".
 - **Inline uniform blocks** (VK4 T7, `wg_descriptor.c`): the binding is one slot, a uniform buffer to the translator and
   to `fold_uniforms`. A set with blocks has their bytes (`inline_data`) and a buffer of its own, each block 256-aligned;
   writes, template updates and copies go into both at once (`gpu_write`, the queue's order: Vulkan forbids updating a set

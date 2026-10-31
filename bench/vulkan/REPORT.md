@@ -771,6 +771,54 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T11: storage images as words — any format loaded and stored, tier1's offered everywhere, libplacebo's compute on `rg16f`
+
+**2026-10-31.** JSON in `results/vk4/t11/`. `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52; `m4/`
+and `mpv-m4/` on the M4 (Metal, Chrome for Testing 153.0.8010.12). `image.*` isn't in `vk-main.txt`: case names from the mustpass
+files in the `webpc-deqp-vk` image. How it works: vk/README.md "Storage images as words".
+
+**No dEQP-VK case had the cause.** T1 counted none, and rightly: every 8th of the `image.*` groups that store (1,350 cases, `before/`) gave
+194 passes, 1,156 not supported and no failure. `load_store` loads one image and stores another, so no case asks for one image both ways
+of a format WebGPU gives one way. What the sample did show: the 1,156 include every one of tier1's formats, because SwiftShader has no
+`texture-formats-tier1`. So the failing-first tests are our own, and the formats' encodings reach CI by offering tier1's formats on every
+adapter, a format WebGPU has no storage texture of going by words for any access. That is more than the task asked, and it is what makes
+dEQP-VK test the encodings on SwiftShader at all.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| the sample, before | 1,350 | 194 | 0 | 1,156 |
+| the sample, after | 1,350 | 426 | 0 | 924 |
+| the storage groups whole and neighbours' samples, after (`wide/`) | 10,947 | 3,618 | 27 | 7,302 |
+| the 27 on a build without T11 (`fails-on-base/`) | 27 | 0 | 27 | 0 |
+| the 3,481 new passes on the M4 (`m4/`) | 3,481 | 3,481 | 0 | 0 |
+
+The 27 aren't T11's: backlog "Storage images' cases failing before T11". The list gains 1,885 (21,198 → 23,083): `format_reinterpret` every 4th, and
+without `mismatched_formats` and `texel_view_compatible`, which pass with a submit dropped (a shader's format not its view's, an uncompressed view of
+ASTC: WebGPU's errors in the run's warnings, dEQP-VK asks nothing of the result).
+
+**A real program.** `bench/vulkan/t11-rw.hook`, an mpv user shader run through `--vo=gpu-next` (libplacebo 7.360.1): a `//!STORAGE` texture of `rg16f`, which no
+tier loads and stores as a texture, written by one compute hook and read by the next, which paints what it found: (0.25, 0.75, 0). Against the same frame
+without the hook, by `mpv-frames.ts`'s greenness (mean G less the mean of R and B):
+
+| | hook | plain | what libplacebo and the driver said |
+|---|---|---|---|
+| without T11, SwiftShader (`mpv-base/`) | 0 | 0 | "a shader didn't translate: a read_write storage image of format rg16float", no picture in either arm |
+| T11, SwiftShader (`mpv-swiftshader/`) | 156.9 | 0.7 | nothing |
+| T11, M4 (`mpv-m4/`) | 157.9 | 0.8 | nothing |
+
+(A first hook of 32x32 invocations failed silently in libplacebo: 1,024 past WebGPU's default 256, ours to the device's limit, not a defect.) One of the three stages of vkQuake's that didn't translate
+stopped at a read-write `rg16float`; it now stops, as the other two, at 16-bit arithmetic on SwiftShader (no `shader-f16`).
+
+**Tests.** `tests/wgsl.test.ts`: 38 rows of formats and ranges against bytes worked out by hand, stored and loaded through Chromium (the refusal's test now asks
+for words). `tests/venus-driver.test.ts` `rwImage`, `rwImageWide`: an image cleared, loaded and stored, copied out, twice, a neighbouring level's clear kept. Planted, each failing: a sub-word store
+unshifted, no sign extension, snorm by the unsigned maximum, a NaN ufloat, words not recorded as written, no copy to the words, rows of 4 bytes a texel. The last and the NaN first
+survived, and got `rwImageWide` (a row only shows past 4 bytes a texel on a wide image) and the out-of-range rows. An older test caught `imageSize` counted as a read, which made a write-only image read-write. A shared
+image's flush has no test: nothing in the tests reads such a texture past the replay.
+
+Not measured: the words' and copies' cost on a real program (nothing in the images leans on them; the hook only shows them right). Next, by promise: views past `maxStorageBufferBindingSize`
+(an invalid bind group today), the view's format at the bind (what `*WithoutFormat` and `mismatched_formats` need), a second binding for a vertex stage reading what the fragment stage writes: backlog
+"Storage images as words' leftovers".
+
 ## VK4 T9: the translator's wrong results — shadow samples past level 0, `textureQueryLod`, offsets, helpers, a dispatch's base
 
 **2026-10-31.** JSON in `results/vk4/t9/`: `base` before, `wide` the groups after, `neigh` the neighbouring shadow groups,

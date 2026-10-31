@@ -1,0 +1,80 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 27,
+ "seconds": 6.880095269999998,
+ "counts": {
+  "Fail": 27
+ },
+ "notPassed": [
+  "dEQP-VK.memory_model.message_passing.ext.u32.coherent.atomic_atomic.atomicwrite.device.payload_local.buffer.guard_local.image.comp Fail",
+  "dEQP-VK.memory_model.message_passing.ext.u32.coherent.atomic_fence.atomicwrite.queuefamily.payload_local.buffer.guard_local.image.comp Fail",
+  "dEQP-VK.memory_model.message_passing.ext.u32.coherent.fence_atomic.atomicwrite.device.payload_local.buffer.guard_local.image.comp Fail",
+  "dEQP-VK.memory_model.message_passing.ext.u32.coherent.fence_fence.atomicwrite.queuefamily.payload_local.buffer.guard_local.image.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32f.dontunroll.nonvolatile.storage_image.fmt_qual.img.samples_1.1d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32f.dontunroll.volatile.storage_image.fmt_qual.img.samples_1.2d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32f.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.2d.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32f.unroll.volatile.storage_image.fmt_qual.img.samples_1.3d.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rg32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rg32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rg32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.r32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.r32f.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.cube.frag Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.r32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.r32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rg32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rg32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rg32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail"
+ ],
+ "passed": [],
+ "slowest": [
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail 1",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.r32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail 1",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rg32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail 1",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.r32f.dontunroll.volatile.storage_image.fmt_qual.img.samples_1.2d.frag Fail 1",
+  "dEQP-VK.memory_model.message_passing.ext.u32.coherent.fence_atomic.atomicwrite.device.payload_local.buffer.guard_local.image.comp Fail 1",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail 0",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail 0",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rg32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail 0",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rg32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail 0",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rg32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail 0"
+ ],
+ "last": "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32f.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail 0dEQP-VK.robustness.image_robustness.push.notemplate.rgba32i.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.3d.frag Fail 1dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.1d_array.comp Fail 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.180905] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.180949] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.180975] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.181000] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.181030] psci_checker: Could not start suspend tests on any CPU",
+  "[   13.945409] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   25.225100] coredump: 419(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 156.5,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 9,
+  "arenaHighMiB": 23.4
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

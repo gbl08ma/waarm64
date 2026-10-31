@@ -494,7 +494,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'addresses' | 'inlineBlocks', push: string) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'addresses' | 'inlineBlocks', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -509,7 +509,7 @@ export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   if (scenario === 'emptyAfterHeld') {
     // The fence of the submit behind the held copy: unsignalled while the copy waits for the host.
@@ -627,6 +627,21 @@ export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 
     u32(want.subarray(256, 320))[5] = 0x04030201;
     u32(want.subarray(512, 528)).fill(0xff0000ff);
     Object.assign(checks, { read: [0, 4, want], levels: [256, 528, want] });
+  } else if (scenario === 'rwImage') {
+    // VK4 T11 (wg_test.c 41): the size the shader saw; each dispatch's texels swapped from their clear; level 0 as cleared.
+    u32(want.subarray(0, 8)).set([65, 2]);
+    want.subarray(256, 264).set([0xcc, 0x33, 0xcc, 0x33, 0xcc, 0x33, 0xcc, 0x33]);
+    want.subarray(512, 520).set([0x99, 0x66, 0x99, 0x66, 0x99, 0x66, 0x99, 0x66]);
+    for (let i = 0; i < 16; i++) want.set([0xff, 0], 768 + 2 * i);
+    Object.assign(checks, { size: [0, 8, want], first: [256, 264, want], second: [512, 520, want], cleared: [768, 800, want] });
+  } else if (scenario === 'rwImageWide') {
+    // VK4 T11 (wg_test.c 42): as rwImage, of two 32-bit floats a texel.
+    u32(want.subarray(0, 8)).set([65, 2]);
+    const floats = (at: number, n: number, a: number, b: number) => new Float32Array(want.buffer, want.byteOffset + at, 2 * n).set(Array.from({ length: 2 * n }, (_, i) => (i & 1 ? b : a)));
+    floats(256, 4, 0.75, 0.25);
+    floats(512, 4, 0.625, 0.375);
+    floats(768, 16, 1, 0);
+    Object.assign(checks, { size: [0, 8, want], first: [256, 288, want], second: [512, 544, want], cleared: [768, 896, want] });
   } else if (scenario === 'uniformWritten' || scenario === 'indirectWritten' || scenario === 'readInPlace') {
     // VK4 T3: the uniform, the indirect arguments or `a` in the memory the dispatch writes (wg_test.c 33 to 35).
     u32(want.subarray(0, 16)).set([101, 102, 103, 104]);

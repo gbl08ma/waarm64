@@ -387,7 +387,7 @@ print_options(const struct wgsl_varyings *fs)
       .max_immediates = wg_max_immediates,
       .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
       .max_uniform_size = wg_limits.max_uniform_buffer_binding_size,
-      .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
+      .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) | ((wg_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
                   ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
                   (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
    };
@@ -1102,9 +1102,9 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
                            x->group, x->binding);
                   ok = false;
                }
-               /* A storage image one stage reaches by an atomic (so as its words, a buffer) and another as a texture. */
+               /* A storage image one stage reaches as its words (a buffer) and another as a texture. */
                if (x->group == y->group && x->binding == y->binding && (x->image_words != y->image_words)) {
-                  snprintf(error, sizeof(error), "a storage image with atomics in one stage only (group %u binding %u)",
+                  snprintf(error, sizeof(error), "a storage image as words in one stage only (group %u binding %u)",
                            x->group, x->binding);
                   ok = false;
                }

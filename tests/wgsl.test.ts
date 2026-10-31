@@ -19,7 +19,7 @@ const MODULE = join(root, 'target/vk/venus.wasm');
 
 /** Why a stage may not translate: what the direct set doesn't offer, and the translator's known gaps (docs/backlog.md
  * "The Vulkan driver's gaps": vkQuake's variants for 16-bit floats, translated since VK3 L5, reach these). */
-const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|dynamically indexed|^image atomics on |^a read_write storage image of format /;
+const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|dynamically indexed|^image atomics on /;
 
 type Stage = { name: string; stage: number; words: Uint32Array };
 
@@ -114,7 +114,7 @@ async function translator() {
 }
 
 /** vk/compiler/wgsl.h's features. */
-const WGSL = { TIER2: 1, DUAL_SOURCE: 2, SUBGROUPS: 4, F16: 8 };
+const WGSL = { TIER2: 1, DUAL_SOURCE: 2, SUBGROUPS: 4, F16: 8, TIER1: 16 };
 /** vk/compiler/wgsl_test.c's flag: the fragment stage of a pipeline with sampleShadingEnable. */
 const TEST_SAMPLE_SHADING = 1 << 16;
 
@@ -306,12 +306,14 @@ test('a storage image loaded and stored is read_write where WebGPU allows it, an
     const ok = stage('r32f');
     assert.equal(ok.rc, 0, ok.text);
     assert.match(ok.text, /texture_storage_2d<r32float, read_write>/);
-    for (const [format, name] of [['rgba8', 'rgba8unorm'], ['rg16f', 'rg16float'], ['rg32f', 'rg32float']]) {
+    // What WebGPU gives no read-write texture of goes by the image's words (VK4 T11).
+    for (const format of ['rgba8', 'rg16f', 'rg32f']) {
       const r = stage(format);
-      assert.equal(r.rc, 3, `${format} translated: ${r.text.slice(0, 200)}`);
-      assert.equal(r.text, `a read_write storage image of format ${name}`);
+      assert.equal(r.rc, 0, `${format}: ${r.text.slice(0, 200)}`);
+      assert.match(r.text, /var<storage, read_write> r0_0: array<atomic<u32>>/);
+      assert.doesNotMatch(r.text, /texture_storage/);
     }
-    // With texture-formats-tier2 (VK3 L5): tier2's formats read_write, the others still refused.
+    // With texture-formats-tier2 (VK3 L5): tier2's formats read_write, the others still words.
     const t2: string[] = [];
     for (const [format, name] of [['rgba8', 'rgba8unorm'], ['r16f', 'r16float'], ['rgba16f', 'rgba16float'], ['r8', 'r8unorm'], ['rgba32f', 'rgba32float']]) {
       const r = stage(format, WGSL.TIER2);
@@ -319,9 +321,10 @@ test('a storage image loaded and stored is read_write where WebGPU allows it, an
       assert.match(r.text, new RegExp(`texture_storage_2d<${name}, read_write>`));
       t2.push(r.text);
     }
-    for (const [format, name] of [['rg16f', 'rg16float'], ['rg32f', 'rg32float'], ['rgba8_snorm', 'rgba8snorm']]) {
+    for (const format of ['rg16f', 'rg32f', 'rgba8_snorm']) {
       const r = stage(format, WGSL.TIER2);
-      assert.equal(r.text, `a read_write storage image of format ${name}`);
+      assert.equal(r.rc, 0, `${format}: ${r.text.slice(0, 200)}`);
+      assert.doesNotMatch(r.text, /texture_storage/);
     }
     const errors = await compile([ok.text, ...t2]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
@@ -1086,6 +1089,92 @@ test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeou
     assert.equal(Math.round(res.out[0] * 255), 0, 'within +X');
     // (1, 0, 0.99) is 0.01 of a texel from +X's edge with +Z: 0.51 of +X's 0, 0.49 of +Z's 160.
     assert.ok(Math.abs(res.out[4] * 255 - 78.4) < 1.5, `across the edge: ${res.out[4] * 255}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// VK4 T11: what a format's words hold, against bytes worked out by hand (Vulkan's formats, section "Fixed-Point Data
+// Conversions"): an image of two rows, whatever is past the texels left alone. Each entry: the GLSL qualifier, the
+// image's type, a texel's bytes, four values stored and the bytes they make, then what those bytes load as.
+const f = 'image2D', u = 'uimage2D', s = 'iimage2D';
+const N8 = (v: number) => v / 255, S8 = (v: number) => v / 127, N16 = (v: number) => v / 65535, S16 = (v: number) => v / 32767, N10 = (v: number) => v / 1023;
+const IMAGE_FORMATS: [string, string, number, number[][], string, number[][]][] = [
+  ['rgba8', f, 4, [[1, 0.5, 0, -1], [2, 0.2, 0.25, 1], [0, 0, 0, 0], [1, 1, 1, 1]], 'ff800000 ff3340ff 00000000 ffffffff', [[1, N8(128), 0, 0], [1, N8(51), N8(64), 1], [0, 0, 0, 0], [1, 1, 1, 1]]],
+  ['rgba8_snorm', f, 4, [[1, -1, 0.5, -2], [0, 0.25, -0.25, 2], [-0.5, 0, 1, 0], [0, 0, 0, 0]], '7f8140 81 00 20 e0 7f c1 00 7f 00 00000000', [[1, -1, S8(64), -1], [0, S8(32), S8(-32), 1], [S8(-63), 0, 1, 0], [0, 0, 0, 0]]],
+  ['rgba8ui', u, 4, [[1, 2, 3, 255], [0, 0, 0, 0], [128, 64, 32, 16], [9, 8, 7, 6]], '010203ff 00000000 80402010 09080706', [[1, 2, 3, 255], [0, 0, 0, 0], [128, 64, 32, 16], [9, 8, 7, 6]]],
+  ['rgba8i', s, 4, [[-1, 2, -128, 127], [0, 0, 0, 0], [-2, -3, 4, 5], [1, 1, 1, 1]], 'ff02807f 00000000 fefd0405 01010101', [[-1, 2, -128, 127], [0, 0, 0, 0], [-2, -3, 4, 5], [1, 1, 1, 1]]],
+  ['r8', f, 1, [[1, 0, 0, 0], [0.5, 0, 0, 0], [0, 0, 0, 0], [-1, 0, 0, 0]], 'ff 80 00 00', [[1, 0, 0, 1], [N8(128), 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1]]],
+  ['r8_snorm', f, 1, [[1, 0, 0, 0], [-1, 0, 0, 0], [0.5, 0, 0, 0], [-0.5, 0, 0, 0]], '7f 81 40 c1', [[1, 0, 0, 1], [-1, 0, 0, 1], [S8(64), 0, 0, 1], [S8(-63), 0, 0, 1]]],
+  ['r8ui', u, 1, [[1, 0, 0, 0], [255, 0, 0, 0], [7, 0, 0, 0], [128, 0, 0, 0]], '01 ff 07 80', [[1, 0, 0, 1], [255, 0, 0, 1], [7, 0, 0, 1], [128, 0, 0, 1]]],
+  ['r8i', s, 1, [[1, 0, 0, 0], [-1, 0, 0, 0], [-128, 0, 0, 0], [127, 0, 0, 0]], '01 ff 80 7f', [[1, 0, 0, 1], [-1, 0, 0, 1], [-128, 0, 0, 1], [127, 0, 0, 1]]],
+  ['rg8', f, 2, [[1, 0.5, 0, 0], [0, 1, 0, 0], [0.2, 0.2, 0, 0], [-1, 2, 0, 0]], 'ff80 00ff 3333 00ff', [[1, N8(128), 0, 1], [0, 1, 0, 1], [N8(51), N8(51), 0, 1], [0, 1, 0, 1]]],
+  ['rg8ui', u, 2, [[1, 2, 0, 0], [255, 254, 0, 0], [0, 0, 0, 0], [3, 4, 0, 0]], '0102 fffe 0000 0304', [[1, 2, 0, 1], [255, 254, 0, 1], [0, 0, 0, 1], [3, 4, 0, 1]]],
+  ['rg8i', s, 2, [[-1, 2, 0, 0], [-128, 127, 0, 0], [0, 0, 0, 0], [3, -4, 0, 0]], 'ff02 807f 0000 03fc', [[-1, 2, 0, 1], [-128, 127, 0, 1], [0, 0, 0, 1], [3, -4, 0, 1]]],
+  ['rg8_snorm', f, 2, [[1, -1, 0, 0], [0.5, -0.5, 0, 0], [0, 0, 0, 0], [2, -2, 0, 0]], '7f81 40c1 0000 7f81', [[1, -1, 0, 1], [S8(64), S8(-63), 0, 1], [0, 0, 0, 1], [1, -1, 0, 1]]],
+  ['r16f', f, 2, [[1, 0, 0, 0], [-2, 0, 0, 0], [0.5, 0, 0, 0], [65536, 0, 0, 0]], '003c 00c0 0038 007c', [[1, 0, 0, 1], [-2, 0, 0, 1], [0.5, 0, 0, 1], [Infinity, 0, 0, 1]]],
+  // What's past the range: NaN keeps being NaN, a value too large is infinity, one too small 0; ufloats have no sign.
+  ['r16f', f, 2, [[NaN, 0, 0, 0], [1e6, 0, 0, 0], [-1e6, 0, 0, 0], [1e-9, 0, 0, 0]], '007e 007c 00fc 0000', [[NaN, 0, 0, 1], [Infinity, 0, 0, 1], [-Infinity, 0, 0, 1], [0, 0, 0, 1]]],
+  ['r11f_g11f_b10f', f, 4, [[NaN, 1e6, 0, 0], [1e-9, 0, 0, 0], [65535, 0, 0, 0], [0, 0, 1e6, 0]], 'ff073e00 00000000 c0070000 000000f8', [[NaN, Infinity, 0, 1], [0, 0, 0, 1], [Infinity, 0, 0, 1], [0, 0, Infinity, 1]]],
+  ['r16ui', u, 2, [[1, 0, 0, 0], [65535, 0, 0, 0], [258, 0, 0, 0], [0, 0, 0, 0]], '0100 ffff 0201 0000', [[1, 0, 0, 1], [65535, 0, 0, 1], [258, 0, 0, 1], [0, 0, 0, 1]]],
+  ['r16i', s, 2, [[-1, 0, 0, 0], [-32768, 0, 0, 0], [32767, 0, 0, 0], [2, 0, 0, 0]], 'ffff 0080 ff7f 0200', [[-1, 0, 0, 1], [-32768, 0, 0, 1], [32767, 0, 0, 1], [2, 0, 0, 1]]],
+  ['r16', f, 2, [[1, 0, 0, 0], [0.5, 0, 0, 0], [0, 0, 0, 0], [-1, 0, 0, 0]], 'ffff 0080 0000 0000', [[1, 0, 0, 1], [N16(32768), 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1]]],
+  ['r16_snorm', f, 2, [[1, 0, 0, 0], [-1, 0, 0, 0], [0.5, 0, 0, 0], [0, 0, 0, 0]], 'ff7f 0180 0040 0000', [[1, 0, 0, 1], [-1, 0, 0, 1], [S16(16384), 0, 0, 1], [0, 0, 0, 1]]],
+  ['rg16f', f, 4, [[1, -2, 0, 0], [0.5, 0, 0, 0], [0.000061035156, 0.0000305175781, 0, 0], [0, 1024, 0, 0]], '003c 00c0 0038 0000 0004 0002 0000 0064', [[1, -2, 0, 1], [0.5, 0, 0, 1], [0.000061035156, 0.0000305175781, 0, 1], [0, 1024, 0, 1]]],
+  ['rg16', f, 4, [[1, 0, 0, 0], [0.5, 1, 0, 0], [0, 0, 0, 0], [2, -1, 0, 0]], 'ffff0000 0080ffff 00000000 ffff0000', [[1, 0, 0, 1], [N16(32768), 1, 0, 1], [0, 0, 0, 1], [1, 0, 0, 1]]],
+  ['rg16_snorm', f, 4, [[1, -1, 0, 0], [0.5, 0, 0, 0], [0, 0, 0, 0], [-2, 2, 0, 0]], 'ff7f0180 00400000 00000000 0180ff7f', [[1, -1, 0, 1], [S16(16384), 0, 0, 1], [0, 0, 0, 1], [-1, 1, 0, 1]]],
+  ['rg16ui', u, 4, [[1, 2, 0, 0], [65535, 0, 0, 0], [0, 0, 0, 0], [258, 772, 0, 0]], '01000200 ffff0000 00000000 02010403', [[1, 2, 0, 1], [65535, 0, 0, 1], [0, 0, 0, 1], [258, 772, 0, 1]]],
+  ['rg16i', s, 4, [[-1, 2, 0, 0], [-32768, 32767, 0, 0], [0, 0, 0, 0], [-2, -3, 0, 0]], 'ffff0200 0080ff7f 00000000 feff fdff', [[-1, 2, 0, 1], [-32768, 32767, 0, 1], [0, 0, 0, 1], [-2, -3, 0, 1]]],
+  ['rgb10_a2', f, 4, [[1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0.34], [0.5, 0, 0, 0]], 'ff0300c0 00fc0f00 0000f07f 00020000', [[1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 1 / 3], [N10(512), 0, 0, 0]]],
+  ['rgb10_a2ui', u, 4, [[1023, 0, 0, 3], [0, 1023, 0, 0], [0, 0, 1023, 1], [1, 2, 3, 0]], 'ff0300c0 00fc0f00 0000f07f 01083000', [[1023, 0, 0, 3], [0, 1023, 0, 0], [0, 0, 1023, 1], [1, 2, 3, 0]]],
+  ['r11f_g11f_b10f', f, 4, [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [-1, 0.5, 2, 0]], 'c0030000 00001e00 00000078 00001c80', [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [0, 0.5, 2, 1]]],
+  ['rgba16', f, 8, [[1, 0.5, 0, 2], [0, 0, 0, 0], [1, 1, 1, 1], [0, 1, 0, 1]], 'ffff0080 0000ffff 00000000 00000000 ffffffff ffffffff 0000ffff 0000ffff', [[1, N16(32768), 0, 1], [0, 0, 0, 0], [1, 1, 1, 1], [0, 1, 0, 1]]],
+  ['rgba16_snorm', f, 8, [[1, -1, 0.5, 0], [0, 0, 0, 0], [2, -2, 0, 1], [-1, 1, -1, 1]], 'ff7f0180 00400000 00000000 00000000 ff7f0180 0000ff7f 0180ff7f 0180ff7f', [[1, -1, S16(16384), 0], [0, 0, 0, 0], [1, -1, 0, 1], [-1, 1, -1, 1]]],
+  ['rgba16f', f, 8, [[1, -2, 0.5, 0], [0, 0, 0, 0], [1, 1, 1, 1], [2, 2, 2, 2]], '003c00c0 00380000 00000000 00000000 003c003c 003c003c 00400040 00400040', [[1, -2, 0.5, 0], [0, 0, 0, 0], [1, 1, 1, 1], [2, 2, 2, 2]]],
+  ['rgba16ui', u, 8, [[1, 2, 3, 4], [0, 0, 0, 0], [65535, 0, 0, 1], [5, 6, 7, 8]], '01000200 03000400 00000000 00000000 ffff0000 00000100 05000600 07000800', [[1, 2, 3, 4], [0, 0, 0, 0], [65535, 0, 0, 1], [5, 6, 7, 8]]],
+  ['rgba16i', s, 8, [[-1, 2, -3, 4], [0, 0, 0, 0], [-32768, 0, 0, 1], [5, 6, 7, 8]], 'ffff0200 fdff0400 00000000 00000000 00800000 00000100 05000600 07000800', [[-1, 2, -3, 4], [0, 0, 0, 0], [-32768, 0, 0, 1], [5, 6, 7, 8]]],
+  ['rg32f', f, 8, [[1, -2, 0, 0], [0, 0, 0, 0], [0.5, 0.25, 0, 0], [2, 4, 0, 0]], '0000803f 000000c0 00000000 00000000 0000003f 0000803e 00000040 00008040', [[1, -2, 0, 1], [0, 0, 0, 1], [0.5, 0.25, 0, 1], [2, 4, 0, 1]]],
+  ['rg32ui', u, 8, [[1, 4294967295, 0, 0], [0, 0, 0, 0], [2, 3, 0, 0], [4, 5, 0, 0]], '01000000 ffffffff 00000000 00000000 02000000 03000000 04000000 05000000', [[1, 4294967295, 0, 1], [0, 0, 0, 1], [2, 3, 0, 1], [4, 5, 0, 1]]],
+  ['rg32i', s, 8, [[-1, 2, 0, 0], [0, 0, 0, 0], [-2, -3, 0, 0], [4, 5, 0, 0]], 'ffffffff 02000000 00000000 00000000 feffffff fdffffff 04000000 05000000', [[-1, 2, 0, 1], [0, 0, 0, 1], [-2, -3, 0, 1], [4, 5, 0, 1]]],
+  ['rgba32f', f, 16, [[1, 2, 4, 8], [0, 0, 0, 0], [-1, -2, 0.5, 0], [1, 1, 1, 1]], '0000803f 00000040 00008040 00000041 00000000 00000000 00000000 00000000 000080bf 000000c0 0000003f 00000000 0000803f 0000803f 0000803f 0000803f', [[1, 2, 4, 8], [0, 0, 0, 0], [-1, -2, 0.5, 0], [1, 1, 1, 1]]],
+  ['rgba32ui', u, 16, [[1, 2, 3, 4], [0, 0, 0, 0], [5, 6, 7, 8], [9, 10, 11, 12]], '01000000 02000000 03000000 04000000 00000000 00000000 00000000 00000000 05000000 06000000 07000000 08000000 09000000 0a000000 0b000000 0c000000', [[1, 2, 3, 4], [0, 0, 0, 0], [5, 6, 7, 8], [9, 10, 11, 12]]],
+  ['rgba32i', s, 16, [[-1, 2, 3, 4], [0, 0, 0, 0], [5, -6, 7, 8], [9, 10, -11, 12]], 'ffffffff 02000000 03000000 04000000 00000000 00000000 00000000 00000000 05000000 faffffff 07000000 08000000 09000000 0a000000 f5ffffff 0c000000', [[-1, 2, 3, 4], [0, 0, 0, 0], [5, -6, 7, 8], [9, 10, -11, 12]]],
+];
+
+test('an image loaded and stored by one stage holds each format\'s bytes in its words, and reads them back (VK4 T11)', { skip: noGlslc, timeout: 300_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    for (const [format, image, bytes, values, enc, dec] of IMAGE_FORMATS) {
+      const vec = image === f ? 'vec4' : image === u ? 'uvec4' : 'ivec4';
+      const spv = join(tmp, 'rw.spv');
+      const c = spawnSync('glslc', ['--target-env=vulkan1.2', `-DFORMAT=${format}`, `-DIMAGE=${image}`, `-DVEC=${vec}`, '-fshader-stage=comp', '-o', spv, join(root, 'tests/venus/t11-image-rw.comp')], { encoding: 'utf8' });
+      assert.equal(c.status, 0, c.stderr);
+      const b = readFileSync(spv);
+      const r = translate({ name: format, stage: 5, words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) });
+      assert.equal(r.rc, 0, `${format}: ${r.text}`);
+      const golden = Buffer.from(enc.replaceAll(' ', ''), 'hex');
+      assert.equal(golden.length, 4 * bytes, `${format}: the table's bytes`);
+      // A view of 4x2, rows 16 words apart as wg_cmd.c's view_words. Row 0 and the bytes past the texels are 0xa5 (a sub-word
+      // store keeps its neighbours), row 1 the bytes to load.
+      const row = 64, img = new Uint8Array(row * 2).fill(0xa5);
+      img.set(golden, row);
+      const params = new Uint8Array(new Uint32Array([4, 2, 1, row / 4, row * 2 / 4, 0, 0, 0]).buffer);
+      const input = new (image === f ? Float32Array : image === u ? Uint32Array : Int32Array)(values.flat());
+      const res = await runCompute(r.text, [{ binding: 0, init: img }, { binding: 1, init: params }, { binding: 2, init: new Uint8Array(input.buffer) }, { binding: 4, size: 64 }]);
+      if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+      assert.deepEqual(res.errors, [], `${format}: ${r.text}`);
+      const stored = res.out[0];
+      assert.equal(Buffer.from(stored.subarray(0, 4 * bytes)).toString('hex'), golden.toString('hex'), `${format}: the bytes stored`);
+      assert.ok(stored.subarray(4 * bytes, row).every((v) => v === 0xa5), `${format}: bytes past the texels`);
+      const got = res.out[3];
+      const out = new (image === f ? Float32Array : image === u ? Uint32Array : Int32Array)(got.buffer, got.byteOffset, 16);
+      dec.flat().forEach((v, i) => {
+        // Float results within 2 ULP of a 16-bit fraction's; integers exact.
+        if (image === f && Number.isFinite(v)) assert.ok(Math.abs(out[i] - v) < 1e-6, `${format}: component ${i} read ${out[i]}, wanted ${v}`);
+        else assert.ok(Object.is(out[i], v), `${format}: component ${i} read ${out[i]}, wanted ${v}`);
+      });
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

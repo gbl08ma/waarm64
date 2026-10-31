@@ -1,0 +1,13 @@
+#version 450
+// tests/wgsl.test.ts (VK4 T11): one image loaded and stored of a format WebGPU gives no such access: row 0 stored from
+// `values`, row 1 (the test's bytes) loaded into `got`. FORMAT, IMAGE and VEC come from the test.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, FORMAT) uniform IMAGE img;
+layout(set = 0, binding = 2) buffer In { VEC values[4]; } i;
+layout(set = 0, binding = 3) buffer Out { VEC got[4]; } o;
+void main() {
+  for (int x = 0; x < 4; x++) {
+    imageStore(img, ivec2(x, 0), i.values[x]);
+    o.got[x] = imageLoad(img, ivec2(x, 1));
+  }
+}

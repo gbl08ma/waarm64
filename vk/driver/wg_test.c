@@ -3391,6 +3391,100 @@ t4_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out
    return 0;
 }
 
+/*
+ * VK4 T11, wgt_misc's scenarios 41 and 42, `cs` t11-rw-view.comp and t11-rw-wide.comp: a 130x4 image of two levels and
+ * two layers, R8G8_UNORM or R32G32_SFLOAT, which no adapter's WebGPU loads and stores as a texture. Each texel of the
+ * corner of level 1, layer 1 is cleared, then swapped by the shader, twice over (0.2, 0.8 or 0.25, 0.75, then cleared
+ * again 0.4, 0.6 or 0.375, 0.625), each time copied out after: to 256, 512, then level 0, layer 1 to 768 (a clear the
+ * words mustn't lose), and the size the shader saw to the buffer's start.
+ */
+static int
+t11_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const VkFormat format = scenario == 42 ? VK_FORMAT_R32G32_SFLOAT : VK_FORMAT_R8G8_UNORM;
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = format,
+      .extent = { 130, 4, 1 }, .mipLevels = 2, .arrayLayers = 2, .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+   };
+   VkImage img;
+   CHECK(CreateImage(dev, &info, NULL, &img));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, img, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, img, mem, 0));
+   const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img,
+                                      .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = format,
+                                      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, 1 } };
+   VkImageView view;
+   CHECK(CreateImageView(dev, &vi, NULL, &view));
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   const VkDescriptorSetLayoutBinding bindings[2] = {
+      { 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+   };
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 2, .pBindings = bindings };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 2, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   const VkDescriptorImageInfo stored = { VK_NULL_HANDLE, view, VK_IMAGE_LAYOUT_GENERAL };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = &stored },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   const VkImageSubresourceRange level1 = { VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, 1 }, level0 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 };
+   const bool wide = scenario == 42;
+   const VkClearColorValue a = { .float32 = { wide ? 0.25f : 0.2f, wide ? 0.75f : 0.8f, 0, 0 } },
+                           b = { .float32 = { wide ? 0.375f : 0.4f, wide ? 0.625f : 0.6f, 0, 0 } },
+                           c = { .float32 = { 1, 0, 0, 0 } };
+   CmdClearColorImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, &c, 1, &level0);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+   for (uint32_t i = 0; i < 2; i++) {
+      CmdClearColorImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, i ? &b : &a, 1, &level1);
+      CmdDispatch(cmd, 1, 1, 1);
+      const VkBufferImageCopy down = { .bufferOffset = 256 + 256 * i, .bufferRowLength = 2,
+                                       .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1 },
+                                       .imageExtent = { 2, 2, 1 } };
+      CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_GENERAL, out, 1, &down);
+   }
+   const VkBufferImageCopy whole = { .bufferOffset = 768, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1 },
+                                     .imageExtent = { 4, 4, 1 } };
+   CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_GENERAL, out, 1, &whole);
+   return 0;
+}
+
 /* VK4 T7: inline uniform blocks (tests/venus/inline.comp): a template update running from one block into the next, then
  * the set copied, the copy dispatched. */
 static int
@@ -4194,6 +4288,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 38) {
       if (t4_misc(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 41 || scenario == 42) {
+      if (t11_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 39) {
       if (t7_addresses(cs, cs_words, cmd, pool))
