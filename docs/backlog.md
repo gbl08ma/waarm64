@@ -268,8 +268,6 @@ left open, most promising first.
   polls).
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
   hundreds of modules at different points, presumably).
-- Blocks are formed twice: decoded for the block interpreter on first sight (which gives the cache
-  their length) and again at compile time.
 
 - **Groups of accesses' leftovers** (docs/jit.md "Loads and stores", `bench/boot/REPORT.md` "Groups of accesses,
   measured"). Probes left on Firefox's pages session, of those with no groups at all: 74% with today's rule. Untried: two
