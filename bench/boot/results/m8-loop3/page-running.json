@@ -1,9 +1,0 @@
-{
- "what": "Page load to the `running` state (the serial login prompt), Debian, 4 parallel vCPUs, JIT, a fresh browser context (fresh OPFS overlay) each run; bench/results/local/m8-loop3/boottime.ts",
- "commit": "M8 loop 3 working tree (before its commit)",
- "chromium": "153.0.8010.52 headless",
- "host": "the M4 dev VM (8 vCPUs)",
- "seconds": [28.987, 28.931, 28.636],
- "serialMessages": [2466, 2520, 2303],
- "serialBytes": [23323, 23323, 23224]
-}

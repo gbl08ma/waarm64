@@ -1,9 +1,0 @@
-{
- "what": "AArch64 instructions a frame inside Mesa 26.2.4's Venus entry points (vn_*, callees included), the scene through the Venus oracle under callgrind 3.27.1, (Ir at 65 frames - Ir at 25 frames) / 40; tools/venus-oracle/encode-cost.sh",
- "fish1":      { "ir25": 7843285,   "ir65": 11306278,  "perFrame": 86575,   "commandsPerFrame": 320,   "perCommand": 271 },
- "toolkit2000":{ "ir25": 9682584,   "ir65": 16048262,  "perFrame": 159142,  "commandsPerFrame": 928,   "perCommand": 171 },
- "fish1000":   { "ir25": 22294021,  "ir65": 48628237,  "perFrame": 658355,  "commandsPerFrame": 2325,  "perCommand": 283 },
- "fish10000":  { "ir25": 152093627, "ir65": 383997245, "perFrame": 5797590, "commandsPerFrame": 20325, "perCommand": 285 },
- "perExtraFish_1000to10000": 571,
- "breakdown_fish10000": "vn_cs_encoder_write 40+7+6+2+2+1% and libc memcpy 34% (a memcpy call per field), vn_cs_encoder_reserve 2%, the app's own code a few % (callgrind's toggle overruns after the loader's tail-jumps)"
-}

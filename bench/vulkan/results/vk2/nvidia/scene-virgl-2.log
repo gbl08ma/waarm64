@@ -1,7 +1,0 @@
-[0.9] WebGL2: ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3070/PCIe/SSE2, OpenGL ES 3.2) | 153.0.8010.52
-[36.5] running
-[41.6] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
-[46.3] device renderer: virgl (webpc) (OpenGL ES 3.0 Mesa 26.2.5-arch1.1)
-[49.8] fish-1-msaa1 2.653 ms a frame (IQR 0.72), guest CPU 2.434 ms; GPU worker busy 66 ms/s, 2760 draws/s
-[54.3] fish-1000-msaa1 8.834 ms a frame (IQR 0.211), guest CPU 5.903 ms; GPU worker busy 357 ms/s, 42948 draws/s
-[58.0] toolkit-2000-msaa1 7.022 ms a frame (IQR 0.201), guest CPU 6.679 ms; GPU worker busy 128 ms/s, 13200 draws/s

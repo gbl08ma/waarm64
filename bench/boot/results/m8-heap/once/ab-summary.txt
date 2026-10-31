@@ -1,2 +1,0 @@
-session	exit	flushes	modules	wasmMB	share	interpG	firstFlushS	flushesPerMin	slowG	slowS	made	doneS	locks	contended	waitMs	emitMs	lockedMs	planMs	perLock	overdue	rssMed	rssMax	codeMed	codeMax	busyMips	stalls20	stalls50	wikiLoadS	bbcLoadS	pagesFps	webglFps	wallS	setupS	measuredS	restoreS
-

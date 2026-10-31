@@ -1,7 +1,0 @@
-code 35138129
-set;get same              293768  saves    587536 B  1.67%
-get;set (copy)            106149  saves         0 B  0.00%
-get A;set B;get B          63744  saves         0 B  0.00%
-tee;set                    31781  saves         0 B  0.00%
-const0;add                 25993  saves     77979 B  0.22%
-wrap;ext                    8091  saves         0 B  0.00%

@@ -1,7 +1,0 @@
-#version 450
-// tests/venus-driver.test.ts "misc: push": v[k] = 3k + 1, k from the push constants' last 16 bytes (past WebGPU's
-// immediates: the driver's push buffer), one dispatch each of thousands in one submit.
-layout(local_size_x = 1) in;
-layout(set = 0, binding = 0) buffer B { uint v[]; } b;
-layout(push_constant) uniform P { uvec4 pad[7]; uint k; } pc;
-void main() { b.v[pc.k] = pc.k * 3u + 1u; }

@@ -1,9 +1,0 @@
-# dEQP for Arch Linux (images/deqp/build.sh): localhost/arch-base is images/arch/base.sh's (the mirror and keyring set).
-FROM localhost/arch-base
-RUN pacman -Syu --noconfirm --noprogressbar --needed base-devel cmake ninja python git libpng zlib mesa libdrm wayland e2fsprogs && \
-    pacman -Scc --noconfirm
-ARG CTS=opengl-es-cts-3.2.14.1
-RUN git clone -q --depth 1 --branch $CTS https://github.com/KhronosGroup/VK-GL-CTS.git /cts && \
-    cd /cts && python3 external/fetch_sources.py --protocol https > /tmp/fetch.log 2>&1 || (tail -20 /tmp/fetch.log; exit 1)
-RUN cmake -S /cts -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDEQP_TARGET=surfaceless > /tmp/cmake.log 2>&1 || (tail -40 /tmp/cmake.log; exit 1)
-RUN ninja -C /build deqp-gles2 deqp-gles3 > /tmp/ninja.log 2>&1 || (tail -40 /tmp/ninja.log; exit 1)

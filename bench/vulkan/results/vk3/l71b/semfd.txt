@@ -1,2 +1,0 @@
-instance 0external semaphore properties 1 0 0 0external semaphore properties 16 16 16 3device 0semaphore 0 exported as 1 create 0 fds [(0, 0), (0, -1)]semaphore 1 exported as 1 create 0 fds [(0, 0), (0, -1)]donerc=0
-{"venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback":1,"venus: vkr: destroying context 2 (python3) with a valid instance":1,"venus: vkr: destroying device with valid objects":1}

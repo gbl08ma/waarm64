@@ -1,6 +1,0 @@
-#version 450
-// tests/venus-driver.test.ts (misc: bindGroupsShared): one of six pipelines (K = 1 to 6) on one set layout.
-layout(local_size_x = 4) in;
-layout(constant_id = 0) const uint K = 0u;
-layout(set = 0, binding = 0) buffer Out { uint b[]; } o;
-void main() { o.b[gl_LocalInvocationIndex] += K; }

@@ -1,8 +1,0 @@
-#version 450
-// tests/venus-driver.test.ts (misc: uniformBeside, indirectBeside): a uniform buffer and a read-only storage buffer of
-// one memory read, the result written to another (vk/driver/wg_test.c's scenarios 17 and 18).
-layout(local_size_x = 4) in;
-layout(set = 0, binding = 0) uniform K { uint k; } u;
-layout(set = 0, binding = 1) readonly buffer In { uint a[]; } i;
-layout(set = 0, binding = 2) buffer Out { uint b[]; } o;
-void main() { o.b[gl_LocalInvocationIndex] = i.a[gl_LocalInvocationIndex] + u.k; }

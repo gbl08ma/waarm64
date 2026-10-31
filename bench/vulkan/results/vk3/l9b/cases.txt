@@ -1,4 +1,0 @@
-dEQP-VK.glsl.texture_functions.textureprojlodoffset.*
-dEQP-VK.glsl.texture_functions.textureprojlod.*
-dEQP-VK.glsl.texture_functions.texturelodoffset.*
-dEQP-VK.memory.binding.*

@@ -1,7 +1,0 @@
-[0.5] WebGL2: ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version) | 153.0.8010.12
-[25.2] running
-[28.9] info 7.2.11-arch1-1mesa 1:26.2.5-1 vulkan-virtio 1:26.2.5-1 mount: (hint) your fstab has been modified, but systemd still uses       the old version; use 'systemctl daemon-reload' to reload.aquarium.pack gles gles-shaders shaders sweep.sh vk
-[32.3] device renderer: virgl (webpc) (OpenGL ES 3.0 Mesa 26.2.5-arch1.1)
-[37.1] fish-1-msaa1 0.957 ms a frame (IQR 0.322), guest CPU 0.757 ms; GPU worker busy 204 ms/s, 35136 draws/s
-[47.8] fish-1000-msaa1 4.601 ms a frame (IQR 0.013), guest CPU 3.057 ms; GPU worker busy 712 ms/s, 175533 draws/s
-[56.1] toolkit-2000-msaa1 3.274 ms a frame (IQR 0.037), guest CPU 3.223 ms; GPU worker busy 280 ms/s, 80750 draws/s

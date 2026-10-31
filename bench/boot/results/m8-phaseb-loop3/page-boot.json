@@ -1,7 +1,0 @@
-{
-  "what": "The page's Debian to its login prompt (data-state=running), headless Chromium 153.0.8010.52, 2 vCPUs, a fresh profile, first boot (unattended credentials for the firmware boot, none needed for the direct one), Lima VM dev (M4), alternating A/B, bench/results/local/page-boot.ts",
-  "direct_965f4c1": { "unit": "s", "samples": [32.5, 33.9, 33.3], "median": 33.3, "what": "kernel and initrd extracted, the page's command line (apparmor=0, the units masked)" },
-  "firmware": { "unit": "s", "samples": [52.9, 54.6, 53.4], "median": 53.4, "what": "EDK2, shim, GRUB (5 s menu timeout), Debian's own command line" },
-  "node_firmware_stages_s": { "boot manager": 3.7, "loader (GRUB banner)": 6.7, "kernel": 9.3, "login prompt": 41.2, "note": "Node, parallel 2 vCPUs, the driver presses Enter at GRUB's menu (no timeout)" },
-  "boot_manager_to_loader": { "steps": 5.4e9, "seconds": 3.0, "hot_code": "an LZMA range decoder (the loader's compressed core image), not a busy wait" }
-}

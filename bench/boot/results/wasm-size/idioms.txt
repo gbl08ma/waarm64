@@ -1,9 +1,0 @@
-ADD/SUB #0 (MOV to/from SP)        n=   4096 saves    12288 B  0.03%
-CSINC (CSET/CSETM)                 n=   1417 saves    11039 B  0.03%
-CSINV (CSET/CSETM)                 n=     10 saves       50 B  0.00%
-MOVK                               n=   1289 saves        0 B  0.00%
-SXT* as extendN_s                  n=   1010 saves     5050 B  0.01%
-UBFM LSL                           n=   1658 saves     6286 B  0.02%
-UBFM LSR                           n=   1951 saves    14396 B  0.04%
-UBFM UBFIZ                         n=   1043 saves      584 B  0.00%
-UBFM UBFX                          n=   1187 saves        0 B  0.00%

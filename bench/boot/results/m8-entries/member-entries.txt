@@ -1,7 +1,0 @@
-begin          steps 2364M  interp-at-uncompiled 25.89M  of which at members 3.87M (0.16% of steps, 651584 misses)  heads that were members 2848 of 23151 regions; members already compiled 1619 of 50732 blocks
-alpine-user 3. steps 63M  interp-at-uncompiled 0.32M  of which at members 0.08M (0.13% of steps, 14106 misses)  heads that were members 41 of 261 regions; members already compiled 8 of 610 blocks
-compress start steps 2118M  interp-at-uncompiled 2.80M  of which at members 0.75M (0.04% of steps, 123481 misses)  heads that were members 388 of 1678 regions; members already compiled 405 of 3222 blocks
-lua start      steps 3206M  interp-at-uncompiled 1.70M  of which at members 0.28M (0.01% of steps, 60163 misses)  heads that were members 304 of 1754 regions; members already compiled 75 of 2759 blocks
-churn start    steps 547M  interp-at-uncompiled 0.35M  of which at members 0.10M (0.02% of steps, 19236 misses)  heads that were members 138 of 449 regions; members already compiled 151 of 1056 blocks
-sqlite start   steps 2142M  interp-at-uncompiled 3.49M  of which at members 0.73M (0.03% of steps, 129728 misses)  heads that were members 611 of 2005 regions; members already compiled 157 of 4083 blocks
-test ok        steps 323M  interp-at-uncompiled 0.71M  of which at members 0.10M (0.03% of steps, 20986 misses)  heads that were members 135 of 893 regions; members already compiled 90 of 1623 blocks

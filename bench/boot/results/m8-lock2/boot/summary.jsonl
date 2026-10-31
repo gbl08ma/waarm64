@@ -1,3 +1,0 @@
-{"file":"bench/boot/results/m8-lock2/boot/base-1.jsonl","samples":3,"mipsMedian":4,"mipsIqr":1,"mipsOverall":4,"locks":6654148,"contended":0.0326,"waitMs":1409,"skipped":0,"interpG":0.6,"ics":2124307,"dsbMs":519,"platMs":15}
-{"file":"bench/boot/results/m8-lock2/boot/lock2-1.jsonl","samples":2,"mipsMedian":5,"mipsIqr":0,"mipsOverall":5,"locks":6670934,"contended":0.0269,"waitMs":543,"skipped":594398,"interpG":0.6,"ics":2124300,"dsbMs":541,"platMs":13}
-{"file":"bench/boot/results/m8-lock2/boot/imin-1.jsonl","samples":2,"mipsMedian":5,"mipsIqr":0,"mipsOverall":5,"locks":2509179,"contended":0.0045,"waitMs":116,"skipped":603951,"interpG":0.6,"ics":121781,"dsbMs":514,"platMs":17}

@@ -1,1 +1,0 @@
-bench/results/local/liftoff/pages/base-2/pages-all.timeline.json: 357 s, 270 MIPS (143 a busy vCPU, inside 47% of the time); vCPU stalls >=20/50/100/250/500/1000 ms: 0/0/0/0/0/0 (top ), stalled ms/s 0.0; all-vCPU stalls: 0/0/0/0/0/0 (top )

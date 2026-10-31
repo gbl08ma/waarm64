@@ -1,5 +1,0 @@
-# VK0's scene for the guest (images/vulkan/build.sh): localhost/arch-base is images/arch/base.sh's (the mirror and
-# keyring set). The compiler, the Vulkan headers and loader, glslc and Mesa's EGL and GLES for the two programs.
-FROM localhost/arch-base
-RUN pacman -Syu --noconfirm --noprogressbar --needed base-devel vulkan-headers vulkan-icd-loader shaderc mesa libglvnd e2fsprogs && \
-    pacman -Scc --noconfirm

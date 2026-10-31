@@ -1,4 +1,0 @@
-macOS 26.6.2
-      Chipset Model: Apple M4
-      Total Number of Cores: 10
-      Metal Support: Metal 4
