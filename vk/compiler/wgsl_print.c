@@ -536,11 +536,13 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_interpolated_input:
       if (nir->info.stage == MESA_SHADER_FRAGMENT) {
          const unsigned slot = nir_intrinsic_io_semantics(intr).location;
-         if (slot < VARYING_SLOT_VAR0 || slot >= VARYING_SLOT_VAR0 + 32) {
+         const bool clip = slot == VARYING_SLOT_CLIP_DIST0 || slot == VARYING_SLOT_CLIP_DIST1;
+         if (!clip && (slot < VARYING_SLOT_VAR0 || slot >= VARYING_SLOT_VAR0 + 32)) {
             failf(c, "fragment input slot %u", slot);
             break;
          }
-         const unsigned loc = slot - VARYING_SLOT_VAR0;
+         /* gl_ClipDistance: at the top locations until declare_io finds free ones. */
+         const unsigned loc = clip ? 30 + slot - VARYING_SLOT_CLIP_DIST0 : slot - VARYING_SLOT_VAR0;
          const unsigned base = base_of(nir_intrinsic_dest_type(intr));
          c->vary.mask |= 1u << loc;
          c->vary.base[loc] = base;
@@ -647,6 +649,11 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_is_helper_invocation:
    case nir_intrinsic_load_helper_invocation:
       c->uses_helper = true;
+      c->uses_sample_mask_in = true;
+      break;
+   case nir_intrinsic_load_global_invocation_id:
+   case nir_intrinsic_load_workgroup_id:
+      c->info->uses_base = true;
       break;
    case nir_intrinsic_load_subgroup_invocation:
    case nir_intrinsic_load_subgroup_size:
@@ -741,8 +748,6 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
          failf(c, "more than %u texture-sampler pairs", WGSL_MAX_PAIRS);
       }
    }
-   if (tex->op == nir_texop_lod)
-      failf(c, "textureQueryLod");
 }
 
 static void
@@ -1009,6 +1014,17 @@ declare_io(struct ctx *c)
       /* An inverted depth range (the driver's flip_z): z mirrored in clip space, the range given the right way. */
       line(c, "override wg_flip_z: bool = false;");
    } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      /* gl_ClipDistance's slots down to free locations. */
+      for (unsigned k = 0; k < 2; k++) {
+         if (!(c->vary.mask & (1u << (30 + k))))
+            continue;
+         const unsigned to = ffs(~c->vary.mask) - 1;
+         c->vary.mask = (c->vary.mask & ~(1u << (30 + k))) | 1u << to;
+         c->vary.interp[to] = c->vary.interp[30 + k];
+         c->vary.sampling[to] = c->vary.sampling[30 + k];
+         c->vary.base[to] = c->vary.base[30 + k];
+         c->vary.clip[k] = to + 1;
+      }
       if (c->vary.mask || c->uses_frag_coord) {
          line(c, "struct In {");
          if (c->uses_frag_coord)
@@ -1558,9 +1574,13 @@ emit_output(struct ctx *c, nir_intrinsic_instr *intr)
          field = "pos";
       } else if (sem.location == VARYING_SLOT_CLIP_DIST0 || sem.location == VARYING_SLOT_CLIP_DIST1) {
          const unsigned at = (sem.location - VARYING_SLOT_CLIP_DIST0) * 4 + first;
-         u_foreach_bit(i, mask)
+         const unsigned read = c->vary.clip[sem.location - VARYING_SLOT_CLIP_DIST0];
+         u_foreach_bit(i, mask) {
             if (at + i < c->info->clip_distance_count)
                line(c, "o.clip[%u] = bitcast<f32>(%s);", at + i, src_comp(c, value, i));
+            if (read)
+               line(c, "o.v%u[%u] = bitcast<f32>(%s);", read - 1, first + i, src_comp(c, value, i));
+         }
          return;
       } else {
          const unsigned loc = sem.location - VARYING_SLOT_VAR0;
@@ -1601,7 +1621,9 @@ emit_input(struct ctx *c, nir_intrinsic_instr *intr)
       e = fmt(c, "i.a%u.%s", loc, comps(c, first, n));
       base = c->info->input_base[loc];
    } else {
-      const unsigned loc = sem.location - VARYING_SLOT_VAR0;
+      const unsigned loc = sem.location == VARYING_SLOT_CLIP_DIST0   ? c->vary.clip[0] - 1u
+                           : sem.location == VARYING_SLOT_CLIP_DIST1 ? c->vary.clip[1] - 1u
+                                                                     : sem.location - VARYING_SLOT_VAR0;
       e = fmt(c, "i.v%u.%s", loc, comps(c, first, n));
       base = c->vary.base[loc];
       /* At an offset from the pixel's centre, or at a sample: the input where WebGPU interpolates it (the centre, or
@@ -1860,10 +1882,11 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       line(c, "t%u = lid;", def->index);
       return;
    case nir_intrinsic_load_global_invocation_id:
-      line(c, "t%u = gid;", def->index);
+      line(c, "t%u = gid + vec3<u32>(wg_base_x, wg_base_y, wg_base_z) * vec3<u32>(%uu, %uu, %uu);", def->index,
+           c->nir->info.workgroup_size[0], c->nir->info.workgroup_size[1], c->nir->info.workgroup_size[2]);
       return;
    case nir_intrinsic_load_workgroup_id:
-      line(c, "t%u = wid;", def->index);
+      line(c, "t%u = wid + vec3<u32>(wg_base_x, wg_base_y, wg_base_z);", def->index);
       return;
    case nir_intrinsic_load_num_workgroups:
       line(c, "t%u = nwg;", def->index);
@@ -1881,10 +1904,10 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_layer_id:
       line(c, "t%u = 0u;", def->index);
       return;
-   /* Demoted invocations are known (wg_helper); the rasterizer's helpers aren't, WGSL having no built-in for them. */
+   /* WGSL has no built-in: demoted invocations are known (wg_helper), and the rasterizer's helpers cover no sample. */
    case nir_intrinsic_is_helper_invocation:
    case nir_intrinsic_load_helper_invocation:
-      line(c, "t%u = wg_helper;", def->index);
+      line(c, "t%u = wg_helper || smask == 0u;", def->index);
       return;
    case nir_intrinsic_ddx: case nir_intrinsic_ddx_fine: case nir_intrinsic_ddx_coarse:
    case nir_intrinsic_ddy: case nir_intrinsic_ddy_fine: case nir_intrinsic_ddy_coarse: {
@@ -2105,14 +2128,18 @@ tex_offset(struct ctx *c, nir_tex_instr *tex)
    nir_src *off = tex_src(tex, nir_tex_src_offset);
    if (!off)
       return NULL;
-   if (!nir_src_is_const(*off)) {
-      failf(c, "a texture offset that isn't a constant");
-      return NULL;
-   }
+   /* WGSL wants a const-expression, and a vector of constants is a vec of scalars here: each channel found through it. */
    const unsigned n = off->ssa->num_components;
-   const char *list = fmt(c, "%d", (int)nir_src_comp_as_int(*off, 0));
-   for (unsigned i = 1; i < n; i++)
-      list = fmt(c, "%s, %d", list, (int)nir_src_comp_as_int(*off, i));
+   const char *list = NULL;
+   for (unsigned i = 0; i < n; i++) {
+      const nir_scalar s = nir_scalar_chase_movs(nir_get_scalar(off->ssa, i));
+      if (!nir_scalar_is_const(s)) {
+         failf(c, "a texture offset that isn't a constant");
+         return NULL;
+      }
+      const int v = (int)nir_scalar_as_int(s);
+      list = list ? fmt(c, "%s, %d", list, v) : fmt(c, "%d", v);
+   }
    return n == 1 ? list : fmt(c, "vec%u<i32>(%s)", n, list);
 }
 
@@ -2143,8 +2170,11 @@ emit_tex(struct ctx *c, nir_tex_instr *tex)
       nir_src *lod = tex_src(tex, nir_tex_src_lod);
       const char *dims = r->r.multisampled || !lod ? fmt(c, "textureDimensions(%s)", t)
                                                    : fmt(c, "textureDimensions(%s, %s)", t, src_comp(c, lod, 0));
-      if (tex->is_array)
-         dims = fmt(c, "vec%u<u32>(%s, textureNumLayers(%s))", def->num_components, dims, t);
+      /* The channels asked: optimization shrinks the value to those it uses. */
+      if (tex->is_array && def->num_components == 3)
+         dims = fmt(c, "vec3<u32>(%s, textureNumLayers(%s))", dims, t);
+      else if (def->num_components == 1 && tex->sampler_dim != GLSL_SAMPLER_DIM_1D)
+         dims = fmt(c, "%s.x", dims);
       line(c, "t%u = %s;", def->index, dims);
       return;
    }
@@ -2588,6 +2618,9 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    } else if (stage == MESA_SHADER_COMPUTE) {
       for (unsigned i = 0; i < 3; i++)
          info->workgroup[i] = nir->info.workgroup_size[i];
+      /* vkCmdDispatchBase: WebGPU's dispatches start at workgroup 0, so a base is a pipeline's (wg_compute_based). */
+      if (info->uses_base)
+         line(&c, "override wg_base_x: u32 = 0u;\noverride wg_base_y: u32 = 0u;\noverride wg_base_z: u32 = 0u;");
       line(&c, "@compute @workgroup_size(%u, %u, %u) fn main(@builtin(local_invocation_id) lid: vec3<u32>, "
                "@builtin(global_invocation_id) gid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>, "
                "@builtin(num_workgroups) nwg: vec3<u32>, @builtin(local_invocation_index) lidx: u32%s%s) {",

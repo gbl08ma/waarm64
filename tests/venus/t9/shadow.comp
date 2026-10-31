@@ -1,0 +1,16 @@
+#version 450
+// VK4 T9: shadow samples at levels past the first (tests/wgsl.test.ts): WGSL's compare has level 0 alone.
+layout(local_size_x = 5) in;
+layout(set = 0, binding = 0) uniform sampler2DShadow img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[8]; };
+layout(constant_id = 0) const float REFERENCE = 0.5;
+void main() {
+  const vec3 at = vec3(0.5, 0.5, REFERENCE);
+  switch (gl_LocalInvocationIndex) {
+  case 0: o[0].x = textureLod(img, at, 0.0); break;
+  case 1: o[1].x = textureLod(img, at, 1.0); break;
+  case 2: o[2].x = textureLod(img, at, 0.25); break;
+  case 3: o[3].x = textureGrad(img, at, vec2(0.5, 0.0), vec2(0.0, 0.0)); break;
+  case 4: o[4].x = textureLod(img, vec3(0.3, 0.5, REFERENCE), 1.0); break;
+  }
+}

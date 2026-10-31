@@ -109,6 +109,9 @@ struct wgsl_varyings {
    uint8_t interp[32];
    uint8_t sampling[32];
    uint8_t base[32];
+   /* gl_ClipDistance read by the fragment stage: WGSL's clip_distances is the vertex stage's alone, so each of its two
+    * vec4 slots the stage reads also travels at a free location (this + 1; 0: not read). */
+   uint8_t clip[2];
 };
 
 /* What the driver needs of a compiled stage. */
@@ -142,7 +145,17 @@ struct wgsl_info {
    /* Integer textures' likewise, which WGSL fetches: their samplers aren't bindings, and only a key sees them. */
    uint32_t int_pair_count;
    uint32_t int_pairs[WGSL_MAX_PAIRS][2];
+   /* Pairs an op needs the sampler's state for whatever WebGPU could do with it (wgsl_sampler.c), the third word
+    * `WGSL_KEY_*`: a LOD query's samplers aren't bindings either. */
+   uint32_t key_pair_count;
+   uint32_t key_pairs[WGSL_MAX_PAIRS][3];
+   bool uses_base;              /* compute: reads workgroup or global ids, declares `override wg_base_*` (vkCmdDispatchBase) */
 };
+
+/* When a pair of `key_pairs` takes a key: where its view has several levels (a shadow sample at a LOD: level 0 is
+ * WGSL's), or always (a LOD query, which WGSL doesn't have). */
+#define WGSL_KEY_LEVELS 0
+#define WGSL_KEY_ALWAYS 1
 
 /* VkSamplerAddressMode's order. */
 enum wgsl_address { WGSL_ADDRESS_REPEAT, WGSL_ADDRESS_MIRROR, WGSL_ADDRESS_EDGE, WGSL_ADDRESS_BORDER, WGSL_ADDRESS_MIRROR_ONCE };
@@ -158,8 +171,8 @@ struct wgsl_sampler_key {
    uint8_t compare;                /* VkCompareOp */
    uint8_t levels;                 /* the view's (0: asked of the texture) */
    uint8_t padded;                 /* a compressed image larger in its texture (whole blocks): `size` is what it is */
-   uint8_t faces;                  /* a padded cube, bound as its faces */
-   uint8_t pad;
+   uint8_t faces;                  /* a cube bound as its faces (padded, or a shadow cube sampled from fetches) */
+   uint8_t clamp_dref;             /* the reference clamped to 0..1: a fixed-point depth format */
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */

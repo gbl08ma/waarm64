@@ -279,7 +279,7 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
             /* A size or level query's result doesn't say the texture's type, which only the variable does: the printer
              * declares it by `component`, which those ops don't use (1 sint, 2 uint), or a stage that only asks an
              * integer texture's size binds it as float. */
-            if (tex->op == nir_texop_txs || tex->op == nir_texop_query_levels) {
+            if (tex->op == nir_texop_txs || tex->op == nir_texop_query_levels || tex->op == nir_texop_lod) {
                const enum glsl_base_type type = glsl_get_sampler_result_type(glsl_without_array(var->type));
                tex->component = type == GLSL_TYPE_INT ? 1 : type == GLSL_TYPE_UINT ? 2 : 0;
             }
@@ -376,7 +376,7 @@ lower_1d_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       switch (tex->src[i].src_type) {
       case nir_tex_src_coord:
          nir_src_rewrite(&tex->src[i].src,
-                         widen_1d(b, v, tex->is_array, nir_tex_instr_src_type(tex, i) == nir_type_float
+                         widen_1d(b, v, tex->is_array && tex->op != nir_texop_lod, nir_tex_instr_src_type(tex, i) == nir_type_float
                                                           ? nir_imm_float(b, 0.5f)
                                                           : nir_imm_int(b, 0)));
          break;

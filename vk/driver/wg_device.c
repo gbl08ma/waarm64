@@ -1531,7 +1531,8 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       view->sampled = wg_create_json(WG_KIND_VIEW, &j);
    }
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
-       (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT)) {
+       (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT ||
+        (aspects == VK_IMAGE_ASPECT_DEPTH_BIT && view->vk.level_count > 1))) {
       wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
       if (!strcmp(aspect, "all"))
          wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
@@ -1691,8 +1692,9 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
    sampler->key.unnormalized = c->unnormalizedCoordinates;
    sampler->key.compare = c->compareEnable ? c->compareOp : VK_COMPARE_OP_ALWAYS;
    sampler->key.bias = c->mipLodBias;
-   sampler->key.min_lod = c->minLod;
-   sampler->key.max_lod = c->maxLod;
+   /* VK_LOD_CLAMP_NONE and programs' infinities: WGSL's min and max are indeterminate on them. */
+   sampler->key.min_lod = CLAMP(c->minLod, -1000.0f, 1000.0f);
+   sampler->key.max_lod = CLAMP(c->maxLod, -1000.0f, 1000.0f);
    for (uint32_t i = 0; i < 3; i++)
       sampler->emulated |= sampler->key.address[i] == WGSL_ADDRESS_BORDER ||
                            sampler->key.address[i] == WGSL_ADDRESS_MIRROR_ONCE;

@@ -162,7 +162,12 @@ T2–T14; the rest of the order is judgement, said with each.
   shadow map sampled at level 0, silently), non-constant texture offsets (print constants as literals: cheap),
   `textureQueryLod`, `gl_HelperInvocation`, a fragment shader writing depth without a depth aspect (a variant
   without the output), `vkCmdDispatchBase`'s base. *Done:* each cause's cases in the list. *Start:* backlog "Shaders",
-  "Rendering".
+  "Rendering". **Done 2026-10-31** (REPORT.md "VK4 T9"): shadow samples past level 0 from fetches, each texel compared, keyed by
+  the sampler (one-level views and a constant LOD of 0 stay WGSL's, no variant); offsets were constants the printer couldn't
+  see through a vec; `textureQueryLod` in the shader; helpers as an empty `sample_mask`; a dispatch's base as overrides, a pipeline
+  per base; `gl_ClipDistance` read by a fragment stage and mirror-once offsets besides; the depth output was T10's. 417 failures of
+  1,911 to 0 of 3,270, the list 18,943 → 21,198, 0 failures on the M4 (8 not supported). Left: backlog "Samplers' leftovers"
+  (anisotropy on what's fetched), `_pcoffset`'s `maintenance8`, the fetches' cost on a program.
 - **T10. Copies and resolves WebGPU refuses** (M): size-compatible copies between formats (compressed ↔
   uncompressed: texture tools, DXVK), multisampled copies, integer resolves, Stencil8's resolves, depth16's offsets,
   a resolve into a 3D image; whole depth and stencil copies through WebGPU's own path (taken never today: slower).

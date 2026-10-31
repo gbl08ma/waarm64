@@ -490,6 +490,8 @@ struct wg_program {
    uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
    uint32_t int_pair_count;                            /* integer textures': WGSL fetches them, no sampler bound */
    uint32_t int_pairs[WGSL_MAX_PAIRS][2];
+   uint32_t key_pair_count;                            /* wgsl_info's: pairs an op needs a key for */
+   uint32_t key_pairs[WGSL_MAX_PAIRS][3];
    bool pairs_full;          /* program_create's: its stages' pairs past WGSL_MAX_PAIRS (the pipeline refused) */
    uint32_t compute_module;
    char *compute_wgsl;       /* a compute program's WGSL (a base's: its variants' modules are made from it) */
@@ -513,6 +515,11 @@ struct wg_program {
    uint32_t fs_no_depth;    /* the fragment module without its depth output, and whose it is (fragment_without_depth) */
    const struct wg_shader *fs_no_depth_of;
    uint32_t compute;        /* a compute pipeline */
+   bool uses_base;          /* its stage reads workgroup or global ids */
+   struct wg_based {        /* the pipelines of vkCmdDispatchBase's bases */
+      uint32_t base[3], pipeline;
+      struct wg_based *next;
+   } *based;
    struct hash_table *pipelines;
    struct wg_pull *pulls;   /* wg_pipeline_pull's, by the bindings pulled */
    /* What identifies the program across shaders (wg_shader.c `program_link`): its data and its stages' WGSL. Stages
@@ -554,6 +561,7 @@ const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
  * samplers they're sampled with as non-filtering, whose read-only storage buffers in it as writable storage, and whose
  * stages print against `keys`; made at its first use, kept with the program. */
+uint32_t wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z);
 struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys,
                                       uint32_t key_count);
 void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs);
@@ -711,6 +719,7 @@ struct wg_cmd_buffer {
    struct wg_op_ib last_ib;
    struct wg_shader *last_compute;
    struct wg_program *last_program[2];
+   uint32_t last_based;     /* the compute pipeline the last dispatch ran with (wg_compute_based) */
    /* Transform feedback (VK3 L7.4): the bound buffers, and whether it's active (between its begin and end). */
    struct {
       struct wg_buffer *buffer;

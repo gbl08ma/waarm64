@@ -771,6 +771,43 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T9: the translator's wrong results — shadow samples past level 0, `textureQueryLod`, offsets, helpers, a dispatch's base
+
+**2026-10-31.** JSON in `results/vk4/t9/`: `base` before, `wide` the groups after, `neigh` the neighbouring shadow groups,
+`list-new-m4` the list's new cases on the M4 (Metal, Chrome for Testing 153.0.8010.12). `bench/gpu/deqp-run.ts vk`, SwiftShader
+on the dev VM, Chromium 153.0.8010.52.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| before: shadow, `textureQueryLod`, every 8th offset case, helpers, bases, clip reads | 1,911 | 127 | 417 | 1,367 |
+| after: the same groups, every offset case (no `_pcoffset`, no sparse) | 3,270 | 1,924 | 0 | 1,346 |
+| every 3rd of `texture.shadow`, every 16th of `pipeline.monolithic`'s shadow and compare, every 4th of `texture_gather`'s shadow | 2,996 | 408 | 0 | 2,588 |
+| the list's 2,255 new cases on the M4 | 2,255 | 2,247 | 0 | 8 |
+
+The list 18,943 -> 21,198.
+
+- **Offsets weren't what the backlog said.** Nothing was dynamic: `wgsl_finish` scalarizes constants (`nir_lower_load_const_to_scalar`), so
+  every vector offset reached the printer as a vec of scalars, and `nir_src_is_const` said no. Each channel is now found through the
+  vec. The truly dynamic `_pcoffset` cases need `maintenance8`, not advertised (2,760 not supported).
+- **Shadow samples past level 0** take T18's filter from fetches, each texel compared. What keeps real shadow maps cheap: a view of
+  one level and a constant LOD of 0 make no key, no variant and stay `textureSampleCompareLevel`; a test holds that. No program
+  replayed here samples a mipmapped shadow map, so the fetches' cost on one is unmeasured (eight `textureLoad`s a trilinear sample, twice that where mag and min filters differ).
+- **A trap: infinities.** dEQP's `clamp_min` sets `maxLod` to `inf`, and `min(x, inf)` in WGSL read the last level (indeterminate; a
+  bitcast keeps the compiler quiet). Key LODs are clamped to ±1,000 at the sampler. T8's integer path had the same exposure.
+- **A trap: `OpImageQueryLod`'s coordinate has no layer**, unlike every other sampling op: the spatial count and 1D's widening
+  read past it (a module with `t0.`). And optimization shrinks a size query to the channels used, so the printer now prints what's
+  asked (a cube array's `vec2<u32>(vec2<u32>, u32)` didn't compile, and its cases crashed).
+- **`textureQueryLod`'s y is before the sampler's clamps**, by dEQP's expectations; its x after.
+- **`gl_HelperInvocation`** as an empty `sample_mask`: all pass on SwiftShader and on Metal. No built-in says this is WebGPU's
+  promise; a backend that reports coverage for helpers would read false, as all of them did before.
+- **Beyond the brief, because the census files it under T9:** `gl_ClipDistance` read by a fragment stage, at free locations (18 failures
+  to 0). A mirror-once offset, T8's leftover, which these cases reached once offsets translated (all 21 failures left in the first run).
+- **The depth output without a depth aspect** was done by T10 (`fragment_without_depth`): nothing to do here.
+- **Tests**: `tests/wgsl.test.ts`'s seven. Planted, each fails: the filter nearest, the reference unclamped, a keyed shadow sample left
+  to WGSL, the compare swapped, offsets not found through the vec, a mirror-once offset after the wrap, the query's layer, its
+  texture's type, its clamps, helpers as demotes alone, the base off the workgroup id, the clip location. Dispatch bases' pipelines
+  and the LOD clamp are dEQP's cases (`dispatch_base` and `clamp_min`, each failing before its fix).
+
 ## VK4 T7: API 1.3's required features — R32 atomics, inline uniform blocks, multiview, device addresses
 
 **2026-10-31.** JSON in `results/vk4/t7/`: `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52;

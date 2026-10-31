@@ -87,8 +87,11 @@ scope's other reads ("The driver", "Usage scopes"); shared memory's atomics are 
 array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max is refused; a texture
 and a sampler array indexed apart get an `if` tree each (every texture with every sampler); a terminate
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
-`helperInvocationEXT()` and `gl_HelperInvocation` read (true only after a demote: WGSL can't see the rasterizer's
-helpers); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
+`helperInvocationEXT()` and `gl_HelperInvocation` read, with an empty `sample_mask` (WGSL has no built-in: the
+rasterizer's helpers cover no sample); a texture offset is printed as literals, each channel found through the vec
+scalarizing left (WGSL wants a const-expression); `gl_ClipDistance` read by a fragment stage travels at free locations,
+a vec4 per slot, beside WGSL's `clip_distances` (`wgsl_varyings.clip`); a compute stage that reads workgroup or global
+ids adds `override wg_base_x/y/z`, a pipeline per `vkCmdDispatchBase` base (`wg_compute_based`); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
 `2d-array` view of their own), its size counted in cubes; an explicit LOD on a depth texture without a comparison picks
 the nearest level.
 
@@ -165,7 +168,7 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's, `textureQueryLod`, and
+16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
 its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
@@ -178,8 +181,7 @@ pipeline without waiting for its result, and a pipeline that failed would fail t
 `SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 124 of 127
 translate (0.47 ms a stage at the median in Node, 28 ms GTK4's largest) and all 124 compile in Chromium; the three
 others are vkQuake's variants for a device with 16-bit floats (dumped through the Mac profile: translated for
-SwiftShader, without `shader-f16`, one stops at its 16-bit arithmetic, the others at a read-write `rg16float` storage image (T11's) and a texture
-offset that isn't a constant; its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
+SwiftShader, without `shader-f16`, two stop at their 16-bit arithmetic, the other at a read-write `rg16float` storage image (T11's); its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
 WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's runs of translated compute shaders
 (`runCompute`: subgroup operations against each subgroup's members, 16-bit storage, scratch arrays).
 **Subgroups on Metal** (Chromium 153 on the M4): a ballot that is an `if`'s only subgroup operation is computed with
@@ -435,7 +437,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
     footprint fell past the edge (per axis, nearest in or out, linear `clamp(u + 0.5)`·`clamp(size - u + 0.5)` in
     texels), which is exact: past the edge a linear filter reads the edge texel and the border, and clamp-to-edge has
     the former. A view of several levels picks them here (each has its size), so anisotropy doesn't survive; a shadow
-    sample stays WebGPU's, blended by its levels' weights, the border compared with its reference. The border as the
+    sample of one level stays WebGPU's, blended by its weights, the border compared with its reference. The border as the
     shader reads it is Vulkan's colour with what the format lacks replaced (`sampler_border`, dEQP's read), through
     the view's mapping, since the shader blends past the view's swizzle. A cube has no border (Vulkan ignores its
     address modes). A gather that needs one goes through four fetches.
@@ -443,8 +445,23 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
     coordinate's own derivatives (`textureSampleGrad`) so the clamp doesn't move the LOD. `samplerMirrorClampToEdge`
     and `VK_KHR_sampler_mirror_clamp_to_edge` are advertised.
   - **Unnormalized coordinates**: divided by the view's size (Vulkan allows them only at one level, clamped).
-  - **The sampler's LOD bias**: a shader bias, added to an explicit LOD, or the derivatives scaled by 2^bias; none on
-    a shadow sample (`textureSampleCompare` takes none: T9's). `maxSamplerLodBias` is 15.
+  - **The sampler's LOD bias**: a shader bias, added to an explicit LOD, or the derivatives scaled by 2^bias.
+    `maxSamplerLodBias` is 15.
+  - **Shadow samples past level 0** (VK4 T9): WGSL's compare has an implicit LOD or level 0, so a bias, an explicit LOD
+    or gradients on a view of several levels go through the fetches below, each texel compared and the results
+    filtered, as Vulkan does, the reference clamped for fixed-point formats (`clamp_dref`). Their pairs ask for a key
+    where the sampler wouldn't (`wgsl_info.key_pairs`, `WGSL_KEY_LEVELS`). A view of one level, the usual shadow map,
+    and a constant LOD of 0 stay WGSL's and make no variant. A shadow cube of several levels with a key is bound as its
+    faces (`key.faces`, every op on it fetched; a gather of one is refused). A key on a multi-level shadow sample takes
+    this path too: borders, mirror-once and bias all come with it.
+  - **`textureQueryLod`** (VK4 T9): λ from the coordinate's derivatives and the view's size, x the level or levels the
+    sampler's mode reads after its clamps, y the LOD before them (dEQP's reading). WGSL has no query, so such a pair
+    always takes a key (`WGSL_KEY_ALWAYS`), its sampler known by no binding. The coordinate has no layer (SPIR-V's).
+    Anisotropy's lengthening of the footprint isn't kept.
+  - **Offsets past a mirror-once reflection** (VK4 T9): in texels of the level before the wrap, so such a sample goes
+    through the fetches.
+  - Key LODs are clamped to ±1,000 at the sampler: `VK_LOD_CLAMP_NONE` and programs' infinities are indeterminate in
+    WGSL's `min` and `max` (a `maxLod` of `inf` read the last level).
   - **Compressed images that aren't whole blocks** (VK4 T18): WebGPU wants a compressed texture's first level in whole
     blocks, so such an image is a corner of a larger texture (13×13 of ASTC 8×5 in 16×20), whose levels aren't even in
     proportion to the image's (level 1 is 6 of 8), and padding lies past its edges: no scaled coordinate would serve. A

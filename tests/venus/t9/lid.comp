@@ -1,0 +1,5 @@
+#version 450
+// VK4 T9: a stage no base moves declares no base (tests/wgsl.test.ts).
+layout(local_size_x = 2) in;
+layout(set = 0, binding = 0, std430) buffer Out { uint o[2]; };
+void main() { o[gl_LocalInvocationID.x] = 1u; }

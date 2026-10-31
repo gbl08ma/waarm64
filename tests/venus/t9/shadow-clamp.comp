@@ -1,0 +1,6 @@
+#version 450
+// VK4 T9: a fixed-point format's reference is clamped (tests/wgsl.test.ts).
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform sampler2DShadow img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[8]; };
+void main() { o[0].x = textureLod(img, vec3(0.5, 0.5, 1.5), 1.0); }

@@ -4,7 +4,8 @@
  * the sampler's LOD bias, and integer textures, which WGSL samples with no sampler at all: they are fetched, their
  * address modes and LOD worked out here. Runs when a stage is printed, so a stage's NIR kept across its compile takes
  * another key without another translation. No key (a stage's own module): integer textures at clamp-to-edge, and
- * everything else WebGPU's.
+ * everything else WebGPU's. Shadow samples at a LOD and LOD queries (VK4 T9) need a sampler's state too, whatever WebGPU
+ * could do with it: `add_key_pair` says so.
  */
 #include "nir.h"
 #include "nir_builder.h"
@@ -32,6 +33,16 @@ find_key(const struct sampler_pass *s, const nir_tex_instr *tex)
 {
    for (uint32_t i = 0; i < s->key_count; i++)
       if (s->keys[i].texture == tex->texture_index && s->keys[i].sampler == tex->sampler_index)
+         return &s->keys[i];
+   return NULL;
+}
+
+/* A key of a cube bound as its faces, for an op on it through another sampler. */
+static const struct wgsl_sampler_key *
+faces_key(const struct sampler_pass *s, const nir_tex_instr *tex)
+{
+   for (uint32_t i = 0; i < s->key_count; i++)
+      if (s->keys[i].texture == tex->texture_index && s->keys[i].faces)
          return &s->keys[i];
    return NULL;
 }
@@ -78,6 +89,7 @@ query(nir_builder *b, const nir_tex_instr *tex, nir_texop op, nir_def *lod, unsi
    q->sampler_dim = tex->sampler_dim;
    q->is_array = tex->is_array;
    q->dest_type = nir_type_int32;
+   q->component = tex->op == nir_texop_lod ? tex->component : 0; /* a LOD query's texture may only be asked */
    q->texture_index = tex->texture_index;
    q->sampler_index = tex->sampler_index;
    if (lod)
@@ -87,11 +99,11 @@ query(nir_builder *b, const nir_tex_instr *tex, nir_texop op, nir_def *lod, unsi
    return &q->def;
 }
 
-/* The spatial dimensions of a coordinate. */
+/* The spatial dimensions of a coordinate (a LOD query's has no layer). */
 static unsigned
 spatial(const nir_tex_instr *tex)
 {
-   return tex->coord_components - (tex->is_array ? 1 : 0);
+   return tex->coord_components - (tex->is_array && tex->op != nir_texop_lod ? 1 : 0);
 }
 
 static nir_def *
@@ -182,7 +194,8 @@ coord_derivatives(nir_builder *b, const nir_tex_instr *tex, nir_def *coord, nir_
       }
       return true;
    }
-   if ((tex->op != nir_texop_tex && tex->op != nir_texop_txb) || b->shader->info.stage != MESA_SHADER_FRAGMENT)
+   if ((tex->op != nir_texop_tex && tex->op != nir_texop_txb && tex->op != nir_texop_lod) ||
+       b->shader->info.stage != MESA_SHADER_FRAGMENT)
       return false;
    for (unsigned i = 0; i < n; i++) {
       nir_def *c = nir_channel(b, coord, i);
@@ -267,6 +280,7 @@ fetch(nir_builder *b, const nir_tex_instr *tex, nir_def *coord, nir_def *lod, un
    f->is_array = array;
    f->coord_components = coord_components;
    f->dest_type = tex->dest_type;
+   f->is_shadow = tex->is_shadow; /* declares a depth texture: what its layout is */
    f->texture_index = tex->texture_index;
    f->sampler_index = tex->sampler_index;
    f->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
@@ -397,12 +411,20 @@ compare_of(nir_builder *b, nir_def *dref, nir_def *texel, unsigned op)
    return nir_b2f32(b, r);
 }
 
+/* The op's reference (NULL: none), as the format compares it: Vulkan clamps it for fixed-point depth. */
+static nir_def *
+reference(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key)
+{
+   nir_def *dref = tex_source(tex, nir_tex_src_comparator);
+   return dref && key->clamp_dref ? nir_fsat(b, dref) : dref;
+}
+
 /* A gather through fetches, for what WebGPU's samplers can't address (borders, mirror-once): the four texels' chosen
  * component, each wrapped, in OpImageGather's order (i0 j1, i1 j1, i1 j0, i0 j0); compared for a shadow gather. */
 static nir_def *
 gather_fetch(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *key)
 {
-   nir_def *coord = tex_source(tex, nir_tex_src_coord), *dref = tex_source(tex, nir_tex_src_comparator);
+   nir_def *coord = tex_source(tex, nir_tex_src_coord), *dref = reference(b, tex, key);
    const unsigned n = spatial(tex);
    nir_def *size = key->padded ? padded_size(b, tex, key, NULL) : query(b, tex, nir_texop_txs, nir_imm_int(b, 0), tex->coord_components);
    nir_def *lo[2], *hi[2], *out_lo[2], *out_hi[2];
@@ -433,14 +455,15 @@ gather_fetch(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
    return nir_vec4(b, res[0], res[1], res[2], res[3]);
 }
 
-/* Padded textures (T18): WebGPU wants a compressed texture's first level in whole blocks, so an image that isn't is a
- * corner of a larger texture, whose levels aren't even in proportion to the image's (13 in blocks of 8 is 16: its level
- * 1 is 6 of 8). WebGPU's sampler can only see the texture, so the filter is the shader's: Vulkan's texels at each level
- * of the image, wrapped by the address modes, weighted here. */
-struct padded {
+/* Samples from texel fetches, Vulkan's LOD and filter in the shader. Padded textures (T18): WebGPU wants a compressed
+ * texture's first level in whole blocks, so an image that isn't is a corner of a larger texture, whose levels aren't
+ * even in proportion to the image's (13 in blocks of 8 is 16: its level 1 is 6 of 8), and WebGPU's sampler can only see
+ * the texture. Shadow samples past level 0 (T9): WGSL's compare at level 0 alone, so each texel is compared here and
+ * the results filtered, as Vulkan does. */
+struct fetched {
    const nir_tex_instr *tex;
    const struct wgsl_sampler_key *key;
-   nir_def *level, *extent[3], *layer;
+   nir_def *level, *extent[3], *layer, *dref;
    unsigned n;
    bool cube;
 };
@@ -448,7 +471,7 @@ struct padded {
 /* One texel (`i`, on `face` for a cube, in the image's level); a cube's neighbour past an edge is on the next face:
  * the texel's centre as a direction, found again by Vulkan's table. */
 static nir_def *
-padded_texel(nir_builder *b, const struct padded *p, nir_def *const *i, nir_def *face, nir_def *du, nir_def *dv)
+fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_def *face)
 {
    const nir_tex_instr *tex = p->tex;
    nir_def *c[4];
@@ -481,12 +504,17 @@ padded_texel(nir_builder *b, const struct padded *p, nir_def *const *i, nir_def 
    }
    nir_def *texel = fetch(b, tex, nir_vec(b, c, count), p->level, 4, p->cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
                           p->cube || tex->is_array, count);
-   return uses_address(tex, p->key, WGSL_ADDRESS_BORDER) ? nir_bcsel(b, outside, border_vec(b, tex, p->key), texel) : texel;
+   if (uses_address(tex, p->key, WGSL_ADDRESS_BORDER))
+      texel = nir_bcsel(b, outside, border_vec(b, tex, p->key), texel);
+   if (!p->dref)
+      return texel;
+   return nir_vec4(b, compare_of(b, p->dref, nir_channel(b, texel, 0), p->key->compare), nir_imm_float(b, 0.0f),
+                   nir_imm_float(b, 0.0f), nir_imm_float(b, 1.0f));
 }
 
 /* The image's sample at one level, nearest or linear. `u` in texels of the level: a cube's on `face`. */
 static nir_def *
-padded_filter(nir_builder *b, const struct padded *p, nir_def *const *u, nir_def *face, bool linear)
+fetched_filter(nir_builder *b, const struct fetched *p, nir_def *const *u, nir_def *face, bool linear)
 {
    nir_def *lo[3], *hi[3], *weight[3];
    const unsigned n = p->cube ? 2 : p->n;
@@ -503,7 +531,7 @@ padded_filter(nir_builder *b, const struct padded *p, nir_def *const *u, nir_def
       }
    }
    if (!linear)
-      return padded_texel(b, p, lo, face, NULL, NULL);
+      return fetched_texel(b, p, lo, face);
    nir_def *sum = NULL;
    for (unsigned corner = 0; corner < (1u << n); corner++) {
       nir_def *i[3], *w = nir_imm_float(b, 1.0f);
@@ -512,27 +540,37 @@ padded_filter(nir_builder *b, const struct padded *p, nir_def *const *u, nir_def
          i[k] = high ? hi[k] : lo[k];
          w = nir_fmul(b, w, high ? weight[k] : nir_fsub_imm(b, 1.0f, weight[k]));
       }
-      nir_def *texel = nir_fmul(b, padded_texel(b, p, i, face, NULL, NULL), nir_vec4(b, w, w, w, w));
+      nir_def *texel = nir_fmul(b, fetched_texel(b, p, i, face), nir_vec4(b, w, w, w, w));
       sum = sum ? nir_fadd(b, sum, texel) : texel;
    }
    return sum;
 }
 
-/* A sample of a padded texture: Vulkan's LOD, then the filter above at its level or levels. */
+/* A sample from fetches: Vulkan's LOD, then the filter above at its level or levels. A cube's binding is its faces. */
 static nir_def *
-padded_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *key)
+fetched_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *key)
 {
    nir_def *coord = tex_source(tex, nir_tex_src_coord);
    const bool cube = tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE;
    const unsigned n = spatial(tex);
-   struct padded p = { .tex = tex, .key = key, .n = n, .cube = cube };
+   struct fetched p = { .tex = tex, .key = key, .n = n, .cube = cube, .dref = reference(b, tex, key) };
+   /* The view's first level: a padded image's as Vulkan has it, else the texture's. */
+   nir_def *base[3];
+   nir_tex_instr view = *tex;
+   if (cube) {
+      view.sampler_dim = GLSL_SAMPLER_DIM_2D;
+      view.is_array = true;
+   }
+   nir_def *size0 = key->padded ? NULL : query(b, &view, nir_texop_txs, nir_imm_int(b, 0), cube ? 3 : tex->coord_components);
+   for (unsigned i = 0; i < (cube ? 2 : n); i++)
+      base[i] = key->padded ? nir_imm_int(b, key->size[i]) : nir_channel(b, size0, i);
    nir_def *dx[3], *dy[3], *lambda = NULL;
    struct cube_place place = { 0 };
    const bool derivatives = coord_derivatives(b, tex, coord, dx, dy);
    if (cube) {
       place = cube_place(b, coord, derivatives ? dx : NULL, derivatives ? dy : NULL);
       if (derivatives) {
-         nir_def *size = nir_imm_float(b, (float)key->size[0]);
+         nir_def *size = nir_i2f32(b, base[0]);
          nir_def *x[2] = { nir_fmul(b, place.ds[0], size), nir_fmul(b, place.dt[0], size) };
          nir_def *y[2] = { nir_fmul(b, place.ds[1], size), nir_fmul(b, place.dt[1], size) };
          lambda = lambda_of(b, x, y, 2);
@@ -540,7 +578,7 @@ padded_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key 
    } else if (derivatives) {
       nir_def *x[3], *y[3];
       for (unsigned i = 0; i < n; i++) {
-         nir_def *size = nir_imm_float(b, (float)key->size[i]);
+         nir_def *size = nir_i2f32(b, base[i]);
          x[i] = nir_fmul(b, dx[i], size);
          y[i] = nir_fmul(b, dy[i], size);
       }
@@ -574,7 +612,7 @@ padded_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key 
    for (unsigned m = 0; m < levels; m++) {
       p.level = at[m];
       for (unsigned i = 0; i < 3; i++)
-         p.extent[i] = i < (cube ? 2 : n) ? nir_imax(b, nir_ishr(b, nir_imm_int(b, key->size[i]), at[m]), nir_imm_int(b, 1)) : NULL;
+         p.extent[i] = i < (cube ? 2 : n) ? nir_imax(b, nir_ishr(b, base[i], at[m]), nir_imm_int(b, 1)) : NULL;
       nir_def *u[3];
       nir_def *face = cube ? place.face : NULL;
       for (unsigned i = 0; i < (cube ? 2 : n); i++) {
@@ -582,9 +620,9 @@ padded_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key 
          u[i] = key->unnormalized ? c : nir_fmul(b, c, nir_i2f32(b, p.extent[i]));
       }
       if (key->mag_linear == key->min_linear) {
-         res[m] = padded_filter(b, &p, u, face, key->min_linear);
+         res[m] = fetched_filter(b, &p, u, face, key->min_linear);
       } else {
-         nir_def *x = padded_filter(b, &p, u, face, key->mag_linear), *y = padded_filter(b, &p, u, face, key->min_linear);
+         nir_def *x = fetched_filter(b, &p, u, face, key->mag_linear), *y = fetched_filter(b, &p, u, face, key->min_linear);
          res[m] = nir_bcsel(b, nir_fle_imm(b, lod, 0.0f), x, y);
       }
    }
@@ -647,7 +685,7 @@ inside(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *
 static nir_def *
 blend_border(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key, nir_def *res, nir_def *weight)
 {
-   nir_def *dref = tex_source(tex, nir_tex_src_comparator);
+   nir_def *dref = reference(b, tex, key);
    nir_def *c[4];
    for (unsigned i = 0; i < res->num_components; i++) {
       nir_def *border;
@@ -670,7 +708,7 @@ set_coord(nir_tex_instr *tex, nir_def *coord)
 }
 
 /* The sampler's bias on an op WebGPU's sampler ignores it for: a shader bias, a LOD, or derivatives scaled. A shadow
- * sample has neither (T9's). */
+ * sample of one level has no use for it. */
 static void
 add_bias(nir_builder *b, nir_tex_instr *tex, float bias)
 {
@@ -720,6 +758,11 @@ float_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
          return false;
       nir_def *res = gather_fetch(b, tex, key);
       nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
+      return true;
+   }
+   /* An offset is in texels of the level before the wrap: past a reflection only the shader can have it there. */
+   if (once && tex_source(tex, nir_tex_src_offset)) {
+      nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
    }
    nir_def *adjusted = coord;
@@ -774,7 +817,7 @@ float_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
    /* The sample at clamp-to-edge (the sampler's address there), blended towards the border by how much of the
     * filter's footprint fell past the edge. Whole views of one level need no LOD; else the levels are chosen here, so
     * that each blends by its own size (anisotropy doesn't survive: Vulkan leaves its footprint to the implementation).
-    * A shadow sample can't take a level past 0 (T9's): it stays WebGPU's, blended by its level's weights. */
+    * A shadow sample here is of one level (fetched_sample takes the others). */
    nir_def *derivative_dx[3], *derivative_dy[3];
    nir_def *lambda = NULL;
    const bool multi = key->levels > 1;
@@ -824,6 +867,79 @@ float_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
    return true;
 }
 
+/* Says that `tex`'s pair needs a key (WGSL_KEY_*). */
+static void
+add_key_pair(struct sampler_pass *s, const nir_tex_instr *tex, uint32_t when)
+{
+   struct wgsl_info *info = s->info;
+   for (uint32_t i = 0; i < info->key_pair_count; i++)
+      if (info->key_pairs[i][0] == tex->texture_index && info->key_pairs[i][1] == tex->sampler_index) {
+         info->key_pairs[i][2] |= when;
+         return;
+      }
+   if (info->key_pair_count < WGSL_MAX_PAIRS) {
+      info->key_pairs[info->key_pair_count][0] = tex->texture_index;
+      info->key_pairs[info->key_pair_count][1] = tex->sampler_index;
+      info->key_pairs[info->key_pair_count++][2] = when;
+   }
+}
+
+/* Whether a shadow sample means a level WGSL's compare can't reach, on a view of several: an explicit LOD that isn't
+ * the first level, a bias, gradients. An implicit LOD is WGSL's own. */
+static bool
+shadow_past_first(const nir_tex_instr *tex)
+{
+   if (!tex->is_shadow)
+      return false;
+   if (tex->op == nir_texop_txb || tex->op == nir_texop_txd)
+      return true;
+   if (tex->op != nir_texop_txl)
+      return false;
+   const int i = nir_tex_instr_src_index(tex, nir_tex_src_lod);
+   return i >= 0 && (!nir_src_is_const(tex->src[i].src) || nir_src_as_float(tex->src[i].src) > 0.0f);
+}
+
+/* OpImageQueryLod, which WGSL hasn't: λ as a sample would have it, from the coordinate's derivatives (anisotropy's
+ * lengthening isn't kept), then x the level or levels it reads, y the LOD before the sampler's clamps. */
+static nir_def *
+lod_query(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *key, bool faces)
+{
+   nir_def *coord = tex_source(tex, nir_tex_src_coord);
+   const bool cube = tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE;
+   const unsigned n = spatial(tex);
+   nir_tex_instr view = *tex;
+   if (faces) {
+      view.sampler_dim = GLSL_SAMPLER_DIM_2D;
+      view.is_array = true;
+   }
+   nir_def *base[3];
+   nir_def *size0 = key->padded ? NULL : query(b, &view, nir_texop_txs, nir_imm_int(b, 0), cube ? 2 + (faces || tex->is_array) : n + tex->is_array);
+   for (unsigned i = 0; i < (cube ? 2 : n); i++)
+      base[i] = key->padded ? nir_imm_int(b, key->size[i]) : nir_channel(b, size0, i);
+   nir_def *dx[3], *dy[3], *x[3], *y[3], *lambda = NULL;
+   if (coord_derivatives(b, tex, coord, dx, dy)) {
+      if (cube) {
+         const struct cube_place place = cube_place(b, coord, dx, dy);
+         nir_def *size = nir_i2f32(b, base[0]);
+         x[0] = nir_fmul(b, place.ds[0], size), x[1] = nir_fmul(b, place.dt[0], size);
+         y[0] = nir_fmul(b, place.ds[1], size), y[1] = nir_fmul(b, place.dt[1], size);
+         lambda = lambda_of(b, x, y, 2);
+      } else {
+         for (unsigned i = 0; i < n; i++) {
+            nir_def *size = nir_i2f32(b, base[i]);
+            x[i] = nir_fmul(b, dx[i], size);
+            y[i] = nir_fmul(b, dy[i], size);
+         }
+         lambda = lambda_of(b, x, y, n);
+      }
+   }
+   nir_def *unclamped = biased_lod(b, tex, key, lambda), *lod = clamped_lod(b, key, unclamped);
+   nir_def *levels = key->levels ? nir_imm_int(b, key->levels) : query(b, &view, nir_texop_query_levels, NULL, 1);
+   nir_def *level = key->mip_linear ? nir_fmin(b, nir_fmax(b, lod, nir_imm_float(b, 0.0f)), nir_i2f32(b, nir_iadd_imm(b, levels, -1)))
+                                    : nir_i2f32(b, nearest_level(b, &view, key, lod));
+   return nir_vec2(b, level, unclamped);
+}
+
 static bool
 lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
 {
@@ -831,6 +947,14 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
    b->cursor = nir_before_instr(&tex->instr);
    if (tex->sampler_dim == GLSL_SAMPLER_DIM_BUF)
       return false;
+   if (tex->op == nir_texop_lod) {
+      add_key_pair(s, tex, WGSL_KEY_ALWAYS);
+      const struct wgsl_sampler_key *key = find_key(s, tex);
+      nir_def_replace(&tex->def, lod_query(b, tex, key ? key : &plain_key, is_int_cube(s, tex)));
+      return true;
+   }
+   if (shadow_past_first(tex))
+      add_key_pair(s, tex, WGSL_KEY_LEVELS);
    /* Sizes and levels of a cube whose binding is its faces. */
    if (!samples(tex) && is_int_cube(s, tex)) {
       if (tex->op == nir_texop_query_levels) {
@@ -892,7 +1016,7 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
          s->padded_cube_gather = true;
          return false;
       }
-      nir_def_replace(&tex->def, nir_trim_vector(b, padded_sample(b, tex, key), tex->def.num_components));
+      nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
    }
    if (is_integer(tex)) {
@@ -918,6 +1042,19 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
       return true;
    }
+   /* A cube bound as its faces: every op on it; a shadow sample of several levels, whose level is the shader's. */
+   if (!key)
+      key = faces_key(s, tex);
+   if (key && (key->faces || (tex->is_shadow && key->levels > 1))) {
+      if (tex->op == nir_texop_tg4 && tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE) {
+         nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key), tex->def.num_components));
+         return true;
+      }
+      if (tex->op != nir_texop_tg4) {
+         nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
+         return true;
+      }
+   }
    return key ? float_sample(b, tex, key) : false;
 }
 
@@ -925,7 +1062,10 @@ static bool
 find_cubes(nir_builder *b, nir_tex_instr *tex, void *data)
 {
    struct sampler_pass *s = data;
-   if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE || !is_integer(tex) || !samples(tex) || tex->op == nir_texop_tg4)
+   if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE || (!samples(tex) && tex->op != nir_texop_lod) || tex->op == nir_texop_tg4)
+      return false;
+   const struct wgsl_sampler_key *faces = faces_key(s, tex);
+   if (!is_integer(tex) && !(faces && !faces->padded))
       return false;
    if (!is_int_cube(s, tex) && s->cube_count < WGSL_MAX_PAIRS)
       s->cubes[s->cube_count++] = tex->texture_index;

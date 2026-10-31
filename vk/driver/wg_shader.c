@@ -152,6 +152,11 @@ program_free(struct wg_program *p)
    wg_id_release(p->vs_module);
    wg_id_release(p->fs_module);
    wg_id_release(p->fs_no_depth);
+   for (struct wg_based *u = p->based, *next; u; u = next) {
+      next = u->next;
+      wg_id_release(u->pipeline);
+      free(u);
+   }
    for (struct wg_pull *u = p->pulls, *next; u; u = next) {
       next = u->next;
       wg_id_release(u->bgl);
@@ -400,6 +405,8 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
          touched |= info->pairs[i][0] == v->keys[k].texture && info->pairs[i][1] == v->keys[k].sampler;
       for (uint32_t i = 0; i < info->int_pair_count; i++)
          touched |= info->int_pairs[i][0] == v->keys[k].texture && info->int_pairs[i][1] == v->keys[k].sampler;
+      for (uint32_t i = 0; i < info->key_pair_count; i++)
+         touched |= info->key_pairs[i][0] == v->keys[k].texture && info->key_pairs[i][1] == v->keys[k].sampler;
       /* A padded texture's size queries, a stage that doesn't sample it (no NIR kept if it samples nothing at all). */
       for (uint32_t i = 0; v->keys[k].padded && i < info->resource_count; i++)
          touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
@@ -482,9 +489,11 @@ compute_pairs(const struct wg_program *p)
    struct wgsl_info i;
    i.pair_count = p->pair_count;
    i.int_pair_count = p->int_pair_count;
+   i.key_pair_count = p->key_pair_count;
    i.resource_count = p->resource_count;
    memcpy(i.pairs, p->pairs, sizeof(i.pairs));
    memcpy(i.int_pairs, p->int_pairs, sizeof(i.int_pairs));
+   memcpy(i.key_pairs, p->key_pairs, sizeof(i.key_pairs));
    memcpy(i.resources, p->resources, sizeof(i.resources));
    return i;
 }
@@ -506,6 +515,7 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
    v->push_group = 0;
    v->push_group_gen = 0;
    v->compute = 0;
+   v->based = NULL;
    v->compute_wgsl = NULL;
    v->compute_nir = NULL;
    v->owns_compute_module = false;
@@ -623,6 +633,19 @@ resource_merge(struct wgsl_resource *m, const struct wgsl_resource *r)
    m->nonfiltering |= r->nonfiltering;
 }
 
+/* A pair that needs a key into a program's, the wider of the two whens. */
+static void
+key_pair_merge(struct wg_program *p, const uint32_t *pair)
+{
+   for (uint32_t k = 0; k < p->key_pair_count; k++)
+      if (p->key_pairs[k][0] == pair[0] && p->key_pairs[k][1] == pair[1]) {
+         p->key_pairs[k][2] |= pair[2];
+         return;
+      }
+   if (p->key_pair_count < WGSL_MAX_PAIRS)
+      memcpy(p->key_pairs[p->key_pair_count++], pair, sizeof(p->key_pairs[0]));
+}
+
 /* The program of `count` translated stages (visibility by stage) on a pipeline's set layouts. */
 static struct wg_program *
 program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_set_layout *const *layouts,
@@ -661,6 +684,9 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
             p->int_pairs[p->int_pair_count++][1] = info->int_pairs[i][1];
          }
       }
+      for (uint32_t i = 0; i < info->key_pair_count; i++)
+         key_pair_merge(p, info->key_pairs[i]);
+      p->uses_base |= info->uses_base;
       for (uint32_t i = 0; i < info->resource_count; i++) {
          const struct wgsl_resource *r = &info->resources[i];
          uint32_t k = 0;
@@ -712,12 +738,34 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    return p;
 }
 
+/* The compute pipeline of a dispatch from a base (vkCmdDispatchBase): WebGPU's start at workgroup 0, so the ids the
+ * shader reads are offset by overrides, a pipeline per base. One that reads no id needs none. */
+uint32_t
+wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z)
+{
+   if ((!x && !y && !z) || !p->uses_base)
+      return p->compute;
+   for (struct wg_based *u = p->based; u; u = u->next)
+      if (u->base[0] == x && u->base[1] == y && u->base[2] == z)
+         return u->pipeline;
+   struct wg_based *u = malloc(sizeof(*u));
+   u->base[0] = x, u->base[1] = y, u->base[2] = z;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\",\"constants\":"
+                  "{\"wg_base_x\":%u,\"wg_base_y\":%u,\"wg_base_z\":%u}}}", p->layout, p->compute_module, x, y, z);
+   u->pipeline = wg_create_json(WG_KIND_COMPUTE, &j);
+   u->next = p->based;
+   p->based = u;
+   return u->pipeline;
+}
+
 /* A program's data across runs (wg_serialize): everything program_create derives from its stages and set layouts.
  * The resources go field by field: a struct's padding is indeterminate, and a program's link hashes these bytes (two
  * stages of one link would otherwise get different programs, and a draw would lose its fragment shader). */
 #define PROGRAM_FIELDS(X)                                                                                              \
    X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
-   X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs)
+   X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
+   X(uses_base)
 #define RESOURCE_FIELDS(X)                                                                                             \
    X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(written) X(nonfiltering) X(image_words) X(access) \
    X(format) X(size)
@@ -843,6 +891,8 @@ wg_program_merge(struct wg_program *a, const struct wg_program *b)
          m->int_pairs[m->int_pair_count++][1] = b->int_pairs[i][1];
       }
    }
+   for (uint32_t i = 0; i < b->key_pair_count; i++)
+      key_pair_merge(m, b->key_pairs[i]);
    /* By group, then binding, each resource's visibility, dynamic index and set with it. */
    struct {
       struct wgsl_resource r;

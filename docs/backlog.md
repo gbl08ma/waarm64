@@ -804,10 +804,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     colour formats beside a depth format refused at image creation though advertised
     (`render_to_image.*.a1r5g5b5_unorm_pack16_d32_sfloat_s8_uint`, `r5g6b5_unorm_pack16_d24_unorm_s8_uint`:
     `VK_ERROR_FORMAT_NOT_SUPPORTED`, VK4 T1).
-  - **Samplers' leftovers** (VK4 T8; vk/README.md "Samplers in the shader"): a border or mirror-once on a shadow
-    sample stays WebGPU's LOD, and its sampler's bias is lost (T9's: `textureSampleCompare` takes none); a border on a view of
-    several levels picks its levels in the shader, so that sample loses anisotropy; a constant offset on a mirror-once
-    float sample is applied after the reflection, not before; an integer cube both sampled and gathered is refused (its
+  - **Samplers' leftovers** (VK4 T8, T9; vk/README.md "Samplers in the shader"): a border on a view of several levels, a
+    shadow sample past level 0 and a mirror-once with an offset pick their levels in the shader, so those samples lose
+    anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
+    mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a shadow cube's filter past a corner
+    of three faces takes the two nearest; a depth texture sampled without a comparison at an explicit LOD picks the
+    nearest level (a linear mip filter's blend is lost, WebGPU filtering no depth); an op on a shadow cube bound as its
+    faces through a sampler of no key takes the key of the sampler that made it so; a gather of a shadow cube bound so
+    is refused; an integer cube both sampled and gathered is refused (its
     one binding can't be both; none seen); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
@@ -818,18 +822,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     fail there only and stay out of `tests/deqp/vk.txt`, which SwiftShader runs. Lavapipe couldn't be put under Chromium
     to tell SwiftShader from Dawn's Vulkan backend: `bench/vulkan/nvidia.sh` `VK2_STEPS=t18` asks NVIDIA, in the next
     batch of the user's runs. Not looked for in SwiftShader's sources.
-  - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
-    WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
-    fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
-    `textureQueryLod` (9), image atomics; derivatives in non-uniform control flow
+  - **Shaders**: texture offsets that really aren't constants (`*_pcoffset`, 2,760 cases, need `maintenance8`, not
+    advertised); derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
-    shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,
-    `textureSampleCompareLevel` only level 0: a mipmapped shadow map sampled at a LOD is sampled at level 0, silently;
-    an emulation would `textureLoad` the level's texels and compare and filter them in the shader, which needs the
-    sampler's filter as a variant); `gl_HelperInvocation` of the rasterizer's helpers (WGSL has no built-in: only
-    demoted invocations read true); signed and unsigned atomic min or max on one array (refused: WGSL's atomics have one
-    type; shared memory is one array); `vkCmdDispatchBase`'s base (warned and dropped: a compute pipeline made per base
-    with overrides added to the workgroup and global ids would do it; `compute.*.device_group.dispatch_base`); flat
+    signed and unsigned atomic min or max on one array (refused: WGSL's atomics have one
+    type; shared memory is one array); flat
     varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
     load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
   - **Clears of image layers** (VK4 T1: 15 and 18 `api.image_clearing` failures, not looked into): clears of several

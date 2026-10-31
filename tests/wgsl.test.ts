@@ -19,7 +19,7 @@ const MODULE = join(root, 'target/vk/venus.wasm');
 
 /** Why a stage may not translate: what the direct set doesn't offer, and the translator's known gaps (docs/backlog.md
  * "The Vulkan driver's gaps": vkQuake's variants for 16-bit floats, translated since VK3 L5, reach these). */
-const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|dynamically indexed|^image atomics on |^a read_write storage image of format |^a texture offset that isn't a constant$/;
+const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|dynamically indexed|^image atomics on |^a read_write storage image of format /;
 
 type Stage = { name: string; stage: number; words: Uint32Array };
 
@@ -389,7 +389,7 @@ test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip
     assert.match(term, /discard; return( o)?;/);
     const demote = ok(`${dir}/demote.frag`, 'vulkan1.3');
     assert.match(demote, /discard; wg_helper = true;/);
-    assert.match(demote, /= wg_helper;/);
+    assert.match(demote, /= wg_helper \|\| smask == 0u;/);
     // 12: one workgroup variable for every uniform condition.
     const conds = ok(`${dir}/uniform-conds.comp`);
     assert.equal(conds.match(/var<workgroup> wg_uc/g)?.length, 1, conds);
@@ -1143,6 +1143,152 @@ test('gl_ViewIndex is an override, declared only by a stage that reads it (VK4 T
     const errors = await compile([r.text]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('constant texture offsets are literals, whatever scalarizing made of them (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t9/offset.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /textureSample\(.*vec2<i32>\(-8, 7\)\)/);
+    assert.match(r.text, /textureLoad\(.*\+ vec2<i32>\(1, 2\)\)/);
+    // Past a mirror-once reflection only the shader can apply it: before the wrap, texel -1 + 1 of a red and black row.
+    const one = [255, 0, 0, 255], zero = [0, 0, 0, 255];
+    const once = glslStage(translate, tmp, 'tests/venus/t9/offset.comp', { sampler: key(ADDRESS.once) });
+    assert.equal(once.rc, 0, once.text);
+    const res = await runSampled(once.text, [{ binding: 0, format: 'rgba8unorm', w: 2, h: 2, data: [...one, ...zero, ...one, ...zero] }], undefined, { binding: 2, size: 8 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.out[0], 1, 'the first texel');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a shadow sample past level 0 compares each texel of its level and filters the results (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // depth16unorm 4×4: level 0 all 0.25; level 1 a column of 0.25, a column of 0.75. Against 0.5, LESS: 0, and 0, 1.
+    const u16 = (v: number) => [v & 255, v >> 8];
+    const a = u16(16384), b = u16(49152);
+    const level0 = Array.from({ length: 16 }, () => a).flat(), level1 = [...a, ...b, ...a, ...b];
+    const values = async (sampler: Device['sampler']) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t9/shadow.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      assert.doesNotMatch(r.text, /textureSampleCompareLevel\(.*0\.75/);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'depth16unorm', w: 4, h: 4, data: level0, mips: [level1] }], undefined, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return [...res.out].filter((_, i) => i % 4 === 0).slice(0, 5).map((v) => Math.round(v * 1000) / 1000);
+    };
+    const LESS = 1, LEQUAL = 3;
+    const nearest = await values(key(ADDRESS.edge, { levels: 2, compare: LESS }));
+    if (!nearest) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    // LOD 0, 1, 0.25, 1 by gradients (half the image: 2 texels), and x 0.3 of level 1, its first column. x 0.5 is the
+    // second column's by nearest.
+    assert.deepEqual(nearest, [0, 1, 0, 1, 0], 'nearest');
+    // Linear: 0.5 is the columns' edge, and the mip's 0.25 a quarter of that.
+    const linear = await values(key(ADDRESS.edge, { levels: 2, compare: LESS, flags: 16 | 1 | 2 | 4 }));
+    assert.deepEqual(linear, [0, 0.5, 0.125, 0.5, 0.1], 'linear');
+    // A fixed-point format clamps the reference: 1.5 is 1, at or below a texel of 1.
+    const clamped = glslStage(translate, tmp, 'tests/venus/t9/shadow-clamp.comp', { sampler: key(ADDRESS.edge, { levels: 2, compare: LEQUAL, flags: 16 | 128 }) });
+    assert.equal(clamped.rc, 0, clamped.text);
+    const full = Array.from({ length: 16 }, () => u16(65535)).flat(), half = Array.from({ length: 4 }, () => u16(65535)).flat();
+    const res = await runSampled(clamped.text, [{ binding: 0, format: 'depth16unorm', w: 4, h: 4, data: full, mips: [half] }], undefined, { binding: 2, size: 8 * 16 });
+    assert.deepEqual(res?.errors, []);
+    assert.equal(res?.out[0], 1, 'the reference clamped: 1 <= 1');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a shadow sample WGSL can do stays WGSL\'s, without a key or at one level (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    for (const sampler of [undefined, key(ADDRESS.edge, { levels: 1, compare: 1 })]) {
+      const r = glslStage(translate, tmp, 'tests/venus/t9/shadow.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      assert.match(r.text, /textureSampleCompareLevel/);
+      assert.doesNotMatch(r.text, /textureLoad/);
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('textureQueryLod is worked out in the shader, an array\'s coordinate without its layer (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const text = (file: string, sampler?: Device['sampler']) => {
+      const r = glslStage(translate, tmp, file, { sampler });
+      assert.equal(r.rc, 0, r.text);
+      assert.doesNotMatch(r.text, /undefined/);
+      return r.text;
+    };
+    const one = text('tests/venus/t9/query.frag');
+    assert.match(one, /var r0_0: texture_2d<i32>/, 'the texture only asked, declared by its type');
+    const keyed = text('tests/venus/t9/query.frag', key(ADDRESS.edge, { levels: 9, min: 5, max: 1000 }));
+    assert.match(keyed, /0x40a00000u/, 'the sampler\'s minLod');
+    const errors = await compile([one, keyed, text('tests/venus/t9/query-array.frag'), text('tests/venus/t9/query-array.frag', key(ADDRESS.edge, { levels: 4 }))]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.equal(errors.join(''), '');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('gl_HelperInvocation is an invocation that covers no sample, or demoted (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t9/helper.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /@builtin\(sample_mask\) smask: u32/);
+    assert.match(r.text, /wg_helper \|\| smask == 0u/);
+    const run = await runFragment(r.text);
+    if (!run) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(run.errors, []);
+    assert.deepEqual(run.pixels[0], [0, 0, 0, 0], 'a covered pixel is no helper');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('workgroup and global ids take a dispatch\'s base from overrides, declared only where read (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t9/base.comp');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /override wg_base_x: u32 = 0u;/);
+    assert.match(r.text, /wid \+ vec3<u32>\(wg_base_x, wg_base_y, wg_base_z\)/);
+    assert.match(r.text, /gid \+ vec3<u32>\(wg_base_x, wg_base_y, wg_base_z\) \* vec3<u32>\(2u, 3u, 1u\)/);
+    const none = glslStage(translate, tmp, 'tests/venus/t9/lid.comp');
+    assert.equal(none.rc, 0, none.text);
+    assert.doesNotMatch(none.text, /wg_base_x/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('gl_ClipDistance read by a fragment stage comes in at a free location, by its vec4 slot (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t9/clip-read.frag');
+    assert.equal(r.rc, 0, r.text);
+    // Location 0 is the program's own; slots 0 and 1 (distances 0-3, 4-7) take the next ones.
+    assert.match(r.text, /@location\(1\) @interpolate\(perspective, center\) v1: vec4<f32>/);
+    assert.match(r.text, /@location\(2\) @interpolate\(perspective, center\) v2: vec4<f32>/);
+    assert.match(r.text, /i\.v1\.y/);
+    assert.match(r.text, /i\.v2\.x/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

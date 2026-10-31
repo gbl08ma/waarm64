@@ -1,0 +1,9 @@
+#version 450
+// VK4 T9: an offset is in texels of the level before the wrap (tests/wgsl.test.ts): x -0.125 of a 2×2 image is texel -1,
+// +1 texel 0, where mirrored first it would read texel 1.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform sampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[8]; };
+void main() {
+  o[0] = textureLodOffset(img, vec2(-0.125, 0.25), 0.0, ivec2(1, 0));
+}

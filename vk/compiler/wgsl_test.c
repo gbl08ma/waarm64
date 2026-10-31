@@ -132,7 +132,7 @@ wgsl_test_ycbcr(int set, unsigned binding, unsigned format, unsigned model, unsi
 
 /* The next translations printed as a variant is: through a stage's NIR serialized, against this sampler state for every
  * pair (flags: 1 magFilter linear, 2 minFilter, 4 mipmap, 8 unnormalized, 16 this is on, 32 padded to the size sx×sy,
- * 64 and a cube bound as its faces). */
+ * 64 and a cube bound as its faces, 128 the reference clamped). */
 EXPORT void
 wgsl_test_sampler(unsigned u, unsigned v, unsigned w, unsigned flags, unsigned compare, unsigned levels, float bias,
                   float min_lod, float max_lod, uint32_t b0, uint32_t b1, uint32_t b2, uint32_t b3, uint32_t sx, uint32_t sy)
@@ -142,7 +142,7 @@ wgsl_test_sampler(unsigned u, unsigned v, unsigned w, unsigned flags, unsigned c
                                          .mip_linear = !!(flags & 4), .unnormalized = !!(flags & 8), .compare = compare,
                                          .levels = levels, .bias = bias, .min_lod = min_lod, .max_lod = max_lod,
                                          .border = { b0, b1, b2, b3 }, .padded = !!(flags & 32),
-                                         .faces = !!(flags & 64), .size = { sx, sy, 1 } };
+                                         .faces = !!(flags & 64), .clamp_dref = !!(flags & 128), .size = { sx, sy, 1 } };
 }
 
 /* Translates a stage (0 vertex, 4 fragment, 5 compute: mesa_shader_stage): 0, or the phase that failed (1
@@ -190,10 +190,17 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
    char *text = wgsl_print(NULL, nir, &print, &info, error, sizeof(error));
    ralloc_free(nir);
    if (text && test_key_on) {
-      struct wgsl_sampler_key keys[2 * WGSL_MAX_PAIRS];
+      struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS];
       uint32_t n = 0;
-      for (uint32_t i = 0; i < info.pair_count + info.int_pair_count; i++) {
-         const uint32_t *pair = i < info.pair_count ? info.pairs[i] : info.int_pairs[i - info.pair_count];
+      for (uint32_t i = 0; i < info.pair_count + info.int_pair_count + info.key_pair_count; i++) {
+         const uint32_t *pair = i < info.pair_count                         ? info.pairs[i]
+                                : i < info.pair_count + info.int_pair_count ? info.int_pairs[i - info.pair_count]
+                                                                            : info.key_pairs[i - info.pair_count - info.int_pair_count];
+         bool seen = false;
+         for (uint32_t k = 0; k < n; k++)
+            seen |= keys[k].texture == pair[0] && keys[k].sampler == pair[1];
+         if (seen)
+            continue;
          keys[n] = test_key;
          keys[n].texture = pair[0];
          keys[n++].sampler = pair[1];

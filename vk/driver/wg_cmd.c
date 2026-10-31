@@ -33,6 +33,7 @@ enum op {
    OP_CLEAR_RECTS,     /* JSON */
    OP_PIPELINE,        /* struct op_pipeline */
    OP_COMPUTE,         /* struct wg_program * */
+   OP_COMPUTE_BASED,   /* uint32_t: the compute pipeline of a dispatch's base */
    OP_DYN,             /* struct op_dyn */
    OP_BIND,            /* struct op_bind */
    OP_VB,              /* struct op_vb */
@@ -1088,28 +1089,36 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
    const struct wg_descriptor *s = pair_descriptor(cmd, point, p, pair[1]);
    const struct wg_sampler *sampler = s ? s->sampler : NULL;
-   if (!sampler || (!integer && !sampler->emulated && !dev->padded_views))
-      return false;
    const struct wg_descriptor *t = pair_descriptor(cmd, point, p, pair[0]);
    const struct wg_image_view *view = t ? t->view : NULL;
+   /* An op that needs a key whatever the sampler (wgsl_info.key_pairs). */
+   bool forced = false;
+   for (uint32_t i = 0; view && i < p->key_pair_count; i++)
+      if (p->key_pairs[i][0] == pair[0] && p->key_pairs[i][1] == pair[1])
+         forced = p->key_pairs[i][2] == WGSL_KEY_ALWAYS || view->vk.level_count > 1;
    const bool padded = view && view->padded;
-   if (!integer && !sampler->emulated && !padded)
-      return false;
-   if (!view)
+   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !forced))
       return false;
    const struct wgsl_sampler_key *k = &sampler->key;
-   if (integer && !sampler->emulated && !padded && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
+   if (integer && !sampler->emulated && !padded && !forced && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
        k->address[2] == WGSL_ADDRESS_EDGE && k->min_lod <= 0.0f && k->max_lod >= view->vk.level_count - 1.0f)
       return false;
    *key = *k;
    key->texture = pair[0];
    key->sampler = pair[1];
    key->levels = MIN2(view->vk.level_count, 255);
-   if (!wg_format_filterable(view->fmt) || integer)
+   /* A depth view filters what a comparison gives. */
+   if ((!wg_format_filterable(view->fmt) && !sampler->compare) || integer)
       key->mag_linear = key->min_linear = key->mip_linear = 0;
    sampler_border(view, sampler, integer, key->border);
    if (padded)
       padded_key_fill(view, key);
+   if (sampler->compare) {
+      key->clamp_dref = view->vk.view_format != VK_FORMAT_D32_SFLOAT && view->vk.view_format != VK_FORMAT_D32_SFLOAT_S8_UINT;
+      /* WGSL can't fetch from a cube: past level 0 one is sampled from its faces. */
+      key->faces |= view->vk.level_count > 1 && (view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
+                                                 view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY);
+   }
    return true;
 }
 
@@ -1134,6 +1143,15 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
    }
    for (uint32_t i = 0; i < p->int_pair_count; i++)
       n += pair_key(cmd, point, p, p->int_pairs[i], true, &keys[n]);
+   /* Pairs no sampler is declared for but an op's: a LOD query's. */
+   for (uint32_t i = 0; i < p->key_pair_count; i++) {
+      bool keyed = false;
+      for (uint32_t k = 0; k < n; k++)
+         keyed |= keys[k].texture == p->key_pairs[i][0] && keys[k].sampler == p->key_pairs[i][1];
+      const struct wg_descriptor *t = pair_descriptor(cmd, point, p, p->key_pairs[i][0]);
+      if (!keyed && t && t->view)
+         n += pair_key(cmd, point, p, p->key_pairs[i], vk_format_is_int(t->view->vk.view_format), &keys[n]);
+   }
    /* A padded texture only asked its size: what it answers is the image's. */
    const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
    for (uint32_t k = 0; dev->padded_views && k < p->resource_count; k++) {
@@ -1189,8 +1207,9 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       if (view && !wg_format_filterable(view->fmt))
          mask[k / 64] |= 1ull << (k % 64);
    }
-   struct wgsl_sampler_key keys[2 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
-   const uint32_t key_count = p->pair_count || p->int_pair_count || dev_padded(cmd) ? program_keys(cmd, point, p, keys) : 0;
+   struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
+   const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd)
+                                 ? program_keys(cmd, point, p, keys) : 0;
    return mask[0] | mask[1] || key_count ? wg_program_variant(p, mask, keys, key_count) : p;
 }
 
@@ -1781,10 +1800,22 @@ record_dispatch(struct wg_cmd_buffer *cmd)
       emit(cmd, OP_COMPUTE, &p, sizeof(p));
       cmd->last_compute = cs;
       cmd->last_program[1] = p;
+      cmd->last_based = p->compute;
    }
    record_sets(cmd, 1, p);
    record_push(cmd, p);
    return true;
+}
+
+/* The pipeline of a dispatch from a base (wg_compute_based), and back after one. */
+static void
+dispatch_base(struct wg_cmd_buffer *cmd, uint32_t x, uint32_t y, uint32_t z)
+{
+   const uint32_t pipeline = wg_compute_based(cmd->last_program[1], x, y, z);
+   if (pipeline != cmd->last_based) {
+      emit(cmd, OP_COMPUTE_BASED, &pipeline, sizeof(pipeline));
+      cmd->last_based = pipeline;
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1794,13 +1825,7 @@ wg_CmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t bx, uint32_t by, uint
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    if (!x || !y || !z || !record_dispatch(cmd))
       return;
-   /* WebGPU's dispatches start at workgroup 0: a base would need a pipeline made with it (docs/backlog.md). */
-   if (bx || by || bz) {
-      static bool warned;
-      if (!warned)
-         fprintf(stderr, "wg: vkCmdDispatchBase's base (%u, %u, %u) ignored: workgroup ids start at 0\n", bx, by, bz);
-      warned = true;
-   }
+   dispatch_base(cmd, bx, by, bz);
    emit(cmd, OP_DISPATCH, (uint32_t[]){ x, y, z }, 12);
 }
 
@@ -1817,6 +1842,7 @@ wg_CmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDevice
    VK_FROM_HANDLE(wg_buffer, buffer, _buffer);
    if (!record_dispatch(cmd))
       return;
+   dispatch_base(cmd, 0, 0, 0);
    emit(cmd, OP_DISPATCH_INDIRECT,
         &(struct op_indirect){ .buffer = buffer_gpu(buffer), .offset = buffer->offset + offset },
         sizeof(struct op_indirect));
@@ -3624,6 +3650,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->dirty |= RD_PIPELINE;
          break;
       }
+      case OP_COMPUTE_BASED:
+         r->compute = *(const uint32_t *)d;
+         r->dirty |= RD_PIPELINE;
+         break;
       case OP_DYN:
          memcpy(&r->dyn, d, sizeof(r->dyn));
          r->dirty |= RD_DYN;
