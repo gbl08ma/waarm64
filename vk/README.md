@@ -413,6 +413,41 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
+- **Samplers in the shader** (VK4 T8; `wgsl_sampler.c`, `pair_key` in wg_cmd.c): a Vulkan sampler says more than
+  WebGPU's, and only the bound sampler knows it, while the shader was compiled long before. The stage that samples keeps
+  its lowered NIR, serialized (`wg_stage_nir`, in caches too: `stage_nir_keep`), and `wgsl_print` starts by lowering
+  sampling (`wgsl_lower_samplers`) against a list of keys (`wgsl_sampler_key`), one per (texture, sampler) pair WebGPU's
+  sampler can't serve: its address modes, filters, unnormalized flag, compare op, bias, LOD clamps, the view's levels
+  and the border as the shader reads it. A stage's own module has no keys, so a program whose samplers WebGPU can
+  express costs nothing: its module is what it was. `program_for` makes the pairs' keys at each draw and dispatch, and
+  any key gives the program a variant (`wg_program_variant`, by mask and keys), whose stages print again from their NIR;
+  a stage no key touches keeps its module. In the shader:
+  - **Integer textures** (WGSL samples them with no sampler at all) are fetched: the texel the coordinate falls in, its
+    level from Vulkan's LOD (λ from the coordinate's derivatives in a fragment stage, the sampler's bias, its clamps,
+    Vulkan's nearest within the view's levels), each axis wrapped by Vulkan's address operation, the border where one
+    is out. With no key that is clamp-to-edge over the whole view (a key is made where the sampler says more); their
+    samplers aren't bindings, so the program lists them apart (`int_pairs`). An integer **cube** binds its faces as a 2D
+    array (`faces` on the view, the size and level queries rewritten with it): its face and place come from Vulkan's
+    table, its λ from derivatives of the place on the face this invocation is on, which seams don't disturb. A
+    **gather** of an integer texture is WGSL's own, through a non-filtering sampler; a cube's that is also sampled
+    is refused (its one binding can't be both).
+  - **Border colours**: the sampler's clamp-to-edge sample, blended towards the border by how much of the filter's
+    footprint fell past the edge (per axis, nearest in or out, linear `clamp(u + 0.5)`·`clamp(size - u + 0.5)` in
+    texels), which is exact: past the edge a linear filter reads the edge texel and the border, and clamp-to-edge has
+    the former. A view of several levels picks them here (each has its size), so anisotropy doesn't survive; a shadow
+    sample stays WebGPU's, blended by its levels' weights, the border compared with its reference. The border as the
+    shader reads it is Vulkan's colour with what the format lacks replaced (`sampler_border`, dEQP's read), through
+    the view's mapping, since the shader blends past the view's swizzle. A cube has no border (Vulkan ignores its
+    address modes). A gather that needs one goes through four fetches.
+  - **Mirror-once**: the coordinate clamped to one reflection on the sampler's mirror-repeat, the op given the
+    coordinate's own derivatives (`textureSampleGrad`) so the clamp doesn't move the LOD. `samplerMirrorClampToEdge`
+    and `VK_KHR_sampler_mirror_clamp_to_edge` are advertised.
+  - **Unnormalized coordinates**: divided by the view's size (Vulkan allows them only at one level, clamped).
+  - **The sampler's LOD bias**: a shader bias, added to an explicit LOD, or the derivatives scaled by 2^bias; none on
+    a shadow sample (`textureSampleCompare` takes none: T9's). `maxSamplerLodBias` is 15.
+  **Component swizzles** are WebGPU's (`texture-component-swizzle`): such a view has a twin with the mapping (`sampled`,
+  allowed only on a view that's just sampled), which sampled bindings take. Without the feature they are ignored and
+  said once: it is in Chromium on every backend, and a fallback in the shader would need texel fetches too.
 - **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
   format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
   image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).
@@ -564,9 +599,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
   the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
   mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, border colours and mirror-once, component
-  swizzles, sampling 3D images through 2D views, integer textures sampled with a sampler's address modes (fetched at clamp-to-edge, from the level an explicit LOD selects within the view's: VK3 L9b), copies
-  between formats, multi-view.
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, sampling 3D images through 2D views, multi-view.
 
 ## Pipelines made asynchronously
 

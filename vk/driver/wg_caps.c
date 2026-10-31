@@ -133,6 +133,10 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* Draw parameters: the push buffer's words past the push constants, each draw's written in its place there,
        * an indirect draw's copied from its arguments before its render pass (wg_cmd.c `prepasses`; VK3 L7.5, vkd3d). */
       .KHR_shader_draw_parameters = true,
+      .KHR_sampler_mirror_clamp_to_edge = true,
+      /* The shader's borders take any colour, through the view's mapping (wgsl_sampler.c, wg_cmd.c `sampler_border`). */
+      .EXT_custom_border_color = true,
+      .EXT_border_color_swizzle = true,
       /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
        * bytes), texel buffers (EXT_texel_buffer_alignment). */
    };
@@ -197,6 +201,11 @@ wg_caps_features(struct vk_features *f)
        * since L7.3 (GTK 4.24 asserts them on a device with dma-buf modifiers; GTK4 still takes GL: its Vulkan renderer
        * misses its bar), held by `?gpu=vkycbcr=off`. Chromium's own Vulkan device refuses a device without them (VK3
        * L7.1b). */
+      .samplerMirrorClampToEdge = true,
+      .customBorderColors = true,
+      .customBorderColorWithoutFormat = true,
+      .borderColorSwizzle = true,
+      .borderColorSwizzleFromImage = true,
       .samplerYcbcrConversion = HAS(YCBCR),
       .ycbcrImageArrays = HAS(YCBCR),
       .provokingVertexLast = true,
@@ -294,8 +303,9 @@ wg_caps_properties(struct vk_properties *p)
    p->mipmapPrecisionBits = 4;
    p->maxDrawIndexedIndexValue = 0xffffffffu;
    p->maxDrawIndirectCount = 1;
-   p->maxSamplerLodBias = 2; /* WebGPU's samplers have no bias, and nothing adds it yet (docs/backlog.md) */
+   p->maxSamplerLodBias = 15; /* WebGPU's samplers have no bias: the shader's (wgsl_sampler.c), WGSL's within 16 */
    p->maxSamplerAnisotropy = 16;
+   p->maxCustomBorderColorSamplers = 4000;
    p->maxViewports = 1;
    p->maxViewportDimensions[0] = p->maxViewportDimensions[1] = L->max_texture_2d;
    p->viewportBoundsRange[0] = -2.0f * L->max_texture_2d;

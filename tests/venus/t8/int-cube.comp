@@ -1,0 +1,14 @@
+#version 450
+// VK4 T8: an integer cube sampled with a sampler (tests/wgsl.test.ts): WGSL fetches only from its faces as a 2D array:
+// one direction per face, a texel of it, and its size and levels (o[6]).
+layout(local_size_x = 7) in;
+layout(set = 0, binding = 0) uniform isamplerCube img;
+layout(set = 0, binding = 1, std430) buffer Out { ivec4 o[7]; };
+const vec3 dirs[6] = vec3[](vec3(1, 0.5, 0.5), vec3(-1, 0.5, 0.5), vec3(0.5, 1, 0.5), vec3(0.5, -1, 0.5), vec3(0.5, 0.5, 1), vec3(0.5, 0.5, -1));
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  if (i < 6u)
+    o[i] = textureLod(img, dirs[i], 0.0);
+  else
+    o[i] = ivec4(textureSize(img, 0), textureQueryLevels(img), 0);
+}

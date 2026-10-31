@@ -81,7 +81,7 @@ export const HELD_FEATURES = ['float32-blendable', 'tier1-storage'];
 const FEATURES = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
   'depth-clip-control', 'dual-source-blending', 'clip-distances', 'indirect-first-instance', 'texture-formats-tier1', 'texture-formats-tier2',
   'rg11b10ufloat-renderable', 'float32-blendable', 'bgra8unorm-storage'];
-const MORE_FEATURES = ['subgroups', 'shader-f16'];
+const MORE_FEATURES = ['subgroups', 'shader-f16', 'texture-component-swizzle'];
 export function gpuFeatures(caps: GpuCaps | undefined, device: boolean, hold: readonly string[] = []) {
   let flags = device ? 1 << 31 : 0;
   const has = (f: string) => !!caps?.features.has(f) && !hold.includes(f);

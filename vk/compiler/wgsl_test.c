@@ -9,8 +9,10 @@
 #include <string.h>
 
 #include "nir.h"
+#include "nir_serialize.h"
 #include "nir_xfb_info.h"
 #include "spirv/nir_spirv.h"
+#include "util/blob.h"
 #include "util/ralloc.h"
 #include "vk_format.h"
 #include "vk_ycbcr_conversion.h"
@@ -20,6 +22,9 @@
 #define EXPORT __attribute__((visibility("default")))
 
 static char *result;
+static bool test_key_on;
+static size_t test_kept;
+static struct wgsl_sampler_key test_key;
 static struct wgsl_info info;
 static char error[512];
 
@@ -125,6 +130,19 @@ wgsl_test_ycbcr(int set, unsigned binding, unsigned format, unsigned model, unsi
                                                      y_offset == VK_CHROMA_LOCATION_COSITED_EVEN);
 }
 
+/* The next translations printed as a variant is: through a stage's NIR serialized, against this sampler state for every
+ * pair (flags: 1 magFilter linear, 2 minFilter, 4 mipmap, 8 unnormalized, 16 this is on). */
+EXPORT void
+wgsl_test_sampler(unsigned u, unsigned v, unsigned w, unsigned flags, unsigned compare, unsigned levels, float bias,
+                  float min_lod, float max_lod, uint32_t b0, uint32_t b1, uint32_t b2, uint32_t b3)
+{
+   test_key_on = flags & 16;
+   test_key = (struct wgsl_sampler_key){ .address = { u, v, w }, .mag_linear = flags & 1, .min_linear = !!(flags & 2),
+                                         .mip_linear = !!(flags & 4), .unnormalized = !!(flags & 8), .compare = compare,
+                                         .levels = levels, .bias = bias, .min_lod = min_lod, .max_lod = max_lod,
+                                         .border = { b0, b1, b2, b3 } };
+}
+
 /* Translates a stage (0 vertex, 4 fragment, 5 compute: mesa_shader_stage): 0, or the phase that failed (1
  * spirv_to_nir, 2 the lowering, 3 printing), with the error as the result. */
 EXPORT int
@@ -164,14 +182,45 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
    /* WebGPU's default workgroup storage. */
    const struct wgsl_print_options print = { .max_immediates = 64, .max_workgroup_storage = 16384,
                                              .features = test_features & ~WGSL_TEST_SAMPLE_SHADING };
+   struct blob kept;
+   blob_init(&kept);
+   nir_serialize(&kept, nir, true);
    char *text = wgsl_print(NULL, nir, &print, &info, error, sizeof(error));
    ralloc_free(nir);
+   if (text && test_key_on) {
+      struct wgsl_sampler_key keys[2 * WGSL_MAX_PAIRS];
+      uint32_t n = 0;
+      for (uint32_t i = 0; i < info.pair_count + info.int_pair_count; i++) {
+         const uint32_t *pair = i < info.pair_count ? info.pairs[i] : info.int_pairs[i - info.pair_count];
+         keys[n] = test_key;
+         keys[n].texture = pair[0];
+         keys[n++].sampler = pair[1];
+      }
+      struct blob_reader r;
+      blob_reader_init(&r, kept.data, kept.size);
+      nir = nir_deserialize(NULL, wgsl_nir_options(), &r);
+      struct wgsl_print_options keyed = print;
+      keyed.keys = keys;
+      keyed.key_count = n;
+      ralloc_free(text);
+      text = wgsl_print(NULL, nir, &keyed, &info, error, sizeof(error));
+      ralloc_free(nir);
+   }
+   test_kept = kept.size;
+   blob_finish(&kept);
    if (!text) {
       result = ralloc_strdup(NULL, error);
       return 3;
    }
    result = text;
    return 0;
+}
+
+/* The bytes of NIR the last translation kept (a stage that samples keeps them: wg_shader.c `stage_nir_keep`). */
+EXPORT uint32_t
+wgsl_test_kept(void)
+{
+   return (uint32_t)test_kept;
 }
 
 EXPORT const char *

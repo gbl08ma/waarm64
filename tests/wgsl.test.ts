@@ -54,13 +54,14 @@ type Exports = {
   _initialize(): void; wgsl_test_init(): void; wgsl_test_translate(words: number, n: number, stage: number): number;
   wgsl_test_device(features: number, subgroupSize: number): void;
   wgsl_test_ycbcr(set: number, binding: number, format: number, model: number, range: number, x: number, y: number, filter: number): void;
+  wgsl_test_sampler(u: number, v: number, w: number, flags: number, compare: number, levels: number, bias: number, min: number, max: number, b0: number, b1: number, b2: number, b3: number): void;
   wgsl_test_result(): number; venus_alloc(n: number): number; venus_free(p: number): void;
 };
 
 /** What a stage is translated for: the device's WGSL features, its subgroups' size, and (VK3 L7.2) a binding sampled
  * through a YCbCr conversion (VkFormat, VkSamplerYcbcrModelConversion, VkSamplerYcbcrRange, VkChromaLocation x and y,
  * the chroma VkFilter), as an immutable sampler in its set layout. */
-type Device = { features?: number; subgroupSize?: number; ycbcr?: { set: number; binding: number; format: number; model: number; range: number; x: number; y: number; filter: number } };
+type Device = { features?: number; subgroupSize?: number; sampler?: { u: number; v: number; w: number; flags: number; compare: number; levels: number; bias: number; min: number; max: number; border: number[] }; ycbcr?: { set: number; binding: number; format: number; model: number; range: number; x: number; y: number; filter: number } };
 
 /** The module's translator, on a memory like the VM's memory 0 (its arena at the top). */
 async function translator() {
@@ -100,6 +101,8 @@ async function translator() {
     ex.wgsl_test_device(device.features ?? WGSL.DUAL_SOURCE, device.subgroupSize ?? 1);
     const y = device.ycbcr;
     ex.wgsl_test_ycbcr(y ? y.set : -1, y?.binding ?? 0, y?.format ?? 0, y?.model ?? 0, y?.range ?? 0, y?.x ?? 0, y?.y ?? 0, y?.filter ?? 0);
+    const k = device.sampler;
+    ex.wgsl_test_sampler(k?.u ?? 0, k?.v ?? 0, k?.w ?? 0, k?.flags ?? 0, k?.compare ?? 0, k?.levels ?? 0, k?.bias ?? 0, k?.min ?? 0, k?.max ?? 0, k?.border[0] ?? 0, k?.border[1] ?? 0, k?.border[2] ?? 0, k?.border[3] ?? 0);
     const p = ex.venus_alloc(s.words.byteLength) >>> 0;
     new Uint8Array(memory.buffer, p, s.words.byteLength).set(new Uint8Array(s.words.buffer, s.words.byteOffset, s.words.byteLength));
     const t0 = performance.now();
@@ -727,7 +730,7 @@ test('interpolateAtOffset and interpolateAtSample move the input along its deriv
  * its bytes at its WGSL binding (`mips`: its further levels' bytes), a sampler (`filter`) at `sampler` (none: no
  * sampler), a storage buffer of `size` bytes at `out`, read back.
  */
-async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string } | undefined, out: { binding: number; size: number }) {
+async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; layers?: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string; address?: string } | undefined, out: { binding: number; size: number }) {
   const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
@@ -747,15 +750,16 @@ async function runSampled(code: string, textures: { binding: number; format: str
       const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
       const entries: GPUBindGroupEntry[] = textures.map((t) => {
         const levels = [t.data, ...(t.mips ?? [])];
-        const tex = device.createTexture({ size: [t.w, t.h], format: t.format as GPUTextureFormat, mipLevelCount: levels.length, usage: 0x2 | 0x4 /* COPY_DST | TEXTURE_BINDING */ });
-        const bpp = t.data.length / (t.w * t.h);
+        const layers = t.layers ?? 1;
+        const tex = device.createTexture({ size: [t.w, t.h, layers], format: t.format as GPUTextureFormat, mipLevelCount: levels.length, usage: 0x2 | 0x4 /* COPY_DST | TEXTURE_BINDING */ });
+        const bpp = t.data.length / (t.w * t.h * layers);
         levels.forEach((data, mip) => {
           const w = Math.max(t.w >> mip, 1), h = Math.max(t.h >> mip, 1);
-          device.queue.writeTexture({ texture: tex, mipLevel: mip }, new Uint8Array(data), { bytesPerRow: w * bpp }, [w, h]);
+          device.queue.writeTexture({ texture: tex, mipLevel: mip }, new Uint8Array(data), { bytesPerRow: w * bpp, rowsPerImage: h }, [w, h, layers]);
         });
-        return { binding: t.binding, resource: tex.createView() };
+        return { binding: t.binding, resource: tex.createView(layers > 1 ? { dimension: '2d-array' } : {}) };
       });
-      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode }) });
+      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode, addressModeU: (sampler.address ?? 'clamp-to-edge') as GPUAddressMode }) });
       const buffer = device.createBuffer({ size: out.size, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
       entries.push({ binding: out.binding, resource: { buffer } });
       const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
@@ -908,6 +912,131 @@ test('an integer texture sampled at an explicit LOD is fetched from the level Vu
     // is texel (2, 2) of level 0, (1, 1) of level 1, (0, 0) of level 2; offset (-1, 1): (1, 3), (0, 1) clamped, (0, 0).
     const at = [110, 203, 300], off = [113, 202, 300], levels = [0, 0, 1, 2, 2, 2, 2, 0];
     assert.deepEqual(got, [...levels.map((l) => at[l]), ...levels.map((l) => off[l])]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// VK4 T8: wgsl_sampler.c, printed from the NIR kept, as a variant's stage is (wgsl_test_sampler).
+const ADDRESS = { repeat: 0, mirror: 1, edge: 2, border: 3, once: 4 };
+const key = (u: number, o: Partial<NonNullable<Device['sampler']>> = {}): NonNullable<Device['sampler']> => ({ u, v: ADDRESS.edge, w: ADDRESS.edge, flags: 16, compare: 7, levels: 1, bias: 0, min: 0, max: 1000, border: [0, 0, 0, 0], ...o });
+
+test('an integer texture is fetched as its sampler\'s address modes say (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const word = (v: number) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
+    // A 4×4 r32sint image, a row of 100 + x.
+    const data = Array.from({ length: 16 }, (_, i) => word(100 + i % 4)).flat();
+    const texels = async (sampler?: Device['sampler']) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t8/int-sampler.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'r32sint', w: 4, h: 4, data }], undefined, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return [...new Int32Array(res.out.buffer)].filter((_, i) => i % 4 === 0);
+    };
+    // x -1.1, -0.3, 0.1, 0.6, 1.1, 1.3, 2.1, -2.3 are texels -5, -2, 0, 2, 4, 5, 8, -10 of 4.
+    const edge = await texels();
+    if (!edge) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(edge, [100, 100, 100, 102, 103, 103, 103, 100], 'no key: clamp-to-edge');
+    assert.deepEqual(await texels(key(ADDRESS.repeat)), [103, 102, 100, 102, 100, 101, 100, 102]);
+    assert.deepEqual(await texels(key(ADDRESS.mirror)), [103, 101, 100, 102, 103, 102, 100, 101]);
+    assert.deepEqual(await texels(key(ADDRESS.once)), [103, 101, 100, 102, 103, 103, 103, 103]);
+    assert.deepEqual(await texels(key(ADDRESS.border, { border: [7, 8, 9, 1] })), [7, 7, 100, 102, 7, 7, 7, 7]);
+    // Unnormalized: coordinates are texels (x 2.1 is texel 2, 0.6 is 0).
+    assert.deepEqual(await texels(key(ADDRESS.edge, { flags: 16 | 8 })), [100, 100, 100, 100, 101, 101, 102, 100]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('an integer texture\'s level comes from its sampler\'s bias and LOD clamps (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const word = (v: number) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
+    const level = (n: number, v: number) => Array.from({ length: n * n }, () => word(v)).flat();
+    const levelOf = async (sampler: Device['sampler']) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t8/int-sampler.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'r32sint', w: 4, h: 4, data: level(4, 10), mips: [level(2, 20), level(1, 30)] }], undefined, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return new Int32Array(res.out.buffer)[0];
+    };
+    const plain = await levelOf(key(ADDRESS.edge, { levels: 3 }));
+    if (plain === undefined) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.equal(plain, 10);
+    assert.equal(await levelOf(key(ADDRESS.edge, { levels: 3, bias: 1.2 })), 20);
+    assert.equal(await levelOf(key(ADDRESS.edge, { levels: 3, bias: 9 })), 30, 'past the view\'s levels: its last');
+    assert.equal(await levelOf(key(ADDRESS.edge, { levels: 3, min: 2 })), 30);
+    assert.equal(await levelOf(key(ADDRESS.edge, { levels: 3, bias: 9, max: 1 })), 20);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a float texture blends towards the border and mirrors once, as WebGPU\'s samplers can\'t (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // A 2×2 image: the first column's red 1, the second's 0.
+    const one = [255, 0, 0, 255], zero = [0, 0, 0, 255];
+    const data = [...one, ...zero, ...one, ...zero];
+    const reds = async (sampler: Device['sampler'], filter: string, address: string, image = data) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t8/float-sampler.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 2, h: 2, data: image }], { binding: 1, filter, address }, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return [...res.out].filter((_, i) => i % 4 === 0).map((v) => Math.round(v * 1000) / 1000);
+    };
+    const WHITE = 0x3f800000;
+    // Nearest: x -1, -0.125, 0.125, 0.5, 0.875, 1.125, 2, -0.75.
+    const border = await reds(key(ADDRESS.border, { border: [WHITE, 0, 0, WHITE] }), 'nearest', 'clamp-to-edge');
+    if (!border) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(border, [1, 1, 1, 0, 0, 1, 1, 1], 'nearest border');
+    // Linear, towards a black border: the part of the two texels' footprint past the edge is the border's.
+    assert.deepEqual(await reds(key(ADDRESS.border, { flags: 16 | 1 | 2 }), 'linear', 'clamp-to-edge'), [0, 0.25, 0.75, 0.5, 0, 0, 0, 0], 'linear border');
+    // Both edges, on a red image: x 0.875 and 1.125 are 0.25 of a texel inside and past the far one.
+    const red = [...one, ...one, ...one, ...one];
+    assert.deepEqual(await reds(key(ADDRESS.border, { flags: 16 | 1 | 2 }), 'linear', 'clamp-to-edge', red), [0, 0.25, 0.75, 1, 0.75, 0.25, 0, 0], 'linear border, both edges');
+    // Mirror-once through the sampler's mirror-repeat: -0.75 reads as 0.75, past 1 the far edge.
+    assert.deepEqual(await reds(key(ADDRESS.once), 'nearest', 'mirror-repeat'), [0, 1, 1, 0, 0, 0, 0, 0], 'mirror-once');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('an integer cube is fetched from its faces as a 2D array, its size and levels asked of them (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t8/int-cube.comp');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /texture_2d_array<i32>/);
+    const word = (v: number) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
+    // Each face's texels 10·face + y·2 + x.
+    const data = Array.from({ length: 6 }, (_, f) => [0, 1, 2, 3].map((i) => word(10 * f + i)).flat()).flat();
+    const res = await runSampled(r.text, [{ binding: 0, format: 'r32sint', w: 2, h: 2, layers: 6, data }], undefined, { binding: 2, size: 7 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const o = new Int32Array(res.out.buffer);
+    // Each direction lands on its face at (s, t) = 0.5(sc/|ma| + 1): 0.25 or 0.75, Vulkan's table.
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map((f) => o[f * 4]), [0, 11, 23, 31, 41, 50]);
+    assert.deepEqual([...o.slice(6 * 4, 6 * 4 + 3)], [2, 2, 1]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('an integer texture only asked its size is declared integer, so that its view binds (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/t8/size-only.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /texture_2d<u32>/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

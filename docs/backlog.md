@@ -742,6 +742,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   groups, 16,489; on SwiftShader 2,448 pass, 498 fail, 2 crash, the rest unsupported, the M4 alike) counts every cause
   in its table (`bench/vulkan/census.ts`); the counts below without a date are L5's samples
   (`bench/vulkan/results/vk2/l5/deqp/`). The cases that fail stay out of `tests/deqp/vk.txt`:
+  - **`texture.explicit_lod.2d.formats.*_pack16_linear_compute`** (3, VK4 T8's sample: `a1r5g5b5`, `b4g4r4a4`, `r5g6b5`;
+    not looked into).
   - **Not advertised, by what dEQP-VK asks** (VK4 T1's reasons, bench/vulkan/REPORT.md "VK4 T1"): a queue family
     with compute and without graphics is the commonest (18% of the census's not-supported cases: `pipeline`'s compute
     variants want one; a second queue family, compute-only, over the same WebGPU queue would serve them), then
@@ -802,17 +804,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     colour formats beside a depth format refused at image creation though advertised
     (`render_to_image.*.a1r5g5b5_unorm_pack16_d32_sfloat_s8_uint`, `r5g6b5_unorm_pack16_d24_unorm_s8_uint`:
     `VK_ERROR_FORMAT_NOT_SUPPORTED`, VK4 T1).
-  - **Samplers** (VK4 T1: 203 of SwiftShader's 500 failures, the largest share): border colours and mirror-once (the
-    nearest WebGPU address mode), component swizzles (ignored: Vulkan requires them; 55 and 62 failures,
-    `texture-component-swizzle` where the browser has it, else in the shader), unnormalized coordinates, integer textures sampled with
-    a sampler (fetched at clamp-to-edge whatever the sampler's address mode: the address modes as a program variant
-    would do the rest; from the level an explicit LOD selects, Vulkan's nearest within the view's levels since VK3 L9b,
-    level 0 for an implicit LOD, a bias or gradients; the sampler's min/max LOD not applied), LOD bias and min/max LOD
-    clamps against WebGPU's.
+  - **Samplers' leftovers** (VK4 T8; vk/README.md "Samplers in the shader"): a border or mirror-once on a shadow
+    sample stays WebGPU's LOD, and its sampler's bias is lost (T9's: `textureSampleCompare` takes none); a border on a view of
+    several levels picks its levels in the shader, so that sample loses anisotropy; a constant offset on a mirror-once
+    float sample is applied after the reflection, not before; an integer cube both sampled and gathered is refused (its
+    one binding can't be both; none seen); a browser without `texture-component-swizzle` ignores mappings, said once
+    (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
+    program's first draw with such a sampler is unmeasured (no replayed program meets one).
+  - **SwiftShader's fetch from a view with a base level** (VK4 T8): `textureLoad` at a view's level 0 reads the level
+    after it (a 16×16 image's view from level 2 reads level 3's texels, zeros past its size; level 1 reads right), where
+    sampling is right and the M4 is too, so
+    `image_view.*.subresource_range.lod_base_mip_level*` of integer formats fail there only and stay out of
+    `tests/deqp/vk.txt`, which SwiftShader runs. Not looked for in SwiftShader's sources.
   - **Shaders**: texture offsets that aren't constants after optimization (46 stages: `glsl.texture_functions.*offset`,
     WGSL wants a const-expression: the printer's vars defeat it, so print constant offsets as literals),
     fragment inputs past the varyings (`gl_ClipDistance` read in a fragment shader, slots 17 and 18: 18 stages),
-    `textureQueryLod` (9), image atomics; integer cube textures sampled with a sampler (`glsl.opaque_type_indexing.sampler.*.compute.isamplercube` read zeros: `lower_int_sample` skips cubes); derivatives in non-uniform control flow
+    `textureQueryLod` (9), image atomics; derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
     shadow sampling with a bias, an explicit LOD or gradients (`textureSampleCompare` takes no bias,
     `textureSampleCompareLevel` only level 0: a mipmapped shadow map sampled at a LOD is sampled at level 0, silently;
@@ -917,6 +924,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     blitted from the one the previous blit wrote, over 6 layers; other layer counts pass: a hazard between the
     worker's blit draws on Metal?), `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
     occlusion count of 496, out of range) and `texture.mipmap.3d.projected.nearest_linear_mirror`; not looked into.
+    VK4 T8's left 3 out of the list: `sampler.*.astc_*.mipmap.nearest.lod.select_bias_2_5` (2) and
+    `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`.
     VK4 T10's sample found more, out of `tests/deqp/vk.txt` (bench/vulkan/REPORT.md "VK4 T10"): 22 more
     `generate_mipmaps.from_previous_level` cases, other layer counts too; 11 copies to or from `e5b9g9r9_ufloat_pack32`,
     compared bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would

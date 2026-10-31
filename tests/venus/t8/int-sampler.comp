@@ -1,0 +1,12 @@
+#version 450
+// VK4 T8: an integer texture sampled through a sampler's address modes and LOD (tests/wgsl.test.ts): the translator
+// fetches it, wgsl_sampler.c working out what WGSL's sampler can't say. A row of coordinates at an explicit LOD 0, and
+// the implicit level of a vertex-less stage with the sampler's bias.
+layout(local_size_x = 8) in;
+layout(set = 0, binding = 0) uniform isampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { ivec4 o[8]; };
+const float xs[8] = float[](-1.1, -0.3, 0.1, 0.6, 1.1, 1.3, 2.1, -2.3);
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  o[i] = textureLod(img, vec2(xs[i], 0.1), 0.0);
+}

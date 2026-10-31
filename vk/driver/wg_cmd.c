@@ -978,6 +978,98 @@ resource_range(const struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_
  * `read`), which costs nothing, where the replay would copy it (`scope_dispatch`). Not where their ranges overlap:
  * WebGPU refuses two writable bindings of one range ("Writable storage buffer binding aliasing"), so that one stays
  * read-only and is copied. */
+
+/* The descriptor at a program's (group, binding) index, among the sets bound. */
+static const struct wg_descriptor *
+pair_descriptor(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, uint32_t index)
+{
+   const uint32_t group = index >> 16, at = (index & 0xffff) / 2;
+   const struct wg_descriptor *d = NULL;
+   for (uint32_t s = 0; s < p->set_count; s++) {
+      const struct wg_descriptor_set *set = cmd->sets[point][s].set;
+      if (p->set_group[s] == group && p->set_base[s] <= at && set && at - p->set_base[s] < set->layout->slot_count)
+         d = &set->slots[at - p->set_base[s]];
+   }
+   return d;
+}
+
+/* The border as the shader reads it: Vulkan's colour, what the format lacks as "Conversion to RGBA" says, through the
+ * view's mapping (WebGPU's view applies it to the texels; the border is mixed in after, so it takes it here). */
+static void
+sampler_border(const struct wg_image_view *view, const struct wg_sampler *sampler, bool integer, uint32_t *out)
+{
+   static const uint8_t colours[][4] = {
+      [VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK] = { 0, 0, 0, 0 }, [VK_BORDER_COLOR_INT_TRANSPARENT_BLACK] = { 0, 0, 0, 0 },
+      [VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK] = { 0, 0, 0, 1 },      [VK_BORDER_COLOR_INT_OPAQUE_BLACK] = { 0, 0, 0, 1 },
+      [VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE] = { 1, 1, 1, 1 },      [VK_BORDER_COLOR_INT_OPAQUE_WHITE] = { 1, 1, 1, 1 },
+   };
+   const uint32_t one = integer ? 1 : 0x3f800000u;
+   const bool custom = vk_border_color_is_custom(sampler->vk.border_color);
+   const uint8_t *c = colours[custom ? 0 : sampler->vk.border_color];
+   const struct util_format_description *d = vk_format_description(view->vk.view_format);
+   const bool zs = view->vk.aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+   uint32_t have[6];
+   for (uint32_t i = 0; i < 4; i++) {
+      const uint32_t s = zs ? (i == 0 ? PIPE_SWIZZLE_X : i == 3 ? PIPE_SWIZZLE_1 : PIPE_SWIZZLE_0) : d->swizzle[i];
+      have[i] = s > PIPE_SWIZZLE_W ? (s == PIPE_SWIZZLE_1 ? one : 0)
+                : custom           ? sampler->vk.border_color_value.uint32[i]
+                                   : c[i] * one;
+   }
+   have[4] = 0, have[5] = one;
+   const VkComponentSwizzle mapping[4] = { view->vk.swizzle.r, view->vk.swizzle.g, view->vk.swizzle.b, view->vk.swizzle.a };
+   for (uint32_t i = 0; i < 4; i++)
+      out[i] = have[mapping[i] == VK_COMPONENT_SWIZZLE_ZERO  ? 4
+                    : mapping[i] == VK_COMPONENT_SWIZZLE_ONE ? 5
+                    : mapping[i] >= VK_COMPONENT_SWIZZLE_R   ? mapping[i] - VK_COMPONENT_SWIZZLE_R
+                                                             : i];
+}
+
+/* What the sampler needs of the shader for a (texture, sampler) pair (false: nothing). An integer texture is fetched at
+ * clamp-to-edge from the level its LOD selects unless a key says otherwise. */
+static bool
+pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, const uint32_t *pair, bool integer,
+         struct wgsl_sampler_key *key)
+{
+   const struct wg_descriptor *s = pair_descriptor(cmd, point, p, pair[1]);
+   const struct wg_sampler *sampler = s ? s->sampler : NULL;
+   if (!sampler || (!integer && !sampler->emulated))
+      return false;
+   const struct wg_descriptor *t = pair_descriptor(cmd, point, p, pair[0]);
+   const struct wg_image_view *view = t ? t->view : NULL;
+   if (!view)
+      return false;
+   const struct wgsl_sampler_key *k = &sampler->key;
+   if (integer && !sampler->emulated && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
+       k->address[2] == WGSL_ADDRESS_EDGE && k->min_lod <= 0.0f && k->max_lod >= view->vk.level_count - 1.0f)
+      return false;
+   *key = *k;
+   key->texture = pair[0];
+   key->sampler = pair[1];
+   key->levels = MIN2(view->vk.level_count, 255);
+   if (!wg_format_filterable(view->fmt) || integer)
+      key->mag_linear = key->min_linear = key->mip_linear = 0;
+   sampler_border(view, sampler, integer, key->border);
+   return true;
+}
+
+/* The keys of a program's pairs at this draw or dispatch (`keys` has room for all of them). */
+static uint32_t
+program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wgsl_sampler_key *keys)
+{
+   uint32_t n = 0;
+   for (uint32_t i = 0; i < p->pair_count; i++) {
+      /* A gathered integer texture is in both lists, as the integer it is. */
+      bool integer = false;
+      for (uint32_t k = 0; k < p->int_pair_count; k++)
+         integer |= p->int_pairs[k][0] == p->pairs[i][0] && p->int_pairs[k][1] == p->pairs[i][1];
+      if (!integer)
+         n += pair_key(cmd, point, p, p->pairs[i], false, &keys[n]);
+   }
+   for (uint32_t i = 0; i < p->int_pair_count; i++)
+      n += pair_key(cmd, point, p, p->int_pairs[i], true, &keys[n]);
+   return n;
+}
+
 static struct wg_program *
 program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
@@ -1011,7 +1103,9 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       if (view && !wg_format_filterable(view->fmt))
          mask[k / 64] |= 1ull << (k % 64);
    }
-   return mask[0] | mask[1] ? wg_program_variant(p, mask) : p;
+   struct wgsl_sampler_key keys[2 * WGSL_MAX_PAIRS];
+   const uint32_t key_count = p->pair_count || p->int_pair_count ? program_keys(cmd, point, p, keys) : 0;
+   return mask[0] | mask[1] || key_count ? wg_program_variant(p, mask, keys, key_count) : p;
 }
 
 /* Whether a draw may go ahead (false: it draws nothing), its state recorded. */
@@ -2898,6 +2992,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
                         res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage
                         : d->plane && d->plane < d->view->plane_count       ? d->view->planes[d->plane]
+                        : res->kind != WGSL_TEXTURE                         ? d->view->view
+                        : d->view->faces && res->dim == WGSL_DIM_2D_ARRAY   ? d->view->faces
+                        : d->view->sampled                                  ? d->view->sampled
                                                                             : d->view->view);
          break;
       }

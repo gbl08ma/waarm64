@@ -1361,6 +1361,46 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                   dim, aspect, view->vk.base_mip_level, view->vk.level_count,
                   layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
    view->view = wg_create_json(WG_KIND_VIEW, &j);
+   /* The component mapping: WebGPU's swizzle, on a view of its own (it allows only sampling through one). Cube views of
+    * integer formats have a 2D array twin: WGSL can only fetch from those, and has no fetch from cubes (wgsl_sampler.c). */
+   static const char channels[] = "rgba";
+   char swizzle[32] = "";
+   const VkComponentSwizzle mapping[4] = { view->vk.swizzle.r, view->vk.swizzle.g, view->vk.swizzle.b, view->vk.swizzle.a };
+   bool identity = true;
+   char letters[5] = "";
+   for (uint32_t i = 0; i < 4; i++) {
+      const VkComponentSwizzle m = mapping[i] == VK_COMPONENT_SWIZZLE_IDENTITY ? VK_COMPONENT_SWIZZLE_R + i : mapping[i];
+      letters[i] = m == VK_COMPONENT_SWIZZLE_ZERO ? '0' : m == VK_COMPONENT_SWIZZLE_ONE ? '1' : channels[m - VK_COMPONENT_SWIZZLE_R];
+      identity &= m == (VkComponentSwizzle)(VK_COMPONENT_SWIZZLE_R + i);
+   }
+   if (!identity && (wg_features & WG_FEATURE_SWIZZLE))
+      snprintf(swizzle, sizeof(swizzle), "\"swizzle\":\"%s\",\"usage\":4,", letters);
+   else if (!identity) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: the browser has no texture-component-swizzle: image views' component mappings are ignored\n");
+      warned = true;
+   }
+   if (swizzle[0]) {
+      wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
+      if (!strcmp(aspect, "all"))
+         wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
+      wg_json_printf(&j, "\"dimension\":\"%s\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
+                     "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
+                     dim, aspect, view->vk.base_mip_level, view->vk.level_count,
+                     layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
+      view->sampled = wg_create_json(WG_KIND_VIEW, &j);
+   }
+   if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
+       (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT)) {
+      wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
+      if (!strcmp(aspect, "all"))
+         wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
+      wg_json_printf(&j, "\"dimension\":\"2d-array\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
+                     "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
+                     aspect, view->vk.base_mip_level, view->vk.level_count, view->vk.base_array_layer, view->vk.layer_count);
+      view->faces = wg_create_json(WG_KIND_VIEW, &j);
+   }
    /* A storage texture's binding has no cube dimension: a cube view's faces as a 2D array (the translator declares
     * cube storage images as 2D arrays). */
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
@@ -1401,6 +1441,8 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
       return;
    wg_id_release(view->view);
    wg_id_release(view->storage);
+   wg_id_release(view->sampled);
+   wg_id_release(view->faces);
    wg_id_release(view->att);
    for (uint32_t p = 1; p < view->plane_count; p++)
       wg_id_release(view->planes[p]);
@@ -1456,7 +1498,7 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
    struct wg_sampler *sampler = vk_sampler_create(&dev->vk, pCreateInfo, pAllocator, sizeof(*sampler));
    if (!sampler)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
-   /* Borders and mirror-once aren't WebGPU's: the nearest of its modes (docs/backlog.md). */
+   /* Borders and mirror-once aren't WebGPU's: the shader's, on the nearest of its modes (wgsl_sampler.c). */
    static const char *const address[] = {
       [VK_SAMPLER_ADDRESS_MODE_REPEAT] = "repeat", [VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT] = "mirror-repeat",
       [VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE] = "clamp-to-edge",
@@ -1466,6 +1508,7 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
    static const char *const compare[] = { "never", "less", "equal", "less-equal", "greater", "not-equal",
                                           "greater-equal", "always" };
    const VkSamplerCreateInfo *c = pCreateInfo;
+   /* Unnormalized coordinates: Vulkan asks for clamp-to-edge or border, a level; the shader makes them normalized. */
    const float lod_min = CLAMP(c->minLod, 0.0f, 32.0f), lod_max = CLAMP(c->maxLod, lod_min, 32.0f);
    const bool linear = c->magFilter == VK_FILTER_LINEAR && c->minFilter == VK_FILTER_LINEAR &&
                        c->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR;
@@ -1478,6 +1521,22 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
                   c->minFilter == VK_FILTER_LINEAR ? "linear" : "nearest",
                   c->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? "linear" : "nearest", lod_min, lod_max, aniso);
    sampler->compare = c->compareEnable;
+   memset(&sampler->key, 0, sizeof(sampler->key));
+   sampler->key.address[0] = MIN2(c->addressModeU, WGSL_ADDRESS_MIRROR_ONCE);
+   sampler->key.address[1] = MIN2(c->addressModeV, WGSL_ADDRESS_MIRROR_ONCE);
+   sampler->key.address[2] = MIN2(c->addressModeW, WGSL_ADDRESS_MIRROR_ONCE);
+   sampler->key.mag_linear = c->magFilter == VK_FILTER_LINEAR;
+   sampler->key.min_linear = c->minFilter == VK_FILTER_LINEAR;
+   sampler->key.mip_linear = c->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR;
+   sampler->key.unnormalized = c->unnormalizedCoordinates;
+   sampler->key.compare = c->compareEnable ? c->compareOp : VK_COMPARE_OP_ALWAYS;
+   sampler->key.bias = c->mipLodBias;
+   sampler->key.min_lod = c->minLod;
+   sampler->key.max_lod = c->maxLod;
+   for (uint32_t i = 0; i < 3; i++)
+      sampler->emulated |= sampler->key.address[i] == WGSL_ADDRESS_BORDER ||
+                           sampler->key.address[i] == WGSL_ADDRESS_MIRROR_ONCE;
+   sampler->emulated |= c->unnormalizedCoordinates || c->mipLodBias != 0.0f;
    if (c->compareEnable)
       wg_json_printf(&j, ",\"compare\":\"%s\"", compare[c->compareOp & 7]);
    wg_json_printf(&j, "}");

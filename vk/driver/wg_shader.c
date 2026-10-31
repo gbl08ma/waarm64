@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "nir.h"
+#include "nir_serialize.h"
 #include "spirv/nir_spirv.h"
 #include "util/blob.h"
 #include "util/hash_table.h"
@@ -101,6 +102,26 @@ program_list(struct wg_program *p)
 }
 
 static void
+stage_nir_free(struct wg_stage_nir *n)
+{
+   if (n)
+      free(n->data);
+   free(n);
+}
+
+static struct wg_stage_nir *
+stage_nir_copy(const struct wg_stage_nir *n)
+{
+   if (!n)
+      return NULL;
+   struct wg_stage_nir *c = malloc(sizeof(*c));
+   *c = *n;
+   c->data = malloc(n->size);
+   memcpy(c->data, n->data, n->size);
+   return c;
+}
+
+static void
 program_free_pipelines(struct wg_program *p)
 {
    if (!p->pipelines)
@@ -138,6 +159,8 @@ program_free(struct wg_program *p)
       free(u);
    }
    free(p->compute_wgsl);
+   stage_nir_free(p->compute_nir);
+   free(p->keys);
    free(p);
 }
 
@@ -351,11 +374,64 @@ variant_text(const struct wg_program *p, const struct wg_program *v, const uint6
    return text;
 }
 
+static struct wgsl_print_options
+print_options(const struct wgsl_varyings *fs)
+{
+   return (struct wgsl_print_options){
+      .fs = fs,
+      .max_immediates = wg_max_immediates,
+      .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
+      .max_uniform_size = wg_limits.max_uniform_buffer_binding_size,
+      .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
+                  ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
+                  (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
+   };
+}
+
+/* A stage printed against a variant's sampler keys, NULL if none is of a pair it samples (its own text serves). */
+static char *
+keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struct wgsl_info *info, mesa_shader_stage stage)
+{
+   if (!v->key_count || !n)
+      return NULL;
+   bool touched = false;
+   for (uint32_t k = 0; k < v->key_count && !touched; k++) {
+      for (uint32_t i = 0; i < info->pair_count; i++)
+         touched |= info->pairs[i][0] == v->keys[k].texture && info->pairs[i][1] == v->keys[k].sampler;
+      for (uint32_t i = 0; i < info->int_pair_count; i++)
+         touched |= info->int_pairs[i][0] == v->keys[k].texture && info->int_pairs[i][1] == v->keys[k].sampler;
+   }
+   if (!touched)
+      return NULL;
+   struct blob_reader r;
+   blob_reader_init(&r, n->data, n->size);
+   nir_shader *nir = nir_deserialize(NULL, wgsl_nir_options(), &r);
+   struct wgsl_print_options options = print_options(n->has_fs ? &n->fs : NULL);
+   options.keys = v->keys;
+   options.key_count = v->key_count;
+   struct wgsl_info *printed = malloc(sizeof(*printed));
+   char error[512] = "";
+   char *text = wgsl_print(NULL, nir, &options, printed, error, sizeof(error));
+   char *out = text ? strdup(text) : NULL;
+   if (!text)
+      fprintf(stderr, "wg: a stage's samplers didn't translate: %s\n", error);
+   ralloc_free(text);
+   ralloc_free(nir);
+   free(printed);
+   return out;
+}
+
 /* A variant's module of `wgsl` (0: the stage's own serves it). */
 static uint32_t
-variant_module(const struct wg_program *p, const struct wg_program *v, const uint64_t *mask, const char *wgsl)
+variant_module(const struct wg_program *p, const struct wg_program *v, const uint64_t *mask, const char *wgsl,
+               const struct wg_stage_nir *nir, const struct wgsl_info *info, mesa_shader_stage stage)
 {
-   char *text = variant_text(p, v, mask, wgsl);
+   char *keyed = keyed_text(v, nir, info, stage);
+   char *text = variant_text(p, v, mask, keyed ? keyed : wgsl);
+   if (text)
+      free(keyed);
+   else
+      text = keyed;
    if (!text)
       return 0;
    const uint32_t m = wg_id();
@@ -368,11 +444,11 @@ variant_module(const struct wg_program *p, const struct wg_program *v, const uin
 void
 wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs)
 {
-   if (!v->split_count || v->stage_modules_made)
+   if ((!v->split_count && !v->key_count) || v->stage_modules_made)
       return;
    v->stage_modules_made = true;
-   v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl) : 0;
-   v->fs_module = fs ? variant_module(v->base, v, v->mask, fs->wgsl) : 0;
+   v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl, vs->nir, &vs->info, MESA_SHADER_VERTEX) : 0;
+   v->fs_module = fs ? variant_module(v->base, v, v->mask, fs->wgsl, fs->nir, &fs->info, MESA_SHADER_FRAGMENT) : 0;
 }
 
 /* `twin` into `v`'s resources before index `at` (a split sampler's twin, at the binding before it). */
@@ -396,11 +472,24 @@ res_index(const struct wgsl_resource *r)
    return (uint32_t)r->group << 16 | r->binding;
 }
 
+/* A compute program's pairs are its one stage's. */
+static struct wgsl_info
+compute_pairs(const struct wg_program *p)
+{
+   struct wgsl_info i;
+   i.pair_count = p->pair_count;
+   i.int_pair_count = p->int_pair_count;
+   memcpy(i.pairs, p->pairs, sizeof(i.pairs));
+   memcpy(i.int_pairs, p->int_pairs, sizeof(i.int_pairs));
+   return i;
+}
+
 struct wg_program *
-wg_program_variant(struct wg_program *p, const uint64_t *mask)
+wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys, uint32_t key_count)
 {
    for (struct wg_program *v = p->variants; v; v = v->variants)
-      if (v->mask[0] == mask[0] && v->mask[1] == mask[1])
+      if (v->mask[0] == mask[0] && v->mask[1] == mask[1] && v->key_count == key_count &&
+          !memcmp(v->keys, keys, key_count * sizeof(*keys)))
          return v;
    struct wg_program *v = malloc(sizeof(*v));
    memcpy(v, p, sizeof(*v));
@@ -413,8 +502,12 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask)
    v->push_group_gen = 0;
    v->compute = 0;
    v->compute_wgsl = NULL;
+   v->compute_nir = NULL;
    v->owns_compute_module = false;
    v->base = p;
+   v->key_count = key_count;
+   v->keys = malloc(MAX2(key_count, 1) * sizeof(*keys));
+   memcpy(v->keys, keys, key_count * sizeof(*keys));
    v->split_count = 0;
    v->vs_module = v->fs_module = 0;
    v->stage_modules_made = false;
@@ -488,8 +581,9 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask)
    }
 #undef MASKED
    program_layouts(v);
-   if ((widened || v->split_count) && p->compute_wgsl) {
-      const uint32_t m = variant_module(p, v, mask, p->compute_wgsl);
+   if ((widened || v->split_count || v->key_count) && p->compute_wgsl) {
+      const struct wgsl_info keyed = compute_pairs(p);
+      const uint32_t m = variant_module(p, v, mask, p->compute_wgsl, p->compute_nir, &keyed, MESA_SHADER_COMPUTE);
       if (m) {
          v->compute_module = m;
          v->owns_compute_module = true;
@@ -516,6 +610,7 @@ resource_merge(struct wgsl_resource *m, const struct wgsl_resource *r)
    if (r->kind == WGSL_STORAGE_TEXTURE)
       m->access |= r->access;
    m->size = MAX2(m->size, r->size);
+   m->nonfiltering |= r->nonfiltering;
 }
 
 /* The program of `count` translated stages (visibility by stage) on a pipeline's set layouts. */
@@ -545,6 +640,15 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
             p->pairs[p->pair_count++][1] = info->pairs[i][1];
          } else if (!known) {
             p->pairs_full = true;
+         }
+      }
+      for (uint32_t i = 0; i < info->int_pair_count; i++) {
+         bool known = false;
+         for (uint32_t k = 0; k < p->int_pair_count; k++)
+            known |= p->int_pairs[k][0] == info->int_pairs[i][0] && p->int_pairs[k][1] == info->int_pairs[i][1];
+         if (!known && p->int_pair_count < WGSL_MAX_PAIRS) {
+            p->int_pairs[p->int_pair_count][0] = info->int_pairs[i][0];
+            p->int_pairs[p->int_pair_count++][1] = info->int_pairs[i][1];
          }
       }
       for (uint32_t i = 0; i < info->resource_count; i++) {
@@ -601,7 +705,7 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
  * stages of one link would otherwise get different programs, and a draw would lose its fragment shader). */
 #define PROGRAM_FIELDS(X)                                                                                              \
    X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
-   X(push_ubo_size) X(vis) X(pair_count) X(pairs)
+   X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs)
 #define RESOURCE_FIELDS(X)                                                                                             \
    X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(written) X(nonfiltering) X(access) X(format) X(size)
 
@@ -653,11 +757,12 @@ program_link(struct wg_program *p, struct wg_shader *const *shaders, uint32_t co
 
 /* The program's WebGPU objects: its layouts, and a compute stage's pipeline (of `compute_module`, made of `wgsl`). */
 static void
-program_objects(struct wg_program *p, uint32_t compute_module, const char *wgsl)
+program_objects(struct wg_program *p, uint32_t compute_module, const char *wgsl, const struct wg_stage_nir *nir)
 {
    program_layouts(p);
    if (compute_module) {
       p->compute_wgsl = strdup(wgsl);
+      p->compute_nir = stage_nir_copy(nir);
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", p->layout,
                      compute_module);
@@ -716,6 +821,15 @@ wg_program_merge(struct wg_program *a, const struct wg_program *b)
          m->pairs[m->pair_count++][1] = b->pairs[i][1];
       }
    }
+   for (uint32_t i = 0; i < b->int_pair_count; i++) {
+      bool known = false;
+      for (uint32_t k = 0; k < m->int_pair_count; k++)
+         known |= m->int_pairs[k][0] == b->int_pairs[i][0] && m->int_pairs[k][1] == b->int_pairs[i][1];
+      if (!known && m->int_pair_count < WGSL_MAX_PAIRS) {
+         m->int_pairs[m->int_pair_count][0] = b->int_pairs[i][0];
+         m->int_pairs[m->int_pair_count++][1] = b->int_pairs[i][1];
+      }
+   }
    /* By group, then binding, each resource's visibility, dynamic index and set with it. */
    struct {
       struct wgsl_resource r;
@@ -757,6 +871,7 @@ shader_destroy(struct vk_device *dev, struct vk_shader *vk, const VkAllocationCa
    wg_id_release(s->empty_fs);
    wg_program_unref(s->program);
    free(s->wgsl);
+   stage_nir_free(s->nir);
    vk_shader_free(dev, pAllocator, &s->vk);
 }
 
@@ -825,6 +940,32 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
    fold_uniforms(out, layouts);
 }
 
+/* The lowered stage as variants will print it, if it samples (what wgsl_print's first step decides by samplers). */
+static struct wg_stage_nir *
+stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
+{
+   bool samples = false;
+   nir_foreach_function_impl (impl, nir)
+      nir_foreach_block (block, impl)
+         nir_foreach_instr (instr, block)
+            if (instr->type == nir_instr_type_tex) {
+               const nir_texop op = nir_instr_as_tex(instr)->op;
+               samples |= op == nir_texop_tex || op == nir_texop_txb || op == nir_texop_txl || op == nir_texop_txd ||
+                          op == nir_texop_tg4;
+            }
+   if (!samples)
+      return NULL;
+   struct blob b;
+   blob_init(&b);
+   nir_serialize(&b, nir, true);
+   struct wg_stage_nir *n = calloc(1, sizeof(*n));
+   blob_finish_get_buffer(&b, &n->data, &n->size);
+   n->has_fs = fs != NULL;
+   if (fs)
+      n->fs = *fs;
+   return n;
+}
+
 static VkResult
 wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_info *infos,
            const struct vk_graphics_pipeline_state *state, const struct vk_features *features,
@@ -871,15 +1012,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             break;
          }
          shaders[i] = s;
-         const struct wgsl_print_options options = {
-            .fs = infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL,
-            .max_immediates = wg_max_immediates,
-            .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
-            .max_uniform_size = wg_limits.max_uniform_buffer_binding_size,
-            .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) |
-                        ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
-                        (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
-         };
+         const struct wgsl_print_options options = print_options(infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL);
+         s->nir = stage_nir_keep(infos[i].nir, options.fs);
          char *text = wgsl_print(NULL, infos[i].nir, &options, &s->info, error, sizeof(error));
          if (!text) {
             ok = false;
@@ -970,6 +1104,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          shaders[i]->module = 0;
          free(shaders[i]->wgsl);
          shaders[i]->wgsl = NULL;
+         stage_nir_free(shaders[i]->nir);
+         shaders[i]->nir = NULL;
          out[i] = &shaders[i]->vk;
       }
       return VK_SUCCESS;
@@ -986,7 +1122,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       p->refs += count;
    } else {
       p->refs = count;
-      program_objects(p, infos[0].stage == MESA_SHADER_COMPUTE ? shaders[0]->module : 0, shaders[0]->wgsl);
+      program_objects(p, infos[0].stage == MESA_SHADER_COMPUTE ? shaders[0]->module : 0, shaders[0]->wgsl, shaders[0]->nir);
       program_list(p);
    }
    for (uint32_t i = 0; i < count; i++) {
@@ -999,7 +1135,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 /* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
  * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
  * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
-#define WG_SHADER_FORMAT 4
+#define WG_SHADER_FORMAT 5
 
 static bool
 wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)
@@ -1011,6 +1147,12 @@ wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *
    if (!s->wgsl || !s->program)
       return !blob->out_of_memory;
    blob_write_string(blob, s->wgsl);
+   blob_write_uint32(blob, s->nir ? (uint32_t)s->nir->size : 0);
+   if (s->nir) {
+      blob_write_bytes(blob, s->nir->data, s->nir->size);
+      blob_write_uint32(blob, s->nir->has_fs);
+      blob_write_bytes(blob, &s->nir->fs, sizeof(s->nir->fs));
+   }
    blob_write_bytes(blob, &s->info, sizeof(s->info));
    program_write(blob, s->program);
    blob_write_bytes(blob, s->program->link, sizeof(blake3_hash));
@@ -1034,6 +1176,18 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
       return VK_SUCCESS;
    }
    const char *wgsl = blob_read_string(blob);
+   const uint32_t nir_size = blob_read_uint32(blob);
+   if (nir_size && !blob->overrun) {
+      const void *data = blob_read_bytes(blob, nir_size);
+      s->nir = calloc(1, sizeof(*s->nir));
+      s->nir->size = nir_size;
+      s->nir->has_fs = blob_read_uint32(blob);
+      blob_copy_bytes(blob, &s->nir->fs, sizeof(s->nir->fs));
+      if (!blob->overrun) {
+         s->nir->data = malloc(nir_size);
+         memcpy(s->nir->data, data, nir_size);
+      }
+   }
    blob_copy_bytes(blob, &s->info, sizeof(s->info));
    struct wg_program *p = calloc(1, sizeof(*p));
    if (!p) {
@@ -1043,8 +1197,9 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
    program_read(blob, p);
    blob_copy_bytes(blob, p->link, sizeof(blake3_hash));
    if (blob->overrun || !wgsl || p->resource_count > WGSL_MAX_RESOURCES || p->group_count > WGSL_MAX_GROUPS ||
-       p->pair_count > WGSL_MAX_PAIRS || p->set_count > WGSL_MAX_SETS) {
+       p->pair_count > WGSL_MAX_PAIRS || p->int_pair_count > WGSL_MAX_PAIRS || p->set_count > WGSL_MAX_SETS) {
       free(p);
+      stage_nir_free(s->nir);
       vk_shader_free(device, pAllocator, &s->vk);
       return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
    }
@@ -1058,7 +1213,7 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
       s->program = same;
    } else {
       p->refs = 1;
-      program_objects(p, stage == MESA_SHADER_COMPUTE ? s->module : 0, s->wgsl);
+      program_objects(p, stage == MESA_SHADER_COMPUTE ? s->module : 0, s->wgsl, s->nir);
       program_list(p);
       s->program = p;
    }
@@ -1289,9 +1444,11 @@ fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
 {
    if (p->fs_no_depth && p->fs_no_depth_of == fs)
       return p->fs_no_depth;
-   char *text = p->split_count ? variant_text(p->base, p, p->mask, fs->wgsl) : NULL;
+   char *keyed = keyed_text(p, fs->nir, &fs->info, MESA_SHADER_FRAGMENT);
+   char *text = p->split_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
    if (!text)
-      text = strdup(fs->wgsl);
+      text = keyed ? strdup(keyed) : strdup(fs->wgsl);
+   free(keyed);
    static const char from[] = "@builtin(frag_depth)", to[] = "@location(7)        ";
    char *at = strstr(text, from);
    if (at)

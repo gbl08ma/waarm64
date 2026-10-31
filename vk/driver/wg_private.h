@@ -58,6 +58,7 @@ enum wg_feature {
                                         * held back (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
+   WG_FEATURE_SWIZZLE = 1 << 17,       /* texture-component-swizzle (image views' component mappings) */
    /* Not the adapter's: VK3 L9a's suspects back at 4fdc69fb's behaviour for the NVIDIA run's A/B (`?gpu=vkl9=…`,
     * web/venus-gpu.ts `L9_SUSPECTS`; never by default): each pipeline's bind group layouts their own uids (wg_shader.c
     * `bgl_uid`), memories' GPUBuffers without WG_MEMORY_PAD. */
@@ -325,6 +326,8 @@ struct wg_image_view {
    uint32_t view;
    uint32_t storage; /* a cube or cube-array view's faces as a 2D array, for a storage binding (WebGPU has no cube storage
                       * views); 0: `view` serves */
+   uint32_t sampled; /* `view` with the component mapping, which WebGPU allows only on a view that's just sampled (0: none) */
+   uint32_t faces;   /* an integer cube view's faces as a 2D array, sampled (the translator fetches: wgsl_sampler.c) */
    uint32_t att;
    int32_t slice;   /* a 3D image's: the attachment is its level's 3D view, drawn into at this depth slice (else -1) */
    /* A multi-planar view's planes (VK3 L7.2: each plane's texture's, plane 0's `view`); a sampler's YCbCr conversion
@@ -349,6 +352,10 @@ struct wg_sampler {
    uint32_t id;
    uint32_t nearest;   /* its twin with nearest filters, for unfilterable views (0: it is one) */
    bool compare;
+   /* What the shader must do of it (wgsl_sampler.c; `key.texture` and the rest filled per binding by wg_cmd.c
+    * `pair_key`): `emulated` for any float texture, whose other samplers are WebGPU's alone. */
+   bool emulated;
+   struct wgsl_sampler_key key;
 };
 
 /* A set layout as slots: binding b's elements are slots first[b] .. first[b] + count[b] - 1 (wgsl.h). */
@@ -432,14 +439,20 @@ struct wg_program {
    uint8_t vis[WGSL_MAX_RESOURCES];                    /* the stages that see each resource */
    uint32_t pair_count;
    uint32_t pairs[WGSL_MAX_PAIRS][2];                  /* textures and the samplers they're sampled with */
+   uint32_t int_pair_count;                            /* integer textures': WGSL fetches them, no sampler bound */
+   uint32_t int_pairs[WGSL_MAX_PAIRS][2];
    bool pairs_full;          /* program_create's: its stages' pairs past WGSL_MAX_PAIRS (the pipeline refused) */
    uint32_t compute_module;
    char *compute_wgsl;       /* a compute program's WGSL (a base's: its variants' modules are made from it) */
+   struct wg_stage_nir *compute_nir; /* a base's, with it */
    bool owns_compute_module; /* the shader that made it was destroyed while others shared the program: it frees it */
    /* Variants of the program for what the shader didn't type (wg_program_variant): textures declared filterable
     * float bound to depth or unfilterable views, and a dispatch's read-only storage buffers bound from a memory it
-    * writes through another, by a mask of those resources; a base's list, through `variants`. */
+    * writes through another, by a mask of those resources, and samplers WebGPU's can't express, by `keys` (each pair's
+    * that isn't plain, in the program's order); a base's list, through `variants`. */
    uint64_t mask[2];
+   struct wgsl_sampler_key *keys;
+   uint32_t key_count;
    struct wg_program *variants;
    struct wg_program *base;  /* a variant's program */
    /* A variant's split samplers (wg_program_variant): (group, texture's binding, sampler's binding), the texture
@@ -464,9 +477,19 @@ struct wg_program {
    blake3_hash with;
 };
 
+/* A stage's lowered NIR, serialized, for the variants that print it against sampler keys (a stage that samples: another
+ * stage's is NULL), and what else its print took. */
+struct wg_stage_nir {
+   void *data;
+   size_t size;
+   bool has_fs;
+   struct wgsl_varyings fs;
+};
+
 struct wg_shader {
    struct vk_shader vk;
    char *wgsl;
+   struct wg_stage_nir *nir;
    struct wgsl_info info;
    uint32_t module;
    uint32_t empty_fs; /* a vertex shader's: the fragment stage of its pipelines without one in a pass with colour */
@@ -480,9 +503,10 @@ void wg_program_unref(struct wg_program *p);
 /* The driver's build ID (vk/gen.ts), the shader caches' identity. */
 const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
- * samplers they're sampled with as non-filtering, and whose read-only storage buffers in it as writable storage; made
- * at its first use, kept with the program. */
-struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask);
+ * samplers they're sampled with as non-filtering, whose read-only storage buffers in it as writable storage, and whose
+ * stages print against `keys`; made at its first use, kept with the program. */
+struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys,
+                                      uint32_t key_count);
 void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs);
 struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
 

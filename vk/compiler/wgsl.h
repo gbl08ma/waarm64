@@ -133,6 +133,27 @@ struct wgsl_info {
    /* The textures sampled with each sampler, as (texture, sampler) pairs of group << 16 | binding. */
    uint32_t pair_count;
    uint32_t pairs[WGSL_MAX_PAIRS][2];
+   /* Integer textures' likewise, which WGSL fetches: their samplers aren't bindings, and only a key sees them. */
+   uint32_t int_pair_count;
+   uint32_t int_pairs[WGSL_MAX_PAIRS][2];
+};
+
+/* VkSamplerAddressMode's order. */
+enum wgsl_address { WGSL_ADDRESS_REPEAT, WGSL_ADDRESS_MIRROR, WGSL_ADDRESS_EDGE, WGSL_ADDRESS_BORDER, WGSL_ADDRESS_MIRROR_ONCE };
+
+/* What a sampler and its view make of a (texture, sampler) pair that WebGPU's sampler can't do (wgsl_sampler.c): a
+ * variant's stages are printed against a list of these (wgsl_print_options.keys). Zeroed whole: variants compare them
+ * as bytes. */
+struct wgsl_sampler_key {
+   uint32_t texture, sampler;      /* as wgsl_info.pairs */
+   uint8_t address[3];             /* enum wgsl_address, U, V, W */
+   uint8_t mag_linear, min_linear, mip_linear;
+   uint8_t unnormalized;
+   uint8_t compare;                /* VkCompareOp */
+   uint8_t levels;                 /* the view's (0: asked of the texture) */
+   uint8_t pad[3];
+   float bias, min_lod, max_lod;
+   uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
 };
 
 /* The NIR options every stage is compiled with, and spirv_to_nir's. */
@@ -174,17 +195,27 @@ struct wgsl_print_options {
    uint32_t max_uniform_size;
    /* The device's WGSL_* (WGSL_TIER2: read-write storage images of more formats; WGSL_DUAL_SOURCE: @blend_src). */
    unsigned features;
+   /* What a variant's samplers need of the shader (none: the stage's own module). */
+   const struct wgsl_sampler_key *keys;
+   uint32_t key_count;
 };
 
 /* Prints a lowered shader. Returns ralloc'd text owned by `mem_ctx`, or NULL with `error`. */
 char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *options, struct wgsl_info *info,
                  char *error, size_t error_size);
 
+/* wgsl_print's first step: sampling as the keys say, and integer textures' fetches (recorded in info->int_pairs). False
+ * for what it can't do (a gather of an integer cube that is also sampled: the one binding can't be both). */
+bool wgsl_lower_samplers(nir_shader *nir, const struct wgsl_sampler_key *keys, uint32_t key_count, struct wgsl_info *info);
+
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);
 void wgsl_test_device(unsigned features, unsigned subgroup_size);
 void wgsl_test_ycbcr(int set, unsigned binding, unsigned format, unsigned model, unsigned range, unsigned x_offset,
                      unsigned y_offset, unsigned filter);
+void wgsl_test_sampler(unsigned u, unsigned v, unsigned w, unsigned flags, unsigned compare, unsigned levels, float bias,
+                       float min_lod, float max_lod, uint32_t b0, uint32_t b1, uint32_t b2, uint32_t b3);
 int wgsl_test_translate(const uint32_t *words, size_t nwords, int stage);
 const char *wgsl_test_result(void);
+uint32_t wgsl_test_kept(void);
 const struct wgsl_info *wgsl_test_info(void);

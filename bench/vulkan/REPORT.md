@@ -771,6 +771,52 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T8: samplers — what WebGPU's samplers can't say, in the shader, 203 of T1's failures to those of other tasks
+
+**2026-10-31.** JSON in `results/vk4/t8/`: `base` and `census-first` T1's sampler failures before and after the first
+version, `wide-first` and `wide` the groups below (the second with integer gathers and custom borders), `list-new` the
+list's new cases, `list-new-m4` them on the M4 (Metal, Chrome for Testing 153.0.8010.12). `bench/gpu/deqp-run.ts vk`,
+SwiftShader on the dev VM, Chromium 153.0.8010.52.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| T1's cases of these causes, before | 215 | 0 | 203 | 12 |
+| the same, the first version | 215 | 167 | 36 | 12 |
+| every 8th of `pipeline.monolithic.sampler`, `image_view`, `texture`, `glsl.texture_functions`, `glsl.texture_gather`, `glsl.opaque_type_indexing.sampler` | 57,066 | 9,946 | 900 | 46,220 |
+| the list's new cases, as one list | 3,497 | 3,497 | 0 | 0 |
+| the same on the M4 | 3,497 | 3,494 | 3 | 0 |
+
+- **The shape.** A sampler is known at the bind and the shader long before, so each stage that samples keeps its lowered
+  NIR and prints again against the bound samplers' keys, as a variant of its program. A plain sampler's module is what
+  it was. NIR, not text: every case here is a coordinate or a level the printer needs anyway, and the integer path was a NIR pass already.
+  What it keeps: over the programs' 124 stages (1.57 MB of WGSL), the 67 that sample keep 196 KB (+12.5%, serialized
+  and stripped), in the shader store too.
+- **What's left of the 900**, none of these causes: 560 of compressed images (524 ASTC, 24 of `texture.swizzle`'s EAC npot,
+  12 of `texture.compressed`'s npot: T18's padding by their look, not checked one by one), 149 of `glsl.texture_functions`' non-constant offsets
+  and `textureQueryLod` (T9), 2 multisampled arrays (T12), 3 `texture.explicit_lod.*_pack16_linear_compute` not looked
+  into, and 186 integer `lod_base_mip_level` views, **SwiftShader's**: a `textureLoad` at a view's level 0 reads the
+  level after it (found with a compute shader on a view from level 2), which sampling doesn't meet and the M4 doesn't
+  do. T1's census had 0 of them on the M4.
+- **Beyond the brief, because they were one step away:** `VK_KHR_sampler_mirror_clamp_to_edge`,
+  `VK_EXT_custom_border_color` and `VK_EXT_border_color_swizzle` advertised, `maxSamplerLodBias` 2 → 15 (T1 counted these
+  ~51,000 cases of the direct set as not supported); a stage that only asks an integer texture's size or levels
+  now declares it integer (a bind group error, its submit dropped, was the `texturequerylevels.usampler*` cases').
+- **A trap for the next one:** a gathered integer texture is in both of a program's pair lists; keyed as a float, its border
+  was float bits (666 `border_swizzle` failures in `wide-first`).
+- **Most `not supported` here is the compute-only queue family** (T1's first reason): `border_swizzle`'s and
+  `sampler`'s `_compute` variants, not samplers.
+- **On the M4** the 3 left out: `sampler.*.astc_*.mipmap.nearest.lod.select_bias_2_5` (2) and
+  `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`; backlog "The M4's own failures".
+- **What it costs where no sampler needs it: nothing measurable.** VK0's scene (`guest.ts venus`, the desktop guest, on
+  SwiftShader, three rounds alternated against the module before T8, `scene/`), ms a frame: 1,000 fish 90.6–92.4 after,
+  90.5–93.0 before; the toolkit at 2,000 21.5–22.1 and 21.6–22.3. The rounds overlap. Its modules are the same text
+  and its draws look at each pair's sampler. No replayed program has a sampler that needs a key, so a variant's own
+  cost on one is unmeasured.
+- **Tests**: `tests/wgsl.test.ts`'s five (a stage printed from NIR serialized, as a variant is, run on WebGPU), dEQP-VK's
+  cases. Planted: mirrored repeat off by one, a border's far edge (which first passed: its image was zero there, so
+  the test gained a red image), a cube's face sign, the sampler's bias dropped, swizzled views not bound, the border's
+  mapping swapped: each fails. The list 13,217 → 16,711.
+
 ## VK4 T6: synchronization's failures — `device_host`'s 202 failures to 0, a semaphore's value reached before its batch ran
 
 **2026-10-30.** JSON in `results/vk4/t6/`: `base/` before and `fix/` after (the 1,913 `timeline_semaphore.device_host`

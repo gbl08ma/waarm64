@@ -237,6 +237,13 @@ lower_descriptors_instr(nir_builder *b, nir_instr *instr, void *data)
          } else {
             tex->texture_index = index;
             tex_set = var->data.descriptor_set, tex_binding = var->data.binding, tex_el = el;
+            /* A size or level query's result doesn't say the texture's type, which only the variable does: the printer
+             * declares it by `component`, which those ops don't use (1 sint, 2 uint), or a stage that only asks an
+             * integer texture's size binds it as float. */
+            if (tex->op == nir_texop_txs || tex->op == nir_texop_query_levels) {
+               const enum glsl_base_type type = glsl_get_sampler_result_type(glsl_without_array(var->type));
+               tex->component = type == GLSL_TYPE_INT ? 1 : type == GLSL_TYPE_UINT ? 2 : 0;
+            }
          }
          nir_tex_instr_remove_src(tex, i);
          i--;
@@ -391,66 +398,6 @@ lower_1d_image(nir_builder *b, nir_intrinsic_instr *intr, void *data)
    nir_def *c[4] = { nir_channel(b, coord, 0), nir_imm_int(b, 0),
                      array ? nir_channel(b, coord, 1) : nir_imm_int(b, 0), nir_imm_int(b, 0) };
    nir_src_rewrite(&intr->src[1], nir_vec(b, c, coord->num_components));
-   return true;
-}
-
-/* An integer texture sampled with a sampler (Vulkan allows it, nearest only; WGSL's textureSample takes float textures):
- * fetched instead, at the texel the coordinate falls in, clamped to the edge (the sampler's address mode isn't known
- * when the shader is compiled: other modes come out as clamp-to-edge), from the level an explicit LOD names or 0. */
-static bool
-lower_int_sample(nir_builder *b, nir_tex_instr *tex, void *data)
-{
-   if ((tex->op != nir_texop_tex && tex->op != nir_texop_txb && tex->op != nir_texop_txl && tex->op != nir_texop_txd) ||
-       tex->is_shadow || tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE)
-      return false;
-   const nir_alu_type base = nir_alu_type_get_base_type(tex->dest_type);
-   if (base != nir_type_int && base != nir_type_uint)
-      return false;
-   const int ci = nir_tex_instr_src_index(tex, nir_tex_src_coord), ti = nir_tex_instr_src_index(tex, nir_tex_src_texture_deref);
-   if (ci < 0 || ti < 0)
-      return false;
-   nir_def *size = nir_get_texture_size(b, tex);
-   b->cursor = nir_before_instr(&tex->instr);
-   const int li = nir_tex_instr_src_index(tex, nir_tex_src_lod), oi = nir_tex_instr_src_index(tex, nir_tex_src_offset);
-   nir_def *lod = nir_imm_int(b, 0);
-   if (tex->op == nir_texop_txl && li >= 0) {
-      /* Vulkan's nearest mipmap selection (the spec's preferred rounding, ceil(d + 0.5) - 1) within the view's levels:
-       * WGSL's textureLoad past them is undefined (VK3 L9b: Dawn clamps the level on SwiftShader, NVIDIA's reads
-       * zeros), and a level below 0 also shrank the extent below by a negative shift. */
-      nir_def *levels = nir_build_tex(b, nir_texop_query_levels, .texture_deref = nir_src_as_deref(tex->src[ti].src),
-                                      .dim = tex->sampler_dim, .is_array = tex->is_array, .dest_type = nir_type_int32);
-      nir_tex_instr *query = nir_instr_as_tex(nir_def_instr(levels));
-      query->sampler_dim = tex->sampler_dim;
-      query->is_array = tex->is_array;
-      nir_def *d = nir_fadd_imm(b, nir_fceil(b, nir_fadd_imm(b, tex->src[li].src.ssa, 0.5)), -1.0);
-      d = nir_fmin(b, nir_fmax(b, d, nir_imm_float(b, 0)), nir_i2f32(b, nir_iadd_imm(b, levels, -1)));
-      lod = nir_f2i32(b, d);
-   }
-   nir_def *coord = tex->src[ci].src.ssa;
-   const unsigned n = tex->coord_components, spatial = n - (tex->is_array ? 1 : 0);
-   nir_def *c[4];
-   for (unsigned i = 0; i < n; i++) {
-      nir_def *extent = nir_channel(b, size, i);
-      if (i < spatial) {
-         extent = nir_imax(b, nir_ishr(b, extent, lod), nir_imm_int(b, 1));
-         nir_def *t = nir_f2i32(b, nir_ffloor(b, nir_fmul(b, nir_channel(b, coord, i), nir_i2f32(b, extent))));
-         if (oi >= 0)
-            t = nir_iadd(b, t, nir_channel(b, tex->src[oi].src.ssa, i));
-         c[i] = nir_imin(b, nir_imax(b, t, nir_imm_int(b, 0)), nir_iadd_imm(b, extent, -1));
-      } else {
-         c[i] = nir_imin(b, nir_imax(b, nir_f2i32(b, nir_fround_even(b, nir_channel(b, coord, i))), nir_imm_int(b, 0)),
-                         nir_iadd_imm(b, extent, -1));
-      }
-   }
-   nir_def *res = nir_build_tex(b, nir_texop_txf, .coord = nir_vec(b, c, n), .lod = lod,
-                                .texture_deref = nir_src_as_deref(tex->src[ti].src), .dim = tex->sampler_dim,
-                                .is_array = tex->is_array, .dest_type = tex->dest_type);
-   /* The builder takes the dimension from the deref's type, which a 1D texture's still has (lower_1d_tex). */
-   nir_tex_instr *fetch = nir_instr_as_tex(nir_def_instr(res));
-   fetch->sampler_dim = tex->sampler_dim;
-   fetch->is_array = tex->is_array;
-   fetch->coord_components = n;
-   nir_def_replace(&tex->def, res);
    return true;
 }
 
@@ -847,7 +794,6 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    wgsl_lower_ycbcr(nir, layout);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_1d_tex, nir_metadata_control_flow, NULL);
    NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_1d_image, nir_metadata_control_flow, NULL);
-   NIR_PASS(_, nir, nir_shader_tex_pass, lower_int_sample, nir_metadata_control_flow, NULL);
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
    const nir_lower_compute_system_values_options csv = { 0 };
    NIR_PASS(_, nir, nir_lower_compute_system_values, &csv);

@@ -146,7 +146,13 @@ T2–T14; the rest of the order is judgement, said with each.
   unnormalized coordinates, the sampler's LOD bias and min/max LOD, integer textures' address modes and their min/max
   LOD (fetched today: clamp-to-edge whatever the sampler says), integer cube textures (the stage refused: 31),
   **component swizzles** (ignored today; Vulkan requires them: 55). In the shader where WebGPU's sampler can't. *Done:* `texture.*` and `glsl.texture_functions.*`
-  cases of those causes in the list. *Start:* backlog "Samplers".
+  cases of those causes in the list. *Start:* backlog "Samplers". **Done 2026-10-31** (REPORT.md "VK4 T8"): a stage that
+  samples keeps its NIR (+12.5% over the programs' WGSL) and prints again against the bound samplers as a variant, plain
+  samplers' modules unchanged; integer textures fetched by the sampler's address modes and LOD, their cubes from a 2D
+  array, borders, mirror-once, unnormalized coordinates and the bias in the shader, swizzles through WebGPU's views.
+  203 failures of T1's to 0 of those causes but on SwiftShader's own bug, on both hosts; mirror-once, custom border
+  colours and their swizzles advertised, the list 13,217 → 16,711. Left (backlog "Samplers' leftovers"): shadow samples'
+  bias (T9's), a border's anisotropy on several levels, SwiftShader's `textureLoad` on views from a base level.
 - **T9. The translator's wrong results** (M): shadow sampling with a bias, an explicit LOD or gradients (a mipmapped
   shadow map sampled at level 0, silently), non-constant texture offsets (print constants as literals: cheap),
   `textureQueryLod`, `gl_HelperInvocation`, a fragment shader writing depth without a depth aspect (a variant

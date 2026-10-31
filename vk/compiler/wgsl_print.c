@@ -657,6 +657,10 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
    struct res_use *t = resource(c, tex->texture_index, WGSL_TEXTURE);
    t->r.dim = tex_dim(c, tex->sampler_dim, tex->is_array);
    t->r.multisampled = tex->sampler_dim == GLSL_SAMPLER_DIM_MS || tex->op == nir_texop_txf_ms;
+   if (tex->op == nir_texop_txs || tex->op == nir_texop_query_levels) {
+      if (tex->component)
+         t->r.sample = tex->component == 1 ? WGSL_SAMPLE_SINT : WGSL_SAMPLE_UINT;
+   }
    if (tex->is_shadow)
       t->r.sample = WGSL_SAMPLE_DEPTH;
    else if (t->r.sample != WGSL_SAMPLE_DEPTH && tex->op != nir_texop_txs && tex->op != nir_texop_query_levels &&
@@ -669,8 +673,10 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
       struct res_use *s = resource(c, tex->sampler_index, tex->is_shadow ? WGSL_SAMPLER_COMPARE : WGSL_SAMPLER);
       if (tex->is_shadow)
          s->r.kind = WGSL_SAMPLER_COMPARE;
+      /* Integer textures reach here only gathered (wgsl_sampler.c fetches the rest): WebGPU's integer textures take
+       * only non-filtering samplers, and Vulkan's are nearest. */
       if (t->r.sample == WGSL_SAMPLE_SINT || t->r.sample == WGSL_SAMPLE_UINT)
-         failf(c, "an integer texture sampled with a sampler");
+         s->r.nonfiltering = true;
       bool known = false;
       for (unsigned i = 0; i < c->info->pair_count; i++)
          known |= c->info->pairs[i][0] == tex->texture_index && c->info->pairs[i][1] == tex->sampler_index;
@@ -2281,10 +2287,11 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    const struct wgsl_varyings *fs = o->fs;
    const uint32_t max_immediates = o->max_immediates;
    const unsigned features = o->features;
+   memset(info, 0, sizeof(*info));
+   const bool samplers_ok = wgsl_lower_samplers(nir, o->keys, o->key_count, info);
    wgsl_finish(nir);
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_index_ssa_defs(impl);
-   memset(info, 0, sizeof(*info));
    struct ctx c = {
       .nir = nir,
       .mem = ralloc_context(NULL),
@@ -2300,6 +2307,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
+   if (!samplers_ok)
+      failf(&c, "an integer cube texture both sampled and gathered");
    /* Transform feedback (VK3 L7.4): each captured buffer's record in `wg_xo`, one after another. */
    if (nir->info.stage == MESA_SHADER_VERTEX && nir->xfb_info) {
       unsigned words = 0;
