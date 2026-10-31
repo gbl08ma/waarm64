@@ -1,6 +1,7 @@
 // What the page does with the files of a folder in the browser (docs/shares.md §2.3): its top level with sizes, files
 // added, copies to and from a folder on the computer through a picked directory (which is why there's no archive format),
-// and emptying it. Runs on the page, on a folder no machine writes (its lock says so).
+// and emptying it. Runs on the page, under the folder's lock (web/app/folders-page.ts `withFolder`).
+import { putFile } from '../9p-folders.ts';
 
 export type Entry = { name: string; kind: 'file' | 'directory'; size: number };
 type Dir = FileSystemDirectoryHandle & { entries(): AsyncIterable<[string, FileSystemHandle]> };
@@ -30,11 +31,7 @@ export const folderSize = (d: FileSystemDirectoryHandle) => sizeOf(d);
 
 /** Writes `files` into `d` by name, over what is there. */
 export async function addFiles(d: FileSystemDirectoryHandle, files: File[]) {
-  for (const f of files) {
-    const w = await (await d.getFileHandle(f.name, { create: true })).createWritable();
-    await w.write(f);
-    await w.close();
-  }
+  for (const f of files) await putFile(await d.getFileHandle(f.name, { create: true }), f);
 }
 
 /** Removes everything in `d`. */
@@ -56,9 +53,7 @@ export async function copyTree(from: FileSystemDirectoryHandle, to: FileSystemDi
     if (h.kind === 'directory') await copyTree(h as FileSystemDirectoryHandle, await to.getDirectoryHandle(name, { create: true }), c);
     else {
       const file = await (h as FileSystemFileHandle).getFile();
-      const w = await (await to.getFileHandle(name, { create: true })).createWritable();
-      await w.write(file);
-      await w.close();
+      await putFile(await to.getFileHandle(name, { create: true }), file);
       c.done++;
       c.bytes += file.size;
       c.onChange?.();

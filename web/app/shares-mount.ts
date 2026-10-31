@@ -19,7 +19,8 @@ export function sharesPathError(path: string): string | undefined {
   if (path === '/') return "The mount point can't be the guest's root.";
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(path)) return "The mount point can't have control characters.";
-  if (new TextEncoder().encode(path).length > 255) return 'The mount point is too long (255 bytes at most).';
+  if (new TextEncoder().encode(path).length > 255 || mountUnit(path).length + '.automount'.length > 255) return 'The mount point is too long.';
+  if (/[%]|\s$|\\$/.test(path)) return 'The mount point can\'t have "%", or end in a space or "\\" (systemd reads them otherwise).';
   if (path.endsWith('/') || path.includes('//') || path.split('/').some((p) => p === '.' || p === '..')) return 'Write the mount point plainly: no "." or "..", no "//", no "/" at the end.';
   if (OWN.includes(path) || UNDER.some((d) => path === d || path.startsWith(`${d}/`))) return `${path} is the guest's own: mounting there would hide it.`;
   return undefined;

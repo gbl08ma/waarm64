@@ -247,6 +247,11 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
   assert.equal(await ok(page, 'stat -c "%u %a" /mnt/shared/Work/g.txt'), '0 644');
   assert.equal(await ok(page, `su -s /bin/sh nobody -c 'stat -c "%u %a" /mnt/shared/Work/g.txt; echo mine > /mnt/shared/Work/n.txt; stat -c %u /mnt/shared/Work/n.txt'`), '65534 644 65534');
 
+  // A directory pinned by one user (its cwd) and looked at by another: v9fs writes the asker's uid into the shared inode, so
+  // what's allowed can't depend on the owner.
+  await ok(page, `su -s /bin/sh nobody -c 'cd /mnt/shared/Work && sleep 2 && touch pinned' & sleep 1; ls -la /mnt/shared/Work >/dev/null; wait $!`);
+  assert.equal(await ok(page, 'stat -c %u /mnt/shared/Work/pinned'), '0');
+
   // A workload, through both backends.
   for (const W of ['/mnt/shared/Work', '/mnt/shared/Host']) {
     await ok(page, `cd ${W} && mkdir -p tree/a/b && for k in 1 2 3 4 5 6 7 8 9; do echo $k > tree/a/b/f$k; done && tar cf /tmp/t.tar tree && mkdir un && tar xf /tmp/t.tar -C un && diff -r tree un/tree && cd`);
@@ -284,7 +289,7 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
     writeFileSync(join(real, 'real.txt'), 'on the disk\n');
     const cdp = await context.newCDPSession(page);
     const data = { items: [], files: [real], dragOperationsMask: 1 };
-    for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp.send('Input.dispatchDragEvent', { type, x: 200, y: 200, data });
+    for (const type of ['dragEnter', 'dragOver', 'drop'] as const) await cdp.send('Input.dispatchDragEvent', { type, x: 200, y: 200, data });
     const row = (problem: string) => page.waitForFunction(([name, problem]) => [...document.querySelectorAll<HTMLElement>('#folders li')].some((li) => li.textContent!.includes(name) && (li.dataset.problem ?? '') === problem), [name, problem], { timeout: 10_000 });
     await row('permission');
     await menu(page);

@@ -4,26 +4,28 @@
 // `bench/shares/REPORT.md` has the numbers and the API's behaviours this is built around.
 //
 // A directory handle has no inode numbers, owners, modes or links: a node is made on first sight and keeps its qid
-// (moved by renames), files are 0644 and directories 0755, owned by whoever asks (the attach's uid), `chmod` lasts while
-// the machine runs. Calls on a node run one at a time, in the order they came (`serial`: a promise chain per node).
+// (moved by renames), files are 0666 and directories 0777, owned by whoever asks (the attach's uid: v9fs keeps one owner
+// per inode, the last asker's, so what's allowed can't hang on it), `chmod` lasts while the machine runs. Calls on a node run one at a time, in the order they came (`serial`: a promise chain per node).
 //
 // A host file is written through a write session: Chromium copies the file into a swap file, and closing swaps it in.
 // A session is closed by the last clunk of a fid writing the file, by a Tfsync and by `flush` (a snapshot, a power-off),
 // so that a file's writes are one session; what it wrote is kept to read back (`Overlay`).
 import { EACCES, EBADF, EBUSY, EEXIST, EINVAL, EIO, EISDIR, ENOENT, ENOSPC, ENOTDIR, ENOTEMPTY, EPERM, EROFS, Err, ESTALE, EXDEV, p9Backend, P9Server, S_IFDIR, S_IFREG, type P9Fid, type P9SetAttr, type P9Stat, type P9StatFs, type P9Tree, type P9Time } from './9p.ts';
+import { uniqueName } from './app/shape.ts';
 import type { Ctx } from './devices.ts';
 
 /** A folder as a machine gets it (web/app/folders.ts): its name at the root is the page's, unique. */
 export type FolderSpec = { id: string; name: string; kind: 'host' | 'opfs'; readOnly: boolean; handle: FileSystemDirectoryHandle };
 /** What the page tells a running device (`P9Spec.port`) and what it hears back. */
 export type FoldersToDevice = { type: 'attach'; folder: FolderSpec } | { type: 'detach'; id: string } | { type: 'granted'; id: string };
-export type FoldersFromDevice = { type: 'denied'; id: string };
+export type FoldersFromDevice = { type: 'denied'; id: string } | { type: 'detached'; id: string };
 
 /** A snapshot's state (docs/shares.md §6): the nodes seen (their qids and chmods), by folder and path, and the fids. */
 export type FoldersState = {
   ids: number;
   nodes: { folder?: string; path: string[]; dir: boolean; id: number; mode?: number }[];
-  fids: { fid: number; node: number; uid: number; flags?: number }[];
+  /** `stale`: a fid of something gone (a directory or not): it answers ESTALE. */
+  fids: { fid: number; node: number; uid: number; flags?: number; stale?: { dir: boolean } }[];
 };
 
 type Sync = { read(b: Uint8Array, o: { at: number }): number; write(b: Uint8Array, o: { at: number }): number; truncate(n: number): void; flush(): void; close(): void; getSize(): number };
@@ -121,10 +123,18 @@ type FNode = {
   file?: File;
   session?: Session;
   sync?: Sync;
+  /** A write failed: what the session held is lost, and this says so (EIO) until the last clunk. */
+  broken?: boolean;
   /** Removed; with `orphan`, it was open and lives on in memory until the last clunk. */
   gone?: boolean;
   orphan?: { data: Uint8Array; size: number };
 };
+
+/** Writes `blob` as the whole of the file. */
+export async function putFile(h: FileSystemFileHandle, blob: Blob) {
+  const w = await h.createWritable();
+  await w.write(blob).then(() => w.close()).catch(async (e) => { await w.abort().catch(() => {}); throw e; });
+}
 
 const named = (e: unknown, name: string) => (e as Error | undefined)?.name === name;
 const secs = (ms: number): P9Time => [Math.floor(ms / 1000), (ms % 1000) * 1e6];
@@ -151,10 +161,11 @@ export class FolderTree implements P9Tree<FNode> {
   /** Adds a folder at the root. */
   attach(spec: FolderSpec) {
     const m: Mount = { spec, node: undefined!, time: secs(Date.now()), detached: false, denied: false };
-    m.node = this.node(spec.name, this.root, m, true);
+    const name = uniqueName(spec.name, this.root.children!.keys());
+    m.node = this.node(name, this.root, m, true);
     m.node.handle = spec.handle;
     this.mounts.set(spec.id, m);
-    this.root.children!.set(spec.name, m.node);
+    this.root.children!.set(name, m.node);
     return m;
   }
 
@@ -163,11 +174,12 @@ export class FolderTree implements P9Tree<FNode> {
     const m = this.mounts.get(id);
     if (!m) return;
     this.mounts.delete(id);
-    this.root.children!.delete(m.spec.name);
+    this.root.children!.delete(m.node.name);
     const nodes = this.subtree(m.node);
     await this.serial(nodes, async () => {
-      for (const n of nodes) await this.quiet(n).catch(() => {});
-      m.detached = true;
+      m.detached = true; // what comes from here answers ESTALE
+      const rest = [...this.withSession, ...this.withSync].filter((n) => n.mount === m); // made while this waited, too
+      for (const n of new Set([...nodes, ...rest])) await this.quiet(n).catch(() => {});
     });
   }
 
@@ -179,18 +191,20 @@ export class FolderTree implements P9Tree<FNode> {
 
   /** Lands what's written (write sessions, a snapshot's and a power-off's). */
   async flush() {
-    for (const n of this.withSession) await this.serial([n], () => this.closeSession(n)).catch(() => {});
+    await Promise.all([...this.withSession].map((n) => this.serial([n], () => this.closeSession(n)).catch(() => {})));
   }
 
   /** What a snapshot keeps: `flush` ran, so no session is open. A file removed while open isn't kept: its fids answer ESTALE. */
   save(fids: Map<number, P9Fid<FNode>>): FoldersState {
     const nodes: FoldersState['nodes'] = [];
+    const used = new Set([...fids.values()].map((f) => f.node));
     const walk = (n: FNode, folder: string | undefined, path: string[]) => {
-      nodes.push({ folder, path, dir: n.dir, id: n.id, ...(n.mode === undefined ? {} : { mode: n.mode }) });
+      if (n === this.root || n === n.mount?.node || used.has(n) || n.mode !== undefined) nodes.push({ folder, path, dir: n.dir, id: n.id, ...(n.mode === undefined ? {} : { mode: n.mode }) });
       for (const [name, c] of n.children ?? []) walk(c, c.mount?.spec.id, c === c.mount?.node ? [] : [...path, name]);
     };
     walk(this.root, undefined, []);
-    return { ids: this.ids, nodes, fids: [...fids].flatMap(([fid, f]) => (f.node.gone ? [] : [{ fid, node: f.node.id, uid: f.uid, ...(f.flags === undefined ? {} : { flags: f.flags }) }])) };
+    const stale = (n: FNode) => n.gone || n.mount?.detached;
+    return { ids: this.ids, nodes, fids: [...fids].map(([fid, f]) => ({ fid, node: f.node.id, uid: f.uid, ...(f.flags === undefined ? {} : { flags: f.flags }), ...(stale(f.node) ? { stale: { dir: f.node.dir } } : {}) })) };
   }
 
   /**
@@ -229,7 +243,11 @@ export class FolderTree implements P9Tree<FNode> {
     }
     for (const m of fresh) m.node.id = ++this.ids; // attached since: their first ids may be taken
     for (const f of s.fids) {
-      const node = byId.get(f.node);
+      let node = byId.get(f.node);
+      if (f.stale) {
+        node = this.node('', this.root, undefined, f.stale.dir);
+        node.gone = true;
+      }
       if (!node) continue;
       fids.set(f.fid, { node, uid: f.uid, flags: f.flags });
       if (f.flags !== undefined && !node.dir) {
@@ -260,6 +278,15 @@ export class FolderTree implements P9Tree<FNode> {
   /** `serial` for a fid's file: gone from under it, it answers ESTALE (a new walk says ENOENT). */
   private opened<T>(n: FNode, f: () => Promise<T>) {
     return this.serial([n], () => f().catch((e) => { throw named(e, 'NotFoundError') ? new Err(ESTALE) : e; }));
+  }
+
+  /** The file's session is lost to a failed write: the stream is dead, and acknowledged writes went with it. */
+  private async lostSession(n: FNode) {
+    const s = n.session;
+    [n.session, n.file, n.broken] = [undefined, undefined, true];
+    this.withSession.delete(n);
+    this.changed(n);
+    await s?.w.abort().catch(() => {});
   }
 
   /** A browser's error as Linux's. */
@@ -405,7 +432,7 @@ export class FolderTree implements P9Tree<FNode> {
     [n.session, n.file] = [undefined, undefined];
     this.withSession.delete(n);
     this.changed(n);
-    await s.w.close().catch(async (e) => { await s.w.abort().catch(() => {}); throw e; });
+    await s.w.close().catch(async (e) => { await s.w.abort().catch(() => {}); throw e; }).finally(() => this.changed(n)); // the size read during the swap is the old one
   }
 
   /** Lets go of the file: what would lock it against a move or a remove. */
@@ -425,8 +452,9 @@ export class FolderTree implements P9Tree<FNode> {
       s.truncate(size);
       if (!n.opens) this.closeSync(n);
     } else {
+      if (n.broken) throw new Err(EIO);
       const s = await this.useSession(n, size > 0);
-      await s.w.truncate(size);
+      await s.w.truncate(size).catch(async (e) => { await this.lostSession(n); throw e; });
       s.size = size;
       s.base = Math.min(s.base, size);
       s.overlay.cut(size);
@@ -461,14 +489,14 @@ export class FolderTree implements P9Tree<FNode> {
     });
   }
 
-  create(f: P9Fid<FNode>, name: string, _flags: number, mode: number) {
+  create(f: P9Fid<FNode>, name: string, flags: number, mode: number) {
     const d = f.node;
     this.writable(d);
     return this.serial([d], async () => {
       if (await this.lookup(d, name)) throw new Err(EEXIST);
       const h = await (await this.dirHandle(d)).getFileHandle(name, { create: true });
       const n = this.seen(d, name, h);
-      [n.mode, n.size, n.mtime, n.attrs, n.opens, n.writers] = [S_IFREG | (mode & 0o7777), 0, Date.now(), performance.now(), 1, 1];
+      [n.mode, n.size, n.mtime, n.attrs, n.opens, n.writers] = [S_IFREG | (mode & 0o7777), 0, Date.now(), performance.now(), 1, (flags & O_ACCMODE) !== 0 ? 1 : 0];
       return n;
     });
   }
@@ -522,8 +550,9 @@ export class FolderTree implements P9Tree<FNode> {
       } else if (n.mount!.spec.kind === 'opfs') {
         (await this.useSync(n)).write(data, { at: off });
       } else {
+        if (n.broken) throw new Err(EIO);
         const s = await this.useSession(n, true);
-        await s.w.write({ type: 'write', position: off, data: data as Uint8Array<ArrayBuffer> });
+        await s.w.write({ type: 'write', position: off, data: data as Uint8Array<ArrayBuffer> }).catch(async (e) => { await this.lostSession(n); throw e; });
         s.size = Math.max(s.size, off + data.length);
         s.overlay.write(off, data);
       }
@@ -539,9 +568,8 @@ export class FolderTree implements P9Tree<FNode> {
       const dots: [string, FNode][] = [['.', d], ['..', d.parent]];
       if (!d.mount) return (f.list = [...dots, ...d.children!]);
       const seen = new Set<string>();
-      const hide = d.mount.spec.kind === 'host' ? /\.crswap$/ : undefined; // a write session's swap file
       for await (const [name, h] of (await this.dirHandle(d) as Entries).entries()) {
-        if (hide?.test(name)) continue;
+        if (name.endsWith('.crswap') && d.children!.get(name.slice(0, -'.crswap'.length))?.session) continue; // a write session's swap file
         seen.add(name);
         this.seen(d, name, h);
       }
@@ -567,12 +595,12 @@ export class FolderTree implements P9Tree<FNode> {
     };
     if (n.dir) {
       this.live(n);
-      return stat(n.mount ? n.mode ?? S_IFDIR | 0o755 : S_IFDIR | 0o555, 0, undefined);
+      return stat(n.mount ? n.mode ?? S_IFDIR | 0o777 : S_IFDIR | 0o555, 0, undefined);
     }
     return this.opened(n, async () => {
       this.live(n);
       const a = await this.attrs(n);
-      return stat(n.mode ?? S_IFREG | 0o644, a.size, a.mtime);
+      return stat(n.mode ?? S_IFREG | 0o666, a.size, a.mtime);
     });
   }
 
@@ -606,25 +634,24 @@ export class FolderTree implements P9Tree<FNode> {
   readlink(): string { throw new Err(EINVAL); }
   link() { throw new Err(EPERM); }
 
-  /** Before `n`'s entry goes: if open, it keeps its bytes in memory (a removed file's `File` reads no more). */
-  private async orphan(n: FNode) {
-    if (!n.opens) return this.quiet(n);
+  /** Before `n`'s entry goes: if open, its bytes, for the node to keep in memory once it is gone (a removed file's `File` reads no more). */
+  private async keep(n: FNode): Promise<FNode['orphan']> {
+    if (n.dir || !n.opens) return undefined;
     await this.closeSession(n);
     const size = (await this.attrs(n)).size;
-    if (size <= ORPHAN_MAX) {
-      const data = new Uint8Array(size);
-      if (n.mount!.spec.kind === 'opfs') (await this.useSync(n)).read(data, { at: 0 });
-      else data.set(await this.slice(n, 0, size));
-      n.orphan = { data, size };
-    }
-    await this.quiet(n);
+    if (size > ORPHAN_MAX) return undefined;
+    const data = new Uint8Array(size);
+    if (n.mount!.spec.kind === 'opfs') (await this.useSync(n)).read(data, { at: 0 });
+    else data.set(await this.slice(n, 0, size));
+    return { data, size };
   }
 
   private async drop(d: FNode, n: FNode, rmdir: boolean) {
     if (n.dir !== rmdir) throw new Err(n.dir ? EISDIR : ENOTDIR);
-    await this.orphan(n);
+    const orphan = await this.keep(n);
+    await this.quiet(n);
     await (await this.dirHandle(d)).removeEntry(n.name);
-    n.gone = true;
+    [n.gone, n.orphan] = [true, orphan];
     d.children!.delete(n.name);
   }
 
@@ -657,29 +684,36 @@ export class FolderTree implements P9Tree<FNode> {
     return this.serial([...nodes], async () => {
       const n = await this.lookup(od, oname);
       if (!n) throw new Err(ENOENT);
-      const t = await this.lookup(nd, nname);
+      let t = await this.lookup(nd, nname);
       if (t === n) return;
-      if (n.dir) await this.moveDir(n, od, nd, nname, t);
-      else await this.moveFile(n, nd, nname, t);
+      // On a host that ignores case, Foo over foo is one file, not a target.
+      const recased = t?.handle && n.handle && await t.handle.isSameEntry(n.handle);
+      if (recased) {
+        nd.children!.delete(nname);
+        t = undefined;
+      }
+      if (n.dir) await this.moveDir(n, od, nd, nname, t, !!recased);
+      else await this.moveFile(n, nd, nname, t, !!recased);
       od.children!.delete(oname);
       [n.name, n.parent] = [nname, nd];
       nd.children!.set(nname, n);
     });
   }
 
-  private async moveFile(n: FNode, nd: FNode, name: string, over: FNode | undefined) {
+  private async moveFile(n: FNode, nd: FNode, name: string, over: FNode | undefined, recased: boolean) {
     if (over?.dir) throw new Err(EISDIR);
-    if (over) await this.orphan(over);
+    const orphan = over && await this.keep(over);
+    if (over) await this.quiet(over);
     await this.quiet(n);
     const target = await this.dirHandle(nd);
-    await this.moveHandle(await this.fileHandle(n), await this.dirHandle(n.parent), target, name, over !== undefined);
+    await this.moveHandle(await this.fileHandle(n), await this.dirHandle(n.parent), target, name, over !== undefined, recased);
     n.handle = undefined;
-    if (over) over.gone = true;
+    if (over) [over.gone, over.orphan] = [true, orphan];
     n.moved++;
   }
 
   /** A file's `move()`, or a copy and a remove where the browser has no `move()` for this file. */
-  private async moveHandle(h: Moving, from: FileSystemDirectoryHandle, target: FileSystemDirectoryHandle, name: string, replaces = false) {
+  private async moveHandle(h: Moving, from: FileSystemDirectoryHandle, target: FileSystemDirectoryHandle, name: string, replaces = false, recased = false) {
     if (h.move) {
       try {
         await h.move(target, name);
@@ -688,40 +722,74 @@ export class FolderTree implements P9Tree<FNode> {
         if (!named(e, 'NotSupportedError') && !named(e, 'AbortError') && !named(e, 'InvalidStateError') && !named(e, 'TypeError')) throw e;
       }
     }
+    if (recased) throw new Err(EINVAL); // a copy onto itself, and then its removal, would be the end of it
     if (replaces) await target.removeEntry(name);
-    const w = await (await target.getFileHandle(name, { create: true })).createWritable();
-    await w.write(await h.getFile());
-    await w.close();
+    await putFile(await target.getFileHandle(name, { create: true }), await h.getFile());
     await from.removeEntry(h.name);
   }
 
-  /** No directory has a `move()`: the new tree is made and the files are moved into it (entries, not bytes). */
-  private async moveDir(n: FNode, od: FNode, nd: FNode, name: string, over: FNode | undefined) {
+  /**
+   * No directory has a `move()`: the new tree is made and the files are moved into it (entries, not bytes), and each
+   * directory left empty goes; on a failure what moved goes back. What a machine's end interrupts stays half moved: a
+   * rename of a tree isn't atomic, on any folder.
+   */
+  private async moveDir(n: FNode, od: FNode, nd: FNode, name: string, over: FNode | undefined, recased: boolean) {
+    if (recased) throw new Err(EINVAL); // the same directory: moving into it would be moving onto itself
     if (over && !over.dir) throw new Err(ENOTDIR);
     for (let up = nd; up !== up.mount?.node; up = up.parent) if (up === n) throw new Err(EINVAL); // into itself
     const nodes = this.subtree(n);
     for (const x of nodes) await this.quiet(x);
+    const parent = await this.dirHandle(od);
     if (over) {
       await (await this.dirHandle(nd)).removeEntry(name); // only if it's empty, as rename(2)
       over.gone = true;
     }
-    const carry = async (from: FileSystemDirectoryHandle, to: FileSystemDirectoryHandle) => {
-      const list: [string, FileSystemHandle][] = [];
-      for await (const e of (from as Entries).entries()) list.push(e);
-      for (const [k, h] of list) {
-        if (h.kind === 'directory') await carry(h as FileSystemDirectoryHandle, await to.getDirectoryHandle(k, { create: true }));
-        else await this.moveHandle(h as Moving, from, to, k);
+    /** The files moved, by their path in the tree; the directories made, by their parent and name. */
+    const moved: string[][] = [];
+    const made: [FileSystemDirectoryHandle, string][] = [];
+    const carry = async (from: FileSystemDirectoryHandle, to: FileSystemDirectoryHandle, path: string[]) => {
+      // Until it's empty: the guest's walk isn't stopped, and a file can come while this runs.
+      for (;;) {
+        const list: [string, FileSystemHandle][] = [];
+        for await (const e of (from as Entries).entries()) list.push(e);
+        if (!list.length) return;
+        for (const [k, h] of list) {
+          if (h.kind === 'directory') {
+            made.push([to, k]);
+            await carry(h as FileSystemDirectoryHandle, await to.getDirectoryHandle(k, { create: true }), [...path, k]);
+            await from.removeEntry(k);
+          } else {
+            await this.moveHandle(h as Moving, from, to, k);
+            moved.push([...path, k]);
+          }
+        }
       }
     };
-    await carry(await this.dirHandle(n), await (await this.dirHandle(nd)).getDirectoryHandle(name, { create: true }));
-    await (await this.dirHandle(od)).removeEntry(n.name, { recursive: true });
-    for (const x of nodes) [x.handle, x.moved] = [undefined, x.moved + 1];
+    const [source, target] = [await this.dirHandle(n), await this.dirHandle(nd)];
+    made.push([target, name]);
+    try {
+      const top = await target.getDirectoryHandle(name, { create: true });
+      await carry(source, top, []);
+      await parent.removeEntry(n.name);
+    } catch (e) {
+      for (const path of moved.reverse()) {
+        await (async () => {
+          let [to, from] = [source, await target.getDirectoryHandle(name)];
+          for (const p of path.slice(0, -1)) [to, from] = [await to.getDirectoryHandle(p, { create: true }), await from.getDirectoryHandle(p)];
+          await this.moveHandle(await from.getFileHandle(path.at(-1)!) as Moving, from, to, path.at(-1)!);
+        })().catch(() => {});
+      }
+      for (const [d, k] of made.reverse()) await d.removeEntry(k).catch(() => {});
+      throw e;
+    } finally {
+      for (const x of nodes) [x.handle, x.moved] = [undefined, x.moved + 1];
+    }
   }
 
   async statfs(f: P9Fid<FNode>): Promise<P9StatFs> {
     const free = async () => {
-      const e = await navigator.storage.estimate();
-      return Math.floor(((e.quota ?? 0) - (e.usage ?? 0)) / 4096);
+      const e = await navigator.storage.estimate().catch(() => undefined);
+      return e ? Math.floor(((e.quota ?? 0) - (e.usage ?? 0)) / 4096) : HOST_BLOCKS;
     };
     const blocks = f.node.mount?.spec.kind === 'opfs' ? await free() : HOST_BLOCKS;
     return { bsize: 4096, blocks, bfree: blocks, bavail: blocks, files: 1 << 24, ffree: 1 << 24 };
@@ -730,6 +798,7 @@ export class FolderTree implements P9Tree<FNode> {
   fsync(f: P9Fid<FNode>) {
     const n = f.node;
     return this.serial([n], async () => {
+      if (n.broken) throw new Err(EIO);
       await this.closeSession(n);
       if (!n.mount?.spec.readOnly) n.sync?.flush();
     });
@@ -742,7 +811,10 @@ export class FolderTree implements P9Tree<FNode> {
     return this.serial([n], async () => {
       n.opens--;
       if (write) n.writers--;
-      if (!n.writers) await this.closeSession(n);
+      if (!n.writers) {
+        n.broken = false;
+        await this.closeSession(n);
+      }
       if (!n.opens) {
         this.closeSync(n);
         [n.file, n.orphan] = [undefined, undefined];
@@ -759,7 +831,7 @@ export function folders9p(ctx: Ctx, folders: FolderSpec[], port?: MessagePort) {
     port.onmessage = (e: MessageEvent<FoldersToDevice>) => {
       const m = e.data;
       if (m.type === 'attach') tree.attach(m.folder);
-      else if (m.type === 'detach') void tree.detach(m.id);
+      else if (m.type === 'detach') void tree.detach(m.id).catch(() => {}).then(() => port.postMessage({ type: 'detached', id: m.id } satisfies FoldersFromDevice));
       else tree.granted(m.id);
     };
   }

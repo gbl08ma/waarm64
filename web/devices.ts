@@ -264,6 +264,9 @@ export type Ctx = {
  * them: requests complete in order either way), or keeps it and completes it
  * later. `config` runs when the guest wrote the config space.
  */
+/** How long a machine's end waits for what the backends hold back (a shared folder's write sessions), ms. */
+export const CLOSE_MS = 2500;
+
 type Backend = {
   request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void;
   /** Its requests may complete in any order (a remote disk's, R4): in realtime mode `Devices.poll` doesn't wait for them. */

@@ -47,9 +47,14 @@ export function preselect(all: Folder[], attached: FolderAttachment[]): string |
   return all.filter((f) => f.lastUsed > 0 && !attached.some((a) => a.id === f.id)).sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
 }
 
-/** A new folder's record. One in the browser gets its directory at its first use. */
+/**
+ * A new folder's record, or for a directory that has one already that one: its lock is what keeps two writers apart. One
+ * in the browser gets its directory at its first use.
+ */
 export async function createFolder(store: Store, n: NewFolder): Promise<Folder> {
-  const taken = (await store.all('folders')).map((f) => f.name);
+  const all = await store.all('folders');
+  for (const f of all) if (f.handle && n.handle && (await f.handle.isSameEntry(n.handle))) return f;
+  const taken = all.map((f) => f.name);
   const f: Folder = { id: newId(), name: uniqueName(n.name.trim() || 'Shared folder', taken), kind: n.kind, readOnly: !!n.readOnly, ...(n.handle ? { handle: n.handle } : {}), lastUsed: 0, created: Date.now() };
   await store.put('folders', f);
   return f;
@@ -110,8 +115,8 @@ export const moveFolder = (store: Store, machine: string, id: string, by: number
 /** Deletes a folder: it is detached from every machine and, in the browser, its files go. Asking first is the page's. */
 export async function deleteFolder(store: Store, id: string) {
   for (const m of await machinesWith(store, id)) await detachFolder(store, m.id, id);
-  await store.forget('folders', id);
   await store.files.remove(folderDir(id));
+  await store.forget('folders', id); // after its files: the sweep takes what a crash leaves
 }
 
 /** A machine's folders as a device gets them, for those in `present` (ids): each under its root name, read-only as its lock was taken. */

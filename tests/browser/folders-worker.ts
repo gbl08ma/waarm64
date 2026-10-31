@@ -3,7 +3,7 @@
 import { P9Server } from '../../web/9p.ts';
 import { FolderTree, type FolderSpec } from '../../web/9p-folders.ts';
 
-const [EPERM, ENOENT, EBADF, EACCES, EEXIST, EXDEV, ENOTDIR, EISDIR, EINVAL, EROFS, ENOTEMPTY, ESTALE] = [1, 2, 9, 13, 17, 18, 20, 21, 22, 30, 39, 116];
+const [EPERM, ENOENT, EIO, EBADF, EACCES, EEXIST, EXDEV, ENOTDIR, EISDIR, EINVAL, EROFS, ENOTEMPTY, ESTALE] = [1, 2, 5, 9, 13, 17, 18, 20, 21, 22, 30, 39, 116];
 const O_WRONLY = 1;
 const O_RDWR = 2;
 const O_TRUNC = 0o1000;
@@ -130,7 +130,7 @@ const cases: Record<string, (r: Rig, kind: string) => Promise<void>> = {
     if (Math.abs(s.mtime - Date.now() / 1000) > 5) throw new Error(`mtime ${s.mtime}`);
     same(await c.statPath('a/f').then((x) => x.qid), s.qid, 'the qid stays');
     await c.mkdir('a', 'd');
-    same((await c.statPath('a/d')).mode, 0o040755, 'a directory');
+    same((await c.statPath('a/d')).mode, 0o040755, 'mkdir\'s mode');
     same(await c.ls('a'), ['d', 'f'], 'readdir');
     same(await c.errno(c.put('a', 'f', 'x')), EEXIST, 'create over a file');
     same(await c.errno(c.mkdir('a', 'f')), EEXIST, 'mkdir over a file');
@@ -383,6 +383,106 @@ const cases: Record<string, (r: Rig, kind: string) => Promise<void>> = {
     same((await size).size, 512, 'in order');
     await end;
     same((await c.ls('a')).length, 9, 'the others');
+  },
+  async 'a failed write lands nothing and says so until the last clunk'({ c, dir }, kind) {
+    if (kind !== 'host') return;
+    await c.put('a', 'f', 'old');
+    const f = await c.walk('a/f');
+    await c.open(f, O_RDWR);
+    await c.write(f, 3, '+new');
+    const proto = FileSystemWritableFileStream.prototype;
+    const real = proto.write;
+    proto.write = function () { proto.write = real; return Promise.reject(new DOMException('full', 'QuotaExceededError')); };
+    same(await c.errno(c.write(f, 7, 'x')), 28, 'the failed write');
+    same(await c.errno(c.write(f, 7, 'x')), EIO, 'a later write');
+    same(await c.errno(c.call(50, [u32(f), u32(0)])), EIO, 'fsync says so');
+    await c.clunk(f);
+    same(await (await (await dir.getFileHandle('f')).getFile()).text(), 'old', 'the file is as it was');
+    const g = await c.walk('a/f');
+    await c.open(g, O_WRONLY);
+    await c.write(g, 0, 'NEW');
+    await c.clunk(g);
+    same(await c.readPath('a/f'), 'NEW', 'a new open starts clean');
+  },
+  async 'a create without write flags leaves no writer'({ c, dir }) {
+    const f = await c.create('a', 'f', 0o644, 0);
+    await c.clunk(f);
+    const g = await c.walk('a/f');
+    await c.open(g, O_WRONLY);
+    await c.write(g, 0, 'landed');
+    await c.clunk(g);
+    same(await (await (await dir.getFileHandle('f')).getFile()).text(), 'landed', 'on the folder at the clunk');
+  },
+  async 'a remove that fails keeps the file live'({ c, dir }) {
+    await c.put('a', 'f', 'data');
+    const f = await c.walk('a/f');
+    await c.open(f, O_RDWR);
+    const real = dir.removeEntry;
+    (dir as { removeEntry: unknown }).removeEntry = () => Promise.reject(new DOMException('no', 'NoModificationAllowedError'));
+    same(await c.errno(c.unlink('a', 'f')), 16, 'EBUSY');
+    (dir as { removeEntry: unknown }).removeEntry = real;
+    await c.write(f, 0, 'DATA');
+    await c.clunk(f);
+    same(await (await (await dir.getFileHandle('f')).getFile()).text(), 'DATA', 'its writes reach the file');
+  },
+  async 'a directory rename that fails goes back'({ c, dir }) {
+    await c.mkdir('a', 'd');
+    await c.put('a/d', 'x', 'one');
+    await c.put('a/d', 'y', 'two');
+    await c.put('a/d', 'z', 'three');
+    const proto = FileSystemFileHandle.prototype as unknown as { move(d: unknown, n: string): Promise<void> };
+    const real = proto.move;
+    let n = 0;
+    proto.move = function (d, name) { if (++n === 2) return Promise.reject(new DOMException('full', 'QuotaExceededError')); return real.call(this, d, name); };
+    const e = await c.errno(c.rename('a', 'd', 'a', 'n'));
+    proto.move = real;
+    same(e, 28, 'ENOSPC');
+    same(await c.ls('a/d'), ['x', 'y', 'z'], 'all back');
+    same(await c.ls('a'), ['d'], 'no half of it under the new name');
+    same(await c.readPath('a/d/x'), 'one', 'read');
+    void dir;
+  },
+  async 'Tversion again: open fids end once'({ c, tree, dir }) {
+    await c.put('a', 'f', 'x');
+    const f = await c.walk('a/f');
+    await c.open(f, O_WRONLY);
+    await c.write(f, 0, 'y');
+    await c.call(100, [u32(1 << 20), '9P2000.L']);
+    same(await (await (await dir.getFileHandle('f')).getFile()).text(), 'y', 'landed');
+    await c.call(104, [u32(0), u32(0xffffffff), 'user', '', u32(1000)]);
+    const g = await c.walk('a/f');
+    await c.open(g, O_WRONLY);
+    await c.write(g, 0, 'z');
+    await c.clunk(g);
+    same(await (await (await dir.getFileHandle('f')).getFile()).text(), 'z', 'counts right after it');
+    void tree;
+  },
+  async 'a rename onto its own other case'({ c, dir }, kind) {
+    await c.put('a', 'f', 'x');
+    const real = dir.getFileHandle.bind(dir);
+    // A host that ignores case: F is f.
+    (dir as { getFileHandle: unknown }).getFileHandle = (n: string, o?: object) => real(n === 'F' ? 'f' : n, o);
+    await new Promise((r) => setTimeout(r, 1100));
+    const e = await c.errno(c.rename('a', 'f', 'a', 'F'));
+    (dir as { getFileHandle: unknown }).getFileHandle = real;
+    same(e, 0, 'no error');
+    same(await (await (await dir.getFileHandle('F')).getFile()).text(), 'x', `the file lives (${kind})`);
+  },
+  async 'a snapshot: fids that were stale stay stale, only what counts is kept'({ c, tree, dir }) {
+    await c.put('a', 'keep', 'x');
+    await dir.getFileHandle('other', { create: true });
+    await c.ls('a');
+    same((await c.statPath('a/other')).mode, 0o100666, 'a file nothing said a mode for');
+    const f = await c.walk('a/keep');
+    const dead = await c.walk('b');
+    await tree.detach('b');
+    const s = tree.save((c.server as unknown as P9Server<never>).open);
+    same(s.nodes.some((x) => x.path.includes('other')), false, 'a node nothing points at');
+    same(s.fids.some((x) => x.fid === f), true, 'a live fid');
+    const next = new FolderTree([]);
+    const d = new Client(new P9Server(next) as P9Server<never>);
+    next.restore(s, d.server.open as never);
+    same(await d.errno(d.stat(dead)), ESTALE, 'a fid of a detached folder');
   },
   async 'statfs'({ c }, kind) {
     const f = await c.walk('a');

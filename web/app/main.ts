@@ -34,6 +34,7 @@ import { connectionLock, migrateLegacy, type Connection, type NewConnection } fr
 import { createFolder, type Folder, type NewFolder } from './folders.ts';
 import { PageFolders } from './folders-live.ts';
 import { DEFAULT_SHARES_PATH } from './shares-mount.ts';
+import { CLOSE_MS } from '../devices.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../tailcat.ts';
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
@@ -757,11 +758,12 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       } else setState('failed', `The machine's disks couldn't be opened: ${String((e as Error).message ?? e)}`, [retry]);
       return;
     }
+    if (run !== r) return;
     holdLock();
     const list = shares ? await folders.begin(stored!.record, shares.port1) : undefined;
     ui.folders.path = stored ? sharesPath(stored.record) ?? '' : '';
-    if (folders.views().some((v) => v.problem)) ui.folders.open++; // Allow access…, Use it here
-    if (run !== r) return;
+    if (run !== r) return folders.end();
+    if (folders.views().some((v) => v.problem)) ui.folders.wanted = true; // Allow access…, Use it here
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
     worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
@@ -825,7 +827,7 @@ function dropLock() {
   releaseLock = undefined;
 }
 
-/** Stops the machine, if any: its worker releases the disk overlay first (or gets 3 s to). */
+/** Stops the machine, if any: its worker releases the disk overlay and lands what its folders hold first (or gets 4 s to). */
 async function stop() {
   const r = run;
   run = undefined;
@@ -835,7 +837,7 @@ async function stop() {
   audio.detach();
   r.usb?.close();
   await new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, 3000);
+    const t = setTimeout(resolve, CLOSE_MS + 1500);
     r.worker.onmessage = (e: MessageEvent<FromWorker>) => { if (e.data.type === 'stopped') { clearTimeout(t); resolve(); } };
     r.worker.postMessage({ type: 'stop' } satisfies ToWorker);
   });
@@ -1457,7 +1459,7 @@ async function droppedFolder(handle: FileSystemDirectoryHandle) {
   const f = await createFolder(store, { kind: 'host', name: handle.name, handle });
   if (here) await folderPage.folderAttach(here.id, f, false);
   else await folders.refresh();
-  if (here) ui.folders.open++;
+  if (here) ui.folders.wanted = true;
 }
 
 /** Where the guest finds the machine's shared folders; undefined: the page doesn't mount them. */

@@ -12,7 +12,7 @@ import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
 import { WindowWatch } from './window.ts';
-import { Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
@@ -1678,11 +1678,11 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     settle: async () => {},
     // A remote disk's requests run on after a poll (realtime, R4): they complete before the doorbell is answered.
     quiesce: async () => {
+      await ringAsync(bell); // what the last poll hadn't taken: the drain waits for it too
       await new Promise<void>((resolve) => {
         drained.push(resolve);
         worker.postMessage({ type: 'drain' });
       });
-      await ringAsync(bell);
     },
     /** The backends' state for a snapshot (web/devices.ts `Devices.save`). */
     save: () => new Promise<unknown[]>((resolve, reject) => {
@@ -1698,13 +1698,13 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       worker.postMessage({ type: 'flush' });
     }),
     /**
-     * Resolves once it released its files (so another VM can open the overlay), or after a second
+     * Resolves once it released its files (so another VM can open the overlay), or after `CLOSE_MS` and a little
      * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call. The value is
      * the blk timers of devices with `stats` (web/iostats.ts), if any.
      */
     close: () => (closing ??= new Promise<unknown>((resolve) => {
       closed = resolve;
-      setTimeout(resolve, 1000);
+      setTimeout(resolve, CLOSE_MS + 500);
       worker.postMessage({ type: 'close' });
     })),
   };

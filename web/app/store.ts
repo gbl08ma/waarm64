@@ -212,7 +212,7 @@ export class Store {
   }
 
   /**
-   * Removes the bytes no record owns (machines.md §2): `overlays/<id>`, `disks/<id>`,
+   * Removes the bytes no record owns (machines.md §2): `overlays/<id>`, `disks/<id>`, `folders/<id>`,
    * `machines/<id>` and `machines/<id>/snapshots/<id>` left by a crash between bytes and record
    * (or between a record's deletion and its files'). Only names that are ids (`isId`): a
    * transient machine's files are named otherwise, and kept. Waits for writers in every tab;
@@ -223,7 +223,8 @@ export class Store {
       const removed: string[] = [];
       const gone = async (path: string) => { await this.files.remove(path); removed.push(path); };
       const ids = async (kind: Kind) => new Set((await this.all(kind)).map((r) => r.id));
-      const [overlays, disks, machines, snapshots] = await Promise.all([ids('overlays'), ids('disks'), ids('machines'), ids('snapshots')]);
+      const [overlays, disks, machines, snapshots, folders] = await Promise.all([ids('overlays'), ids('disks'), ids('machines'), ids('snapshots'), ids('folders')]);
+      for (const n of await this.files.list('folders')) if (isId(n) && !folders.has(n)) await gone(folderDir(n));
       for (const n of await this.files.list('overlays')) if (isId(n) && !overlays.has(n)) await gone(overlayDir(n));
       for (const n of await this.files.list('disks')) if (isId(n) && !disks.has(n)) await gone(diskDir(n));
       for (const n of await this.files.list('machines')) {

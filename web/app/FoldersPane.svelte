@@ -10,7 +10,7 @@
   import { bytesText } from './bytes.ts';
   import type { PageFolders } from './folders-live.ts';
   import { addFiles, copyTree, emptyFolder, folderSize, topLevel, type Copying, type Entry } from './folder-files.ts';
-  import { deleteFolderOf, editFolderOf, folderDirectory, usersOf } from './folders-page.ts';
+  import { deleteFolderOf, editFolderOf, folderDirectory, usersOf, withFolder } from './folders-page.ts';
   import type { Folder } from './folders.ts';
   import type { Store } from './store.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -30,11 +30,15 @@
   });
   const busy = (f: Folder) => folders.held.has(f.id) || folders.mine(f.id);
   const dirOf = (f: Folder) => folderDirectory(f);
+  async function refreshOf(f: Folder) {
+    const list = await topLevel(await dirOf(f));
+    if (open === f.id) entries = list; // what's open now may be another folder's
+  }
   async function show(f: Folder) {
     open = open === f.id ? undefined : f.id;
-    if (open) entries = await topLevel(await dirOf(f));
+    entries = [];
+    if (open) await refreshOf(f);
   }
-  async function refreshOf(f: Folder) { entries = await topLevel(await dirOf(f)); }
 
   type Picker = { showOpenFilePicker(o: object): Promise<FileSystemFileHandle[]>; showDirectoryPicker(o: object): Promise<FileSystemDirectoryHandle> };
   const pickers = globalThis as unknown as Picker;
@@ -42,27 +46,27 @@
 
   const addPicked = (f: Folder) => act('Adding files', async () => {
     const picked = await pickers.showOpenFilePicker({ multiple: true }).catch((e) => { if (cancelled(e)) return []; throw e; });
-    await addFiles(await dirOf(f), await Promise.all(picked.map((h) => h.getFile())));
+    await withFolder(f.id, true, async () => addFiles(await dirOf(f), await Promise.all(picked.map((h) => h.getFile()))));
     await refreshOf(f);
   });
-  async function copy(what: string, f: () => Promise<[FileSystemDirectoryHandle, FileSystemDirectoryHandle] | undefined>) {
+  async function copy(what: string, id: string, write: boolean, f: () => Promise<[FileSystemDirectoryHandle, FileSystemDirectoryHandle] | undefined>) {
     await act(what, async () => {
       const pair = await f().catch((e) => { if (cancelled(e)) return undefined; throw e; });
       if (!pair) return;
       const c = $state({ what, done: 0, total: 0, bytes: 0 } as Copying & { what: string });
       copying = c;
       try {
-        await copyTree(pair[0], pair[1], c);
+        await withFolder(id, write, () => copyTree(pair[0], pair[1], c));
       } finally {
         copying = undefined;
       }
     });
   }
-  const copyOut = (f: Folder) => copy('Copying out', async () => [await dirOf(f), await pickers.showDirectoryPicker({ mode: 'readwrite' })]);
-  const copyIn = async (f: Folder) => { await copy('Copying in', async () => [await pickers.showDirectoryPicker({ mode: 'read' }), await dirOf(f)]); await refreshOf(f); };
+  const copyOut = (f: Folder) => copy('Copying out', f.id, false, async () => [await dirOf(f), await pickers.showDirectoryPicker({ mode: 'readwrite' })]);
+  const copyIn = async (f: Folder) => { await copy('Copying in', f.id, true, async () => [await pickers.showDirectoryPicker({ mode: 'read' }), await dirOf(f)]); await refreshOf(f); };
   async function empty(f: Folder) {
     if (!(await ask.confirm(`Empty ${f.name}? Its files are deleted from this browser.`, { title: 'Empty the folder', ok: 'Empty', danger: true }))) return;
-    await act('Emptying', async () => { await emptyFolder(await dirOf(f)); await refreshOf(f); });
+    await act('Emptying', async () => { await withFolder(f.id, true, async () => emptyFolder(await dirOf(f))); await refreshOf(f); });
   }
   async function remove(f: Folder) {
     const lose = users[f.id] ?? [];
@@ -76,8 +80,8 @@
     e.stopPropagation();
     dropping = false;
     if (busy(f)) return;
-    const files = [...(e.dataTransfer?.files ?? [])].filter((x) => x.size > 0 || x.type);
-    await act('Adding files', async () => { await addFiles(await dirOf(f), files); await refreshOf(f); });
+    const files = [...(e.dataTransfer?.items ?? [])].filter((i) => i.webkitGetAsEntry()?.isFile).map((i) => i.getAsFile()!); // a directory is a file here too
+    await act('Adding files', async () => { await withFolder(f.id, true, async () => addFiles(await dirOf(f), files)); await refreshOf(f); });
   }
 </script>
 

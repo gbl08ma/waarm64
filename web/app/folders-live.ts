@@ -5,16 +5,16 @@
 // page's tab drive it; web/app/main.ts hands it each start's record. DOM-free but for what `FolderAccess` wraps:
 // tests/folders.test.ts runs it over a memory store.
 import type { FolderSpec, FoldersFromDevice, FoldersToDevice } from '../9p-folders.ts';
-import { attachFolder, detachFolder, folderLock, folderSpecs, moveFolder, readsOnly, rootNames, setAttachmentReadOnly, type Folder } from './folders.ts';
+import { attachFolder, detachFolder, folderLock, folderSpecs, moveFolder, readsOnly, setAttachmentReadOnly, type Folder } from './folders.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { FolderAttachment, MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 
 /**
  * Why an attached folder isn't served. `permission`: the browser needs a click; `held`: another machine has it;
- * `missing`: the record is gone (another tab deleted it).
+ * `missing`: the record is gone (another tab deleted it); `failed`: it can't be opened (`holder` says why).
  */
-export type FolderProblem = 'permission' | 'held' | 'missing';
+export type FolderProblem = 'permission' | 'held' | 'missing' | 'failed';
 export type FolderView = {
   id: string;
   /** Its name at the device's root. */
@@ -22,7 +22,7 @@ export type FolderView = {
   folder?: Folder;
   readOnly: boolean;
   problem?: FolderProblem;
-  /** The machine that has it (`held`), when its tab answered. */
+  /** The machine that has it (`held`), when its tab answered; why it can't be opened (`failed`). */
   holder?: string;
 };
 
@@ -47,6 +47,9 @@ export const browserAccess: FolderAccess = {
   async request(f, write) { return (await (f.handle as Writable).requestPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted'; },
 };
 
+/** How long a device gets to say it let go of a folder (a dead one never will), ms. */
+const LET_GO_MS = 5000;
+
 export class PageFolders {
   readonly locks: Locks;
   private store: Store;
@@ -63,18 +66,52 @@ export class PageFolders {
   /** What the device has, by folder id. */
   private served = new Map<string, FileSystemDirectoryHandle>();
   private problems = new Map<string, { problem: FolderProblem; holder?: string }>();
+  /** The names the device has them under. */
+  private names = new Map<string, string>();
+  /** Who waits for the device to let go of a folder, by id. */
+  private letting = new Map<string, () => void>();
+  /** The last refresh: they run one at a time. */
+  private refreshing: Promise<void> = Promise.resolve();
 
   constructor(o: { store: Store; me: () => string; onChange: () => void; access?: FolderAccess }) {
     [this.store, this.onChange, this.access] = [o.store, o.onChange, o.access ?? browserAccess];
     this.locks = new Locks(o.store, 'folder', o.me, (lock) => void this.release(lock));
   }
 
-  /** Reads the browser's folders again, and who holds them. */
-  async refresh() {
+  private async read() {
     this.folders = (await this.store.all('folders')).sort((a, b) => a.created - b.created);
     const held = await heldLocks();
     this.held = new Set(this.folders.filter((f) => held.has(folderLock(f.id)) && !this.locks.mine(folderLock(f.id))).map((f) => f.id));
-    this.onChange();
+  }
+
+  /**
+   * Reads the browser's folders again and who holds them; a running machine follows what its record says now, whichever
+   * tab changed it.
+   */
+  refresh(): Promise<void> {
+    const done = this.refreshing.then(async () => {
+      await this.read();
+      await this.follow();
+      this.onChange();
+    });
+    this.refreshing = done.catch(() => {});
+    return done;
+  }
+
+  private async follow() {
+    if (!this.machine) return;
+    const now = (await this.store.get('machines', this.machine))?.folders ?? [];
+    const gone = this.attached.filter((a) => !now.some((x) => x.id === a.id));
+    const added = now.filter((a) => !this.attached.some((x) => x.id === a.id));
+    this.attached = now;
+    for (const a of gone) {
+      this.problems.delete(a.id);
+      await this.letGo(a.id);
+    }
+    for (const a of added) {
+      await this.take(a);
+      this.serve(a.id);
+    }
   }
 
   /** Whether the page's machine runs with this device. */
@@ -82,7 +119,8 @@ export class PageFolders {
 
   /** A start: what the device serves, of `m`'s attachments (the rest wait on the page). */
   async begin(m: MachineRecord, port: MessagePort): Promise<FolderSpec[]> {
-    await this.refresh();
+    await this.refreshing;
+    await this.read();
     this.machine = m.id;
     this.port = port;
     this.attached = m.folders ?? [];
@@ -90,10 +128,13 @@ export class PageFolders {
     this.problems.clear();
     port.onmessage = (e: MessageEvent<FoldersFromDevice>) => {
       if (e.data.type === 'denied') void this.denied(e.data.id);
+      else this.letting.get(e.data.id)?.();
     };
     for (const a of this.attached) await this.take(a);
     this.onChange();
-    return folderSpecs(this.attached, this.folders, this.served);
+    const specs = folderSpecs(this.attached, this.folders, this.served);
+    this.names = new Map(specs.map((f) => [f.id, f.name]));
+    return specs;
   }
 
   /** The machine stopped: the folders go back. */
@@ -103,6 +144,8 @@ export class PageFolders {
     this.attached = [];
     this.served.clear();
     this.problems.clear();
+    this.names.clear();
+    for (const done of this.letting.values()) done();
     this.locks.dropAll();
     this.onChange();
   }
@@ -115,8 +158,13 @@ export class PageFolders {
     if (f.kind === 'host' && !(await this.access.query(f, write))) return void this.problems.set(a.id, { problem: 'permission' });
     const lock = folderLock(a.id);
     if (!(await this.locks.take(lock, { shared: !write }))) return void this.problems.set(a.id, { problem: 'held', holder: await this.locks.holder(lock) });
-    this.problems.delete(a.id);
-    this.served.set(a.id, f.kind === 'host' ? f.handle! : await this.access.directory(f));
+    try {
+      this.served.set(a.id, f.kind === 'host' ? f.handle! : await this.access.directory(f));
+      this.problems.delete(a.id);
+    } catch (e) {
+      this.locks.drop(lock);
+      this.problems.set(a.id, { problem: 'failed', holder: String((e as Error).message ?? e) });
+    }
   }
 
   private tell(m: FoldersToDevice) { this.port?.postMessage(m); }
@@ -124,7 +172,10 @@ export class PageFolders {
   /** Hands the device folder `id`, if it got ready. */
   private serve(id: string) {
     const spec = folderSpecs(this.attached, this.folders, this.served).find((s) => s.id === id);
-    if (spec) this.tell({ type: 'attach', folder: spec });
+    if (spec) {
+      this.names.set(id, spec.name);
+      this.tell({ type: 'attach', folder: spec });
+    }
     this.onChange();
   }
 
@@ -132,25 +183,24 @@ export class PageFolders {
   async attach(machine: string, f: Folder, readOnly: boolean) {
     await attachFolder(this.store, machine, f.id, readOnly);
     await this.refresh();
-    if (machine !== this.machine || this.attached.some((a) => a.id === f.id)) return;
-    const a = { id: f.id, readOnly };
-    this.attached = [...this.attached, a];
-    await this.take(a);
-    this.serve(f.id);
   }
 
   async detach(machine: string, id: string) {
     await detachFolder(this.store, machine, id);
-    if (machine === this.machine) {
-      this.attached = this.attached.filter((a) => a.id !== id);
-      this.letGo(id);
-      this.problems.delete(id);
-    }
     await this.refresh();
   }
 
-  private letGo(id: string) {
-    if (this.served.delete(id)) this.tell({ type: 'detach', id });
+  /** The device gives folder `id` up: its lock goes once what it wrote landed, and no writer can come between. */
+  private async letGo(id: string) {
+    if (this.served.delete(id)) {
+      this.names.delete(id);
+      this.tell({ type: 'detach', id });
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, LET_GO_MS);
+        this.letting.set(id, () => { clearTimeout(t); resolve(); });
+      });
+      this.letting.delete(id);
+    }
     this.locks.drop(folderLock(id));
   }
 
@@ -163,6 +213,7 @@ export class PageFolders {
     if (machine === this.machine && this.served.has(id)) throw new Error('Detach it first: the machine has it now.');
     await setAttachmentReadOnly(this.store, machine, id, readOnly);
     await this.refresh();
+    if (machine === this.machine) this.attached = this.attached.map((a) => (a.id === id ? { ...a, readOnly } : a));
   }
 
   /** The user's click on Allow access: the grant, then the folder is served (or it was only lost: the device goes on). */
@@ -194,7 +245,7 @@ export class PageFolders {
   async forget(id: string) {
     this.attached = this.attached.filter((a) => a.id !== id);
     this.problems.delete(id);
-    this.letGo(id);
+    await this.letGo(id);
   }
 
   /** The device says a grant was lost. */
@@ -206,17 +257,16 @@ export class PageFolders {
   /** Another tab asks for what this machine holds. */
   private async release(lock: string) {
     const id = lock.slice(folderLock('').length);
-    this.letGo(id);
+    await this.letGo(id);
     this.problems.set(id, { problem: 'held', holder: await this.locks.holder(lock, 1000) });
     this.onChange();
   }
 
   /** The page's machine's folders as the menu and the tab show them. */
   views(): FolderView[] {
-    const names = rootNames(this.attached, this.folders);
     return this.attached.map((a) => {
       const folder = this.folders.find((f) => f.id === a.id);
-      return { id: a.id, name: names.get(a.id) ?? a.id, folder, readOnly: folder ? readsOnly(a, folder) : a.readOnly, ...this.problems.get(a.id) };
+      return { id: a.id, name: this.names.get(a.id) ?? folder?.name ?? a.id, folder, readOnly: folder ? readsOnly(a, folder) : a.readOnly, ...this.problems.get(a.id) };
     });
   }
 

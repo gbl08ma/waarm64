@@ -6,7 +6,7 @@
 // backend throws, word 1 becomes -1 so the vCPU fails instead of waiting.
 // `close` releases the backends' files (OPFS locks), answers `closed` and ends
 // the worker.
-import { Devices, stateBuffers, type DevicesInit } from './devices.ts';
+import { CLOSE_MS, Devices, stateBuffers, type DevicesInit } from './devices.ts';
 import { registerUsbOpener } from './usb.ts';
 import { webHidOpener, type WebHidLike } from './webhid.ts';
 import { webUsbOpener, type WebUsbLike } from './webusb.ts';
@@ -20,8 +20,6 @@ if (nav.hid) registerUsbOpener('hid', webHidOpener(nav.hid));
 
 let devices: Devices | undefined;
 
-/** How long a close waits for what the backends hold back, ms. */
-const CLOSE_MS = 2500;
 
 self.onmessage = (e: MessageEvent) => {
   if (e.data.type === 'init') start(e.data as Init).catch((err) => self.postMessage({ type: 'error', message: String(err) }));

@@ -76,6 +76,22 @@ test('folders: names, attachments, delete', async () => {
   store.close();
 });
 
+test('a folder is one record per directory, and the sweep takes the files of one gone', async () => {
+  const files = newFiles();
+  const store = newStore(files);
+  const a = await createFolder(store, { kind: 'host', name: 'A', handle: fakeDir('same') });
+  const all = store.all.bind(store);
+  // A handle's isSameEntry doesn't survive the memory store's clone.
+  (store as { all: unknown }).all = async () => (await all('folders')).map((f) => ({ ...f, handle: { isSameEntry: async (o: { name: string }) => o.name === 'same' } }));
+  const b = await createFolder(store, { kind: 'host', name: 'B', handle: fakeDir('same') });
+  (store as { all: unknown }).all = all;
+  assert.equal(b.id, a.id, 'the same directory dropped twice');
+  // A crash between the files and the record: the sweep takes them.
+  files.write('folders/aaaaaaaaaaaa/f', 10);
+  assert.ok((await store.sweep()).includes(folderDir('aaaaaaaaaaaa')));
+  store.close();
+});
+
 test('the mount unit: names as systemd-escape makes them, paths refused', { skip: (() => { try { execFileSync('systemd-escape', ['--version']); return false; } catch { return 'SKIPPED: no systemd-escape'; } })() }, () => {
   for (const p of ['/mnt/shared', '/home/me/host files', '/mnt/é', '/data.v2/.hidden', '/a-b/c_d:e', '/x+y']) {
     assert.equal(mountUnit(p), execFileSync('systemd-escape', ['--path', p], { encoding: 'utf8' }).trim(), p);
@@ -83,7 +99,7 @@ test('the mount unit: names as systemd-escape makes them, paths refused', { skip
   assert.equal(mountUnit('/mnt/shared'), 'mnt-shared');
   assert.equal(mountUnit('/home/me/host files'), 'home-me-host\\x20files');
   for (const ok of ['/mnt/shared', '/media/x', '/home/me/host files', '/srv/data', '/var/share/x']) assert.equal(sharesPathError(ok), undefined, ok);
-  for (const bad of ['', 'mnt', '/', '/mnt/', '/mnt//x', '/mnt/../x', '/mnt/./x', '/etc', '/usr', '/lib64', '/dev', '/dev/x', '/proc/x', '/sys/y', '/a\nb', `/${'x'.repeat(255)}`]) assert.ok(sharesPathError(bad), JSON.stringify(bad));
+  for (const bad of ['/mnt/100%', '/mnt/x ', '/mnt/x\\', `/${'é/'.repeat(30)}x`, '', 'mnt', '/', '/mnt/', '/mnt//x', '/mnt/../x', '/mnt/./x', '/etc', '/usr', '/lib64', '/dev', '/dev/x', '/proc/x', '/sys/y', '/a\nb', `/${'x'.repeat(255)}`]) assert.ok(sharesPathError(bad), JSON.stringify(bad));
   const units = sharesCredentials('/mnt/shared');
   assert.deepEqual(units.map((c) => c.name), ['systemd.extra-unit.mnt-shared.mount', 'systemd.extra-unit.mnt-shared.automount', 'systemd.unit-dropin.remote-fs.target~webpc-shares']);
   assert.match(units[0].data, /What=webpc\nWhere=\/mnt\/shared\nType=9p\nOptions=trans=virtio,version=9p2000\.L,cache=none,msize=1048576,access=user,nofail\n/);
@@ -123,9 +139,36 @@ test('the live side: what a start serves, what waits, and what brings it in', as
   const third = await createFolder(store, { kind: 'opfs', name: 'Third' });
   await live.attach(m.id, third, true);
   assert.equal((device.told.at(-1) as { folder: { readOnly: boolean } }).folder.readOnly, true);
-  await live.detach(m.id, third.id);
+  const leaving3 = live.detach(m.id, third.id);
+  await new Promise((r) => setTimeout(r, 5));
+  device.say({ type: 'detached', id: third.id });
+  await leaving3;
   assert.deepEqual(device.told.at(-1), { type: 'detach', id: third.id });
   assert.equal(live.views().length, 2);
+  // The lock goes after the device let go.
+  const fourth = await createFolder(store, { kind: 'opfs', name: 'Fourth' });
+  await live.attach(m.id, fourth, false);
+  const detaching = live.detach(m.id, fourth.id);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(live.locks.mine(folderLock(fourth.id)), true, 'held while the device lands its writes');
+  device.say({ type: 'detached', id: fourth.id });
+  await detaching;
+  assert.equal(live.locks.mine(folderLock(fourth.id)), false);
+  const leavingHost = live.detach(m.id, host.id);
+  await new Promise((r) => setTimeout(r, 5));
+  device.say({ type: 'detached', id: host.id });
+  await leavingHost;
+  // Another tab's change to the record reaches the machine running here.
+  const fifth = await createFolder(store, { kind: 'opfs', name: 'Fifth' });
+  await attachFolder(store, m.id, fifth.id, false);
+  await live.refresh();
+  assert.equal((device.told.at(-1) as { folder?: { name: string } }).folder?.name, 'Fifth');
+  await detachFolder(store, m.id, fifth.id);
+  const leaving = live.refresh();
+  await new Promise((r) => setTimeout(r, 5));
+  device.say({ type: 'detached', id: fifth.id });
+  await leaving;
+  assert.deepEqual(device.told.at(-1), { type: 'detach', id: fifth.id });
   live.end();
   assert.equal(live.running, false);
   assert.equal(folderLock('x'), 'webpc-folder:x');

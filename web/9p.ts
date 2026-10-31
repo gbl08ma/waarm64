@@ -409,8 +409,13 @@ export class P9Server<N = unknown> {
     switch (type) {
       case 100: { // Tversion: msize, version
         const msize = r.u32();
-        for (const f of this.fids.values()) yield t.clunk?.(f);
+        const open = [...this.fids.values()];
         this.fids.clear();
+        for (const f of open) {
+          try {
+            yield t.clunk?.(f);
+          } catch { /* each fid ends once, whatever its clunk says */ }
+        }
         w.u32(Math.min(msize, MSIZE)).str(r.str() === '9P2000.L' ? '9P2000.L' : 'unknown');
         return;
       }

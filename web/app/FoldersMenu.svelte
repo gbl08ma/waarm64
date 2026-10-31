@@ -15,9 +15,8 @@
   let error = $state('');
   const views = $derived((void ui.folders.tick, folders.views()));
   const waiting = $derived(views.some((v) => v.problem));
-  let opened = 0;
   $effect(() => {
-    if (ui.folders.open !== opened) { opened = ui.folders.open; open = true; }
+    if (ui.folders.wanted) { ui.folders.wanted = false; open = true; }
   });
   async function act(f: () => Promise<unknown>) {
     try {
@@ -27,7 +26,7 @@
       error = String((e as Error).message ?? e);
     }
   }
-  const stateText = (v: (typeof views)[number]) => (v.problem === 'permission' ? 'needs your permission' : v.problem === 'held' ? `in use by ${v.holder ?? 'a machine in another tab'}` : v.problem === 'missing' ? 'not in this browser any more' : v.readOnly ? 'read-only' : 'read and write');
+  const stateText = (v: (typeof views)[number]) => (v.problem === 'permission' ? 'needs your permission' : v.problem === 'held' ? `in use by ${v.holder ?? 'a machine in another tab'}` : v.problem === 'missing' ? 'not in this browser any more' : v.problem === 'failed' ? `can't be used: ${v.holder}` : v.readOnly ? 'read-only' : 'read and write');
 </script>
 
 <Menu id="folders" icon="folder" title="The machine's shared folders" bind:open panel data-waiting={waiting || undefined}>

@@ -72,9 +72,9 @@ export const ui = $state({
   netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number },
   /**
    * The page's machine's shared folders (docs/shares.md §4): `on` while it runs with them (the toolbar's Folders menu);
-   * `path` is where the guest finds them; `open` is bumped to open the menu; `tick` when any of it changes.
+   * `path` is where the guest finds them; `wanted` opens the menu (it clears it); `tick` when any of it changes.
    */
-  folders: { on: false, path: '', open: 0, tick: 0 },
+  folders: { on: false, path: '', wanted: false, tick: 0 },
   /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
   folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },

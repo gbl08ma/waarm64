@@ -98,8 +98,10 @@ after the request it names**. What changes while the machine runs comes over the
 
 - **Identity:** no inode numbers. A qid path comes from a map of the node's path, made on first walk and moved by
   renames. Paths are per folder, so two folders can't collide.
-- **Owner and mode:** none. Files are 0644 and directories 0755, owned by the uid of the attach (Linux's v9fs attaches
-  per user with `access=user`, sending `n_uname`'s uid), so whoever uses the mount owns what's in it. `chmod` is
+- **Owner and mode:** none. Files are 0666 and directories 0777, owned by the uid of the attach (Linux's v9fs attaches
+  per user with `access=user`, sending `n_uname`'s uid), so whoever uses the mount owns what's in it. v9fs keeps one owner
+  per inode, the last asker's, so on a dentry pinned by one user's cwd another's `ls` changes it: the open modes are why
+  access doesn't hang on that. `chmod` is
   kept in memory for the session (so `chmod +x` and then running it works), as is a create's mode (so a compiler's
   output runs) and answered; `chown` and setting times succeed without effect (`cp -p`, `tar`, `rsync` set them and
   would fail otherwise). v9fs takes per-attach owners under `cache=none`: root and `nobody` each see themselves as owner
@@ -110,9 +112,10 @@ after the request it names**. What changes while the machine runs comes over the
 - **Names:** what Chromium refuses (`/`, `\`, `.`/`..`, and on Windows its reserved characters) answers `EINVAL`; on
   a case-insensitive host, a name differing only in case from an existing one `EEXIST` (what the host does).
 - **Renames:** `FileSystemFileHandle.move()` for files, or a copy and a remove where a host file has none. Directories
-  have no `move()` (L0, Chromium 153): the new tree is made and its files are moved into it, entries not bytes. A rename
+  have no `move()` (Chromium 153): the new tree is made and its files are moved into it, entries not bytes; on a failure
+  what moved goes back, and a machine's end in the middle of it leaves the tree split: such a rename isn't atomic. A rename
   from one folder to another, or into or out of the root, is `EXDEV`.
-- **Unlinked while open:** a removed file's `File` reads no more (L0), so it keeps its bytes in memory until its last
+- **Unlinked while open:** a removed file's `File` reads no more, so it keeps its bytes in memory until its last
   clunk, up to 64 MiB (past that its fids answer `ESTALE`).
 - **statfs:** a folder in the browser `navigator.storage.estimate()`; a host folder doesn't know, and says 1 TiB free.
 
@@ -130,9 +133,11 @@ after the request it names**. What changes while the machine runs comes over the
 - So writing small or whole files is cheap and one write into a big file costs a copy of it (~2 ms/MiB on the M4's VM
   on OPFS; a real disk's cost is what the page in `bench/shares/` measures by hand): SQLite databases or disk images on a
   host folder are slow, and the wizard says so. A folder in the browser has no such cost.
-- A session's swap file (`<name>.crswap`) is hidden from listings.
+- A write that fails ends the session (a stream that errored takes the acknowledged writes with it): the file stays as it
+  was, and `EIO` answers later writes and `Tfsync` until the last clunk.
+- A session's swap file (`<name>.crswap`) is hidden from listings while it's the session's.
 - **Attributes:** `getattr` needs a `getFile()` (size, time): cached per node for 1 s, dropped by the server's own
-  writes; a readdir starts its entries' in the background, 32 at a time (L0: 5–8× cheaper side by side). A readdir takes the directory's entries once at offset 0 and serves later offsets from that list (offsets
+  writes; a readdir starts its entries' in the background, 32 at a time (5–8× cheaper side by side). A readdir takes the directory's entries once at offset 0 and serves later offsets from that list (offsets
   are entry indices), so the host changing it mid-listing doesn't skip or repeat entries.
 
 ## 4. The page
