@@ -71,7 +71,7 @@ Since decided (the user, 2026-10-17):
 
 | Thing | What it holds | Where |
 |---|---|---|
-| **Machine** | id, name, vCPUs, RAM MiB (and `ramSplit` when set by hand), display (2D/3D) and Vulkan beside 3D, the JIT cache budget (`jitMiB`), the keyboard layout, the network adapters and their connections (network-adapters.md), the USB controller (`usb`) and remembered USB devices (`usbDevices`), the mouse, touchscreen, clock and shared folders' switches, the attachments in slot order with the overlay chosen per read-write one | IndexedDB `machines` |
+| **Machine** | id, name, vCPUs, RAM MiB (and `ramSplit` when set by hand), display (2D/3D) and Vulkan beside 3D, the JIT cache budget (`jitMiB`), the keyboard layout, the network adapters and their connections (network-adapters.md), the USB controller (`usb`) and remembered USB devices (`usbDevices`), the mouse, touchscreen and clock switches, shared folders (`shares`, the switch; `folders`, the attached folders with their own Read-only; `sharesMount` and `sharesPath`, how the page mounts them in the guest: shares.md §1), the attachments in slot order with the overlay chosen per read-write one | IndexedDB `machines` |
 | **Disk** (a base) | id, kind (`url`, `file`, `stored`, `blank`, `ramdisk`), name, size, the identity (§3.1), the kind's data: a URL; a `FileSystemFileHandle` (IndexedDB can hold one, JSON can't); the hash where something computed it | IndexedDB `disks` |
 | **Attachment** | the disk, read-only or not, written in place or not, the overlay chosen, the virtio serial (`webpc-<attachment id>`, answered to `GET_ID`) | in the machine |
 | **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes; its `data`, `map`, `meta` and `base` files | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |
@@ -80,17 +80,20 @@ Since decided (the user, 2026-10-17):
 | **Suspended copy** | a snapshot without the overlays' blocks (§5.3) | OPFS `machines/<id>/suspend` |
 | **Stored disk** | an imported image in the overlay's sparse block format (§4.4), with a generation | OPFS `disks/<id>/` |
 | **Connection** | a tailnet or tailcat, the browser's (network-adapters.md) | IndexedDB `connections` |
+| **Folder** | a shared folder, the browser's: a folder on this computer (its directory handle) or a folder in the browser, a name, Read-only (shares.md §2.1) | IndexedDB `folders`; a folder in the browser's files in OPFS `folders/<id>/` |
 
 - **IndexedDB for records, OPFS for bytes** (`web/app/store.ts`, IndexedDB `webpc`, ids of 12 hex digits). A record
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
-  its files. `Store.sweep` removes, at start, id-named files under `overlays/`, `machines/*/snapshots/` and `disks/`
-  without a record, and waits for writers first (`Store.writing`, a shared Web Lock).
+  its files. `Store.sweep` removes, at start, id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
+  `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock).
 - **Several tabs:** a running machine holds the Web Lock `webpc-machine:<id>` (beside its overlays' own), and a
   `BroadcastChannel` tells other tabs to read the records again (`onChange`). What needs the machine off (attaching,
-  detaching, reordering, a change of shape) is refused while it runs, in this tab or another (`isRunning`), with a
-  message to power it off.
+  detaching or reordering disks, a change of shape) is refused while it runs, in this tab or another (`isRunning`),
+  with a message to power it off. What isn't in the shape is changed at once, running or not: a network adapter's
+  connection, a shared folder attached or detached (the 9p root is a listing the server makes), USB devices. Shared
+  folders have their own locks (`webpc-folder:<id>`: one writer, or several readers; shares.md §1).
 - **Storage:** the Machines page shows `navigator.storage.estimate()` and what each overlay, machine (variable store
-  and snapshots), stored disk and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
+  and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
   first time something is stored (without it the browser may evict the origin's data under pressure).
 - **Transient machines:** the tests' query parameters (`?machine=debian`, `?disk=`, `?disk2=`, `?ncpus=`, `?ram=`)
   make a machine that is never stored. Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
@@ -250,7 +253,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
   a disk written in place) and generation, the blocks the file carries, and `ram` for a ramdisk; the page maps
   paths to records.
 - **Orphaned:** a kept snapshot whose shape hash differs from its machine's now (the user changed RAM, added a
-  disk…). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
+  disk, turned shared folders on…). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
   differs (`shapeDiff`, from the two shapes), and offers **Make a machine like it** (`machineLike`: a new machine
   from its shape, disks the browser has attached again by identity, blank disks and ramdisks made again, files picked
   again) and **Delete orphaned snapshots**.
@@ -282,11 +285,19 @@ It resumes only while every pin matches (the worker compares each overlay's gene
 it with a note otherwise. Switching an overlay, New empty, a merge, editing the machine or a boot all make it stale
 with no code of their own.
 
+**Shared folders and snapshots** (shares.md §6): the 9p device is in the shape, the attached folders aren't, and a
+folder's files are never in a snapshot (a host folder is the host's; a folder in the browser is its stored files, as
+a disk's base is). A snapshot (a suspended copy too: the same writer) saves the server's fids and nodes by path after closing its write
+sessions; a restore asks nothing of the folders until the guest does, and a folder detached since, or a path gone,
+answers `ESTALE` on those fids. So attaching or detaching a folder orphans nothing and doesn't make a suspended
+copy stale.
+
 ## 6. Machine definitions in and out
 
 `web/app/definitions.ts`; the page's side is frontend.md "Machines in the browser".
-- **Export the definition:** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings, the
-  adapters' MACs (no connections), and per attachment the disk's kind, name, size, identity, URL, hash where the
+- **Export the definition:** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings (shared
+  folders as `shares`, `sharesMount` and `sharesPath`, never the folders), the adapters' MACs (no connections), the
+  remembered USB devices as identities (no grant travels), and per attachment the disk's kind, name, size, identity, URL, hash where the
   record has one, read-only, in place and serial. No handles, overlays, snapshots or file contents.
 - **Import a definition:** a new machine (the name made unique, the same shape). A disk the browser has by identity is
   attached again; URL, blank and ramdisk disks come back as they were; file disks, and stored disks the browser
