@@ -142,6 +142,12 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   the page's session scripts (`bench/gpu/guest-session.ts`) log in as `arch` (`WEBPC_GUEST_USER=alarm` for an older
   Arch Linux ARM disk).
 
+## Debian with a compiler (`images/debian-tools/build.sh`)
+
+On demand, as the next section's: the pinned Debian with `gcc`, `libc6-dev`, `make` and `git` installed by apt in QEMU
+(~5 min): `target/images/debian-tools/disk.qcow2`, what `tests/page-folders.test.ts` builds and commits in a shared folder
+on (skipped without it).
+
 ## Debian with Chromium (`images/debian-chromium/build.sh`)
 
 **On demand only** (not `images/build.sh`, `SHA256SUMS` or CI): the disk of the complex-app benchmark
