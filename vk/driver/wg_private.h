@@ -267,6 +267,7 @@ struct wg_buffer {
 };
 
 #define WG_IMAGE_ALIASES 7
+#define WG_IMAGE_WORDS (WG_IMAGE_ALIASES + 1) /* where `valid` and an op's alias take the image's words for a texture */
 /* An image is a texture, made with the image (its memory is only where its bytes are said to be). */
 struct wg_image {
    struct vk_image vk;
@@ -283,14 +284,19 @@ struct wg_image {
    bool imported;   /* bound to imported memory: its texture is another renderer's resource's (gpu_texture_import) */
    /* Views in a format WebGPU won't view its texture in (VK4 T4; vk/README.md "Views in another format"): a texture of
     * that format each, the same size. `valid`, NULL without one: for each plane, level and layer (wg_image_valid), a
-    * bit for each texture that holds its bytes, bit 0 its own and i + 1 aliases[i]; the replay keeps it, in queue order. */
+    * bit for each texture that holds its bytes, bit 0 its own, i + 1 aliases[i] and WG_IMAGE_WORDS the buffer below; the
+    * replay keeps it, in queue order. */
    uint32_t alias_count;
    struct wg_image_alias {
       uint32_t tex;
       const struct wg_texture_format *fmt;
       uint32_t plane;
    } aliases[WG_IMAGE_ALIASES];
-   uint8_t *valid;
+   uint16_t *valid;
+   /* Atomics reach a storage image as words in a buffer (VK4 T7; vk/README.md "Image atomics"), made at their first
+    * binding: rows 256-aligned as WebGPU's copies want them, a level and a slice at whole rows from `words_at[level]`. */
+   uint32_t words;
+   uint64_t words_at[15];
    /* A multi-planar format's planes (VK3 L7.2), each a texture of its own (plane 0's are `tex` and `fmt` above), and
     * where its bytes are: in the image's (`offset` past the image's own), or, disjoint, in a memory bound to the plane.
     * 1 for every other format. */
@@ -312,10 +318,23 @@ wg_image_valid_layers(const struct wg_image *image)
 {
    return image->vk.image_type == VK_IMAGE_TYPE_3D ? 1 : image->vk.array_layers;
 }
-static inline uint8_t *
+static inline uint16_t *
 wg_image_valid(const struct wg_image *image, uint32_t plane, uint32_t level, uint32_t layer)
 {
    return &image->valid[((plane * image->vk.mip_levels + level) * wg_image_valid_layers(image)) + layer];
+}
+/* The formats Vulkan's atomics take on images and texel buffers here. */
+static inline bool
+wg_atomic_format(VkFormat format)
+{
+   return format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R32_SINT;
+}
+/* The image's words (made at the first call), a row's bytes at a level. */
+uint32_t wg_image_words(struct wg_image *image);
+static inline uint32_t
+wg_image_row_bytes(const struct wg_image *image, uint32_t level)
+{
+   return align(u_minify(image->vk.extent.width, level) * 4, 256);
 }
 /* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
 void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);
@@ -339,6 +358,7 @@ struct wg_image_view {
    uint32_t planes[3];
    uint32_t first_plane; /* of a one-plane view */
    uint32_t alias;       /* the image's texture it views: 0 its own, i + 1 aliases[i] */
+   uint32_t word_params; /* a word binding's parameters (wgsl_print.c `image_words`), made at the first (0: none) */
 };
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
@@ -371,6 +391,8 @@ struct wg_descriptor_set_layout {
    uint32_t *count;
    VkDescriptorType *type;  /* by binding */
    VkShaderStageFlags *stages; /* by binding */
+   uint32_t *inline_bytes;  /* by binding: an inline uniform block's bytes */
+   uint32_t inline_size;    /* a set's bytes of inline uniform blocks, each block 256-aligned */
    int16_t *dynamic;        /* by slot: its index among the dynamic offsets, or -1 */
    struct wg_sampler **immutable; /* by slot, or NULL */
    /* YCbCr (VK3 L7.2): by binding, the slot its elements' other planes start at (wgsl.h; -1: none), and by slot, the
@@ -385,7 +407,8 @@ struct wg_descriptor {
    VkDescriptorType type;
    uint8_t plane;           /* a plane slot's: the element's view's plane it binds (wg_descriptor_set_layout.owner) */
    struct wg_buffer *buffer;
-   VkDeviceSize offset, range;
+   VkDeviceSize offset, range;  /* an inline uniform block's: its bytes in its set's buffer, `inline_buffer` */
+   uint32_t inline_buffer;
    struct wg_image_view *view;
    struct wg_sampler *sampler;
    struct wg_buffer_view *texel;
@@ -398,6 +421,8 @@ struct wg_descriptor_set {
    struct list_head link;   /* its pool's */
    uint32_t version;        /* bumped by each update */
    uint32_t uid;            /* the set's own number, never reused */
+   uint8_t *inline_data;    /* its inline uniform blocks' bytes (wg_descriptor.c) */
+   uint32_t inline_buffer;
    /* Bind groups made of it (and of the sets after it in group 3: their versions hashed), by bind group layout (its
     * uid), for the version they were made of. */
    struct { uint32_t bgl, version, group; } groups[WG_SET_GROUPS];

@@ -42,6 +42,9 @@ struct ctx {
    bool f16;         /* shader-f16 */
    bool uses_subgroup_ops, uses_sg_inv, uses_sg_size;
    bool uses_texel_buffers;
+   /* Storage images with an atomic in this stage (their index: image_words). */
+   unsigned word_images[WGSL_MAX_RESOURCES];
+   unsigned word_image_count;
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
@@ -399,6 +402,33 @@ texel_buffer(struct ctx *c, unsigned index, bool writes)
    c->uses_texel_buffers = true;
 }
 
+/* WGSL has no atomics on textures, so a storage image an atomic reaches is, in that stage, its view's words: a storage
+ * buffer (of atomics) at its binding, and at the next the view's parameters, a uniform buffer of two vec4s
+ * (p0 = (width, height, depth or layers, words between rows), p1.x = words between slices): the driver's, whose replay
+ * keeps the words and the image's textures in step (vk/README.md "Image atomics"). Every access of that binding in the
+ * stage goes through them, since the words hold what the image holds there. */
+static bool
+is_word_image(const struct ctx *c, unsigned index)
+{
+   for (unsigned i = 0; i < c->word_image_count; i++)
+      if (c->word_images[i] == index)
+         return true;
+   return false;
+}
+
+static struct res_use *
+image_words(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
+{
+   struct res_use *r = resource(c, index, WGSL_STORAGE);
+   r->r.kind = WGSL_STORAGE;
+   r->r.atomic = r->r.written = r->r.image_words = true;
+   r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
+   r->r.format = nir_intrinsic_format(intr);
+   struct res_use *p = resource(c, index + 1, WGSL_UNIFORM);
+   p->r.size = 32;
+   return r;
+}
+
 /* The gather: resources, I/O and what the entry point needs. */
 static void
 gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
@@ -454,6 +484,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          texel_buffer(c, const_index(c, &intr->src[0]), intr->intrinsic == nir_intrinsic_image_store);
          break;
       }
+      if (is_word_image(c, const_index(c, &intr->src[0]))) {
+         image_words(c, const_index(c, &intr->src[0]), intr);
+         break;
+      }
       struct res_use *r = resource(c, const_index(c, &intr->src[0]), WGSL_STORAGE_TEXTURE);
       r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
       r->r.format = nir_intrinsic_format(intr);
@@ -466,9 +500,24 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       break;
    }
    case nir_intrinsic_image_atomic:
-   case nir_intrinsic_image_atomic_swap:
-      failf(c, "image atomics");
+   case nir_intrinsic_image_atomic_swap: {
+      const enum pipe_format f = nir_intrinsic_format(intr);
+      if (f != PIPE_FORMAT_R32_UINT && f != PIPE_FORMAT_R32_SINT) {
+         failf(c, "image atomics on %s", util_format_name(f));
+         break;
+      }
+      const unsigned index = const_index(c, &intr->src[0]);
+      struct res_use *r;
+      if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
+         texel_buffer(c, index, true);
+         r = resource(c, index, WGSL_STORAGE);
+         r->r.atomic = true;
+      } else {
+         r = image_words(c, index, intr);
+      }
+      atomic_sign(c, nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
       break;
+   }
    case nir_intrinsic_load_input:
       if (nir->info.stage == MESA_SHADER_VERTEX) {
          const unsigned loc = nir_intrinsic_io_semantics(intr).location - VERT_ATTRIB_GENERIC0;
@@ -696,6 +745,18 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
 static void
 gather(struct ctx *c, nir_function_impl *impl)
 {
+   /* First which images an atomic reaches: their loads and stores, wherever they are, go by their words. */
+   nir_foreach_block(block, impl) {
+      nir_foreach_instr(instr, block) {
+         if (instr->type != nir_instr_type_intrinsic)
+            continue;
+         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+         if ((intr->intrinsic == nir_intrinsic_image_atomic || intr->intrinsic == nir_intrinsic_image_atomic_swap) &&
+             nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_BUF && nir_src_is_const(intr->src[0]) &&
+             !is_word_image(c, nir_src_as_uint(intr->src[0])) && c->word_image_count < WGSL_MAX_RESOURCES)
+            c->word_images[c->word_image_count++] = nir_src_as_uint(intr->src[0]);
+      }
+   }
    nir_foreach_block(block, impl) {
       nir_foreach_instr(instr, block) {
          if (instr->type == nir_instr_type_intrinsic)
@@ -824,7 +885,15 @@ declare_texel_buffers(struct ctx *c)
       const struct wgsl_resource *r = &c->res[i].r;
       const char *words = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
       const char *name = fmt(c, "%u_%u", r->group, r->binding);
+      /* A buffer an atomic reaches is of atomics, its loads and stores too. */
+      const char *load = r->atomic ? (c->res[i].signed_atomic ? "bitcast<u32>(atomicLoad(&" : "(atomicLoad(&") : "(";
+      const char *load_end = r->atomic ? "))" : ")";
       line(c, "fn wg_tb_size_%s() -> u32 { return %s[0].z; }", name, params);
+      line(c, "fn wg_tb_word_%s(i: u32) -> u32 {", name);
+      line(c, "  let p0 = %s[0];", params);
+      line(c, "  if (i >= p0.z) { return 0xffffffffu; }");
+      line(c, "  return (p0.y + i * ((p0.x >> 8u) & 0xffu)) >> 2u;");
+      line(c, "}");
       line(c, "fn wg_tb_load_%s(i: u32) -> vec4<u32> {", name);
       line(c, "  let p0 = %s[0]; let p1 = %s[1];", params, params);
       line(c, "  if (i >= p0.z) { return vec4<u32>(0u); }");
@@ -834,7 +903,7 @@ declare_texel_buffers(struct ctx *c)
       line(c, "    let n = (p1.x >> (8u * k)) & 0xffu;");
       line(c, "    if (n == 0u) { continue; }");
       line(c, "    let b = (a & 3u) * 8u + ((p1.y >> (8u * k)) & 0xffu);");
-      line(c, "    ch[k] = wg_tb_dec(extractBits(%s[(a >> 2u) + (b >> 5u)], b & 31u, n), ty, n);", words);
+      line(c, "    ch[k] = wg_tb_dec(extractBits(%s%s[(a >> 2u) + (b >> 5u)]%s, b & 31u, n), ty, n);", load, words, load_end);
       line(c, "  }");
       line(c, "  let s = p0.x >> 16u;");
       line(c, "  return vec4<u32>(ch[s & 7u], ch[(s >> 3u) & 7u], ch[(s >> 6u) & 7u], ch[(s >> 9u) & 7u]);");
@@ -853,7 +922,40 @@ declare_texel_buffers(struct ctx *c)
       line(c, "    let b = (p1.y >> (8u * k)) & 0xffu;");
       line(c, "    w[b >> 5u] = insertBits(w[b >> 5u], wg_tb_enc(v[(p1.z >> (3u * k)) & 3u], ty, n), b & 31u, n);");
       line(c, "  }");
-      line(c, "  for (var k = 0u; k < ((p0.x >> 10u) & 0x3fu); k++) { %s[(a >> 2u) + k] = w[k]; }", words);
+      if (r->atomic)
+         line(c, "  for (var k = 0u; k < ((p0.x >> 10u) & 0x3fu); k++) { atomicStore(&%s[(a >> 2u) + k], %s(w[k])); }", words,
+              c->res[i].signed_atomic ? "bitcast<i32>" : "");
+      else
+         line(c, "  for (var k = 0u; k < ((p0.x >> 10u) & 0x3fu); k++) { %s[(a >> 2u) + k] = w[k]; }", words);
+      line(c, "}");
+   }
+}
+
+/* Storage images as their views' words (image_words). A texel past the view reads 0 and isn't written. */
+static void
+declare_word_images(struct ctx *c)
+{
+   for (unsigned i = 0; i < c->res_count; i++) {
+      const struct wgsl_resource *r = &c->res[i].r;
+      if (!r->image_words)
+         continue;
+      const char *words = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
+      const char *name = fmt(c, "%u_%u", r->group, r->binding);
+      const bool is_signed = c->res[i].signed_atomic;
+      line(c, "fn wg_im_size_%s() -> vec3<u32> { return %s[0].xyz; }", name, params);
+      line(c, "fn wg_im_word_%s(x: i32, y: i32, z: i32) -> u32 {", name);
+      line(c, "  let p0 = %s[0]; let a = vec3<u32>(bitcast<u32>(x), bitcast<u32>(y), bitcast<u32>(z));", params);
+      line(c, "  if (any(a >= p0.xyz)) { return 0xffffffffu; }");
+      line(c, "  return a.x + a.y * p0.w + a.z * %s[1].x;", params);
+      line(c, "}");
+      line(c, "fn wg_im_load_%s(x: i32, y: i32, z: i32) -> vec4<u32> {", name);
+      line(c, "  let w = wg_im_word_%s(x, y, z);", name);
+      line(c, "  if (w == 0xffffffffu) { return vec4<u32>(0u); }");
+      line(c, "  return vec4<u32>(%s(atomicLoad(&%s[w])), 0u, 0u, 1u);", is_signed ? "bitcast<u32>" : "", words);
+      line(c, "}");
+      line(c, "fn wg_im_store_%s(x: i32, y: i32, z: i32, v: u32) {", name);
+      line(c, "  let w = wg_im_word_%s(x, y, z);", name);
+      line(c, "  if (w != 0xffffffffu) { atomicStore(&%s[w], %s(v)); }", words, is_signed ? "bitcast<i32>" : "");
       line(c, "}");
    }
 }
@@ -1300,6 +1402,28 @@ emit_half_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
    }
 }
 
+/* An atomic on word `word` of an array of atomics; `data` its operand (of a swap, the compared value, the new one
+ * after it). SPIR-V's compare-exchange is strong and WGSL's may fail spuriously: tried again until it exchanged or saw
+ * another value. */
+static void
+emit_atomic(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, const char *word, nir_src *data, bool signed_atomic)
+{
+   const char *conv_in = signed_atomic ? "bitcast<i32>" : "";
+   const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
+   if (intr->intrinsic == nir_intrinsic_ssbo_atomic_swap || intr->intrinsic == nir_intrinsic_shared_atomic_swap ||
+       intr->intrinsic == nir_intrinsic_image_atomic_swap) {
+      line(c, "loop {");
+      line(c, "  let wg_cas = atomicCompareExchangeWeak(&%s[%s], %s(%s), %s(%s));", arr, word, conv_in, src_name(c, data),
+           conv_in, src_name(c, data + 1));
+      line(c, "  if (wg_cas.exchanged || wg_cas.old_value != %s(%s)) { t%u = %s(wg_cas.old_value); break; }", conv_in,
+           src_name(c, data), intr->def.index, conv_out);
+      line(c, "}");
+   } else {
+      line(c, "t%u = %s(%s(&%s[%s], %s(%s)));", intr->def.index, conv_out, atomic_fn(c, nir_intrinsic_atomic_op(intr)),
+           arr, word, conv_in, src_name(c, data));
+   }
+}
+
 /* Loads, stores and atomics on an array of words (`arr`, a WGSL array of u32, atomic<u32> or atomic<i32>), at word
  * `word` (byte offset `byte`). */
 static void
@@ -1340,25 +1464,13 @@ emit_word_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
       return;
    }
    case nir_intrinsic_ssbo_atomic:
-   case nir_intrinsic_shared_atomic: {
-      nir_src *data = &intr->src[intr->intrinsic == nir_intrinsic_ssbo_atomic ? 2 : 1];
-      line(c, "t%u = %s(%s(&%s[%s], %s(%s)));", intr->def.index, conv_out, atomic_fn(c, nir_intrinsic_atomic_op(intr)),
-           arr, word, conv_in, src_name(c, data));
+   case nir_intrinsic_shared_atomic:
+      emit_atomic(c, intr, arr, word, &intr->src[intr->intrinsic == nir_intrinsic_ssbo_atomic ? 2 : 1], signed_atomic);
       return;
-   }
    case nir_intrinsic_ssbo_atomic_swap:
-   case nir_intrinsic_shared_atomic_swap: {
-      /* SPIR-V's compare-exchange is strong; WGSL's may fail spuriously: tried again until it exchanged or saw
-       * another value. */
-      const unsigned at = intr->intrinsic == nir_intrinsic_ssbo_atomic_swap ? 2 : 1;
-      line(c, "loop {");
-      line(c, "  let wg_cas = atomicCompareExchangeWeak(&%s[%s], %s(%s), %s(%s));", arr, word, conv_in,
-           src_name(c, &intr->src[at]), conv_in, src_name(c, &intr->src[at + 1]));
-      line(c, "  if (wg_cas.exchanged || wg_cas.old_value != %s(%s)) { t%u = %s(wg_cas.old_value); break; }", conv_in,
-           src_name(c, &intr->src[at]), intr->def.index, conv_out);
-      line(c, "}");
+   case nir_intrinsic_shared_atomic_swap:
+      emit_atomic(c, intr, arr, word, &intr->src[intr->intrinsic == nir_intrinsic_ssbo_atomic_swap ? 2 : 1], signed_atomic);
       return;
-   }
    default:
       return;
    }
@@ -1388,6 +1500,17 @@ image_coords(struct ctx *c, nir_intrinsic_instr *intr, nir_src *coord, const cha
       *xy = fmt(c, "%s.xy", v);
       *layer = fmt(c, "%s.z", v);
    }
+}
+
+/* A word image's coordinate as the x, y, z its functions take. */
+static const char *
+word_coords(struct ctx *c, nir_intrinsic_instr *intr, nir_src *coord)
+{
+   const unsigned dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
+   const char *v = as_base(c, src_name(c, coord), WGSL_I32, coord->ssa->num_components);
+   return dim == WGSL_DIM_1D ? fmt(c, "%s.x, 0, 0", v)
+          : dim == WGSL_DIM_2D ? fmt(c, "%s.x, %s.y, 0", v, v)
+                               : fmt(c, "%s.x, %s.y, %s.z", v, v, v);
 }
 
 static const char *
@@ -1867,12 +1990,38 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
                      WGSL_U32);
          return;
       }
+      if (is_word_image(c, index)) {
+         assign_vec4(c, def, fmt(c, "wg_im_load_%u_%u(%s)", index >> 16, index & 0xffff, word_coords(c, intr, &intr->src[1])),
+                     WGSL_U32);
+         return;
+      }
       const char *xy, *layer;
       image_coords(c, intr, &intr->src[1], &xy, &layer);
       const char *e = layer ? fmt(c, "textureLoad(%s, %s, %s)", res_name(c, index), xy, layer)
                             : fmt(c, "textureLoad(%s, %s)", res_name(c, index), xy);
       const char *b = texel_base(nir_intrinsic_format(intr));
       assign_vec4(c, def, e, !strcmp(b, "u32") ? WGSL_U32 : !strcmp(b, "i32") ? WGSL_I32 : WGSL_F32);
+      return;
+   }
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap: {
+      /* A texel past the view is left alone and reads 0. */
+      const unsigned index = const_index(c, &intr->src[0]);
+      const struct res_use *r = find_res(c, index);
+      const char *word = nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF
+                            ? fmt(c, "wg_tb_word_%u_%u(%s)", index >> 16, index & 0xffff, src_comp(c, &intr->src[1], 0))
+                            : fmt(c, "wg_im_word_%u_%u(%s)", index >> 16, index & 0xffff, word_coords(c, intr, &intr->src[1]));
+      line(c, "t%u = 0u;", def->index);
+      line(c, "{");
+      c->indent++;
+      line(c, "let wg_w = %s;", word);
+      line(c, "if (wg_w != 0xffffffffu) {");
+      c->indent++;
+      emit_atomic(c, intr, res_name(c, index), "wg_w", &intr->src[3], r->signed_atomic);
+      c->indent--;
+      line(c, "}");
+      c->indent--;
+      line(c, "}");
       return;
    }
    case nir_intrinsic_image_store: {
@@ -1884,6 +2033,11 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
                          : n == 1 ? fmt(c, "vec4<u32>(%s, 0u, 0u, 0u)", src_name(c, value))
                                   : fmt(c, "vec4<u32>(%s, %s)", src_name(c, value), n == 2 ? "0u, 0u" : "0u");
          line(c, "wg_tb_store_%u_%u(%s, %s);", index >> 16, index & 0xffff, src_comp(c, &intr->src[1], 0), v);
+         return;
+      }
+      if (is_word_image(c, index)) {
+         line(c, "wg_im_store_%u_%u(%s, %s);", index >> 16, index & 0xffff, word_coords(c, intr, &intr->src[1]),
+              src_comp(c, &intr->src[3], 0));
          return;
       }
       const char *xy, *layer;
@@ -1906,6 +2060,14 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          return;
       }
       const unsigned dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
+      if (is_word_image(c, index)) {
+         const bool cubes = nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_CUBE && nir_intrinsic_image_array(intr);
+         const char *size = fmt(c, "wg_im_size_%u_%u()", index >> 16, index & 0xffff);
+         if (cubes)
+            size = fmt(c, "(%s / vec3<u32>(1u, 1u, 6u))", size);
+         line(c, "t%u = %s%s;", def->index, size, def->num_components < 3 ? fmt(c, ".%s", comps(c, 0, def->num_components)) : "");
+         return;
+      }
       const char *name = res_name(c, index);
       /* A cube array's size counts cubes, its 2D array's layers faces. */
       const bool cubes = nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_CUBE && nir_intrinsic_image_array(intr);
@@ -2372,6 +2534,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    }
    declare_resources(&c);
    declare_texel_buffers(&c);
+   declare_word_images(&c);
    declare_io(&c);
    if (stage == MESA_SHADER_COMPUTE && nir->info.shared_size)
       line(&c, "var<workgroup> shm: array<%s, %u>;", !c.shm_atomic ? "u32" : c.shm_signed ? "atomic<i32>" : "atomic<u32>",

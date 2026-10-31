@@ -137,8 +137,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* The shader's borders take any colour, through the view's mapping (wgsl_sampler.c, wg_cmd.c `sampler_border`). */
       .EXT_custom_border_color = true,
       .EXT_border_color_swizzle = true,
-      /* Not translated: 16-bit integers, inline uniform blocks (a bind group holds buffers, not
-       * bytes), texel buffers (EXT_texel_buffer_alignment). */
+      /* A uniform buffer of the set's, written as the guest updates the blocks (wg_descriptor.c). */
+      .EXT_inline_uniform_block = true,
+      /* Not translated: 16-bit integers, texel buffers (EXT_texel_buffer_alignment). */
    };
 }
 
@@ -160,6 +161,7 @@ wg_caps_features(struct vk_features *f)
       .textureCompressionASTC_LDR = HAS(ASTC),
       .textureCompressionBC = HAS(BC),
       .fragmentStoresAndAtomics = true,
+      .inlineUniformBlock = true,
       .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE),
       .shaderClipDistance = HAS(CLIP_DISTANCES),
       /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
@@ -261,6 +263,13 @@ wg_caps_properties(struct vk_properties *p)
    p->maxPerStageDescriptorSampledImages = sampled;
    p->maxPerStageDescriptorStorageImages = storage_tex;
    p->maxPerStageDescriptorInputAttachments = 4;
+   /* 1.3's minimums of blocks (each a uniform binding, counted by wg_bindings_fit), a page each. */
+   p->maxInlineUniformBlockSize = 4096;
+   p->maxPerStageDescriptorInlineUniformBlocks = 4;
+   p->maxDescriptorSetInlineUniformBlocks = 4;
+   p->maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks = 4;
+   p->maxDescriptorSetUpdateAfterBindInlineUniformBlocks = 4;
+   p->maxInlineUniformTotalSize = 4 * 4096;
    /* Samplers aren't counted; a fragment shader's colour attachments are. */
    p->maxPerStageResources = sampled + storage_tex + ubo + ssbo + L->max_color_attachments;
    /* WebGPU counts per stage, Vulkan per layout: a layout whose bindings every stage sees gets one stage's. */
@@ -481,7 +490,8 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
             h[c][WG_HIDDEN_PLANE]++;
          else if (t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
             h[c][WG_HIDDEN_TEXEL]++;
-         else if (t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && c == WG_COUNT_STORAGE)
+         else if ((t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || t == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) &&
+                  c == WG_COUNT_STORAGE)
             h[c][WG_HIDDEN_FOLDED]++;
          else if (t == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
             h[c][WG_HIDDEN_INPUT]++;

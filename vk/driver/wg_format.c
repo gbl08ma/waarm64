@@ -308,6 +308,8 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
          o |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
       if (f->flags & WG_FMT_STORAGE)
          o |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+      if ((f->flags & WG_FMT_STORAGE) && wg_atomic_format(format))
+         o |= VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT;
    }
    *optimal = o;
    *linear = f && f->bw == 1 && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL))
@@ -327,5 +329,6 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
    uint32_t x, p1[3];
    bool storage;
    if (wg_texel_buffer_layout(format, &x, p1, &storage))
-      *buffer |= VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT | (storage ? VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT : 0);
+      *buffer |= VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT | (storage ? VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT : 0) |
+                 (storage && wg_atomic_format(format) ? VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT : 0);
 }

@@ -89,6 +89,9 @@ struct wgsl_resource {
    bool written;          /* storage buffers: the stage writes it (what the driver reads back of host-visible memory;
                            * the kind is the declared access: atomics' are read_write written or not) */
    bool nonfiltering;     /* samplers: bound as non-filtering (the driver's, for unfilterable views) */
+   bool image_words;      /* a storage image with atomics, as its view's words (kind WGSL_STORAGE, its parameters a
+                           * uniform buffer at the next binding: wgsl_print.c `image_words`); `dim`, `format` as a
+                           * storage texture's */
    uint8_t access;        /* storage textures */
    uint16_t format;       /* storage textures: enum pipe_format */
    uint32_t size;         /* uniform buffers: the bytes declared */

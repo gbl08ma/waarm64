@@ -1090,3 +1090,43 @@ test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeou
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('atomics reach a storage image through its words, its loads, stores and sizes with them, and a texel buffer\'s words directly (VK4 T7)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t7/image-atomics.comp');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /@binding\(0\) var<storage, read_write> r0_0: array<atomic<u32>>/);
+    assert.match(r.text, /@binding\(2\) var<storage, read_write> r0_2: array<atomic<i32>>/);
+    assert.match(r.text, /@binding\(1\) var<uniform> r0_1:/);
+    assert.match(r.text, /@binding\(3\) var<uniform> r0_3:/);
+    const words = (n: number, f: (i: number) => number) => new Uint8Array(new Uint32Array(n).map((_, i) => f(i)).buffer);
+    // A view of 16x4x3, rows 32 words apart, slices 128 (as wg_cmd.c's view_words), its words offset by nothing.
+    const params = words(8, (i) => [16, 4, 3, 32, 128, 0, 0, 0][i]);
+    const image = words(32 * 4 * 3, () => 0);
+    // An r32i texel buffer's parameters, as wg_texel_buffer_layout's: sint, 4 bytes, identity with 0 and 1 past it;
+    // starting one texel in; 8 texels (a ninth word stands past them).
+    const SWIZ = 0 | (4 << 3) | (4 << 6) | (5 << 9);
+    const tp = words(8, (i) => [3 | (4 << 8) | (SWIZ << 16), 4, 8, 0, 32, 0, 0, 0][i]);
+    const tb = words(10, () => 5);
+    const res = await runCompute(r.text, [{ binding: 0, init: image }, { binding: 1, init: params }, { binding: 2, init: tb }, { binding: 3, init: tp }, { binding: 4, size: 29 * 4 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const img = new Uint32Array(res.out[0].buffer), o = new Uint32Array(res.out[4].buffer), tw = new Int32Array(res.out[2].buffer);
+    assert.deepEqual([...o.slice(0, 3)], [16, 4, 3], 'imageSize');
+    // Each of texels 0-3 of row 1, slice 1 took two invocations' bits.
+    const at = (x: number, y: number, z: number) => img[x + y * 32 + z * 128];
+    assert.deepEqual([0, 1, 2, 3].map((x) => at(x, 1, 1)), [0, 1, 2, 3].map((x) => (1 << x) | (1 << (x + 4))));
+    // Stored, then swapped from what was stored.
+    assert.deepEqual([...o.slice(11, 19)], [...Array(8).keys()].map((i) => 100 + i), 'the swaps\' old values');
+    assert.deepEqual([...Array(8).keys()].map((i) => at(i, 0, 0)), [...Array(8).keys()].map((i) => 200 + i));
+    // The texel buffer's texels start one word in; signed minima; nothing written past it.
+    assert.deepEqual([...tw.slice(0, 10)], [5, ...[0, -1, -2, -3, -4, -5, -6, -7], 5]);
+    assert.deepEqual([...o.slice(19, 27)], Array(8).fill(5), 'the minima\'s old values');
+    assert.deepEqual([o[27], o[28]], [0, 0], 'reads past the views');
+    assert.equal(img.reduce((a, b) => a + (b ? 1 : 0), 0), 12, 'written past the view');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

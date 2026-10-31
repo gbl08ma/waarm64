@@ -992,6 +992,9 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    /* A linear image may be bound to host-visible memory: copied to and from it at each submit. */
    if (vi->tiling == VK_IMAGE_TILING_LINEAR)
       usage |= 1 | 2;
+   /* Atomics reach such an image as words, copied to and from its texture (VK4 T7). */
+   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_atomic_format(fmt->vk))
+      usage |= 1 | 2;
    /* A mutable image's textures of different formats copy between them (VK4 T4), and its usage may be its views'. */
    if (vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) {
       usage |= 1 | 2;
@@ -1034,6 +1037,19 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    return wg_create_json(WG_KIND_TEXTURE, &j);
 }
 
+/* The replay keeps which of an image's places hold its bytes (`valid`). */
+static void
+image_track(struct wg_device *dev, struct wg_image *image)
+{
+   if (!image->valid) {
+      const uint32_t n = image->plane_count * image->vk.mip_levels * wg_image_valid_layers(image);
+      image->valid = malloc(n * sizeof(*image->valid));
+      for (uint32_t i = 0; i < n; i++)
+         image->valid[i] = 1;
+   }
+   dev->aliased = true;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
                VkImage *pImage)
@@ -1068,8 +1084,29 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
                                                   .extent = { image->vk.extent.width, image->vk.extent.height },
                                                   .size = image->size };
    }
+   /* Atomics can reach it as words: commands recorded before its view count. */
+   if ((image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_atomic_format(image->vk.format))
+      image_track(dev, image);
    *pImage = wg_image_to_handle(image);
    return VK_SUCCESS;
+}
+
+uint32_t
+wg_image_words(struct wg_image *image)
+{
+   if (!image->words) {
+      uint64_t at = 0;
+      for (uint32_t m = 0; m < image->vk.mip_levels; m++) {
+         image->words_at[m] = at;
+         const uint32_t layers = image->vk.image_type == VK_IMAGE_TYPE_3D ? u_minify(image->vk.extent.depth, m)
+                                                                          : image->vk.array_layers;
+         at += (uint64_t)wg_image_row_bytes(image, m) * u_minify(image->vk.extent.height, m) * layers;
+      }
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)at, 0x80 | 4 | 8); /* STORAGE | COPY_* */
+      image->words = wg_create_json(WG_KIND_BUFFER, &j);
+   }
+   return image->words;
 }
 
 /* The image's texture of plane `plane` for views of `format`, made at the first such view: its index + 1, or 0 where
@@ -1097,11 +1134,7 @@ image_alias(struct wg_device *dev, struct wg_image *image, uint32_t plane, VkFor
       warned = true;
       return 0;
    }
-   if (!image->valid) {
-      const uint32_t n = image->plane_count * image->vk.mip_levels * wg_image_valid_layers(image);
-      image->valid = malloc(n);
-      memset(image->valid, 1, n);
-   }
+   image_track(dev, image);
    const struct wg_texture_format *f = wg_texture_format(format);
    const VkExtent3D e = image->plane_count > 1 ? (VkExtent3D){ image->planes[plane].extent.width,
                                                                image->planes[plane].extent.height, 1 }
@@ -1135,6 +1168,7 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
       wg_id_release(image->planes[p].tex);
    for (uint32_t i = 0; i < image->alias_count; i++)
       wg_id_release(image->aliases[i].tex);
+   wg_id_release(image->words);
    free(image->valid);
    vk_image_destroy(&dev->vk, pAllocator, &image->vk);
 }
@@ -1297,6 +1331,9 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    view->fmt = wg_texture_format(view->vk.view_format);
    if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
       view->alias = image_alias(dev, image, 0, view->vk.view_format);
+   /* A mutable image's view atomics can reach. */
+   if ((view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_atomic_format(view->vk.view_format))
+      image_track(dev, image);
    const uint32_t tex = view->alias ? image->aliases[view->alias - 1].tex : image->tex;
    /* A depth or stencil aspect of a combined format is the image's format with an aspect in WebGPU (the runtime's
     * view format is the aspect's own). */
@@ -1451,6 +1488,7 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    wg_id_release(view->sampled);
    wg_id_release(view->faces);
    wg_id_release(view->att);
+   wg_id_release(view->word_params);
    for (uint32_t p = 1; p < view->plane_count; p++)
       wg_id_release(view->planes[p]);
    vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);

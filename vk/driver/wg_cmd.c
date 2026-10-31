@@ -216,7 +216,7 @@ static void
 record_image_use(struct wg_cmd_buffer *cmd, struct wg_image *image, uint32_t plane, uint32_t alias, uint32_t level,
                  uint32_t levels, uint32_t layer, uint32_t layers, bool write)
 {
-   if (!(image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+   if (!(image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && !image->valid)
       return;
    const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
    struct op_image_use u = { image, plane, alias, level, levels, is3d ? 0 : layer, is3d ? 1 : layers, write, false };
@@ -235,7 +235,7 @@ static void
 record_attachment_use(struct wg_cmd_buffer *cmd, const struct wg_image_view *v, bool discard)
 {
    struct wg_image *image = container_of(v->vk.image, struct wg_image, vk);
-   if (!(image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+   if (!(image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && !image->valid)
       return;
    const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
    struct op_image_use u = { image, 0, v->alias, v->vk.base_mip_level, 1, is3d ? 0 : v->vk.base_array_layer,
@@ -2566,13 +2566,57 @@ struct scan {
    bool have_ib, ib_added;
 };
 
+/* A view atomics reach as words: where they are bound from, and its parameters (wgsl_print.c `image_words`). */
+static void
+view_words(const struct wg_image_view *v, uint32_t *buffer, VkDeviceSize *at, VkDeviceSize *size, uint32_t *params)
+{
+   struct wg_image *image = container_of(v->vk.image, struct wg_image, vk);
+   *buffer = wg_image_words(image);
+   const uint32_t m = v->vk.base_mip_level, row = wg_image_row_bytes(image, m), h = u_minify(image->vk.extent.height, m);
+   const bool is3d = v->vk.view_type == VK_IMAGE_VIEW_TYPE_3D;
+   const uint32_t n = is3d ? u_minify(image->vk.extent.depth, m) : v->vk.layer_count;
+   *at = image->words_at[m] + (VkDeviceSize)row * h * (is3d ? 0 : v->vk.base_array_layer);
+   *size = (VkDeviceSize)row * h * n;
+   params[0] = u_minify(image->vk.extent.width, m), params[1] = h, params[2] = n;
+   params[3] = row / 4, params[4] = row / 4 * h;
+}
+
+/* A view's parameters' buffer. */
+static uint32_t
+view_word_params(struct wg_image_view *v)
+{
+   if (!v->word_params) {
+      uint32_t buffer, params[8] = { 0 };
+      VkDeviceSize at, size;
+      view_words(v, &buffer, &at, &size, params);
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":32,\"usage\":%u}", 0x40 | 0x8); /* UNIFORM | COPY_DST */
+      v->word_params = wg_create_json(WG_KIND_BUFFER, &j);
+      gpu_write(v->word_params, 0, params, sizeof(params));
+   }
+   return v->word_params;
+}
+
 /* A buffer resource's binding: its GPUBuffer, its offset (before any dynamic offset) and size; false for none, and
- * for a texel buffer's parameters (the driver's own buffer). */
+ * for a texel buffer's or word image's parameters (the driver's own buffers). */
 static bool
 buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descriptor *d, uint32_t *buffer,
                VkDeviceSize *at, VkDeviceSize *size)
 {
    const struct wgsl_resource *res = &p->resources[k];
+   if (d->type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+      *buffer = d->inline_buffer;
+      *at = d->offset;
+      *size = align64(MAX3(d->range, 16, res->kind == WGSL_UNIFORM ? res->size : 0), 16);
+      return true;
+   }
+   if (d->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+      if (!res->image_words || !d->view)
+         return false;
+      uint32_t words[5];
+      view_words(d->view, buffer, at, size, words);
+      return true;
+   }
    if (d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
       const struct wg_buffer_view *v = d->texel;
       if (!v || !v->mem || !v->params || (res->binding & 1))
@@ -2604,9 +2648,9 @@ use(struct replay *r, uint32_t buffer, double at, double size, bool writable)
       util_dynarray_append_typed(&r->uses, struct scope_use, ((struct scope_use){ buffer, writable, at, size }));
 }
 
-/* A mutable image's subresources used in its texture `alias` (0 its own): their bytes copied there from a texture
- * that holds them where this one doesn't (the encoder's order, so outside a pass; bytes for bytes, as views see them);
- * written, only this one holds them after. */
+/* A tracked image's subresources used in its texture `alias` (0 its own) or words (WG_IMAGE_WORDS): their bytes copied
+ * there from a place that holds them where this one doesn't (the encoder's order, so outside a pass; bytes for bytes,
+ * as views see them); written, only this one holds them after. */
 static void
 image_use(struct replay *r, const struct op_image_use *u)
 {
@@ -2617,19 +2661,29 @@ image_use(struct replay *r, const struct op_image_use *u)
    const uint32_t bit = 1u << u->alias;
    for (uint32_t m = u->level; m < u->level + u->levels; m++)
       for (uint32_t l = u->layer; l < u->layer + u->layers; l++) {
-         uint8_t *v = wg_image_valid(image, u->plane, m, l);
+         uint16_t *v = wg_image_valid(image, u->plane, m, l);
          if (!(*v & bit) && !u->discard) {
             const uint32_t from = ffs(*v) - 1;
-            const struct wg_texture_format *f = from ? image->aliases[from - 1].fmt : plane->fmt;
-            const uint32_t src = from ? image->aliases[from - 1].tex : plane->tex;
-            const uint32_t dst = u->alias ? image->aliases[u->alias - 1].tex : plane->tex;
+            const bool to_words = u->alias == WG_IMAGE_WORDS, from_words = from == WG_IMAGE_WORDS;
+            const struct wg_texture_format *f = from && !from_words ? image->aliases[from - 1].fmt : plane->fmt;
+            const uint32_t src = from && !from_words ? image->aliases[from - 1].tex : plane->tex;
+            const uint32_t dst = u->alias && !to_words ? image->aliases[u->alias - 1].tex : plane->tex;
             const uint32_t w = u_minify(image->plane_count > 1 ? plane->extent.width : image->vk.extent.width, m);
             const uint32_t h = u_minify(image->plane_count > 1 ? plane->extent.height : image->vk.extent.height, m);
             const uint32_t d = image->vk.image_type == VK_IMAGE_TYPE_3D ? u_minify(image->vk.extent.depth, m) : 1;
             const uint32_t cols = DIV_ROUND_UP(w, f->bw), rows = DIV_ROUND_UP(h, f->bh);
             end_pass(r);
-            gpu_copy_tt(src, m, 0, 0, l, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0, cols * f->bw, rows * f->bh,
-                        cols, rows, f->bytes);
+            if (to_words || from_words) {
+               const uint32_t words = wg_image_words(image), row = wg_image_row_bytes(image, m);
+               const double at = image->words_at[m] + (double)row * h * l;
+               if (to_words)
+                  gpu_copy_tb(words, at, row, h, src, m, 0, 0, l, w, h, d, 0);
+               else
+                  gpu_copy_bt(words, at, row, h, dst, m, 0, 0, l, w, h, d, 0);
+            } else {
+               gpu_copy_tt(src, m, 0, 0, l, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0, cols * f->bw,
+                           rows * f->bh, cols, rows, f->bytes);
+            }
             *v |= bit;
          }
          if (u->write)
@@ -2644,7 +2698,8 @@ bind_images(struct replay *r, const struct op_bind *b)
    const struct wg_program *p = b->program;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *res = &p->resources[k];
-      if (res->group != b->group || (res->kind != WGSL_TEXTURE && res->kind != WGSL_STORAGE_TEXTURE))
+      if (res->group != b->group ||
+          (res->kind != WGSL_TEXTURE && res->kind != WGSL_STORAGE_TEXTURE && !res->image_words))
          continue;
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       const struct wg_image_view *v = d ? d->view : NULL;
@@ -2652,10 +2707,11 @@ bind_images(struct replay *r, const struct op_bind *b)
       if (!image || !image->valid)
          continue;
       const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
-      const bool write = res->kind == WGSL_STORAGE_TEXTURE && res->access != WGSL_ACCESS_READ;
+      const bool write = res->image_words || (res->kind == WGSL_STORAGE_TEXTURE && res->access != WGSL_ACCESS_READ);
       for (uint32_t i = 0; i < MAX2(v->plane_count, 1); i++)
          util_dynarray_append_typed(&r->images, struct op_image_use,
-                                    ((struct op_image_use){ image, v->first_plane + i, v->alias, v->vk.base_mip_level,
+                                    ((struct op_image_use){ image, v->first_plane + i,
+                                                            res->image_words ? WG_IMAGE_WORDS : v->alias, v->vk.base_mip_level,
                                                             v->vk.level_count, is3d ? 0 : v->vk.base_array_layer,
                                                             is3d ? 1 : v->vk.layer_count, write }));
    }
@@ -3005,6 +3061,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                  d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) && v && v->mem && v->params)
                wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":32}", sep, res->binding,
                               v->params);
+            else if (d->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && d->view && res->kind == WGSL_UNIFORM)
+               wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":32}", sep, res->binding,
+                              view_word_params(d->view));
             else
                continue;
             break;

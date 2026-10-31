@@ -44,6 +44,13 @@ binding_ycbcr(const VkDescriptorSetLayoutBinding *b)
    return false;
 }
 
+/* The slots of a binding: an inline uniform block's count is its bytes, and it is one uniform buffer. */
+static uint32_t
+binding_slots(const VkDescriptorSetLayoutBinding *b)
+{
+   return b->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ? 1 : b->descriptorCount;
+}
+
 /* One allocation: the layout, then its tables (the runtime frees it whole when its last reference goes). A binding
  * with YCbCr conversions has two slots more an element, after the others: its views' other planes (wgsl.h). */
 static struct wg_descriptor_set_layout *
@@ -52,13 +59,13 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    uint32_t bindings = 0, slots = 0, plane_slots = 0;
    for (uint32_t i = 0; i < info->bindingCount; i++) {
       bindings = MAX2(bindings, info->pBindings[i].binding + 1);
-      slots += info->pBindings[i].descriptorCount;
+      slots += binding_slots(&info->pBindings[i]);
       if (binding_ycbcr(&info->pBindings[i]))
          plane_slots += 2 * info->pBindings[i].descriptorCount;
    }
    const uint32_t all = slots + plane_slots;
    const size_t size = sizeof(struct wg_descriptor_set_layout) + bindings * (sizeof(int32_t) + sizeof(uint32_t) +
-                       sizeof(VkDescriptorType) + sizeof(VkShaderStageFlags)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
+                       sizeof(uint32_t) + sizeof(VkDescriptorType) + sizeof(VkShaderStageFlags)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
                        (plane_slots ? bindings * sizeof(int32_t) + all * (sizeof(void *) + sizeof(int32_t)) : 0) + 32;
    struct wg_descriptor_set_layout *l = vk_descriptor_set_layout_zalloc(&dev->vk, size, info);
    if (!l)
@@ -78,6 +85,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    l->count = (uint32_t *)p, p += bindings * sizeof(uint32_t);
    l->type = (VkDescriptorType *)p, p += bindings * sizeof(VkDescriptorType);
    l->stages = (VkShaderStageFlags *)p, p += bindings * sizeof(VkShaderStageFlags);
+   l->inline_bytes = (uint32_t *)p, p += bindings * sizeof(uint32_t);
    l->dynamic = (int16_t *)p;
    l->binding_count = bindings;
    for (uint32_t b = 0; b < bindings; b++)
@@ -95,10 +103,15 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    for (uint32_t i = 0; i < info->bindingCount; i++) {
       const VkDescriptorSetLayoutBinding *b = &sorted[i];
       l->first[b->binding] = slot;
-      l->count[b->binding] = b->descriptorCount;
+      l->count[b->binding] = binding_slots(b);
+      if (b->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+         l->inline_bytes[b->binding] = b->descriptorCount;
       l->type[b->binding] = b->descriptorType;
       l->stages[b->binding] = b->stageFlags;
-      for (uint32_t e = 0; e < b->descriptorCount; e++) {
+      /* Its bytes in the set's buffer, each block where a uniform binding can start. */
+      if (b->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+         l->inline_size += align(MAX2(b->descriptorCount, 16), 256);
+      for (uint32_t e = 0; e < binding_slots(b); e++) {
          l->dynamic[slot + e] = is_dynamic(b->descriptorType) ? (int16_t)dynamic++ : -1;
          if (b->pImmutableSamplers && (b->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
                                        b->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER))
@@ -117,7 +130,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
          }
          plane_slot += 2 * b->descriptorCount;
       }
-      slot += b->descriptorCount;
+      slot += binding_slots(b);
       _mesa_blake3_update(&hash, &b->binding, sizeof(b->binding));
       _mesa_blake3_update(&hash, &b->descriptorType, sizeof(b->descriptorType));
       _mesa_blake3_update(&hash, &b->descriptorCount, sizeof(b->descriptorCount));
@@ -148,15 +161,11 @@ VKAPI_ATTR void VKAPI_CALL
 wg_GetDescriptorSetLayoutSupport(VkDevice _device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                  VkDescriptorSetLayoutSupport *pSupport)
 {
-   /* What a bind group can hold: no inline uniform blocks, nothing past the compiler's slots. */
+   /* What a bind group can hold: nothing past the compiler's slots. */
    uint32_t slots = 0;
-   bool ok = true;
-   for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++) {
-      slots += pCreateInfo->pBindings[i].descriptorCount;
-      if (pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
-         ok = false;
-   }
-   pSupport->supported = ok && slots <= 1024;
+   for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++)
+      slots += binding_slots(&pCreateInfo->pBindings[i]);
+   pSupport->supported = slots <= 1024;
    VkDescriptorSetVariableDescriptorCountLayoutSupport *v =
       vk_find_struct(pSupport->pNext, DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
    if (v)
@@ -184,6 +193,8 @@ set_destroy(struct wg_device *dev, struct wg_descriptor_set *set)
 {
    for (uint32_t i = 0; i < WG_SET_GROUPS; i++)
       wg_id_release(set->groups[i].group);
+   wg_id_release(set->inline_buffer);
+   free(set->inline_data);
    list_del(&set->link);
    vk_descriptor_set_layout_unref(&dev->vk, &set->layout->vk);
    vk_object_free(&dev->vk, NULL, set);
@@ -223,10 +234,25 @@ wg_descriptor_set_create(struct wg_device *dev, struct wg_descriptor_set_layout 
    set->uid = ++uids;
    vk_descriptor_set_layout_ref(&layout->vk);
    list_inithead(&set->link);
+   /* Inline uniform blocks: their bytes here and in a uniform buffer of the set's, written as the guest updates them
+    * (the queue's order: no pending command buffer may be using a set being updated). */
+   if (layout->inline_size) {
+      set->inline_data = calloc(1, layout->inline_size);
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", layout->inline_size, 0x40 | 0x80 | 8); /* UNIFORM | STORAGE | COPY_DST */
+      set->inline_buffer = wg_create_json(WG_KIND_BUFFER, &j);
+   }
+   uint32_t inline_at = 0;
    for (uint32_t b = 0; b < layout->binding_count; b++)
       for (uint32_t e = 0; layout->first[b] >= 0 && e < layout->count[b]; e++) {
          struct wg_descriptor *d = &set->slots[layout->first[b] + e];
          d->type = layout->type[b];
+         if (d->type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+            d->inline_buffer = set->inline_buffer;
+            d->offset = inline_at;
+            d->range = layout->inline_bytes[b];
+            inline_at += align(MAX2(layout->inline_bytes[b], 16), 256);
+         }
          d->sampler = layout->immutable[layout->first[b] + e];
          if (layout->planes && layout->planes[b] >= 0)
             for (uint32_t p = 0; p < 2; p++)
@@ -341,13 +367,51 @@ write_one(struct wg_descriptor_set *set, struct wg_descriptor *d, VkDescriptorTy
       d->range = buffer->range;
       break;
    default:
-      break; /* inline blocks: not offered */
+      break; /* inline uniform blocks: below */
+   }
+}
+
+/* The bytes of a set's inline uniform blocks from `offset` of `binding`, on into the next binding past its end
+ * (Vulkan's consecutive binding updates): the run in this block, its bytes at `at`. Binding and offset move past it. */
+static uint32_t
+inline_run(const struct wg_descriptor_set *set, uint32_t *binding, uint32_t *offset, uint32_t size, uint32_t *at)
+{
+   const struct wg_descriptor_set_layout *l = set->layout;
+   while (*binding < l->binding_count &&
+          (l->first[*binding] < 0 || l->type[*binding] != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ||
+           *offset >= l->inline_bytes[*binding])) {
+      if (l->first[*binding] >= 0 && l->type[*binding] == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+         *offset -= l->inline_bytes[*binding];
+      ++*binding;
+   }
+   if (*binding >= l->binding_count)
+      return 0;
+   const uint32_t n = MIN2(size, l->inline_bytes[*binding] - *offset);
+   *at = set->slots[l->first[*binding]].offset + *offset;
+   *offset += n;
+   return n;
+}
+
+static void
+inline_write(struct wg_descriptor_set *set, uint32_t binding, uint32_t offset, const void *data, uint32_t size)
+{
+   const uint8_t *p = data;
+   for (uint32_t n, at; size && (n = inline_run(set, &binding, &offset, size, &at)); p += n, size -= n) {
+      memcpy(set->inline_data + at, p, n);
+      gpu_write(set->inline_buffer, at, set->inline_data + at, n);
    }
 }
 
 void
 wg_descriptor_write(struct wg_descriptor_set *set, const VkWriteDescriptorSet *w)
 {
+   if (w->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+      const VkWriteDescriptorSetInlineUniformBlock *b =
+         vk_find_struct_const(w->pNext, WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
+      if (b)
+         inline_write(set, w->dstBinding, w->dstArrayElement, b->pData, b->dataSize);
+      return;
+   }
    for (uint32_t i = 0; i < w->descriptorCount; i++) {
       struct wg_descriptor *d = slot(set, w->dstBinding, w->dstArrayElement + i);
       if (d)
@@ -367,6 +431,15 @@ wg_UpdateDescriptorSets(VkDevice _device, uint32_t writeCount, const VkWriteDesc
    for (uint32_t i = 0; i < copyCount; i++) {
       VK_FROM_HANDLE(wg_descriptor_set, src, copies[i].srcSet);
       VK_FROM_HANDLE(wg_descriptor_set, dst, copies[i].dstSet);
+      if (src->layout->type[copies[i].srcBinding] == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+         uint32_t binding = copies[i].srcBinding, offset = copies[i].srcArrayElement;
+         uint32_t to = copies[i].dstArrayElement, size = copies[i].descriptorCount, to_binding = copies[i].dstBinding;
+         for (uint32_t n, at; size && (n = inline_run(src, &binding, &offset, size, &at)); size -= n) {
+            inline_write(dst, to_binding, to, src->inline_data + at, n);
+            to += n;
+         }
+         continue;
+      }
       for (uint32_t e = 0; e < copies[i].descriptorCount; e++) {
          const struct wg_descriptor *s = slot(src, copies[i].srcBinding, copies[i].srcArrayElement + e);
          struct wg_descriptor *d = slot(dst, copies[i].dstBinding, copies[i].dstArrayElement + e);
@@ -389,6 +462,10 @@ wg_descriptor_write_template(struct wg_descriptor_set *set, const struct vk_desc
 {
    for (uint32_t i = 0; i < t->entry_count; i++) {
       const struct vk_descriptor_template_entry *e = &t->entries[i];
+      if (e->type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+         inline_write(set, e->binding, e->array_element, (const uint8_t *)data + e->offset, e->array_count);
+         continue;
+      }
       for (uint32_t k = 0; k < e->array_count; k++) {
          struct wg_descriptor *d = slot(set, e->binding, e->array_element + k);
          const void *p = (const uint8_t *)data + e->offset + k * e->stride;

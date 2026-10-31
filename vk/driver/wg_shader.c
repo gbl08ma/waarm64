@@ -717,7 +717,8 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
    X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs)
 #define RESOURCE_FIELDS(X)                                                                                             \
-   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(written) X(nonfiltering) X(access) X(format) X(size)
+   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(written) X(nonfiltering) X(image_words) X(access) \
+   X(format) X(size)
 
 static void
 program_write(struct blob *b, const struct wg_program *p)
@@ -915,7 +916,7 @@ fold_uniforms(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *l
                      room -= l->count[b];
                   continue;
                }
-               if (t != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+               if (t != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && t != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
                   continue;
                for (uint32_t e = 0; e < l->count[b]; e++) {
                   if (room-- > 0)
@@ -1046,6 +1047,12 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
                if (x->kind == WGSL_STORAGE_TEXTURE && y->kind == WGSL_STORAGE_TEXTURE && x->group == y->group &&
                    x->binding == y->binding && x->access != y->access) {
                   snprintf(error, sizeof(error), "a storage image the stages access differently (group %u binding %u)",
+                           x->group, x->binding);
+                  ok = false;
+               }
+               /* A storage image one stage reaches by an atomic (so as its words, a buffer) and another as a texture. */
+               if (x->group == y->group && x->binding == y->binding && (x->image_words != y->image_words)) {
+                  snprintf(error, sizeof(error), "a storage image with atomics in one stage only (group %u binding %u)",
                            x->group, x->binding);
                   ok = false;
                }

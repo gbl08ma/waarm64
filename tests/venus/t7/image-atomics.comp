@@ -1,0 +1,18 @@
+#version 450
+// VK4 T7: atomics on a storage image and a texel buffer, with loads, stores and sizes of the same bindings.
+layout(local_size_x = 8) in;
+layout(set = 0, binding = 0, r32ui) uniform coherent uimage2DArray img;
+layout(set = 0, binding = 1, r32i) uniform coherent iimageBuffer tb;
+layout(set = 0, binding = 2) buffer Out { uint size[3]; uint old[8]; uint swapped[8]; int mins[8]; uint far; int tbfar; } o;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  ivec3 p = ivec3(i & 3, 1, 1);
+  o.size[0] = imageSize(img).x; o.size[1] = imageSize(img).y; o.size[2] = imageSize(img).z;
+  o.old[i] = imageAtomicAdd(img, p, 1u << i);
+  imageStore(img, ivec3(i, 0, 0), uvec4(100u + i));
+  o.swapped[i] = imageAtomicCompSwap(img, ivec3(i, 0, 0), 100u + i, 200u + i);
+  o.mins[i] = imageAtomicMin(tb, int(i), -int(i));
+  // Past the view: nothing written, 0 read.
+  o.far = imageAtomicAdd(img, ivec3(100, 0, 0), 1u) + imageLoad(img, ivec3(0, 100, 0)).x;
+  o.tbfar = imageAtomicAdd(tb, 100, 1);
+}

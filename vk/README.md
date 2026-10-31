@@ -165,7 +165,7 @@ integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arith
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), image atomics, `textureQueryLod`, and
+16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's, `textureQueryLod`, and
 storage images with an access WebGPU doesn't give their format: loaded and stored (`read_write`) but r32's (in core)
 and, with `texture-formats-tier2`, tier2's; `bgra8unorm` but write-only (VK3 L4c-F: the module used to be invalid and
 its submits dropped; the formats stay advertised as storage images, their write-only and read-only uses being right).
@@ -459,6 +459,23 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   **Component swizzles** are WebGPU's (`texture-component-swizzle`): such a view has a twin with the mapping (`sampled`,
   allowed only on a view that's just sampled), which sampled bindings take. Without the feature they are ignored and
   said once: it is in Chromium on every backend, and a fallback in the shader would need texel fetches too.
+- **Image atomics** (VK4 T7; `image_words` in wgsl_print.c, `image_use` in wg_cmd.c): WGSL has no atomics on textures, so a
+  storage image an atomic reaches is, in that stage, its view's words: a storage buffer of atomics at its binding and the
+  view's parameters (`view_word_params`: size, words between rows and slices) a uniform buffer at the next, every load,
+  store and size of that binding going through them (`wg_im_*`; a texel past the view is left alone and reads 0). The
+  buffer is the image's own (`wg_image_words`, made at the first such binding: every level and layer, rows 256-aligned as
+  WebGPU's copies want them) and one more place `wg_image.valid` tracks, alongside the alias textures (below): the scan of
+  a scope's descriptors copies a subresource from its texture before a word binding uses it, and a later use elsewhere
+  copies it back, in the encoder's order, so a program whose images stay words pays one copy. An image of R32_UINT or
+  R32_SINT with storage usage is tracked from its making (a mutable image from such a view), and has the copy usages. Only
+  R32 (`wg_atomic_format`, what Vulkan requires; no float or 64-bit atomics), optimal tiling, no sparse images. A pipeline
+  with atomics on an image in one stage and a texture access of it in another is refused. Within one scope a binding of
+  the words and a binding of the texture don't see each other's writes (as T4's views).
+- **Inline uniform blocks** (VK4 T7, `wg_descriptor.c`): the binding is one slot, a uniform buffer to the translator and
+  to `fold_uniforms`. A set with blocks has their bytes (`inline_data`) and a buffer of its own, each block 256-aligned;
+  writes, template updates and copies go into both at once (`gpu_write`, the queue's order: Vulkan forbids updating a set
+  a pending command buffer uses), rolling on into the next binding past a block's end. 1.3's minimums of four blocks a
+  stage and a set, 4,096 bytes each, no update-after-bind (`wg_bindings_fit` counts each as a uniform buffer).
 - **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
   format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
   image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).
