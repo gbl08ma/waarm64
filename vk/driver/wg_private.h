@@ -14,6 +14,7 @@
 #include "util/list.h"
 #include "util/mesa-blake3.h"
 #include "util/u_dynarray.h"
+#include "util/vma.h"
 #include "vk_alloc.h"
 #include "vk_buffer.h"
 #include "vk_buffer_view.h"
@@ -219,8 +220,18 @@ struct wg_device {
     * `shadow_place`): `shadow_size` bytes, places taken in order within a submit from `shadow_used`. */
    uint32_t shadow;
    uint64_t shadow_size, shadow_used;
+   /* Memory with device addresses (VK4 T7; vk/README.md "Device addresses"): all of it in one GPUBuffer, grown in place
+    * (`address_gen` counts that, for the bind groups that name it), an address being a byte of it. */
+   uint32_t address_buffer, address_gen;
+   uint64_t address_size;
+   struct util_vma_heap address_heap;
+   bool address_heap_made;
+   struct list_head address_memories;
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
+/* The bytes a memory's GPUBuffer has past it, for a uniform block declared past the range bound. */
+uint32_t wg_address_buffer(struct wg_device *dev);
+#define wg_memory_pad(mem) ((mem)->address ? (uint64_t)(64u << 10) : WG_MEMORY_PAD)
 #define WG_FAN_VERTICES 65536
 /* Whether a vertex shader's outputs are captured by transform feedback (wgsl_info.xfb_stride). */
 #define wg_shader_xfb(s) ((s)->info.xfb_stride[0] | (s)->info.xfb_stride[1] | (s)->info.xfb_stride[2] | (s)->info.xfb_stride[3])
@@ -239,7 +250,10 @@ struct wg_device_memory {
    struct vk_device_memory vk;
    uint8_t *data;
    uint32_t gpu;
+   uint64_t gpu_at; /* where it starts in `gpu`: 0 but in the device's address buffer (`address`) */
    uint64_t size;   /* the buffer's (4-byte aligned) */
+   bool address;    /* allocated for device addresses */
+   struct list_head address_link;
    bool host;
    bool dirty;      /* all of it written (made, moved): uploaded whole at the next submit */
    bool owned;      /* `data` is ours to free */
@@ -263,7 +277,8 @@ uint32_t wg_memory_texture(VkDeviceMemory memory);
 struct wg_buffer {
    struct vk_buffer vk;
    struct wg_device_memory *mem;
-   VkDeviceSize offset;
+   VkDeviceSize offset;     /* in its memory's GPUBuffer (past `gpu_at`) */
+   VkDeviceSize mem_offset; /* in its memory, as the CPU's bytes are */
 };
 
 #define WG_IMAGE_ALIASES 7

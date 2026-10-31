@@ -1636,7 +1636,7 @@ xfb_mark(struct wg_cmd_buffer *cmd, uint32_t kind, uint32_t first, uint32_t coun
          const VkDeviceSize at = c->offset + (offsets ? offsets[b - first] : 0);
          wg_json_printf(&j, "%s[%u,%llu]", b ? "," : "", buffer_gpu(c), (unsigned long long)at);
          if (kind && c->mem->host)
-            o.readback[n].mem = c->mem, o.readback[n].offset = at, o.readback[n++].size = 4;
+            o.readback[n].mem = c->mem, o.readback[n].offset = at - c->mem->gpu_at, o.readback[n++].size = 4;
       } else {
          wg_json_printf(&j, "%snull", b ? "," : "");
       }
@@ -1651,7 +1651,7 @@ xfb_mark(struct wg_cmd_buffer *cmd, uint32_t kind, uint32_t first, uint32_t coun
             wg_json_printf(&j, "%s[%u,%llu,%llu]", b ? "," : "", buffer_gpu(x), (unsigned long long)at,
                            (unsigned long long)cmd->xfb[b].size);
             if (x->mem->host)
-               o.readback[n].mem = x->mem, o.readback[n].offset = at, o.readback[n++].size = cmd->xfb[b].size;
+               o.readback[n].mem = x->mem, o.readback[n].offset = at - x->mem->gpu_at, o.readback[n++].size = cmd->xfb[b].size;
          } else {
             wg_json_printf(&j, "%snull", b ? "," : "");
          }
@@ -1841,7 +1841,7 @@ wg_CmdCopyBuffer2(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2 *info)
       emit(cmd, OP_COPY_BB,
            &(struct op_copy_bb){ .src = buffer_gpu(src), .dst = buffer_gpu(dst), .src_offset = src->offset + r->srcOffset,
                                  .dst_offset = dst->offset + r->dstOffset, .size = r->size, .dst_mem = host_mem(dst),
-                                 .dst_mem_offset = dst->offset + r->dstOffset },
+                                 .dst_mem_offset = dst->mem_offset + r->dstOffset },
            sizeof(struct op_copy_bb));
    }
 }
@@ -1883,7 +1883,7 @@ copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct 
       };
       if (op == OP_COPY_TB && host_mem(buffer)) {
          c.mem = buffer->mem;
-         c.mem_offset = offset;
+         c.mem_offset = offset - buffer->mem->gpu_at;
          c.mem_size = (VkDeviceSize)bpr * rows * (depth - 1) + (VkDeviceSize)bpr * (DIV_ROUND_UP(e.height, f->bh) - 1) +
                       DIV_ROUND_UP(e.width, f->bw) * bytes;
       }
@@ -2065,7 +2065,7 @@ wg_CmdFillBuffer(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize o
       return;
    emit(cmd, OP_FILL,
         &(struct op_fill){ .buffer = buffer_gpu(b), .value = data, .size = size, .offset = b->offset + offset,
-                           .mem = host_mem(b), .mem_offset = b->offset + offset },
+                           .mem = host_mem(b), .mem_offset = b->mem_offset + offset },
         sizeof(struct op_fill));
 }
 
@@ -2077,7 +2077,7 @@ wg_CmdUpdateBuffer(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize
    VK_FROM_HANDLE(wg_buffer, b, _buffer);
    struct op_fill *op = emit(cmd, OP_UPDATE, NULL, sizeof(struct op_fill) + size);
    *op = (struct op_fill){ .buffer = buffer_gpu(b), .size = size, .offset = b->offset + offset, .mem = host_mem(b),
-                           .mem_offset = b->offset + offset };
+                           .mem_offset = b->mem_offset + offset };
    memcpy(op + 1, data, size);
 }
 
@@ -2267,6 +2267,7 @@ struct replay {
    /* Multiview: the pass's mask, how many of its views have been replayed, this one, and where the pass starts again. */
    uint32_t view_mask, view_order, view;
    const uint8_t *pass_op;
+   uint32_t address_use; /* the scope's pointers' binding: 0 none, 1 read, 2 written */
    /* Draw parameters (VK3 L7.5): the next draw's (base vertex, base instance, draw index) and, for an indirect draw,
     * the place `prepasses` copied its arguments' into (UINT32_MAX: none); those the current place holds, where
     * `dp_valid`; the render pass's indirect draws' places, in their order (uint32_t), the next one `dp_next`. */
@@ -2602,11 +2603,13 @@ struct scope_use {
    uint32_t buffer;
    bool writable;
    double at, size;
+   bool address; /* the pointers' binding, of the whole address buffer */
 };
 
 struct shadow {
    uint32_t buffer, to; /* the GPUBuffer read, and the shadow buffer its copy is in */
    double at, size, place;
+   bool written;        /* copied back at the scope's end */
 };
 
 /* What the render pass a scan starts at uses: the bindings in force at each of its draws (`scan_pass`). */
@@ -2619,6 +2622,17 @@ struct scan {
    struct op_ib ib;
    bool have_ib, ib_added;
 };
+
+/* Whether a group holds the pointers' binding, written. */
+static bool
+res_written(const struct wg_program *p, uint32_t group)
+{
+   for (uint32_t k = 0; k < p->resource_count; k++)
+      if (p->resources[k].group == group && p->resources[k].binding == WGSL_ADDRESS_BINDING &&
+          p->resources[k].kind == WGSL_STORAGE)
+         return true;
+   return false;
+}
 
 /* A view atomics reach as words: where they are bound from, and its parameters (wgsl_print.c `image_words`). */
 static void
@@ -2688,10 +2702,10 @@ buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descripto
    /* A uniform block the shader declares larger than the range bound (std140 rounds up, or a block declared past
     * it): the memory's GPUBuffer has WG_MEMORY_PAD bytes past its end for it, the block at most that. */
    if (res->kind == WGSL_UNIFORM)
-      *size = MIN2(MAX2(*size, res->size), d->buffer->mem->size + WG_MEMORY_PAD - *at);
-   /* WebGPU binds storage in whole words; a buffer of an odd size bound whole loses its last bytes' word. */
-   else if (*size > 4)
-      *size &= ~3ull;
+      *size = MIN2(MAX2(*size, res->size), d->buffer->mem->gpu_at + d->buffer->mem->size + wg_memory_pad(d->buffer->mem) - *at);
+   /* WebGPU binds storage in whole words; a memory is whole words, so a range of an odd size has room for its last. */
+   else
+      *size = align64(*size, 4);
    return true;
 }
 
@@ -2699,7 +2713,7 @@ static void
 use(struct replay *r, uint32_t buffer, double at, double size, bool writable)
 {
    if (buffer)
-      util_dynarray_append_typed(&r->uses, struct scope_use, ((struct scope_use){ buffer, writable, at, size }));
+      util_dynarray_append_typed(&r->uses, struct scope_use, ((struct scope_use){ buffer, writable, at, size, false }));
 }
 
 /* A tracked image's subresources used in its texture `alias` (0 its own) or words (WG_IMAGE_WORDS): their bytes copied
@@ -2802,6 +2816,12 @@ bind_uses(struct replay *r, const struct op_bind *b)
       if ((res->kind != WGSL_UNIFORM && res->kind != WGSL_STORAGE && res->kind != WGSL_STORAGE_READ) ||
           p->dynamic[k] == WG_DYNAMIC_PUSH)
          continue;
+      if (res->binding == WGSL_ADDRESS_BINDING) {
+         util_dynarray_append_typed(&r->uses, struct scope_use,
+                                    ((struct scope_use){ wg_address_buffer(r->dev), res->kind == WGSL_STORAGE, 0,
+                                                         r->dev->address_size, true }));
+         continue;
+      }
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       uint32_t buffer;
       VkDeviceSize at, size;
@@ -2902,6 +2922,11 @@ find_shadow(const struct replay *r, uint32_t buffer, double at, double size)
 static bool
 conflicts(const struct replay *r, const struct scope_use *u)
 {
+   /* The pointers' binding is the whole address buffer, so a writable descriptor of it would alias it, which WebGPU
+    * refuses: that one goes to a shadow and comes back at the scope's end (bytes reached both ways in one scope don't
+    * see each other), and reads conflict only with pointers that write. */
+   if (r->address_use && u->buffer == r->dev->address_buffer)
+      return !u->address && (u->writable || r->address_use == 2);
    if (u->writable)
       return false;
    util_dynarray_foreach (&r->written, uint32_t, w)
@@ -2915,7 +2940,10 @@ static bool
 scope_conflicts(struct replay *r)
 {
    util_dynarray_clear(&r->written);
+   r->address_use = 0;
    util_dynarray_foreach (&r->uses, struct scope_use, u) {
+      if (u->address)
+         r->address_use = MAX2(r->address_use, u->writable ? 2 : 1);
       bool known = !u->writable;
       util_dynarray_foreach (&r->written, uint32_t, w)
          known |= *w == u->buffer;
@@ -2960,7 +2988,7 @@ shadow_place(struct wg_device *dev, double size, uint32_t *to, double *place)
       dev->shadow_size = MIN2(grown, most);
       struct wg_json j = { 0 };
       /* COPY_DST | INDEX | VERTEX | UNIFORM | STORAGE | INDIRECT */
-      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)dev->shadow_size, 0x1f8);
+      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)dev->shadow_size, 0x1fc);
       dev->shadow = wg_create_json(WG_KIND_BUFFER, &j);
       dev->shadow_used = 0;
    }
@@ -3010,11 +3038,14 @@ scope_shadows(struct replay *r)
       }
       const uint32_t buffer = (uint32_t)v[3 * first];
       gpu_copy_bb(buffer, lo, to, place, hi - lo);
-      util_dynarray_foreach (&r->uses, struct scope_use, u)
-         if (u->buffer == buffer && u->at >= lo && u->at + u->size <= hi && conflicts(r, u) &&
-             !find_shadow(r, u->buffer, u->at, u->size))
+      util_dynarray_foreach (&r->uses, struct scope_use, u) {
+         struct shadow *known = (struct shadow *)find_shadow(r, u->buffer, u->at, u->size);
+         if (known)
+            known->written |= u->writable && conflicts(r, u);
+         else if (u->buffer == buffer && u->at >= lo && u->at + u->size <= hi && conflicts(r, u))
             util_dynarray_append_typed(&r->shadows, struct shadow,
-                                       ((struct shadow){ buffer, to, u->at, u->size, place + (u->at - lo) }));
+                                       ((struct shadow){ buffer, to, u->at, u->size, place + (u->at - lo), u->writable }));
+      }
    }
    util_dynarray_fini(&spans);
    return util_dynarray_num_elements(&r->shadows, struct shadow) != 0;
@@ -3055,6 +3086,11 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
       const uint32_t words[2] = { version, r->dev->push_gen };
       version = _mesa_hash_data(words, sizeof(words)) | 1u << 31;
    }
+   /* The address buffer grown: groups of it are of the old buffer. */
+   if (holder && r->dev->address_gen) {
+      const uint32_t words[2] = { version, r->dev->address_gen };
+      version = _mesa_hash_data(words, sizeof(words)) | 1u << 31;
+   }
    /* A group reading a shadow is the scope's own. */
    if (util_dynarray_num_elements(&r->shadows, struct shadow)) {
       uint32_t n = 0;
@@ -3064,13 +3100,15 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
             continue;
          const uint32_t dynamic = p->dynamic[k] >= 0 && n < b->offset_count ? b->offsets[n] : 0;
          n += p->dynamic[k] != -1;
-         if ((res->kind != WGSL_UNIFORM && res->kind != WGSL_STORAGE_READ) || p->dynamic[k] == WG_DYNAMIC_PUSH)
+         if ((res->kind != WGSL_UNIFORM && res->kind != WGSL_STORAGE_READ && res->kind != WGSL_STORAGE) ||
+             p->dynamic[k] == WG_DYNAMIC_PUSH)
             continue;
          const struct wg_descriptor *d = bound_descriptor(b, p, k);
          uint32_t buffer;
          VkDeviceSize at, size;
-         *shadowed = d && buffer_binding(p, k, d, &buffer, &at, &size) &&
-                     find_shadow(r, buffer, (double)at + dynamic, size);
+         const struct shadow *s = d && buffer_binding(p, k, d, &buffer, &at, &size)
+                                     ? find_shadow(r, buffer, (double)at + dynamic, size) : NULL;
+         *shadowed = s && (res->kind != WGSL_STORAGE || s->written);
       }
    }
    /* In a multiview pass an input attachment reads its view's layer (declared 2D, its binding that layer): a group a
@@ -3106,6 +3144,12 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          continue;
       }
       push_only = false;
+      if (res->binding == WGSL_ADDRESS_BINDING) {
+         wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":%llu}", sep, res->binding,
+                        wg_address_buffer(r->dev), (unsigned long long)r->dev->address_size);
+         first = false;
+         continue;
+      }
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       if (!d)
          continue;
@@ -3129,8 +3173,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                continue;
             break;
          }
-         const struct shadow *s = res->kind != WGSL_STORAGE && *shadowed
-                                     ? find_shadow(r, buffer, (double)at + dynamic, size) : NULL;
+         const struct shadow *s = *shadowed ? find_shadow(r, buffer, (double)at + dynamic, size) : NULL;
+         if (s && res->kind == WGSL_STORAGE && !s->written)
+            s = NULL;
          if (s) {
             buffer = s->to;
             at = (VkDeviceSize)s->place;
@@ -3173,7 +3218,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          p->push_group_gen = r->dev->push_gen;
          return group;
       }
-      *transient = true; /* an empty group: released once the submit is encoded */
+      *transient = true; /* an empty group, or the pointers' alone: released once the submit is encoded */
+      if (res_written(p, b->group))
+         goto found;
       return group;
    }
    if (*shadowed) {
@@ -3201,14 +3248,21 @@ found:
       n += p->dynamic[k] != -1;
       if (res->kind != WGSL_STORAGE || !res->written)
          continue;
+      /* Written through pointers, wherever they lead. */
+      if (res->binding == WGSL_ADDRESS_BINDING) {
+         list_for_each_entry (struct wg_device_memory, mem, &r->dev->address_memories, address_link)
+            if (mem->host)
+               readback(r, mem, 0, mem->size);
+         continue;
+      }
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       if (d && d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
          if (d->texel && d->texel->mem && d->texel->mem->host)
-            readback(r, d->texel->mem, d->texel->at, d->texel->size);
+            readback(r, d->texel->mem, d->texel->at - d->texel->mem->gpu_at, d->texel->size);
          continue;
       }
       if (d && d->buffer && d->buffer->mem && d->buffer->mem->host)
-         readback(r, d->buffer->mem, d->buffer->offset + d->offset + dynamic,
+         readback(r, d->buffer->mem, d->buffer->mem_offset + d->offset + dynamic,
                   vk_buffer_range(&d->buffer->vk, d->offset, d->range));
    }
    return group;
@@ -3238,6 +3292,15 @@ scope_end(struct replay *r, uint32_t point)
 {
    if (!util_dynarray_num_elements(&r->shadows, struct shadow))
       return;
+   /* What the scope wrote in a shadow, back where it belongs. */
+   util_dynarray_foreach (&r->shadows, struct shadow, s)
+      if (s->written) {
+         end_pass(r);
+         break;
+      }
+   util_dynarray_foreach (&r->shadows, struct shadow, s)
+      if (s->written)
+         gpu_copy_bb(s->to, s->place, s->buffer, s->at, s->size);
    util_dynarray_clear(&r->shadows);
    r->no_readback = true;
    for (uint32_t g = 0; g < WGSL_MAX_GROUPS; g++)
@@ -3418,12 +3481,12 @@ copy_queries(struct replay *r, const struct op_copy_query *q)
          if (buf)
             gpu_update(buf, at + from, bytes + from, to - from);
          if (!gpu && host_mem(q->dst))
-            cpu_write(r, q->dst->mem, at + from, bytes + from, to - from, false, 0);
+            cpu_write(r, q->dst->mem, at - q->dst->mem->gpu_at + from, bytes + from, to - from, false, 0);
       }
    }
    /* An occlusion query's value is the GPU's: read back what the copy wrote to host-visible memory. */
    if (gpu && host_mem(q->dst))
-      readback(r, q->dst->mem, base, (q->count - 1) * q->stride + each);
+      readback(r, q->dst->mem, base - q->dst->mem->gpu_at, (q->count - 1) * q->stride + each);
 }
 
 static void
@@ -3864,7 +3927,7 @@ upload_range(struct wg_device *dev, struct wg_device_memory *mem, VkDeviceSize o
    const VkDeviceSize end = off + len;
    const uint32_t n = spans(dev, NULL, mem, off, end);
    if (!n) {
-      gpu_write(mem->gpu, off, mem->data + off, len);
+      gpu_write(mem->gpu, mem->gpu_at + off, mem->data + off, len);
       return;
    }
    const struct span *sp = span_list.data;
@@ -3887,12 +3950,12 @@ upload_range(struct wg_device *dev, struct wg_device_memory *mem, VkDeviceSize o
       }
       if (keep && !wrote) {
          if (w > run)
-            gpu_write(mem->gpu, run, mem->data + run, w - run);
+            gpu_write(mem->gpu, mem->gpu_at + run, mem->data + run, w - run);
          run = w + 4;
       }
    }
    if (end > run)
-      gpu_write(mem->gpu, run, mem->data + run, end - run);
+      gpu_write(mem->gpu, mem->gpu_at + run, mem->data + run, end - run);
 }
 
 /* A submit's ranges' bases: the CPU's bytes before its look at the write-watch. */
@@ -3975,7 +4038,7 @@ linear_images(struct wg_device *dev, bool load, struct replay *r)
             if (at + l.size > image->mem->size)
                continue;
             const uint32_t rows = DIV_ROUND_UP(e.height, image->fmt->bh);
-            (load ? gpu_copy_bt : gpu_copy_tb)(image->mem->gpu, (double)at, (uint32_t)l.rowPitch, rows, image->tex,
+            (load ? gpu_copy_bt : gpu_copy_tb)(image->mem->gpu, (double)(image->mem->gpu_at + at), (uint32_t)l.rowPitch, rows, image->tex,
                                                level, 0, 0, is3d ? 0 : layer, e.width, e.height, is3d ? e.depth : 1, 0);
             if (!load)
                readback(r, image->mem, at, l.size);
@@ -4139,7 +4202,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    snapshot(s);
    upload(dev);
    util_dynarray_foreach (&s->readbacks, struct readback, b)
-      b->slot = gpu_readback(b->mem->gpu, b->offset, b->size);
+      b->slot = gpu_readback(b->mem->gpu, b->mem->gpu_at + b->offset, b->size);
    util_dynarray_foreach (&s->queries, struct query_readback, q)
       q->slot = gpu_readback(q->pool->buf, q->lo * 8.0, (q->hi - q->lo) * 8);
    util_dynarray_fini(&r.pass_queries);

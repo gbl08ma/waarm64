@@ -139,6 +139,7 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_border_color_swizzle = true,
       /* A uniform buffer of the set's, written as the guest updates the blocks (wg_descriptor.c). */
       .EXT_inline_uniform_block = true,
+      .KHR_buffer_device_address = true,
       /* Not translated: 16-bit integers, texel buffers (EXT_texel_buffer_alignment). */
    };
 }
@@ -164,6 +165,8 @@ wg_caps_features(struct vk_features *f)
       .inlineUniformBlock = true,
       /* A pass per view (wg_cmd.c `begin_rendering`), no geometry or tessellation to multiply. */
       .multiview = true,
+      /* Bytes of one GPUBuffer (wgsl_nir.c `lower_global`). */
+      .bufferDeviceAddress = true,
       .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE),
       .shaderClipDistance = HAS(CLIP_DISTANCES),
       /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
@@ -176,6 +179,8 @@ wg_caps_features(struct vk_features *f)
       .sampleRateShading = true,
       .imagelessFramebuffer = true,
       .uniformBufferStandardLayout = true,
+      /* Every access is by words at explicit offsets. */
+      .scalarBlockLayout = true,
       .shaderSubgroupExtendedTypes = true,
       .shaderFloat16 = HAS(F16),
       .storageBuffer16BitAccess = true,

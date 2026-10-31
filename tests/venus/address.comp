@@ -1,0 +1,13 @@
+#version 450
+// VK4 T7: through pointers and through a descriptor of the same memory in one dispatch, after the address buffer grew.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 4) in;
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words { uint v[]; };
+layout(push_constant) uniform Push { Words from, to; } p;
+layout(set = 0, binding = 0, std430) buffer Out { uint o[4]; } d;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  d.o[i] = p.from.v[i] + i;
+  p.to.v[i + 8] = 100 + i;
+}

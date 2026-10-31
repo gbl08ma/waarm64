@@ -690,6 +690,8 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
          r->size = p->push_ubo_size;
          continue;
       }
+      if (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING)
+         continue;
       /* The set whose slots hold the binding: the last of its group starting at or before it. */
       const uint32_t at = r->binding / 2;
       for (uint32_t s = 0; s < p->set_count; s++)

@@ -1,0 +1,10 @@
+#version 450
+// VK4 T7: two inline uniform blocks, written together by one template update that runs on from the first into the second.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) uniform A { uvec4 a; };
+layout(set = 0, binding = 1) uniform B { uvec4 b; };
+layout(set = 0, binding = 2, std430) buffer Out { uint o[4]; };
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  o[i] = a[i] + 1000 * b[i];
+}

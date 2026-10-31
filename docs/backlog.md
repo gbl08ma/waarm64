@@ -783,7 +783,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     multisampled storage): checked once by reporting samples for storage in a throwaway build, 113 of 371 passing, none
     failing, the rest not supported (`results/vk4/t4/store-probe/`). The copies' cost on a program isn't measured
     (ffmpeg's and libplacebo's filters are the ones to measure: whole subresources, per switch of format).
-  - **Multisampled arrays** (VK4 T4: 380 of `image.mutable`, T12's): WebGPU's multisampled textures have one layer. A
+  - **Multisampled arrays** (VK4 T4: 380 of `image.mutable`, T12's; VK4 T7: the 48 of `multiview.*multisample*`): WebGPU's multisampled textures have one layer. A
     multisampled 2D texture per layer would serve rendering and resolves, which go a layer at a time, at no cost past
     the bookkeeping (the aliases' per-subresource shape fits); a shader sampling a whole multi-layer `sampler2DMSArray`
     needs a binding per layer and a switch on the layer in the translator. Not a compute emulation: WGSL can't write a
@@ -873,7 +873,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     aren't advertised.
   - **Usage scopes' leftovers** (VK4 T3: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: two writable bindings of one memory whose ranges
-    overlap in one scope ("Writable storage buffer binding aliasing": no copy serves both; a GPUBuffer per `VkBuffer`
+    overlap in one scope (but pointers beside a descriptor: VK4 T7; "Writable storage buffer binding aliasing": no copy serves both; a GPUBuffer per `VkBuffer`
     with copies between those that alias, or one binding the shader indexes for both); a draw reading a range an
     earlier draw of its render pass wrote through storage reads the pass's starting bytes (a barrier within a pass, by
     region; splitting the WebGPU pass there would serve it); a range past `maxBufferSize` isn't copied (warned, the
@@ -911,9 +911,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     holds a slot of the guest's control queue, 16 on the page, and a full queue blocks the ioctl. A larger queue isn't
     the fix: that queue being full is what paces a compositor (docs/devices.md, "Flush replies are paced"), and 256 of
     them would put 4 s of replies ahead of each fence. Retiring fences early past a bound would bring T6's bug back.
+  - **Device addresses' leftovers** (VK4 T7; vk/README.md "Device addresses"): all address memory is one storage binding
+    away, so an allocation with the flag past `maxStorageBufferBindingSize` fails though the heap has room: DXVK puts every
+    allocation there (no shader of it reads through pointers, so it needs none of this but the place). Every use of a
+    GPUBuffer shared by all address memory counts as that buffer's, so a scope that writes storage of any address memory
+    copies its reads of all of it: unmeasured on a program. `shaderInt64` (`OpConvertUToPtr`, 504 of
+    `buffer_device_address`) and capture and replay (`bufferDeviceAddressCaptureReplay`) aren't offered; the 64 KiB past each
+    memory bounds a uniform block widened past its range there.
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
-    they go): buffer device addresses (VK4 T7's) and
-    `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
+    they go): `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
     guarantees without checking them fails at pipeline or descriptor creation.
   - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%
     by more than 24, the same counts on SwiftShader and on the M4's Metal (so not the GPU's rasterization), its text

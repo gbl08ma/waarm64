@@ -67,8 +67,8 @@ wgsl_nir_options(void)
    return &options;
 }
 
-/* Buffers by binding and offset, push constants and shared memory by offset; no physical pointers (bufferDeviceAddress
- * isn't offered). */
+/* Buffers by binding and offset, push constants and shared memory by offset; physical pointers as two 32-bit words
+ * (no 64-bit values), the low one a byte of the device's address buffer (lower_global). */
 void
 wgsl_spirv_options(struct spirv_to_nir_options *out)
 {
@@ -76,13 +76,51 @@ wgsl_spirv_options(struct spirv_to_nir_options *out)
       .environment = NIR_SPIRV_VULKAN,
       .ubo_addr_format = nir_address_format_32bit_index_offset,
       .ssbo_addr_format = nir_address_format_32bit_index_offset,
-      .phys_ssbo_addr_format = nir_address_format_64bit_global,
+      .phys_ssbo_addr_format = nir_address_format_2x32bit_global,
       .push_const_addr_format = nir_address_format_logical,
       .shared_addr_format = nir_address_format_32bit_offset,
       .constant_addr_format = nir_address_format_64bit_global,
       .min_ubo_alignment = 256,
       .min_ssbo_alignment = 256,
    };
+}
+
+/* Physical pointers: memory with device addresses is one GPUBuffer, at a binding of its own (vk/README.md "Device
+ * addresses"), so a global access is a storage buffer's at the pointer's low word. */
+static bool
+lower_global(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   b->cursor = nir_before_instr(&intr->instr);
+   nir_def *index = nir_imm_int(b, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_ADDRESS_BINDING);
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_global_2x32: {
+      nir_def *v = nir_load_ssbo(b, intr->def.num_components, intr->def.bit_size, index,
+                                 nir_channel(b, intr->src[0].ssa, 0), .align_mul = nir_intrinsic_align_mul(intr),
+                                 .align_offset = nir_intrinsic_align_offset(intr), .access = nir_intrinsic_access(intr));
+      nir_def_replace(&intr->def, v);
+      return true;
+   }
+   case nir_intrinsic_store_global_2x32:
+      nir_store_ssbo(b, intr->src[0].ssa, index, nir_channel(b, intr->src[1].ssa, 0),
+                     .write_mask = nir_intrinsic_write_mask(intr), .align_mul = nir_intrinsic_align_mul(intr),
+                     .align_offset = nir_intrinsic_align_offset(intr), .access = nir_intrinsic_access(intr));
+      nir_instr_remove(&intr->instr);
+      return true;
+   case nir_intrinsic_global_atomic_2x32: {
+      nir_def *v = nir_ssbo_atomic(b, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0), intr->src[1].ssa,
+                                   .atomic_op = nir_intrinsic_atomic_op(intr));
+      nir_def_replace(&intr->def, v);
+      return true;
+   }
+   case nir_intrinsic_global_atomic_swap_2x32: {
+      nir_def *v = nir_ssbo_atomic_swap(b, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0),
+                                        intr->src[1].ssa, intr->src[2].ssa, .atomic_op = nir_intrinsic_atomic_op(intr));
+      nir_def_replace(&intr->def, v);
+      return true;
+   }
+   default:
+      return false;
+   }
 }
 
 static bool
@@ -819,6 +857,8 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    }
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_push_const, nir_address_format_32bit_offset);
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo | nir_var_mem_ssbo, nir_address_format_32bit_index_offset);
+   NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_global, nir_address_format_2x32bit_global);
+   NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_global, nir_metadata_control_flow, NULL);
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
       if (!nir->info.shared_memory_explicit_layout) {
          nir->info.shared_size = 0;

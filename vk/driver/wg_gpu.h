@@ -35,6 +35,10 @@ WG_IMPORT(gpu_destroy) void gpu_destroy(uint32_t id);
 /* queue.writeBuffer from memory 0 (ordered before the next gpu_submit). */
 WG_IMPORT(gpu_write) void gpu_write(uint32_t buffer, double offset, const void *data, uint32_t size);
 
+/* A buffer replaced by a larger one under its id, its bytes kept, in the queue's order (bind groups of it must be made
+ * again). */
+WG_IMPORT(gpu_grow) void gpu_grow(uint32_t buffer, double size);
+
 /* A texture's bytes are another renderer's resource's (an image bound to memory imported from a dma-buf: a virgl
  * texture, e.g. a VA-API surface's plane): the worker writes them into it now and whenever the resource changes, in the
  * queue's order. Resource 0 forgets the texture's. */

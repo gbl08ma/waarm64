@@ -27,6 +27,8 @@
 #define WGSL_MAX_PAIRS 128
 /* The push constants' uniform buffer's binding in group 3 (WebGPU's bindings stay under 1000). */
 #define WGSL_PUSH_BINDING 998
+/* The device's address buffer's binding in group 3 (VK4 T7): physical pointers are words of it. */
+#define WGSL_ADDRESS_BINDING 996
 /* A vertex stage's draw parameters (BaseVertex, BaseInstance, DrawIndex: VK3 L7.5) are words of the push buffer at
  * this byte, past Vulkan's 128 bytes of push constants (the device's maxPushConstantsSize): a stage that reads them
  * reads its push constants from the push buffer too, and the driver writes them in each draw's place there. */

@@ -771,6 +771,46 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T7: API 1.3's required features — R32 atomics, inline uniform blocks, multiview, device addresses
+
+**2026-10-31.** JSON in `results/vk4/t7/`: `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52;
+`list-new-m4` on the M4 (Metal, Chrome for Testing 153.0.8010.12). These groups aren't in `vk-main.txt`: their case names come from
+the mustpass files in the `webpc-deqp-vk` image.
+
+| run | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| atomics, a sample, before | 29 | 0 | 25 | 4 |
+| `image.atomic_operations`, R32, no sparse or linear, after | 705 | 705 | 0 | 0 |
+| inline uniform blocks (`inline_uniform_blocks`, `descriptor_copy`, a sample of `descriptorset_random`'s `iub`, the limits) | 497 | 28 | 0 | 469 |
+| `multiview`, no geometry or tessellation | 742 | 547 | 48 | 147 |
+| `buffer_device_address` and a fifth of `ssbo` and `ubo`'s scalar cases | 2,881 | 1,811 | 0 | 1,070 |
+| the list's 1,735 new cases on the M4 | 1,735 | 1,735 | 0 | 0 |
+
+The list 17,208 -> 18,943.
+
+- **Atomics are T4's tracking with one more place.** WGSL has no atomics on textures, and the image must stay a texture for
+  everything else, so its words are a buffer that `wg_image.valid` tracks beside the alias textures. A program that stays on
+  its words pays one copy. The first run's 14 failures were all one thing: a storage-only texture has no copy usages.
+- **Multiview costs nothing where it isn't used and needed no layered rendering.** `forget` at a pass's start already makes its
+  commands self-contained, so replaying them is a jump back to `OP_PASS`. A pipeline per view only for stages that read
+  `gl_ViewIndex`. An input attachment needed no shader change: the view's layer is bound, 2D as declared.
+- **The 48 failures are all multisampled arrays** (`multiview.*multisample*`, T12's): WebGPU refuses the texture.
+- **Device addresses are a byte of one buffer, not a dispatch over memories.** A stage can reach more memories than
+  WebGPU binds, so an `if` tree can't serve; every address memory is in one GPUBuffer. `nir_address_format_2x32bit_global`
+  gives pointers without 64-bit integers, and a global access becomes an SSBO's, so the printer needed nothing.
+- **Pointers beside a writable descriptor of address memory** would alias in WebGPU and no dEQP case meets it, so
+  `wg_test.c`'s scenario 39 does, after a growth: T3's shadows now take writes and copy them back at the scope's end.
+- **Not supported, by the reasons of a sample**: vertex stores (`vertexPipelineStoresAndAtomics`), `shaderInt64` and set counts past
+  `maxBoundDescriptorSets`. `scalarBlockLayout` was the fourth, and every access is by words, so it is advertised now.
+- **A found bug**: a group holding only the pointers' binding returned before its readback, so what a shader wrote through
+  pointers never reached the CPU (3 `misc` and `op_access_chain` failures). And a storage binding of 2 bytes, which scalar
+  layout allows, was refused: sizes round up within the memory now.
+
+Not measured: the copies' cost on a real program, since none in the images uses these features. Next, by promise: multisampled
+arrays (T12: 48 here, 380 in `image.mutable`); `shaderInt64` as 2x32 (504 of `buffer_device_address`, and vkd3d-proton needs
+it); address memory past one storage binding, which DXVK's habit of flagging every allocation would meet on an adapter with
+a small binding limit.
+
 ## VK4 T18: compressed images that aren't whole blocks — sampled in the shader, 648 cases to SwiftShader's own 146
 
 **2026-10-31.** JSON in `results/vk4/t18/`: `cases` the 648 (T1's cause, and T8's sample's 560 compressed failures), `cases-m4`

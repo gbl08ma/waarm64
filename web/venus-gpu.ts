@@ -409,6 +409,17 @@ export class VenusGpu {
         self.objs[id] = undefined;
         if (o instanceof GPUBuffer || o instanceof GPUTexture || o instanceof GPUQuerySet) later(() => o.destroy());
       },
+      gpu_grow(id: number, size: number) {
+        const old = buf(id);
+        const b = d.createBuffer({ size, usage: old.usage });
+        self.objs[id] = b;
+        later(() => {
+          const e = d.createCommandEncoder();
+          e.copyBufferToBuffer(old, 0, b, 0, old.size);
+          d.queue.submit([e.finish()]);
+          old.destroy();
+        });
+      },
       gpu_write(id: number, offset: number, ptr: number, size: number) {
         if (!size) return;
         const b = buf(id);
@@ -2306,7 +2317,7 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 }
 
 /** Every import, for the deviceless stubs. */
-const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
+const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
   'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',

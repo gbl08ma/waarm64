@@ -141,7 +141,12 @@ T2–T14; the rest of the order is judgement, said with each.
   set: a uniform buffer the driver writes), **multiview** (a pass per view, or layered rendering), **buffer device
   addresses** (pointers into GPUBuffers: one big storage buffer and offsets, or per-buffer bindings by address; the
   hardest, and DXVK and vkd3d need it). *Done:* each feature's dEQP-VK groups in the list. *Start:* backlog "API
-  1.3's required features".
+  1.3's required features". **Done 2026-10-31** (REPORT.md "VK4 T7"): atomics on R32 through the image's words in a buffer, tracked
+  with T4's textures (705 of 705); inline uniform blocks as a uniform buffer of the set's; multiview as a pass per view (547
+  pass, the 48 failures multisampled arrays, T12's); device addresses as bytes of one GPUBuffer that grows in place, a
+  pointer two 32-bit words, a writable descriptor beside pointers in a shadow copied back; `scalarBlockLayout` with them (1,811
+  pass, 0 fail). All 1,735 new cases pass on the M4; the list 17,208 → 18,943. Left: backlog "Device addresses' leftovers"
+  (`shaderInt64`, memory past one storage binding, the copies' cost on a program).
 - **T8. Samplers** (M; T1: 203 of SwiftShader's 500 failures): border colours (shadow maps), mirror-once,
   unnormalized coordinates, the sampler's LOD bias and min/max LOD, integer textures' address modes and their min/max
   LOD (fetched today: clamp-to-edge whatever the sampler says), integer cube textures (the stage refused: 31),

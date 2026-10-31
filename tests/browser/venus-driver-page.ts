@@ -494,7 +494,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace', push: string) {
+export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'addresses' | 'inlineBlocks', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -509,7 +509,7 @@ export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40 }[scenario];
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   if (scenario === 'emptyAfterHeld') {
     // The fence of the submit behind the held copy: unsignalled while the copy waits for the host.
@@ -633,6 +633,15 @@ export async function runMisc(scenario: 'copy' | 'mutableViews' | 'resolve3d' | 
     if (scenario === 'uniformWritten') u32(want.subarray(256, 260))[0] = 100;
     if (scenario === 'indirectWritten') u32(want.subarray(512, 524)).set([1, 1, 1]);
     Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'inlineBlocks') {
+    // VK4 T7 (wg_test.c 40): each block's four words, both written by one update and copied by one copy.
+    u32(want.subarray(0, 16)).set([5001, 6002, 7003, 8004]);
+    Object.assign(checks, { blocks: [0, 4096, want] });
+  } else if (scenario === 'addresses') {
+    // VK4 T7 (wg_test.c 39): what the pointers read, through the descriptor, and what they wrote.
+    u32(want.subarray(1024, 1040)).set([40, 41, 42, 43]);
+    u32(want.subarray(32, 48)).set([100, 101, 102, 103]);
+    Object.assign(checks, { pointers: [0, 512, want], descriptor: [512, 4096, want] });
   } else if (scenario === 'storageAliased') {
     u32(want.subarray(0, 16)).set([3, 5, 7, 9]);
     u32(want.subarray(512, 528)).set([1, 2, 3, 4]);

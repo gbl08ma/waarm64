@@ -178,7 +178,7 @@ pipeline without waiting for its result, and a pipeline that failed would fail t
 `SPIRV_DIR=target/vk1/spirv bench/vulkan/translate/programs.sh`; not committed, they're the programs'): 124 of 127
 translate (0.47 ms a stage at the median in Node, 28 ms GTK4's largest) and all 124 compile in Chromium; the three
 others are vkQuake's variants for a device with 16-bit floats (dumped through the Mac profile: translated for
-SwiftShader, without `shader-f16`, one stops at its 16-bit arithmetic, the others at an image atomic and a texture
+SwiftShader, without `shader-f16`, one stops at its 16-bit arithmetic, the others at a read-write `rg16float` storage image (T11's) and a texture
 offset that isn't a constant; its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
 WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's runs of translated compute shaders
 (`runCompute`: subgroup operations against each subgroup's members, 16-bit storage, scratch arrays).
@@ -226,8 +226,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
   `shaderStorageImageExtendedFormats` from the features; `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
-  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs,
-  inline uniform blocks, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
+  translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of every kind of descriptor (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
@@ -295,8 +294,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   written since (they'd put stale bytes over the GPU's; a word with both goes up), and the range's pages go up again
   once it completes (VK3 L4c-B). A linear image in host-visible memory is loaded from it before each submit and stored
   back after; freeing that memory takes the image off that list (Vulkan lets the image outlive it, only to be
-  destroyed). A storage binding is a whole number of words (WebGPU's): a buffer of an odd size bound whole loses its
-  last bytes' word.
+  destroyed). A storage binding is a whole number of words (WebGPU's): an odd size is rounded up within its memory,
+  which is whole words.
 - **Usage scopes** (VK4 T3, `scope_pass` and `scope_dispatch` in wg_cmd.c): WebGPU's usage scope (a dispatch; a whole
   render pass) refuses a GPUBuffer bound as writable storage beside any other usage of it, and a memory is one GPUBuffer,
   so a pass or dispatch that wrote storage of a memory it also read through another binding (a uniform or read-only
@@ -309,8 +308,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   index and indirect buffers at their places; at the scope's end the groups are bound again without. Each buffer's read
   ranges are merged into spans copied once (from 256 bytes below the first, so offsets keep their alignment). A scope
   reads what such a range held at its start, so a draw doesn't see what an earlier draw of its pass wrote there (a
-  barrier within a render pass, by region: rare); shadows are never written back. Two writable bindings whose ranges
-  overlap are still refused (no copy serves both). A scope without such a conflict costs the scan alone.
+  barrier within a render pass, by region: rare). Two writable bindings whose ranges overlap are still refused (no copy
+  serves both), but for a pointers' binding (below, "Device addresses"), where the descriptor's range goes to a shadow
+  written back at the scope's end. A scope without such a conflict costs the scan alone.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render
@@ -485,6 +485,21 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   per view, only for such stages. A query is one a view, consecutive, as Vulkan allows (`q->first + view_order`). An input
   attachment binds its view's layer, 2D as declared, in a group per view. Eight views. No multisampled arrays
   (docs/backlog.md), so a multisampled multiview pass fails as any multisampled array does.
+- **Device addresses** (VK4 T7; `address_place` in wg_device.c, `lower_global` in wgsl_nir.c): WGSL has no pointers, and a
+  stage could reach more memories than WebGPU binds, so memory allocated with `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT` is
+  all in one GPUBuffer of the device's (`util_vma_heap`, each memory 256-aligned with 64 KiB past it for widened uniform
+  blocks; `wg_device_memory.gpu_at`, and `wg_buffer.offset` is GPU-relative while `mem_offset` is the CPU's), and an address
+  is a byte of it, 0 never. It starts at 64 MiB and doubles in place (`gpu_grow`: a new buffer under the same id, in the
+  queue's order, so recorded commands stay right and only bind groups are made again, `address_gen`), up to what one
+  storage binding reaches (`maxStorageBufferBindingSize`, under 4 GiB): past that an allocation with the flag fails with
+  `VK_ERROR_OUT_OF_DEVICE_MEMORY`, whatever the heap says. SPIR-V's pointers are two 32-bit words
+  (`nir_address_format_2x32bit_global`: no 64-bit integers, so they keep their 8 bytes in memory), and a global access is
+  a storage buffer's at the low word, at `@group(3) @binding(996)`, so 16-bit accesses and atomics work as they do. What
+  a shader writes through pointers is read back from every host-visible memory with an address. Usage scopes see that
+  binding as the whole buffer: other reads of address memory go to shadows when the pointers write, and a writable
+  descriptor of address memory goes to a shadow copied back at the scope's end, which WebGPU's aliasing rule asks for
+  (bytes reached both ways in one scope don't see each other). `shaderInt64` isn't offered, so `OpConvertUToPtr`'s
+  programs don't run, only `uvec2` conversions; no capture and replay.
 - **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
   format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
   image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).
