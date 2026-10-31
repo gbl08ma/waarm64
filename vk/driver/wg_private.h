@@ -339,6 +339,8 @@ wg_image_row_bytes(const struct wg_image *image, uint32_t level)
 /* Where a level and layer of an image is in its memory, as GetImageSubresourceLayout says. */
 void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t layer, VkSubresourceLayout *out);
 
+/* maxMultiviewViewCount. */
+#define WG_MAX_VIEWS 8
 /* A view as Vulkan made it (`view`: sampled or storage), and as an attachment (`att`: one level, one layer, 2D). */
 struct wg_image_view {
    struct vk_image_view vk;
@@ -358,8 +360,12 @@ struct wg_image_view {
    uint32_t planes[3];
    uint32_t first_plane; /* of a one-plane view */
    uint32_t alias;       /* the image's texture it views: 0 its own, i + 1 aliases[i] */
+   uint32_t layer_atts[WG_MAX_VIEWS - 1]; /* multiview: layers past the first as attachments (wg_view_att), made at first use */
    uint32_t word_params; /* a word binding's parameters (wgsl_print.c `image_words`), made at the first (0: none) */
 };
+
+/* A view's attachment for multiview's view `view`: its layer past the view's first. */
+uint32_t wg_view_att(struct wg_image_view *view, uint32_t index);
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
  * its parameters for the translator's loads and stores (a uniform buffer of 32 bytes: wg_texel_buffer_layout). */
@@ -547,6 +553,7 @@ struct wg_pipeline_key {
    VkFormat colors[8];
    VkFormat depth;
    uint8_t depth_test, depth_write, depth_compare, stencil_test;
+   uint8_t view, view_pad[3]; /* multiview, a stage reading the view: `wg_view` (0 else) */
    uint8_t stencil[2][4];   /* front, back: fail, pass, depth fail, compare */
    uint8_t stencil_read, stencil_write, depth_bias, flip_z; /* flip_z: the viewport's depth range inverted */
    float bias_constant, bias_slope, bias_clamp;
@@ -672,6 +679,7 @@ struct wg_cmd_buffer {
       /* Its view's id in the recorded pass (ten digits at that byte of `cmds`), until the pass's first draw gives its
        * samples (dummy_samples; 0: not this command buffer's pass, or given). */
       size_t dummy_at;
+      uint32_t view_mask;    /* multiview: the pass replays once a view */
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */
    struct wg_pipeline_key last_key;

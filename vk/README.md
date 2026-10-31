@@ -476,6 +476,15 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   writes, template updates and copies go into both at once (`gpu_write`, the queue's order: Vulkan forbids updating a set
   a pending command buffer uses), rolling on into the next binding past a block's end. 1.3's minimums of four blocks a
   stage and a set, 4,096 bytes each, no update-after-bind (`wg_bindings_fit` counts each as a uniform buffer).
+- **Multiview** (VK4 T7; `begin_rendering` and `OP_VIEWS` in wg_cmd.c): WebGPU has no layered rendering, so a pass with a
+  view mask (dynamic rendering's `viewMask`; legacy passes through the runtime's emulation, secondaries through their
+  inheritance) is replayed once a view: `OP_PASS` holds each view's JSON one after another, each attachment that view's
+  layer (`wg_view_att`, a 3D image's slice as `depthSlice`), and `OP_PASS_END` jumps back to it. A pass's commands hold all
+  they need since `forget`, so each view repeats them whole (load ops, clears, prepasses, draws); the push buffer is
+  counted for it (`cmd->draws`). A stage that reads `gl_ViewIndex` declares `override wg_view`, the key's `view`: a pipeline
+  per view, only for such stages. A query is one a view, consecutive, as Vulkan allows (`q->first + view_order`). An input
+  attachment binds its view's layer, 2D as declared, in a group per view. Eight views. No multisampled arrays
+  (docs/backlog.md), so a multisampled multiview pass fails as any multisampled array does.
 - **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
   format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
   image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).
@@ -627,7 +636,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
   the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
   mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, sampling 3D images through 2D views, multi-view.
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, sampling 3D images through 2D views.
 
 ## Pipelines made asynchronously
 

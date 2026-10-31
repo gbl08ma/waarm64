@@ -499,6 +499,9 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          r->r.access |= WGSL_ACCESS_WRITE;
       break;
    }
+   case nir_intrinsic_load_view_index:
+      c->info->uses_view = true;
+      break;
    case nir_intrinsic_image_atomic:
    case nir_intrinsic_image_atomic_swap: {
       const enum pipe_format f = nir_intrinsic_format(intr);
@@ -1873,6 +1876,8 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
            c->nir->info.workgroup_size[1], c->nir->info.workgroup_size[2]);
       return;
    case nir_intrinsic_load_view_index:
+      line(c, "t%u = wg_view;", def->index);
+      return;
    case nir_intrinsic_load_layer_id:
       line(c, "t%u = 0u;", def->index);
       return;
@@ -2533,6 +2538,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       line(&c, "var<immediate> immediates: Immediates;");
    }
    declare_resources(&c);
+   if (c.info->uses_view)
+      line(&c, "override wg_view: u32 = 0;");
    declare_texel_buffers(&c);
    declare_word_images(&c);
    declare_io(&c);

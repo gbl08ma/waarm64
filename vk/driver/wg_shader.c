@@ -1490,9 +1490,12 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    struct wg_json j = { 0 };
    const struct wg_pull *pull = wg_pipeline_pull(p, k);
    wg_json_printf(&j, "{\"layout\":%u,\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
-                  "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d},",
+                  "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d",
                   pull ? pull->layout : p->layout, p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1,
                   k->flip_z ? 1 : 0);
+   if (k->vs->info.uses_view)
+      wg_json_printf(&j, ",\"wg_view\":%u", k->view);
+   wg_json_printf(&j, "},");
    if (pull)
       wg_json_printf(&j, "\"pullGroup\":%u,", pull->group);
    wg_json_printf(&j, "\"buffers\":[");
@@ -1558,8 +1561,12 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
       wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
                      depth_dropped ? fragment_without_depth(p, k->fs) : p->fs_module ? p->fs_module : k->fs->module);
       /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`). */
-      if (k->fs->info.per_sample)
+      if (k->fs->info.per_sample && k->fs->info.uses_view)
+         wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u,\"wg_view\":%u},", k->samples, k->view);
+      else if (k->fs->info.per_sample)
          wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u},", k->samples);
+      else if (k->fs->info.uses_view)
+         wg_json_printf(&j, "\"constants\":{\"wg_view\":%u},", k->view);
       wg_json_printf(&j, "\"targets\":[");
       for (uint32_t i = 0; i < k->color_count; i++) {
          const struct wg_texture_format *f = k->colors[i] ? wg_texture_format(k->colors[i]) : NULL;

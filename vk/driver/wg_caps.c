@@ -162,6 +162,8 @@ wg_caps_features(struct vk_features *f)
       .textureCompressionBC = HAS(BC),
       .fragmentStoresAndAtomics = true,
       .inlineUniformBlock = true,
+      /* A pass per view (wg_cmd.c `begin_rendering`), no geometry or tessellation to multiply. */
+      .multiview = true,
       .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE),
       .shaderClipDistance = HAS(CLIP_DISTANCES),
       /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
@@ -263,6 +265,8 @@ wg_caps_properties(struct vk_properties *p)
    p->maxPerStageDescriptorSampledImages = sampled;
    p->maxPerStageDescriptorStorageImages = storage_tex;
    p->maxPerStageDescriptorInputAttachments = 4;
+   p->maxMultiviewViewCount = WG_MAX_VIEWS;
+   p->maxMultiviewInstanceIndex = (1u << 27) - 1;
    /* 1.3's minimums of blocks (each a uniform binding, counted by wg_bindings_fit), a page each. */
    p->maxInlineUniformBlockSize = 4096;
    p->maxPerStageDescriptorInlineUniformBlocks = 4;

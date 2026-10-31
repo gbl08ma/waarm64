@@ -1130,3 +1130,20 @@ test('atomics reach a storage image through its words, its loads, stores and siz
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('gl_ViewIndex is an override, declared only by a stage that reads it (VK4 T7)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t7/view-index.vert');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /override wg_view: u32 = 0;/);
+    assert.match(r.text, /= wg_view;/);
+    assert.doesNotMatch(glslStage(translate, tmp, 'tests/venus/driver.vert').text, /wg_view/);
+    const errors = await compile([r.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

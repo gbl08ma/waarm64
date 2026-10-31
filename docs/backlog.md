@@ -912,7 +912,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the fix: that queue being full is what paces a compositor (docs/devices.md, "Flush replies are paced"), and 256 of
     them would put 4 s of replies ahead of each fence. Retiring fences early past a bound would bring T6's bug back.
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
-    they go): multiview, buffer device addresses (VK4 T7's) and
+    they go): buffer device addresses (VK4 T7's) and
     `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
     guarantees without checking them fails at pipeline or descriptor creation.
   - **vkQuake's frames** (`images/vkframes/`) differ from lavapipe's systematically: 78% of their bytes by a little, 1.7%

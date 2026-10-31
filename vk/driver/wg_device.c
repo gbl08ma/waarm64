@@ -1476,6 +1476,24 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    return VK_SUCCESS;
 }
 
+uint32_t
+wg_view_att(struct wg_image_view *view, uint32_t index)
+{
+   /* A 3D image's slices are the pass's `depthSlice` of one view. */
+   if (!index || index >= WG_MAX_VIEWS || view->slice >= 0 || !view->att)
+      return view->att;
+   if (!view->layer_atts[index - 1]) {
+      const struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"2d\",\"baseMipLevel\":%u,"
+                     "\"mipLevelCount\":1,\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
+                     view->alias ? image->aliases[view->alias - 1].tex : image->tex, view->fmt->name,
+                     view->vk.base_mip_level, view->vk.base_array_layer + index);
+      view->layer_atts[index - 1] = wg_create_json(WG_KIND_VIEW, &j);
+   }
+   return view->layer_atts[index - 1];
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallbacks *pAllocator)
 {
@@ -1489,6 +1507,8 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    wg_id_release(view->faces);
    wg_id_release(view->att);
    wg_id_release(view->word_params);
+   for (uint32_t i = 0; i < ARRAY_SIZE(view->layer_atts); i++)
+      wg_id_release(view->layer_atts[i]);
    for (uint32_t p = 1; p < view->plane_count; p++)
       wg_id_release(view->planes[p]);
    vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);

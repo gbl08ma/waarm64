@@ -92,7 +92,8 @@ scalarize_filter(const nir_instr *instr, const void *data)
 }
 
 /* Input attachments as 2D textures (kk_shader.c's lower_subpass_dim), without the layer nir_lower_input_attachments
- * gives their coordinate: multiview isn't offered, and WGSL has no multisampled arrays. */
+ * gives their coordinate: a multiview pass binds each view's layer (wg_cmd.c `bind_group`), and WGSL has no multisampled
+ * arrays. */
 static bool
 lower_subpass_dim(nir_builder *b, nir_tex_instr *tex, void *data)
 {

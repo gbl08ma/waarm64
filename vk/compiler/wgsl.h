@@ -121,6 +121,7 @@ struct wgsl_info {
    uint32_t outputs;
    uint8_t output_base[8];
    bool writes_depth, writes_sample_mask, discards;
+   bool uses_view;              /* reads the view (multiview): declares `override wg_view`, a pipeline's for each view */
    bool per_sample;             /* fragment: at the sample rate, declares `override wg_samples` (the pipeline's) */
    bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
    uint8_t dual_base;           /* its WGSL type */

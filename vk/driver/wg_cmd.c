@@ -27,7 +27,8 @@ void (*wg_submitted)(void);
 
 /* The ops. */
 enum op {
-   OP_PASS,            /* JSON of the render pass, then the attachments' size */
+   OP_VIEWS,           /* uint32_t: the next pass's view mask (multiview: it replays once a view) */
+   OP_PASS,            /* JSON of the render pass (with OP_VIEWS, one after another, a view's each; fewer: the last serves) */
    OP_PASS_END,
    OP_CLEAR_RECTS,     /* JSON */
    OP_PIPELINE,        /* struct op_pipeline */
@@ -180,7 +181,7 @@ emit(struct wg_cmd_buffer *cmd, enum op op, const void *data, uint32_t size)
    /* An indirect draw may take two places of the push buffer: its render pass's for its draw parameters (`prepasses`)
     * and one of its own. */
    if ((op >= OP_DRAW && op <= OP_DISPATCH_INDIRECT) || op == OP_PROVOKE || op == OP_XFB)
-      cmd->draws += op == OP_DRAW_INDIRECT ? 2 : 1;
+      cmd->draws += (op == OP_DRAW_INDIRECT ? 2 : 1) * MAX2(util_bitcount(cmd->pass.view_mask), 1);
    *h = (struct op_head){ .op = op, .size = padded };
    void *payload = h + 1;
    if (data)
@@ -360,6 +361,7 @@ wg_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginI
       cmd->pass.depth = inh->depthAttachmentFormat;
       cmd->pass.stencil = inh->stencilAttachmentFormat;
       cmd->pass.samples = inh->rasterizationSamples ? inh->rasterizationSamples : 1;
+      cmd->pass.view_mask = inh->viewMask;
       /* A pass without attachments: the device's in the place wg_CmdBeginRendering gives it (VK3 L8a). */
       bool any = inh->depthAttachmentFormat || inh->stencilAttachmentFormat;
       for (uint32_t i = 0; i < cmd->pass.color_count; i++)
@@ -614,13 +616,15 @@ dummy_samples(struct wg_cmd_buffer *cmd, uint32_t samples)
    cmd->pass.samples = samples;
 }
 
-VKAPI_ATTR void VKAPI_CALL
-wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
+/* The pass of `view` (0 without multiview): a pass per view, each view's bit of the mask a layer of each attachment.
+ * `views`, with multiview, gathers each view's JSON; the last view's call emits them. */
+static void
+begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t view, struct util_dynarray *views)
 {
-   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    memset(&cmd->pass, 0, sizeof(cmd->pass));
    cmd->pass.active = true;
    cmd->pass.samples = 1;
+   cmd->pass.view_mask = info->viewMask;
    forget(cmd);
    const VkRect2D area = info->renderArea;
    uint32_t width = 0, height = 0;
@@ -701,12 +705,13 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          cmd->pass.resolve_color_src[i] = v;
          cmd->pass.resolve_color_dst[i] = r;
       }
-      wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":[%s]", i ? "," : "", v->att,
-                     load_op(a->loadOp, partial, resumed), drawn ? "store" : store_op(a->storeOp, suspending, partial), value);
+      wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":[%s]", i ? "," : "",
+                     wg_view_att(v, view), load_op(a->loadOp, partial, resumed),
+                     drawn ? "store" : store_op(a->storeOp, suspending, partial), value);
       if (v->slice >= 0)
-         wg_json_printf(&j, ",\"depthSlice\":%d", v->slice);
+         wg_json_printf(&j, ",\"depthSlice\":%d", v->slice + (int)view);
       if (resolves && !drawn)
-         wg_json_printf(&j, ",\"resolveTarget\":%u", r->att);
+         wg_json_printf(&j, ",\"resolveTarget\":%u", wg_view_att(r, view));
       wg_json_printf(&j, "}");
       if (partial && clear) {
          wg_json_printf(&clears, "%s[%u,%s]", first_clear ? "" : ",", i, value);
@@ -736,7 +741,7 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
          cmd->pass.depth = dv->vk.format;
       if (sv)
          cmd->pass.stencil = sv->vk.format;
-      wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", ds->att);
+      wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", wg_view_att(ds, view));
       /* SAMPLE_ZERO resolves (the modes advertised) of a multisampled depth or stencil, done at the pass's end. */
       cmd->pass.suspending = suspending;
       for (uint32_t a = 0; a < 2; a++) {
@@ -783,13 +788,52 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
    wg_json_printf(&j, ",\"width\":%u,\"height\":%u}", width, height);
    wg_json_printf(&clears, "}");
    cmd->pass.width = width, cmd->pass.height = height;
-   if (dummy)
-      cmd->pass.dummy_at = cmd->cmds.size + sizeof(struct op_head) + dummy_at;
-   emit_json(cmd, OP_PASS, &j);
+   /* Every view's the same without attachments, which the last's stands for (dummy_samples replaces its id). */
+   if (views) {
+      const bool last = !(info->viewMask >> (view + 1));
+      if (dummy && !last) {
+         wg_json_free(&j);
+         wg_json_free(&clears);
+         return;
+      }
+      if (last)
+         emit(cmd, OP_VIEWS, &info->viewMask, sizeof(info->viewMask));
+      const size_t at = views->size;
+      memcpy(util_dynarray_grow_bytes(views, 1, j.len + 1), j.data, j.len);
+      ((char *)views->data)[at + j.len] = 0;
+      wg_json_free(&j);
+      if (!last) {
+         wg_json_free(&clears);
+         return;
+      }
+      char *p = emit(cmd, OP_PASS, NULL, views->size);
+      memcpy(p, views->data, views->size);
+      if (dummy)
+         cmd->pass.dummy_at = (size_t)((uint8_t *)p - (uint8_t *)cmd->cmds.data) + dummy_at;
+   } else {
+      if (dummy)
+         cmd->pass.dummy_at = cmd->cmds.size + sizeof(struct op_head) + dummy_at;
+      emit_json(cmd, OP_PASS, &j);
+   }
    if (any_clear)
       emit_json(cmd, OP_CLEAR_RECTS, &clears);
    else
       wg_json_free(&clears);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
+{
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   if (!info->viewMask) {
+      begin_rendering(cmd, info, 0, NULL);
+      return;
+   }
+   struct util_dynarray views;
+   util_dynarray_init(&views, NULL);
+   u_foreach_bit(view, info->viewMask)
+      begin_rendering(cmd, info, view, &views);
+   util_dynarray_fini(&views);
 }
 
 static void meta(struct wg_cmd_buffer *cmd, struct wg_json *j);
@@ -1339,6 +1383,13 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
       /* Made now, while the command buffer is recorded (WebGPU makes it asynchronously: web/venus-gpu.ts), so that it
        * is likely ready by the submit, which otherwise waits for it; the replay finds it by its key. */
       wg_render_pipeline(p, &k);
+      /* A stage that reads the view: a pipeline per view (`wg_view`, an override). */
+      if (cmd->pass.view_mask && (vs->info.uses_view || (fs && fs->info.uses_view)))
+         u_foreach_bit(view, cmd->pass.view_mask) {
+            struct wg_pipeline_key per_view = k;
+            per_view.view = view;
+            wg_render_pipeline(p, &per_view);
+         }
       cmd->last_key = k;
       cmd->last_program[0] = p;
       cmd->have_key = true;
@@ -2213,6 +2264,9 @@ struct replay {
    uint32_t qspares; /* the pass's spare slots taken */
    struct util_dynarray pass_queries;
    uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
+   /* Multiview: the pass's mask, how many of its views have been replayed, this one, and where the pass starts again. */
+   uint32_t view_mask, view_order, view;
+   const uint8_t *pass_op;
    /* Draw parameters (VK3 L7.5): the next draw's (base vertex, base instance, draw index) and, for an indirect draw,
     * the place `prepasses` copied its arguments' into (UINT32_MAX: none); those the current place holds, where
     * `dp_valid`; the render pass's indirect draws' places, in their order (uint32_t), the next one `dp_next`. */
@@ -3019,6 +3073,13 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                      find_shadow(r, buffer, (double)at + dynamic, size);
       }
    }
+   /* In a multiview pass an input attachment reads its view's layer (declared 2D, its binding that layer): a group a
+    * view, like a scope's own. */
+   for (uint32_t k = 0; r->view_mask && k < p->resource_count && !*shadowed; k++) {
+      const struct wg_descriptor *d = p->resources[k].group == b->group && p->resources[k].kind == WGSL_TEXTURE
+                                         ? bound_descriptor(b, p, k) : NULL;
+      *shadowed = d && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+   }
    uint32_t group = 0;
    if (holder && !*shadowed)
       for (uint32_t i = 0; i < WG_SET_GROUPS; i++)
@@ -3091,7 +3152,8 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          if (!d->view)
             continue;
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
-                        res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage
+                        r->view_mask && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
+                        : res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage
                         : d->plane && d->plane < d->view->plane_count       ? d->view->planes[d->plane]
                         : res->kind != WGSL_TEXTURE                         ? d->view->view
                         : d->view->faces && res->dim == WGSL_DIM_2D_ARRAY   ? d->view->faces
@@ -3391,9 +3453,28 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       const void *d = h + 1;
       p += sizeof(*h) + h->size;
       switch ((enum op)h->op) {
+      case OP_VIEWS:
+         r->view_mask = *(const uint32_t *)d;
+         r->view_order = 0;
+         break;
       case OP_PASS: {
          end_pass(r);
+         r->pass_op = (const uint8_t *)h;
          const char *json = d;
+         /* Multiview: this view's JSON, its layers. */
+         r->view = 0;
+         if (r->view_mask) {
+            uint32_t mask = r->view_mask;
+            for (uint32_t i = 0; i < r->view_order; i++)
+               mask &= mask - 1;
+            r->view = ffs(mask) - 1;
+            for (uint32_t i = 0; i < r->view_order; i++) {
+               const char *next = json + strlen(json) + 1;
+               if (next >= (const char *)d + h->size || !*next)
+                  break;
+               json = next;
+            }
+         }
          /* Its occlusion queries' set (WebGPU's pass takes one, at its start). */
          bool stop = false;
          r->qpool = pass_query_pool(p, end, &stop);
@@ -3423,6 +3504,14 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       }
       case OP_PASS_END:
          end_pass(r);
+         /* The next view replays the pass, its commands holding all they need since `forget`. */
+         if (r->view_mask) {
+            if (++r->view_order < (uint32_t)util_bitcount(r->view_mask)) {
+               p = r->pass_op;
+               break;
+            }
+            r->view_mask = r->view_order = r->view = 0;
+         }
          break;
       case OP_CLEAR_RECTS:
          if (r->pass == RENDER) {
@@ -3450,6 +3539,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_PIPELINE: {
          const struct op_pipeline *op = d;
          r->pipeline = wg_render_pipeline(op->program, &op->key);
+         if (r->view && (op->key.vs->info.uses_view || (op->key.fs && op->key.fs->info.uses_view))) {
+            struct wg_pipeline_key per_view = op->key;
+            per_view.view = r->view;
+            r->pipeline = wg_render_pipeline(op->program, &per_view);
+         }
          r->program[0] = op->program;
          r->dirty |= RD_PIPELINE;
          r->group_count[0] = op->program->group_count;
@@ -3632,20 +3726,22 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_query *q = d;
          struct wg_query_pool *pool = q->pool;
          const bool occlusion = pool->vk.query_type == VK_QUERY_TYPE_OCCLUSION;
+         /* In a multiview pass a query is one a view, consecutive. */
+         const uint32_t first = q->first + (q->kind ? r->view_order : 0);
          if (q->kind == 0) {
             memset(&pool->values[q->first], 0, q->count * sizeof(uint64_t));
             memset(&pool->avail[q->first], 0, q->count);
             memset(&pool->ended[q->first], 0, q->count * sizeof(uint32_t));
          } else if (q->kind == 1) {
-            pool->values[q->first] = os_time_get_nano();
-            query_ended(r, pool, q->first);
+            pool->values[first] = os_time_get_nano();
+            query_ended(r, pool, first);
          } else if (q->kind == 2 && occlusion) {
-            if (r->pass == RENDER && pool == r->qpool && !r->qactive_pool && q->first < WG_QUERY_SET_MAX) {
-               gpu_begin_occlusion(q->first);
+            if (r->pass == RENDER && pool == r->qpool && !r->qactive_pool && first < WG_QUERY_SET_MAX) {
+               gpu_begin_occlusion(first);
                r->qactive_pool = pool;
-               r->qactive = q->first;
+               r->qactive = first;
                util_dynarray_append_typed(&r->pass_queries, struct pass_query,
-                                          ((struct pass_query){ pool, q->first, false, UINT32_MAX }));
+                                          ((struct pass_query){ pool, first, false, UINT32_MAX }));
             } else {
                static bool warned;
                if (!warned)
@@ -3655,14 +3751,14 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             }
          } else if (q->kind == 3) {
             if (occlusion) {
-               if (r->pass == RENDER && r->qactive_pool == pool && r->qactive == q->first) {
+               if (r->pass == RENDER && r->qactive_pool == pool && r->qactive == first) {
                   gpu_end_occlusion();
                   r->qactive_pool = NULL;
                } else {
-                  query_passing(r, pool, q->first);
+                  query_passing(r, pool, first);
                }
             }
-            query_ended(r, pool, q->first);
+            query_ended(r, pool, first);
          }
          break;
       }
