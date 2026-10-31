@@ -92,7 +92,7 @@ changes are disabled and say which machine has it.
 
 Requests become asynchronous (the backend's `request` returns a promise; the device is `unordered`, so realtime
 `Devices.poll` doesn't wait on a slow host read). Linux matches replies by tag, so order doesn't matter to the guest;
-what does: requests on one file are serialized in the server (a promise chain per node), and **`Tflush` is answered
+what does: requests on one file are serialized in the tree (a promise chain per node), and **`Tflush` is answered
 after the request it names** (today every request completes at once, so it's answered straight away).
 
 ### 3.2 What a directory handle can't say, and what the server answers
@@ -109,9 +109,11 @@ after the request it names** (today every request completes at once, so it's ans
   or directories don't appear.
 - **Names:** what Chromium refuses (`/`, `\`, `.`/`..`, and on Windows its reserved characters) answers `EINVAL`; on
   a case-insensitive host, a name differing only in case from an existing one `EEXIST` (what the host does).
-- **Renames:** `FileSystemFileHandle.move()` for files. Moving a directory is either supported by then or done as
-  a copy and remove (or `EXDEV`, which `mv` handles by copying itself): §7 L0 decides. A rename from one folder to
-  another, or into or out of the root, is `EXDEV`.
+- **Renames:** `FileSystemFileHandle.move()` for files, or a copy and a remove where a host file has none. Directories
+  have no `move()` (L0, Chromium 153): the new tree is made and its files are moved into it, entries not bytes. A rename
+  from one folder to another, or into or out of the root, is `EXDEV`.
+- **Unlinked while open:** a removed file's `File` reads no more (L0), so it keeps its bytes in memory until its last
+  clunk, up to 64 MiB (past that its fids answer `ESTALE`).
 - **statfs:** a folder in the browser `navigator.storage.estimate()`; a host folder doesn't know, and says 1 TiB free.
 
 ### 3.3 Reads and writes on a host folder
@@ -126,7 +128,7 @@ after the request it names** (today every request completes at once, so it's ans
 - So writing small or whole files is cheap and one write into a big file costs a copy of it: SQLite databases or disk
   images on a host folder are slow, and the docs will say so. A folder in the browser has no such cost.
 - **Attributes:** `getattr` needs a `getFile()` (size, time): cached per node for 1 s, dropped by the server's own
-  writes. A readdir takes the directory's entries once at offset 0 and serves later offsets from that list (offsets
+  writes; a readdir starts its entries' in the background, 32 at a time (L0: 5–8× cheaper side by side). A readdir takes the directory's entries once at offset 0 and serves later offsets from that list (offsets
   are entry indices), so the host changing it mid-listing doesn't skip or repeat entries.
 
 ## 4. The page

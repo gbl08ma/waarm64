@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- What a directory handle costs (bench/shares/REPORT.md): opened by hand in Chromium, or by run.ts headless. -->
+<meta charset="utf-8">
+<title>Shared folders: what a directory handle costs</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 760px; }
+  #drop { border: 2px dashed #888; padding: 24px; margin: 12px 0; }
+  pre { white-space: pre-wrap; background: #8881; padding: 12px; }
+</style>
+<h1>What a directory handle costs</h1>
+<p>Pick an <b>empty</b> folder on a disk with 2 GB free. The page writes into it, measures, and deletes what it wrote;
+  it takes about a minute. Then save the JSON (or copy it) for bench/shares/results/.</p>
+<button id="pick">Pick a folder…</button> <button id="opfs">Run on OPFS</button> <button id="save" hidden>Save the JSON</button>
+<div id="drop">… or drop a folder here</div>
+<pre id="out"></pre>
+<script type="module" src="./page.ts"></script>

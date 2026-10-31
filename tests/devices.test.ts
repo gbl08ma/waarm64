@@ -4,7 +4,7 @@
 // the doorbell's server's end (`Devices.serve`, parallel mode in Node).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { P9Server } from '../web/9p.ts';
+import { MemoryTree, P9Server, type P9Tree } from '../web/9p.ts';
 import { blk, deviceEntry, Devices, inputConfig, net, type Ctx } from '../web/devices.ts';
 import { memFile } from '../web/overlay.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
@@ -26,9 +26,9 @@ const u32 = (v: number): [number, number] => [4, v];
 const u64 = (v: number): [number, number] => [8, v];
 
 test('9p server: create, write, read, readdir, rename, symlink, unlink', () => {
-  const s = new P9Server({ 'hello.txt': 'hi\n' }, true);
+  const s = new P9Server(new MemoryTree({ 'hello.txt': 'hi\n' }, true));
   const call = (m: Uint8Array) => {
-    const r = s.handle(m, 8192);
+    const r = s.handle(m, 8192) as Uint8Array;
     const v = new DataView(r.buffer, r.byteOffset, r.byteLength);
     assert.equal(v.getUint32(0, true), r.length);
     assert.equal(v.getUint16(5, true), 1, 'tag echoed');
@@ -86,6 +86,55 @@ test('9p server: create, write, read, readdir, rename, symlink, unlink', () => {
   // Unsupported (xattrwalk): EOPNOTSUPP; truncated: EINVAL.
   assert.equal(call(msg(30, u32(0), u32(9), 'user.x')).v.getUint32(7, true), 95);
   assert.equal(call(msg(118, u32(3), u64(0), u32(100))).v.getUint32(7, true), 22);
+});
+
+test('9p server: a tree that answers later: requests overlap, a Tflush ends after its request', async () => {
+  // The memory tree, its reads and removes held until the test lets them go.
+  const held: (() => void)[] = [];
+  const later = <T,>(f: () => T) => new Promise<T>((resolve, reject) => held.push(() => { try { resolve(f()); } catch (e) { reject(e); } }));
+  const mem = new MemoryTree({ 'a': 'aaa', 'b': 'bbb' }, true);
+  const tree = Object.create(mem) as typeof mem & P9Tree<ReturnType<typeof mem.walk>>;
+  tree.read = ((f: never, off: number, count: number) => later(() => mem.read(f, off, count))) as never;
+  tree.remove = ((f: never) => later(() => mem.remove(f))) as never;
+  const clunked: unknown[] = [];
+  tree.clunk = ((f: unknown) => { clunked.push(f); }) as never;
+  const s = new P9Server(tree as never);
+  const tagged = (tag: number, m: Uint8Array) => { m[5] = tag; return m; };
+  s.handle(msg(100, u32(1 << 20), '9P2000.L'), 8192);
+  s.handle(msg(104, u32(0), u32(~0 >>> 0), 'root', '', u32(0)), 8192);
+  s.handle(msg(110, u32(0), u32(1), [2, 1], 'a'), 8192);
+  s.handle(msg(110, u32(0), u32(2), [2, 1], 'b'), 8192);
+  const text = (r: Uint8Array) => new TextDecoder().decode(r.subarray(11));
+  const [a, b] = [s.handle(tagged(7, msg(116, u32(1), u64(0), u32(100))), 8192), s.handle(tagged(8, msg(116, u32(2), u64(0), u32(100))), 8192)];
+  assert.ok(a instanceof Promise && b instanceof Promise, 'the reads are held');
+  // Answered at once while nothing else is held: what didn't touch the held calls.
+  assert.equal((s.handle(msg(24, u32(1), u64(0x7ff)), 8192) as Uint8Array)[4], 25);
+  const order: string[] = [];
+  const flushOf = (tag: number) => {
+    const m = msg(108, [2, tag]);
+    m[5] = 9;
+    return s.handle(m, 8192);
+  };
+  const flush = Promise.resolve(flushOf(7)).then((r) => { order.push('flush'); return r; });
+  void Promise.resolve(a).then(() => order.push('a'));
+  held[1](); // b, the later one, ends first
+  assert.equal(text(await b), 'bbb');
+  await new Promise((r) => setTimeout(r, 1));
+  assert.deepEqual(order, [], 'the flush waits for its request');
+  held[0]();
+  assert.equal(text(await a), 'aaa');
+  assert.equal((await flush)[4], 109);
+  assert.deepEqual(order, ['a', 'flush']);
+  // A flush of nothing running answers at once; a failed Tremove clunks its fid.
+  assert.equal((flushOf(7) as Uint8Array)[4], 109);
+  held.length = 0;
+  s.handle(msg(110, u32(0), u32(3), [2, 0]), 8192);
+  const rm = s.handle(msg(122, u32(3)), 8192);
+  held[0](); // the root: ENOENT
+  const ans = await rm;
+  assert.deepEqual([ans[4], new DataView(ans.buffer, ans.byteOffset).getUint32(7, true)], [7, 2]);
+  assert.equal(clunked.length, 1);
+  assert.equal((s.handle(msg(120, u32(3)), 8192) as Uint8Array)[4], 7, 'the fid is gone');
 });
 
 test('loopback adapter answers ARP and ping for the peer, and nothing else', () => {
