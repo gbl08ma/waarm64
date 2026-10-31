@@ -240,8 +240,9 @@ The table is `core/src/interp/sys.rs`.
   better. The interpreter runs ~1.4% of Alpine's boot, which stayed within noise
   (`bench/interp/REPORT.md` "M7 loop 6"). On x86_64 an atomic store is an `xchg`: plain
   accesses would make the block interpreter ~3-4% faster in Chromium, nearly all of it the stores
-  (`bench/interp/REPORT.md` "What the guest accesses' atomics cost on x86_64"; what to do about it
-  is in docs/backlog.md "Interpreter"). JIT code uses plain wasm loads and stores, which wasm
+  (`bench/interp/REPORT.md` "What the guest accesses' atomics cost on x86_64"). Not taken: plain
+  accesses could only be used with one vCPU, and the page's machines run parallel (that section's end).
+  JIT code uses plain wasm loads and stores, which wasm
   defines under races ([jit.md](jit.md) "Atomics").
 - Exclusives, LSE atomics and LDAR/STLR use real wasm atomics even single-core (SMP-ready), all
   sequentially consistent (stronger than acquire/release).
@@ -450,7 +451,7 @@ test it against `tests/steps.txt`.
   on the Mac host (before the MOV runs) 427, 404, 144 and 182. Liftoff, compile included, boots Alpine at 244 MIPS and
   Buildroot at 60, and runs the hot guests at ~1,700-2,600. On the M4 the guest accesses' `ldar`/`stlr` in
   `run` took 0.24% of its cycle samples (with the instruction after); x86_64, where a sequentially consistent store
-  is an `xchg`, was never measured (backlog "Interpreter").
+  is an `xchg`, costs the block interpreter ~3-4% (see "Memory model").
 
 ### Tried and not kept
 

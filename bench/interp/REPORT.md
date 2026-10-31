@@ -1712,6 +1712,14 @@ plain stores (one vCPU or round-robin, atomics in parallel SMP) recover the cost
 workload wasn't measured: under the JIT the interpreter runs cold code and slow paths only (Alpine's boot under
 `jit` 4, all interpreted, would bound it), so 3-4% of the interpreter's share of a boot.
 
+**Closed, not taken (2026-10-31, the user's call).** Plain accesses are safe only without parallel vCPUs, and the
+page's machines are parallel from 2 vCPUs up, with a default of `min(4, cores - 2)`: only a 1-vCPU machine would
+benefit, since round-robin matters only to the tests. There the gain would be small: on Alpine's boot under the JIT
+the interpreter ran 159M of 2,652M steps, ~0.7 s of ~5.5 s at its 224 MIPS on the M4, so ~13% of the boot and ~0.45%
+for 3.5% of it, under the bar of ~1% (an estimate, not an x86_64 run, and without the JIT's slow paths). Against that, a
+second copy of `hot`'s access paths in a loop that loses to small additions (the next section). The x86_64 run on the
+boots was scripted and never run.
+
 ## A shared TLB probe for pairs off one base: a loss (2026-10-30)
 
 The JIT's groups of accesses (`bench/boot/REPORT.md` "Groups of accesses, measured") in the block interpreter's terms:
@@ -1731,8 +1739,7 @@ times the JIT's cost each. `bench/interp/ab.sh`, dev VM, 3 alternated rounds, JS
 Dropped. A probe here is two loads and a compare in a handler that does much more; what the pair gives back is less than
 the extra tests and the code the inlined path adds to `hot`. The likely cause, not profiled: `hot`'s speed rests on what
 V8 keeps in registers across the loop, and the flat guest, which has no TLB to save on, lost most. A new path in `hot`
-for a probe's sake may well do the same. On x86_64 the atomics remain the larger lever (docs/cpu.md, backlog "Interpreter").
-
+for a probe's sake may well do the same. 
 ## SUBS's NZCV from its operands (2026-10-30)
 
 `nzcv_of`'s `Kind::Sub` computed `x + !y + 1` and went through `add_nzcv`; now `r = x - y`, `C = x >=u y`,

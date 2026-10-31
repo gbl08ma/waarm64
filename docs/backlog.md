@@ -62,16 +62,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 What the block interpreter's speed track (2026-10-21/22, `bench/interp/REPORT.md` "M8-INTERP loop 0" to "loop 11")
 left open, most promising first.
 
-- **The guest accesses' atomics on x86_64: measured, a decision left** (2026-10-26, `bench/interp/REPORT.md` "What
-  the guest accesses' atomics cost on x86_64"; a cloud session, `bench/interp/paired.ts`): plain accesses make the
-  block interpreter ~3-4% faster in Chromium (3.5-8% in Node) on the small guests, nearly all of it from the stores
-  (`xchg` where a plain store is a `mov`); plain loads alone ~1%. So plain loads with atomic stores buy nothing worth
-  their UB; the one remedy that pays is plain stores (and loads) with one vCPU or round-robin, atomics only in parallel
-  SMP (the user's decision; a second copy of the access paths, or a const generic on `hot`). Not measured: what it
-  is on a real workload, where the interpreter runs only cold code and slow paths under the JIT: Alpine's boot under
-  `jit` 4 and under the JIT on x86_64 (the user's desktop, or the dev VM's Buildroot and Alpine images in a session
-  that has them), with measuring builds from `bench/interp/results/m8-atomics-x86/plain.patch`. Worth doing only if
-  that shows past ~1% on the boot under the JIT.
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
   MSRs that change the regime and DAIFClr; ISB and DSB leave with `Exit::Resync` under parallel SMP anyway. A
