@@ -231,7 +231,7 @@ struct wg_device {
     * [1] those written and copied back: a GPUBuffer written in a scope can't be read otherwise in it, shadows included. */
    uint32_t shadow[2];
    uint64_t shadow_size[2], shadow_used[2];
-   /* What a storage binding a program's variant doesn't read binds (`storage_alias` in wg_cmd.c). */
+   /* What storage bindings a program's variant doesn't read bind, each its own 256 bytes (`storage_alias` in wg_cmd.c). */
    uint32_t alias_dummy;
    /* Memory with device addresses (VK4 T7; vk/README.md "Device addresses"): all of it in one GPUBuffer, grown in place
     * (`address_gen` counts that, for the bind groups that name it), an address being a byte of it. */
@@ -764,6 +764,7 @@ struct wg_cmd_buffer {
    uint8_t last_dyn[64];
    struct wg_descriptor_set *last_sets[2][WGSL_MAX_GROUPS][WG_GROUP_SETS];
    uint32_t last_bgl[2][WGSL_MAX_GROUPS];
+   const struct wg_program *last_aliased[2][WGSL_MAX_GROUPS]; /* the variant with storage aliases a group was bound for */
    uint32_t last_dynamic[2][WGSL_MAX_GROUPS][32];
    uint8_t last_push[256];
    uint32_t last_push_size;

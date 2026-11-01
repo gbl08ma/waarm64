@@ -223,6 +223,7 @@ forget(struct wg_cmd_buffer *cmd)
    memset(cmd->last_dyn, 0xff, sizeof(cmd->last_dyn));
    memset(cmd->last_sets, 0, sizeof(cmd->last_sets));
    memset(cmd->last_bgl, 0, sizeof(cmd->last_bgl));
+   memset(cmd->last_aliased, 0, sizeof(cmd->last_aliased));
    cmd->last_push_size = ~0u;
    cmd->last_compute = NULL;
    memset(cmd->last_program, 0, sizeof(cmd->last_program));
@@ -642,7 +643,7 @@ other_size(const struct wg_image_view *v, uint32_t width, uint32_t height)
 }
 
 /* An attachment's texture and its crop (wg_view_crop), one way or the other, at the render pass's size: a copy per
- * aspect, of the view's layers (a 3D view's one slice). */
+ * aspect, of the view's layers (a 3D image's view: its slices). */
 static void
 crop_copies(struct wg_cmd_buffer *cmd, bool back)
 {
@@ -650,7 +651,7 @@ crop_copies(struct wg_cmd_buffer *cmd, bool back)
       const struct wg_image_view *v = cmd->pass.crops[i].view;
       const struct wg_view_crop *c = cmd->pass.crops[i].crop;
       const uint32_t tex = view_texture(v), layer = v->slice >= 0 ? v->slice : v->vk.base_array_layer;
-      const uint32_t layers = v->slice >= 0 ? 1 : v->vk.layer_count, mip = v->vk.base_mip_level;
+      const uint32_t layers = v->vk.layer_count, mip = v->vk.base_mip_level;
       const bool both = (v->fmt->flags & WG_FMT_DEPTH) && (v->fmt->flags & WG_FMT_STENCIL);
       for (uint32_t a = both ? 1 : 0; a <= (both ? 2u : 0u); a++) {
          struct op_copy_tt op = { .src = back ? c->texture : tex, .src_mip = back ? 0 : mip, .sz = back ? 0 : layer,
@@ -814,7 +815,10 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
          cmd->pass.depth = dv->vk.format;
       if (sv)
          cmd->pass.stencil = sv->vk.format;
-      const uint32_t ds_at = cmd->pass.color_count - (dummy ? 1 : 0) + (dv ? 0 : 1);
+      uint32_t ds_at = 0;
+      while (ds_at < n && atts_info[ds_at]->imageView != wg_image_view_to_handle(ds))
+         ds_at++;
+      ds_at = MIN2(ds_at, ARRAY_SIZE(crops) - 1);
       wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", ATT(ds_at, ds));
       /* SAMPLE_ZERO resolves (the modes advertised) of a multisampled depth or stencil, done at the pass's end. */
       for (uint32_t a = 0; a < 2; a++) {
@@ -1085,9 +1089,12 @@ record_sets(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
          if (p->dynamic[k] != -1 && b.offset_count < 32)
             b.offsets[b.offset_count++] =
                p->dynamic[k] >= 0 ? cmd->sets[point][p->res_set[k]].dynamic[p->dynamic[k]] : 0;
+      /* A variant with storage aliases binds what a group holds otherwise: its layout's uid doesn't say so. */
+      const struct wg_program *aliased = p->alias_count ? p : NULL;
       if (!memcmp(cmd->last_sets[point][g], b.sets, sizeof(b.sets)) && cmd->last_bgl[point][g] == p->bgl_uid[g] &&
-          !memcmp(cmd->last_dynamic[point][g], b.offsets, b.offset_count * 4))
+          cmd->last_aliased[point][g] == aliased && !memcmp(cmd->last_dynamic[point][g], b.offsets, b.offset_count * 4))
          continue;
+      cmd->last_aliased[point][g] = aliased;
       memcpy(cmd->last_sets[point][g], b.sets, sizeof(b.sets));
       cmd->last_bgl[point][g] = p->bgl_uid[g];
       memcpy(cmd->last_dynamic[point][g], b.offsets, b.offset_count * 4);
@@ -1313,7 +1320,8 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
  * binding aliasing"), the two of them being one memory's GPUBuffer. Vulkan lets them: a shader that views one range
  * through two blocks. Each run of overlapping ranges becomes one binding, the lowest's widened over all of them, and
  * the others' accesses go through it (`wg_storage_alias`, wg_shader.c `aliased_text`). A shader's atomics are of its
- * array's type, so a run of atomic and plain arrays stays as it is (WebGPU refuses it, said once).
+ * array's type, so a run of atomic and plain arrays, or of signed and unsigned ones, stays as it is (WebGPU refuses it,
+ * said once).
  */
 static uint32_t
 storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_storage_alias *out)
@@ -1346,9 +1354,10 @@ storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_progr
       bool mixed = false;
       for (; last < n && runs[last].mem == runs[i].mem && runs[last].lo < reach; last++) {
          reach = MAX2(reach, runs[last].hi);
-         mixed |= p->resources[runs[last].k].atomic != first->atomic;
+         mixed |= p->resources[runs[last].k].atomic != first->atomic ||
+                  p->resources[runs[last].k].signed_atomic != first->signed_atomic;
       }
-      const bool wide = reach - runs[i].lo > wg_limits.max_storage_buffer_binding_size;
+      const bool wide = align64(reach - runs[i].lo, 4) > wg_limits.max_storage_buffer_binding_size;
       if (last > i + 1 && (mixed || wide)) {
          static bool warned;
          if (!warned)
@@ -1359,7 +1368,7 @@ storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_progr
             out[count++] = (struct wg_storage_alias){ (uint32_t)p->resources[runs[j].k].group << 16 | p->resources[runs[j].k].binding,
                                                       (uint32_t)first->group << 16 | first->binding,
                                                       (uint32_t)(runs[j].lo - runs[i].lo), (uint32_t)(runs[j].hi - runs[j].lo),
-                                                      j == i ? (uint32_t)(reach - runs[i].lo) : 0 };
+                                                      j == i ? align((uint32_t)(reach - runs[i].lo), 4) : 0 };
       }
       i = last;
    }
@@ -3515,11 +3524,11 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
             /* Unused by the variant's text; a binding must be there, and not of what the run's first writes. */
             if (!r->dev->alias_dummy) {
                struct wg_json dummy = { 0 };
-               wg_json_printf(&dummy, "{\"size\":256,\"usage\":128}");
+               wg_json_printf(&dummy, "{\"size\":%u,\"usage\":128}", 256 * 8);
                r->dev->alias_dummy = wg_create_json(WG_KIND_BUFFER, &dummy);
             }
-            wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":256}", sep, res->binding,
-                           r->dev->alias_dummy);
+            wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":%u,\"size\":256}", sep, res->binding,
+                           r->dev->alias_dummy, (uint32_t)(a - p->aliases) * 256);
             if (p->dynamic[k] >= 0 && dyn_index < b->offset_count)
                offsets[dyn_index] = 0;
             break;
@@ -3706,8 +3715,8 @@ scope_cut(struct replay *r, const uint8_t *p, const uint8_t *end)
    gpu_pass_end();
    r->pass = NONE;
    scope_end(r, 0);
-   r->qpool = pool;
    scope_pass(r, p, end);
+   r->qpool = pool; /* a copy of the scope's ends what `end_pass` keeps of the pass */
    r->pass = RENDER;
    begin_pass(r, 2);
    if (qp)
@@ -4027,8 +4036,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->dp_next = 0;
          const struct wg_program *prog = r->program[0];
          if (draws) {
+            struct wg_query_pool *pool = r->qpool;
             prepasses(r, &prog, p, end, 0, true);
             scope_pass(r, p, end);
+            r->qpool = pool;
          }
          r->tickets = 0;
          r->pass_json = json;

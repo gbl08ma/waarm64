@@ -88,6 +88,7 @@ struct wgsl_resource {
    uint8_t sample;        /* textures: enum wgsl_sample */
    bool multisampled;
    bool atomic;           /* storage buffers: declared of atomics */
+   bool signed_atomic;    /* of `atomic<i32>` */
    bool written;          /* storage buffers: the stage writes it (what the driver reads back of host-visible memory;
                            * the kind is the declared access: atomics' are read_write written or not) */
    bool nonfiltering;     /* samplers: bound as non-filtering (the driver's, for unfilterable views) */

@@ -834,7 +834,7 @@ wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z)
    X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
    X(uses_base)
 #define RESOURCE_FIELDS(X)                                                                                             \
-   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(written) X(nonfiltering) X(image_words) X(access) \
+   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(access) \
    X(format) X(size)
 
 static void

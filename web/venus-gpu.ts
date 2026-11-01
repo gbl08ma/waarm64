@@ -1174,8 +1174,10 @@ override bit: u32 = 8u;
       return;
     }
     if (S === D) {
-      const temp = d.createTexture({ size: { width: w, height: h }, format: f, sampleCount: S.sampleCount, usage: TEXTURE_BINDING | RENDER_ATTACHMENT });
+      const temp = d.createTexture({ size: { width: w, height: h }, format: base, sampleCount: S.sampleCount, usage: TEXTURE_BINDING | RENDER_ATTACHMENT });
       this.temps.push(temp);
+      const packing = this.packed.get(S);
+      if (packing) this.packed.set(temp, packing);
       this.copyMultisampled(S, sm, sx, sy, sz, temp, 0, 0, 0, 0, w, h, aspect);
       this.copyMultisampled(temp, 0, 0, 0, 0, D, dm, dx, dy, dz, w, h, aspect);
       return;
@@ -2071,7 +2073,7 @@ var<workgroup> wl: array<u32, 256>;
     const d = this.device!, enc = this.enc!;
     let pipeline = this.metaComputes.get('fan');
     if (!pipeline) {
-      const code = `struct P { arg: u32, el0: u32, wide: u32, restart: u32, most: u32, pad0: u32, pad1: u32, pad2: u32 }
+      const code = `struct P { arg: u32, el0: u32, wide: u32, restart: u32, most: u32, room: u32, pad1: u32, pad2: u32 }
 @group(0) @binding(0) var<storage, read> a: array<u32>;
 @group(0) @binding(1) var<storage, read> s: array<u32>;
 @group(0) @binding(2) var<storage, read_write> o: array<u32>;
@@ -2091,7 +2093,7 @@ fn ix(k: u32) -> u32 {
     out[4] = a[p.arg + 3u];
     return;
   }
-  let count = min(a[p.arg], p.most - min(a[p.arg + 2u], p.most));
+  let count = min(min(a[p.arg], p.most - min(a[p.arg + 2u], p.most)), p.room);
   let first = p.el0 + a[p.arg + 2u];
   let r = select(0xffffu, 0xffffffffu, p.wide == 1u);
   var w = 0u;
@@ -2121,7 +2123,7 @@ fn ix(k: u32) -> u32 {
     }
     const argFrom = offset - (offset % 256);
     const [out, at] = this.scratch(STORAGE | INDIRECT, 20);
-    let source: GPUBufferBinding, el0 = 0, most: number, list: GPUBuffer, listAt: number, listBytes: number;
+    let source: GPUBufferBinding, el0 = 0, most: number, room = 0, list: GPUBuffer, listAt: number, listBytes: number;
     if (wide === 2) {
       this.dummyStorage ??= d.createBuffer({ size: 16, usage: STORAGE });
       source = { buffer: this.dummyStorage };
@@ -2134,12 +2136,13 @@ fn ix(k: u32) -> u32 {
       const end = Math.min(ib.size, from + this.device!.limits.maxStorageBufferBindingSize, Math.ceil((ibOffset + ibSize) / 4) * 4);
       source = { buffer: ib, offset: from, size: Math.max(4, end - from) };
       el0 = (ibOffset - from) / el;
-      most = fanMost(end - ibOffset, el);
-      listBytes = Math.max(12, Math.max(0, most - 2) * 12);
+      most = Math.floor((end - ibOffset) / el);
+      room = fanMost(end - ibOffset, el);
+      listBytes = Math.max(12, Math.max(0, room - 2) * 12);
       [list, listAt] = this.scratch(STORAGE | INDEX, listBytes);
     }
     const [u, uat] = this.scratch(UNIFORM | COPY_DST, 32);
-    d.queue.writeBuffer(u, uat, new Uint32Array([(offset - argFrom) / 4, el0, wide, restart, most, 0, 0, 0]));
+    d.queue.writeBuffer(u, uat, new Uint32Array([(offset - argFrom) / 4, el0, wide, restart, most, room, 0, 0]));
     const dummy = (this.dummyWrite ??= d.createBuffer({ size: 16, usage: STORAGE }));
     const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: a, offset: argFrom, size: Math.min(a.size - argFrom, 256 + 20) } },
@@ -2497,7 +2500,7 @@ const ownFormat = (t: GPUTexture, format: string | undefined) => (format && form
 
 /**
  * The indices an indirect indexed fan's list has room for: its count is on the GPU, so the worst case, of the bound
- * range, but no more than a fan may have (the bound range is often a whole shared buffer: VK4 R4, the review's X3).
+ * range, but no more than a fan may have (the bound range is often a whole shared buffer: VK4 R4, the review's X3); past that the fan is cut.
  */
 export const fanMost = (bytes: number, el: number) => Math.min(Math.floor(bytes / el), 65536);
 
@@ -2525,8 +2528,8 @@ function rawFormat(f: string) {
 
 /**
  * WGSL taking `v` (a texel of `from`) to the same bits as a texel of `to`, for formats of one block size: channel by
- * channel to bits, to the block's two words, to `to`'s channels. '' for one format; undefined where the bits can't
- * survive a shader (a float16's NaN does; snorm's two minima wouldn't, and isn't multisampled).
+ * channel to bits, to the block's two words, to `to`'s channels. '' for one format; undefined for what it doesn't take
+ * apart. Floats go through values, so a NaN or a denormal of a float format may not keep its bits.
  */
 export function bitsBetween(from: string, to: string) {
   if (from === to) return '';

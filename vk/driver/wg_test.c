@@ -3617,7 +3617,8 @@ dispatch_with(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, uint32
 }
 
 /* A 2D image of `layers` with a view of them (its format `view_format`), usable as a colour attachment and a copy's
- * either end, `extra` its other usage. */
+ * either end (`extra` its other usage: the driver gives every attachment what its copies need, for the crops, and scenario
+ * 47 has no transfer usage at all, as a program's attachments). */
 static int
 layered_image(VkFormat format, VkFormat view_format, uint32_t w, uint32_t h, uint32_t layers, VkImageUsageFlags extra,
               VkImageCreateFlags flags, VkImage *out, VkImageView *view)
@@ -3626,7 +3627,7 @@ layered_image(VkFormat format, VkFormat view_format, uint32_t w, uint32_t h, uin
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = flags, .imageType = VK_IMAGE_TYPE_2D, .format = format,
       .extent = { w, h, 1 }, .mipLevels = 1, .arrayLayers = layers, .samples = VK_SAMPLE_COUNT_1_BIT,
       .tiling = VK_IMAGE_TILING_OPTIMAL,
-      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | extra,
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | extra,
    };
    CHECK(CreateImage(dev, &info, NULL, out));
    VkMemoryRequirements req;
@@ -3678,7 +3679,9 @@ copy_image(VkFormat format, uint32_t w, uint32_t h, uint32_t layers, VkSampleCou
  *    texel at 0, 4: A, B.
  * 56 (X5): 4 samples of RGBA8_SRGB cleared to 0.5 (bytes 188), copied into RGBA8_UNORM, resolved: 188 at 0.
  * 57 (X8): 4 samples of R5G6B5 cleared to red, copied into B5G6R5, resolved: the same bits (0xf800) at 0.
- * 59 (backlog "Copies WebGPU refuses"): 4 samples of RGBA8 cleared to A, copied into R16G16_UINT, resolved: A's bytes at 0. */
+ * 59 (backlog "Copies WebGPU refuses"): 4 samples of RGBA8 cleared to A, copied into R16G16_UINT, resolved: A's bytes at 0.
+ * 63, 64 (the review of R1 to R4's D3, W3): two layers of 4 samples of RGBA8_SRGB, R5G6B5, the first cleared and copied
+ * to the second within the image, that resolved: 188 a channel, 0xf800 at 0. */
 static int
 r4_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
 {
@@ -3701,6 +3704,23 @@ r4_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
       CmdCopyBufferToImage(cmd, out, image, dst, 1, &r);
       r.bufferOffset = 64;
       CmdCopyImageToBuffer(cmd, image, src, out, 1, &r);
+      return 0;
+   }
+   if (scenario == 63 || scenario == 64) {
+      const VkFormat f = scenario == 63 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R5G6B5_UNORM_PACK16;
+      VkImage a, c;
+      if (copy_image(f, 16, 16, 2, VK_SAMPLE_COUNT_4_BIT, &a) || copy_image(f, 16, 16, 1, VK_SAMPLE_COUNT_1_BIT, &c))
+         return 1;
+      const VkClearColorValue v = { .float32 = { scenario == 63 ? 0.5f : 1, scenario == 63 ? 0.5f : 0, scenario == 63 ? 0.5f : 0, 1 } };
+      const VkImageSubresourceRange l0 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+      CmdClearColorImage(cmd, a, dst, &v, 1, &l0);
+      const VkImageCopy copy = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                 .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1 }, .extent = { 16, 16, 1 } };
+      CmdCopyImage(cmd, a, src, a, dst, 1, &copy);
+      const VkImageResolve r = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1 },
+                                 .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .extent = { 16, 16, 1 } };
+      CmdResolveImage(cmd, a, src, c, dst, 1, &r);
+      copy_texel(cmd, c, VK_IMAGE_ASPECT_COLOR_BIT, 0, 8, 8, out, 0);
       return 0;
    }
    const VkFormat from = scenario == 56 ? VK_FORMAT_R8G8B8A8_SRGB : scenario == 57 ? VK_FORMAT_R5G6B5_UNORM_PACK16 : VK_FORMAT_R8G8B8A8_UNORM;
@@ -3800,8 +3820,7 @@ r3_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
    VkImage depth = VK_NULL_HANDLE;
    VkImageView dview = VK_NULL_HANDLE;
    if (scenario == 47) {
-      if (image(VK_FORMAT_D32_SFLOAT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &dview))
+      if (image(VK_FORMAT_D32_SFLOAT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &dview))
          return 1;
       const VkClearDepthStencilValue v = { 0.75f, 0 };
       const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
@@ -3944,7 +3963,9 @@ r3_feedback(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandB
 /* VK4 R2's dispatches in one host-visible memory (`out`, 4 KiB; tests/venus/):
  * 44 (two-reads.comp, the review's R4): `a` and `b` read-only, both at [1024, 1056) (1, 2, 3, 4), `o` at [0, 32).
  * 45 (two-writes.comp): two writable bindings of [256, 320).
- * 46 (two-writes.comp): two writable bindings, [256, 768) and [512, 1024). */
+ * 46 (two-writes.comp): two writable bindings, [256, 768) and [512, 1024).
+ * The review of R1 to R4: 60 (three-writes.comp): three writable bindings of [256, 320); 61 (two-writes.comp): two of
+ * [256, 318), not whole words. */
 static int
 r2_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
 {
@@ -3957,6 +3978,12 @@ r2_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuffe
    const VkDescriptorBufferInfo reads[3] = { { out, 1024, 32 }, { out, 1024, 32 }, { out, 0, 32 } };
    const VkDescriptorBufferInfo same[2] = { { out, 256, 64 }, { out, 256, 64 } };
    const VkDescriptorBufferInfo over[2] = { { out, 256, 512 }, { out, 512, 512 } };
+   const VkDescriptorBufferInfo three[3] = { { out, 256, 64 }, { out, 256, 64 }, { out, 256, 64 } };
+   const VkDescriptorBufferInfo odd[2] = { { out, 256, 62 }, { out, 256, 62 } };
+   if (scenario == 60)
+      return dispatch_with(cs, cs_words, cmd, 3, types, three);
+   if (scenario == 61)
+      return dispatch_with(cs, cs_words, cmd, 2, types, odd);
    return dispatch_with(cs, cs_words, cmd, scenario == 44 ? 3 : 2, types, scenario == 44 ? reads : scenario == 45 ? same : over);
 }
 
@@ -4712,7 +4739,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 53) {
       if (r4_resolve(cmd, out))
          return 1;
-   } else if (scenario == 52 || (scenario >= 55 && scenario <= 59)) {
+   } else if (scenario == 52 || (scenario >= 55 && scenario <= 59) || scenario == 63 || scenario == 64) {
       if (r4_misc(scenario, cmd, out))
          return 1;
    } else if (scenario >= 47 && scenario <= 49) {
@@ -4721,7 +4748,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 50 || scenario == 51) {
       if (r3_feedback(scenario, cs, cs_words, cmd, out))
          return 1;
-   } else if (scenario >= 44 && scenario <= 46) {
+   } else if ((scenario >= 44 && scenario <= 46) || scenario == 60 || scenario == 61) {
       if (r2_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 40) {

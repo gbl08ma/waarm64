@@ -539,12 +539,12 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   held what follows, including the unfenced `SUBMIT_3D` every queue submit also sends, so 8 such submits filled the page's
   16 entries and the guest stopped in the kernel before it signalled. The kernel takes fences of different rings in any
   order. A program that queues work waiting for its own signal, from the thread that sends it, could fill the queue and stop
-  that thread in the kernel, so while more than 4 ring fences are held and none has retired for 250 ms (`RING_SLOTS`,
-  `RING_STALL_MS`) the second newest of the ring with most is answered with no fence flag: its entry comes back, its
-  fence stays unsignalled in the kernel, and the next fence of that ring to be answered signals it (a fence signals the
-  earlier ones of its dma-fence context). The newest of a ring always keeps its entry. Only when stalled: giving entries
-  back whenever more than 8 were held hung dEQP's `timeline_semaphore.device_host`, whose guest waits for such a fence
-  alone while its fences go on retiring.
+  that thread in the kernel, so while the queue is full and for 250 ms no ring fence has retired and the guest has sent
+  nothing (`RING_STALL_MS`), the second newest of the ring with most is answered with no fence flag: its entry comes
+  back, its fence stays unsignalled in the kernel, and the next fence of that ring to be answered signals it (a fence
+  signals the earlier ones of its dma-fence context). The newest of a ring always keeps its entry. Only then, and one at a
+  time: giving entries back whenever more than 8 were held hung dEQP's `timeline_semaphore.device_host`, whose guest waits
+  for such a fence alone while its fences go on retiring.
   A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
   which happens once the GPU's work before it on that context's ring is done (`VenusRenderer.retired`: the GPU worker
   holds the device's fence until then). A fence names its context, ring and id (`FenceScope`) and waits for itself alone, not for what's sent after it on its ring, and a ring is a lane of the GPU

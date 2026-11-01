@@ -1,0 +1,13 @@
+#version 450
+// VK4 R2's review (D2): three writable storage buffers of one range, and two more of another: every one past the first
+// of a run binds a dummy, and those mustn't alias each other.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) buffer A { uint v[]; } a;
+layout(set = 0, binding = 1) buffer B { uint v[]; } b;
+layout(set = 0, binding = 2) buffer C { uint v[]; } c;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  a.v[i] = 10 + i;
+  b.v[i + 4] = a.v[i] + 10;
+  c.v[i + 8] = b.v[i + 4] + 10;
+}

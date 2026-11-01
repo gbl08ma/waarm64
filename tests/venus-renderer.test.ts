@@ -64,6 +64,10 @@ test("a fence is retired by itself, not by others of its ring or context", { ski
   v.call({ t: 'vctx', id: 8, create: true, name: 'b' });
   v.wake = () => {}; // no poll: the fences stay pending
   assert.equal(v.retired(7, 1, 1n), true, 'not sent');
+  // No queue has that ring yet, so vkr refuses the fence: it mustn't hold its lane for ever.
+  v.call({ t: 'vsubmit', ctx: 7, bytes: new Uint8Array(0), fence: { flags: 3, ring: 1, id: 2n } });
+  assert.equal(v.retired(7, 1, 2n), true, 'a refused fence');
+  (v as unknown as { ex: { venus_submit_fence(): number } }).ex.venus_submit_fence = () => 1;
   v.call({ t: 'vsubmit', ctx: 7, bytes: new Uint8Array(0), fence: { flags: 3, ring: 1, id: 1n } });
   assert.equal(v.retired(7, 1, 1n), false);
   assert.equal(v.retired(7, 2, 1n), true, 'another ring of the context');

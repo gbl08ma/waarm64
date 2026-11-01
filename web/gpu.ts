@@ -1136,38 +1136,44 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   // queue's work, which may wait for the guest's own signal, and the replies held behind it would fill the queue before
   // the guest got to send that (docs/devices.md "Venus"). The kernel takes fences of different rings in any order.
   // They hold queue entries meanwhile, and a program that queues work waiting for its own signal, from the thread that
-  // sends it, can fill the queue and stop that thread in the kernel. So while more than `RING_SLOTS` are held and none has
-  // retired for `RING_STALL_MS`, the second newest of the ring with most gives its entry back: answered with no fence flag,
-  // its fence stays unsignalled in the kernel until the next fence of that ring to be answered signals it (a fence signals
-  // the earlier ones of its dma-fence context). Only when stalled: a guest may wait for that fence alone (dEQP's
-  // timeline_semaphore.device_host hung with entries given back whenever more than 8 were held, its fences still retiring).
+  // sends it, can fill the queue and stop that thread in the kernel. So while the queue is full (`QUEUE_FULL` entries) and
+  // for `RING_STALL_MS` neither has a ring fence retired nor has the guest sent anything, the second newest of the ring
+  // with most gives its entry back: answered with no fence flag, its fence stays unsignalled in the kernel until the next
+  // fence of that ring to be answered signals it (a fence signals the earlier ones of its dma-fence context). One entry
+  // at a time, and only then: a guest may wait for that fence alone, which then hangs if the ring's newest waits for
+  // what it does next (docs/backlog.md "Synchronization"; dEQP's timeline_semaphore.device_host hung when entries came
+  // back at any 8 held).
   type Ringed = Held & { lane: string; write: Request['write']; reply: Uint8Array };
-  const RING_SLOTS = 4, RING_STALL_MS = 250;
+  const QUEUE_FULL = 16, RING_STALL_MS = 250;
   const rings = new Set<Ringed>();
-  let ringRetired = 0;
+  let ringActive = 0;
   let ringWatch: ReturnType<typeof setTimeout> | undefined;
   const giveBack = () => {
-    while (rings.size > RING_SLOTS) {
-      const lanes = new Map<string, Ringed[]>();
-      for (const h of rings) lanes.set(h.lane, [...(lanes.get(h.lane) ?? []), h]);
-      const most = [...lanes.values()].reduce((a, b) => (b.length > a.length ? b : a));
-      if (most.length < 2) return;
-      const h = most[most.length - 2];
-      rings.delete(h);
-      new DataView(h.reply.buffer, h.reply.byteOffset, h.reply.length).setUint32(4, 0, true);
-      scatter(ctx.ram(), h.write, h.reply);
-      ctx.complete(h.w0, h.len);
-    }
+    const lanes = new Map<string, Ringed[]>();
+    for (const h of rings) lanes.set(h.lane, [...(lanes.get(h.lane) ?? []), h]);
+    const most = [...lanes.values()].reduce((a, b) => (b.length > a.length ? b : a));
+    if (most.length < 2) return;
+    const h = most[most.length - 2];
+    rings.delete(h);
+    new DataView(h.reply.buffer, h.reply.byteOffset, h.reply.length).setUint32(4, 0, true);
+    scatter(ctx.ram(), h.write, h.reply);
+    ctx.complete(h.w0, h.len);
   };
   const watchRings = () => {
     ringWatch = undefined;
-    if (rings.size <= RING_SLOTS) return;
-    if (performance.now() - ringRetired >= RING_STALL_MS) giveBack();
+    if (!rings.size) return;
+    if (rings.size + held.length >= QUEUE_FULL && performance.now() - ringActive >= RING_STALL_MS) {
+      while (rings.size + held.length >= QUEUE_FULL && rings.size > 1) {
+        const before = rings.size;
+        giveBack();
+        if (rings.size === before) break;
+      }
+      ringActive = performance.now();
+    }
     ringWatch = setTimeout(watchRings, RING_STALL_MS);
   };
   // The stats' queue occupancy (`?displaystats`): the most replies held at once, and the time QUEUE_FULL of them were
   // (the page's queue size: the guest's ring had no free entry, so its next command waited).
-  const QUEUE_FULL = 16;
   let fullSince = -1;
   const occupancy = () => {
     busy.heldMax = Math.max(busy.heldMax, held.length);
@@ -1211,7 +1217,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         return 0;
       }
       const room = r.write.reduce((n, s) => n + s.len, 0);
-      const t0 = performance.now();
+      const t0 = ringActive = performance.now();
       const type = cmd.length >= 4 ? new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) : 0;
       busy.events?.push(performance.timeOrigin + t0, type);
       const reply = gpu.control(cmd, room);
@@ -1226,10 +1232,9 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         const h: Ringed = { w0: r.w0, len: reply.length, flush, ready: false, behind: false, at: now, type, lane: `${c.getUint32(16, true)}:${c.getUint8(20)}`, write: r.write, reply };
         rings.add(h);
         void wait.then(() => {
-          ringRetired = performance.now();
+          ringActive = performance.now();
           if (rings.delete(h)) ctx.complete(h.w0, h.len);
         });
-        if (rings.size === 1) ringRetired = now;
         ringWatch ??= setTimeout(watchRings, RING_STALL_MS);
         return undefined;
       }

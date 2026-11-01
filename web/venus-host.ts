@@ -348,7 +348,12 @@ export class VenusRenderer {
           this.pending.add(key);
           this.sentAt.set(key, performance.now());
           this.watchFences();
-          this.ex.venus_submit_fence(c.ctx, fence.flags, fence.ring, fence.id);
+          // Refused (no such ring): it never retires, and it mustn't hold its ring's lane or a guest waiting for it.
+          if (!this.ex.venus_submit_fence(c.ctx, fence.flags, fence.ring, fence.id)) {
+            console.warn(`venus: fence ${key} refused`);
+            this.pending.delete(key);
+            this.sentAt.delete(key);
+          }
         }
         this.wake();
         return;
@@ -358,9 +363,10 @@ export class VenusRenderer {
 
   /** Destroys a context with its blobs, imports and fences (vkr frees what it holds). */
   private destroy(id: number) {
-    if (!this.contexts.delete(id)) return;
-    this.ex.venus_context_destroy(id);
-    this.stats.contexts--;
+    if (this.contexts.delete(id)) {
+      this.ex.venus_context_destroy(id);
+      this.stats.contexts--;
+    }
     for (const [res, ctx] of this.owner) if (ctx === id) this.owner.delete(res);
     for (const k of this.imported) if (k.startsWith(`${id}:`)) this.imported.delete(k);
     for (const k of this.pending) {

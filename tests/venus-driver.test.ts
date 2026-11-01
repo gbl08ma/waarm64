@@ -309,7 +309,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -374,6 +374,8 @@ for (const [scenario, what] of [
   ['twoReads', 'two read-only storage buffers of one range beside a writable one of their memory'],
   ['sameRange', 'two writable storage buffers of one range: what one writes the other reads'],
   ['overlappingRanges', 'two writable storage buffers that overlap: what one writes the other reads'],
+  ['threeSame', 'three writable storage buffers of one range'],
+  ['oddRange', 'two writable storage buffers of one range that isn\'t whole words'],
   // VK4 R3: the render passes' replay.
   ['attachmentSizes', 'attachments of different sizes in a pass over the smallest'],
   ['loadNone', 'a pass with load op NONE on a view of another format leaves the image as it was'],
@@ -384,6 +386,8 @@ for (const [scenario, what] of [
   ['oneRow', 'one row of an image to and from a buffer whose images are taller'],
   ['resolveTwin', 'a drawn resolve into an sRGB view of a UNORM image'],
   ['msLayers', 'a multisampled copy of two layers'],
+  ['msLayersSrgb', 'a multisampled sRGB copy between two layers of an image'],
+  ['msLayersPacked', 'a multisampled packed copy between two layers of an image'],
   ['msTwins', 'a multisampled copy between sRGB and UNORM twins moves bits'],
   ['msPacked', 'a multisampled copy between packed layouts moves bits'],
   ['msFormats', 'a multisampled copy between formats of a block\'s size moves bits'],

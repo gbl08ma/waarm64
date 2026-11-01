@@ -652,7 +652,7 @@ test('gpu: a Venus fence names its context and ring to the host; virgl\'s and a 
 
 // A queue's work may wait for a signal the guest sends after it, from the thread that queued it; each ring fence held
 // takes an entry of the page's 16, so 16 stopped that thread in the kernel (backlog "Synchronization", VK4 R1).
-test('gpu: ring fences stalled past the slots give their entries back, the next fence of their ring standing for them', async () => {
+test('gpu: ring fences that fill the queue and stall give entries back, the next fence of their ring standing for them', async () => {
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const done: number[] = [];
@@ -678,10 +678,13 @@ test('gpu: ring fences stalled past the slots give their entries back, the next 
   for (let i = 1; i <= 40; i++) assert.equal(send(100 + i, ringed(BigInt(i))), undefined);
   assert.equal(done.length, 0, 'no entry comes back before a stall: the guest may wait for any of these fences alone');
   await new Promise((r) => setTimeout(r, 300));
-  assert.equal(done.length, 40 - 4, 'stalled, at most 4 entries stay held, whatever the number of fences');
+  assert.equal(done.length, 40 - 15, 'stalled, entries come back until the queue has room, and no further');
   for (const r of replies.values()) assert.equal(r.flags & 1, 0, 'a reply given back says no fence: its fence hasn\'t retired');
   assert.ok(!done.includes(140), 'the newest keeps its entry: it stands for those before it');
   assert.ok(!done.includes(101), 'the oldest keeps its own');
+  const second = done.length;
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(done.length, second, 'with room, no more');
   done.length = 0;
   retire[0]();
   await new Promise((r) => setTimeout(r));
@@ -689,14 +692,14 @@ test('gpu: ring fences stalled past the slots give their entries back, the next 
   // In order, as the worker answers them; a fence without an entry is said by the next with one.
   for (let i = 1; i < 40; i++) retire[i]();
   await new Promise((r) => setTimeout(r));
-  assert.equal(done.length, 4, 'those that kept their entries');
+  assert.equal(done.length, 15, 'those that kept their entries');
   assert.equal(done.at(-1), 140);
   const last = replies.get(140)!;
   assert.deepEqual([last.flags & 1, last.id], [1, 40n], 'the last reply is the newest fence\'s, which signals every earlier one of its ring');
   b.reset();
 });
 
-test('gpu: ring fences that go on retiring keep their entries, however many are held', async () => {
+test('gpu: a full queue whose fences go on retiring, or whose guest goes on sending, keeps its entries', async () => {
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const done: number[] = [];
@@ -706,7 +709,7 @@ test('gpu: ring fences that go on retiring keep their entries, however many are 
   b.gpu.host = { call() {}, fence: () => new Promise<void>((r) => retire.push(r)) };
   const send = (w0: number, c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] }); };
   send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= 20; i++) {
     const s = ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
     const v = new DataView(s.buffer);
     v.setUint32(4, 1 | 2, true);

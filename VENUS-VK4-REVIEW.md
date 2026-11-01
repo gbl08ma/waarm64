@@ -1,5 +1,11 @@
 # VK4's out-of-context review (2026-11-01)
 
+**The review of R1 to R4 itself** (a fresh agent, static, on the local branch `review/vk4-r1-r4`, 16 findings): fixed C1 (a crop of
+a 3D image's slices), C2 narrowed (entries come back only from a full, stalled queue, one at a time; what's left is in the
+backlog), D1 (attachments have the copies a crop needs), D2 (each dummy binding its own range), D3, D4 (a fan's room apart from its
+range), D5, D6, D7, D8, W1, W3, M1 (its comment) and M2. D1, D2, D3, D8 and W3 with a test seen failing; C1, D4 to D7, W1 and M2's
+context half without one of their own. W2 and M3 are in the backlog ("Usage scopes' leftovers").
+
 Five fresh agents, each given only the repo, an area and its entry points, and docs/testing.md's neutral brief ("a
 careful static review for real defects: ..."), with no theories and no handover. The area was what VK4 changed after
 T1 (`9730e991..174b870`: T2–T12, T18, T19). It was static only: no reviewer built or ran anything. The findings below

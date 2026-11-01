@@ -855,7 +855,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
     atomics and one not, or together past `maxStorageBufferBindingSize` (said once, refused by WebGPU); a descriptor
-    beside a pointers' binding, and overlapping descriptors there, don't see each other's bytes in the scope; a barrier
+    beside a pointers' binding, and overlapping descriptors there, don't see each other's bytes in the scope, and its
+    shadow's copy back overwrites what pointers wrote anywhere in its range (the review of R1 to R4's W2: going through the
+    pointers' binding at the descriptor's distance, as `aliased_text` does, would serve); a variant per distinct
+    offset between overlapping dynamic bindings, and a crop per size of a view, are kept until their program or view goes; a barrier
     of a secondary command buffer doesn't end the scope; a range past `maxBufferSize` isn't copied (warned, the
     scope dropped as before). Not met by anything measured (dEQP-VK's likeliest groups of the direct set, vkd3d's
     suite: bench/vulkan/REPORT.md "VK4 T3"), so the copies' cost is unmeasured on a program: DXVK or a VMA-based
@@ -886,10 +889,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
     (WebGPU's vertex stage has no writable storage; were it offered, a draw split by face for its stencil state, whose
     vertex stage runs twice, would double its stores: vk/README.md "Commands"). A submit of signals alone behind held
-    ones is held too. Past 4 held ring fences with none retired for 250 ms a fence gives its queue entry back and is signalled by the next
-    one of its ring with an entry (VK4 R1, docs/devices.md "Venus"): **a program waiting in the guest for such a fence
-    alone, while a later fence of that ring waits for what it does next, waits for ever** (needs that stall first; none
-    seen).
+    ones is held too. With the control queue full and no ring fence retired and nothing sent for 250 ms, a fence gives its queue entry back
+    and is signalled by the next one of its ring with an entry (VK4 R1, docs/devices.md "Venus"): **a guest waiting for such
+    a fence alone, while the ring's newest waits for what it does next, waits for ever** (the review of R1 to R4's C2;
+    none seen, and a stall of a full queue would have hung it anyway).
     A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
     are paced"), and 256 of them would put 4 s of replies ahead of each fence.
   - **Device addresses' leftovers** (VK4 T7; vk/README.md "Device addresses"): all address memory is one storage binding

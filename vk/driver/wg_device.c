@@ -1080,6 +1080,16 @@ wg_dimension(const struct vk_image *image)
    }
 }
 
+/* A format's sRGB twin's name, or its linear twin's; NULL for none. */
+static const char *
+srgb_twin(const struct wg_texture_format *fmt)
+{
+   const VkFormat twin = vk_format_is_srgb(fmt->vk) ? vk_format_srgb_to_linear(fmt->vk)
+                                                    : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(fmt->vk)));
+   const struct wg_texture_format *t = twin != fmt->vk ? wg_texture_format(twin) : NULL;
+   return t ? t->name : NULL;
+}
+
 /* What the worker's copies need of a packed format, as a texture's first JSON key: each of R, G, B, A's shift and bits. */
 static void
 packed_key(struct wg_json *j, const struct wg_texture_format *fmt)
@@ -1111,6 +1121,9 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 8;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
+   /* A pass may draw it in a crop, copied from it and back (`crop_copies`), which for depth may be the worker's shader. */
+   if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+      usage |= 1 | 2 | ((flags & WG_FMT_SAMPLE) ? 4 : 0);
    /* A draw may read it as an input attachment while it's an attachment: from a copy (`feedback_copies`). */
    if ((vi->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) &&
        (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)))
@@ -1163,12 +1176,9 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
                   vi->samples, wg_dimension(vi), fmt->name, usage);
    /* A multisampled image's too: a copy into or out of its sRGB twin is a draw, of raw values. */
    if ((vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || shared || (vi->samples > 1 && !(flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))) {
-      const VkFormat twin = vk_format_is_srgb(fmt->vk)
-                               ? vk_format_srgb_to_linear(fmt->vk)
-                               : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(fmt->vk)));
-      const struct wg_texture_format *t = twin != fmt->vk ? wg_texture_format(twin) : NULL;
-      if (t)
-         wg_json_printf(&j, "\"%s\"", t->name);
+      const char *twin = srgb_twin(fmt);
+      if (twin)
+         wg_json_printf(&j, "\"%s\"", twin);
    }
    wg_json_printf(&j, "]}");
    return wg_create_json(WG_KIND_TEXTURE, &j);
@@ -1652,7 +1662,7 @@ wg_view_crop(struct wg_image_view *view, uint32_t width, uint32_t height)
    for (struct wg_view_crop *c = view->crops; c; c = c->next)
       if (c->width == width && c->height == height)
          return c;
-   const uint32_t layers = view->slice >= 0 ? 1 : view->vk.layer_count;
+   const uint32_t layers = view->vk.layer_count;
    struct wg_view_crop *c = calloc(1, sizeof(*c) + layers * sizeof(c->atts[0]));
    c->width = width, c->height = height;
    struct wg_json j = { 0 };
@@ -1660,9 +1670,14 @@ wg_view_crop(struct wg_image_view *view, uint32_t width, uint32_t height)
    if (view->fmt->flags & WG_FMT_PACKED)
       packed_key(&j, view->fmt);
    /* COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT (the worker draws copies it can't make). */
-   wg_json_printf(&j, "\"size\":[%u,%u,%u],\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u}",
+   wg_json_printf(&j, "\"size\":[%u,%u,%u],\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u,\"viewFormats\":[",
                   width, height, layers, view->fmt->name, view->vk.image->samples,
                   4 | 16 | ((view->fmt->flags & WG_FMT_NOCOPY) && !(view->fmt->flags & WG_FMT_STENCIL) ? 0 : 3));
+   /* As a multisampled image's: its copies are draws of raw values. */
+   const char *twin = view->vk.image->samples > 1 ? srgb_twin(view->fmt) : NULL;
+   if (twin)
+      wg_json_printf(&j, "\"%s\"", twin);
+   wg_json_printf(&j, "]}");
    c->texture = wg_create_json(WG_KIND_TEXTURE, &j);
    c->next = view->crops;
    view->crops = c;
@@ -1728,7 +1743,7 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    free(view->layer_atts);
    for (struct wg_view_crop *c = view->crops, *next; c; c = next) {
       next = c->next;
-      for (uint32_t i = 0; i < (view->slice >= 0 ? 1 : view->vk.layer_count); i++)
+      for (uint32_t i = 0; i < view->vk.layer_count; i++)
          wg_id_release(c->atts[i]);
       wg_id_release(c->texture);
       free(c);

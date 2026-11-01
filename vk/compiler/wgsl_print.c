@@ -879,6 +879,7 @@ declare_resources(struct ctx *c)
          const char *el = r->atomic ? (c->res[i].signed_atomic ? "atomic<i32>" : "atomic<u32>") : "u32";
          if (r->atomic)
             r->kind = WGSL_STORAGE;
+         r->signed_atomic = r->atomic && c->res[i].signed_atomic;
          line(c, "%s var<storage, %s> %s: array<%s>;", at, r->kind == WGSL_STORAGE ? "read_write" : "read", name, el);
          break;
       }
