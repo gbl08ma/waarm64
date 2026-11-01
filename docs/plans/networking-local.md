@@ -1,4 +1,4 @@
-# A local network helper (L0 done; L1 next)
+# A local network helper (L0 and L1 done; L2 next)
 
 A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
@@ -164,6 +164,18 @@ with tun2socks-style forwarders.
 - **L1, the helper's repository:** flags, the kept token, origins, the subprotocol, logs; a README that states
   the code ours and imported, the install lines, the hashes and how to rebuild them; the pinned toolchain in
   `go.mod`; releases built here, checked by a second build elsewhere.
+  - **Done** (2026-11-01, a cloud session): the flags as L0 made them, with a usage text, the MTU bounded (1280 to 65520,
+    576 with `--no-ipv6`), no arguments, a taken port said as such (`main_test.go`); the README's install lines (one
+    block per target: `curl` or `Invoke-WebRequest` to `~/.local/bin` or `%LOCALAPPDATA%\Programs\webpc-net`, the
+    SHA-256 checked before it's made executable), the flags' table, the logs and where the token is kept; `build.sh`
+    writes the release: the six binaries at the baseline levels (`GOAMD64=v1`, `GOARM64=v8.0`, so a host's environment
+    can't change the bytes), `LICENSES.txt` (`licenses.sh`: every linked module's own license, notice and patent files,
+    Go's first, failing on a module without one), SHA256SUMS over them, and `INSTALL.md` (the install lines with the
+    hashes, for the release notes and the README); `--check` rebuilds a version and compares with published sums. The
+    helper has its own `LICENSE` now. Two clean builds matched on x86_64 Linux
+    (`bench/net/results/local-helper/build-x86_64.txt`); the Linux install line ran against a `file://` copy.
+  - **Left:** the second host's check (the dev VM, arm64: `build.sh --check` against that file, from the same source);
+    GitHub's releases wait on the move (L3/L4, and the download location in §6).
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
   install`, as `tests/net/tailcat.sh` pins tailcat): Debian's lease, a TCP transfer to a server on this machine, a

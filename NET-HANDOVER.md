@@ -19,14 +19,24 @@ of 2026-11-01 below.
 
 **L0 is done** (2026-11-01): the helper in `net/webpc-net/`, the spike on the page (`?localnet=`, `#net=`, web/local-net.ts),
 `tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's questions answered in bench/net/REPORT.md "The local helper".
+**L1 is done** (2026-11-01, cloud) but for the second host's build check: the plan's L1 "Done" says what.
+
+## The user's answers (2026-11-01, for L2)
+
+- **A link flap** (virtio-net's `STATUS`, down and up) is allowed, guest-visible as it is, for **any kind**: whenever
+  what an adapter's guest holds would change (the path between the page's gateway and the helper, or the gateway's
+  lease address differing from the one the guest was given), never for a reconnect to the same address (networkd drops
+  an adapter's addresses on carrier loss, which cuts its TCP connections).
+- The move to its own repository: after L2, at L3's start (the user's OK to that timing).
 
 ## Next
 
-1. **L1:** the README's install lines, the release's license file (THIRD_PARTY.md says what it needs).
+1. **The dev VM:** `grep -v '^#' bench/net/results/local-helper/build-x86_64.txt > $TMPDIR/sums && net/webpc-net/build.sh --check $TMPDIR/sums v0.0.0-repro`
+   at the commit that wrote that file (`git log -1 -- bench/net/results/local-helper/build-x86_64.txt`), and record it beside.
 2. **L2:** the connection kind replacing `?localnet=`, and in it, as measured: the client **in a worker, batched** (flush on
    `setTimeout(0)`: bench/net/results/local-helper/variants.patch has both); a refused prompt told apart from a stopped helper
    through `permissions.query({ name: 'loopback-network' })`, the message saying where the setting is; **the user looks at the
-   prompt once** (nothing headless shows it); raising `MAX_FRAME` for frame ports and measuring MTU 65520 with the rest.
+   prompt once** (nothing headless shows it); raising `MAX_FRAME` for frame ports and measuring MTU 65520 with the rest; the link flap above.
 3. **L3:** a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
    `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
