@@ -141,6 +141,40 @@ test('once half the data file is free slots, the blocks left move down and the f
   assert.equal(data.getSize(), before);
 });
 
+test('a write the storage refuses (short, or a thrown QuotaExceededError) fails alone: its slots go back, and a compaction after it moves only real blocks', async () => {
+  for (const how of ['short', 'throws'] as const) {
+    const size = 300 * 4096;
+    const base = openDisk((off, len) => new Uint8Array(len).fill(7), size);
+    const [file, map] = [memFile(), memFile()];
+    let refuse = false;
+    const data = Object.assign(memFile(), {
+      read: file.read.bind(file), getSize: file.getSize.bind(file), truncate: file.truncate.bind(file), flush: file.flush.bind(file),
+      write: (buf: Uint8Array, o: { at: number }) => {
+        if (!refuse) return file.write(buf, o);
+        if (how === 'short') return 0;
+        throw new DOMException('No space available for this operation', 'QuotaExceededError');
+      },
+    });
+    const d = overlay(base, data, map);
+    for (let b = 0; b < 100; b++) assert.ok(await d.write(b * 4096, new Uint8Array(4096).fill(b + 1)));
+    refuse = true;
+    assert.equal(await d.write(200 * 4096, new Uint8Array(10 * 4096).fill(200)), false, `${how}: a run of fresh blocks`);
+    assert.equal(await d.write(220 * 4096 + 512, new Uint8Array(512).fill(220)), false, `${how}: part of a fresh block`);
+    refuse = false;
+    assert.ok(await d.write(250 * 4096, new Uint8Array(4096).fill(250)), `${how}: a write after room was made`);
+    // Most blocks trimmed: the data file is compacted (the blocks left move into the free slots below).
+    assert.ok(d.discard(4096, 99 * 4096));
+    for (const disk of [d, overlay(base, data, map)]) {
+      const got = (await disk.read(0, size))!;
+      for (let b = 0; b < 300; b++) {
+        const want = b === 0 ? 1 : b < 100 ? 0 : b === 250 ? 250 : 7;
+        assert.ok(got.subarray(b * 4096, (b + 1) * 4096).every((x) => x === want), `${how}: block ${b} reads ${got[b * 4096]}, not ${want}`);
+      }
+    }
+    assert.ok(file.getSize() <= 4 * 4096, `${how}: ${file.getSize() / 4096} slots for 2 blocks`);
+  }
+});
+
 /** An in-memory file that logs every write (a copy of what was written) and counts the calls. */
 function logged(name: string, log: { file: string; at: number; bytes: Uint8Array }[], calls: Record<string, number>, failAt = Infinity) {
   const f = memFile();

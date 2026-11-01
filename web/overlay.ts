@@ -57,6 +57,28 @@ export type WritableDisk = Disk & {
 export type Meta = { generation: number; merging: string };
 const META_SIZE = 32;
 
+/**
+ * `f` with a write the storage refuses as a short count, as the overlay checks for: Chromium's sync handles come back
+ * short past the quota in some contexts and throw `QuotaExceededError` in others. A thrown write would leave the slots
+ * it took neither mapped nor free, and a later compaction would move them as block 0's (tests/overlay.test.ts).
+ */
+export function shortOnFull(f: SyncFile): SyncFile {
+  return {
+    read: (buf, o) => f.read(buf, o),
+    write: (buf, o) => {
+      try {
+        return f.write(buf, o);
+      } catch (e) {
+        if ((e as DOMException)?.name === 'QuotaExceededError') return 0;
+        throw e;
+      }
+    },
+    getSize: () => f.getSize(),
+    truncate: (size) => f.truncate(size),
+    flush: () => f.flush(),
+  };
+}
+
 /** Reads a `meta` file (an empty one is generation 0, nothing merging). */
 export function readMeta(f: SyncFile): Meta {
   const b = new Uint8Array(META_SIZE);
@@ -83,6 +105,7 @@ export function writeMeta(f: SyncFile, m: Meta) {
  * again: a snapshot pins the generation it saw, so a change after it must move it (web/snapshot.ts).
  */
 export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile): WritableDisk & { generation(): number; epoch(): void } {
+  [data, mapFile, meta] = [shortOnFull(data), shortOnFull(mapFile), meta && shortOnFull(meta)];
   const blocks = Math.ceil(base.size / BLOCK);
   const map = new Uint32Array(blocks);
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 }); // the host is little-endian, as the file

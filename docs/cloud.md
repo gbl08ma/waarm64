@@ -82,7 +82,8 @@ pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` 
 `images/build.sh` needs Podman and native arm64, so the cloud can't build Alpine, Buildroot, the
 Linux kernels, LTP, kvm-unit-tests or litmus. **Debian works**: `node tools/debian.ts` (Node only)
 downloads the pinned qcow2 (403 MB, ~10 s) and unpacks its kernel and initrd, and
-`WEBPC_DISTROS=debian` then selects the Debian tests. So in a cloud session `scripts/ci.sh` runs
+`WEBPC_DISTROS=debian` then selects the Debian tests. `images/build.sh debian` runs the same on the host (no Podman)
+and also writes `.inputs`, which `scripts/ci-debian.sh` and `scripts/ci-machines.sh` check first: use it for those. So in a cloud session `scripts/ci.sh` runs
 everything except the image-based native tests (`boot`, `kvm-unit-tests`, `litmus`, `ltp`, the
 Alpine boots), which it already skips with a message when `images/build.sh --check` fails. Work
 that needs those (Buildroot/Alpine step counts, kernel changes) belongs in the local VM; a done

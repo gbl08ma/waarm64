@@ -505,6 +505,51 @@ test('virtio-blk: a write that finds the storage full gets the remote disks\' ke
   store.close();
 });
 
+test('virtio-blk: a write the storage refuses (short, or QuotaExceededError) is told once, until a write lands again; other errors aren\'t', async () => {
+  const size = 16 * 4096;
+  const ram = new Uint8Array(1 << 16);
+  const ctx = { ram: () => [ram] } as unknown as Ctx;
+  const src = { size, read: (off: number, len: number) => new Uint8Array(len).fill(7) };
+  // The overlay's data file: `mode` says how its writes go.
+  let mode: 'ok' | 'short' | 'quota' | 'other' = 'ok';
+  const file = memFile();
+  const data = { ...file, read: file.read.bind(file), getSize: file.getSize.bind(file), truncate: file.truncate.bind(file), flush: file.flush.bind(file),
+    write: (buf: Uint8Array, o: { at: number }) => {
+      if (mode === 'short') return 0;
+      if (mode === 'quota') throw new DOMException('No space available for this operation', 'QuotaExceededError');
+      if (mode === 'other') throw new TypeError('something else');
+      return file.write(buf, o);
+    } };
+  let told = 0;
+  const b = blk(ctx, src, { data, map: memFile(), meta: memFile(), close() {} }, true, undefined, 'webpc-blk', false, () => told++);
+  /** Writes block `k` (OUT; or WRITE_ZEROES over its first half); the status. */
+  const write = async (k: number, zeroes = false) => {
+    const h = new DataView(ram.buffer, 0, 16);
+    h.setUint32(0, zeroes ? 13 : 1, true);
+    h.setBigUint64(8, BigInt(zeroes ? 0 : k * 8), true);
+    const body = new Uint8Array(zeroes ? 16 : 4096).fill(9);
+    if (zeroes) { const seg = new DataView(body.buffer); seg.setBigUint64(0, BigInt(k * 8), true); seg.setUint32(8, 4, true); seg.setUint32(12, 0, true); } // half a block: its bytes are written
+    ram.set(body, 16);
+    ram[8192] = 0xff;
+    await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: body.length, mem: 0 }], write: [{ off: 8192, len: 1, mem: 0 }] });
+    return ram[8192];
+  };
+  const [OK, IOERR] = [0, 1];
+  assert.equal(await write(0), OK);
+  mode = 'short';
+  assert.deepEqual([await write(1), await write(2), told], [IOERR, IOERR, 1], 'a short write: told once');
+  mode = 'quota';
+  assert.deepEqual([await write(3), await write(4, true), told], [IOERR, IOERR, 1], 'still full: not told again (a write of zeroes too)');
+  mode = 'ok';
+  assert.equal(await write(5), OK);
+  mode = 'quota';
+  assert.deepEqual([await write(6), told], [IOERR, 2], 'full again after a write landed: told again');
+  mode = 'ok';
+  assert.equal(await write(7), OK);
+  mode = 'other';
+  assert.deepEqual([await write(8), told], [IOERR, 2], 'another error fails the request, and is no full storage');
+});
+
 test('the I/O counters: blk counts the bytes of completed reads and writes, net the frames to and from the guest', async () => {
   const ram = new Uint8Array(1 << 16);
   const io = new Float64Array(4); // two devices' worth: each backend gets its own two slots, as `Devices` hands them out

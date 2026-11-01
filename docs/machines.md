@@ -91,10 +91,22 @@ Since decided (the user, 2026-10-17):
   detaching or reordering disks, a change of shape) is refused while it runs, in this tab or another (`isRunning`),
   with a message to power it off. What isn't in the shape is changed at once, running or not: a network adapter's
   connection, a shared folder attached or detached (the 9p root is a listing the server makes), USB devices. Shared
-  folders have their own locks (`webpc-folder:<id>`: one writer, or several readers; shares.md §1).
+  folders have their own locks (`webpc-folder:<id>`: one writer, or several readers; shares.md §1). A start takes the
+  machine's lock before it opens the disks, and only if it's free (`ifAvailable`): a second tab of a running machine
+  (the page opens the last machine by default) says at once that it runs in another tab, with Retry, instead of
+  waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts).
 - **Storage:** the Machines page shows `navigator.storage.estimate()` and what each overlay, machine (variable store
   and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
-  first time something is stored (without it the browser may evict the origin's data under pressure).
+  first time something is stored (without it the browser may evict the origin's data under pressure). A guest's
+  write the storage refuses (over the quota: OPFS's sync handles come back short or throw `QuotaExceededError`)
+  fails with `IOERR` after the remote disks' kept blocks give way (`releaseStores`), and the page says the storage
+  is full with `estimate()`'s numbers (devices.ts `storageFullText`, a notice), once until a write lands again and at
+  most once a minute (overwrites of held blocks still land while it's full); the machine runs on, though a guest's
+  filesystem may abort on its own refused writes (Debian's ext4 does at times: read-only, then EIO for anything not
+  cached, until a restart) (tests/page-quota.test.ts lowers the quota with `Storage.overrideQuotaForOrigin`). Chromium's sync
+  handles past the quota come back short in some contexts and throw `QuotaExceededError` in others; the overlay and the
+  block cache take both as a short write (`shortOnFull`): a thrown one used to leave the overlay's taken slots neither
+  mapped nor free, and a compaction after a trim then moved one as block 0's (the guest's first block read as zeros).
 - **Transient machines:** the tests' query parameters (`?machine=debian`, `?disk=`, `?disk2=`, `?ncpus=`, `?ram=`)
   make a machine that is never stored. Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
   `webpc-disk-<hash>` for `?disk=`), which the sweep never touches; its suspended copy is beside its overlay.
@@ -118,9 +130,9 @@ date are the same disk to the page.
 
 A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
 a start that finds a file disk without permission stops at "Allow and start" (one prompt per handle), or at "Pick
-and start" for a disk with no handle (a definition's, or one opened through a plain file input). Drops give handles
-too (`DataTransferItem.getAsFileSystemHandle`), as the Add a disk wizard's `showOpenFilePicker` does. A picked file
-is checked as in §6.
+and start" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
+no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
+Add a disk wizard's, Open disk…'s and From a disk image…'s (main.ts `openDisk`). A picked file is checked as in §6.
 
 ### 3.3 The overlay's generation
 

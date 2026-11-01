@@ -50,6 +50,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.md`); read it only to
   generate decoder tables or coverage checks from it.
+- **A timing-bound GPU test flakes in the cloud** (2026-11-01): tests/gpu.test.ts "ring fences that fill the queue and
+  stall…" waits 300 ms for `RING_STALL_MS` (250 ms); when the stall timer fires a little early against
+  `performance.now()`, the check re-arms for another 250 ms and nothing has come back at 300 (`0 !== 25`). In a cloud
+  session it failed 3 to 4 times in 8 alone, the same before and after the commit tested; not seen in the dev VM. Waiting
+  for the entries (bounded) instead of a fixed 300 ms, or a stall check that tolerates an early timer, would settle it.
 - **Corpus depth:** thin FP flag paths (8 `fp_scalar` tests raise Divide-by-Zero); add biased forms
   when touching FP again.
 
@@ -1073,8 +1078,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     test now runs on an on-disk profile, as a user's, where the estimate holds. A user in an Incognito window can still
     meet it: the snapshot and suspend writers could give the cache's stores up on a short write and try once more, as
     a guest's disk write does (`releaseStores`), or the cache could stay small off the record.
-  - A full quota still reaches the guest as `IOERR` (and an import or a kept snapshot fails with "is it full?"): the
-    page should say so where it happens, with the storage view's numbers.
+  - A full quota stops an import or a kept snapshot with "is it full?" and no numbers (a guest's write says so with
+    them: machines.md "Storage"); those messages could carry `estimate()`'s too. `Storage.overrideQuotaForOrigin`
+    (tests/page-quota.test.ts) makes the case cheap to test; `estimate()` doesn't report the override.
   - A stored disk's SHA-256 isn't computed in the background (once would do: it never changes; machines.md §3.1), and a definition carries a file's hash only
     where the record has one: a definition's file is checked by name, size and date unless something hashed it.
   - **Chromium 153 crashes reading a file handle back from IndexedDB in an off-the-record context** (the whole
@@ -1084,14 +1090,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     put `{ h: await (await navigator.storage.getDirectory()).getFileHandle('d', { create: true }) }` into an object
     store, then get it. Check
     Chrome stable; if it reproduces there, report it upstream and keep handles out of IndexedDB off the record.
-  - **Open disk… keeps no handle:** the first-run message's button and the Machines page's From a disk image… are a
-    plain `<input type=file>` (main.ts `openDiskInput`), so the machine they make has a file disk without a handle,
-    and after a reload its suspended copy resumes only once the file is picked again ("Pick and start", checked by
-    name, size and date). A drop and the Add disk wizard (`showOpenFilePicker`) keep one, and a reload resumes after
-    one click ("Allow and start"); both buttons could use the picker too.
-  - **A second tab of a running machine** (the page opens the last machine by default) starts a worker, waits out the
-    overlay's lock (10 s, `OVERLAY_WAIT_MS`) and fails with `disk-in-use`, naming the disk. Checking the machine's
-    lock first (`isRunning`) would say at once that it runs in another tab, without a worker.
   - Several file disks re-granted at a start ask once each (`requestPermission` per handle).
   - **Exporting a whole machine** isn't built: a bundle with the definition, its overlays (as changes files), its kept
     snapshots and, optionally, its stored disks (machines.md §10). Only the definition goes in and out.

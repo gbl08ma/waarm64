@@ -761,6 +761,12 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     let disks: StartDisk[];
     let home: string | undefined;
     let about: Awaited<ReturnType<typeof aboutMachine>>;
+    if (!(await holdLock())) {
+      if (run !== r) return;
+      setState('failed', `${stored!.record.name} runs in another tab of this page: power it off there, or close that tab, then Retry.`, [retry]);
+      return;
+    }
+    if (run !== r) return dropLock();
     try {
       const needs = stored ? await filesNeedingUser(stored) : [];
       if (needs.length) throw new NeedsUser(needs);
@@ -769,6 +775,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       about = await aboutMachine(!!three);
     } catch (e) {
       if (run !== r) return;
+      dropLock();
       if (e instanceof NeedsUser) {
         const needs = e.disks;
         setState('idle', `${e.message}: the browser lets a page read a file only after you say so.`, [{ label: needs.some((d) => d.handle) ? 'Allow and start' : 'Pick and start', run: () => void grantFiles(needs).then((ok) => { if (ok) void restart(); }) }], 'warn');
@@ -776,7 +783,6 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       return;
     }
     if (run !== r) return;
-    holdLock();
     const list = shares ? await folders.begin(stored!.record, shares.port1) : undefined;
     ui.folders.path = stored ? sharesPath(stored.record) ?? '' : '';
     if (run !== r) return folders.end();
@@ -832,12 +838,25 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   ui.net++;
 }
 
-/** While a stored machine runs on this page, its Web Lock is held (machines.ts `machineLock`): the Machines page, in any tab, sees it running. */
+/**
+ * While a stored machine runs on this page, its Web Lock is held (machines.ts `machineLock`): the Machines page, in any
+ * tab, sees it running. It's taken before the machine's disks are opened, and only if it's free: false when another
+ * tab holds it (the machine runs there), said at once instead of after the overlay's wait (`OVERLAY_WAIT_MS`).
+ */
 let releaseLock: (() => void) | undefined;
-function holdLock() {
-  if (!stored || releaseLock) return;
-  const held = new Promise<void>((resolve) => { releaseLock = resolve; });
-  void navigator.locks.request(machineLock(stored.record.id), () => held);
+/** Settles once the lock this page last held is released (a restart's next take waits for it, or it'd find its own). */
+let lockReleased: Promise<unknown> = Promise.resolve();
+async function holdLock() {
+  if (!stored || releaseLock) return true;
+  await lockReleased;
+  const got = await new Promise<boolean>((answer) => {
+    lockReleased = navigator.locks.request(machineLock(stored!.record.id), { ifAvailable: true }, (lock) => {
+      if (!lock) return answer(false);
+      answer(true);
+      return new Promise<void>((resolve) => { releaseLock = resolve; });
+    }).catch(() => answer(false));
+  });
+  return got;
 }
 function dropLock() {
   releaseLock?.();
@@ -939,7 +958,7 @@ function syncDiskButtons() {
 /** No disk yet: say how to bring one, and start nothing. */
 function waitForDisk() {
   if (stored) return setState('idle', `${stored.record.name} has no disks yet: add one on its Disks tab.`, [{ label: 'Disks…', run: () => openMachines('disks', stored!.record.id) }], 'warn');
-  setState('idle', 'Open a disk image to start the machine: an arm64 Linux image that boots through UEFI, as qcow2, raw or an installer or live ISO (Open disk…, or drop the file on the page). What the machine writes to it is kept in this browser, per file.', [{ label: 'Open disk…', run: () => openDiskInput.click() }], 'warn');
+  setState('idle', 'Open a disk image to start the machine: an arm64 Linux image that boots through UEFI, as qcow2, raw or an installer or live ISO (Open disk…, or drop the file on the page). What the machine writes to it is kept in this browser, per file.', [{ label: 'Open disk…', run: () => void openDisk() }], 'warn');
 }
 
 // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
@@ -971,6 +990,23 @@ async function resetDiskAsked() {
 // Your own disk: a local file (raw or qcow2, by its magic), by the picker or dropped on the page. The machine restarts on it; the
 // disk's changes are kept in the browser per file (name, size, modification time), so choosing it again continues where it left off.
 const openDiskInput = $<HTMLInputElement>('open-disk-input');
+/**
+ * Open disk… (the first-run message's, the Machines page's From a disk image…): the browser's file picker where it has
+ * one, so the machine keeps the file's handle (a reload's resume asks only to allow it, not to pick the file again), as
+ * a drop and the Add disk wizard do; else the plain input.
+ */
+async function openDisk() {
+  const picker = (window as unknown as { showOpenFilePicker?: () => Promise<FileSystemFileHandle[]> }).showOpenFilePicker;
+  if (!picker) return openDiskInput.click();
+  let handle: FileSystemFileHandle;
+  try {
+    [handle] = await picker.call(window);
+  } catch (e) {
+    if ((e as DOMException).name !== 'AbortError') notify(`The file couldn't be opened: ${String((e as Error).message ?? e)}`, 'error');
+    return;
+  }
+  await chooseDisk({ file: await handle.getFile(), handle });
+}
 
 /**
  * The machine for a disk file opened or dropped on the page (machines.md §2: "opening a disk the old way stays"): the
@@ -2099,6 +2135,7 @@ Object.assign(page, {
   restoreKept: (id: string) => void restoreKept(id),
   loadSnapshot: (file: File) => void loadSnapshot(file),
   openDiskFile: (file: File, handle?: FileSystemFileHandle) => void chooseDisk({ file, handle }),
+  openDisk: () => void openDisk(),
   openMachine: (id: string) => { closeMachines(); void switchMachine(id); },
   powerOff: () => exclusively(async () => { await stop(); setState('off'); }),
   powerOffAsked: () => void powerOffAsked(),

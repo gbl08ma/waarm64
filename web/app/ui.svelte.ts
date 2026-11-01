@@ -128,6 +128,8 @@ export type Page = {
   loadSnapshot(file: File): void;
   /** A disk image, snapshot or changes file chosen or dropped on the page. */
   openDiskFile(file: File, handle?: FileSystemFileHandle): void;
+  /** Open disk…: a disk image picked (with its handle, where the browser has the picker), as if dropped on the page. */
+  openDisk(): void;
   /** Opens stored machine `id` on this page. */
   openMachine(id: string): void;
   powerOff(): Promise<void>;

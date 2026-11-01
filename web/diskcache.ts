@@ -13,7 +13,7 @@
 // The device worker holds the directory's Web Lock while it reads it; another tab on the same image gets no store (an
 // opener waits 2 s for it: a restarting machine's old device worker lets go as it closes). The page's Clear asks the
 // workers holding one to give its space back (`clearCaches`).
-import { opfsDir, type SyncFile } from './overlay.ts';
+import { opfsDir, shortOnFull, type SyncFile } from './overlay.ts';
 
 /** The Storage Bucket's name, or the OPFS directory's where there are no buckets. */
 export const CACHE_DIR = 'remote-cache';
@@ -254,6 +254,7 @@ export async function openBlockStore(key: string, size: number, block: number): 
 
 /** The store over its two files (memory files in the tests): `slots` blocks at most. */
 export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, block: number, slots: number, close: () => void = () => {}): BlockStore {
+  [data, mapFile] = [shortOnFull(data), shortOnFull(mapFile)]; // a refused write gives up, as a short one does, never throws into a read
   const blocks = Math.ceil(size / block);
   const map = new Uint32Array(blocks);
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 });
@@ -301,7 +302,8 @@ export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, bloc
           mapFile.flush();
         }
       }
-      // A short write (the storage is full: Chromium's sync handles return a short count, they don't throw) gives up.
+      // A short write (the storage is full: Chromium's sync handles return a short count or throw `QuotaExceededError`,
+      // which `shortOnFull` makes a short count) gives up.
       if (data.write(bytes, { at: s * block }) !== bytes.length) return store.giveUp();
       data.flush();
       owner[s] = b;

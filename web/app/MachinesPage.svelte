@@ -266,7 +266,7 @@
       </ul>
       <div class="new">
         <button onclick={() => act('Making a machine', async () => { choose((await createMachine(store)).id); })} data-action="new-machine"><Icon name="plus" size={16} />New machine</button>
-        {#if ui.firmware}<button onclick={() => document.getElementById('open-disk-input')!.click()} title="A machine for a disk image on this computer (qcow2, raw or an ISO), started at once: the same as dropping the file on the page"><Icon name="file" size={16} />From a disk image…</button>{/if}
+        {#if ui.firmware}<button onclick={() => page.openDisk()} title="A machine for a disk image on this computer (qcow2, raw or an ISO), started at once: the same as dropping the file on the page"><Icon name="file" size={16} />From a disk image…</button>{/if}
         <button onclick={() => defInput.click()} title="A machine definition (.webpc-machine.json): its settings and disks, without their contents"><Icon name="file-import" size={16} />Import a definition…</button>
         <input type="file" accept=".json,application/json" hidden bind:this={defInput} onchange={importDef} data-field="import-definition">
       </div>
