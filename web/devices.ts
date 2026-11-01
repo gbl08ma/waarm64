@@ -70,8 +70,11 @@ const RAMDISK_FULL = "The ramdisk is out of memory: this tab can't have more, so
 export async function storageFullText() {
   const est = await globalThis.navigator?.storage?.estimate?.().catch(() => undefined);
   const numbers = est?.quota ? ` (${bytesText(est.usage ?? 0)} used of ${bytesText(est.quota)})` : '';
-  return `The browser's storage is full${numbers}: the guest's writes to its disk fail (I/O errors). Make room on the Machines page (the browser's storage, at its bottom: what takes it, the remote disks' blocks), or delete files in the guest; writes that come after work again.`;
+  return `The browser's storage is full${numbers}: the guest's writes to its disk fail (I/O errors), and its filesystem may stop taking any (read-only) until the machine is restarted. Make room on the Machines page (the browser's storage, at its bottom: what takes it, the remote disks' blocks), then restart the machine if it needs it.`;
 }
+
+/** How often the page is told at most that the storage is full. */
+const FULL_REPEAT_MS = 60_000;
 
 /** Whether a disk takes the guest's writes: through an overlay, or a ramdisk. */
 export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
@@ -1103,7 +1106,15 @@ export class Devices {
       if (d.url.startsWith('file:')) return fileSource(d.url);
       return remoteSource(d.url, d.keep ?? true, !init.deterministic);
     }));
-    return new Devices(init, overlays, sources, out, () => void storageFullText().then(notice));
+    // At most once a minute for all disks: while it's full, overwrites of blocks an overlay holds still land (they
+    // don't grow its file), and each disk tells again after one.
+    let toldAt = -Infinity;
+    const full = () => {
+      if (performance.now() - toldAt < FULL_REPEAT_MS) return;
+      toldAt = performance.now();
+      void storageFullText().then(notice);
+    };
+    return new Devices(init, overlays, sources, out, full);
   }
 
   /** The I/O timers of the blk devices that have them (spec `stats`), by device index. */

@@ -100,8 +100,10 @@ Since decided (the user, 2026-10-17):
   first time something is stored (without it the browser may evict the origin's data under pressure). A guest's
   write the storage refuses (over the quota: OPFS's sync handles come back short or throw `QuotaExceededError`)
   fails with `IOERR` after the remote disks' kept blocks give way (`releaseStores`), and the page says the storage
-  is full with `estimate()`'s numbers (devices.ts `storageFullText`, a notice), once until a write lands again; the
-  machine runs on (tests/page-quota.test.ts lowers the quota with `Storage.overrideQuotaForOrigin`). Chromium's sync
+  is full with `estimate()`'s numbers (devices.ts `storageFullText`, a notice), once until a write lands again and at
+  most once a minute (overwrites of held blocks still land while it's full); the machine runs on, though a guest's
+  filesystem may abort on its own refused writes (Debian's ext4 does at times: read-only, then EIO for anything not
+  cached, until a restart) (tests/page-quota.test.ts lowers the quota with `Storage.overrideQuotaForOrigin`). Chromium's sync
   handles past the quota come back short in some contexts and throw `QuotaExceededError` in others; the overlay and the
   block cache take both as a short write (`shortOnFull`): a thrown one used to leave the overlay's taken slots neither
   mapped nor free, and a compaction after a trim then moved one as block 0's (the guest's first block read as zeros).
