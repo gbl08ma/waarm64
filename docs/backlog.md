@@ -46,10 +46,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   The first has to tell RMWs from STXR, which shares `cas`; the second needs a probe of the translation first.
 - **Reserved AdvSIMD encodings with FPEN 0** take the FP trap (`interp.rs`: `fp_enabled` before the handler's field
   checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED.
-- **Smaller, from reading the code (2026-10-30), not tested:** a stepped instruction that takes a real external abort
-  leaves SPSR.SS 0 (`debug::step`'s list can't add `Bus`: MMIO shares it); the SP alignment check comes before the
-  checks for reserved load/store encodings; `interp::run` and `run_system` take `Exit::Wfe`, `Sev` and `TlbiIs` for
-  faults, unreachable today (only a VM's vCPUs have `FEATURE_SMP`).
 - **Exclusives and LSE on device memory:** an LDXR reads (through `Io`, with LDAR), its STXR and the LSE atomics take
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.md`); read it only to
@@ -82,8 +78,6 @@ left open, most promising first.
   end` test, LdO/StO runs in a loop (docs/cpu.md "Tried and not kept"). Any code in `hot` moves V8's register
   allocation for all of it, and a guest branch must stay a host branch (loop 12: a `select` there cost 30%): measure
   on the small guests too.
-- `ldst_fp::multiple` copies all of `c.v` (512 bytes) for every structure access, stores included, to commit loads
-  after the last read; up to four `u128`s would do. LD1/ST1 are inline in the JIT, so this is LD2-4 and cold code.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.

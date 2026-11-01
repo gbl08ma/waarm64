@@ -126,6 +126,13 @@ pub(crate) fn enabled_for(c: &Cpu, p: u64) -> bool {
     c.os_lock == 0 && (p & 0xc == 0 || c.mdscr_el1 & MDSCR_KDE != 0 && p & PSTATE_D == 0)
 }
 
+/// Whether the instruction at the PC is stepped: software step is enabled
+/// at the current EL. One that reaches an exception was active-not-pending
+/// (pending, `step` takes the step exception instead).
+pub(crate) fn stepping(c: &Cpu) -> bool {
+    enabled(c, c.el()) && c.mdscr_el1 & MDSCR_SS != 0
+}
+
 /// An exception's EC for a class taken from EL0 (`ec`) or EL1 (`ec` + 1).
 fn ec(ec: u32, el: u64) -> u32 {
     (ec + el as u32) << 26
@@ -138,7 +145,7 @@ fn ec(ec: u32, el: u64) -> u32 {
 fn step(c: &mut Cpu, m: &mut impl Bus) -> R {
     let (pc, el) = (c.pc, c.el());
     let on = enabled(c, el);
-    let stepping = on && c.mdscr_el1 & MDSCR_SS != 0;
+    let stepping = stepping(c);
     if stepping && c.pstate & PSTATE_SS == 0 {
         return Err(Exit::Trap(ec(0x32, el) | c.step_syn as u32 | FSC_DEBUG));
     }
@@ -159,6 +166,8 @@ fn step(c: &mut Cpu, m: &mut impl Bus) -> R {
     // Active-not-pending: the instruction completes, or takes an exception
     // that leaves it to run again (SPSR.SS = 1). An SVC or HVC completes it, as
     // does what the run loop finishes (the platform's registers, WFI, MMIO).
+    // `FaultKind::Bus` is MMIO's too: `take_exception` sets SS for a real
+    // external abort.
     c.pstate &= !PSTATE_SS;
     c.step_syn = 1 << 24 | (load_exclusive(insn) as u64) << 6;
     let r = exec_at(c, m, insn, pc);

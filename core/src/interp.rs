@@ -91,7 +91,8 @@ type R<T = ()> = Result<T, Exit>;
 /// ([`block`]), which decodes a block once.
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
     match steps(cpu, mem, None, 1) {
-        (_, None | Some(Exit::Resync | Exit::Invalidate(_))) => Ok(()),
+        (_, None) => Ok(()),
+        (_, Some(e)) if e.retired() => Ok(()),
         (_, Some(e)) => Err(e),
     }
 }
@@ -161,7 +162,9 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
         done += k;
         match e {
             None => {}
-            Some(Exit::Resync | Exit::Invalidate(_)) => done += 1,
+            // Wfe, Sev and TlbiIs (SMP only) too: with one vCPU, the
+            // event is set or WFE completes at once, and its TLB is done.
+            Some(e) if e.retired() => done += 1,
             Some(Exit::Wfi) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
                 done += 1;
@@ -189,7 +192,9 @@ pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
         done += k;
         match e {
             None => {}
-            Some(Exit::Resync | Exit::Invalidate(_)) => done += 1,
+            // Wfe, Sev and TlbiIs (SMP only) too: with one vCPU, the
+            // event is set or WFE completes at once, and its TLB is done.
+            Some(e) if e.retired() => done += 1,
             Some(Exit::Wfi) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
                 done += 1;
@@ -807,16 +812,14 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
         | LDUMINB | SWPB | LDADDH | LDCLRH | LDEORH | LDSETH | LDSMAXH | LDSMINH | LDUMAXH
         | LDUMINH | SWPH | LDADD | LDCLR | LDEOR | LDSET | LDSMAX | LDSMIN | LDUMAX | LDUMIN
         | SWP => ldst::exec(c, m, i, pc, op)?,
+        // FPEN is checked there, after the UNDEFINED encodings.
         LDR_lit_fpsimd | STNP_LDNP_fpsimd | STP_LDP_fpsimd | STUR_fpsimd | LDUR_fpsimd
         | STR_imm_fpsimd_1 | STR_imm_fpsimd_2 | LDR_imm_fpsimd_1 | LDR_imm_fpsimd_2
         | STR_reg_fpsimd | LDR_reg_fpsimd | STx_mult_1 | STx_mult_2 | LDx_mult_1 | LDx_mult_2
         | ST1_sngl_1 | ST1_sngl_2 | ST2_sngl_1 | ST2_sngl_2 | ST3_sngl_1 | ST3_sngl_2
         | ST4_sngl_1 | ST4_sngl_2 | LD1_sngl_1 | LD1_sngl_2 | LD2_sngl_1 | LD2_sngl_2
         | LD3_sngl_1 | LD3_sngl_2 | LD4_sngl_1 | LD4_sngl_2 | LD1R_1 | LD1R_2 | LD2R_1 | LD2R_2
-        | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => {
-            fp_enabled(c)?;
-            ldst_fp::exec(c, m, i, pc, op)?
-        }
+        | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => ldst_fp::exec(c, m, i, pc, op)?,
 
         // Scalar floating point.
         FCVT_float | SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix

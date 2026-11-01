@@ -57,16 +57,13 @@ fn low(v: u128, bytes: u32) -> u128 {
 pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let (rt, rn, rm) = (bits(i, 4, 0) as usize, bits(i, 9, 5), bits(i, 20, 16));
-    let base = match op {
-        LDR_lit_fpsimd => 0, // no base register
-        _ => super::base_reg(c, rn)?,
-    };
     match op {
         LDR_lit_fpsimd => {
             let bytes = match bits(i, 31, 30) {
                 3 => return Err(Exit::Undefined),
                 opc => 4 << opc,
             };
+            super::fp_enabled(c)?;
             let addr = pc.wrapping_add(sext((bits(i, 23, 5) << 2) as u64, 21));
             c.v[rt] = load(c, m, addr, bytes)?;
         }
@@ -75,6 +72,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
                 3 => return Err(Exit::Undefined),
                 opc => 4 << opc,
             };
+            let base = base(c, rn)?;
             let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(bytes as u64);
             // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for STNP/LDNP) offset.
             let mode = bits(i, 24, 23);
@@ -98,21 +96,17 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
         }
         STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 => {
             let bytes = single_size(i)?;
-            let addr = base.wrapping_add(bits(i, 21, 10) as u64 * bytes as u64);
+            let addr = base(c, rn)?.wrapping_add(bits(i, 21, 10) as u64 * bytes as u64);
             single(c, m, i, addr, bytes)?;
         }
         STUR_fpsimd | LDUR_fpsimd => {
             let bytes = single_size(i)?;
-            single(
-                c,
-                m,
-                i,
-                base.wrapping_add(sext(bits(i, 20, 12) as u64, 9)),
-                bytes,
-            )?;
+            let addr = base(c, rn)?.wrapping_add(sext(bits(i, 20, 12) as u64, 9));
+            single(c, m, i, addr, bytes)?;
         }
         STR_imm_fpsimd_1 | LDR_imm_fpsimd_1 => {
             let bytes = single_size(i)?;
+            let base = base(c, rn)?;
             let wb = base.wrapping_add(sext(bits(i, 20, 12) as u64, 9));
             single(c, m, i, if bit(i, 11) { wb } else { base }, bytes)?;
             c.set_reg_sp(rn, wb);
@@ -129,12 +123,20 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
                 0
             };
             let off = extend(c.reg(rm), option, amt);
-            single(c, m, i, base.wrapping_add(off), bytes)?;
+            single(c, m, i, base(c, rn)?.wrapping_add(off), bytes)?;
         }
         STx_mult_1 | STx_mult_2 | LDx_mult_1 | LDx_mult_2 => multiple(c, m, i)?,
         _ => single_structure(c, m, i)?,
     }
     Ok(())
+}
+
+/// The checks after decoding, in the architecture's order: the FPEN trap, then
+/// (`super::base_reg`) the SP alignment fault. Every form calls it once its
+/// UNDEFINED encodings are ruled out, which come first.
+fn base(c: &Cpu, rn: u32) -> R<u64> {
+    super::fp_enabled(c)?;
+    super::base_reg(c, rn)
 }
 
 /// Access size of a single-register SIMD&FP load/store: size (31:30), with opc<1> (23) selecting Q.
@@ -186,33 +188,29 @@ fn multiple(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let elements = datasize / ebytes;
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
-    let (t, base) = (bits(i, 4, 0) as usize, super::base_reg(c, bits(i, 9, 5))?);
-    // Loads build the new registers in a copy and commit after the last read.
-    let mut v = c.v;
-    if load_ {
-        // Every element of each register gets written; Q=0 also clears the upper half.
-        for r in 0..rpt * selem {
-            v[(t + r) % 32] = 0;
-        }
-    }
+    let (t, base) = (bits(i, 4, 0) as usize, base(c, bits(i, 9, 5))?);
+    // Loads build the new registers (at most four: register t + k is v[k])
+    // and commit after the last read. Every element of each gets written, and
+    // Q=0 clears the upper half, so they start at zero.
+    let mut v = [0u128; 4];
     let mut addr = base;
     for r in 0..rpt {
         for e in 0..elements {
             for s in 0..selem {
-                let tt = (t + r + s) % 32;
-                let sh = e * esize;
+                let (k, sh) = (r + s, e * esize);
                 if load_ {
-                    let x = load(c, m, addr, ebytes)?;
-                    v[tt] = (v[tt] & !(emask << sh)) | x << sh;
+                    v[k] |= load(c, m, addr, ebytes)? << sh;
                 } else {
-                    store(c, m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
+                    store(c, m, addr, ebytes, (c.v[(t + k) % 32] >> sh) & emask)?;
                 }
                 addr = addr.wrapping_add(ebytes as u64);
             }
         }
     }
     if load_ {
-        c.v = v;
+        for (k, x) in v.iter().take(rpt * selem).enumerate() {
+            c.v[(t + k) % 32] = *x;
+        }
     }
     post_index(c, i, base, addr.wrapping_sub(base));
     Ok(())
@@ -233,7 +231,7 @@ fn single_structure(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
         3 if load_ && !s => (1 << size, u32::MAX),
         _ => return Err(Exit::Undefined),
     };
-    let (t, base) = (bits(i, 4, 0) as usize, super::base_reg(c, bits(i, 9, 5))?);
+    let (t, base) = (bits(i, 4, 0) as usize, base(c, bits(i, 9, 5))?);
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
     let mut addr = base;

@@ -89,7 +89,9 @@ match it step for step.
 - **HVC at EL1 is a PSCI call** ([platform.md](platform.md)); `SMC`, `HLT`, `DCPS1-3`, `DRPS` are
   UNDEFINED (no EL3, no halting debug); `ERET` is UNDEFINED at EL0.
 - **Alignment:** `SCTLR_EL1.A` alignment faults; SP alignment faults (`SA`/`SA0`, EC 0x26) —
-  QEMU TCG doesn't raise these, the M4 (hvf) does, and we follow the architecture. Exclusives,
+  QEMU TCG doesn't raise these, the M4 (hvf) does, and we follow the architecture. A load/store's
+  checks run in the pseudocode's order: its reserved encodings are UNDEFINED first (decoding), then
+  the FPEN trap for SIMD&FP, then the SP alignment fault (`ldst::undefined`, `ldst_fp::base`). Exclusives,
   LDAR/STLR and LSE atomics need natural alignment (v8.0 rules; we don't advertise LSE2, which the
   M4 and QEMU implement: see [testing.md](testing.md) "Known oracle behavior").
 - `Cpu::default()` is a Linux user process at EL0; `Cpu::reset()` the EL1 boot state.
@@ -118,7 +120,8 @@ use, and kvm-unit-tests' `debug-*`.
   `PSTATE.SS` is bit 21 of `pstate`; an instruction that completes clears it, and the step
   exception (EC 0x32/0x33) is taken before the next one, with ISV and EX (a load-exclusive was
   stepped); an exception the instruction raises leaves it set (SPSR.SS = 1, the instruction runs
-  again), SVC and HVC complete it; ERET restores `SPSR.SS` only while step is on at its target, and
+  again; a real external abort too, set by `take_exception`: the run loop's MMIO shares
+  `FaultKind::Bus` and completes the instruction), SVC and HVC complete it; ERET restores `SPSR.SS` only while step is on at its target, and
   the step that leaves pending reports no ISV. An IRQ is taken before a pending step exception.
 - **Order:** a pending step, then the PC alignment fault and the instruction abort, then a
   breakpoint, as the architecture prioritizes them.
