@@ -1,4 +1,4 @@
-// Snapshots of machines as the unit (docs/plans/machines.md §5), in Node on a bare-metal guest (no image needed):
+// Snapshots of machines as the unit (docs/machines.md §5), in Node on a bare-metal guest (no image needed):
 // a snapshot pins each overlay's generation and moves it on for the next change; a ramdisk's blocks are in the file
 // (a suspended machine's too); a restore keeps an overlay at its pinned generation, or writes the file's blocks into
 // another one (a fork), never into the one it pins unless asked (the default, a replace).

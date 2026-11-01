@@ -250,7 +250,7 @@ const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu'
  */
 function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: string) {
   const what = `${name} can't be loaded`;
-  // A stored machine's snapshot is checked by its shape (docs/plans/machines.md §5.1): the page checked it first and
+  // A stored machine's snapshot is checked by its shape (docs/machines.md §5.1): the page checked it first and
   // offers to make a machine like it; here it is refused before anything is touched.
   if (m.about && typeof h.shapeHash === 'string' && h.shapeHash !== m.about.shapeHash) {
     throw failure('snapshot', `${what}: it is a snapshot of a machine with other settings or disks than ${m.about.name} has now.\nIts machine can be made again from it on the Machines page (Make a machine like it).`);
@@ -436,7 +436,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       ({ ncpus, ramMiB, cpu, split } = h);
       here = h.slots;
       // A suspended machine resumes only onto its overlays as it left them: the same ones, at the generations it pinned
-      // (docs/plans/machines.md §5.3; a switch, a reset, a merge or a boot since moved them on).
+      // (docs/machines.md §5.3; a switch, a reset, a merge or a boot since moved them on).
       if (resume) {
         for (const d of (header.disks ?? []) as SnapshotDisk[]) {
           if (d.ram || !d.overlay) continue;

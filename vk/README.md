@@ -929,7 +929,7 @@ end, resets), `tests/virgl-video.test.ts` the call queue's; `tests/gpu.test.ts` 
 
 ## On the page
 
-A machine has Vulkan when its Machines page setting is on (`MachineRecord.vulkan`, beside 3D: docs/plans/machines.md)
+A machine has Vulkan when its Machines page setting is on (`MachineRecord.vulkan`, beside 3D: docs/machines.md)
 or the page's `?gpu=vulkan` asks; only then does the GPU worker fetch the module. `npm run dist` puts it in the
 static copy as a hashed asset with its licences beside it (`VENUS-LICENSES.txt`, made by vk/build.sh from
 `vk/LICENSES.head`, the sources' licence files and `vk/LLVM-exception.txt`); `npm start` and `npm run dist --

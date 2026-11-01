@@ -1,4 +1,4 @@
-// The ramdisk (docs/plans/machines.md §4.3): a writable disk in the host's memory, owned by the
+// The ramdisk (docs/machines.md §4.3): a writable disk in the host's memory, owned by the
 // device worker and gone with it, so every boot (the guest's reboot too: a new machine worker)
 // starts from an empty disk. Its bytes are 1 MiB chunks of shared memory, made on a chunk's first
 // write and dropped when a DISCARD or WRITE_ZEROES covers the whole chunk: an empty ramdisk costs

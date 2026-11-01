@@ -1045,12 +1045,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   The ramdisk is lazily backed, so swap costs host memory only as the guest fills it, and `swapon --discard` (in the
   fstab line's options) gives it back. Not a replacement for spill memories (swap runs guest code for every page;
   [spill-memories.md](spill-memories.md)), but useful where a user wants the kernel's LRU to decide.
-- **Machines as the unit, loose ends** (docs/plans/machines.md §11):
+- **Machines as the unit, loose ends** ([machines.md](machines.md)):
   - **The exit's numbers weren't taken** (the user's call, 2026-10-18: low relevance for now, and they'd go stale
     beside unrelated optimizations). In Chromium 153, `bench/boot/REPORT.md` with JSON: a restore whose pins match
     (RAM and state only) against one that forks; a stored disk's import (Debian; the cloud: ~94–140 s, 1,043 MB); a
     merge; a kept snapshot's size and save time against a downloaded one's; the ramdisk's fio against one buffer
-    (machines.md §4.3: kept if within noise). The cloud's boots written in place (221 s) and on a merged disk (290 s)
+    (the chunks' map lookup per request: kept if within noise). The cloud's boots written in place (221 s) and on a merged disk (290 s)
     were slower than its overlay boots (115–156 s), one run each on shared hardware; the user's boots of stored and
     merged disks by hand showed nothing like it. If anyone relies on in-place disks for speed, time those boots too.
   - **Off the record, the remote disks' block cache crowds out snapshots** (VK3 L3b): an off-the-record profile keeps
@@ -1063,7 +1063,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     a guest's disk write does (`releaseStores`), or the cache could stay small off the record.
   - A full quota still reaches the guest as `IOERR` (and an import or a kept snapshot fails with "is it full?"): the
     page should say so where it happens, with the storage view's numbers.
-  - A stored disk's SHA-256 isn't computed in the background (§3.1), and a definition carries a file's hash only
+  - A stored disk's SHA-256 isn't computed in the background (once would do: it never changes; machines.md §3.1), and a definition carries a file's hash only
     where the record has one: a definition's file is checked by name, size and date unless something hashed it.
   - **Chromium 153 crashes reading a file handle back from IndexedDB in an off-the-record context** (the whole
     browser, SIGTRAP: a CHECK; an on-disk profile is fine; Chromium 141 was fine). The store keeps file disks'
@@ -1081,8 +1081,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     overlay's lock (10 s, `OVERLAY_WAIT_MS`) and fails with `disk-in-use`, naming the disk. Checking the machine's
     lock first (`isRunning`) would say at once that it runs in another tab, without a worker.
   - Several file disks re-granted at a start ask once each (`requestPermission` per handle).
+  - **Exporting a whole machine** isn't built: a bundle with the definition, its overlays (as changes files), its kept
+    snapshots and, optionally, its stored disks (machines.md §10). Only the definition goes in and out.
+  - **Kept snapshots don't share blocks:** each carries its overlays' blocks whole, so many snapshots of a machine with
+    a big overlay cost that overlay each time. Copy-on-write between a machine's snapshots, if the sizes measured ask
+    for it.
   - `?display=simple` runs (the tests') are another shape than the same machine on the page, so their snapshots show
-    as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, §11).
+    as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, machines.md §1).
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
   Phase C, host integration.

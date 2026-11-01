@@ -1,4 +1,4 @@
-// The Machines page (web/app/MachinesPage.svelte, docs/plans/machines.md §7) and the URL check (web/app/urlcheck.ts) in
+// The Machines page (web/app/MachinesPage.svelte, docs/machines.md §7) and the URL check (web/app/urlcheck.ts) in
 // Chromium, without a guest: a machine made, set and given disks from several sources through the modal's controls,
 // kept across a reload, opened on the page; a URL refused with the reason when its server lacks CORS or ranges.
 import assert from 'node:assert/strict';

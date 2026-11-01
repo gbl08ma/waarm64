@@ -1,4 +1,4 @@
-// A disk stored in the browser (docs/plans/machines.md §3), on Debian: imported into the block store, its
+// A disk stored in the browser (docs/machines.md §3), on Debian: imported into the block store, its
 // overlays as variants, merged into it, written in place, under an overlay again; each a boot of the stored
 // machine on the page. Its own file so that scripts/ci-machines.sh runs it beside tests/page-machines.test.ts
 // (whose helpers these are). Opt-in with WEBPC_DISTROS=debian; a Debian page boot is ~40 s in the dev VM,

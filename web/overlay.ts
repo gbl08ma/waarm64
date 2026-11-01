@@ -8,7 +8,7 @@
 // garbage. Slots that no block maps (a discarded block's, a leaked one) are
 // found when the overlay is opened and taken by the next first writes; free
 // slots at the end of `data` are cut off, and once half of it is free the rest
-// is moved down (`compact`). `meta` holds the overlay's generation (docs/plans/machines.md §3.3):
+// is moved down (`compact`). `meta` holds the overlay's generation (docs/machines.md §3.3):
 // bumped, durably, before the first change of each opening, so "the overlay is as it was at
 // generation g" is a comparison of two integers. core/tests/common's `Overlay` is the native
 // (in-memory) equivalent (without discard or a generation).
@@ -356,7 +356,7 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: Lock
  * image's identity `want` (`diskIdentity` in web/devices.ts: a URL's path and the size, or a chosen file's name, size and modification time): an overlay only makes sense over the bytes it was
  * written against, so a mismatch is an error (`want` undefined: not checked, as a merge does). `readOnly`: an
  * existing directory, opened with read-only handles under a shared lock (several readers: a stored disk under
- * its machines' overlays, docs/plans/machines.md §4.4; a writer waits for them all). Dedicated workers only
+ * its machines' overlays, docs/machines.md §4.4; a writer waits for them all). Dedicated workers only
  * (sync access handles).
  */
 // ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
@@ -433,7 +433,7 @@ const SUSPEND = 'suspend';
 /**
  * A suspended machine (docs/frontend.md "Suspend"): its snapshot without the overlays' blocks (they stay in OPFS), in
  * the `suspend` file of the machine's directory `name` (a stored machine's `machines/<id>`, a transient one's overlay).
- * It pins each overlay's generation (docs/plans/machines.md §5.3): a start resumes it only while every pin matches, and
+ * It pins each overlay's generation (docs/machines.md §5.3): a start resumes it only while every pin matches, and
  * drops it (`dropSuspend`) before the machine runs, resumed or booted. This writes it (`fileWriter`).
  */
 export const suspendWriter = (name: string) => fileWriter(`${name}/${SUSPEND}`);

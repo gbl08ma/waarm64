@@ -93,7 +93,7 @@ dev server (decision 7).
 
 ## Machines in the browser
 
-docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
+The model, its rules and why ([machines.md](machines.md)); here, what the page does with it.
 - **Records** (`web/app/store.ts`): IndexedDB `webpc` has `machines`, `disks`, `overlays`, `snapshots` and `connections` (version 2; the network's, below), keyed by
   a 12-hex-digit id; their bytes are in OPFS: `overlays/<id>/` (`data`, `map`, `meta`, `base`), `disks/<id>/` (a
   stored disk, the same block store), `machines/<id>/` (`flash`, the firmware's variable store: the machine's,
@@ -121,8 +121,8 @@ docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
   the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file **stored in the browser**
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
-  boot, the guest's reboot too; its memory counts in the page's memory check). The ramdisk can't be in a snapshot
-  or a suspended machine yet (refused with a message: L4).
+  boot, the guest's reboot too; its memory counts in the page's memory check). A snapshot and a suspended copy hold
+  its blocks (machines.md §4.3).
 - **Overlays are the base disk's**, named variants any machine attaching it can choose (`disks.ts`): new empty,
   rename, switch, delete (refused while a machine has it open: its Web Lock), export (changes only, or the whole
   disk), Import changes… into a new one. A stored disk can take one **in place** (merge: the disk's other overlays are
@@ -237,7 +237,7 @@ keeps the machine from running (it failed, it waits for a disk) stays until it's
 
 ## The Machines page
 
-docs/plans/machines.md §7. It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
+The page's side of [machines.md](machines.md). It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
 address opens it, so a reload keeps it): **Back to the machine** (or a view button) returns. The machines on the left
 (new, **from a disk image…** (what Open disk… and a drop do), import a definition), each said running (its Web Lock
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
@@ -495,7 +495,7 @@ and offers Reset disk.
 
 ### A stored machine's snapshots
 
-docs/plans/machines.md §5. The toolbar's **Snapshot** on a stored machine **keeps** one at once (no question: it's
+[machines.md](machines.md) §5. The toolbar's **Snapshot** on a stored machine **keeps** one at once (no question: it's
 the panic button), named by the date and time; the Snapshots tab renames it. Keeping: the worker writes the file to
 OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its record (its pins, the
 shape) inside `Store.writing`. The toolbar's **Load snapshot** lists the five latest (orphaned ones disabled). The

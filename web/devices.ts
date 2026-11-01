@@ -39,7 +39,7 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * `url`, read with `FileReaderSync` (workers only); the overlay then belongs to the file's name,
  * size and modification time (`diskIdentity`). With `discard` (and an overlay) the disk takes
  * DISCARD and WRITE_ZEROES: what the guest trims leaves the overlay (the page's machines; the
- * tests' guests are without it, as their step counts are). `source` is a disk with no image (docs/plans/machines.md
+ * tests' guests are without it, as their step counts are). `source` is a disk with no image (docs/machines.md
  * §4.2, `size` given): `zero`, a blank disk that reads as zeros (writable through its overlay), or `ram`, a ramdisk
  * (web/ramdisk.ts: writable in itself, empty at every start, with DISCARD). `serial` is what GET_ID answers (default
  * `webpc-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`

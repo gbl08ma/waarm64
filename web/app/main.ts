@@ -56,7 +56,7 @@ const params = new URLSearchParams(location.search);
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="webpc-build"]')?.getAttribute('content');
 if (build) console.info(`webpc: built from ${build}`);
-// A machine kept in this browser (docs/plans/machines.md), by id: `?m=<id>`. It is the page's machine (`uefi`) with its own
+// A machine kept in this browser (docs/machines.md), by id: `?m=<id>`. It is the page's machine (`uefi`) with its own
 // vCPUs, RAM, display and disks. Without one the machine is transient, made from the query (the tests' `?machine=`).
 const store = await Store.open();
 let storedError = '';
@@ -1207,7 +1207,7 @@ async function graphicsOk(r: Run) {
 
 /**
  * Saves a snapshot of the running machine: to a file (the picker, or a download), or, for a stored machine by default,
- * kept in the browser under a name (docs/plans/machines.md §5.2). `whole`: a disk written in place goes into the file
+ * kept in the browser under a name (docs/machines.md §5.2). `whole`: a disk written in place goes into the file
  * whole (§4.4; a kept snapshot pins its generation instead).
  */
 async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
@@ -1343,7 +1343,7 @@ const sleptNote = (slept?: boolean) => slept === undefined || !clockSync() ? '' 
 const isSnapshot = async (file: File) => new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';
 
 /**
- * Restores a snapshot onto the stored machine (docs/plans/machines.md §5.2): refused when its shape isn't the machine's
+ * Restores a snapshot onto the stored machine (docs/machines.md §5.2): refused when its shape isn't the machine's
  * (it says what differs); else each writable disk keeps its overlay where it is as the snapshot pinned it, and forks
  * (or, if the user says, is replaced) where it moved on. `key` identifies the snapshot for reusing an earlier fork.
  */
@@ -1713,7 +1713,7 @@ async function saveSettings(m: MachineRecord) {
   });
 }
 
-// The Machines page (docs/plans/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind it.
+// The Machines page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind it.
 // `#machines` in the address opens it (a reload keeps it open).
 function openMachines(tab?: MachinesTab, id?: string) {
   if (tab) ui.machinesTab = tab;

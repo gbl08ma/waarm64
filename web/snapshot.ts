@@ -37,7 +37,7 @@ export type SnapshotMeta = Record<string, unknown>;
 export type SnapshotDisk = { slot: number; identity: string; size: number; blocks: number; sha256?: string; overlay?: string; generation?: number; ram?: boolean };
 
 /**
- * What a restore does with a writable disk the file pins (docs/plans/machines.md §5.2): `keep` its overlay as it is
+ * What a restore does with a writable disk the file pins (docs/machines.md §5.2): `keep` its overlay as it is
  * (it is at the pinned generation: the file's blocks for it are skipped), or `write` the file's blocks into overlay
  * `overlay` (emptied first: a fork into a new overlay, or a replace), with `whole` the disk's every block made zeros
  * first (a stored disk written in place, forked over its moved store: the file has the whole disk). A ramdisk's

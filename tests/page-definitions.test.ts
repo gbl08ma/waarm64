@@ -1,4 +1,4 @@
-// Machine definitions in and out (docs/plans/machines.md §6; web/app/definitions.ts), in Chromium, without a guest: a
+// Machine definitions in and out (docs/machines.md §6; web/app/definitions.ts), in Chromium, without a guest: a
 // machine with a URL disk, a file disk, a blank disk and a ramdisk exported from one fresh profile and imported through
 // the modal into another comes back with the same shape; its file disk is picked again at its first start, taken
 // without a question when its hash is the definition's though its date differs, and asked about when it isn't.

@@ -1,4 +1,4 @@
-// Stored disks (web/stored.ts, docs/plans/machines.md §4.4) in Node, where overlays live in memory: an image
+// Stored disks (web/stored.ts, docs/machines.md §4.4) in Node, where overlays live in memory: an image
 // imported into the block store reads back as the image's bytes; a merge writes an overlay's blocks in and deletes
 // it; an interrupted merge is finished at the next opening. (The page's flows are tests/page-machines.test.ts's.)
 import assert from 'node:assert/strict';

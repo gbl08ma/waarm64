@@ -1,4 +1,4 @@
-// Snapshots of stored machines on the page (docs/plans/machines.md §5): the machine's shape now (what its snapshots are
+// Snapshots of stored machines on the page (docs/machines.md §5): the machine's shape now (what its snapshots are
 // checked against), which kept snapshots it orphans, and the plan of a restore: per writable disk, **keep** its overlay
 // when it is exactly as the snapshot pinned it (nothing is written), else **fork** (a new overlay, named after the
 // snapshot, takes its blocks and is attached; the old one stays as it was), reusing an earlier fork of the same

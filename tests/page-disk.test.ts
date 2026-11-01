@@ -171,7 +171,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // The page's disk takes DISCARD: Debian's ext4 trims its free space (what the guest frees leaves the overlay).
   await onSerial(page, 'fstrim -v / && echo tr""immed\n');
   await shows(page, /\/: [^/]*\(\d+ bytes\) trimmed\s*trimmed/);
-  // A machine kept in the browser for it (docs/plans/machines.md): the disk's changes in an overlay of their own, the
+  // A machine kept in the browser for it (docs/machines.md): the disk's changes in an overlay of their own, the
   // firmware's variable store in the machine's directory.
   const names = await overlays(page);
   assert.deepEqual(names.sort(), ['machines', 'overlays'], `OPFS has ${names}`);

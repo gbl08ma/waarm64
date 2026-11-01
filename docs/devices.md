@@ -113,7 +113,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
 - Features `SEG_MAX` = 126, `RO` (or `FLUSH` when writable: an overlay, or a ramdisk); one queue of 128. `IN`, `GET_ID`,
   `OUT` and `FLUSH` when writable (`IOERR` without), the rest `UNSUPP`. `GET_ID` answers the spec's `serial` (a
   machine's attachment: `webpc-<attachment id>`, so `/dev/disk/by-id/virtio-…` survives a reorder;
-  docs/plans/machines.md §4.1), else `webpc-blk` (the tests' guests).
+  docs/machines.md §4.1), else `webpc-blk` (the tests' guests).
 - **Sources** (`BlkSpec`): an image by `url` (HTTP ranges, or `file:` in Node) or `file` (a `File`), or
   `source` with a `size`: `zero`, a **blank disk** reading as zeros (writable through its overlay, as any image),
   or `ram`, a **ramdisk** (`web/ramdisk.ts`): writable in itself, with `DISCARD` and `WRITE_ZEROES`, its bytes in
@@ -204,7 +204,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,
   n = slot n − 1, 0xffffffff = zeros without a slot), `meta` its **generation** (a u64, bumped and flushed before
   the first change of each opening: a write, a discard or a zeroing; an opening that only reads leaves it, so "the
-  overlay is as it was at generation g" is two integers compared: docs/plans/machines.md §3.3) and, for a stored
+  overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3) and, for a stored
   disk, the overlay being merged into it, `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage. **Few OPFS calls:** a sync-handle
   call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
@@ -230,9 +230,9 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   name (the tests' writable disks, e.g. `tests/uefi.test.ts`), under the same Web Lock. No quota handling or content check of the base
   (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
   overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
-  Overlay names are OPFS paths: a stored machine's are `overlays/<id>` (docs/plans/machines.md §2), a transient one's
+  Overlay names are OPFS paths: a stored machine's are `overlays/<id>` (docs/machines.md §2), a transient one's
   (the tests' `?machine=`) are single names as before; `overlayMeta(name)` reads the generation without opening it.
-- **Stored disks** (`web/stored.ts`, docs/plans/machines.md §4.4): an image copied into the browser is the same
+- **Stored disks** (`web/stored.ts`, docs/machines.md §4.4): an image copied into the browser is the same
   block store over nothing, in `disks/<id>/` (`importImage`: a qcow2's virtual bytes, compressed clusters inflated,
   or a raw file's, zero blocks left out; `storedEstimate` bounds what it takes from a qcow2's allocated clusters).
   Under an overlay it is the base (`BlkSpec.stored`: `openStored` reads it with read-only handles under a shared

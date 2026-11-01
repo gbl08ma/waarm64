@@ -25,7 +25,7 @@ track lands, its outcome moves into the docs and its row here stays a line.
 | Devices | Backends in TypeScript in one device worker; the core owns the virtio rings; net is raw Ethernet frames ([docs/devices.md](docs/devices.md)) |
 | Browsers | Chromium first; cross-origin isolation required |
 | License | MIT. GPL/EPL/CeCILL projects are oracles, guest workloads or behavioral references only, never copied (`THIRD_PARTY.md`) |
-| The page | **One machine per page**, under the JIT, realtime, parallel SMP. **The page starts no disk image** (since 2026-10-17): its machine is EDK2 waiting for the user's disk (Open disk, a drop, `?disk=`), and it names no distribution; Debian 13 is the tests' and benchmarks' guest (`?machine=debian`). Machines are named and stored in the browser, with their disks, overlays and snapshots ([docs/plans/machines.md](docs/plans/machines.md)). The screen (the framebuffer, then virtio-gpu) is the default view, with keyboard and mouse through virtio-input; a serial terminal on xterm.js is the fallback. Disks persist in OPFS copy-on-write overlays ([docs/frontend.md](docs/frontend.md)) |
+| The page | **One machine per page**, under the JIT, realtime, parallel SMP. **The page starts no disk image** (since 2026-10-17): its machine is EDK2 waiting for the user's disk (Open disk, a drop, `?disk=`), and it names no distribution; Debian 13 is the tests' and benchmarks' guest (`?machine=debian`). Machines are named and stored in the browser, with their disks, overlays and snapshots ([docs/machines.md](docs/machines.md)). The screen (the framebuffer, then virtio-gpu) is the default view, with keyboard and mouse through virtio-input; a serial terminal on xterm.js is the fallback. Disks persist in OPFS copy-on-write overlays ([docs/frontend.md](docs/frontend.md)) |
 | Booting users' images | **Unmodified, through UEFI**: EDK2's ArmVirtQemuKernel (built in Podman, reproducible) entered as an `Image` through our direct boot, running the image's own bootloader (GRUB, Limine, shim). **Not** a loader in the page that reads `/boot` and guesses the boot entry (rejected: not standardized, breaks with each distro's layout, takes the choice of bootloader away). The DT stays the guests' description (ACPI measured the same; out of scope). A disk comes from a file or a URL, raw or qcow2; its changes go out as a qcow2 over the base or as a whole disk, and come back in ([docs/firmware.md](docs/firmware.md)) |
 | Frontend | **Svelte 5** for the page, the rest of `web/` plain TypeScript; **built with Vite** (the user, 2026-10-24); a desktop application's look. **`npm start`** on a fresh clone (Node and rustup the only prerequisites) builds and serves it; `npm run dist` makes a static copy, deployed by the user at `https://vm.tny.im` (a Cloudflare Worker with static assets); disk images on `vmdisks.tny.im`, **never R2**, whose uncached reads anyone can bill ([docs/remote-disks.md](docs/remote-disks.md)). New runtime dependencies need the user's OK |
 | Graphics | **No software rendering or translation layers in the guest.** OpenGL ES through Mesa's upstream **virgl** onto **our virgl renderer on WebGL2** (the page's default where WebGL2 is; [docs/graphics.md](docs/graphics.md) "Decisions"). **Vulkan** (the user, 2026-10-25): Venus translated onto WebGPU, a per-machine choice until every program that switches to it is no slower than on virgl; a C toolchain for wasm allowed ([docs/plans/graphics.md](docs/plans/graphics.md) §2) |
@@ -94,7 +94,7 @@ What each built is in its doc; numbers in the reports it names. Open loose ends:
 | Video decoding | Done 2026-10-15 | [plans/video.md](docs/plans/video.md) |
 | Networking and the tailnet client | Done 2026-10-16, IPv6 among the loose ends | [plans/networking.md](docs/plans/networking.md), [tailnet.md](docs/tailnet.md) |
 | Several network adapters | Done 2026-10-19 | [network-adapters.md](docs/network-adapters.md) |
-| Machines as the unit (phase D's start) | Done 2026-10-17 (a cloud session) | [plans/machines.md](docs/plans/machines.md) |
+| Machines as the unit (phase D's start) | Done 2026-10-17 (a cloud session) | [machines.md](docs/machines.md) |
 | USB (WebUSB, WebHID) | Done 2026-10-18 | [usb.md](docs/usb.md) |
 | Guest RAM past memory 0, the JIT's spill arm | Done 2026-10-19, 2026-10-24 | [spill-memories.md](docs/spill-memories.md) |
 | A browser's code in the JIT (cache size, the memory signal, the compile worker, the cache's lock) | Done 2026-10-20 to 10-23 | [jit.md](docs/jit.md) |
@@ -108,7 +108,7 @@ Proposed, not started: peer-to-peer rooms over WebRTC ([plans/networking-p2p.md]
 local network helper ([plans/networking-local.md](docs/plans/networking-local.md)); a guest agent and live resize
 ([plans/agent.md](docs/plans/agent.md)); a preloaded image and snapshot loaded with the page (likely the Arch desktop
 guest), a catalog of hosted images, and the stable embedding API, extracted from what the page ended up using
-([plans/machines.md](docs/plans/machines.md)); Firefox and Safari (the user checks Firefox by hand; backlog).
+([machines.md](docs/machines.md)); Firefox and Safari (the user checks Firefox by hand; backlog).
 
 ### Backlog
 

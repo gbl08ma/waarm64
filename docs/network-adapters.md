@@ -6,7 +6,7 @@ locks between tabs, the guest's routes over several adapters and the numbers mea
 are in [frontend.md](frontend.md) "Network" and "The Machines page", the gateway's DHCP and router advertisements in
 [devices.md](devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
 [backlog.md](backlog.md) "Several adapters' loose ends". (Built 2026-10-18/19, from a plan whose section numbers the
-code's comments still cite; [machines.md](plans/machines.md) had left several adapters for later.)
+code's comments still cite; machines had first left several adapters for later: [machines.md](machines.md).)
 
 ## 1. The rules (the user's, 2026-10-18)
 
