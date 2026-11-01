@@ -1034,6 +1034,7 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       if (tex->op == nir_texop_tg4) {
          if (cube)
             return false;
+         add_key_pair(s, tex, WGSL_KEY_ALWAYS);
          nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key ? key : &plain_key), tex->def.num_components));
          return true;
       }

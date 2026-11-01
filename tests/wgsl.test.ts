@@ -733,7 +733,7 @@ test('interpolateAtOffset and interpolateAtSample move the input along its deriv
  * its bytes at its WGSL binding (`mips`: its further levels' bytes), a sampler (`filter`) at `sampler` (none: no
  * sampler), a storage buffer of `size` bytes at `out`, read back.
  */
-async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; layers?: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string; address?: string; lodMinClamp?: number } | undefined, out: { binding: number; size: number }) {
+async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; layers?: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string; address?: string; lodMinClamp?: number; compare?: string } | undefined, out: { binding: number; size: number }) {
   const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
@@ -762,7 +762,7 @@ async function runSampled(code: string, textures: { binding: number; format: str
         });
         return { binding: t.binding, resource: tex.createView(layers > 1 ? { dimension: '2d-array' } : {}) };
       });
-      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ lodMinClamp: sampler.lodMinClamp ?? 0, mipmapFilter: sampler.lodMinClamp ? 'linear' : 'nearest', magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode, addressModeU: (sampler.address ?? 'clamp-to-edge') as GPUAddressMode }) });
+      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ ...(sampler.compare ? { compare: sampler.compare as GPUCompareFunction } : {}), lodMinClamp: sampler.lodMinClamp ?? 0, mipmapFilter: sampler.lodMinClamp ? 'linear' : 'nearest', magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode, addressModeU: (sampler.address ?? 'clamp-to-edge') as GPUAddressMode }) });
       const buffer = device.createBuffer({ size: out.size, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
       entries.push({ binding: out.binding, resource: { buffer } });
       const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
@@ -1310,6 +1310,24 @@ test('a depth texture sampled with and without comparison prints, from its first
     const errors = await compile(texts.map((r) => r.text));
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(errors, ['', '']);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a gather of a texture the stage compares goes by its sampler (the review of VK4 R5 to R7)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/r5/gather-depth.comp', { sampler: key(ADDRESS.repeat, { v: ADDRESS.repeat }) });
+    assert.equal(r.rc, 0, r.text);
+    // Two columns, 0 and 1: at u 0 a gather reads across the repeat: i0 is the last column.
+    const u16 = (v: number) => [v & 255, v >> 8];
+    const data = [...u16(0), ...u16(65535), ...u16(0), ...u16(65535)];
+    const res = await runSampled(r.text, [{ binding: 0, format: 'depth16unorm', w: 2, h: 2, data }], { binding: 5, filter: 'nearest', compare: 'greater' }, { binding: 6, size: 8 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    assert.deepEqual([...res.out.slice(0, 4)], [1, 0, 0, 1], 'i0 j1, i1 j1, i1 j0, i0 j0');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

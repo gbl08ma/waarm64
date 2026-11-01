@@ -800,9 +800,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
     mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a shadow cube's filter past a corner
     of three faces takes the two nearest; a depth texture sampled without a comparison in a stage that doesn't compare it
-    picks the nearest level at an explicit LOD (a linear mip filter's blend is lost, WebGPU filtering no depth); a
-    vertex stage that compares a texture the fragment stage samples plainly isn't told (the fragment stage is printed
-    first: the pipeline is invalid; none seen); a gather of a shadow cube bound as its faces
+    picks the nearest level at an explicit LOD (a linear mip filter's blend is lost, WebGPU filtering no depth); a gather of a shadow cube bound as its faces
     is refused; an integer cube both sampled and gathered is refused (its
     one binding can't be both; none seen); each base of `vkCmdDispatchBase` is a compute pipeline, never evicted (a
     tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
@@ -923,10 +921,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
     dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
     with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader).
+  - **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
+    vertex stage's storage buffers, or the draw is refused, said once (four groups in use, or a vertex stage's own storage
+    buffers); 8 dynamic uniform buffers with push constants past the immediates or draw parameters put the push buffer on
+    a dynamic storage binding, which a layout with all 4 of those, or a stage full of storage buffers, doesn't have (the
+    pipeline is refused, said once; a push binding without a dynamic offset, a bind group per draw, would serve); a
+    uniform block declared past its range and the 64 KiB pad at a memory's end loses its submit. A set with inline blocks
+    has a GPUBuffer of 64 KiB more than them, for what its shaders may declare.
   - **Memory**: `memory.binding.aliasing.suballocated.image_*` fail (9 sampled by VK4 R6, 2 others pass): each image is a
-    texture of its own, so two images bound to one range don't share texels. An allocation past the heap, the largest
-    GPUBuffer or the arena, which Venus's guest doesn't wait for, is an empty memory (`memory_refused`): a map fails and what
-    is bound to it is dropped at the submit, where a program learns less than from `VK_ERROR_OUT_OF_DEVICE_MEMORY`. Only
+    texture of its own, so two images bound to one range don't share texels. An allocation past the device-local heap, the largest
+    GPUBuffer or the arena, which Venus's guest doesn't wait for, is an empty memory (`memory_refused`): a blob's map gives
+    zeros that go nowhere and a buffer past its bytes loses its submit, where a program learns less than from
+    `VK_ERROR_OUT_OF_DEVICE_MEMORY`. Host-visible memory the arena has is had past its heap. Only
     the guest's `VN_PERF=no_async_mem_alloc` would give the error back; a program within its budget doesn't meet it
     (VK_EXT_memory_budget is advertised).
 - **Nodes 2 and up in one memory64 behind a second JIT arm** (bench/spike/memory/REPORT.md §6, VK4 T19). Memory 1 stays

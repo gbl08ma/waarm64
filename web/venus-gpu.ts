@@ -1494,7 +1494,8 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     const dst3d = tex.dimension === '3d';
     // A blit within one subresource (Vulkan's regions apart) samples a copy of it: WebGPU won't sample a subresource it
     // renders to (VK3 L8a, the track-end review's finding 1).
-    let srcView = this.viewOf(j.src, j.srcMip, j.srcLayer);
+    // BC1's RGB formats: alpha 1, as a sampled view's swizzle says (wg_format.c).
+    let srcView = j.srcOpaque ? (j.src as GPUTexture).createView({ dimension: '2d', baseMipLevel: j.srcMip, mipLevelCount: 1, baseArrayLayer: j.srcLayer, arrayLayerCount: 1, swizzle: 'rgb1', usage: 4 } as GPUTextureViewDescriptor) : this.viewOf(j.src, j.srcMip, j.srcLayer);
     if (j.src === j.dst && j.srcMip === j.dstMip && (src3d || j.srcLayer === j.dstLayer)) {
       const S = j.src as GPUTexture, mip = j.srcMip as number;
       const size = { width: Math.max(1, S.width >> mip), height: Math.max(1, S.height >> mip), depthOrArrayLayers: src3d ? Math.max(1, S.depthOrArrayLayers >> mip) : 1 };

@@ -41,7 +41,7 @@ export type HostCall =
 export type VenusCall =
   | { t: 'vctx'; id: number; create: boolean; name?: string }
   | { t: 'blob'; ctx: number; res: number; mem: number; flags: number; blobId: bigint; size: number }
-  | { t: 'blob-map'; res: number; offset: number }
+  | { t: 'blob-map'; res: number; offset: number; size: number }
   | { t: 'blob-unmap'; res: number }
   | { t: 'blob-unref'; res: number }
   /** A blob attached to a context, or with `size` a virgl resource attached to a Venus context (its bytes as the guest sees them): imported (web/venus-import.ts). */

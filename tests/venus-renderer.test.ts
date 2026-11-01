@@ -44,7 +44,7 @@ test("a blob's bytes move into the window at its map and back at its unmap", { s
   assert.ok(storage > 0 && storage < VENUS_ARENA, `storage at ${storage.toString(16)}`);
   const u8 = new Uint8Array(memory.buffer);
   u8.set([1, 2, 3, 4], storage);
-  v.call({ t: 'blob-map', res: 3, offset: 0x4000 });
+  v.call({ t: 'blob-map', res: 3, offset: 0x4000, size: 8192 });
   assert.equal(v.address(3), window.at + 0x4000);
   assert.deepEqual([...u8.subarray(window.at + 0x4000, window.at + 0x4004)], [1, 2, 3, 4], 'copied in');
   u8.set([9, 8], window.at + 0x4000 + 8190);
@@ -111,9 +111,10 @@ test('memory: an import that wants addresses gets them or is refused, wild bindi
   const { v, memory } = await renderer();
   const at = (v.raw.wgt_memory as () => number)() >>> 0;
   assert.ok(at, 'wgt_memory failed');
-  const [address, refused, wide, wrapped, mib, past, unwaited, map] = new Int32Array(memory.buffer, at, 8);
+  const [address, refused, wide, wrapped, mib, past, unwaited, map, imported, nullAddress] = new Int32Array(memory.buffer, at, 10);
   assert.notEqual(address, 0, 'a device address of the import');
   assert.equal(refused, -1000072003, 'VK_ERROR_INVALID_EXTERNAL_HANDLE with a buffer already on the memory');
+  assert.deepEqual([imported, nullAddress], [0, 0], 'a guest that doesn\'t wait: the import made, its pointers null');
   assert.deepEqual([wide, wrapped], [-1, -1], 'VK_ERROR_OUT_OF_HOST_MEMORY');
   assert.ok(mib > 0 && mib <= 2048, `${mib} MiB of a 2 GiB heap`);
   assert.equal(past, -2, 'VK_ERROR_OUT_OF_DEVICE_MEMORY past the heap');
@@ -124,22 +125,34 @@ test('memory: an import that wants addresses gets them or is refused, wild bindi
 // unreferenced mapped, its bytes leave the window.
 test('a surviving import moves with its blob, and a blob unreferenced while mapped leaves the window', { skip }, async () => {
   const { v, memory, window } = await renderer();
-  const raw = v.raw as unknown as { wgt_peers_memory(): number; wgt_peers_at(): number; venus_test_peers(ctx: number, res: number, memory: bigint): number };
+  const raw = v.raw as unknown as { wgt_peers_memory(): number; wgt_peers_at(): number; venus_test_peers(ctx: number, res: number, memory: bigint, importFirst: number): number };
   v.call({ t: 'vctx', id: 7, create: true, name: 'test' });
   v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 0n, size: 8192 });
   const storage = v.address(3);
   const handle = raw.wgt_peers_memory();
   assert.ok(handle);
-  assert.equal(raw.venus_test_peers(7, 3, BigInt(handle)), 1, 'the blob is the import\'s');
-  v.call({ t: 'blob-map', res: 3, offset: 0x4000 });
+  assert.equal(raw.venus_test_peers(7, 3, BigInt(handle), 0), 1, 'the blob is the import\'s');
+  v.call({ t: 'blob-map', res: 3, offset: 0x4000, size: 8192 });
   assert.equal(raw.wgt_peers_at() >>> 0, window.at + 0x4000, 'mapped: the driver\'s memory in the window');
   v.call({ t: 'blob-unmap', res: 3 });
   assert.equal(raw.wgt_peers_at() >>> 0, storage, 'unmapped: back in the storage');
-  v.call({ t: 'blob-map', res: 3, offset: 0x4000 });
+  v.call({ t: 'blob-map', res: 3, offset: 0x4000, size: 8192 });
   new Uint8Array(memory.buffer).set([7, 7], window.at + 0x4000);
   v.call({ t: 'blob-unref', res: 3 });
   assert.equal(raw.wgt_peers_at() >>> 0, storage, 'unreferenced mapped: out of the window');
   assert.deepEqual([...new Uint8Array(memory.buffer, storage, 2)], [7, 7]);
+});
+
+// The review of R5 to R7: the import freed first takes nothing with it; a map that can't be leaves no other's bytes.
+test('an import freed first leaves its memory the storage, and a blob that can\'t be mapped reads zeros', { skip }, async () => {
+  const { v, memory, window } = await renderer();
+  const raw = v.raw as unknown as { wgt_peers_memory(): number; venus_test_peers(ctx: number, res: number, memory: bigint, importFirst: number): number };
+  v.call({ t: 'vctx', id: 7, create: true, name: 'test' });
+  v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 0n, size: 8192 });
+  assert.equal(raw.venus_test_peers(7, 3, BigInt(raw.wgt_peers_memory()), 1), 1, 'the exporter keeps its blob and bytes');
+  new Uint8Array(memory.buffer).fill(0x5a, window.at + 0x8000, window.at + 0xa001);
+  v.call({ t: 'blob-map', res: 99, offset: 0x8000, size: 8192 });
+  assert.deepEqual([...new Uint8Array(memory.buffer, window.at + 0x9fff, 2)], [0, 0x5a]);
 });
 
 // A fence destroyed while a submit held for a timeline wait signals it (a context's teardown destroys its objects so; VK4

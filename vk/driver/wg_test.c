@@ -828,11 +828,12 @@ wgt_heaps(void)
  * import that wants addresses of a memory made without, [1] the result of such an import of a memory with a buffer bound,
  * [2], [3] of set layouts with bindings 0x40000001 and 0xffffffff, [4] the device-local MiB allocated before a refusal
  * ([5] its result), and for a guest that doesn't wait: [6] the result past the heap, [7] of a map of that memory (none
- * host-visible: of one of the other heap's). NULL with wgt_error(). */
+ * host-visible: of one of the other heap's), [8] the import of [1] for such a guest, [9] that memory's buffer's address.
+ * NULL with wgt_error(). */
 EXPORT const uint32_t *
 wgt_memory(void)
 {
-   static uint32_t out[8];
+   static uint32_t out[10];
    if (!dev && init())
       return NULL;
    PFN_vkFreeMemory FreeMemory = (PFN_vkFreeMemory)GetDeviceProcAddr(dev, "vkFreeMemory");
@@ -863,7 +864,15 @@ wgt_memory(void)
       return NULL;
    }
    fd.fd = (int)(uintptr_t)c;
+   const bool was = wg_unwaited_allocations;
+   wg_unwaited_allocations = false;
    out[1] = (uint32_t)AllocateMemory(dev, &imp, NULL, &e);
+   /* A guest that doesn't wait for it: the import all the same, no address. */
+   wg_unwaited_allocations = true;
+   out[8] = (uint32_t)AllocateMemory(dev, &imp, NULL, &e);
+   wg_unwaited_allocations = was;
+   const VkBufferDeviceAddressInfo oi = { .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = other };
+   out[9] = (uint32_t)Address(dev, &oi);
    for (uint32_t i = 0; i < 2; i++) {
       const VkDescriptorSetLayoutBinding binding = { i ? 0xffffffffu : 0x40000001u, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
       const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &binding };
@@ -4117,7 +4126,14 @@ r5_image(VkCommandBuffer cmd, VkFormat format, uint32_t size, uint32_t layers, u
  * the one at 3): 255, 0, 4, 255.
  * 74 (C6): as 73: refused, so not drawn: the clear.
  * 75 (C7): depth-eight.frag, every colour location and depth, no attachment for depth: red.
- * 78 (VK4 R7): r7/sixteen.vert with 16 vertex bindings of a float each, 1/16 at every vertex: 255, 128, 64, 255. */
+ * 78 (VK4 R7): r7/sixteen.vert with 16 vertex bindings of a float each, 1/16 at every vertex: 255, 128, 64, 255.
+ * The review of R5 to R7:
+ * 79 (B1, B5): as 78, then one binding pulled for its stride, then that binding not pulled, then in a new pass the same:
+ * as 78, the vertex buffers past WebGPU's never set.
+ * 80 (B2): cube-plain.frag on a cube of D32 of one level: 255, 64, 0, 255.
+ * 81 (B6): r7/vs-compare.*, the depth image of 71: 255, 64, 0, 255.
+ * 82 (B4): r7/four-sets.frag with 73's vertex inputs: refused, so not drawn: the clear.
+ * 83 (C2): a block of BC1_RGB's transparent texels blitted: 0, 0, 0, 255. */
 static int
 r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
 {
@@ -4129,7 +4145,7 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    const VkImageCreateInfo tinfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = format, .extent = { 4, 4, 1 },
       .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
-      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT };
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
    CHECK(CreateImage(dev, &tinfo, NULL, &target));
    VkMemoryRequirements req;
    GetImageMemoryRequirements(dev, target, &req);
@@ -4142,13 +4158,47 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
                                        .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
    CHECK(CreateImageView(dev, &tvi, NULL, &tv));
    const VkClearColorValue red = { .float32 = { 1, 0, 0, 1 } }, none = { 0 };
-   const bool cube = scenario == 73 || scenario == 74;
+   if (scenario == 83) {
+      const VkImageCreateInfo bi = { .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+                                     .format = VK_FORMAT_BC1_RGB_UNORM_BLOCK, .extent = { 4, 4, 1 }, .mipLevels = 1, .arrayLayers = 1,
+                                     .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                     .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
+      VkImage bc;
+      CHECK(CreateImage(dev, &bi, NULL, &bc));
+      GetImageMemoryRequirements(dev, bc, &req);
+      if (memory_for(req, false, &mem, NULL))
+         return 1;
+      CHECK(BindImageMemory(dev, bc, mem, 0));
+      VkBuffer block;
+      uint32_t *w;
+      if (buffer(8, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &block, (void **)&w))
+         return 1;
+      w[0] = 0xffff0000u, w[1] = 0xffffffffu; /* color0 <= color1, every index 3: BC1's transparent black */
+      const VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+      const VkImageMemoryBarrier b[2] = {
+         { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .newLayout = VK_IMAGE_LAYOUT_GENERAL, .image = bc, .subresourceRange = all },
+         { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .newLayout = VK_IMAGE_LAYOUT_GENERAL, .image = target, .subresourceRange = all } };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 2, b);
+      CmdCopyBufferToImage(cmd, block, bc, VK_IMAGE_LAYOUT_GENERAL, 1,
+                           &(VkBufferImageCopy){ .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .imageExtent = { 4, 4, 1 } });
+      const VkImageBlit blit = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .srcOffsets = { { 0, 0, 0 }, { 4, 4, 1 } },
+                                 .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .dstOffsets = { { 0, 0, 0 }, { 4, 4, 1 } } };
+      ((PFN_vkCmdBlitImage)GetDeviceProcAddr(dev, "vkCmdBlitImage"))(cmd, bc, VK_IMAGE_LAYOUT_GENERAL, target, VK_IMAGE_LAYOUT_GENERAL, 1, &blit, VK_FILTER_NEAREST);
+      const VkImageMemoryBarrier s = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                       .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT, .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                       .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, .image = target, .subresourceRange = all };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &s);
+      copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, out, 0);
+      return 0;
+   }
+   const bool cube = scenario == 73 || scenario == 74 || scenario == 80;
+   const bool sixteen = scenario == 78 || scenario == 79 || scenario == 82;
    int bad;
    if (cube)
-      bad = r5_image(cmd, VK_FORMAT_D32_SFLOAT, 4, 6, 3, NULL, &i0, &v0, VK_IMAGE_VIEW_TYPE_CUBE);
-   else if (scenario == 70 || scenario == 75 || scenario == 78)
+      bad = r5_image(cmd, VK_FORMAT_D32_SFLOAT, 4, 6, scenario == 80 ? 1 : 3, NULL, &i0, &v0, VK_IMAGE_VIEW_TYPE_CUBE);
+   else if (scenario == 70 || scenario == 75 || sixteen || scenario == 83)
       bad = r5_image(cmd, format, 4, 1, 1, &red, &i0, &v0, VK_IMAGE_VIEW_TYPE_2D);
-   else if (scenario == 71)
+   else if (scenario == 71 || scenario == 81)
       bad = r5_image(cmd, VK_FORMAT_D32_SFLOAT, 4, 1, 1, NULL, &i0, &v0, VK_IMAGE_VIEW_TYPE_2D);
    else
       bad = r5_image(cmd, VK_FORMAT_R32_UINT, 4, 1, 1, &none, &i0, &v0, VK_IMAGE_VIEW_TYPE_2D);
@@ -4175,7 +4225,10 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
       si.addressModeU = si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
       si.compareEnable = VK_TRUE;
       si.compareOp = VK_COMPARE_OP_LESS;
+      if (scenario == 80)
+         si.compareEnable = VK_FALSE;
       CHECK(CreateSampler(dev, &si, NULL, &s[1]));
+      si.compareEnable = VK_TRUE;
       si.compareOp = VK_COMPARE_OP_GREATER;
       CHECK(CreateSampler(dev, &si, NULL, &s[0]));
    } else {
@@ -4196,8 +4249,9 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    VkDescriptorSetLayout dsl;
    CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
    const VkDescriptorSetLayout layouts[2] = { dsl, dsl };
-   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
-                                            .pSetLayouts = &dsl };
+   const VkDescriptorSetLayout four[4] = { dsl, dsl, dsl, dsl };
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = scenario == 82 ? 4 : 1,
+                                            .pSetLayouts = four };
    VkPipelineLayout layout;
    CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
    const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4 }, { VK_DESCRIPTOR_TYPE_SAMPLER, 4 } };
@@ -4230,7 +4284,7 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    VkVertexInputAttributeDescription via[16];
    VkBuffer vbufs[16];
    const VkDeviceSize voffs[16] = { 0 };
-   for (uint32_t i = 0; scenario == 78 && i < 16; i++) {
+   for (uint32_t i = 0; sixteen && i < 16; i++) {
       vib[i] = (VkVertexInputBindingDescription){ i, 4, VK_VERTEX_INPUT_RATE_VERTEX };
       via[i] = (VkVertexInputAttributeDescription){ i, i, VK_FORMAT_R32_SFLOAT, 0 };
       float *v;
@@ -4239,8 +4293,8 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
       v[0] = v[1] = v[2] = 1 / 16.0f;
    }
    const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-                                                      .vertexBindingDescriptionCount = scenario == 78 ? 16 : 0, .pVertexBindingDescriptions = vib,
-                                                      .vertexAttributeDescriptionCount = scenario == 78 ? 16 : 0, .pVertexAttributeDescriptions = via };
+                                                      .vertexBindingDescriptionCount = sixteen ? 16 : 0, .pVertexBindingDescriptions = vib,
+                                                      .vertexAttributeDescriptionCount = sixteen ? 16 : 0, .pVertexAttributeDescriptions = via };
    const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
                                                        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
    const VkViewport vp = { 0, 0, 4, 4, 0, 1 };
@@ -4260,8 +4314,23 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &pri, .stageCount = 2, .pStages = stage,
       .pVertexInputState = &vis, .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs,
       .pMultisampleState = &ms, .pColorBlendState = &bs, .layout = layout };
-   VkPipeline p;
+   VkPipeline p, one, pulled;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   if (scenario == 79) {
+      /* Every attribute from binding 0: of a stride WebGPU takes, then of one it doesn't. */
+      VkVertexInputAttributeDescription same[16];
+      for (uint32_t i = 0; i < 16; i++)
+         same[i] = (VkVertexInputAttributeDescription){ i, 0, VK_FORMAT_R32_SFLOAT, 0 };
+      VkVertexInputBindingDescription b0 = { 0, 4, VK_VERTEX_INPUT_RATE_VERTEX };
+      const VkPipelineVertexInputStateCreateInfo vone = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                                                          .vertexBindingDescriptionCount = 1, .pVertexBindingDescriptions = &b0,
+                                                          .vertexAttributeDescriptionCount = 16, .pVertexAttributeDescriptions = same };
+      VkGraphicsPipelineCreateInfo g = gpi;
+      g.pVertexInputState = &vone;
+      CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &g, NULL, &one));
+      b0.stride = 6;
+      CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &g, NULL, &pulled));
+   }
    const VkImageMemoryBarrier toc = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                                       .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .image = target,
                                       .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
@@ -4275,9 +4344,26 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    BeginRendering(cmd, &ri);
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[0], 0, NULL);
-   if (scenario == 78)
+   if (scenario == 82)
+      for (uint32_t k = 1; k < 4; k++)
+         CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, k, 1, &sets[0], 0, NULL);
+   if (sixteen)
       ((PFN_vkCmdBindVertexBuffers)GetDeviceProcAddr(dev, "vkCmdBindVertexBuffers"))(cmd, 0, 16, vbufs, voffs);
    CmdDraw(cmd, 3, 1, 0, 0);
+   if (scenario == 79) {
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pulled);
+      CmdDraw(cmd, 3, 1, 0, 0);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, one);
+      CmdDraw(cmd, 3, 1, 0, 0);
+      EndRendering(cmd);
+      VkRenderingAttachmentInfo again = ca;
+      again.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      VkRenderingInfo next = ri;
+      next.pColorAttachments = &again;
+      BeginRendering(cmd, &next);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, one);
+      CmdDraw(cmd, 3, 1, 0, 0);
+   }
    if (scenario == 70) {
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[1], 0, NULL);
       CmdDraw(cmd, 3, 1, 0, 0);
@@ -5077,7 +5163,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 76) {
       if (t7_inline(cs, cs_words, cmd, out, 4096))
          return 1;
-   } else if ((scenario >= 70 && scenario <= 75) || scenario == 78) {
+   } else if ((scenario >= 70 && scenario <= 75) || (scenario >= 78 && scenario <= 83)) {
       if (r5_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario >= 47 && scenario <= 49) {

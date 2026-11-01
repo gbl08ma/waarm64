@@ -1,0 +1,11 @@
+#version 450
+// The review of VK4 R5 to R7 (C1): a gather of a texture the stage compares, by its sampler's address modes.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform texture2D t;
+layout(set = 0, binding = 1) uniform sampler s;
+layout(set = 0, binding = 2) uniform samplerShadow c;
+layout(set = 0, binding = 3, std430) buffer Out { vec4 o[8]; };
+void main() {
+  o[0] = textureGather(sampler2D(t, s), vec2(0.0));
+  o[1] = vec4(texture(sampler2DShadow(t, c), vec3(0.5, 0.5, 0.5)));
+}

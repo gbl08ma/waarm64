@@ -43,7 +43,7 @@ void venus_resource_destroy(uint32_t ctx_id, uint32_t res_id);
 int venus_resource_import(uint32_t ctx_id, uint32_t res_id, uint64_t size);
 int venus_resource_map(uint32_t ctx_id, uint32_t res_id, void *where);
 int venus_resource_unmap(uint32_t ctx_id, uint32_t res_id);
-int venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory);
+int venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory, int import_first);
 void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
 uint32_t venus_resource_texture(uint32_t ctx_id, uint32_t res_id);
 int venus_poll(void);
@@ -168,11 +168,11 @@ venus_resource_map(uint32_t ctx_id, uint32_t res_id, void *where)
    return vkr_renderer_map_resource(ctx_id, res_id, where);
 }
 
-/* tests/venus-renderer.test.ts: a resource's memory freed with an import of it left, `memory` the driver's. */
+/* tests/venus-renderer.test.ts: a resource's memory and an import of it, one freed; `memory` the driver's. */
 EXPORT int
-venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory)
+venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory, int import_first)
 {
-   return vkr_wasi_test_peers(ctx_id, res_id, memory);
+   return vkr_wasi_test_peers(ctx_id, res_id, memory, import_first);
 }
 
 EXPORT int

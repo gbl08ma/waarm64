@@ -734,13 +734,20 @@ address_place(struct wg_device *dev, struct wg_device_memory *mem)
 }
 
 /* A memory that can't be had: past its heap, the largest GPUBuffer, the address buffer or the arena. The error, unless
- * no one waits for it: Venus's guest sends vkAllocateMemory without waiting (vn_device_memory_alloc_simple), so an
- * object vkr didn't make would end the context at its first use. It gets an empty memory instead, and the error shows as
- * what can't be done with it: a map fails, and what is bound to it is refused at the submit (an image's texture is its
- * own, and works). A program that keeps to its budget doesn't meet it. */
+ * no one waits for it: Venus's guest sends vkAllocateMemory without waiting (vn_device_memory_alloc_simple, imports too),
+ * so an object vkr didn't make would end the context at its first use. It gets an empty memory instead: said once, a
+ * direct map fails, a blob's maps zeros that go nowhere, and a buffer past its 4 bytes loses its submit (an image's
+ * texture is its own, and works). A program that keeps to its budget doesn't meet it. */
 static VkResult
 memory_refused(struct wg_device *dev, struct wg_device_memory *mem, const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMem)
 {
+   if (mem->address) {
+      util_vma_heap_free(&dev->address_heap, mem->gpu_at, mem->size + WG_ADDRESS_PAD);
+      list_del(&mem->address_link);
+      mem->address = false;
+      mem->gpu = 0;
+      mem->gpu_at = 0;
+   }
    if (!wg_unwaited_allocations) {
       vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
       return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
@@ -774,11 +781,18 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
       if (src && src->vk.base.type == VK_OBJECT_TYPE_DEVICE_MEMORY && src->vk.base.device == &dev->vk &&
           pAllocateInfo->allocationSize <= src->vk.size) {
          /* An import that wants addresses of a memory that hasn't any: it moves into the address buffer if nothing is
-          * bound to it yet; with a GPUBuffer in use there's no address to give (Venus's guest waits for an import). */
+          * bound to it yet. With a GPUBuffer in use there's no address to give: an error, or for a guest that doesn't wait
+          * (an import's as any other: memory_refused) the import all the same, its pointers null. */
          const VkMemoryAllocateFlagsInfo *wanted = vk_find_struct_const(pAllocateInfo->pNext, MEMORY_ALLOCATE_FLAGS_INFO);
          if (wanted && (wanted->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) && !src->address &&
-             (src->gpu || src->placeholder || !address_place(dev, src)))
-            return vk_error(dev, VK_ERROR_INVALID_EXTERNAL_HANDLE);
+             (src->gpu || src->placeholder || !address_place(dev, src))) {
+            if (!wg_unwaited_allocations)
+               return vk_error(dev, VK_ERROR_INVALID_EXTERNAL_HANDLE);
+            static bool warned;
+            if (!warned)
+               fprintf(stderr, "wg: an import wants device addresses of a memory already in use without: it has none\n");
+            warned = true;
+         }
          src->aliases++;
          *pMem = wg_device_memory_to_handle(src);
          return VK_SUCCESS;
@@ -793,8 +807,9 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
    const uint32_t type = pAllocateInfo->memoryTypeIndex;
    const VkMemoryAllocateFlagsInfo *flags = vk_find_struct_const(pAllocateInfo->pNext, MEMORY_ALLOCATE_FLAGS_INFO);
    const bool dmabuf = fd_info && fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT && fd_info->fd > 0;
-   if ((!dmabuf && (heap_used[type] + pAllocateInfo->allocationSize > heap_sizes[type] ||
-                    pAllocateInfo->allocationSize > MIN2((uint64_t)wg_limits.max_buffer_size, 0xffffffffu))) ||
+   /* vkr's storage already had (mem->vk.host_ptr) is memory all the same, whatever the heap says: the arena was its limit. */
+   const bool past_heap = heap_used[type] + pAllocateInfo->allocationSize > heap_sizes[type] && !mem->vk.host_ptr;
+   if ((!dmabuf && (past_heap || pAllocateInfo->allocationSize > MIN2((uint64_t)wg_limits.max_buffer_size, 0xffffffffu))) ||
        (flags && (flags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) && !address_place(dev, mem)))
       return memory_refused(dev, mem, pAllocator, pMem);
    if (dmabuf) {
@@ -1004,7 +1019,8 @@ VKAPI_ATTR VkDeviceAddress VKAPI_CALL
 wg_GetBufferDeviceAddress(VkDevice _device, const VkBufferDeviceAddressInfo *pInfo)
 {
    VK_FROM_HANDLE(wg_buffer, buffer, pInfo->buffer);
-   return buffer->offset;
+   /* A memory without addresses (an import refused them): null, not a byte of another's. */
+   return buffer->mem && buffer->mem->address ? buffer->offset : 0;
 }
 
 VKAPI_ATTR uint64_t VKAPI_CALL
@@ -1631,7 +1647,7 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    }
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
        (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT ||
-        (aspects == VK_IMAGE_ASPECT_DEPTH_BIT && view->vk.level_count > 1))) {
+        aspects == VK_IMAGE_ASPECT_DEPTH_BIT)) {
       wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
       if (!strcmp(aspect, "all"))
          wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
@@ -1808,7 +1824,7 @@ wg_CreateBufferView(VkDevice _device, const VkBufferViewCreateInfo *pCreateInfo,
    view->at = start / align * align;
    view->size = align64(start - view->at + view->vk.range, 4);
    if (view->mem && view->at + view->size > view->mem->gpu_at + view->mem->size)
-      view->size = view->mem->gpu_at + view->mem->size - view->at;
+      view->size = view->mem->gpu_at + view->mem->size > view->at ? view->mem->gpu_at + view->mem->size - view->at : 0;
    const uint32_t params[8] = { x, (uint32_t)(start - view->at), view->vk.elements, 0, p1[0], p1[1], p1[2], 0 };
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"size\":32,\"usage\":%u}", 0x40 | 0x8); /* UNIFORM | COPY_DST */

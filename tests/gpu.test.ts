@@ -978,7 +978,7 @@ test('venus: blobs, their mapping in the window, uuids and submits reach the hos
   assert.deepEqual(calls.map((c) => c.t), ['vctx', 'blob', 'blob', 'blob-ctx', 'blob-map', 'blob', 'blob-map', 'vsubmit', 'blob-unmap', 'blob-unref']);
   assert.deepEqual(calls[0], { t: 'vctx', id: 3, create: true, name: 'vkcube' });
   assert.deepEqual(calls[1], { t: 'blob', ctx: 3, res: 10, mem: 2, flags: 1, blobId: '7n', size: 65536 });
-  assert.deepEqual(calls[4], { t: 'blob-map', res: 10, offset: 0x8000 });
+  assert.deepEqual(calls[4], { t: 'blob-map', res: 10, offset: 0x8000, size: 65536 });
   assert.deepEqual(calls[7], { t: 'vsubmit', ctx: 3, bytes: [0x44, 0x33, 0x22, 0x11, 5, 0, 0, 0], fence: { flags: 3, ring: 2, id: '77n' } });
   assert.ok(fences >= 7, 'creates, maps and unmaps wait for the host');
   // Not saved while a Venus context exists; a reset forgets them.

@@ -517,7 +517,7 @@ export class Gpu {
           if (m !== undefined && offset < m + r.blob!.size && m < offset + b.size) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         }
         b.mapped = offset;
-        this.host?.call({ t: 'blob-map', res: res.id, offset });
+        this.host?.call({ t: 'blob-map', res: res.id, offset, size: b.size });
         this.hold();
         const r = new Uint8Array(HDR + 8);
         new DataView(r.buffer).setUint32(HDR, MAP_CACHE_CACHED, true);

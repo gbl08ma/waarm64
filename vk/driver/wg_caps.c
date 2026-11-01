@@ -283,21 +283,23 @@ wg_caps_properties(struct vk_properties *p)
    p->maxInlineUniformTotalSize = 4 * 4096;
    /* Samplers aren't counted; a fragment shader's colour attachments are. */
    p->maxPerStageResources = MAX2(sampled + storage_tex + ubo + ssbo + L->max_color_attachments, 53);
-   /* WebGPU counts per stage, Vulkan per layout: a stage's for each of Vulkan's five, which a layout may spread over
-    * them. What a stage of a pipeline binds is held to a stage's (wg_bindings_fit); the rest of a set isn't bound. */
-   p->maxDescriptorSetSamplers = 5 * L->max_samplers;
-   p->maxDescriptorSetUniformBuffers = 5 * ubo;
+   /* WebGPU counts per stage, Vulkan per layout: six of a stage's, as Vulkan's table of minimums is. A layout may spread
+    * them over stages: what a stage of a pipeline binds is held to a stage's (wg_bindings_fit), and the rest of a set
+    * isn't bound. */
+   p->maxDescriptorSetSamplers = 6 * L->max_samplers;
+   p->maxDescriptorSetUniformBuffers = 6 * ubo;
    /* All of WebGPU's: with the push buffer past them, it takes a dynamic storage binding (`push_storage`). */
    p->maxDescriptorSetUniformBuffersDynamic = L->max_dynamic_uniform_buffers;
-   p->maxDescriptorSetStorageBuffers = 5 * ssbo;
+   p->maxDescriptorSetStorageBuffers = 6 * ssbo;
    p->maxDescriptorSetStorageBuffersDynamic = L->max_dynamic_storage_buffers;
-   p->maxDescriptorSetSampledImages = 5 * sampled;
-   p->maxDescriptorSetStorageImages = 5 * storage_tex;
+   p->maxDescriptorSetSampledImages = 6 * sampled;
+   p->maxDescriptorSetStorageImages = 6 * storage_tex;
    p->maxDescriptorSetInputAttachments = 4;
    /* Attributes past their binding's stride take vertex buffer slots of their own (wg_vertex_slots). */
    p->maxVertexInputAttributes = MIN2(L->max_vertex_attributes, 16);
-   /* Vulkan's 16, those past WebGPU's vertex buffers pulled from storage (wg_vertex_pull). */
-   p->maxVertexInputBindings = storage ? WG_VERTEX_BINDINGS : MIN2(L->max_vertex_buffers, 8);
+   /* Vulkan's 16, those past WebGPU's vertex buffers pulled from storage (wg_vertex_pull): a draw that can't be is refused
+    * (`wg_pipeline_pull_ok`). */
+   p->maxVertexInputBindings = storage >= WG_VERTEX_BINDINGS - 8 ? WG_VERTEX_BINDINGS : MIN2(L->max_vertex_buffers, 8);
    p->maxVertexInputAttributeOffset = L->max_vertex_buffer_array_stride - 1;
    p->maxVertexInputBindingStride = L->max_vertex_buffer_array_stride;
    p->maxVertexOutputComponents = 4 * L->max_inter_stage_shader_variables;

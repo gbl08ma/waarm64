@@ -673,6 +673,8 @@ struct wg_vertex_slots {
    uint32_t stuck;          /* bindings with an attribute past the stride that no slot of its own serves */
 };
 void wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vertex_slots *out);
+/* Whether a key's pulled bindings can be, on `p`: else its draw is refused. */
+bool wg_pipeline_pull_ok(struct wg_program *p, const struct wg_pipeline_key *k);
 /* Sets the key's `pull` on the bindings WebGPU's vertex buffers can't take (VK4 T5; `bound`: each binding's byte in its
  * GPUBuffer): a stride, a bound offset or an attribute's offset WebGPU refuses. The vertex stage reads them from a
  * storage binding (web/venus-gpu.ts `pulledCode`). */

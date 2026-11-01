@@ -115,7 +115,7 @@ loads, so it is `var<storage, read>` and its layout entry `read-only-storage`). 
 same way: a stage's room is WebGPU's uniform buffers less one for the push buffer (counted always), its texel buffers'
 parameters and its dynamic uniform buffers (never folded: WebGPU's dynamic storage buffers are fewer); the rest, in
 set and binding order, are storage (the set layouts' hash carries the stage flags, the shaders' keys with it).
-`maxDescriptorSetUniformBuffers` and the other set-wide limits are five times a stage's (Vulkan's five stages, VK4 R7): a set may spread its descriptors over stages, what one stage of a pipeline binds being held to a stage's.
+`maxDescriptorSetUniformBuffers` and the other set-wide limits are six times a stage's, as Vulkan's table of minimums is (VK4 R7): a set may spread its descriptors over stages, what one stage of a pipeline binds being held to a stage's.
 
 **Draw parameters** (VK3 L7.5, `shaderDrawParameters`, vkd3d's row): WGSL has no built-ins for SPIR-V's `BaseVertex`,
 `BaseInstance` and `DrawIndex` (its `vertex_index` and `instance_index` include the bases, as Vulkan's `VertexIndex`
@@ -224,7 +224,7 @@ backend refuses a device without the four `shader*ArrayDynamicIndexing` features
 `sampleRateShading`; "The shader path"); ANGLE's row (VK3 L7.4): the last vertex provoking, transform feedback and
 uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5): draw parameters;
   depth clamp, dual-source blending, clip distances, first instance in indirect draws, the compressed families and
-  from the features; `shaderStorageImageExtendedFormats` unless held (below; an adapter without tier1 backs it by words: "Storage images as words"); `shaderFloat16` from `shader-f16`, real subgroups (size,
+  from the features; `shaderStorageImageExtendedFormats` with `texture-formats-tier1` and unless held (below); `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
   translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
   operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
@@ -244,9 +244,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   host-visible, coherent, cached and device-local, 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory
   rather than a discrete GPU's BAR window), whose budget reports what's allocated from each (VK4 T2). Host-visible
   memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
-  its heap, the largest GPUBuffer or the arena is refused; Venus's guest doesn't wait for that answer, and an object vkr
+  its heap, the largest GPUBuffer or the arena is refused; Venus's guest doesn't wait for that answer, imports' included, and an object vkr
   didn't make would end the context at its first use, so through vkr it is an empty memory (`memory_refused`, VK4 R6;
-  docs/backlog.md "Memory"). One queue
+  docs/backlog.md "Memory"), while host-visible memory past its heap with the arena's room is simply had. One queue
   family. `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
 - **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
@@ -467,8 +467,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   - **A depth texture also sampled without a comparison** (VK4 R5): WGSL declares a binding one way, and on
     `texture_depth_*` has no bias and no gradients, and WebGPU takes no filtering sampler with it. So a stage's plain
     samples of a texture it compares go through the fetches below, as their own sampler says (`WGSL_KEY_ALWAYS`; a cube's
-    bound as its faces, `WGSL_KEY_FACES`; a gather of one stays WGSL's, the sampler non-filtering). The fragment stage
-    is printed first, so a vertex stage that samples or sizes what it compares is told (`wgsl_print_options.depths`).
+    bound as its faces, `WGSL_KEY_FACES`; a gather of one stays WGSL's, the sampler non-filtering). What any stage of a
+    pipeline compares is depth in all of them (`wgsl_print_options.depths`).
   - **A sampler shared by an integer or depth texture and a float one** (VK4 R5): the former want it non-filtering, so the
     program's variants split it as they do for unfilterable textures (`wg_program_mixed`, the twin at the binding
     before): the float textures keep their filters.
@@ -604,7 +604,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   for its pad): under Vulkan 1.3's 1 GiB on an adapter of WebGPU's default 256 MiB, as nothing can back more. Multi-planar
   formats list copies for linear tiling, as dEQP asks, but the image query refuses a linear image of one.
 - **Vertex bindings past WebGPU's** (VK4 R7): Vulkan's minimum is 16, WebGPU's vertex buffers commonly 8, so bindings 8 and
-  up are always pulled, below; each takes a storage binding of the vertex stage, which WebGPU's limit may refuse.
+  up are always pulled, below, and never set as vertex buffers. Each takes a storage binding of the vertex stage: a draw
+  past WebGPU's limit on those, or with no bind group left, is refused, said once (`wg_pipeline_pull_ok`).
 - **Pulled vertices** (VK4 T5): WebGPU wants strides and bound offsets in multiples of 4 and an attribute's offset in
   multiples of its size up to 4, and Vulkan doesn't. A binding that breaks one (`wg_vertex_pull`, at each draw: the
   bound offset is part of the key, `vb[b].pull`), or with an attribute past its stride that no slot serves, is read by

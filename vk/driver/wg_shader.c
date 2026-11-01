@@ -457,8 +457,7 @@ print_options(const struct wgsl_varyings *fs)
    };
 }
 
-/* What `r` of `count` resources are compared, for a stage printed after them (wgsl_print_options.depths): `out` has
- * room for WGSL_MAX_RESOURCES. */
+/* What `r` of `count` resources are compared (wgsl_print_options.depths): `out` has room for WGSL_MAX_RESOURCES. */
 static uint32_t
 depth_textures(const struct wgsl_resource *r, uint32_t count, uint32_t *out)
 {
@@ -1197,9 +1196,23 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
    if (ok && vs && fs)
       wgsl_link(vs, fs);
 
+   /* What any stage compares is a depth texture in all of them (a binding has one type). */
+   uint32_t depths[WGSL_MAX_RESOURCES], depth_count = 0;
+   for (uint32_t i = 0; i < count && ok; i++)
+      nir_foreach_function_impl (impl, infos[i].nir)
+         nir_foreach_block (block, impl)
+            nir_foreach_instr (instr, block) {
+               if (instr->type != nir_instr_type_tex || !nir_instr_as_tex(instr)->is_shadow)
+                  continue;
+               const uint32_t t = nir_instr_as_tex(instr)->texture_index;
+               bool known = false;
+               for (uint32_t k = 0; k < depth_count; k++)
+                  known |= depths[k] == t;
+               if (!known && depth_count < WGSL_MAX_RESOURCES)
+                  depths[depth_count++] = t;
+            }
    /* Fragment shaders first: a vertex shader's outputs are typed by what its fragment shader reads. */
    const struct wgsl_varyings *fs_reads = NULL;
-   const struct wgsl_info *fs_info = NULL;
    for (uint32_t pass = 0; pass < 2 && ok; pass++) {
       for (uint32_t i = 0; i < count && ok; i++) {
          const bool frag = infos[i].stage == MESA_SHADER_FRAGMENT;
@@ -1213,11 +1226,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          shaders[i] = s;
          struct wgsl_print_options options = print_options(infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL);
          options.push_storage = push_storage(infos[i].set_layouts, infos[i].set_layout_count);
-         uint32_t depths[WGSL_MAX_RESOURCES];
-         if (fs_info) {
-            options.depths = depths;
-            options.depth_count = depth_textures(fs_info->resources, fs_info->resource_count, depths);
-         }
+         options.depths = depths;
+         options.depth_count = depth_count;
          s->nir = stage_nir_keep(infos[i].nir, options.fs);
          char *text = wgsl_print(NULL, infos[i].nir, &options, &s->info, error, sizeof(error));
          if (!text) {
@@ -1228,10 +1238,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          ralloc_free(text);
          s->module = wg_id();
          gpu_shader(s->module, s->wgsl, strlen(s->wgsl));
-         if (frag) {
+         if (frag)
             fs_reads = &s->info.varyings;
-            fs_info = &s->info;
-         }
       }
    }
    /* A storage image the stages bind with different access: its one layout entry can't match both modules' (WebGPU
@@ -1410,6 +1418,7 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
    blob_copy_bytes(blob, &s->info, sizeof(s->info));
    /* A corrupt store's counts mustn't take the fixed arrays they count past their ends. */
    if (blob->overrun || !wg_counts_sane(s->info.resource_count, s->info.pair_count, s->info.int_pair_count, s->info.key_pair_count)) {
+      stage_nir_free(s->nir);
       vk_shader_free(device, pAllocator, &s->vk);
       return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
    }
@@ -1420,8 +1429,8 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
    }
    program_read(blob, p);
    blob_copy_bytes(blob, p->link, sizeof(blake3_hash));
-   if (blob->overrun || !wgsl || p->resource_count > WGSL_MAX_RESOURCES || p->group_count > WGSL_MAX_GROUPS ||
-       p->pair_count > WGSL_MAX_PAIRS || p->int_pair_count > WGSL_MAX_PAIRS || p->set_count > WGSL_MAX_SETS) {
+   if (blob->overrun || !wgsl || p->group_count > WGSL_MAX_GROUPS ||
+       !wg_counts_sane(p->resource_count, p->pair_count, p->int_pair_count, p->key_pair_count) || p->set_count > WGSL_MAX_SETS) {
       free(p);
       stage_nir_free(s->nir);
       vk_shader_free(device, pAllocator, &s->vk);
@@ -1630,6 +1639,12 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    for (struct wg_pull *u = p->pulls; u; u = u->next)
       if (u->slots == mask)
          return u;
+   /* The vertex stage's storage buffers: its own and these, on WebGPU's limit. */
+   uint32_t storage = util_bitcount(mask);
+   for (uint32_t k = 0; k < p->resource_count; k++)
+      storage += (p->vis[k] & 1) && (p->resources[k].kind == WGSL_STORAGE || p->resources[k].kind == WGSL_STORAGE_READ);
+   if (storage > MIN2(wg_limits.max_storage_buffers, wg_limits.max_storage_buffers_in_vertex_stage))
+      return NULL;
    /* The first group without resources: past the program's, or one it leaves empty below its push buffer's group 3. */
    uint32_t used = 0;
    for (uint32_t i = 0; i < p->resource_count; i++)
@@ -1661,6 +1676,15 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    return u;
 }
 
+bool
+wg_pipeline_pull_ok(struct wg_program *p, const struct wg_pipeline_key *k)
+{
+   bool wanted = false;
+   u_foreach_bit(loc, k->vs->info.inputs)
+      wanted |= k->attr[loc].format && k->vb[k->attr[loc].binding].pull;
+   return !wanted || wg_pipeline_pull(p, k);
+}
+
 /* A fragment stage that writes depth into an attachment without a depth aspect: Vulkan drops the write, WebGPU refuses the
  * pipeline. The output, at a location no target takes, goes nowhere (a location past the stage's own). */
 static uint32_t
@@ -1669,7 +1693,7 @@ fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
    if (p->fs_no_depth && p->fs_no_depth_of == fs)
       return p->fs_no_depth;
    char *keyed = keyed_text(p, fs->nir, &fs->info, NULL);
-   char *text = p->split_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
+   char *text = p->split_count || p->alias_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
    if (!text)
       text = keyed ? strdup(keyed) : strdup(fs->wgsl);
    free(keyed);

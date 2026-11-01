@@ -314,7 +314,11 @@ export class VenusRenderer {
         return;
       case 'blob-map': {
         const ctx = this.owner.get(c.res);
-        if (ctx === undefined || !this.ex.venus_resource_map(ctx, c.res, this.window.at + c.offset)) console.warn(`venus: blob ${c.res} couldn't be mapped`);
+        if (ctx === undefined || !this.ex.venus_resource_map(ctx, c.res, this.window.at + c.offset)) {
+          // The guest has its reply already, and what it reads there mustn't be the last mapping's, another process's.
+          console.warn(`venus: blob ${c.res} couldn't be mapped`);
+          new Uint8Array(this.memory.buffer, this.window.at + c.offset, c.size).fill(0);
+        }
         return;
       }
       case 'blob-unmap': {

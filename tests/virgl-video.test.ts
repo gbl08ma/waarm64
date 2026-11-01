@@ -634,7 +634,7 @@ test('CallQueue: Venus\'s calls that make things run past waiting calls (its rin
   q.push(submit(1, 8), 0);
   q.push({ t: 'vctx', id: 5, create: true, name: 'mpv' }, 0);
   q.push({ t: 'blob', ctx: 5, res: 40, mem: 0, flags: 0, blobId: 1n, size: 4096 }, 0);
-  q.push({ t: 'blob-map', res: 40, offset: 0 }, 0);
+  q.push({ t: 'blob-map', res: 40, offset: 0, size: 4096 }, 0);
   q.push({ t: 'blob-ctx', ctx: 5, res: 31, attach: true, size: 4096 }, 0);
   q.push({ t: 'vsubmit', ctx: 5, bytes: new Uint8Array(4) }, 0);
   assert.deepEqual(ran, ['vctx5+', 'blob', 'blob-map', 'blob-ctx5:31+', 'vsubmit']);

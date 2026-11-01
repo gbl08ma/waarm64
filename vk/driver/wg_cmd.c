@@ -1256,7 +1256,8 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    sampler_border(view, sampler, integer, key->border);
    if (padded)
       padded_key_fill(view, key);
-   key->faces |= faces;
+   /* `must`: a pair of a cube another pair binds as its faces. */
+   key->faces |= faces || must;
    if (sampler->compare) {
       key->clamp_dref = view->vk.view_format != VK_FORMAT_D32_SFLOAT && view->vk.view_format != VK_FORMAT_D32_SFLOAT_S8_UINT;
       /* WGSL can't fetch from a cube: past level 0 one is sampled from its faces. */
@@ -1632,6 +1633,14 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
          if (cmd->vbs[b].buffer)
             bound[b] = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
       wg_vertex_pull(&k, vs->info.inputs, bound);
+   }
+   /* A vertex stage that can't pull what it must: dropped, said once, not an invalid pipeline. */
+   static bool unpulled;
+   if (!wg_pipeline_pull_ok(p, &k)) {
+      if (!unpulled)
+         fprintf(stderr, "wg: a draw refused: its pulled vertex bindings don't fit (no bind group left, or past the vertex stage's storage buffers)\n");
+      unpulled = true;
+      return false;
    }
    if (!cmd->have_key || memcmp(&k, &cmd->last_key, sizeof(k)) || cmd->last_program[0] != p) {
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
@@ -2253,9 +2262,10 @@ wg_CmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2 *info)
       record_layers_use(cmd, dst, &r->dstSubresource, true);
       for (uint32_t l = 0; l < layers; l++) {
          struct wg_json j = { 0 };
-         wg_json_printf(&j, "{\"op\":\"blit\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"srcFormat\":\"%s\",\"dst\":%u,"
+         wg_json_printf(&j, "{\"op\":\"blit\",%s\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"srcFormat\":\"%s\",\"dst\":%u,"
                         "\"dstMip\":%u,\"dstLayer\":%u,\"format\":\"%s\",\"filter\":\"%s\",\"srcSize\":[%u,%u],"
                         "\"from\":[%d,%d,%d,%d],\"to\":[%d,%d,%d,%d],\"srcZ\":[%d,%d],\"dstZ\":[%d,%d],\"srcDepth\":%u}",
+                        (src->fmt->flags & WG_FMT_OPAQUE) && (src->fmt->flags & WG_FMT_BC) ? "\"srcOpaque\":true," : "",
                         src->tex, r->srcSubresource.mipLevel, r->srcSubresource.baseArrayLayer + l, src->fmt->name,
                         dst->tex, r->dstSubresource.mipLevel, r->dstSubresource.baseArrayLayer + l, dst->fmt->name,
                         info->filter == VK_FILTER_LINEAR ? "linear" : "nearest", se.width, se.height,
@@ -3890,7 +3900,7 @@ apply(struct replay *r, uint32_t point)
                const uint32_t to = s ? s->to : r->vb[b].buffer;
                const double place = s ? s->place : r->vb[b].offset;
                /* Offsets WebGPU's vertex buffers refuse: no pipeline but a pulling one reads them. */
-               if ((r->pull && (r->pull->slots & (1u << b))) || fmod(place, 4))
+               if ((r->pull && (r->pull->slots & (1u << b))) || fmod(place, 4) || b >= MIN2(wg_limits.max_vertex_buffers, 8))
                   gpu_pull_buffer(b, to, place, r->vb[b].size);
                else
                   gpu_set_vertex_buffer(b, to, place, r->vb[b].size);
@@ -4158,7 +4168,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          /* The group the last one pulled from may be a set's of this one. */
          if (r->pull)
             r->dirty |= RD_GROUPS;
+         const struct wg_pull *was = r->pull;
          r->pull = wg_pipeline_pull(op->program, &op->key);
+         /* A slot it pulled has no vertex buffer set for one that doesn't. */
+         if ((was ? was->slots : 0) != (r->pull ? r->pull->slots : 0))
+            r->dirty |= RD_VB;
          break;
       }
       case OP_COMPUTE: {
