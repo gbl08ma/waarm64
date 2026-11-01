@@ -40,7 +40,16 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 57, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 58, counter: 2 });
+});
+
+test('the JIT\'s FMA forms: the fused arm and the emulation give the FP guest the same state', async () => {
+  const r = await result('/tests/browser/fma.html', 'result') as { error?: string; fused: boolean; same: boolean; steps: number[]; bytes: number[] };
+  assert.equal(r.error, undefined);
+  assert.equal(r.same, true);
+  assert.equal(r.steps[0], r.steps[1]);
+  // The arms did differ, where the host has two.
+  assert.equal(r.bytes[0] !== r.bytes[1], r.fused);
 });
 
 test('three core instances run guests concurrently on one memory in workers (M7)', async () => {

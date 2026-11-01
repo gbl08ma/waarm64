@@ -1196,6 +1196,8 @@ pub struct Ctx {
     /// The vCPU has FEAT_SHA512 and FEAT_SHA3 (`cpu::has_sha3`, fixed for its
     /// life): without them the helper runs those words (UNDEFINED).
     pub sha3: bool,
+    /// The host's relaxed-SIMD `madd` fuses (`jit::Config::fma`): the FMA forms use it ([`float`]).
+    pub fma: bool,
     /// Parallel SMP (`cpu::FEATURE_PARALLEL`): DSB is the helper's, which
     /// ends the chunk there.
     pub parallel: bool,
@@ -4127,6 +4129,7 @@ mod tests {
         el1: false,
         crypto: true,
         sha3: true,
+        fma: false,
         parallel: false,
         pair_locks: 0x100,
         clock: None,
@@ -4514,6 +4517,15 @@ mod tests {
         assert!(has(&b, &[0x44, 0, 0, 0, 2, 0, 0, 0xa0, 0x41]) && has(&b, &[0x1b]));
         let b = emit(0x1f020c20, 0).unwrap();
         assert!(has(&b, &[0xa2]) && has(&b, &[0xa0]) && has(&b, &[0xb6]));
+        // On a fused host: relaxed `madd` (0x105 single, 0x107 double) on lane 0,
+        // no split, no sum through f64; FNMADD's `nmadd` over a negated addend.
+        let fused = |w| emit_in(w, 0, &Ctx { fma: true, ..FLAT }).unwrap();
+        let b = fused(0x1f420c20);
+        assert!(has(&b, &[0xfd, 0x87, 2]) && !has(&b, &[0x44, 0, 0, 0, 2, 0, 0, 0xa0, 0x41]));
+        let b = fused(0x1f020c20);
+        assert!(has(&b, &[0xfd, 0x85, 2]) && !has(&b, &[0xb6]));
+        let b = fused(0x1f620c20);
+        assert!(has(&b, &[0xfd, 0x88, 2]) && has(&b, &[0xfd, 0xed, 1]));
         // fneg d0, d1: a bit flip, no guard.
         let b = emit(0x1e614020, 0).unwrap();
         assert!(!has(&b, &[0x21, FPOK as u8]));
@@ -4540,6 +4552,13 @@ mod tests {
         let b = emit(0x4e62cc20, 0).unwrap();
         assert!(has(&b, &[0xfd, 0xcc, 1]) && has(&b, &[0xfd, 0xec, 1]) && has(&b, &[0xfd, 0x4a]));
         assert!(has(&b, &[0xfd, 0xc3, 1]));
+        // On a fused host: `madd`, FMLS's `nmadd`, nothing through f64x2.
+        let fused = |w| emit_in(w, 0, &Ctx { fma: true, ..FLAT }).unwrap();
+        let b = fused(0x4e22cc20);
+        assert!(has(&b, &[0xfd, 0x85, 2]) && !has(&b, &[0xfd, 0x5f]));
+        assert!(has(&fused(0x4ea2cc20), &[0xfd, 0x86, 2]));
+        assert!(has(&fused(0x4e62cc20), &[0xfd, 0x87, 2]));
+        assert!(has(&fused(0x4ee2cc20), &[0xfd, 0x88, 2]));
         // fadd v0.2d: f64x2.add, i64x2.all_true (0xc3).
         let b = emit(0x4e62d420, 0).unwrap();
         assert!(has(&b, &[0xfd, 0xf0, 1]) && has(&b, &[0xfd, 0xc3, 1]));
@@ -4765,6 +4784,7 @@ mod tests {
             el1: true,
             crypto: true,
             sha3: true,
+            fma: false,
             parallel: false,
             pair_locks: 0x100,
             clock: None,

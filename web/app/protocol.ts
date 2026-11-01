@@ -31,7 +31,7 @@ export type Problem = 'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-m
 export type ToWorker =
   | {
     type: 'start';
-    /** The page's query (`location.search`), for the worker's own knobs (`?snd=`, `?gpu=`, `?jit=`, `?growcore`, `?vyield=`). */
+    /** The page's query (`location.search`), for the worker's own knobs (`?snd=`, `?gpu=`, `?jit=`, `?fma=`, `?growcore`, `?vyield=`). */
     query: string;
     machine: MachineName;
     ncpus: number;

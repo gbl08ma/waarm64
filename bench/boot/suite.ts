@@ -63,7 +63,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined });
+  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), fma: pageQuery().get('fma') !== 'emul', exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;

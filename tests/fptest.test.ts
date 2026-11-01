@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fusedFma } from '../web/fma.ts';
 import { runToPowerOff } from '../web/vm.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
@@ -16,9 +17,9 @@ const skip = process.env.WEBPC_FPTEST !== '1' ? 'SKIPPED: scripts/ci-fp.sh runs 
   : !has('fptest/initramfs.cpio') || !has('linux/Image') ? 'SKIPPED: run images/build.sh linux fptest' : false;
 const args = (process.env.WEBPC_FPTEST_ARGS ?? '').trim().split(/\s+/).filter(Boolean).join(',');
 const CPUS = Number(process.env.WEBPC_FPTEST_CPUS ?? 4);
-const modes: [string, 0 | 1][] = [['JIT', 1], ...(process.env.WEBPC_FPTEST_INTERP === '1' ? [['interpreter', 0] as [string, 0 | 1]] : [])];
+const modes: [string, 0 | 1, boolean][] = [['JIT', 1, true], ...(fusedFma() ? [['JIT, FMA emulated', 1, false] as [string, 0 | 1, boolean]] : []), ...(process.env.WEBPC_FPTEST_INTERP === '1' ? [['interpreter', 0, false] as [string, 0 | 1, boolean]] : [])];
 
-for (const [name, jit] of modes) {
+for (const [name, jit, fma] of modes) {
   test(`FP suite in the guest (${name})`, { skip }, async () => {
     const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
     const r = await runToPowerOff(wasm, {
@@ -27,6 +28,7 @@ for (const [name, jit] of modes) {
       initrd: readFileSync(new URL('fptest/initramfs.cpio', IMAGES)),
       cmdline: `console=ttyAMA0 panic=-1${args ? ` webpc.fptest=${args}` : ''}`,
       jit,
+      fma,
       ncpus: CPUS,
       parallel: CPUS > 1,
       idleLimitMs: 60_000,

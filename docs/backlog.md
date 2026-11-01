@@ -178,14 +178,14 @@ left open, most promising first.
     in Alpine's userspace benchmark (30), so it's for the FP guest and FP-heavy guests, not the ranking workloads.
   - **FZ's operand tests** (llvmpipe's 8%): about five lane ops an operand (the `movi`s included); for singles, an
     unsigned min of every operand's `(x << 1) - 1` before one compare saves about a third.
-  - **The single FMA's midpoint test** (8% of the FP guest with everything it computes): folded into the result's
-    mask and reduction, with the round-to-odd redo in the failure arm before the helper; saves a reduction (two
-    lane ops), not the test.
+  - **The single FMA's midpoint test** (the emulated arm only: the fused arm has none, so this now reaches only hosts
+    without FMA3 or relaxed SIMD; not worth doing for them): folded into the result's mask and reduction, with the
+    round-to-odd redo in the failure arm before the helper; saves a reduction (two lane ops), not the test.
   - **Vector FMUL's zero clause** in a branch on a zero result lane, as the scalar form's: about two lane ops a
     product (the FP guest has none to measure it on; llvmpipe's shaders do).
-  - **Double FMA through a host fused op**: only relaxed-simd's `f64x2.relaxed_madd`, which may not fuse on every
-    host and tier; it needs a probe and a guarantee that Liftoff and TurboFan agree. The FP guest spent ~10% on the
-    double emulation in a cloud measurement; leave it unless a double-heavy workload needs it.
+  - **`relaxed_trunc` for the FCVTZS/FCVTZU fast path**: only worth it if it measures on x86, where the deterministic
+    saturating truncation costs extra ops (on arm64 `fcvtzs` already saturates, so it can't gain here). Unmeasured: the
+    dev VM has no x86 Chromium. The FMA forms took relaxed SIMD's other useful op (jit.md "Floating point").
   The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
   "Tried and not kept").
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a

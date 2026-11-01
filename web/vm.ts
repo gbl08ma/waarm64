@@ -7,6 +7,7 @@
 // WFIs sleep on the signal word). With `parallel` (M7), every vCPU runs in
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
 import { chunkedHead, isManifestUrl } from './chunked.ts';
+import { fusedFma } from './fma.ts';
 import type { GpuState } from './gpu.ts';
 import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
@@ -22,7 +23,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 57;
+export const ABI = 58;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -553,6 +554,11 @@ export type BootOptions = {
    * `jit::MAX_BYTES`.
    */
   jitBytes?: number;
+  /**
+   * `VmConfig.fma` (ABI 58): the JIT's FMA forms use relaxed-SIMD's `madd` where the host fuses it ({@link fusedFma});
+   * on unless false, which forces their emulation (`?fma=emul`; the guest sees no difference).
+   */
+  fma?: boolean;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
@@ -846,12 +852,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 35).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
     BigInt(o.jitBytes ?? 0), // the JIT's code cache budget (ABI 44)
     BigInt(windowBytes), // the host-visible window (ABI 53)
-    BigInt(windowAt)]); // where it is in memory 1 (ABI 55)
+    BigInt(windowAt), // where it is in memory 1 (ABI 55)
+    o.fma !== false && fusedFma() ? 1n : 0n]); // the JIT's FMA forms on the host's fused madd (ABI 58)
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, ENTRY_WORDS * specs.length).set(specs.flatMap((d) => [...deviceEntry(d).entry, deviceShm(d)]));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);

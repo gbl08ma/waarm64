@@ -121,6 +121,8 @@ pub struct Config {
     /// blocks only), so the edge into it stays in the function instead of a
     /// jump-cache probe and an indirect call (docs/jit.md "Compile policy").
     pub warm: u32,
+    /// The host's relaxed-SIMD `madd` fuses (`VmConfig.fma`): the FMA forms use it, not their emulation.
+    pub fma: bool,
 }
 
 impl Config {
@@ -139,6 +141,7 @@ impl Config {
         spill: [0; crate::mem::MAX_SPILL],
         decoded: interp::block::MAX_BUDGET as u32,
         warm: WARM,
+        fma: false,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -154,6 +157,7 @@ impl Config {
         spill: [0; crate::mem::MAX_SPILL],
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
+        fma: false,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -1750,6 +1754,11 @@ impl Jit {
         self.gauge.0.as_ptr() as *const u64
     }
 
+    /// `Config::fma`, for what's compiled from now on.
+    pub fn set_fma(&self, on: bool) {
+        self.cache.lock().cfg.fma = on;
+    }
+
     /// The code cache's byte budget (`Config::max_bytes`).
     pub fn max_bytes(&self) -> u64 {
         self.cache.lock().cfg.max_bytes
@@ -2599,6 +2608,7 @@ mod tests {
             spill: [0; crate::mem::MAX_SPILL],
             decoded: 0,
             warm: 0,
+            fma: false,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());

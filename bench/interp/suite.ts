@@ -4,6 +4,7 @@
 // M4: the integer guest again in a whole VM through vm_run, at EL1 with the MMU off and on (vm-start.S).
 // M5: each of them again through the JIT (`jit_*`, `VmConfig.jit`), with the JIT's counters in the params.
 import type { Options, Sample } from '../spike/benchmarks.ts';
+import { fusedFma } from '../../web/fma.ts';
 import { ABI, bootVm, coreImports, helperReport } from '../../web/vm.ts';
 
 const RAM = 16 << 20;
@@ -27,6 +28,7 @@ type Exports = {
   mem_new(base: number, size: bigint): number;
   interp_run(cpu: number, mem: number, n: bigint): bigint;
   jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
+  jit_fma(v: number, on: number): void;
   jit_run(v: number, mem: number, n: bigint): bigint;
   jit_stats(v: number): number;
   jit_helper_report(v: number): number;
@@ -48,7 +50,7 @@ export const JIT_INTERP: JitConfig = [0xffff_ffff, 32, 16384, 0, 1000];
  * (layout A), `pad` bytes into its first page; with `jit` (jit_new's
  * arguments), runs it through the JIT.
  */
-export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0) {
+export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0, fma = new URLSearchParams((globalThis as { name?: string }).name).get('fma') !== 'emul') {
   const wasm = await load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);
@@ -57,6 +59,7 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0) {
   const ex = instance.exports as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
   const cpu = jit ? ex.jit_new(...jit) : ex.vcpu_new();
+  if (jit) ex.jit_fma(cpu, fma && fusedFma() ? 1 : 0);
   const base = memory.grow(RAM / 65536 + 1) * 65536 + pad;
   const guest = await load(bin);
   new Uint8Array(memory.buffer, base + LOAD, guest.length).set(guest);

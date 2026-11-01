@@ -148,6 +148,9 @@ pub struct VmConfig {
     /// docs/devices.md "The host-visible window"); node 1's RAM, if any, follows the window there. A multiple of
     /// 64 KiB.
     pub window_at: u64,
+    /// Non-zero: the host's relaxed-SIMD `madd` fuses in every tier (ABI 58, probed by `web/fma.ts`), and the JIT's FMA
+    /// forms use it (docs/jit.md "Floating point"). 0: their emulation. Results, flags and steps are the same.
+    pub fma: u64,
 }
 
 /// The largest host-visible window.
@@ -282,6 +285,7 @@ impl Default for VmConfig {
             jit_bytes: 0,
             window: 0,
             window_at: 0,
+            fma: 0,
         }
     }
 }
@@ -788,6 +792,7 @@ impl Vm {
             spill: cfg.memory_sizes().map(|n| (n >> 16) as u32),
             // A table per vCPU in parallel SMP, one in round-robin.
             decoded: crate::interp::block::budget(if parallel { n } else { 1 }) as u32,
+            fma: cfg.fma != 0,
             ..c
         });
         let mut vcpus: Vec<_> = (0..n)

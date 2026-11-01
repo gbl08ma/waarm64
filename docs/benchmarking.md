@@ -366,6 +366,8 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
     disassembly (`ann.sh`).
 - **The JIT's compile worker A/B:** `bench/run.ts --query=nocw` turns it off in `bench/boot` (the bench page passes
   its query to its worker); the page takes `?jit=nocw`.
+- **The fused FMA A/B:** `bench/run.ts --query=fma=emul` forces the emulation in `bench/interp` and `bench/boot`, the
+  same build; the page takes `?fma=emul`.
 - **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the
   guest's blocks run in the vCPU workers: 73% of samples unknown); `--perf-basic-prof` (a
   `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in

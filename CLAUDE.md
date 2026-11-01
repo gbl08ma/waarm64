@@ -60,7 +60,7 @@ scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, a
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
 scripts/ci-deqp-vk.sh          # dEQP-VK's pass list and the programs' replays on the page (~40 min): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus), Vulkan track ends; needs images/deqp/build.sh vk
 scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
-scripts/ci-fp.sh               # the FP suite in the guest (~3 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
+scripts/ci-fp.sh               # the FP suite in the guest (~5 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)

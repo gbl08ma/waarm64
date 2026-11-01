@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 57;
+pub const ABI_VERSION: u32 = 58;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -325,8 +325,23 @@ pub extern "C" fn jit_new(
         spill: [0; crate::mem::MAX_SPILL],
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
+        fma: false,
     }))));
     Box::into_raw(v)
+}
+
+/// A [`jit_new`] vCPU's `VmConfig.fma` (ABI 58): what it compiles from now on uses the host's fused `madd`, or the
+/// emulation. Set before its first run.
+///
+/// # Safety
+/// `v` comes from [`jit_new`]; nothing else uses it meanwhile.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_fma(v: *mut mmu::Vcpu, on: u32) {
+    // SAFETY: the caller's contract: `v` is a live vCPU no one else is using.
+    let v = unsafe { &mut *v };
+    if let Some(j) = v.jit.cache.as_mut() {
+        j.set_fma(on != 0);
+    }
 }
 
 /// [`interp_run`] through the JIT.

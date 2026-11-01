@@ -786,6 +786,36 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // exact while the product's error is (a zero factor or a product from
         // 2^-900 up), with no denormal factor. An overflow anywhere makes z
         // infinite or a NaN, which the result check sends to the helper.
+        //
+        // On a host whose relaxed `madd` fuses (`Ctx::fma`): that op on lane 0,
+        // one rounding, of ±Vn·Vm + ±Va, negated before it: ARM's result, and
+        // the result check is what the emulated form's says of it. Only the
+        // emulation needs the factors' bound; a zero result isn't taken in
+        // either. Under FZ, the operands' test stays.
+        FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float if cx.fma => {
+            fpa_guard(c);
+            let (o1, o0) = (bit(i, 21), bit(i, 15));
+            c.vget(rn);
+            c.vget(rm);
+            c.vget(ra);
+            if o1 {
+                c.simd(if f.d { op::F64X2_NEG } else { op::F32X4_NEG });
+            }
+            c.simd(op::MADD[f.d as usize][(o1 != o0) as usize]);
+            c.simd_lane(if f.d { 0x1d } else { 0x1b }, 0); // i64x2/i32x4.extract_lane
+            c.local_set(r);
+            c.local_get(FPOK);
+            under_fz(c, |c| {
+                for (l, n) in [(x, rn), (y, rm), (a, ra)] {
+                    f.load(c, n);
+                    c.local_set(l);
+                }
+                no_denormal(c, f, &[a, x, y]);
+            });
+            exp_in(c, f, r, 2);
+            c.op(AND);
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
+        }
         FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float => {
             fpa_guard(c);
             // o1 (21) negates the addend, o1 != o0 (15) the first factor.
@@ -1382,6 +1412,8 @@ mod op {
         [0x41, 0x43, 0x44, 0x45, 0x46],
         [0x47, 0x49, 0x4a, 0x4b, 0x4c],
     ];
+    /// Relaxed SIMD: [madd, nmadd] of f32x4, of f64x2.
+    pub const MADD: [[u32; 2]; 2] = [[0x105, 0x106], [0x107, 0x108]];
     /// abs: f32x4, f64x2.
     pub const ABS: [u32; 2] = [0xe0, 0xec];
     /// min, max: f32x4, f64x2.
@@ -1844,6 +1876,78 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.local_get(tr);
                 c.vset(rd);
             });
+        }
+        // Fused on a host whose relaxed `madd` fuses (`Ctx::fma`): that op, one
+        // rounding, its first factor negated in the op itself (`nmadd` is
+        // madd(-a, b, c)). Doubles: a fast result (the factors' bound is the
+        // emulation's). Singles take an exact zero too, as the emulated form
+        // does, but there's no double sum to read it from.
+        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2
+            if cx.fma =>
+        {
+            fpa_guard(c);
+            let (neg, acc, half) = fma_kind(op, d, rd);
+            vreg(c, rn);
+            factor(c);
+            acc(c);
+            c.simd(op::MADD[d as usize][neg as usize]);
+            if half {
+                // FRSQRTS: exact, or a denormal the check rejects.
+                let k = if d {
+                    splat(true, 0.5f64.to_bits())
+                } else {
+                    splat(false, 0.5f32.to_bits() as u64)
+                };
+                c.v128_const(k)
+                    .simd(if d { op::F64X2[2] } else { op::F32X4[2] });
+            }
+            c.local_set(tr);
+            let fz = |c: &mut Func| {
+                under_fz_bad(c, |c| {
+                    vreg(c, rn);
+                    denormal_lanes(c, d);
+                    factor(c);
+                    denormal_lanes(c, d);
+                    acc(c);
+                    denormal_lanes(c, d);
+                    c.simd(op::OR).simd(op::OR);
+                })
+            };
+            c.local_get(tr);
+            lanes_in(c, d, 2);
+            fz(c);
+            if d {
+                all_lanes(c, d, q, 1);
+            } else {
+                // Without a lane outside the fast results, nothing more: one
+                // reduction. Else a zero lane may be fine: it's exact with a zero
+                // factor (then the addend is the zero result) or an addend from
+                // 2^-100 up: a nonzero exact sum is then a multiple of 2^-148
+                // (the addend's last place, and the product's: a product near
+                // 2^-100 has 48 bits), which rounds to no zero. Anything else may
+                // be a tiny sum rounded to zero, with Underflow: the helper.
+                every_lane(c, d, q, 1);
+                c.if_t(super::I32).i32_const(1).else_();
+                c.local_get(tr);
+                lanes_in(c, d, 2);
+                c.local_get(tr);
+                zero_lanes(c, d);
+                vreg(c, rn);
+                zero_lanes(c, d);
+                factor(c);
+                zero_lanes(c, d);
+                acc(c);
+                c.simd(op::ABS[0]);
+                c.v128_const(splat(false, 2f32.powi(-100).to_bits() as u64))
+                    .simd(op::CMP[0][4]);
+                c.simd(op::OR).simd(op::OR).simd(op::AND).simd(op::OR);
+                fz(c);
+                every_lane(c, d, q, 1);
+                c.end();
+                c.local_get(FPOK).op(AND);
+            }
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // Fused, double precision: the scalar double FMA's algorithm on f64x2
         // (Veltkamp, Dekker, TwoSum, round to odd, docs/jit.md "Floating

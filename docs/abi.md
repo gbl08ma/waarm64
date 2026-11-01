@@ -1,4 +1,4 @@
-# Host ABI (version 43)
+# Host ABI (version 58)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -124,6 +124,7 @@ Design notes for an ABI change go in this file before the code.
 | `jit_bytes` | the JIT's code cache budget in wasm bytes, for `jit` 1 and 4 (JIT-stress and JIT-check keep theirs): the most the live modules hold before a flush ([jit.md](jit.md) "Memory"); 0: the core's default, `jit::MAX_BYTES`. Not part of a snapshot's state: a state restores under any budget. The host's scratch page holds the config's words at 0 and the device entries from 512 (44) |
 | `window` | the host-visible window's bytes: guest-physical memory right after RAM, outside the DT's `/memory`, a multiple of 2 MiB up to 1 GiB (`vm::MAX_WINDOW`) after RAM of whole 64 KiB pages; its bytes are memory 1's at `window_at`; a transport whose entry has `shm` reports it as its shared memory region 1, and the spill memories' guest PAs start past it; 0: none ([devices.md](devices.md) "virtio-gpu") (53) |
 | `window_at` | where the window's bytes start in memory 1, a multiple of 64 KiB (a Venus machine's renderer arena before it: web/ram.ts `VENUS_ARENA`); node 1's RAM follows the window there, so memory 1 is `window_at + window + spill[0]` bytes (`VmConfig::memory_sizes`, which JIT modules import as `env.ram1`'s exact limits) (55) |
+| `fma` | non-zero: the host's relaxed-SIMD `madd` fuses in every tier, and the JIT's FMA forms use it (`web/fma.ts` probes it; `bootVm`'s `fma: false` forces the emulation). Nothing the guest can see depends on it |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1, 2 and 3 unless told `rng: false`, `e0pd: false`, `sha3: false` (the bare-metal tests are); the ABI's 0 means none.
@@ -273,7 +274,8 @@ it. All three from any thread (round-robin's `vm_wake` between `vm_run` calls; i
 
 `vcpu_new`, `mem_new`, `interp_run`, `interp_run_exit` (EL0-style exits, plus trap-to-EL1 and
 HVC kinds and the EL1 state at the end of `Cpu`), and their JIT twins over a per-vCPU JIT state:
-`jit_new(threshold, batch, capacity, check, region_after)`, `jit_run`, `jit_run_exit`,
+`jit_new(threshold, batch, capacity, check, region_after)`, `jit_fma(v, on)` (`VmConfig.fma` for such a vCPU, before
+its first run: the emulation unless set), `jit_run`, `jit_run_exit`,
 `jit_flush` (for hosts that rewrite guest code between runs: drops compiled and decoded blocks),
 `jit_stats`. These vCPUs always
 have every optional feature. The host writes their `Cpu` fields directly between runs (an EL1 test
@@ -467,7 +469,7 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
 `fb_height`, `features`, `ncpus`, whether there is an RTC, `firmware`, `flash_size`. Free: `jit`
-(a state is the same under either tier) and `jit_bytes`, `mem_pages`, `smp` in realtime mode (the per-vCPU state is saved in
+(a state is the same under either tier), `fma` (under either FMA arm: a machine saved on a host that fuses restores on one that doesn't) and `jit_bytes`, `mem_pages`, `smp` in realtime mode (the per-vCPU state is saved in
 one form: power, WFI, a pending CPU_ON), `rtc`'s value and the fw_cfg files (the state's files
 replace the VM's: they are part of the machine).
 
@@ -576,6 +578,7 @@ implemented by this step).
 | 53 | the host-visible window: `VmConfig.window` (memory 0's bytes after RAM), `DeviceEntry.shm` (6 u64s an entry), the transport's SHM registers for region 1, `vm_window_watch` (VK1, docs/plans/graphics.md) |
 | 55 | the window in memory 1: `VmConfig.window_at`; memory 0 holds RAM alone (`vm_new`'s `ram`), memory 1 the bytes before the window (Venus's renderer), the window, then node 1's RAM; a device's (memory, offset) counts from the memory's first byte (VK4 T19) |
 | 56 | `jit_exec_span(vcpu, pc, n, w0, w1, w2)`: `jit_exec_mmu` for up to six instructions, their words as constants; returns how many retired (a group of accesses' cold arm, docs/jit.md "Loads and stores") |
+| 58 | `VmConfig.fma` and `jit_fma(v, on)`: the JIT's FMA forms on the host's fused relaxed-SIMD `madd` (`web/fma.ts`; docs/jit.md "Floating point") |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

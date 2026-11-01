@@ -14,6 +14,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fusedFma } from '../web/fma.ts';
 import { coreImports, helperReport } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
@@ -27,6 +28,7 @@ type Exports = {
   mem_new(base: number, size: bigint): number;
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
   jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
+  jit_fma(v: number, on: number): void;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_stats(v: number): number;
   jit_helper_report(v: number): number;
@@ -209,10 +211,17 @@ function field(w: number) {
 
 const DATA_SIZE = 0x2000;
 
+/** What the JIT's FMA forms run on here (docs/jit.md "Floating point"): the host's fused `madd` where it has one. The
+ * tests that reach those forms run again on the emulation, forced, so a host that fuses tests both arms. */
+const FUSED = fusedFma();
+const ARMS = FUSED ? [true, false] : [false];
+const armName = (fma: boolean) => (fma === FUSED ? '' : ' (FMA emulated)');
+const FMA_CLASSES = new Set(['FP data processing, 3 sources', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD scalar x indexed element', 'AdvSIMD scalar three same']);
+
 /** Two vCPUs (interpreter, JIT) on two copies of a RAM that holds `code` bytes
  * of code, a gap, then the data area, which ends the RAM (accesses past it are
  * external aborts). */
-function setup(code: number) {
+function setup(code: number, fma = FUSED) {
   const DATA = code + 0x1000;
   const RAM = DATA + DATA_SIZE;
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
@@ -225,6 +234,7 @@ function setup(code: number) {
   const [ma, mb] = [ex.mem_new(ra, BigInt(RAM)), ex.mem_new(rb, BigInt(RAM))];
   const interp = ex.vcpu_new();
   const jit = ex.jit_new(0, 1, 16384, 0, 0);
+  ex.jit_fma(jit, fma ? 1 : 0);
   const [ei, ej] = [ex.vcpu_new(), ex.vcpu_new()]; // exit words
   const [a8, b8] = [new Uint8Array(memory.buffer, ra, RAM), new Uint8Array(memory.buffer, rb, RAM)];
   // Stores only reach the gap and the data area (the addresses registers hold).
@@ -286,9 +296,9 @@ function setup(code: number) {
 for (const [name, [mask, bits], mem] of [
   ...Object.entries(CLASSES).map(([n, c]) => [n, c, false] as const),
   ...Object.entries(MEMORY).map(([n, c]) => [n, c, true] as const),
-]) test(`JIT vs interpreter: ${name}`, () => {
+]) for (const fma of ARMS.filter((f) => f === FUSED || FMA_CLASSES.has(name))) test(`JIT vs interpreter: ${name}${armName(fma)}`, () => {
   // Each word with a brk after it.
-  const { ex, jit, a8, ca32, cb32, cpus, run, counts, helpers, allocated, data } = setup(8 * WORDS);
+  const { ex, jit, a8, ca32, cb32, cpus, run, counts, helpers, allocated, data } = setup(8 * WORDS, fma);
   const word = () => ((field(rand32()) & ~mask) | bits) >>> 0;
   // With the helper report, allocated words only (the unallocated ones' helper calls hide the rest).
   const words = Array.from({ length: WORDS }, () => {
@@ -443,6 +453,7 @@ test('JIT vs interpreter: system registers and barriers', () => {
 // the fast paths' limits, each under several FPCR/FPSR states.
 const f32bits = (x: number) => { const d = new DataView(new ArrayBuffer(4)); d.setFloat32(0, x, true); return BigInt(d.getUint32(0, true)); };
 const f64bits = (x: number) => { const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, x, true); return d.getBigUint64(0, true); };
+const lanes = (...l: number[]) => l.map(f32bits) as unknown as bigint;
 const FP_EDGES: [string, number, bigint[]][] = [
   // Exact product just below the smallest normal, rounding up to it: tiny (Underflow).
   ['fmul s0, s1, s2', 0x1e220820, [0n, 0x3f7fffffn, 0x00800000n]],
@@ -554,9 +565,54 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['w fmla v0.2d (split overflows)', 0x4e62cc20, [f64bits(1), f64bits(1.5 * 2 ** 1000), f64bits(2 ** -500)]],
   ['w fmla v0.2d (Dekker product overflows)', 0x4e62cc20, [f64bits(-(2 ** 30 - 1) * 2 ** 994), f64bits((2 - 2 ** -30) * 2 ** 992), f64bits((2 - 2 ** -30) * 2 ** 30)]],
   ['w fmla v0.2d (exact zero)', 0x4e62cc20, [f64bits(-3), f64bits(1.5), f64bits(2)]],
+  // A 64-bit source rounded by one: 2^64 - 1 becomes 2^63, past any signed compare.
+  ['uqrshrn s0, d1, #1 (2^64 - 1)', 0x7f3f9c20, [0n, (1n << 64n) - 1n]],
+  ['w uqrshrn v0.2s, v1.2d, #1 (2^64 - 1)', 0x2f3f9c20, [0n, (1n << 64n) - 1n]],
+  ['w uqrshrn2 v0.4s, v1.2d, #1 (2^64 - 1)', 0x6f3f9c20, [0n, (1n << 64n) - 1n]],
+  // The fused arm: its negations, and a zero result it can't read from a double sum. A sum that rounds to zero raises
+  // Underflow; an exact one doesn't.
+  ['fnmadd s0, s1, s2, s3 (midpoint)', 0x1f220c20, [0n, f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18)), f32bits(-(1 + 2 ** -23))]],
+  ['fnmsub s0, s1, s2, s3 (midpoint)', 0x1f228c20, [0n, f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18)), f32bits(-(1 + 2 ** -23))]],
+  ['fnmadd d0 (exact zero)', 0x1f620c20, [0n, f64bits(1.5), f64bits(2), f64bits(-3)]],
+  ['fmadd s0 (product underflows to zero)', 0x1f020c20, [0n, f32bits(2 ** -80), f32bits(2 ** -80), 0n]],
+  ['fmadd d0 (denormal factor, a normal result)', 0x1f420c20, [0n, f64bits(2 ** -1060), f64bits(2 ** 100), f64bits(0.5)]],
+  ['fmadd d0 (product 2^-1000, a normal result)', 0x1f420c20, [0n, f64bits(2 ** -500 * (1 + 2 ** -30)), f64bits(2 ** -500 * (1 - 2 ** -30)), f64bits(2 ** -900)]],
+  ['v fmla v0.4s (product underflows to zero)', 0x4e22cc20, [0n, f32bits(2 ** -80), f32bits(2 ** -80)]],
+  ['v fmla v0.4s (negative product underflows to zero)', 0x4e22cc20, [0n, f32bits(-(2 ** -80)), f32bits(2 ** -80)]],
+  ['v fmla v0.4s (zero factor, zero addend)', 0x4e22cc20, [1n << 31n, 1n << 31n, f32bits(1.5)]],
+  ['v fmla v0.4s (zero factor, denormal partner)', 0x4e22cc20, [0n, 1n, 0n]],
+  ['v fmla v0.4s (zero factor, denormal addend)', 0x4e22cc20, [1n, 0n, f32bits(1.5)]],
+  ['v fmla v0.4s (cancels exactly)', 0x4e22cc20, [f32bits(-3), f32bits(1.5), f32bits(2)]],
+  ['v fmls v0.4s (cancels exactly)', 0x4ea2cc20, [f32bits(3), f32bits(1.5), f32bits(2)]],
+  ['v fmls v0.4s (zero factor, zero addend)', 0x4ea2cc20, [0n, 0n, f32bits(1.5)]],
+  // Addends around the zero clause's 2^-100, the product's last bits left over or not.
+  ['v fmla v0.4s (cancels at 2^-100)', 0x4e22cc20, [f32bits(-(2 ** -100) * 3), f32bits(1.5), f32bits(2 ** -99)]],
+  ['v fmla v0.4s (cancels at 2^-101)', 0x4e22cc20, [f32bits(-(2 ** -101) * 3), f32bits(1.5), f32bits(2 ** -100)]],
+  ['v fmla v0.4s (residue below the addend, at 2^-100)', 0x4e22cc20, [f32bits(-(2 ** -100) * (1 + 2 ** -22)), f32bits((1 + 2 ** -12) * 2 ** -50), f32bits((1 - 2 ** -12) * 2 ** -50)]],
+  ['v fmla v0.4s (residue rounds to zero, at 2^-126)', 0x4e22cc20, [f32bits(-(2 ** -126)), f32bits((1 + 2 ** -12) * 2 ** -63), f32bits((1 - 2 ** -12) * 2 ** -63)]],
+  ['v frecps v0.4s (2 - 2)', 0x4e22fc20, [0n, f32bits(1), f32bits(2)]],
+  ['v frsqrts v0.4s (3 - 3)', 0x4ea2fc20, [0n, f32bits(1.5), f32bits(2)]],
+  ['v frsqrts v0.4s (a midpoint)', 0x4ea2fc20, [0n, f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  ['w frsqrts v0.2d (3 - 3)', 0x4ee2fc20, [0n, f64bits(1.5), f64bits(2)]],
+  ['frecps s0, s1, s2', 0x5e22fc20, [0n, f32bits(1.5), f32bits(1.25)]],
+  ['v fmla s0, s1, v2.s[1]', 0x5fa21020, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  ['w fmls d0, d1, v2.d[1]', 0x5fc25820, [f64bits(2 ** 53 + 2), f64bits(-(1 + 2 ** -30)), f64bits(1 - 2 ** -30)]],
+  ['v fmls v0.4s, v1.4s, v2.s[1]', 0x4fa25020, [f32bits(1 + 2 ** -23), f32bits(-(1 + 2 ** -18)), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  // Lanes that differ: a fast one beside what the zero clause decides, and the lanes a 2S ignores.
+  ['x fmla v0.4s (a zero lane beside fast ones)', 0x4e22cc20, [lanes(0, 1, 0, 1), lanes(0, 1.5, 0, 1.5), lanes(1.5, 1.5, 1.5, 1.5)]],
+  ['x fmla v0.4s (an underflowed lane beside fast ones)', 0x4e22cc20, [lanes(1, 0, 1, 1), lanes(1.5, 2 ** -80, 1.5, 1.5), lanes(1.5, 2 ** -80, 1.5, 1.5)]],
+  ['x fmla v0.4s (an exact zero and an underflow)', 0x4e22cc20, [lanes(0, 0, 1, -3), lanes(0, 2 ** -80, 1.5, 1.5), lanes(1.5, 2 ** -80, 1.5, 2)]],
+  ['x fmla v0.2s (a NaN in lanes it ignores)', 0x0e22cc20, [lanes(1, 1, NaN, 2 ** -149), lanes(1.5, 1.5, NaN, 2 ** -80), lanes(1.5, 1.5, NaN, 2 ** -80)]],
+  ['x fmla v0.2s (a zero lane, an underflow in lanes it ignores)', 0x0e22cc20, [lanes(0, 1, 0, 0), lanes(0, 1.5, 2 ** -80, 2 ** -80), lanes(1.5, 1.5, 2 ** -80, 2 ** -80)]],
+  ['x fmla s0 by element, junk above lane 0', 0x5fa21020, [lanes(1, NaN, Infinity, 2 ** -149), lanes(1.5, NaN, 2 ** -149, Infinity), lanes(1, 1.5, NaN, Infinity)]],
 ];
-test('JIT vs interpreter: FP edge cases', () => {
-  const { ex, jit, ca32, cb32, cpus, run } = setup(8 * FP_EDGES.length);
+test('the probe finds the fused madd on arm64', { skip: process.arch !== 'arm64' }, () => {
+  // arm64's relaxed madd is always FMLA. If the probe broke, every host would quietly lose the fused arm.
+  assert.equal(FUSED, true);
+});
+
+for (const fma of ARMS) test(`JIT vs interpreter: FP edge cases${armName(fma)}`, () => {
+  const { ex, jit, ca32, cb32, cpus, run } = setup(8 * FP_EDGES.length, fma);
   const failures: string[] = [];
   FP_EDGES.forEach(([name, w], k) => {
     ca32.set([w, BRK], 2 * k);
@@ -571,8 +627,11 @@ test('JIT vs interpreter: FP edge cases', () => {
         a[32] = BigInt(8 * k);
         const all = new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8);
         // "v …" cases: the 32-bit value in every lane; "w …": the 64-bit value in both.
+        // "x …": the four lanes of each register, one value each.
         const rep = (v: bigint) => (name.startsWith('v ') ? v | (v << 32n) : v);
-        vs.forEach((v, r) => { all[38 + 2 * r] = rep(v); all[39 + 2 * r] = name.startsWith('v ') || name.startsWith('w ') ? rep(v) : 0n; });
+        if (name.startsWith('x ')) {
+          (vs as unknown as bigint[][]).forEach((l, r) => { all[38 + 2 * r] = l[0] | (l[1] << 32n); all[39 + 2 * r] = l[2] | (l[3] << 32n); });
+        } else vs.forEach((v, r) => { all[38 + 2 * r] = rep(v); all[39 + 2 * r] = name.startsWith('v ') || name.startsWith('w ') ? rep(v) : 0n; });
         [all[102], all[103]] = [fpcr, fpsr];
         new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
         const what = run(1n, false);
@@ -654,8 +713,8 @@ function fewRegs(w: number) {
   return w >>> 0;
 }
 
-for (const [name, { pool, helpers, aes, sha, vec }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
-  const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * SLOT * SEQS);
+for (const [name, { pool, helpers, aes, sha, vec }] of Object.entries(SEQUENCES)) for (const fma of ARMS.filter((f) => f === FUSED || vec)) test(`JIT vs interpreter, sequences: ${name}${armName(fma)}`, () => {
+  const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * SLOT * SEQS, fma);
   /** A random allocated word of a class in `from`, on few registers. */
   const draw = (from: [number, number][]) => {
     for (;;) {

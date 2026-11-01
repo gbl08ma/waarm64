@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fusedFma } from '../web/fma.ts';
 import { coreImports } from '../web/vm.ts';
 import { CODE, DATA, DATA_SIZE, REGS, initialState, parseFile } from '../tools/corpus/corpus.ts';
 
@@ -23,6 +24,7 @@ type Exports = {
   mem_new(base: number, size: bigint): number;
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
   jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
+  jit_fma(v: number, on: number): void;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_flush(v: number): void;
   jit_stats(v: number): number;
@@ -55,6 +57,7 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
   imports.jit.bind(instance);
   const ex = instance.exports as unknown as Exports;
   const cpu = jit ? ex.jit_new(...jit) : ex.vcpu_new();
+  if (jit) ex.jit_fma(cpu, fusedFma() ? 1 : 0);
   const exit = ex.vcpu_new(); // any 16 aligned bytes the core won't touch otherwise
   const base = memory.grow(Math.ceil(RAM / 65536)) * 65536;
   const mem = ex.mem_new(base, BigInt(RAM));

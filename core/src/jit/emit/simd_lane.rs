@@ -617,6 +617,12 @@ fn shift_imm(c: &mut Func, i: u32) -> bool {
             c.local_set(X);
             c.i64_const(s).local_set(T);
             shr_round(c, T, w, src_u, round);
+            // 2^64 - 1 rounded by one is 2^63, negative to `clamp`'s compares.
+            if saturates && src_u && w == 64 && round && s == 1 {
+                c.local_set(T);
+                c.i64_const(i64::MAX).local_get(T);
+                c.local_get(T).i64_const(0).op(LT_S).select();
+            }
             if saturates {
                 clamp(c, range(esize, dst_u));
             }

@@ -249,6 +249,91 @@ fn slow(f: Fmt, c: u64, a: u64, b: u64) -> u64 {
     want
 }
 
+/// The JIT's fused FMA (jit/emit/float.rs, `Ctx::fma`) on a host that fuses,
+/// where its check takes the result: a fast one, nothing else (scalar and
+/// double).
+fn fused64(c: u64, a: u64, b: u64) -> Option<u64> {
+    let z = f64::from_bits(a)
+        .mul_add(f64::from_bits(b), f64::from_bits(c))
+        .to_bits();
+    (((z >> 52) & 0x7ff).wrapping_sub(2) < 0x7fd).then_some(z)
+}
+
+/// As [`fused64`], singles; `zeros`: the vector form's clause, a zero from a zero
+/// factor or an addend from 2^-100 up.
+fn fused32(c: u32, a: u32, b: u32, zeros: bool) -> Option<u32> {
+    let (x, y, w) = (f32::from_bits(a), f32::from_bits(b), f32::from_bits(c));
+    let z = x.mul_add(y, w).to_bits();
+    let fast = ((z >> 23) & 0xff).wrapping_sub(2) < 0xfd;
+    let zero = z << 1 == 0 && (x == 0.0 || y == 0.0 || w.abs() >= 2f32.powi(-100));
+    (fast || zeros && zero).then_some(z)
+}
+
+/// Every fused result the check takes is the software FMA's, with no flag but
+/// IXC ([`slow`]); `n` counts them.
+fn check_fused64(n: &mut u32, c: u64, a: u64, b: u64) {
+    if let Some(z) = fused64(c, a, b) {
+        *n += 1;
+        assert_eq!(z, slow(D, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
+    }
+}
+
+fn check_fused32(n: &mut u32, c: u32, a: u32, b: u32) {
+    for zeros in [false, true] {
+        if let Some(z) = fused32(c, a, b, zeros) {
+            *n += 1;
+            let w = slow(S, c as u64, a as u64, b as u64);
+            assert_eq!(z as u64, w, "{a:#x} * {b:#x} + {c:#x}");
+        }
+    }
+}
+
+/// The zero clause at its limit: products near every exponent, with an addend
+/// that cancels them exactly or leaves their low bits, and with no addend.
+#[test]
+fn fused_zero_results() {
+    let mut x = 0x1234_5678_9abc_def1u64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    let (mut zeros, mut exact, mut n) = (0, 0, 0);
+    for _ in 0..4_000_000 {
+        let (r1, r2) = (next(), next());
+        // Factors of up to 24 bits; exponents that put the product anywhere
+        // from the singles' range down past where it rounds to zero.
+        let sig = |r: u64| 0x3f80_0000 | (r as u32 & 0x7f_ffff & !((1 << ((r >> 40) % 24)) - 1));
+        let ex = |r: u64| ((r >> 50) % 110) as i32 - 95;
+        let scale = |s: u32, e: i32| f32::from_bits(s) * 2f32.powi(e);
+        let (a, b) = (scale(sig(r1), ex(r1)), scale(sig(r2), ex(r2)));
+        let p = a as f64 * b as f64;
+        let c = match r1 & 3 {
+            0 => 0.0,
+            // The nearest single (or a neighbour): exact when the product fits.
+            1 => -(p as f32),
+            2 => f32::from_bits((-(p as f32)).to_bits().wrapping_add((r2 & 1) as u32)),
+            // A denormal's worth of it: the addend small, the same cancellation.
+            _ => -(p as f32) * if r2 & 2 != 0 { 1.0 } else { 0.5 },
+        };
+        let (ab, bb, cb) = (a.to_bits(), b.to_bits(), c.to_bits());
+        let z = a.mul_add(b, c);
+        n += 1;
+        if z == 0.0 {
+            zeros += 1;
+            exact += (p + c as f64 == 0.0) as u32;
+        }
+        check_fused32(&mut n, cb, ab, bb);
+    }
+    // Both kinds of zero came up: the clause was decided.
+    assert!(
+        exact > 1000 && zeros - exact > 1000,
+        "{exact} of {zeros} zeros"
+    );
+    assert!(n > 4_000_000);
+}
+
 #[test]
 fn inline_fma_is_correctly_rounded() {
     let mut x = 0x9e37_79b9_7f4a_7c15u64;
@@ -258,7 +343,7 @@ fn inline_fma_is_correctly_rounded() {
         x ^= x << 17;
         x
     };
-    let (mut fast, mut n) = (0, 0);
+    let (mut fast, mut n, mut fused) = (0, 0, 0);
     for _ in 0..4_000_000 {
         let r = next();
         // Exponents near each other (cancellation, ties), mantissas with few
@@ -290,6 +375,7 @@ fn inline_fma_is_correctly_rounded() {
                     (a, b & 1 << 63)
                 };
                 n += 1;
+                check_fused64(&mut fused, c, a, b);
                 if let Some(z) = fma64_fast(c, a, b) {
                     fast += 1;
                     assert_eq!(z, slow(D, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
@@ -306,6 +392,7 @@ fn inline_fma_is_correctly_rounded() {
                 let b = s(r2) | ((1.0 - 2f64.powi(-(m as i32))) * 2f64.powi(k as i32)).to_bits();
                 let c = s(r3) | ((1023 + k + 53) as u64) << 52 | r3 & ((1 << 52) - 1);
                 n += 1;
+                check_fused64(&mut fused, c, a, b);
                 if let Some(z) = fma64_fast(c, a, b) {
                     fast += 1;
                     assert_eq!(z, slow(D, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
@@ -315,6 +402,7 @@ fn inline_fma_is_correctly_rounded() {
             _ => {}
         }
         n += 1;
+        check_fused64(&mut fused, c, a, b);
         if let Some(z) = fma64_fast(c, a, b) {
             fast += 1;
             let want = slow(D, c, a, b);
@@ -322,6 +410,7 @@ fn inline_fma_is_correctly_rounded() {
         }
     }
     assert!(fast > n / 3, "{fast} of {n} on the fast path");
+    assert!(fused > n / 3, "{fused} of {n} on the fused path");
 }
 
 #[test]
@@ -371,6 +460,8 @@ fn inline_fma32_is_correctly_rounded() {
 /// Compares the inline single FMA with the interpreter's where it applies.
 fn check32(n: &mut u32, fast: &mut u32, mid: &mut u32, c: u32, a: u32, b: u32) {
     *n += 1;
+    let mut fused = 0;
+    check_fused32(&mut fused, c, a, b);
     if let Some((z, m)) = fma32_fast(c, a, b) {
         *fast += 1;
         *mid += m as u32;

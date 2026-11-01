@@ -802,10 +802,41 @@ interpreter's; the helper runs the instruction otherwise.
   - without FZ, the lane tests' FZ branch passes the mask through (VTMP) instead of clearing no lanes
     with an `andnot` of a zero;
   - the single FMA's midpoint test is the sums' low words shifted left by 3 against the sign bit.
-- **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, single and double),
-  in RNE f64 operations only (wasm has no deterministic FMA; relaxed-simd's `madd` may not fuse):
-  the exact product, its sum with the addend, then one final rounding.
-  - *Single:* the product of two singles is exact in double, so the double sum is the exact sum
+- **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, FRECPS/FRSQRTS, single and
+  double) has two arms: the host's relaxed-SIMD `madd` where it fuses, else an emulation in RNE f64
+  operations. They give the same bits, flags and steps; only how often the helper runs differs.
+  - *Fused* (`Ctx::fma`, `jit::Config::fma`, `VmConfig.fma`): `f32x4`/`f64x2.relaxed_madd`, or
+    `nmadd` for a negated first factor (the spec's `nmadd` is `madd(-a, b, c)`), scalars on lane 0
+    with the upper lanes ignored. Inside the guard, a fused a·b + c is ARM's result: one rounding in
+    RNE, and a result that's normal above the smallest normal binade raises nothing but Inexact, set
+    already, whatever the operands (NaNs, ∞ and 0 × ∞ end in a NaN or ∞ the check rejects). Negations
+    come before the op (FNMADD's addend is negated, never the result: an exact zero's sign depends on
+    it). So FPOK, FZ's operand tests and the result check stay as they are, and the double's factor
+    bound goes: that was the emulation's. Singles stay in f32, with no midpoint test. FRSQRTS halves
+    after the op, exactly (a denormal fails the check).
+  - *Its zero clause* (vector singles only, as in the emulation): there's no double sum to read a
+    zero from, and a fused sum that underflows to zero must reach the helper (Underflow). A zero lane
+    is taken with a zero factor (the addend is then the zero) or an addend from 2^-100 up: then
+    |a·b| > 2^-101, whose 48-bit product ends at or above 2^-148, as the addend does, so a nonzero
+    exact sum is ≥ 2^-148 and rounds to no zero. Cancellation below 2^-100 goes to the helper. All of
+    that is in a branch on some lane not being a fast result, so a block of plain lanes pays one
+    reduction, as the other paths do.
+  - *The probe* (`web/fma.ts`, once a host): `(1 + e)² - 1` through all four ops, with e = 2^-27
+    (2^-13 in singles), the operands as parameters so nothing folds. Any op that doesn't fuse, or no
+    relaxed SIMD: the emulation. `bootVm`'s `fma: false`, `?fma=emul`, `jit_fma(v, 0)` force it (the
+    M4 always fuses).
+  - *Why one probe holds for every tier:* the spec makes relaxed choices "fixed, that is, parameters
+    are constant during the execution of any given program". In V8 14.6, by its source, Liftoff compiles
+    these ops itself (no bailout), and both tiers lower them alike: arm64 is always `fmla`/`fmls`
+    (Liftoff `EMIT_QFMOP`, TurboFan `VISIT_SIMD_QFMOP`); x86-64 goes through one macro,
+    `QFMA`/`QFMS`, in `SharedMacroAssemblerBase`, FMA3's `vfmadd`/`vfnmadd` if
+    `CpuFeatures::IsSupported(FMA3)`, else mul + add. Measured: the default, `--liftoff-only` and
+    `--no-liftoff`, in Node and Chromium 153 on the M4; x64 Node under qemu-user: Haswell fuses,
+    Nehalem and `--no-enable-fma3` don't, in those tiers alike. Other engines rest on the spec's sentence.
+  - *What it saves* (bench/interp/REPORT.md "FMA through the host's fused op"): FMLA 2D about 64
+    lane ops to 5, FMLA 4S about 23 to 5.
+  - *Emulated:* the exact product, its sum with the addend, then one final rounding.
+  - *Emulated single:* the product of two singles is exact in double, so the double sum is the exact sum
     rounded once (RN64), and its demote rounds a second time (RN32). Two roundings to nearest give
     the correctly rounded result unless the first lands exactly on a midpoint of the narrower
     format (a single's midpoint is a double, so RN64 is monotonic around it: an exact sum below a
@@ -818,7 +849,7 @@ interpreter's; the helper runs the instruction otherwise.
     2^29 takes the branch, but exact sums of short significands land on midpoints often (the FP
     guest's matrix multiply: as helper calls instead of the branch, they cost all of the gain over
     rounding every sum to odd; bench/interp/REPORT.md "M8: the single FMA's midpoint test").
-  - *Double:* Boldo and Melquiond's emulated FMA ("Emulation of FMA and correctly rounded sums:
+  - *Emulated double:* Boldo and Melquiond's emulated FMA ("Emulation of FMA and correctly rounded sums:
     proved algorithms using rounding to odd", IEEE TC 2008; glibc's soft `fma` does the same with
     a rounding-mode switch): Veltkamp's split and Dekker's product give p + pl = a·b exactly,
     TwoSum gives th + tl = c + p, and z = RN(th + RO(tl + pl)). Exact while every partial product
@@ -830,16 +861,19 @@ interpreter's; the helper runs the instruction otherwise.
     negative on x86-64) gave the largest finite double. The vector form is the same on f64x2 (its five v128 scratch locals don't hold both
     splits, so the low halves are recomputed from the operands); the scalar form uses eight f64
     scratch locals (`FT`).
-  - *Guard:* FPOK, a fast result (vector single: also an exact zero from a zero product and
+  - *Emulation's guard:* FPOK, a fast result (vector single: also an exact zero from a zero product and
     addend); doubles: the factors' test above. No midpoint or binade cases fall back. The single midpoint test
     holds above the smallest normal binade, where the singles' last place is the double's bit 29;
     below it (a sum rounding up to the smallest normal) the result's exponent sends it to the
     helper.
   - *Tested* by models of both algorithms against the software FMA (`core/src/fp/tests.rs`, 4M
-    cases each, midpoints by construction; the single model also counts its midpoint branches)
+    cases each, midpoints by construction; the single model also counts its midpoint branches),
+    the fused rule on the same cases and on products and addends around the zero clause (`fused_zero_results`),
     and the differential test's FP edge cases (midpoints,
     the product bound, an error under 2^-1074 deciding a midpoint, zero, denormal and 0 × ∞
-    operands, split overflow); planted bugs in each step fail them.
+    operands, split overflow, sums underflowing to zero, lanes that differ), on both arms; planted
+    bugs in each step fail them. `tests/browser.test.ts` runs the FP guest through both arms in
+    Chromium (the same `Cpu` after 2G steps), and the FP suite takes both.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms (2D lane by lane: no i64x2 convert);
   FCVT{N,M,A,P,Z}{S,U} to W, X and V registers, scalar and vector: the operand rounded in the
@@ -856,7 +890,7 @@ interpreter's; the helper runs the instruction otherwise.
   they're exact. A zero sum or difference is always exact (a nonzero exact sum rounds to a nonzero
   result); a zero product or quotient only with a zero operand (the dividend), and only when the
   result is zero (0 × ∞ and 0 / 0 are NaNs). x / 0 is infinite. Vector single FMLA's zero result
-  only when its double sum is zero (the product is exact in a double, and a nonzero exact sum can't
+  (emulated; the fused arm's clause is under FMA) only when its double sum is zero (the product is exact in a double, and a nonzero exact sum can't
   round to zero there; a tiny one demotes to a zero with Underflow); the other FMA forms take no
   zero result. A zero lane is a float compare with zero (a NaN isn't one). llvmpipe's shaders multiply and add zero lanes all the time; with
   the normal-only rule its FMLAs and FADDs were helper calls, as the FP guest's sums started at 0
