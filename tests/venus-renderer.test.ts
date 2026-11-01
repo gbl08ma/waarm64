@@ -106,6 +106,42 @@ test('the memory budget reports the heap and its use, an import of an export cou
   assert.deepEqual([reads, readsAfter], [1, 1], "the import's bytes are the memory's");
 });
 
+// VK4 R6 (the review's O1, O3, O11).
+test('memory: an import that wants addresses gets them or is refused, wild binding numbers refused, the heap kept to', { skip }, async () => {
+  const { v, memory } = await renderer();
+  const at = (v.raw.wgt_memory as () => number)() >>> 0;
+  assert.ok(at, 'wgt_memory failed');
+  const [address, refused, wide, wrapped, mib, past, unwaited, map] = new Int32Array(memory.buffer, at, 8);
+  assert.notEqual(address, 0, 'a device address of the import');
+  assert.equal(refused, -1000072003, 'VK_ERROR_INVALID_EXTERNAL_HANDLE with a buffer already on the memory');
+  assert.deepEqual([wide, wrapped], [-1, -1], 'VK_ERROR_OUT_OF_HOST_MEMORY');
+  assert.ok(mib > 0 && mib <= 2048, `${mib} MiB of a 2 GiB heap`);
+  assert.equal(past, -2, 'VK_ERROR_OUT_OF_DEVICE_MEMORY past the heap');
+  assert.deepEqual([unwaited, map], [0, -5], 'a guest that doesn\'t wait: an empty memory, VK_ERROR_MEMORY_MAP_FAILED at its map');
+});
+
+// VK4 R6 (the review's O2, O14): a blob's memory freed with an import of it left: the import still moves with the blob;
+// unreferenced mapped, its bytes leave the window.
+test('a surviving import moves with its blob, and a blob unreferenced while mapped leaves the window', { skip }, async () => {
+  const { v, memory, window } = await renderer();
+  const raw = v.raw as unknown as { wgt_peers_memory(): number; wgt_peers_at(): number; venus_test_peers(ctx: number, res: number, memory: bigint): number };
+  v.call({ t: 'vctx', id: 7, create: true, name: 'test' });
+  v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 0n, size: 8192 });
+  const storage = v.address(3);
+  const handle = raw.wgt_peers_memory();
+  assert.ok(handle);
+  assert.equal(raw.venus_test_peers(7, 3, BigInt(handle)), 1, 'the blob is the import\'s');
+  v.call({ t: 'blob-map', res: 3, offset: 0x4000 });
+  assert.equal(raw.wgt_peers_at() >>> 0, window.at + 0x4000, 'mapped: the driver\'s memory in the window');
+  v.call({ t: 'blob-unmap', res: 3 });
+  assert.equal(raw.wgt_peers_at() >>> 0, storage, 'unmapped: back in the storage');
+  v.call({ t: 'blob-map', res: 3, offset: 0x4000 });
+  new Uint8Array(memory.buffer).set([7, 7], window.at + 0x4000);
+  v.call({ t: 'blob-unref', res: 3 });
+  assert.equal(raw.wgt_peers_at() >>> 0, storage, 'unreferenced mapped: out of the window');
+  assert.deepEqual([...new Uint8Array(memory.buffer, storage, 2)], [7, 7]);
+});
+
 // A fence destroyed while a submit held for a timeline wait signals it (a context's teardown destroys its objects so; VK4
 // T2): the held submit forgets it, so its replay at the host's signal doesn't signal freed memory (NVIDIA's trap in
 // wg_complete: an indirect call through the freed sync's type, VK3 L9b).

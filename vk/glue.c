@@ -12,6 +12,7 @@
 #include "vkr_renderer.h"
 
 /* The driver's (vk/driver/wg_private.h; not included: its headers are Mesa's, vkr's util is its own copy). */
+extern bool wg_unwaited_allocations;
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
 uint32_t wg_memory_texture(VkDeviceMemory memory);
 extern void (*wg_submitted)(void);
@@ -42,6 +43,7 @@ void venus_resource_destroy(uint32_t ctx_id, uint32_t res_id);
 int venus_resource_import(uint32_t ctx_id, uint32_t res_id, uint64_t size);
 int venus_resource_map(uint32_t ctx_id, uint32_t res_id, void *where);
 int venus_resource_unmap(uint32_t ctx_id, uint32_t res_id);
+int venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory);
 void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
 uint32_t venus_resource_texture(uint32_t ctx_id, uint32_t res_id);
 int venus_poll(void);
@@ -82,6 +84,7 @@ venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *wi
    wg_window_at = (uintptr_t)window;
    wg_window_bytes = window_bytes;
    wg_submitted = venus_submitted;
+   wg_unwaited_allocations = true;
    return vkr_renderer_init(VKR_RENDERER_THREAD_SYNC | VKR_RENDERER_ASYNC_FENCE_CB, &callbacks);
 }
 
@@ -163,6 +166,13 @@ EXPORT int
 venus_resource_map(uint32_t ctx_id, uint32_t res_id, void *where)
 {
    return vkr_renderer_map_resource(ctx_id, res_id, where);
+}
+
+/* tests/venus-renderer.test.ts: a resource's memory freed with an import of it left, `memory` the driver's. */
+EXPORT int
+venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory)
+{
+   return vkr_wasi_test_peers(ctx_id, res_id, memory);
 }
 
 EXPORT int

@@ -1,14 +1,23 @@
 diff --git a/src/venus/vkr_context.c b/src/venus/vkr_context.c
-index cc82c42d..be79c003 100644
+index cc82c42d..df152c66 100644
 --- a/src/venus/vkr_context.c
 +++ b/src/venus/vkr_context.c
-@@ -189,6 +189,13 @@ static inline void
+@@ -189,6 +189,22 @@ static inline void
  vkr_context_free_resource(struct hash_entry *entry)
  {
     struct vkr_resource *res = entry->data;
 +#ifdef __wasi__
-+   if (res->memory)
-+      res->memory->wasi_res = NULL;
++   if (res->memory) {
++      /* Unreferenced mapped (Linux unmaps first; a broken guest needn't): the bytes out of the window, which the next
++       * blob may take, the driver's memory with them. */
++      struct vkr_device_memory *mem = res->memory;
++      if (mem->wasi_storage && res->u.data != mem->wasi_storage) {
++         memcpy(mem->wasi_storage, res->u.data, res->size);
++         vkr_wasi_memory_moved(mem->base.handle.device_memory, mem->wasi_storage);
++      }
++      if (mem->wasi_res == res)
++         mem->wasi_res = NULL;
++   }
 +   free(res->storage);
 +   free(res);
 +   return;
@@ -16,7 +25,7 @@ index cc82c42d..be79c003 100644
     if (res->fd_type == VIRGL_RESOURCE_FD_SHM)
        munmap(res->u.data, res->size);
     else if (res->u.fd >= 0)
-@@ -237,6 +244,10 @@ vkr_context_import_resource_internal(struct vkr_context *ctx,
+@@ -237,6 +253,10 @@ vkr_context_import_resource_internal(struct vkr_context *ctx,
     res->res_id = res_id;
     res->fd_type = fd_type;
     res->size = blob_size;
@@ -27,7 +36,7 @@ index cc82c42d..be79c003 100644
  
     /* fd and mmap_ptr cannot be valid at the same time, but allowed to be -1 and NULL */
     assert(fd < 0 || !mmap_ptr);
-@@ -288,6 +299,26 @@ vkr_context_create_resource_from_shm(struct vkr_context *ctx,
+@@ -288,6 +308,26 @@ vkr_context_create_resource_from_shm(struct vkr_context *ctx,
      */
     const size_t page_size = getpagesize();
     const uint64_t alloc_size = (blob_size + page_size - 1) & ~(page_size - 1);
@@ -54,7 +63,7 @@ index cc82c42d..be79c003 100644
  
     int fd = os_create_anonymous_file(alloc_size, "vkr-shmem");
     if (fd < 0)
-@@ -332,6 +363,22 @@ vkr_context_create_resource_from_device_memory(struct vkr_context *ctx,
+@@ -332,6 +372,22 @@ vkr_context_create_resource_from_device_memory(struct vkr_context *ctx,
     struct virgl_context_blob blob;
     if (!vkr_device_memory_export_blob(mem, blob_size, blob_flags, &blob))
        return false;
@@ -77,7 +86,7 @@ index cc82c42d..be79c003 100644
  
     /* If memory might get exported, store a dup'ed fd in vkr_resource for:
      * - vkAllocateMemory for dma_buf import
-@@ -464,6 +511,18 @@ vkr_context_wait_ring_seqno(struct vkr_context *ctx,
+@@ -464,6 +520,18 @@ vkr_context_wait_ring_seqno(struct vkr_context *ctx,
  
     bool ok = true;
  
@@ -96,7 +105,7 @@ index cc82c42d..be79c003 100644
     mtx_lock(&ctx->wait_ring.mutex);
     ctx->wait_ring.id = ring->id;
     ctx->wait_ring.seqno = ring_seqno;
-@@ -584,6 +643,11 @@ vkr_context_ring_monitor_init(struct vkr_context *ctx, uint32_t report_period_us
+@@ -584,6 +652,11 @@ vkr_context_ring_monitor_init(struct vkr_context *ctx, uint32_t report_period_us
  
     ctx->ring_monitor.report_period_us = report_period_us;
     ctx->ring_monitor.started = true;
@@ -108,7 +117,7 @@ index cc82c42d..be79c003 100644
     ret = thrd_create(&ctx->ring_monitor.thread, vkr_context_ring_monitor_thread, ctx);
     if (ret != thrd_success)
        goto err_monitor_thrd_create;
-@@ -607,7 +671,9 @@ vkr_context_ring_monitor_fini(struct vkr_context *ctx)
+@@ -607,7 +680,9 @@ vkr_context_ring_monitor_fini(struct vkr_context *ctx)
     cnd_signal(&ctx->ring_monitor.cond);
     mtx_unlock(&ctx->ring_monitor.mutex);
  
@@ -118,7 +127,7 @@ index cc82c42d..be79c003 100644
  
     cnd_destroy(&ctx->ring_monitor.cond);
     mtx_destroy(&ctx->ring_monitor.mutex);
-@@ -701,7 +767,10 @@ vkr_context_create(uint32_t ctx_id,
+@@ -701,7 +776,10 @@ vkr_context_create(uint32_t ctx_id,
     if (VKR_DEBUG(VALIDATE))
        ctx->validate_level = VKR_CONTEXT_VALIDATE_FULL;
  
@@ -165,7 +174,7 @@ index 603f45b8..fef03867 100644
        if (result != VK_SUCCESS)
           vkr_log("vkDeviceWaitIdle(%p) failed(%d)", dev, (int32_t)result);
 diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
-index 7d57c7ce..06aaec48 100644
+index 7d57c7ce..a4ca079a 100644
 --- a/src/venus/vkr_device_memory.c
 +++ b/src/venus/vkr_device_memory.c
 @@ -33,11 +33,32 @@ vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
@@ -231,7 +240,7 @@ index 7d57c7ce..06aaec48 100644
     }
  
     VkExportMemoryAllocateInfo *export_info =
-@@ -303,8 +341,37 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -303,8 +341,36 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     struct vkr_mtl_shm *mtl_shm = NULL;
     VkExportMemoryAllocateInfo local_export_info;
     VkImportMemoryMetalHandleInfoEXT local_metal_import;
@@ -248,19 +257,18 @@ index 7d57c7ce..06aaec48 100644
 +   }
 +   if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
 +      const uint64_t size = align64(alloc_info->allocationSize, 4096);
++      /* Past the arena the driver says what becomes of it (wg_AllocateMemory): the guest doesn't wait for an error. */
 +      wasi_storage = aligned_alloc(4096, size);
-+      if (!wasi_storage) {
-+         args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
-+         return;
++      if (wasi_storage) {
++         memset(wasi_storage, 0, size);
++         wasi_import = (VkImportMemoryHostPointerInfoEXT){
++            .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
++            .pNext = alloc_info->pNext,
++            .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
++            .pHostPointer = wasi_storage,
++         };
++         alloc_info->pNext = &wasi_import;
 +      }
-+      memset(wasi_storage, 0, size);
-+      wasi_import = (VkImportMemoryHostPointerInfoEXT){
-+         .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
-+         .pNext = alloc_info->pNext,
-+         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
-+         .pHostPointer = wasi_storage,
-+      };
-+      alloc_info->pNext = &wasi_import;
 +      valid_fd_types = 1 << VIRGL_RESOURCE_FD_SHM;
 +   }
 +   if (false) {
@@ -270,7 +278,7 @@ index 7d57c7ce..06aaec48 100644
        /* An implementation can support dma_buf import along with opaque fd export/import.
         * If the client driver is using external memory and requesting dma_buf, without
         * dma_buf fd export support, we must use gbm bo import path instead of forcing
-@@ -408,6 +475,9 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -408,6 +474,9 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
  
     struct vkr_device_memory *mem = vkr_device_memory_create_and_add(ctx, args);
     if (!mem) {
@@ -280,17 +288,23 @@ index 7d57c7ce..06aaec48 100644
        if (local_import_info.fd >= 0)
           close(local_import_info.fd);
        if (gbm_bo)
-@@ -425,6 +495,9 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -425,6 +494,15 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     mem->mtl_shm = mtl_shm;
     mem->allocation_size = alloc_info->allocationSize;
     mem->memory_type_index = alloc_info->memoryTypeIndex;
 +#ifdef __wasi__
 +   mem->wasi_storage = wasi_storage;
++   list_inithead(&mem->wasi_peers);
++   if (res_info) {
++      struct vkr_resource *res = vkr_context_get_resource(ctx, res_info->resourceId);
++      if (res && res->memory)
++         list_add(&mem->wasi_peers, &res->memory->wasi_peers);
++   }
 +#endif
  }
  
  static void
-@@ -481,6 +554,20 @@ vkr_dispatch_vkGetMemoryResourcePropertiesMESA(
+@@ -481,6 +559,20 @@ vkr_dispatch_vkGetMemoryResourcePropertiesMESA(
        return;
     }
  
@@ -311,22 +325,41 @@ index 7d57c7ce..06aaec48 100644
     if (res->fd_type != VIRGL_RESOURCE_FD_DMABUF) {
        args->ret = VK_ERROR_INVALID_EXTERNAL_HANDLE;
        return;
-@@ -532,6 +619,14 @@ vkr_context_init_device_memory_dispatch(struct vkr_context *ctx)
- void
- vkr_device_memory_release(struct vkr_device_memory *mem)
- {
+@@ -529,9 +621,33 @@ vkr_context_init_device_memory_dispatch(struct vkr_context *ctx)
+       vkr_dispatch_vkGetMemoryResourcePropertiesMESA;
+ }
+ 
 +#ifdef __wasi__
-+   if (mem->wasi_res) {
++void
++vkr_wasi_memory_release(struct vkr_device_memory *mem)
++{
++   if (!list_is_empty(&mem->wasi_peers)) {
++      struct vkr_device_memory *next = list_first_entry(&mem->wasi_peers, struct vkr_device_memory, wasi_peers);
++      list_del(&mem->wasi_peers);
++      next->wasi_storage = mem->wasi_storage;
++      if (mem->wasi_res) {
++         mem->wasi_res->memory = next;
++         next->wasi_res = mem->wasi_res;
++      }
++   } else if (mem->wasi_res) {
 +      mem->wasi_res->storage = mem->wasi_storage;
 +      mem->wasi_res->memory = NULL;
 +   } else {
 +      free(mem->wasi_storage);
 +   }
++}
++#endif
++
+ void
+ vkr_device_memory_release(struct vkr_device_memory *mem)
+ {
++#ifdef __wasi__
++   vkr_wasi_memory_release(mem);
 +#endif
     vkr_mtl_shm_free(mem->mtl_shm);
     if (mem->gbm_bo)
        vkr_gbm_bo_destroy(mem->gbm_bo);
-@@ -570,6 +665,17 @@ vkr_device_memory_export_blob(struct vkr_device_memory *mem,
+@@ -570,6 +686,17 @@ vkr_device_memory_export_blob(struct vkr_device_memory *mem,
                                        : VIRGL_RENDERER_MAP_CACHE_WC;
     }
  
@@ -345,7 +378,7 @@ index 7d57c7ce..06aaec48 100644
        mem->exported = true;
        *out_blob = (struct virgl_context_blob){
 diff --git a/src/venus/vkr_device_memory.h b/src/venus/vkr_device_memory.h
-index 32599664..63a8992c 100644
+index 32599664..0e947bea 100644
 --- a/src/venus/vkr_device_memory.h
 +++ b/src/venus/vkr_device_memory.h
 @@ -11,6 +11,8 @@
@@ -357,7 +390,7 @@ index 32599664..63a8992c 100644
  struct vkr_device_memory {
     struct vkr_object base;
  
-@@ -34,6 +36,12 @@ struct vkr_device_memory {
+@@ -34,9 +36,24 @@ struct vkr_device_memory {
     uint32_t memory_type_index;
  
     bool exported;
@@ -366,12 +399,24 @@ index 32599664..63a8992c 100644
 +    * it is exported as: freed first, the memory hands that resource its storage (a mapped blob outlives its memory). */
 +   uint8_t *wasi_storage;
 +   struct vkr_resource *wasi_res;
++   /* The other vkr memories of one driver memory (a guest's export imported again): the storage and the resource pass
++    * from one to the next as they're freed, so a surviving import still moves with its blob. */
++   struct list_head wasi_peers;
 +#endif
  };
  VKR_DEFINE_OBJECT_CAST(device_memory, VK_OBJECT_TYPE_DEVICE_MEMORY, VkDeviceMemory)
  
++#ifdef __wasi__
++/* What's left of a memory freed: its storage and resource to a peer, or the storage to the resource, or freed. */
++void
++vkr_wasi_memory_release(struct vkr_device_memory *mem);
++#endif
++
+ void
+ vkr_context_init_device_memory_dispatch(struct vkr_context *ctx);
+ 
 diff --git a/src/venus/vkr_queue.c b/src/venus/vkr_queue.c
-index d75a2294..65786ba2 100644
+index d75a2294..89e863f7 100644
 --- a/src/venus/vkr_queue.c
 +++ b/src/venus/vkr_queue.c
 @@ -120,7 +120,9 @@ vkr_queue_sync_thread_fini(struct vkr_queue *queue)
@@ -437,10 +482,10 @@ index 6a3a909e..41593720 100644
     struct vkr_object base;
  };
 diff --git a/src/venus/vkr_renderer.c b/src/venus/vkr_renderer.c
-index d04f11b3..a1fa1160 100644
+index d04f11b3..42f6a68a 100644
 --- a/src/venus/vkr_renderer.c
 +++ b/src/venus/vkr_renderer.c
-@@ -232,6 +232,82 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+@@ -232,6 +232,105 @@ vkr_renderer_import_resource(uint32_t ctx_id,
     return vkr_context_import_resource(ctx, res_id, fd_type, fd, size);
  }
  
@@ -495,13 +540,36 @@ index d04f11b3..a1fa1160 100644
 +{
 +   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
 +   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
-+   if (!res || res->fd_type != VIRGL_RESOURCE_FD_SHM || res->u.data != vkr_resource_storage(res))
++   /* (No storage: a device-local memory's blob, or one past what the renderer has: nothing to move.) */
++   if (!res || res->fd_type != VIRGL_RESOURCE_FD_SHM || !res->u.data || res->u.data != vkr_resource_storage(res))
 +      return false;
 +   memcpy(where, res->u.data, res->size);
 +   res->u.data = where;
 +   if (res->memory)
 +      vkr_wasi_memory_moved(res->memory->base.handle.device_memory, where);
 +   return true;
++}
++
++/* The test of a memory's import outliving it (tests/venus-renderer.test.ts): resource `res_id`, plain shared memory, made
++ * the blob of two vkr memories of the driver's `memory`, the first of them then freed. */
++bool
++vkr_wasi_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory)
++{
++   struct vkr_context *ctx = vkr_renderer_lookup_context(ctx_id);
++   struct vkr_resource *res = ctx ? vkr_context_get_resource(ctx, res_id) : NULL;
++   if (!res || !res->storage)
++      return false;
++   struct vkr_device_memory *a = calloc(1, sizeof(*a)), *b = calloc(1, sizeof(*b));
++   a->base.handle.device_memory = b->base.handle.device_memory = memory;
++   a->wasi_storage = res->storage;
++   a->wasi_res = res;
++   res->storage = NULL;
++   res->memory = a;
++   list_inithead(&a->wasi_peers);
++   list_add(&b->wasi_peers, &a->wasi_peers);
++   vkr_wasi_memory_release(a);
++   free(a);
++   return res->memory == b;
 +}
 +
 +bool
@@ -524,10 +592,10 @@ index d04f11b3..a1fa1160 100644
  vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id)
  {
 diff --git a/src/venus/vkr_renderer.h b/src/venus/vkr_renderer.h
-index be3ae046..f0a01814 100644
+index be3ae046..f3e6c1da 100644
 --- a/src/venus/vkr_renderer.h
 +++ b/src/venus/vkr_renderer.h
-@@ -74,4 +74,35 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+@@ -74,4 +74,39 @@ vkr_renderer_import_resource(uint32_t ctx_id,
  void
  vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id);
  
@@ -556,6 +624,10 @@ index be3ae046..f0a01814 100644
 +/* Moves them back out of the window into the resource's own storage. */
 +bool
 +vkr_renderer_unmap_resource(uint32_t ctx_id, uint32_t res_id);
++
++/* tests/venus-renderer.test.ts: vkr_renderer.c's. */
++bool
++vkr_wasi_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory);
 +
 +/* Told when a device memory's bytes move (the glue points the driver's memory there). */
 +void

@@ -29,6 +29,10 @@ const uint8_t *wgt_imported(void);
 const uint32_t *wgt_caps(void);
 int wgt_semaphores(void);
 const uint32_t *wgt_heaps(void);
+const uint32_t *wgt_memory(void);
+uint32_t wgt_peers_memory(void);
+uint32_t wgt_peers_at(void);
+extern bool wg_unwaited_allocations;
 const uint32_t *wgt_sync_freed(void);
 int wgt_draw(const uint32_t *fs, uint32_t fs_words, uint32_t variant);
 int wgt_draw_done(void);
@@ -808,6 +812,98 @@ wgt_heaps(void)
    props(pdev, &mp);
    out[7] = (uint32_t)(budget.heapUsage[heap] >> 10);
    return out;
+}
+
+/* VK4 R6: memory (the review's O1, O3, O11) on a device of its own. [0] the low word of a buffer's device address, on an
+ * import that wants addresses of a memory made without, [1] the result of such an import of a memory with a buffer bound,
+ * [2], [3] of set layouts with bindings 0x40000001 and 0xffffffff, [4] the device-local MiB allocated before a refusal
+ * ([5] its result), and for a guest that doesn't wait: [6] the result past the heap, [7] of a map of that memory (none
+ * host-visible: of one of the other heap's). NULL with wgt_error(). */
+EXPORT const uint32_t *
+wgt_memory(void)
+{
+   static uint32_t out[8];
+   if (!dev && init())
+      return NULL;
+   PFN_vkFreeMemory FreeMemory = (PFN_vkFreeMemory)GetDeviceProcAddr(dev, "vkFreeMemory");
+   PFN_vkGetBufferDeviceAddress Address = (PFN_vkGetBufferDeviceAddress)GetDeviceProcAddr(dev, "vkGetBufferDeviceAddress");
+   const VkMemoryAllocateInfo plain = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = 65536 };
+   const VkMemoryAllocateFlagsInfo flags = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT };
+   const VkBufferCreateInfo bi = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = 4096,
+                                   .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT };
+   VkDeviceMemory a, b, c, e;
+   VkBuffer buf;
+   if (AllocateMemory(dev, &plain, NULL, &a) != VK_SUCCESS || AllocateMemory(dev, &plain, NULL, &c) != VK_SUCCESS ||
+       CreateBuffer(dev, &bi, NULL, &buf) != VK_SUCCESS) {
+      snprintf(error, sizeof(error), "memory not made");
+      return NULL;
+   }
+   VkImportMemoryFdInfoKHR fd = { .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR, .pNext = &flags,
+                                  .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT, .fd = (int)(uintptr_t)a };
+   const VkMemoryAllocateInfo imp = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &fd, .allocationSize = 65536 };
+   if (AllocateMemory(dev, &imp, NULL, &b) != VK_SUCCESS || BindBufferMemory(dev, buf, b, 0) != VK_SUCCESS) {
+      snprintf(error, sizeof(error), "the import not made");
+      return NULL;
+   }
+   const VkBufferDeviceAddressInfo ai = { .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = buf };
+   out[0] = (uint32_t)Address(dev, &ai);
+   VkBuffer other;
+   if (CreateBuffer(dev, &bi, NULL, &other) != VK_SUCCESS || BindBufferMemory(dev, other, c, 0) != VK_SUCCESS) {
+      snprintf(error, sizeof(error), "a buffer not bound");
+      return NULL;
+   }
+   fd.fd = (int)(uintptr_t)c;
+   out[1] = (uint32_t)AllocateMemory(dev, &imp, NULL, &e);
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkDescriptorSetLayoutBinding binding = { i ? 0xffffffffu : 0x40000001u, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+      const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &binding };
+      VkDescriptorSetLayout dsl;
+      out[2 + i] = (uint32_t)CreateDescriptorSetLayout(dev, &dli, NULL, &dsl);
+   }
+   VkPhysicalDeviceMaintenance3Properties m3 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES };
+   VkPhysicalDeviceProperties2 pp = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &m3 };
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   EnumeratePhysicalDevices(instance, &n, &pdev);
+   ((PFN_vkGetPhysicalDeviceProperties2)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties2"))(pdev, &pp);
+   VkMemoryAllocateInfo big = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = m3.maxMemoryAllocationSize };
+   VkDeviceMemory all[64];
+   uint32_t count = 0;
+   VkResult r = VK_SUCCESS;
+   const bool unwaited = wg_unwaited_allocations;
+   wg_unwaited_allocations = false;
+   while (count < 64 && (r = AllocateMemory(dev, &big, NULL, &all[count])) == VK_SUCCESS)
+      count++;
+   out[4] = (uint32_t)(count * (m3.maxMemoryAllocationSize >> 20));
+   out[5] = (uint32_t)r;
+   wg_unwaited_allocations = true;
+   out[6] = (uint32_t)AllocateMemory(dev, &big, NULL, &e);
+   void *map;
+   out[7] = (uint32_t)MapMemory(dev, e, 0, VK_WHOLE_SIZE, 0, &map);
+   FreeMemory(dev, e, NULL);
+   wg_unwaited_allocations = unwaited;
+   while (count)
+      FreeMemory(dev, all[--count], NULL);
+   return out;
+}
+
+/* A host-visible memory for venus_test_peers (VK4 R6), and where a map of it says its bytes are. */
+static VkDeviceMemory peers_memory;
+
+EXPORT uint32_t
+wgt_peers_memory(void)
+{
+   if (!dev && init())
+      return 0;
+   const VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = 8192, .memoryTypeIndex = 1 };
+   return AllocateMemory(dev, &ai, NULL, &peers_memory) == VK_SUCCESS ? (uint32_t)(uintptr_t)peers_memory : 0;
+}
+
+EXPORT uint32_t
+wgt_peers_at(void)
+{
+   void *map = NULL;
+   return MapMemory(dev, peers_memory, 0, VK_WHOLE_SIZE, 0, &map) == VK_SUCCESS ? (uint32_t)(uintptr_t)map : 0;
 }
 
 /* A sync destroyed while a held submit names it (VK4 T2: NVIDIA's trap in wg_complete, a completion signalling a freed
@@ -2790,7 +2886,7 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
       b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
    } else {
-      mode = scenario == 27 || scenario == 32 ? 0 : scenario == 29 ? 1 : 2;
+      mode = scenario == 27 || scenario == 32 || scenario == 77 ? 0 : scenario == 29 ? 1 : 2;
       b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
                                                 VK_SHADER_STAGE_COMPUTE_BIT, &linear };
       b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT };
@@ -2804,6 +2900,9 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
                                                  .bindingCount = nb, .pBindings = b };
    VkDescriptorSetLayout dsl;
    CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   /* VK4 R6 (the review's O16): immutable samplers outlive their handles. */
+   if (scenario == 77)
+      ((PFN_vkDestroySampler)GetDeviceProcAddr(dev, "vkDestroySampler"))(dev, linear, NULL);
    const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
    const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                                             .setLayoutCount = 1, .pSetLayouts = &dsl, .pushConstantRangeCount = 1,
@@ -3504,7 +3603,7 @@ t11_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
 /* VK4 T7: inline uniform blocks (tests/venus/inline.comp): a template update running from one block into the next, then
  * the set copied, the copy dispatched. */
 static int
-t7_inline(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+t7_inline(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out, uint32_t second)
 {
    PFN_vkCreateDescriptorUpdateTemplate CreateDescriptorUpdateTemplate =
       (PFN_vkCreateDescriptorUpdateTemplate)GetDeviceProcAddr(dev, "vkCreateDescriptorUpdateTemplate");
@@ -3512,7 +3611,7 @@ t7_inline(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer o
       (PFN_vkUpdateDescriptorSetWithTemplate)GetDeviceProcAddr(dev, "vkUpdateDescriptorSetWithTemplate");
    const VkDescriptorSetLayoutBinding bindings[3] = {
       { 0, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 16, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
-      { 1, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 16, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, second, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
       { 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
    };
    const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3534,7 +3633,7 @@ t7_inline(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer o
       .layout = layout };
    VkPipeline pipeline;
    CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
-   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 64 },
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 16384 },
                                         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 } };
    const VkDescriptorPoolInlineUniformBlockCreateInfo ipi = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO, .maxInlineUniformBlockBindings = 4 };
@@ -4924,7 +5023,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          CmdDispatchIndirect(cmd, scenario == 18 ? in : out, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
-   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32) {
+   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32 || scenario == 77) {
       if (l7a_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 30 || scenario == 31) {
@@ -4948,6 +5047,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 52 || (scenario >= 55 && scenario <= 59) || scenario == 63 || scenario == 64) {
       if (r4_misc(scenario, cmd, out))
          return 1;
+   } else if (scenario == 76) {
+      if (t7_inline(cs, cs_words, cmd, out, 4096))
+         return 1;
    } else if (scenario >= 70 && scenario <= 75) {
       if (r5_misc(scenario, cs, cs_words, cmd, out))
          return 1;
@@ -4961,7 +5063,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       if (r2_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 40) {
-      if (t7_inline(cs, cs_words, cmd, out))
+      if (t7_inline(cs, cs_words, cmd, out, 16))
          return 1;
    } else if (scenario == 23) {
       /* More uniform buffers than WebGPU binds a stage (VK3 L7.4): the device's maximum, 13 or more. */

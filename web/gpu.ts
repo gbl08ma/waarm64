@@ -1001,7 +1001,8 @@ export class Gpu {
   async save() {
     const inUse = this.used.size > 0 || [...this.resources.values()].some((r) => r.three);
     let renderer: RendererSnapshot | undefined, unsaveable: string | undefined;
-    if (this.venusContexts.size > 0) unsaveable = "the machine is using Vulkan (Venus), whose state can't be saved yet";
+    // A blob can outlive its context (a program's image the compositor still holds), its bytes and the window's with it.
+    if (this.venusContexts.size > 0 || [...this.resources.values()].some((r) => r.blob)) unsaveable = "the machine is using Vulkan (Venus), whose state can't be saved yet";
     else if (inUse && this.host && !this.off3d) {
       const got = this.host.save ? await this.host.save() : { refused: 'the machine is using 3D (virgl), and this renderer can\'t be saved' };
       if ('refused' in got) unsaveable = got.refused;
@@ -1056,7 +1057,7 @@ export class Gpu {
       const now = this.caps;
       if (saved.length !== now.length || saved.some((x, k) => x !== now[k])) {
         const why = capsBacked(saved, now);
-        this.capsets = capsets(saved);
+        this.capsets = capsets(saved, this.capsets.find(([id]) => id === CAPSET_VENUS)?.[2]);
         if (why) this.off3d ??= `this browser can't back the 3D the machine was started with (${why})`;
       }
     }

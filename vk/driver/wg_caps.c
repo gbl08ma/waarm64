@@ -238,9 +238,9 @@ wg_caps_properties(struct vk_properties *p)
    const uint32_t folded = storage >= 4 + WG_FOLDED_UBOS ? WG_FOLDED_UBOS : 0;
    const uint32_t ubo = L->max_uniform_buffers - 1 + folded, ssbo = storage - folded;
    const uint32_t samples = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
-   /* WebGPU's buffers are ranges of one GPUBuffer a memory: an allocation is at most a buffer less its pad (and a
-    * 32-bit size). */
-   const uint64_t max_buffer = MIN2((uint64_t)L->max_buffer_size - WG_MEMORY_PAD, 0xffffffffu);
+   /* WebGPU's buffers are ranges of one GPUBuffer a memory: an allocation is at most a buffer (and a 32-bit size), which
+    * has what room is left past it for a pad (wg_memory_pad). */
+   const uint64_t max_buffer = MIN2((uint64_t)L->max_buffer_size, 0xffffffffu);
 
    p->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU; /* a GPU: libplacebo, GTK4 and wlroots turn CPUs away */
    /* The adapter's maker, as Venus on a native host passes its GPU's on (not Mesa's own ID: programs key quirks of

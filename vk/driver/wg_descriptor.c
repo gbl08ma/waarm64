@@ -51,6 +51,25 @@ binding_slots(const VkDescriptorSetLayoutBinding *b)
    return b->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ? 1 : b->descriptorCount;
 }
 
+#define WG_INLINE_PAD (64u << 10)
+
+/* Immutable samplers outlive their handles (programs destroy them once the layout is made). */
+static void
+layout_destroy(struct vk_device *vk, struct vk_descriptor_set_layout *layout)
+{
+   struct wg_device *dev = container_of(vk, struct wg_device, vk);
+   struct wg_descriptor_set_layout *l = container_of(layout, struct wg_descriptor_set_layout, vk);
+   for (uint32_t k = 0; k < l->immutable_count; k++)
+      if (l->immutable[k])
+         wg_sampler_unref(dev, l->immutable[k], NULL);
+   vk_descriptor_set_layout_destroy(vk, layout);
+}
+
+/* Binding numbers past this, and slots, refuse a layout: its tables go by binding number, and every process of every
+ * context shares the module they'd overrun. Vulkan has no such ceiling; nothing seen comes near. */
+#define WG_MAX_BINDING 0xffffu
+#define WG_MAX_SLOTS (1u << 20)
+
 /* One allocation: the layout, then its tables (the runtime frees it whole when its last reference goes). A binding
  * with YCbCr conversions has two slots more an element, after the others: its views' other planes (wgsl.h). */
 static struct wg_descriptor_set_layout *
@@ -58,6 +77,8 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
 {
    uint32_t bindings = 0, slots = 0, plane_slots = 0;
    for (uint32_t i = 0; i < info->bindingCount; i++) {
+      if (info->pBindings[i].binding > WG_MAX_BINDING || binding_slots(&info->pBindings[i]) > WG_MAX_SLOTS - slots)
+         return NULL;
       bindings = MAX2(bindings, info->pBindings[i].binding + 1);
       slots += binding_slots(&info->pBindings[i]);
       if (binding_ycbcr(&info->pBindings[i]))
@@ -88,6 +109,8 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    l->inline_bytes = (uint32_t *)p, p += bindings * sizeof(uint32_t);
    l->dynamic = (int16_t *)p;
    l->binding_count = bindings;
+   l->immutable_count = all;
+   l->vk.destroy = layout_destroy;
    for (uint32_t b = 0; b < bindings; b++)
       l->first[b] = -1;
 
@@ -115,7 +138,8 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
          l->dynamic[slot + e] = is_dynamic(b->descriptorType) ? (int16_t)dynamic++ : -1;
          if (b->pImmutableSamplers && (b->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
                                        b->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER))
-            l->immutable[slot + e] = wg_sampler_from_handle(b->pImmutableSamplers[e]);
+            if ((l->immutable[slot + e] = wg_sampler_from_handle(b->pImmutableSamplers[e])))
+               l->immutable[slot + e]->refs++;
       }
       if (plane_slots && binding_ycbcr(b)) {
          l->planes[b->binding] = plane_slot;
@@ -239,7 +263,9 @@ wg_descriptor_set_create(struct wg_device *dev, struct wg_descriptor_set_layout 
    if (layout->inline_size) {
       set->inline_data = calloc(1, layout->inline_size);
       struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", layout->inline_size, 0x40 | 0x80 | 8); /* UNIFORM | STORAGE | COPY_DST */
+      /* A uniform binding is widened to the block its shader declares, which may run past a block's bytes, as past a
+       * memory's (wg_memory_buffer). */
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", layout->inline_size + WG_INLINE_PAD, 0x40 | 0x80 | 8); /* UNIFORM | STORAGE | COPY_DST */
       set->inline_buffer = wg_create_json(WG_KIND_BUFFER, &j);
    }
    uint32_t inline_at = 0;
@@ -251,6 +277,7 @@ wg_descriptor_set_create(struct wg_device *dev, struct wg_descriptor_set_layout 
             d->inline_buffer = set->inline_buffer;
             d->offset = inline_at;
             d->range = layout->inline_bytes[b];
+            d->inline_room = layout->inline_size + WG_INLINE_PAD - inline_at;
             inline_at += align(MAX2(layout->inline_bytes[b], 16), 256);
          }
          d->sampler = layout->immutable[layout->first[b] + e];

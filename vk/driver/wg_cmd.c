@@ -3029,7 +3029,7 @@ buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descripto
    if (d->type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
       *buffer = d->inline_buffer;
       *at = d->offset;
-      *size = align64(MAX3(d->range, 16, res->kind == WGSL_UNIFORM ? res->size : 0), 16);
+      *size = MIN2(align64(MAX3(d->range, 16, res->kind == WGSL_UNIFORM ? res->size : 0), 16), d->inline_room);
       return true;
    }
    if (d->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {

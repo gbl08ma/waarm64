@@ -16,7 +16,7 @@ file goes when the last one does.
 **Fixed in the review's own commits** (each with its test, failing first): H2 (`Mem::ram_pa`), H3 (splits checked
 with Vulkan's reserve: definitions and the worker), O4 (`maxPushDescriptors`).
 **Fixed by VK4's tier 2b** (its row in VK4-KICKOFF.md): H1 (R1); R1, R4 (R2); R2, R3, R5 to R10, O7, O10 (R3; R9 and R10 without a test of their own, R10 warned rather than
-drawn); X1, X3 to X8 (R4; X6 and X7 without a test of their own, X6's clamp to the image's texels left in the backlog). C1 to C7 (R5; C7's `wg_compute_based` left in the backlog, "Samplers' leftovers"; the shader store's bounds without a corrupt store's test, only the check itself). X2 didn't
+drawn); X1, X3 to X8 (R4; X6 and X7 without a test of their own, X6's clamp to the image's texels left in the backlog). C1 to C7 (R5; C7's `wg_compute_based` left in the backlog, "Samplers' leftovers"; the shader store's bounds without a corrupt store's test, only the check itself). O1 to O3, O8's pad, O11, O12, O14 to O17, H4 (R6; O15 and O17 without a test of their own, and O2's placeholder path, past what a test can drive of vkr, through `wgt_memory` on the driver alone). X2 didn't
 reproduce (a drawn resolve into an sRGB view passes without the fix, its test kept); the worker now views both ends in the views' formats.
 
 | Id | Area |

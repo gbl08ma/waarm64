@@ -90,7 +90,7 @@ struct wg_limits {
 };
 extern struct wg_limits wg_limits;
 /* The bytes a memory's GPUBuffer has past its end: a uniform block's largest (wg_device.c `wg_memory_buffer`). */
-#define WG_MEMORY_PAD ((wg_features & WG_FEATURE_L9_PAD) ? 0 : (uint64_t)(wg_limits.max_uniform_buffer_binding_size & ~3u))
+#define WG_MEMORY_PAD ((wg_features & WG_FEATURE_L9_PAD) ? 0 : MIN2((uint64_t)wg_limits.max_uniform_buffer_binding_size & ~3ull, 64ull << 10))
 
 /* What the device advertises, from the features and limits (wg_caps.c); wg_caps_init sets them (venus_init's). */
 int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
@@ -244,7 +244,10 @@ struct wg_device {
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 /* The bytes a memory's GPUBuffer has past it, for a uniform block declared past the range bound. */
 uint32_t wg_address_buffer(struct wg_device *dev);
-#define wg_memory_pad(mem) ((mem)->address ? (uint64_t)(64u << 10) : WG_MEMORY_PAD)
+/* (A memory the size of the largest GPUBuffer has what's left.) */
+#define wg_memory_pad(mem) ((mem)->address ? (uint64_t)(64u << 10) : MIN2(WG_MEMORY_PAD, (uint64_t)wg_limits.max_buffer_size - MIN2((mem)->size, (uint64_t)wg_limits.max_buffer_size)))
+/* Whether Venus's guest doesn't wait for an allocation's result, as vkr's users don't: wg_AllocateMemory. */
+extern bool wg_unwaited_allocations;
 #define WG_FAN_VERTICES 65536
 /* Whether a vertex shader's outputs are captured by transform feedback (wgsl_info.xfb_stride). */
 #define wg_shader_xfb(s) ((s)->info.xfb_stride[0] | (s)->info.xfb_stride[1] | (s)->info.xfb_stride[2] | (s)->info.xfb_stride[3])
@@ -270,6 +273,7 @@ struct wg_device_memory {
    bool host;
    bool dirty;      /* all of it written (made, moved): uploaded whole at the next submit */
    bool owned;      /* `data` is ours to free */
+   bool placeholder; /* one that couldn't be had, for a guest that didn't wait to hear so (wg_AllocateMemory) */
    struct list_head link;
    /* A shared image bound to it (a WSI image's dedicated memory, which the guest's compositor imports into virgl by
     * its resource: web/venus-share.ts), on the device's shared_memories while set. */
@@ -427,6 +431,7 @@ struct wg_buffer_view {
 
 struct wg_sampler {
    struct vk_sampler vk;
+   uint32_t refs;      /* its own, and each set layout's that has it immutable */
    uint32_t id;
    uint32_t nearest;   /* its twin with nearest filters, for unfilterable views (0: it is one) */
    bool compare;
@@ -440,6 +445,7 @@ struct wg_sampler {
 struct wg_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
    uint32_t binding_count;  /* the highest binding number + 1 */
+   uint32_t immutable_count; /* the entries of `immutable` */
    uint32_t slot_count;
    uint32_t dynamic_count;
    int32_t *first;
@@ -464,6 +470,7 @@ struct wg_descriptor {
    struct wg_buffer *buffer;
    VkDeviceSize offset, range;  /* an inline uniform block's: its bytes in its set's buffer, `inline_buffer` */
    uint32_t inline_buffer;
+   uint32_t inline_room;    /* and the bytes from its start to that buffer's end */
    struct wg_image_view *view;
    struct wg_sampler *sampler;
    struct wg_buffer_view *texel;
@@ -604,6 +611,7 @@ struct wg_shader {
 };
 
 extern const struct vk_device_shader_ops wg_device_shader_ops;
+void wg_sampler_unref(struct wg_device *dev, struct wg_sampler *sampler, const VkAllocationCallbacks *alloc);
 void wg_program_mixed(struct wg_program *p);
 bool wg_counts_sane(uint32_t resources, uint32_t pairs, uint32_t int_pairs, uint32_t key_pairs);
 void wg_cmd_bind_shaders(struct vk_command_buffer *cmd, uint32_t count, const mesa_shader_stage *stages,

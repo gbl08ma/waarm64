@@ -2,6 +2,7 @@
 // answers the spec and QEMU give, the pixels, and a parser that survives random bytes; and the
 // EDID generator (web/edid.ts) against edid-decode where it is installed.
 import assert from 'node:assert/strict';
+import { virglCaps } from '../web/virgl.ts';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -912,6 +913,25 @@ test('venus: off without the option; with it the features, the third capset and 
   r.ok(ctxCreate(1, 4));
   r.ok(ctxCreate(2, 0));
   assert.equal(r.run(blob(2, 1, 4096)).type, ERR_CTX, "a virgl context makes no blobs");
+});
+
+// VK4 R6 (the review's H4): a blob outlives its context (a compositor still holds a program's image), and a browser
+// with other caps keeps the Venus capset.
+test('venus: a blob left of a destroyed context refuses the snapshot, and caps restored keep the capset', async () => {
+  const r = rig({ virgl: true, venus: true, window: 1 << 20 });
+  r.gpu.host = { call: () => {}, fence: () => {} } as unknown as typeof r.gpu.host;
+  r.ok(ctxCreate(3, 4, 'vkcube'));
+  r.ok(blob(3, 10, 4096));
+  r.ok(ctxCmd(3, V.CTX_DESTROY));
+  assert.match((await r.gpu.save()).unsaveable ?? '', /Vulkan/);
+  r.ok(cmd(T.UNREF, 10, 0));
+  const saved = JSON.parse(JSON.stringify(await r.gpu.save()));
+  assert.equal(saved.unsaveable, undefined);
+  const other = rig({ virgl: true, venus: true, window: 1 << 20 });
+  saved.caps = btoa(String.fromCharCode(...virglCaps(2).map((b, i) => (i === 200 ? b ^ 1 : b))));
+  other.gpu.restore(saved);
+  const info = other.run(cmd(V.CAPSET_INFO, 2, 0));
+  assert.equal(new DataView(info.r.buffer, info.r.byteOffset).getUint32(24, true), 4, 'the third capset is still Venus');
 });
 
 test('venus: blobs, their mapping in the window, uuids and submits reach the host in order', async () => {

@@ -121,7 +121,7 @@ programs' replays need the dev VM.
   (location 7 for depth, inter-stage variable counts, `wg_deserialize`'s bounds on a corrupt cache, small floats'
   rounding, the bias's clamp). *Done:* a `tests/wgsl.test.ts` row or a `wg_test.c` scenario each. *Start:*
   wg_shader.c `wg_program_variant`, `keyed_text`, `fragment_without_depth`; wgsl_print.c; wgsl_sampler.c.
-- **R6. Memory and objects** (M; review O1–O3, O11, O12, O14–O17, H4, then backlog "Memory" and "External memory's
+- **R6. Memory and objects** (done 2026-11-01: an allocation past what there is is refused, for Venus's guest an empty memory rather than a lost context; a surviving import moves with its blob. `memory.*` and `api.external.memory.*` unchanged. Left: backlog "Memory", "External memory's leftovers") (M; review O1–O3, O11, O12, O14–O17, H4, then backlog "Memory" and "External memory's
   leftovers"): an import aliasing an earlier export ignores `DEVICE_ADDRESS_BIT` (address 0, or writes into another
   memory: VMA with BDA); an alias no longer rebound by map and unmap once the original vkr memory is freed (vkr's
   patch); a large binding number overflowing the set layout's 32-bit size (a renderer-wide crash: the guest's input);

@@ -1,0 +1,11 @@
+#version 450
+// VK4 R6 (the review's O12): a block of 4,096 bytes declared as std140's 16 KiB, the set's last: what it reads is within
+// the block, the binding's size what the shader declares.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) uniform A { uvec4 a; };
+layout(set = 0, binding = 1) uniform B { uint b[1024]; };
+layout(set = 0, binding = 2, std430) buffer Out { uint o[4]; };
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  o[i] = a[i] + 1000 * b[a.x - 1u + i * 0u]; // dynamic: the whole array declared
+}

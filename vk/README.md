@@ -196,8 +196,9 @@ of one invocation (bench/vulkan/REPORT.md "VK3 L5").
   stayed, and the 17th failed to be made; VK4 T2), without the idle wait before (the driver can't block: its
   `vkDestroyDevice` drops pending work); a blob of the context's own imported again (the guest's opaque-fd or dma-buf
   export of a memory, imported) names that memory's handle as an opaque fd, which the driver takes as one more
-  reference to it (`wg_device_memory.aliases`), and an import that can't be made (the memory freed) is a memory of its
-  own, not an error the guest would only meet at its free; device memory as vkr's own `aligned_alloc` storage, imported into the driver
+  reference to it (`wg_device_memory.aliases`; vkr's memories of one driver memory are peers, `wasi_peers`, which hand on its
+  storage and blob as each is freed, so a surviving import moves with the blob), and an import that can't be made (all of
+  them freed) is a memory of its own, not an error the guest would only meet at its free; device memory as vkr's own `aligned_alloc` storage, imported into the driver
   as a host pointer (`VkImportMemoryHostPointerInfoEXT`) and exported as a blob of shared memory with no fd; a blob's
   map into the window copies its storage there and rebinds the driver's memory to it (`vkr_wasi_memory_moved` →
   `wg_memory_rebind`), an unmap copies it back (wasm can't remap pages). A memory freed while its blob lives hands the
@@ -242,8 +243,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types, each on a heap of its own (device-local, 2 GiB;
   host-visible, coherent, cached and device-local, 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory
   rather than a discrete GPU's BAR window), whose budget reports what's allocated from each (VK4 T2). Host-visible
-  memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19); a
-  guest past the heap meets an allocation the renderer can't make (docs/backlog.md "Memory"). One queue
+  memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
+  its heap, the largest GPUBuffer or the arena is refused; Venus's guest doesn't wait for that answer, and an object vkr
+  didn't make would end the context at its first use, so through vkr it is an empty memory (`memory_refused`, VK4 R6;
+  docs/backlog.md "Memory"). One queue
   family. `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
 - **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
@@ -524,7 +527,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   to `fold_uniforms`. A set with blocks has their bytes (`inline_data`) and a buffer of its own, each block 256-aligned;
   writes, template updates and copies go into both at once (`gpu_write`, the queue's order: Vulkan forbids updating a set
   a pending command buffer uses), rolling on into the next binding past a block's end. 1.3's minimums of four blocks a
-  stage and a set, 4,096 bytes each, no update-after-bind (`wg_bindings_fit` counts each as a uniform buffer).
+  stage and a set, 4,096 bytes each, no update-after-bind (`wg_bindings_fit` counts each as a uniform buffer). The buffer
+  has 64 KiB past the blocks: a binding is widened to the block its shader declares, as a memory's is.
 - **Attachments of different sizes** (VK4 R3; `wg_view_crop` in wg_device.c, `crop_copies` in wg_cmd.c): WebGPU wants a
   pass's attachments of one size, Vulkan only that the render area fits each. The pass takes the smallest width and
   height, and an attachment larger than that is drawn in a texture of that size, copied from it before the pass and back

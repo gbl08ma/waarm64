@@ -748,9 +748,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
     synchronous calls' latency is T13's.
-  - **External memory's leftovers** (VK4 T2): the guest's export imported again aliases its memory only while that
-    memory lives and on its own device; otherwise (the exporter freed first, another device) the import is a memory of
-    its own whose bytes aren't shared (vkr's patch, `wg_AllocateMemory`; not met by dEQP-VK). Images on external
+  - **External memory's leftovers** (VK4 T2, R6): the guest's export imported again aliases its memory while the
+    memory or an import of it lives, on its own device; otherwise (every one freed before a new import, another
+    device) the import is a memory of its own whose bytes aren't shared (vkr's patch, `wg_AllocateMemory`; not met by
+    dEQP-VK). An import that wants device addresses of a memory that hasn't any and already has a buffer is refused
+    (`VK_ERROR_INVALID_EXTERNAL_HANDLE`: the buffer's GPUBuffer is in use). Images on external
     memory (`api.external.memory.*.image.*`) aren't offered: an image is a texture of its own, which an import can't
     share.
   - **Compressed images that aren't whole blocks' leftovers** (VK4 T18; vk/README.md "Samplers in the shader"): each
@@ -920,11 +922,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
     dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
     with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader).
-  - **Memory**: 3 `memory.binding.aliasing` cases fail, not looked into. **An allocation past the arena loses the
-    context**: Venus's guest allocates without waiting, so a host-visible allocation the renderer can't make (its arena,
-    1,280 MiB, backs the 1 GiB heap and the renderer's own heap) surfaces as a CS error at its free, not as
-    `VK_ERROR_OUT_OF_DEVICE_MEMORY`. A program within the heap doesn't meet it (dEQP's random allocations peak at 242
-    MiB); refusing the blob's creation, which the guest's kernel waits for, might give the error back (VK4 T19).
+  - **Memory**: `memory.binding.aliasing.suballocated.image_*` fail (9 sampled by VK4 R6, 2 others pass): each image is a
+    texture of its own, so two images bound to one range don't share texels. An allocation past the heap, the largest
+    GPUBuffer or the arena, which Venus's guest doesn't wait for, is an empty memory (`memory_refused`): a map fails and what
+    is bound to it is dropped at the submit, where a program learns less than from `VK_ERROR_OUT_OF_DEVICE_MEMORY`. Only
+    the guest's `VN_PERF=no_async_mem_alloc` would give the error back; a program within its budget doesn't meet it
+    (VK_EXT_memory_budget is advertised).
 - **Nodes 2 and up in one memory64 behind a second JIT arm** (bench/spike/memory/REPORT.md §6, VK4 T19). Memory 1 stays
   wasm32 (node 1, and on a Vulkan machine the renderer and window, behind today's arm). Nodes 2 and up, which an access
   reaches today only through the interpreter (2–17× node 0's time), would share one memory64 of up to 16 GiB, reached
