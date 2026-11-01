@@ -75,6 +75,15 @@ the interpreter's own code.
   kernel's linear map) share its translations. One block runs at every VA mapping its page, so
   the PC it stores is relative to its entry PC.
 - JIT functions are named `<va>_pa<pa>` in the name section (profiles, `tools/v8code.ts`).
+- **A compile forms its blocks again** from memory (`block::form` in `block::region` and `block::forward`, often more
+  than once per block: `Cache::plan` asks a candidate member whether it heads a loop), though the table's decoded
+  blocks formed them first (`interp::block::Cache`). That stays: it is part of forming batches (`plan_ns`, counter
+  word 113), which took 1.0 s of ~1,450 vCPU-seconds in Firefox's pages session and 2.1 s of ~800 on the churn screen
+  (0.07% and 0.26%, all under the cache's lock), and taking 3.6-7.7 s of emission out from under that lock moved
+  nothing a user would see (`bench/boot/REPORT.md` "M8: emitting outside the JIT cache's lock"). Reusing the first
+  decode would also cost: micro-ops don't keep their words (4 bytes more per instruction in every table's arena), a
+  batch is formed in the shared cache from blocks other tables decoded, and what a compile reads now is what the
+  stale-code checker hashes.
 
 ## Compile policy
 
