@@ -26086,3 +26086,5 @@ dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.generate_mipmaps
 dEQP-VK.api.copy_and_blit.core.blit_image.all_formats.generate_mipmaps.from_base_level.layercount_1.a2b10g10r10_unorm_pack32.optimal_general_nearest
 dEQP-VK.api.copy_and_blit.core.blit_image.all_formats.generate_mipmaps.from_previous_level.layercount_6.r16_sint.optimal_general_nearest
 dEQP-VK.api.copy_and_blit.dedicated_allocation.blit_image.all_formats.generate_mipmaps.from_base_level.layercount_6.b10g11r11_ufloat_pack32.optimal_optimal_nearest
+# VK4 review: VK_KHR_push_descriptor's maxPushDescriptors (O4).
+dEQP-VK.api.info.vulkan1p2_limits_validation.khr_push_descriptor

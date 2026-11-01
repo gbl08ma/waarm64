@@ -135,7 +135,12 @@ programs' replays need the dev VM.
   `BC1_RGB_*` (refused at creation, which Venus's asynchronous creation turns into a lost context: an RGBA texture whose
   alpha reads 1, or BC off); `shaderStorageImageExtendedFormats` on adapters without tier1, whose 16-bit normalized
   formats don't exist there (off there, or those formats as words); the memory pad and `maxMemoryAllocationSize`
-  wrapping; Vulkan 1.3's 1 GiB minimums on adapters with WebGPU's default buffer size; the sample counts. *Done:*
+  wrapping; Vulkan 1.3's 1 GiB minimums on adapters with WebGPU's default buffer size; the sample counts.
+  `api.info.vulkan1p2_limits_validation.general` fails on SwiftShader (the review's run in a cloud session): 9 limits
+  under Vulkan's minimums, from the adapter's (`maxPerStageResources` 49 of 53, `maxDescriptorSetSamplers` 16 of 48,
+  `…UniformBuffers` 26 of 36, `…UniformBuffersDynamic` 7 of 8, `…StorageBuffers` 8 of 12, `…SampledImages` 16 of 48,
+  `…StorageImages` 4 of 12, `maxVertexInputBindings` 8 of 16, `maxMemoryAllocationSize` 64 KiB short of 1 GiB); the
+  set-wide ones need no more than a stage's ×5 stages, the others an emulation or the adapter's real limits asked for. *Done:*
   dEQP-VK's `api.info.format_properties.*`, `api.info.vulkan1p*_limits_validation.*` and
   `api.info.image_format_properties.*` passing on SwiftShader and the M4, whatever is taken off said in vk/README.md.
   *Start:* wg_caps.c, wg_format.c, web/venus-gpu.ts `gpuFeatures`; tests/venus-renderer.test.ts's caps test.
