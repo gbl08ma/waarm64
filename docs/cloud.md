@@ -40,8 +40,13 @@ Mako, meson). Two things the dev VM never showed, handled in `vk/build.sh` and `
 `libvirgl.a` without `libmesa.a`'s objects (built by name), and an x86_64 host's native flags (`-mtls-dialect=gnu2`,
 SSE, CET, valgrind, OpenMP) and BLAKE3's x86 assembly are dropped from the wasm compile. Headless Chromium's
 SwiftShader gives WebGPU, so `tests/venus-driver.test.ts`, `tests/wgsl.test.ts` and `tests/venus-renderer.test.ts`
-run (31 tests, ~20 s). dEQP-VK (`scripts/ci-deqp-vk.sh`) needs `images/deqp/build.sh vk` and the Vulkan guest images:
-not here.
+run (31 tests, ~20 s). dEQP-VK (`scripts/ci-deqp-vk.sh`) needs `images/deqp/build.sh vk`'s disk and guest, which can't be built here
+(arm64 Podman, "Images" below); the user keeps them prebuilt (2026-11-01, built in the dev VM) at
+`https://static.gbl08ma.com/diskimages/deqp-vk.ext4` (448 MiB) and `https://static.gbl08ma.com/diskimages/guest-vk.qcow2`
+(858 MiB), reachable through the proxy (HTTP redirects to HTTPS; ranges served, so the page can boot them from there
+too). Fetch them into `target/deqp/` (`curl -sS --fail -o target/deqp/deqp-vk.ext4 <url>`, the same for the guest) and
+`bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2` runs on them; `scripts/ci-deqp-vk.sh` as a whole also wants
+`images/debian-vulkan` and `images/vkframes`' disks for the programs' replays, which aren't hosted.
 
 ## Networking work (net/, tests/net/)
 
