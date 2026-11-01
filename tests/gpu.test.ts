@@ -678,7 +678,9 @@ test('gpu: ring fences that fill the queue and stall give entries back, the next
   replies.clear();
   for (let i = 1; i <= 40; i++) assert.equal(send(100 + i, ringed(BigInt(i))), undefined);
   assert.equal(done.length, 0, 'no entry comes back before a stall: the guest may wait for any of these fences alone');
-  await new Promise((r) => setTimeout(r, 300));
+  // RING_STALL_MS, 250 ms, then a timer: bounded, not timed, as a loaded host runs it late.
+  for (let k = 0; k < 300 && done.length < 40 - 15; k++) await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 50));
   assert.equal(done.length, 40 - 15, 'stalled, entries come back until the queue has room, and no further');
   for (const r of replies.values()) assert.equal(r.flags & 1, 0, 'a reply given back says no fence: its fence hasn\'t retired');
   assert.ok(!done.includes(140), 'the newest keeps its entry: it stands for those before it');
