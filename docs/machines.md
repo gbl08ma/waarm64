@@ -91,7 +91,10 @@ Since decided (the user, 2026-10-17):
   detaching or reordering disks, a change of shape) is refused while it runs, in this tab or another (`isRunning`),
   with a message to power it off. What isn't in the shape is changed at once, running or not: a network adapter's
   connection, a shared folder attached or detached (the 9p root is a listing the server makes), USB devices. Shared
-  folders have their own locks (`webpc-folder:<id>`: one writer, or several readers; shares.md §1).
+  folders have their own locks (`webpc-folder:<id>`: one writer, or several readers; shares.md §1). A start takes the
+  machine's lock before it opens the disks, and only if it's free (`ifAvailable`): a second tab of a running machine
+  (the page opens the last machine by default) says at once that it runs in another tab, with Retry, instead of
+  waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts).
 - **Storage:** the Machines page shows `navigator.storage.estimate()` and what each overlay, machine (variable store
   and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
   first time something is stored (without it the browser may evict the origin's data under pressure).
@@ -118,9 +121,9 @@ date are the same disk to the page.
 
 A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
 a start that finds a file disk without permission stops at "Allow and start" (one prompt per handle), or at "Pick
-and start" for a disk with no handle (a definition's, or one opened through a plain file input). Drops give handles
-too (`DataTransferItem.getAsFileSystemHandle`), as the Add a disk wizard's `showOpenFilePicker` does. A picked file
-is checked as in §6.
+and start" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
+no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
+Add a disk wizard's, Open disk…'s and From a disk image…'s (main.ts `openDisk`). A picked file is checked as in §6.
 
 ### 3.3 The overlay's generation
 

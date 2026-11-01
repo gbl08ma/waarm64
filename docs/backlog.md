@@ -1078,14 +1078,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     put `{ h: await (await navigator.storage.getDirectory()).getFileHandle('d', { create: true }) }` into an object
     store, then get it. Check
     Chrome stable; if it reproduces there, report it upstream and keep handles out of IndexedDB off the record.
-  - **Open disk… keeps no handle:** the first-run message's button and the Machines page's From a disk image… are a
-    plain `<input type=file>` (main.ts `openDiskInput`), so the machine they make has a file disk without a handle,
-    and after a reload its suspended copy resumes only once the file is picked again ("Pick and start", checked by
-    name, size and date). A drop and the Add disk wizard (`showOpenFilePicker`) keep one, and a reload resumes after
-    one click ("Allow and start"); both buttons could use the picker too.
-  - **A second tab of a running machine** (the page opens the last machine by default) starts a worker, waits out the
-    overlay's lock (10 s, `OVERLAY_WAIT_MS`) and fails with `disk-in-use`, naming the disk. Checking the machine's
-    lock first (`isRunning`) would say at once that it runs in another tab, without a worker.
   - Several file disks re-granted at a start ask once each (`requestPermission` per handle).
   - **Exporting a whole machine** isn't built: a bundle with the definition, its overlays (as changes files), its kept
     snapshots and, optionally, its stored disks (machines.md §10). Only the definition goes in and out.

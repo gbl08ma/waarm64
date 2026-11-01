@@ -990,7 +990,7 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 ## Your own disk
 
 A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): **Open disk…** (the
-message's button while no disk is open, and the Machines page's From a disk image…: a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
+message's button while no disk is open, and the Machines page's From a disk image…: the browser's file picker, whose handle the machine keeps, or a file input where there is none), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own, or a chunked image's `manifest.json`, which any static host can serve:
 `node tools/chunk-image.ts <image> <dir> [MiB] [--name <name>]`, docs/devices.md "A chunked image"; `node tools/disk-trace.ts` adds a
 boot's reads, which the page then fetches ahead; the manifest's `name` is what the page calls the machine and the disk,
