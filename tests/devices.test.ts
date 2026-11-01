@@ -3,17 +3,19 @@
 // the blk and net backends' I/O counters (the page's status, `Ctx.io`), and
 // the doorbell's server's end (`Devices.serve`, parallel mode in Node).
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { MemoryTree, P9Server, type P9Tree } from '../web/9p.ts';
 import { blk, deviceEntry, Devices, inputConfig, net, type Ctx } from '../web/devices.ts';
 import { memFile } from '../web/overlay.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
 
-/** A T-message: size, type, tag 1, then the fields ([bytes, value] or a string). */
-function msg(type: number, ...fields: (string | [number, number])[]) {
+/** A T-message: size, type, tag 1, then the fields ([bytes, value], a string or raw bytes). */
+function msg(type: number, ...fields: (string | [number, number] | Uint8Array)[]) {
   const parts: number[] = [];
   for (const f of fields) {
-    if (typeof f === 'string') {
+    if (f instanceof Uint8Array) parts.push(...f);
+    else if (typeof f === 'string') {
       const e = new TextEncoder().encode(f);
       parts.push(e.length & 0xff, e.length >> 8, ...e);
     } else for (let k = 0; k < f[0]; k++) parts.push(Number((BigInt(f[1]) >> BigInt(8 * k)) & 0xffn));
@@ -83,9 +85,194 @@ test('9p server: create, write, read, readdir, rename, symlink, unlink', () => {
   ok(msg(76, u32(0), 'l', u32(0)));
   ok(msg(76, u32(0), 'e', u32(0x200)));
   assert.deepEqual(names(2), ['.', '..', 'hello.txt', 'g']);
-  // Unsupported (xattrwalk): EOPNOTSUPP; truncated: EINVAL.
-  assert.equal(call(msg(30, u32(0), u32(9), 'user.x')).v.getUint32(7, true), 95);
+  // Unsupported (a 9P2000 Tstat): EOPNOTSUPP; truncated: EINVAL.
+  assert.equal(call(msg(124, u32(0))).v.getUint32(7, true), 95);
   assert.equal(call(msg(118, u32(3), u64(0), u32(100))).v.getUint32(7, true), 22);
+});
+
+/** A POSIX ACL as Linux's xattr carries it: version 2, then [tag, perm, id] per entry. */
+function acl(...entries: [number, number, number][]) {
+  const b = new Uint8Array(4 + entries.length * 8);
+  const v = new DataView(b.buffer);
+  v.setUint32(0, 2, true);
+  for (const [k, [tag, perm, id]] of entries.entries()) {
+    v.setUint16(4 + k * 8, tag, true);
+    v.setUint16(6 + k * 8, perm, true);
+    v.setUint32(8 + k * 8, id, true);
+  }
+  return b;
+}
+const [USER_OBJ, USER, GROUP_OBJ, MASK, OTHER] = [1, 2, 4, 0x10, 0x20];
+const TRANSCRIPT = new URL('./p9/transcript.txt', import.meta.url);
+
+// What the guest relies on past the basics: readdir offsets that survive a listing's entries going, qid versions that
+// change with the contents, nanosecond times, xattrs, and POSIX ACLs kept as a local file system keeps them. The
+// exchanges are tests/p9/transcript.txt, which the native twin (core/tests/common/p9.rs) answers the same way
+// (core/tests/p9.rs); P9_TRANSCRIPT=write records it again.
+test('9p server: readdir offsets, qid versions, nanosecond times, xattrs, ACLs (and the native twin\'s transcript)', () => {
+  const s = new P9Server(new MemoryTree({ 'hello.txt': 'hi\n' }, true));
+  const lines: string[] = [];
+  const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
+  const call = (m: Uint8Array) => {
+    const r = s.handle(m, 8192) as Uint8Array;
+    lines.push(`${hex(m)} ${hex(r)}`);
+    return { type: r[4], v: new DataView(r.buffer, r.byteOffset, r.byteLength), r };
+  };
+  const ok = (m: Uint8Array) => {
+    const a = call(m);
+    assert.equal(a.type, m[4] + 1, a.type === 7 ? `type ${m[4]}: errno ${a.v.getUint32(7, true)}` : '');
+    return a;
+  };
+  const errno = (m: Uint8Array) => {
+    const a = call(m);
+    assert.equal(a.type, 7, `type ${m[4]} succeeded`);
+    return a.v.getUint32(7, true);
+  };
+  const walk = (fid: number, newfid: number, ...names: string[]) => ok(msg(110, u32(fid), u32(newfid), [2, names.length], ...names));
+  const clunk = (fid: number) => ok(msg(120, u32(fid)));
+  const attr = (fid: number) => {
+    const v = ok(msg(24, u32(fid), u64(0x7ff))).v;
+    const big = (k: number) => Number(v.getBigUint64(k, true));
+    return { version: v.getUint32(16, true), mode: v.getUint32(28, true), atime: [big(80), big(88)], mtime: [big(96), big(104)] };
+  };
+  /** Sets `name` on `fid`'s node through a clone (`via`), as v9fs does: Txattrcreate, Twrite, Tclunk; the clunk's answer. */
+  const setx = (fid: number, name: string, value: Uint8Array, flags = 0) => {
+    walk(fid, 90);
+    ok(msg(32, u32(90), name, u64(value.length), u32(flags)));
+    if (value.length) ok(msg(118, u32(90), u64(0), u32(value.length), value));
+    return call(msg(120, u32(90)));
+  };
+  /** The value of `name` (empty: the names), or the errno. */
+  const getx = (fid: number, name: string) => {
+    const a = call(msg(30, u32(fid), u32(91), name));
+    if (a.type === 7) return a.v.getUint32(7, true);
+    const size = Number(a.v.getBigUint64(7, true));
+    const data = ok(msg(116, u32(91), u64(0), u32(1000))).r.slice(11);
+    assert.equal(data.length, size);
+    clunk(91);
+    return data;
+  };
+  const names = (r: Uint8Array) => {
+    const out: [string, number][] = [];
+    for (let k = 11; k < r.length;) {
+      const n = r[k + 22] | (r[k + 23] << 8);
+      out.push([new TextDecoder().decode(r.subarray(k + 24, k + 24 + n)), Number(new DataView(r.buffer, r.byteOffset + k + 13).getBigUint64(0, true))]);
+      k += 24 + n;
+    }
+    return out;
+  };
+
+  ok(msg(100, u32(1 << 20), '9P2000.L'));
+  ok(msg(104, u32(0), u32(~0 >>> 0), 'root', '', u32(0)));
+  ok(msg(72, u32(0), 'd', u32(0o755), u32(0)));
+  walk(0, 1, 'd');
+  // Readdir offsets: five files, a listing that stops after two of them, the two removed, the rest from where it stopped.
+  for (const f of ['a', 'b', 'c', 'x', 'y']) {
+    walk(1, 10);
+    ok(msg(14, u32(10), f, u32(0), u32(0o644), u32(0)));
+    clunk(10);
+  }
+  walk(1, 2);
+  ok(msg(12, u32(2), u32(0)));
+  const first = names(ok(msg(40, u32(2), u64(0), u32(101))).r); // 25, 26, 25 and 25 bytes
+  assert.deepEqual(first, [['.', 1], ['..', 2], ['a', 3], ['b', 4]]);
+  ok(msg(76, u32(1), 'a', u32(0)));
+  ok(msg(76, u32(1), 'b', u32(0)));
+  assert.deepEqual(names(ok(msg(40, u32(2), u64(4), u32(4096))).r), [['c', 5], ['x', 6], ['y', 7]], 'none skipped');
+  // A rename takes a new offset: a listing past its old one sees it once, at the end.
+  ok(msg(74, u32(1), 'c', u32(1), 'z'));
+  assert.deepEqual(names(ok(msg(40, u32(2), u64(5), u32(4096))).r), [['x', 6], ['y', 7], ['z', 8]]);
+  assert.deepEqual(names(ok(msg(40, u32(2), u64(8), u32(4096))).r), [], 'the end');
+  clunk(2);
+  // qid versions: a file's moves with each write and truncate, a directory's with its entries; a chmod moves neither.
+  walk(1, 3, 'x');
+  const v0 = attr(3).version;
+  ok(msg(12, u32(3), u32(2)));
+  ok(msg(118, u32(3), u64(0), u32(3), new Uint8Array([1, 2, 3])));
+  const v1 = attr(3).version;
+  assert.ok(v1 > v0, `version ${v0} -> ${v1} after a write`);
+  ok(msg(118, u32(3), u64(0), u32(1), new Uint8Array([9])));
+  const v2 = attr(3).version;
+  assert.ok(v2 > v1, 'an overwrite in place too');
+  ok(msg(26, u32(3), u32(1), u32(0o600), u32(0), u32(0), u64(0), u64(0), u64(0), u64(0), u64(0)));
+  assert.equal(attr(3).version, v2, 'chmod: the same contents');
+  ok(msg(26, u32(3), u32(8), u32(0), u32(0), u32(0), u64(1), u64(0), u64(0), u64(0), u64(0)));
+  assert.ok(attr(3).version > v2, 'a truncate');
+  const dv = attr(1).version;
+  walk(1, 10);
+  ok(msg(14, u32(10), 'n', u32(0), u32(0o644), u32(0)));
+  clunk(10);
+  assert.ok(attr(1).version > dv, 'a directory with a new entry');
+  // Explicit times keep their nanoseconds; "now" is the deterministic tree's EPOCH, at 0 ns.
+  ok(msg(26, u32(3), u32(16 | 32 | 128 | 256), u32(0), u32(0), u32(0), u64(0), u64(100), u64(123456789), u64(200), u64(987654321)));
+  assert.deepEqual([attr(3).atime, attr(3).mtime], [[100, 123456789], [200, 987654321]]);
+  ok(msg(26, u32(3), u32(32), u32(0), u32(0), u32(0), u64(0), u64(0), u64(0), u64(0), u64(0)));
+  assert.deepEqual(attr(3).mtime, [1788220800, 0]);
+  // xattrs: set, read, list, the flags, a short write, removal.
+  assert.equal(getx(3, 'user.k'), 61, 'ENODATA');
+  assert.equal(setx(3, 'user.k', new TextEncoder().encode('abc')).type, 121);
+  assert.equal(new TextDecoder().decode(getx(3, 'user.k') as Uint8Array), 'abc');
+  assert.equal(setx(3, 'user.j', new TextEncoder().encode('j')).type, 121);
+  assert.equal(new TextDecoder().decode(getx(3, '') as Uint8Array), 'user.k\0user.j\0');
+  walk(3, 90);
+  assert.equal(errno(msg(32, u32(90), 'user.k', u64(1), u32(1))), 17, 'XATTR_CREATE on one there: EEXIST');
+  assert.equal(errno(msg(32, u32(90), 'user.q', u64(1), u32(2))), 61, 'XATTR_REPLACE on none: ENODATA');
+  assert.equal(errno(msg(32, u32(90), 'user.q', u64(65537), u32(0))), 7, 'past XATTR_SIZE_MAX: E2BIG');
+  assert.equal(errno(msg(32, u32(90), 'user.' + 'q'.repeat(251), u64(1), u32(0))), 34, 'a name past 255 bytes: ERANGE');
+  ok(msg(32, u32(90), 'user.q', u64(4), u32(0)));
+  ok(msg(118, u32(90), u64(0), u32(2), new Uint8Array([1, 2])));
+  assert.equal(errno(msg(120, u32(90))), 22, 'fewer bytes than announced: EINVAL at the clunk');
+  assert.equal(getx(3, 'user.q'), 61);
+  assert.equal(setx(3, 'user.k', new Uint8Array(0), 2).type, 121, 'an empty value removes');
+  assert.equal(getx(3, 'user.k'), 61);
+  assert.equal(setx(3, 'user.k', new Uint8Array(0)).v.getUint32(7, true), 61, 'removing none: ENODATA');
+  assert.equal(new TextDecoder().decode(getx(3, '') as Uint8Array), 'user.j\0');
+  // POSIX ACLs: d's default ACL is what its new entries start with, narrowed by the mode they're created with.
+  const def = acl([USER_OBJ, 7, 0], [USER, 7, 1000], [GROUP_OBJ, 5, 0], [MASK, 7, 0], [OTHER, 5, 0]);
+  assert.equal(setx(3, 'system.posix_acl_default', def).v.getUint32(7, true), 13, 'a default ACL on a file: EACCES');
+  assert.equal(setx(1, 'system.posix_acl_default', def).type, 121);
+  assert.equal(setx(1, 'system.posix_acl_access', acl([USER_OBJ, 7, 0], [OTHER, 5, 0])).v.getUint32(7, true), 22, 'no owning group: EINVAL');
+  walk(1, 4);
+  ok(msg(14, u32(4), 'f', u32(0), u32(0o666), u32(0)));
+  assert.equal(attr(4).mode, 0o100664);
+  assert.deepEqual(getx(4, 'system.posix_acl_access'), acl([USER_OBJ, 6, 0], [USER, 7, 1000], [GROUP_OBJ, 5, 0], [MASK, 6, 0], [OTHER, 4, 0]));
+  assert.equal(getx(4, 'system.posix_acl_default'), 61, 'a file has no default ACL');
+  // A chmod is the ACL's owner, mask and other entries.
+  ok(msg(26, u32(4), u32(1), u32(0o640), u32(0), u32(0), u64(0), u64(0), u64(0), u64(0), u64(0)));
+  assert.deepEqual(getx(4, 'system.posix_acl_access'), acl([USER_OBJ, 6, 0], [USER, 7, 1000], [GROUP_OBJ, 5, 0], [MASK, 4, 0], [OTHER, 0, 0]));
+  // An access ACL the mode can say is the mode.
+  assert.equal(setx(4, 'system.posix_acl_access', acl([USER_OBJ, 7, 0], [GROUP_OBJ, 5, 0], [OTHER, 1, 0])).type, 121);
+  assert.equal(attr(4).mode, 0o100751);
+  assert.equal(getx(4, 'system.posix_acl_access'), 61);
+  // A new directory takes the default ACL as its own default too; a symlink takes none.
+  ok(msg(72, u32(1), 'e', u32(0o777), u32(0)));
+  walk(1, 5, 'e');
+  assert.equal(attr(5).mode, 0o40775);
+  assert.deepEqual(getx(5, 'system.posix_acl_default'), def);
+  ok(msg(16, u32(1), 'l', 'f', u32(0)));
+  walk(1, 6, 'l');
+  assert.equal(new TextDecoder().decode(getx(6, '') as Uint8Array), '');
+  // A hard link shares them.
+  ok(msg(70, u32(1), u32(4), 'g'));
+  walk(1, 7, 'g');
+  assert.equal(setx(7, 'user.h', new Uint8Array([7])).type, 121);
+  assert.deepEqual(getx(4, 'user.h'), new Uint8Array([7]));
+
+  const text = lines.join('\n') + '\n';
+  if (process.env.P9_TRANSCRIPT === 'write') writeFileSync(TRANSCRIPT, text);
+  assert.ok(readFileSync(TRANSCRIPT, 'utf8') === text, 'the exchanges are tests/p9/transcript.txt\'s (P9_TRANSCRIPT=write records them)');
+});
+
+test('9p server: a tree out of deterministic mode has nanosecond times', () => {
+  const s = new P9Server(new MemoryTree({ 'f': '' }, false));
+  s.handle(msg(100, u32(1 << 20), '9P2000.L'), 8192);
+  s.handle(msg(104, u32(0), u32(~0 >>> 0), 'root', '', u32(0)), 8192);
+  s.handle(msg(110, u32(0), u32(1), [2, 1], 'f'), 8192);
+  const r = s.handle(msg(24, u32(1), u64(0x7ff)), 8192) as Uint8Array;
+  const v = new DataView(r.buffer, r.byteOffset);
+  const [sec, ns] = [Number(v.getBigUint64(96, true)), Number(v.getBigUint64(104, true))];
+  assert.ok(Math.abs(sec + ns / 1e9 - Date.now() / 1000) < 5, `mtime ${sec}.${ns}`);
+  assert.ok(ns < 1e9);
 });
 
 test('9p server: a tree that answers later: requests overlap, a Tflush ends after its request', async () => {

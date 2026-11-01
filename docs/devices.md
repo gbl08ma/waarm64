@@ -337,16 +337,38 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   read as references, no code copied).
 - Feature `MOUNT_TAG`, one queue of 128. One T-message per chain, the R-message into the writable
   buffers (Linux's zero-copy split is undone by concatenation). Messages: version (msize ≤ 1 MiB),
-  attach, walk, lopen, lcreate, read, write, readdir (with `.`/`..`; offsets are entry indices),
-  getattr, setattr, mkdir, symlink, mknod, readlink, link, renameat, unlinkat, remove, clunk,
-  flush, fsync, statfs, lock (always granted), getlock (always unlocked); xattrs and the rest
+  attach, walk, lopen, lcreate, read, write, readdir (with `.`/`..`), getattr, setattr, mkdir, symlink, mknod,
+  readlink, link, renameat, unlinkat, remove, clunk, flush, fsync, statfs, lock (always granted), getlock (always
+  unlocked), xattrwalk and xattrcreate (where the tree has xattrs; `EOPNOTSUPP` where it hasn't); the rest
   `EOPNOTSUPP`, malformed messages `EINVAL`.
+- **Readdir offsets are the tree's cookies** (`P9Entry`), not positions: a listing resumes after the entry it stopped at
+  even when entries before it went (`rm -rf` removes as it lists). **`qid.version`** is the tree's (`version`): it
+  changes when a file's contents or a directory's entries do, so a caching mount (`cache=loose`, `fscache`) sees
+  changes. Times are seconds and nanoseconds both ways (Tsetattr's nanoseconds are kept).
+- **xattrs** are the server's protocol and the tree's storage: Txattrwalk gives a value (or, for an empty name, the
+  names, each ending in a NUL) to a new fid to read; Txattrcreate makes the fid one to write the value to, set at its
+  clunk (`EINVAL` if fewer bytes came than announced; a value of 0 bytes removes the attribute, as QEMU's server does:
+  setxattr(2) with an empty value is a removal here). `XATTR_CREATE`/`XATTR_REPLACE` answer `EEXIST`/`ENODATA` at the
+  create; names past 255 bytes `ERANGE`, values past 64 KiB `E2BIG`, a missing attribute `ENODATA`.
 - **`P9Server` asks a tree.** A synchronous tree answers at the step it was asked; an asynchronous one's requests overlap
   (`concurrent`), and a Tflush is answered after the request it names.
 - **The in-memory tree** seeded from the spec (`{type: '9p', tag, files: {path: text}}`, `MemoryTree`); qid paths
-  in creation order; in deterministic mode every timestamp is 2026-09-01, so native and Chromium
-  boots see the same bytes. `qid.version` is always 0 (only `cache=none` is coherent);
-  whole-second timestamps.
+  in creation order; readdir offsets per directory in the order entries came (`.` 1, `..` 2, then from 3; a rename takes a
+  new one); a version per node counted up by writes, truncates and entry changes. In deterministic mode every timestamp
+  is 2026-09-01 at 0 ns unless a Tsetattr gives one, so native and Chromium boots see the same bytes; otherwise times
+  come from `performance.timeOrigin + performance.now()` (sub-millisecond). Its native twin answers
+  `tests/p9/transcript.txt` (recorded by `tests/devices.test.ts`, `P9_TRANSCRIPT=write`) byte for byte
+  (`core/tests/p9.rs`).
+- **xattrs and POSIX ACLs** in the memory tree: any name, kept per node (hard links share them). v9fs passes
+  `system.posix_acl_access`/`_default` to the server as they are unless mounted `access=client,posixacl` (then the
+  client does all of it itself), so the tree does what a local file system does with them: a valid ACL only (`EINVAL`
+  otherwise; a default ACL on a non-directory `EACCES`); an access ACL sets the mode's permission bits (the owner's,
+  the mask's or the owning group's, the others'), and one the mode can say is dropped for the mode; `chmod` writes the
+  bits back into the ACL; a new file, directory or node in a directory with a default ACL starts with it, narrowed by
+  its create mode (Linux's `posix_acl_create`; a directory also takes it as its default; symlinks take none). The
+  client applied its umask to that mode already, which a local file system wouldn't with a default ACL (QEMU's server
+  has the same gap). Nothing enforces the ACLs but the client, and only with `posixacl`: the server checks no
+  permissions at all.
 - **The page's shared folders** (`{type: '9p', tag: 'webpc', folders, port}`, `FolderTree`): [shares.md](shares.md).
 
 ### input (ID 18)

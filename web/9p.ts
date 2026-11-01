@@ -24,6 +24,7 @@ export const S_IFLNK = 0o120000;
 export const EPERM = 1;
 export const ENOENT = 2;
 export const EIO = 5;
+export const E2BIG = 7;
 export const EBADF = 9;
 export const EACCES = 13;
 export const EBUSY = 16;
@@ -34,7 +35,9 @@ export const EISDIR = 21;
 export const EINVAL = 22;
 export const ENOSPC = 28;
 export const EROFS = 30;
+export const ERANGE = 34;
 export const ENOTEMPTY = 39;
+export const ENODATA = 61;
 export const EOPNOTSUPP = 95;
 export const ESTALE = 116;
 
@@ -44,11 +47,24 @@ export type Async<T> = T | Promise<T>;
 export type P9Time = [number, number];
 export type P9Stat = { mode: number; uid: number; gid: number; nlink: number; size: number; atime: P9Time; mtime: P9Time; ctime: P9Time };
 /** Tsetattr's fields: `valid` says which (1 mode, 2 uid, 4 gid, 8 size, 16 atime, 32 mtime, 128 and 256 the times as given). */
-export type P9SetAttr = { valid: number; mode: number; uid: number; gid: number; size: number; atime: number; mtime: number };
+export type P9SetAttr = { valid: number; mode: number; uid: number; gid: number; size: number; atime: P9Time; mtime: P9Time };
 /** What Tstatfs answers. */
 export type P9StatFs = { bsize: number; blocks: number; bfree: number; bavail: number; files: number; ffree: number };
-/** A fid: its node, the attach's uid and, once opened, its flags; `list` is what a tree keeps for a directory's readdir. */
-export type P9Fid<N> = { node: N; uid: number; flags?: number; list?: [string, N][] };
+/** A directory's entry: its name, its node and its offset, the cookie a readdir resumes after (ascending, never 0). */
+export type P9Entry<N> = [name: string, node: N, offset: number];
+/**
+ * A fid: its node, the attach's uid and, once opened, its flags; `list` is what a tree keeps for a directory's readdir.
+ * `xattr`: a Txattrwalk's fid (what it reads: a value or the names) or a Txattrcreate's (`set`: what it writes, set at
+ * its clunk), the server's own.
+ */
+export type P9Fid<N> = { node: N; uid: number; flags?: number; list?: P9Entry<N>[]; xattr?: { data: Uint8Array; set?: { name: string; written: number } } };
+
+/** Txattrcreate's flags (setxattr(2)'s). */
+export const XATTR_CREATE = 1;
+export const XATTR_REPLACE = 2;
+/** Linux's limits on a name and a value (XATTR_NAME_MAX, XATTR_SIZE_MAX). */
+const XATTR_NAME_MAX = 255;
+const XATTR_SIZE_MAX = 65536;
 
 /** The files a server serves. Errors are `Err`; a promise rejects with one. */
 export type P9Tree<N> = {
@@ -56,6 +72,8 @@ export type P9Tree<N> = {
   /** The qid's path and the node's type (its S_IFMT bits). */
   id(n: N): number;
   type(n: N): number;
+  /** The qid's version: changes when the file's contents (a directory's entries) do, so a caching client sees it. 0 without. */
+  version?(n: N): number;
   /** `name` in directory `d`, with `.` and `..`; undefined if there's none. */
   walk(d: N, name: string): Async<N | undefined>;
   /** Tlopen: `f.flags` is set by the server after it. */
@@ -64,8 +82,8 @@ export type P9Tree<N> = {
   create(f: P9Fid<N>, name: string, flags: number, mode: number, gid: number): Async<N>;
   read(f: P9Fid<N>, off: number, count: number): Async<Uint8Array>;
   write(f: P9Fid<N>, off: number, data: Uint8Array): Async<void>;
-  /** The directory's entries with `.` and `..` (Treaddir's offsets index them). */
-  entries(f: P9Fid<N>, off: number): Async<[string, N][]>;
+  /** The directory's entries with `.` and `..`, by offset: Treaddir sends those past `off`. */
+  entries(f: P9Fid<N>, off: number): Async<P9Entry<N>[]>;
   stat(f: P9Fid<N>): Async<P9Stat>;
   setattr(f: P9Fid<N>, a: P9SetAttr): Async<void>;
   mkdir(f: P9Fid<N>, name: string, mode: number, gid: number): Async<N>;
@@ -79,6 +97,13 @@ export type P9Tree<N> = {
   remove(f: P9Fid<N>): Async<void>;
   statfs(f: P9Fid<N>): Async<P9StatFs>;
   fsync?(f: P9Fid<N>): Async<void>;
+  /**
+   * Extended attributes (POSIX ACLs are `system.posix_acl_access` and `_default`): the names, a value (undefined: none, so
+   * ENODATA) and a change (`value` undefined: removed; ENODATA if there was none). A tree without them answers EOPNOTSUPP.
+   */
+  listxattr?(f: P9Fid<N>): Async<string[]>;
+  getxattr?(f: P9Fid<N>, name: string): Async<Uint8Array | undefined>;
+  setxattr?(f: P9Fid<N>, name: string, value: Uint8Array | undefined): Async<void>;
   /** The fid's end: it was opened if `f.flags` is set. */
   clunk?(f: P9Fid<N>): Async<void>;
 };
@@ -117,8 +142,8 @@ class Writer {
   u64(v: number) { this.room(8); new DataView(this.b.buffer).setBigUint64(this.k, BigInt(v), true); this.k += 8; return this; }
   str(s: string) { const e = new TextEncoder().encode(s); this.u16(e.length); return this.bytes(e); }
   bytes(e: Uint8Array) { this.room(e.length); this.b.set(e, this.k); this.k += e.length; return this; }
-  qid(type: number, id: number) {
-    return this.u8(type === S_IFDIR ? 0x80 : type === S_IFLNK ? 0x02 : 0).u32(0).u64(id);
+  qid(type: number, id: number, version: number) {
+    return this.u8(type === S_IFDIR ? 0x80 : type === S_IFLNK ? 0x02 : 0).u32(version).u64(id);
   }
 }
 
@@ -130,6 +155,70 @@ export class Err {
   }
 }
 
+// POSIX ACLs as Linux's xattrs carry them (include/uapi/linux/posix_acl_xattr.h): version 2, then tag[2] perm[2] id[4]
+// per entry. The client (v9fs) sends them as they are; without `access=client,posixacl` it leaves to the server what a
+// local file system would do with them, which the memory tree does: an access ACL gives the mode its bits and `chmod`
+// gives them back to it, and a directory's default ACL is what its new entries start with (Linux's posix_acl_create).
+export const ACL_ACCESS = 'system.posix_acl_access';
+export const ACL_DEFAULT = 'system.posix_acl_default';
+const ACL_USER_OBJ = 1;
+const ACL_USER = 2;
+const ACL_GROUP_OBJ = 4;
+const ACL_GROUP = 8;
+const ACL_MASK = 0x10;
+const ACL_OTHER = 0x20;
+
+/** The ACL's entries as [tag, perm] by index, or undefined if it isn't a valid one. */
+function aclEntries(v: Uint8Array): [number, number][] | undefined {
+  if (v.length < 4 || (v.length - 4) % 8 !== 0) return undefined;
+  const d = new DataView(v.buffer, v.byteOffset, v.byteLength);
+  if (d.getUint32(0, true) !== 2) return undefined;
+  const out: [number, number][] = [];
+  const count = new Map<number, number>();
+  for (let k = 4; k < v.length; k += 8) {
+    const [tag, perm] = [d.getUint16(k, true), d.getUint16(k + 2, true)];
+    if (![ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER].includes(tag) || perm > 7) return undefined;
+    count.set(tag, (count.get(tag) ?? 0) + 1);
+    out.push([tag, perm]);
+  }
+  const one = (tag: number) => count.get(tag) === 1;
+  if (!one(ACL_USER_OBJ) || !one(ACL_GROUP_OBJ) || !one(ACL_OTHER) || (count.get(ACL_MASK) ?? 0) > 1) return undefined;
+  if ((count.has(ACL_USER) || count.has(ACL_GROUP)) && !count.has(ACL_MASK)) return undefined;
+  return out;
+}
+
+/** The ACL with each entry's perm set by `perm(tag, old)`. */
+function aclMap(v: Uint8Array, perm: (tag: number, old: number) => number) {
+  const out = v.slice();
+  const d = new DataView(out.buffer);
+  for (let k = 4; k < out.length; k += 8) d.setUint16(k + 2, perm(d.getUint16(k, true), d.getUint16(k + 2, true)), true);
+  return out;
+}
+
+/** The permission bits an ACL stands for: the owner's, the mask's (the owning group's without one) and the others'. */
+function aclMode(e: [number, number][]) {
+  const perm = (tag: number) => e.find(([t]) => t === tag)?.[1] ?? 0;
+  return perm(ACL_USER_OBJ) << 6 | (e.some(([t]) => t === ACL_MASK) ? perm(ACL_MASK) : perm(ACL_GROUP_OBJ)) << 3 | perm(ACL_OTHER);
+}
+
+/** Whether the mode says all an ACL does (no named users or groups, no mask). */
+const aclEquiv = (e: [number, number][]) => e.length === 3;
+
+/** `chmod` on an access ACL: the owner's, the mask's (the owning group's without one) and the others' perms. */
+function aclChmod(v: Uint8Array, mode: number) {
+  const mask = aclEntries(v)!.some(([t]) => t === ACL_MASK);
+  return aclMap(v, (tag, old) => tag === ACL_USER_OBJ ? mode >> 6 & 7 : tag === ACL_OTHER ? mode & 7 : tag === (mask ? ACL_MASK : ACL_GROUP_OBJ) ? mode >> 3 & 7 : old);
+}
+
+/** A new file's access ACL from its directory's default ACL and the mode it's created with (posix_acl_create_masq): both narrowed to what the other allows. */
+function aclCreate(def: Uint8Array, mode: number): { acl: Uint8Array; mode: number } {
+  const e = aclEntries(def)!;
+  const mask = e.some(([t]) => t === ACL_MASK);
+  const group = mask ? ACL_MASK : ACL_GROUP_OBJ;
+  const acl = aclMap(def, (tag, old) => tag === ACL_USER_OBJ ? old & mode >> 6 : tag === ACL_OTHER ? old & mode : tag === group ? old & mode >> 3 : old);
+  return { acl, mode: (mode & ~0o777) | aclMode(aclEntries(acl)!) };
+}
+
 type Node = {
   id: number;
   mode: number;
@@ -138,22 +227,34 @@ type Node = {
   data: Uint8Array;
   size: number;
   target: string;
+  /** A directory's entries in the order they came, and each one's readdir offset (`.` is 1, `..` 2, then from 3 up). */
   children?: Map<string, Node>;
+  offsets?: Map<string, number>;
+  offset: number;
   parent: Node;
   nlink: number;
-  atime: number;
-  mtime: number;
-  ctime: number;
+  version: number;
+  atime: P9Time;
+  mtime: P9Time;
+  ctime: P9Time;
+  xattrs?: Map<string, Uint8Array>;
 };
+
+/** Now as [seconds, nanoseconds], from a clock with sub-millisecond steps where there is one. */
+function wallClock(): P9Time {
+  const ms = performance.timeOrigin + performance.now();
+  const s = Math.floor(ms / 1000);
+  return [s, Math.min(999_999_999, Math.floor((ms - s * 1000) * 1e6))];
+}
 
 /** An in-memory tree: the tests' and Alpine's. */
 export class MemoryTree implements P9Tree<Node> {
   private ids = 0;
   readonly root: Node;
-  private now: () => number;
+  private now: () => P9Time;
 
   constructor(files: P9Files, deterministic: boolean) {
-    this.now = deterministic ? () => EPOCH : () => Math.floor(Date.now() / 1000);
+    this.now = deterministic ? () => [EPOCH, 0] : wallClock;
     this.root = this.node(S_IFDIR | 0o755, undefined);
     for (const [path, text] of Object.entries(files)) {
       let dir = this.root;
@@ -167,16 +268,25 @@ export class MemoryTree implements P9Tree<Node> {
 
   private node(mode: number, parent: Node | undefined, uid = 0, gid = 0): Node {
     const t = this.now();
-    const n: Node = { id: ++this.ids, mode, uid, gid, data: new Uint8Array(0), size: 0, target: '', parent: parent!, nlink: 1, atime: t, mtime: t, ctime: t };
-    if ((mode & S_IFMT) === S_IFDIR) [n.children, n.nlink] = [new Map(), 2];
+    const n: Node = { id: ++this.ids, mode, uid, gid, data: new Uint8Array(0), size: 0, target: '', parent: parent!, offset: 2, nlink: 1, version: 0, atime: t, mtime: t, ctime: t };
+    if ((mode & S_IFMT) === S_IFDIR) [n.children, n.offsets, n.nlink] = [new Map(), new Map(), 2];
     n.parent ??= n;
     return n;
   }
 
+  /** `name` in `dir` is `n` now: a new name takes the next offset, one there already keeps its own. */
   private linked(dir: Node, name: string, n: Node) {
+    if (!dir.children!.has(name)) dir.offsets!.set(name, ++dir.offset);
     dir.children!.set(name, n);
     dir.mtime = dir.ctime = this.now();
+    dir.version++;
     return n;
+  }
+
+  private unlinked(dir: Node, name: string) {
+    dir.children!.delete(name);
+    dir.offsets!.delete(name);
+    dir.version++;
   }
 
   private dir(f: P9Fid<Node>) {
@@ -184,11 +294,20 @@ export class MemoryTree implements P9Tree<Node> {
     return f.node;
   }
 
-  /** A new entry `name` in `dir`: EEXIST if taken. */
+  /** A new entry `name` in `dir`: EEXIST if taken. It starts with the directory's default ACL, if it has one. */
   private add(dir: Node, name: string, mode: number, gid: number) {
     if (dir.children!.has(name)) throw new Err(EEXIST);
     if (!name || name === '.' || name === '..' || name.includes('/')) throw new Err(EINVAL);
-    return this.linked(dir, name, this.node(mode, dir, 0, gid));
+    const n = this.linked(dir, name, this.node(mode, dir, 0, gid));
+    const def = dir.xattrs?.get(ACL_DEFAULT);
+    if (def && (mode & S_IFMT) !== S_IFLNK) {
+      const c = aclCreate(def, mode);
+      n.mode = c.mode;
+      n.xattrs = new Map();
+      if (!aclEquiv(aclEntries(c.acl)!)) n.xattrs.set(ACL_ACCESS, c.acl);
+      if (n.children) n.xattrs.set(ACL_DEFAULT, def.slice());
+    }
+    return n;
   }
 
   private resize(n: Node, size: number) {
@@ -198,6 +317,7 @@ export class MemoryTree implements P9Tree<Node> {
       n.data = d;
     } else n.data.fill(0, size, n.size);
     n.size = size;
+    n.version++;
   }
 
   private drop(dir: Node, name: string, rmdir: boolean) {
@@ -206,13 +326,14 @@ export class MemoryTree implements P9Tree<Node> {
     if (n.children && !rmdir) throw new Err(EISDIR);
     if (!n.children && rmdir) throw new Err(ENOTDIR);
     if (n.children?.size) throw new Err(ENOTEMPTY);
-    dir.children!.delete(name);
+    this.unlinked(dir, name);
     n.nlink = n.children ? 0 : n.nlink - 1;
     dir.mtime = dir.ctime = n.ctime = this.now();
   }
 
   id(n: Node) { return n.id; }
   type(n: Node) { return n.mode & S_IFMT; }
+  version(n: Node) { return n.version; }
 
   walk(d: Node, name: string) {
     return !d.children ? undefined : name === '..' ? d.parent : name === '.' ? d : d.children.get(name);
@@ -240,22 +361,27 @@ export class MemoryTree implements P9Tree<Node> {
     if (off + data.length > n.size) this.resize(n, off + data.length);
     n.data.set(data, off);
     n.mtime = n.ctime = this.now();
+    n.version++;
   }
 
-  entries(f: P9Fid<Node>): [string, Node][] {
+  entries(f: P9Fid<Node>): P9Entry<Node>[] {
     const d = this.dir(f);
-    return [['.', d], ['..', d.parent], ...d.children!];
+    return [['.', d, 1], ['..', d.parent, 2], ...[...d.children!].map(([k, n]): P9Entry<Node> => [k, n, d.offsets!.get(k)!])];
   }
 
   stat(f: P9Fid<Node>): P9Stat {
     const n = f.node;
-    return { mode: n.mode, uid: n.uid, gid: n.gid, nlink: n.nlink, size: n.size, atime: [n.atime, 0], mtime: [n.mtime, 0], ctime: [n.ctime, 0] };
+    return { mode: n.mode, uid: n.uid, gid: n.gid, nlink: n.nlink, size: n.size, atime: n.atime, mtime: n.mtime, ctime: n.ctime };
   }
 
   setattr(f: P9Fid<Node>, a: P9SetAttr) {
     const n = f.node;
     const now = this.now();
-    if (a.valid & 1) n.mode = (n.mode & S_IFMT) | (a.mode & 0o7777);
+    if (a.valid & 1) {
+      n.mode = (n.mode & S_IFMT) | (a.mode & 0o7777);
+      const acl = n.xattrs?.get(ACL_ACCESS);
+      if (acl) n.xattrs!.set(ACL_ACCESS, aclChmod(acl, n.mode));
+    }
     if (a.valid & 2) n.uid = a.uid;
     if (a.valid & 4) n.gid = a.gid;
     if (a.valid & 8) {
@@ -310,7 +436,7 @@ export class MemoryTree implements P9Tree<Node> {
     const old = nd.children!.get(nname);
     if (old === n) return;
     if (old) this.drop(nd, nname, !!old.children);
-    od.children!.delete(oname);
+    this.unlinked(od, oname);
     this.linked(nd, nname, n);
     if (n.children) {
       [od.nlink, nd.nlink] = [od.nlink - 1, nd.nlink + 1];
@@ -335,6 +461,36 @@ export class MemoryTree implements P9Tree<Node> {
 
   statfs(): P9StatFs {
     return { bsize: 4096, blocks: 1 << 18, bfree: 1 << 18, bavail: 1 << 18, files: 1 << 16, ffree: 1 << 16 };
+  }
+
+  listxattr(f: P9Fid<Node>) {
+    return [...f.node.xattrs?.keys() ?? []];
+  }
+
+  getxattr(f: P9Fid<Node>, name: string) {
+    return f.node.xattrs?.get(name);
+  }
+
+  setxattr(f: P9Fid<Node>, name: string, value: Uint8Array | undefined) {
+    const n = f.node;
+    if (value && (name === ACL_ACCESS || name === ACL_DEFAULT)) {
+      const e = aclEntries(value);
+      if (!e) throw new Err(EINVAL);
+      if (name === ACL_DEFAULT && !n.children) throw new Err(EACCES);
+      if (name === ACL_ACCESS) {
+        n.mode = (n.mode & ~0o777) | aclMode(e);
+        if (aclEquiv(e)) value = undefined; // the mode says it all: kept as the mode, as Linux does
+      }
+      if (!value) {
+        n.xattrs?.delete(name);
+        n.ctime = this.now();
+        return;
+      }
+    } else if (!value && !n.xattrs?.has(name)) throw new Err(ENODATA);
+    n.xattrs ??= new Map();
+    if (value) n.xattrs.set(name, value.slice());
+    else n.xattrs.delete(name);
+    n.ctime = this.now();
   }
 }
 
@@ -405,13 +561,13 @@ export class P9Server<N = unknown> {
   /** One request: `yield` is `await` for what the tree answers. */
   private *op(type: number, r: Reader, w: Writer, room: number): Generator<unknown, void, any> {
     const t = this.tree;
-    const qid = (n: N) => w.qid(t.type(n), t.id(n));
+    const qid = (n: N) => w.qid(t.type(n), t.id(n), t.version?.(n) ?? 0);
     switch (type) {
       case 100: { // Tversion: msize, version
         const msize = r.u32();
         const open = [...this.fids.values()];
         this.fids.clear();
-        for (const f of open) {
+        for (const f of open.filter((f) => !f.xattr)) {
           try {
             yield t.clunk?.(f);
           } catch { /* each fid ends once, whatever its clunk says */ }
@@ -469,15 +625,24 @@ export class P9Server<N = unknown> {
       case 116: { // Tread: fid, offset, count
         const f = this.fid(r);
         const off = r.u64();
-        const data: Uint8Array = yield t.read(f, off, Math.min(r.u32(), room - 11));
+        const count = Math.min(r.u32(), room - 11);
+        const x = f.xattr;
+        const data: Uint8Array = x ? (x.set ? new Uint8Array(0) : x.data.subarray(Math.min(off, x.data.length), Math.min(off + count, x.data.length))) : yield t.read(f, off, count);
         w.u32(data.length).bytes(data);
         return;
       }
       case 118: { // Twrite: fid, offset, count, data
         const f = this.fid(r);
         const off = r.u64();
-        const data = r.bytes(r.u32());
-        yield t.write(f, off, data);
+        let data = r.bytes(r.u32());
+        const x = f.xattr;
+        if (x) { // a Txattrcreate's value, up to the size it gave
+          if (!x.set) throw new Err(EBADF);
+          if (off > x.data.length) throw new Err(ENOSPC);
+          data = data.subarray(0, x.data.length - off);
+          x.data.set(data, off);
+          x.set.written += data.length;
+        } else yield t.write(f, off, data);
         w.u32(data.length);
         return;
       }
@@ -485,14 +650,14 @@ export class P9Server<N = unknown> {
         const d = this.dir(r);
         const off = r.u64();
         const count = Math.min(r.u32(), room - 11);
-        const all: [string, N][] = yield t.entries(d, off);
+        const all: P9Entry<N>[] = yield t.entries(d, off);
         const e = new Writer();
         e.k = 0;
-        for (let k = off; k < all.length; k++) {
-          const [name, n] = all[k];
+        for (const [name, n, next] of all) {
+          if (next <= off) continue;
           const type = t.type(n);
           const before = e.k;
-          e.qid(type, t.id(n)).u64(k + 1).u8(type === S_IFDIR ? 4 : type === S_IFLNK ? 10 : type === S_IFREG ? 8 : 0).str(name);
+          e.qid(type, t.id(n), t.version?.(n) ?? 0).u64(next).u8(type === S_IFDIR ? 4 : type === S_IFLNK ? 10 : type === S_IFREG ? 8 : 0).str(name);
           if (e.k > count) {
             e.k = before;
             break;
@@ -512,9 +677,9 @@ export class P9Server<N = unknown> {
       }
       case 26: { // Tsetattr: fid, valid, mode, uid, gid, size, atime, mtime (seconds, nanoseconds)
         const f = this.fid(r);
-        const [valid, mode, uid, gid, size, atime] = [r.u32(), r.u32(), r.u32(), r.u32(), r.u64(), r.u64()];
-        r.u64();
-        yield t.setattr(f, { valid, mode, uid, gid, size, atime, mtime: r.u64() });
+        const [valid, mode, uid, gid, size] = [r.u32(), r.u32(), r.u32(), r.u32(), r.u64()];
+        const atime: P9Time = [r.u64(), r.u64()];
+        yield t.setattr(f, { valid, mode, uid, gid, size, atime, mtime: [r.u64(), r.u64()] });
         return;
       }
       case 72: { // Tmkdir: dfid, name, mode, gid
@@ -560,11 +725,45 @@ export class P9Server<N = unknown> {
         yield t.unlink(d, name, (r.u32() & 0x200) !== 0);
         return;
       }
-      case 120: { // Tclunk: fid
+      case 120: { // Tclunk: fid; a Txattrcreate's sets its attribute now (a value of 0 bytes removes it, as QEMU's)
         const k = r.k;
         const f = this.fid(r);
         this.fids.delete((r.k = k, r.u32()));
-        yield t.clunk?.(f);
+        const set = f.xattr?.set;
+        if (set) {
+          if (set.written !== f.xattr!.data.length) throw new Err(EINVAL);
+          yield t.setxattr!(f, set.name, f.xattr!.data.length ? f.xattr!.data : undefined);
+        } else if (!f.xattr) yield t.clunk?.(f);
+        return;
+      }
+      case 30: { // Txattrwalk: fid, newfid, name (empty: the names, each ending in a NUL) → the value's size; newfid reads it
+        const f = this.fid(r);
+        const newfid = r.u32();
+        const name = r.str();
+        if (!t.getxattr || !t.listxattr) throw new Err(EOPNOTSUPP);
+        let data: Uint8Array | undefined;
+        if (name) data = yield t.getxattr(f, name);
+        else data = new TextEncoder().encode(((yield t.listxattr(f)) as string[]).map((x) => `${x}\0`).join(''));
+        if (!data) throw new Err(ENODATA);
+        if (data.length > XATTR_SIZE_MAX) throw new Err(E2BIG);
+        this.fids.set(newfid, { node: f.node, uid: f.uid, xattr: { data: data.slice() } });
+        w.u64(data.length);
+        return;
+      }
+      case 32: { // Txattrcreate: fid (becomes the value's to write), name, attr_size, flags (XATTR_CREATE, XATTR_REPLACE)
+        const f = this.fid(r);
+        const [name, size, flags] = [r.str(), r.u64(), r.u32()];
+        if (!t.getxattr || !t.setxattr) throw new Err(EOPNOTSUPP);
+        if (!name || flags & ~(XATTR_CREATE | XATTR_REPLACE)) throw new Err(EINVAL);
+        if (new TextEncoder().encode(name).length > XATTR_NAME_MAX) throw new Err(ERANGE);
+        if (size > XATTR_SIZE_MAX) throw new Err(E2BIG);
+        if (f.flags !== undefined || f.xattr) throw new Err(EINVAL);
+        if (flags) {
+          const had = (yield t.getxattr(f, name)) !== undefined;
+          if (flags & XATTR_CREATE && had) throw new Err(EEXIST);
+          if (flags & XATTR_REPLACE && !had) throw new Err(ENODATA);
+        }
+        f.xattr = { data: new Uint8Array(size), set: { name, written: 0 } };
         return;
       }
       case 122: { // Tremove: fid, clunked even if the remove fails
@@ -598,7 +797,7 @@ export class P9Server<N = unknown> {
         w.u8(2).u64(start).u64(len).u32(pid).str(client);
         return;
       }
-      default: // xattrs and the rest
+      default: // the rest
         throw new Err(EOPNOTSUPP);
     }
   }
