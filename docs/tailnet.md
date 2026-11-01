@@ -125,7 +125,7 @@ the tunnel address as a /128 (DHCPv6 and the router advertisement), IPv4 `192.0.
 address for a host translator's IPv4 side; nothing outside sees it), resolvers 1.1.1.1 and
 2606:4700:4700::1111 reached through the exit node (no MagicDNS). The IPv6 default route and resolver only while the
 server's machine reaches the internet over IPv6 (web/reach6.ts, probed by the worker: docs/network-adapters.md §4
-"IPv6 out"); otherwise the guest uses IPv4, the /128 routed through the /48 only. **NAT46 in the module** (`nat46.rs`,
+"IPv6 out"); otherwise the guest uses IPv4, with routes to the tailcat clients it lets in only. **NAT46 in the module** (`nat46.rs`,
 stateless RFC 7915 for TCP, UDP and ICMP echo), so the gateway stays the same for both protocols: IPv4
 from the guest becomes IPv6 from the tunnel address to `64:ff9b::<v4>`, and back. Translated IPv4 must
 fit 1260 bytes, but the link stays at 1280 (under 1280 Linux turns IPv6 off on the interface), so the

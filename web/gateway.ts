@@ -18,7 +18,7 @@ import { ALL_DHCP_AGENTS, ALL_NODES, domainList, icmp6, linkLocal, multicastMac,
  * What a backend gives the guest. `address` is the guest's own IPv4 address on the network;
  * `address6` (16 bytes) its IPv6 one, if the network has one, with the IPv6 resolvers in `dns6`.
  */
-export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: number[][]; dns6?: number[][]; domains: string[]; routes?: Routes };
+export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: number[][]; dns6?: number[][]; domains: string[]; routes?: Routes; peers6?: Prefix[] };
 
 /** A prefix: its address (4 or 16 bytes) and length. */
 export type Prefix = [number[], number];
@@ -28,12 +28,17 @@ export type Prefix = [number[], number];
  * router for these prefixes only (IPv4: option 121's routes and no option 3; IPv6: a router advertisement with
  * lifetime 0 and a Route Information option per prefix), so another adapter's gateway can be the default, or none
  * (an adapter whose IPv6 doesn't reach the internet, web/reach6.ts). `pref6`: the IPv6 routes' preference (`ranked`).
+ * A lease's `peers6` are addresses reached through this gateway whatever else it is: a Route Information option each, on
+ * a default router too, so they win by length over another adapter's wider prefix (tailcat's clients, in a tailnet's /48).
  */
 export type Routes = { v4?: Prefix[]; v6?: Prefix[]; pref6?: RoutePref };
 
-/** A tailnet's own addresses (Tailscale's CGNAT range, MagicDNS's 100.100.100.100 in it, and its ULA /48); tailcat's tunnel addresses are in the /48 too. */
+/** A tailnet's own addresses (Tailscale's CGNAT range, MagicDNS's 100.100.100.100 in it, and its ULA /48). */
 export const TAILNET_ROUTES: Required<Pick<Routes, 'v4' | 'v6'>> = { v4: [[[100, 64, 0, 0], 10]], v6: [[[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 48]] };
-export const TAILCAT_ROUTES: Required<Pick<Routes, 'v4' | 'v6'>> = { v4: [], v6: TAILNET_ROUTES.v6 };
+/** tailcat has no prefix of its own: its tunnel addresses are in a tailnet's /48, so its clients are each a route (`peers6`). */
+export const TAILCAT_ROUTES: Required<Pick<Routes, 'v4' | 'v6'>> = { v4: [], v6: [] };
+/** Route Information options in one advertisement (24 bytes each for a /128): more go in the next, under the MTU. */
+const ROUTES_PER_ADVERT = 40;
 
 /**
  * `lease` with its IPv6 routes at the preference of the adapter's `rank` among the machine's connected adapters
@@ -229,12 +234,14 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     if (!on && !advertised) return;
     advertised = on;
     const dns = lease?.dns6 ?? [];
-    const routes = on ? lease!.routes?.v6 : undefined;
-    const lifetime = on && !routes ? 1800 : 0;
-    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes, pref: lease?.routes?.pref6 })));
+    const routes = on ? [...(lease!.routes?.v6 ?? []), ...(lease!.peers6 ?? [])] : [];
+    const lifetime = on && !lease!.routes?.v6 ? 1800 : 0;
+    for (let at = 0; at === 0 || at < routes.length; at += ROUTES_PER_ADVERT) {
+      receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes: routes.slice(at, at + ROUTES_PER_ADVERT), pref: lease?.routes?.pref6 })));
+    }
     // No longer the default router but still one for `routes`: systemd-networkd drops the default route's nexthop,
     // which the routes this advertisement gave share, so they went too (back ~11 s later). Once more, a second on.
-    if (defaultRouter && !lifetime && routes?.length && opts.advertiseMs) again = setTimeout(advertise, 1000);
+    if (defaultRouter && !lifetime && routes.length && opts.advertiseMs) again = setTimeout(advertise, 1000);
     defaultRouter = lifetime > 0;
   }
   const timer = opts.advertiseMs ? setInterval(advertise, opts.advertiseMs) : undefined;

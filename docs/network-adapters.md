@@ -11,7 +11,8 @@ code's comments still cite; machines had first left several adapters for later: 
 ## 1. The rules (the user's, 2026-10-18)
 
 1. **A machine has up to 4 network adapters** (`MAX_ADAPTERS`), in order, each with its own MAC. Adapters are part
-   of the shape: virtio-mmio has no hotplug, so adding or removing one needs the machine off (as a disk does).
+   of the shape, their order too: virtio-mmio has no hotplug, so adding, removing or moving one needs the machine off
+   (as a disk does).
 2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet or tailcat
    (later, perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md), or a local helper:
    [plans/networking-local.md](plans/networking-local.md)). A connection carries its own state
@@ -19,7 +20,9 @@ code's comments still cite; machines had first left several adapters for later: 
    next. There is no "default" connection.
 3. **An adapter with no connection is allowed:** a card with no cable.
 4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3). A machine that
-   wants a held connection says which machine holds it and offers to take it.
+   wants a held connection says which machine holds it and offers to take it. A machine that stops (powered off,
+   suspended, crashed, or stopped for one that can't start) lets its connections go and connects them again at its next start; a restart keeps them. The
+   exception is an ephemeral tailnet's: its node is in the client, so the client stays, and no other tab can want it.
 5. **Two adapters on the same tailnet are two connections:** two nodes, enrolled separately, with separate state.
 6. **Ephemeral connections** are chosen when the connection is made and are never written to the browser's storage.
    A tailnet's asks the control server for an ephemeral node; a tailcat one has a fresh identity, held in memory.
@@ -42,6 +45,14 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   under the profile prefix `stateKey` (the connection's id; for a node kept before connections, its control URL). An
   auth key is never kept: it enrolls the node once, and the node is then kept like a login's (ephemeral only when the
   key or the connection is).
+  Logging a node out needs the control server: with no machine running it, a client of its own on a port no guest has
+  comes up with the node's keys, waits for the control server to answer (15 s) and logs out (`logOutNode`), so Log out
+  works from Connections for any kept node, and Delete logs the node out first. A client that runs the node stops
+  first and this is the path then too: the module, not connected, would only forget the keys here and strand the
+  node, and only this knows the server has answered. If it doesn't answer, Log out keeps the node and says so (a client
+  that ran stays stopped); Delete deletes all the same and says the node stays on the tailnet until it expires or an
+  admin removes it. While it goes on the connection's lock is held, nothing connects it and no other tab can take it;
+  one another tab's machine has is taken from it first, after asking.
 - **tailcat's served identity** in `webpc-tailcat` under `identityKey` (`served` for the one kept before
   connections). The server address it goes online through (`exit`) is a secret and is kept only in a stored
   connection.
@@ -73,7 +84,10 @@ The Machines page's **Network tab** (§3.1) lists a machine's adapters with thei
 browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine. What each shows and
 does: [frontend.md](frontend.md) "The Machines page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error; a
-restart hands the new machine's port to the running client, and Disconnect takes the port back.
+restart hands the new machine's port to the running client, matched by the adapter's id (so a client follows its
+adapter when they move), and Disconnect takes the port back. A connection attached to or detached from a machine
+running in another tab takes effect there at once: that tab hears the record change on the store's channel
+(`follow`), and an adapter whose connection is in use says so.
 
 ## 4. The guest side
 
@@ -93,11 +107,14 @@ restart hands the new machine's port to the running client, and Disconnect takes
   (`setPrimary`). The primary's lease is as a single card's. The others' carry `routes` (`routedLease`), and their
   gateway is then the router for those prefixes only: option 121 without a default and no option 3, a router
   advertisement with lifetime 0 and a Route Information option per IPv6 prefix. A tailnet offers 100.64.0.0/10 and
-  fd7a:115c:a1e0::/48 (`TAILNET_ROUTES`), tailcat the /48 (`TAILCAT_ROUTES`). Both are the same /48 (tailcat's tunnel
-  addresses are in Tailscale's range), so an adapter's IPv6 routes carry a preference from its rank among the
-  connected adapters (`ranksOf`, web/gateway.ts `ranked`: high, medium, then low; RFC 4191's three levels, so a third
-  and fourth tie): the guest's kernel takes the more preferred of equal routes, and the earlier adapter's wins
-  whatever its type. (Without it the guest picked either; a tailnet's peer went unreached over IPv6 when tailcat's won.)
+  fd7a:115c:a1e0::/48 (`TAILNET_ROUTES`). tailcat offers no prefix: its tunnel addresses, its clients' too, are in that
+  same /48, so each client it lets in is a /128 route of its own, on the primary too (`peers6`, up to 40 options an
+  advertisement, as many as 64 clients take): the longest match sends the guest's answers to tailcat's adapter
+  whatever the order, and a tailcat adapter hides no tailnet peer. (With a /48 of its own, the guest answered tailcat
+  clients through the tailnet's adapter and they timed out, tests/net-tailnet.test.ts's two adapters.) Two tailnets do
+  share the /48, so an adapter's IPv6 routes carry a preference from its rank among the connected adapters (`ranksOf`,
+  web/gateway.ts `ranked`: high, medium, then low; RFC 4191's three levels, so a third and fourth tie): the guest's
+  kernel takes the more preferred of equal routes, and the earlier adapter's wins.
   systemd-networkd installs them all, so
   this works on any guest without configuration: Debian's `network.network.card` credential matches `e*`.
 - **The takeover:** when the primary loses the internet, the next one becomes primary. Its router advertisement goes
@@ -110,7 +127,7 @@ restart hands the new machine's port to the running client, and Disconnect takes
   devices.md "net"); not needed so far.
 - **IPv6 out** (web/reach6.ts): an adapter whose far end may have no IPv6 route out probes it, and while it doesn't
   answer, its lease has no IPv6 default route and no IPv6 resolvers (`unreached6`: the address stays, routed through
-  the network's own prefixes), so the guest's IPv6 to the internet fails at once ("network unreachable") and clients
+  the network's own prefixes and clients), so the guest's IPv6 to the internet fails at once ("network unreachable") and clients
   that try IPv6 first fall back to IPv4. A probe is a DNS query (the root's NS) to three operators' resolvers at once
   (`PROBE_TARGETS`: Cloudflare's, Google's, Quad9's; one blocked, as Cloudflare is in some countries at times, mustn't
   make IPv6 out), from the lease's IPv6 address, sent through the backend by its worker, lost when none answers, whose answer the worker takes out of the guest's
@@ -147,4 +164,6 @@ server; tailcat is the primary although second, and the guest reaches the tailne
 families, by name through MagicDNS) and the internet (this machine's LAN through the exit node) at once. Planted
 bugs each caught: a MAC left out of the hash, every adapter's gateway at one address, a default route from every
 gateway, `primaryOf` taking the first connected, the renewal time ignored, a kept node's profile rewritten, a
-connect without its lock, every node kept, Keep ignored.
+connect without its lock, every node kept, Keep ignored, the page not telling the network its machine stopped, the
+page not following another tab's attachment. That test also lets a tailcat client in beside the tailnet, over
+IPv6: it timed out with tailcat's /48, before its per-client routes.

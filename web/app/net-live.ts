@@ -6,7 +6,7 @@
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
-import { createNetwork, primaryOf, ranksOf, type Connect, type Network, type NetworkView } from './network.ts';
+import { createNetwork, logOutNode, primaryOf, ranksOf, type Connect, type Network, type NetworkView } from './network.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 
@@ -44,6 +44,8 @@ export type AdapterView = {
   note?: string;
   /** The guest's default way out goes through it. */
   primary: boolean;
+  /** The machine runs, so the adapter can connect. */
+  on: boolean;
 };
 
 export type PageNetworkOptions = {
@@ -52,6 +54,8 @@ export type PageNetworkOptions = {
   startCat?: Parameters<typeof createNetwork>[2];
   store: Store;
   state?: ConnectionState;
+  /** The profiles that hold a kept node (web/tailscale-state.ts `keptProfiles`). */
+  kept?: () => Promise<string[]>;
   /** The name of this page's machine (what another tab is told holds a connection). */
   me: () => string;
   onChange: () => void;
@@ -66,10 +70,16 @@ export class PageNetwork {
   connections: Connection[] = [];
   /** The connection ids another tab's machine holds now, as last read. */
   held = new Set<string>();
+  /** The profiles that hold a kept node, as last read. */
+  private keptNodes = new Set<string>();
   private o: PageNetworkOptions;
   private nets: Network[] = [];
   private adapters: Adapter[] = [];
   private machine?: string;
+  /** The machine has started and hasn't stopped (`ports`, `machineOff`). */
+  private on = false;
+  /** The connections whose nodes are being logged out: nothing connects them meanwhile, and no other tab is let in. */
+  private leaving = new Set<string>();
   /** The connection each adapter's client runs, while one does. */
   private running: (string | undefined)[] = [];
   private notes: (string | undefined)[] = [];
@@ -102,40 +112,78 @@ export class PageNetwork {
   ports(machine: string, adapters: Adapter[]): { mac: string; ip: MessagePort }[] {
     const same = machine === this.machine;
     this.machine = machine;
-    const keep = (i: number) => same && i < adapters.length && this.adapters[i]?.id === adapters[i].id && this.adapters[i]?.connection === adapters[i].connection;
-    const nets: Network[] = [];
-    for (let i = 0; i < Math.max(this.nets.length, adapters.length); i++) {
-      if (keep(i) && this.nets[i]) nets[i] = this.nets[i];
-      else {
-        if (this.nets[i]) this.retire(i);
-        if (i < adapters.length) nets[i] = this.fresh();
-      }
-    }
-    this.running = adapters.map((_, i) => (keep(i) ? this.running[i] : undefined));
-    this.notes = adapters.map((_, i) => (keep(i) ? this.notes[i] : undefined));
-    this.nets = nets.slice(0, adapters.length);
-    this.adapters = adapters.map((a) => ({ ...a }));
+    this.on = true;
+    this.adopt(adapters, same);
     const out = this.adapters.map((a, i) => ({ mac: a.mac, ip: this.nets[i].port() }));
     this.changed();
     return out;
   }
 
-  /** Connects what the adapters have attached and connect at start (after a start); an attachment whose connection is gone (an ephemeral one, after the page closed) is detached. */
+  /** Takes `adapters` as the machine's: by the adapter's id, so a client moves with its adapter when they are reordered (`same`: the same machine; otherwise every client stops). */
+  private adopt(adapters: Adapter[], same: boolean) {
+    const was = adapters.map((a) => (same ? this.adapters.findIndex((o) => o.id === a.id && o.connection === a.connection) : -1));
+    for (const i of this.nets.keys()) if (!was.includes(i)) this.retire(i);
+    const nets = adapters.map((_, i) => (was[i] >= 0 ? this.nets[was[i]] : this.fresh()));
+    this.running = was.map((k) => (k >= 0 ? this.running[k] : undefined));
+    this.notes = was.map((k) => (k >= 0 ? this.notes[k] : undefined));
+    this.nets = nets;
+    this.adapters = adapters.map((a) => ({ ...a }));
+  }
+
+  /**
+   * The machine stopped and no start follows (powered off, suspended, crashed): its clients stop and their connections
+   * go free for other machines, connecting again at its next start. An ephemeral tailnet's stays: its node is in the
+   * client, and stopping it would need a new login (or an auth key that's gone); no other tab can want it.
+   */
+  machineOff() {
+    this.on = false;
+    for (const i of this.nets.keys()) {
+      const c = this.connections.find((x) => x.id === this.running[i]);
+      if (!(c?.ephemeral && c.kind === 'tailnet')) this.retire(i);
+    }
+    void this.refresh();
+  }
+
+  /** Connects what the adapters have attached and connect at start (after a start). */
   async autoconnect() {
-    for (const [i, a] of this.adapters.entries()) {
-      if (!a.connection || this.nets[i]?.active()) continue;
-      const c = await this.conns.get(a.connection);
-      if (!c) {
-        this.notes[i] = 'Its connection is gone (an ephemeral one goes when its page closes): attach one again.';
-        await this.setAttachment(i, undefined);
-        continue;
-      }
-      if (!c.connectAtStart) continue;
+    for (const i of this.adapters.keys()) await this.connectAttached(i);
+    await this.refresh();
+  }
+
+  /** Connects adapter `i`'s attachment if it should connect by itself; one whose connection is gone (an ephemeral one, after its page closed) is detached. */
+  private async connectAttached(i: number) {
+    const a = this.adapters[i];
+    if (!this.on || !a.connection || this.nets[i]?.active()) return;
+    const c = await this.conns.get(a.connection);
+    if (!c) {
+      this.notes[i] = 'Its connection is gone (an ephemeral one goes when its page closes): attach one again.';
+      await this.setAttachment(i, undefined);
+    } else if (c.connectAtStart) {
       try {
         await this.connect(i, c);
       } catch (e) {
         this.notes[i] = String((e as Error).message ?? e);
       }
+    }
+  }
+
+  /**
+   * The machine's record changed (another tab's Machines page attached or detached a connection, or this one's saved
+   * it): the attachments it has now take effect, at once if the machine runs. Matched by adapter: its shape can't
+   * change while it runs, and off, the adapters are simply the record's.
+   */
+  async follow(adapters: Adapter[]) {
+    if (!this.on) {
+      this.adopt(adapters, true);
+      return this.refresh();
+    }
+    for (const [i, a] of this.adapters.entries()) {
+      const now = adapters.find((x) => x.id === a.id);
+      if (!now || now.connection === a.connection) continue;
+      if (this.running[i]) await this.disconnect(i, false);
+      this.notes[i] = undefined;
+      a.connection = now.connection;
+      await this.connectAttached(i);
     }
     await this.refresh();
   }
@@ -146,8 +194,8 @@ export class PageNetwork {
   }
 
   /**
-   * Attaches connection `c` to adapter `i` (saved with the machine) and, when the machine has started, connects it,
-   * taking its lock first: `HeldError` if another machine has it (`takeFrom` takes it).
+   * Attaches connection `c` to adapter `i` (saved with the machine) and, while the machine runs, connects it, taking
+   * its lock first: `HeldError` if another machine has it (`takeFrom` takes it).
    */
   async attach(i: number, c: Connection, authKey?: string) {
     if (i >= this.adapters.length) throw new Error(`the machine has no adapter ${i + 1}`);
@@ -155,7 +203,11 @@ export class PageNetwork {
       if (this.running[i]) await this.disconnect(i, false);
       await this.setAttachment(i, c.id);
     }
-    await this.connect(i, c, authKey);
+    if (this.on) return this.connect(i, c, authKey);
+    await this.conns.put({ ...c, connectAtStart: true });
+    // `takeFrom`'s, if the machine stopped while it was asked.
+    if (!this.running.includes(c.id)) this.locks.drop(connectionLock(c.id));
+    await this.refresh();
   }
 
   /** Asks the tab whose machine has `c` to let it go, then attaches it to adapter `i`. */
@@ -169,10 +221,17 @@ export class PageNetwork {
     const n = this.nets[i];
     if (!n) throw new Error(`the machine has no adapter ${i + 1}`);
     if (this.running[i] === c.id && n.active()) return;
+    if (!this.on) throw new Error('The machine is off: start it first.');
+    if (this.leaving.has(c.id)) throw new Error(`${c.name} is being logged out.`);
     const other = this.running.findIndex((id, k) => id === c.id && k !== i);
     if (other >= 0) throw new Error(`${c.name} is on adapter ${other + 1} already: a connection is one node, on one adapter.`);
     const lock = connectionLock(c.id);
     if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
+    // It stopped, or its adapters changed, while the lock was asked for.
+    if (!this.on || this.nets[i] !== n) {
+      if (!this.running.includes(c.id)) this.locks.drop(lock);
+      throw new Error('The machine is off: start it first.');
+    }
     if (n.active()) await this.disconnect(i, false);
     try {
       n.connect(connectOf(c, authKey));
@@ -209,8 +268,47 @@ export class PageNetwork {
 
   /** Logs adapter `i`'s tailnet node out (it is removed from the tailnet and its keys forgotten), then disconnects. */
   async logout(i: number) {
+    const c = this.running[i] ? await this.conns.get(this.running[i]!) : undefined;
+    if (c && !c.ephemeral) return this.logoutKept(c);
     await this.nets[i]?.logout();
     await this.disconnect(i);
+  }
+
+  /** Whether connection `c` has a node kept here, which can be logged out. */
+  hasNode(c: Connection) { return !!c.tailnet && !c.ephemeral && this.keptNodes.has(c.tailnet.stateKey); }
+
+  /** Whether the node is still kept, read now (a logout that worked forgot it). */
+  private async stillKept(c: Connection) { return !!(await this.o.kept?.())?.includes(c.tailnet!.stateKey); }
+
+  /**
+   * Runs `then` with `c`'s client stopped and its lock held, once its kept node, if any, is logged out: `then` hears
+   * whether that worked. Always through a client of its own: the module, not connected, would only forget the keys
+   * here, and only `logOutNode` knows the control server has answered. `HeldError` if another tab's machine has it.
+   */
+  private async nodeOut<T>(c: Connection, then: (gone: boolean) => Promise<T>): Promise<T> {
+    this.leaving.add(c.id);
+    const lock = connectionLock(c.id);
+    try {
+      for (const [i, id] of this.running.entries()) if (id === c.id) await this.disconnect(i, false);
+      if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
+      const kept = !!c.tailnet && !c.ephemeral && await this.stillKept(c);
+      return await then(!kept || (await logOutNode(connectOf(c), this.o.start) && !(await this.stillKept(c))));
+    } finally {
+      this.locks.drop(lock);
+      this.leaving.delete(c.id);
+    }
+  }
+
+  /**
+   * Logs connection `c`'s kept node out, whether or not a client runs it here (one that does stops). `HeldError` if
+   * another tab's machine has it (`takeFrom`'s lock, then this again); it stays off at the next start.
+   */
+  async logoutKept(c: Connection) {
+    await this.nodeOut(c, async (gone) => {
+      if (!gone) throw new Error(`Couldn't reach ${new URL(c.tailnet!.controlURL).host} to log ${c.name} out: it stays logged in.`);
+      await this.conns.put({ ...c, connectAtStart: false });
+    });
+    await this.refresh();
   }
 
   /** The exit node of adapter `i`'s tailnet (kept in its connection). */
@@ -233,29 +331,31 @@ export class PageNetwork {
   async edit(c: Connection) {
     await this.conns.put(c);
     for (const [i, id] of this.running.entries()) {
-      if (id !== c.id) continue;
+      if (id !== c.id || !this.on) continue; // off, an ephemeral tailnet's client stays as it is
       await this.disconnect(i, false);
       await this.connect(i, c);
     }
     await this.refresh();
   }
 
-  /** Deletes connection `c` (its record and its state); the adapter here that runs it disconnects. Throws if another tab's machine has it. */
-  async remove(c: Connection) {
-    for (const [i, id] of this.running.entries()) if (id === c.id) await this.disconnect(i, false);
-    const lock = connectionLock(c.id);
-    if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
-    try {
+  /**
+   * Deletes connection `c` (its record and its state): a kept tailnet node is logged out first, and the adapter here that
+   * runs it disconnects. Throws if another tab's machine has it. True when the node couldn't be logged out (the control
+   * server didn't answer): it stays on the tailnet until it expires or an admin removes it.
+   */
+  async remove(c: Connection): Promise<boolean> {
+    const stranded = await this.nodeOut(c, async (gone) => {
       await this.conns.delete(c.id);
-    } finally {
-      this.locks.drop(lock);
-    }
+      return !gone;
+    });
     for (const a of this.adapters) if (a.connection === c.id) a.connection = undefined;
     await this.refresh();
+    return stranded;
   }
 
   /** Another tab takes a connection one of these adapters runs: it disconnects (and connects at the next start as before). */
   private async release(lock: string) {
+    if ([...this.leaving].some((id) => connectionLock(id) === lock)) return; // not until the node is out
     const i = this.running.findIndex((id) => id && connectionLock(id) === lock);
     if (i < 0) return this.locks.drop(lock);
     const c = await this.conns.get(this.running[i]!);
@@ -269,6 +369,7 @@ export class PageNetwork {
   /** Rereads the connections and which are held elsewhere (the store changed, in this tab or another). */
   async refresh() {
     this.connections = await this.conns.list();
+    this.keptNodes = new Set(await this.o.kept?.().catch(() => []) ?? []);
     const held = await heldLocks();
     this.held = new Set(this.connections.filter((c) => held.has(connectionLock(c.id)) && !this.locks.mine(connectionLock(c.id))).map((c) => c.id));
     this.changed();
@@ -293,6 +394,7 @@ export class PageNetwork {
       active: !!this.nets[i]?.active(),
       note: this.notes[i],
       primary: i === this.primary,
+      on: this.on,
     }));
   }
 

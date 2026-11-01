@@ -70,6 +70,16 @@ export function withoutAdapter(m: MachineRecord, id: string): MachineRecord {
   return { ...m, network: undefined, adapters: adaptersOf(m).filter((a) => a.id !== id) };
 }
 
+/** `m` with adapter `id` moved `by` places, its MAC and connection with it (the guest's `eth<n>` and the default way out follow the order); at an end it stays. */
+export function movedAdapter(m: MachineRecord, id: string, by: number): MachineRecord {
+  const adapters = [...adaptersOf(m)];
+  const from = adapters.findIndex((a) => a.id === id);
+  const to = from + by;
+  if (from < 0 || to < 0 || to >= adapters.length) return m;
+  adapters.splice(to, 0, ...adapters.splice(from, 1));
+  return { ...m, network: undefined, adapters };
+}
+
 /**
  * Machine `id` with connection `connection` (undefined: none) attached to its adapter `index` (docs/network-adapters.md
  * §3.1): saved now, also while it runs (a connection isn't in the shape). A machine made before adapters gets its card as

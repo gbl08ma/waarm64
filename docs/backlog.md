@@ -1235,14 +1235,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
-- **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): a tailnet and tailcat
-  both route fd7a:115c:a1e0::/48 (tailcat's tunnel addresses, its clients' too, are in it), so a machine serving
-  tailcat beside a tailnet would answer tailcat clients over IPv6 through the tailnet's adapter (by reading,
-  unchecked; the fix: per-peer routes instead of the /48); adapters can't be reordered (remove and add); a connection attached on the Machines page to a machine
-  running in another tab connects at that machine's next start, not at once; a machine powered off with a client
-  running keeps its connection (and its lock) until Disconnect, as the one card did; Log out is offered only where the
-  connection runs on this page, and deleting a kept tailnet connection forgets the node without logging it out (it
-  stays on the tailnet until it expires or an admin removes it).
+- **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): two tailnets both route
+  fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
+  it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer
+  would be an advertisement); routes of a client or connection that went aren't withdrawn (they lapse in 30 minutes,
+  through a gateway that no longer answers).
 - **IPv6 out's loose ends** ([network-adapters.md](network-adapters.md) §4 "IPv6 out", web/reach6.ts):
   - **A primary per family**: with tailcat as the primary and its IPv6 out, a second adapter whose IPv6 reaches out
     (a tailnet's exit node) could carry IPv6's default; `primaryOf` picks one adapter for both.

@@ -5,6 +5,8 @@
 // yet: straight to the kind); a second tab's machine sees that connection in use by the first, named, and takes it
 // after asking, the first saying so; the Network tab detaches it; an ephemeral connection is kept nowhere and is gone
 // after a reload, its adapter detached and saying why; Connections renames and deletes (naming the machines it is on).
+// A machine powered off lets its connection go; attached and detached from another tab, a running machine follows at
+// once; adapters move up and down.
 // Needs the firmware (images/build.sh edk2) and the tailnet client (net/ts/build.sh).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -166,5 +168,73 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.equal(asked.length, 1);
   assert.match(asked[0], /Delete the connection Home tailnet\?/);
   assert.deepEqual(await records(pageB, 'connections'), []);
+  assert.deepEqual(errors, []);
+});
+
+test('power off lets a connection go; a running machine follows what another tab attaches; adapters move', { skip, timeout: 5 * 60_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  contexts.push(context);
+  const pageA = await context.newPage();
+  const errors: string[] = [];
+  pageA.on('pageerror', (e) => errors.push(`A: ${e}`));
+  await answerAsks(pageA, () => {});
+  await pageA.goto(`${base}/web/app/`);
+  const { a, b } = await seed(pageA);
+  const locks = () => pageA.evaluate(async () => ((await navigator.locks.query()).held ?? []).map((l) => l.name!).filter((n) => n.startsWith('webpc-net:')));
+
+  // Alpha connects, and powered off lets go: nothing to Connect to, and Change connection… still there.
+  await pageA.goto(`${base}/web/app/?m=${a}`);
+  await started(pageA);
+  await newTailnet(pageA, { hostname: 'alpha', pick: false });
+  const [t] = await records(pageA, 'connections');
+  assert.deepEqual(await locks(), [`webpc-net:${t.id}`]);
+  await pageA.click('#power-off');
+  await pageA.waitForFunction(() => document.getElementById('state')?.dataset.state === 'off', null, { timeout: 30_000 });
+  await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
+  assert.deepEqual(await locks(), [], 'its lock is let go');
+  assert.equal((await records(pageA, 'connections'))[0].connectAtStart, true, "it isn't a Disconnect");
+  await menu(pageA);
+  assert.equal(await pageA.locator('#net-connect-now').isVisible(), false);
+  assert.equal(await text(pageA, '#net-setup'), 'Change connection…');
+
+  // Bravo runs in another tab; from Alpha's tab, attaching to it connects it there at once.
+  const pageB = await context.newPage();
+  pageB.on('pageerror', (e) => errors.push(`B: ${e}`));
+  await pageB.goto(`${base}/web/app/?m=${b}`);
+  await started(pageB);
+  assert.equal(await phase(pageB), 'off');
+  await pageA.click('#machines-open');
+  await pageA.click(`[data-machine="${b}"]`);
+  await pageA.click('[data-tab="network"]');
+  await pageA.click('[data-adapter="0"] [data-action="attach-connection"]');
+  await pageA.locator(`#net-wizard [data-connection="${t.id}"]`).click();
+  assert.equal(await text(pageA, '#net-connect'), 'Attach');
+  await pageA.click('#net-connect');
+  await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 15_000 });
+  assert.deepEqual(await locks(), [`webpc-net:${t.id}`], 'Bravo holds it');
+  await menu(pageB);
+  assert.match(await text(pageB, '#net-conn'), /127\.0\.0\.1:1/);
+  // Detached there, it stops here.
+  await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
+  await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 15_000 });
+  assert.deepEqual(await locks(), []);
+  assert.match(await text(pageB, '#net-conn'), /No connection attached/);
+  await pageB.close();
+
+  // Alpha, off: a second adapter, moved first. The first can't go up, the last can't go down, and Save keeps the order.
+  await pageA.click(`[data-machine="${a}"]`);
+  await pageA.click('[data-tab="network"]');
+  await pageA.click('[data-action="add-adapter"]');
+  assert.equal(await pageA.locator('[data-adapter="0"] [data-action="adapter-up"]').isDisabled(), true);
+  assert.equal(await pageA.locator('[data-adapter="1"] [data-action="adapter-down"]').isDisabled(), true);
+  await pageA.click('[data-action="save"]');
+  await pageA.waitForFunction(() => document.querySelector('[data-action="save"]')?.hasAttribute('disabled') !== false, null, { timeout: 10_000 });
+  const macs = async () => ((await records(pageA, 'machines')).find((m) => m.id === a)!.adapters as { mac: string }[]).map((x) => x.mac);
+  const before = await macs();
+  assert.equal(before.length, 2);
+  await pageA.click('[data-adapter="1"] [data-action="adapter-up"]');
+  await pageA.click('[data-action="save"]');
+  await pageA.waitForFunction(() => document.querySelector('[data-action="save"]')?.hasAttribute('disabled') !== false, null, { timeout: 10_000 });
+  assert.deepEqual(await macs(), [before[1], before[0]]);
   assert.deepEqual(errors, []);
 });

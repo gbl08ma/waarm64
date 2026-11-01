@@ -183,6 +183,41 @@ export type Network = {
   setPrimary(primary: boolean, rank?: number): void;
 };
 
+/** How long a kept node has to reach its control server to be logged out. */
+const LOGOUT_MS = 15_000;
+
+/**
+ * Logs a kept node out with no machine: a client of its own on a port no guest has, which reaches the control server
+ * with the node's keys, expires them there and forgets them (docs/network-adapters.md §2.1). False when the control
+ * server didn't answer in `ms`, with the node left as it was: a client logging out unconnected would only forget it here.
+ */
+export function logOutNode(c: Connect, start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale, ms = LOGOUT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    const { port1, port2 } = new MessageChannel();
+    const done = (ok: boolean) => {
+      clearTimeout(timer);
+      port2.close();
+      client?.close();
+      resolve(ok);
+    };
+    const timer = setTimeout(() => done(false), ms);
+    let leaving = false;
+    let client: Tailscale | undefined;
+    const onEvent = (m: FromTailscale) => {
+      if (leaving || !client) return;
+      if (m.type === 'error') return done(false);
+      const s = client.state();
+      // NeedsLogin is also where it starts: the control server has answered once it gives a login link.
+      if (s === 'Running' || s === 'NeedsMachineAuth' || (s === 'NeedsLogin' && client.loginURL())) {
+        leaving = true;
+        void client.logout().then(() => done(true), () => done(false));
+      }
+    };
+    client = start({ controlURL: c.controlURL, hostname: c.hostname, ip: port1, persist: c.persist }, onEvent);
+    client.running.catch(() => { if (!leaving) done(false); });
+  });
+}
+
 export function createNetwork(
   onChange: () => void,
   start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
@@ -191,6 +226,8 @@ export function createNetwork(
   /** The page's end of the machine's port, while no client has it. */
   let free: MessagePort | undefined;
   let client: Tailscale | undefined;
+  /** How many ports machines have brought. */
+  let ports = 0;
   let error: string | undefined;
   let tailcat = false;
   let primary = true;
@@ -203,13 +240,18 @@ export function createNetwork(
     if (!t) return;
     client = undefined;
     error = undefined;
-    free = await t.detach();
+    // A machine that started meanwhile has brought a new port: the old one is done with.
+    const was = ports;
+    const back = await t.detach();
+    if (ports !== was) back?.close();
+    else free = back;
     t.close();
     onChange();
   }
 
   return {
     port() {
+      ports++;
       const { port1, port2 } = new MessageChannel();
       if (client) client.attach(port1);
       else {

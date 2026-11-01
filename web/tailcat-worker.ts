@@ -11,7 +11,7 @@ import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule, type TailcatConfig } from './ts-client.ts';
 import type { FromTailscale } from './tailscale.ts';
 import { nearestRegion, netmapOf, tailcatIdentity, type ToTailcat } from './tailcat.ts';
-import { ranked, routedLease, TAILCAT_ROUTES, type Lease } from './gateway.ts';
+import { ranked, routedLease, TAILCAT_ROUTES, type Lease, type Prefix } from './gateway.ts';
 import { reach6, unreached6, type Reach6 } from './reach6.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
@@ -28,9 +28,12 @@ let serving: string | undefined;
 let exit = true;
 /** Through a server: whether its machine's IPv6 reaches the internet. */
 let reach: Reach6 | undefined;
+/** The clients let in: each a route of its own, so the guest answers them here beside a tailnet's /48 (docs/network-adapters.md §4). */
+let clients: Prefix[] = [];
 const offered = () => {
   const l = routedLease(lease, primary, TAILCAT_ROUTES);
-  return ranked(reach && !reach.reached() ? unreached6(l, TAILCAT_ROUTES.v6) : l, rank);
+  const r = ranked(reach && !reach.reached() ? unreached6(l, TAILCAT_ROUTES.v6) : l, rank);
+  return r && { ...r, peers6: clients };
 };
 
 function attach(port: MessagePort) {
@@ -54,6 +57,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
   }
   if (m.type === 'detach') {
     lease = null;
+    clients = [];
     reach?.stop();
     reach = undefined;
     ip?.postMessage({ type: 'lease', lease: null });
@@ -86,7 +90,11 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
       event(ev) {
         if (ev.type === 'log') return console.log('tailcat:', ev.msg);
         if (ev.type === 'self') return;
-        if (ev.type === 'client') return console.log('tailcat: a client came in,', ev.key);
+        if (ev.type === 'client') {
+          console.log('tailcat: a client came in,', ev.key);
+          clients.push([ev.address6, 128]);
+          return ip?.postMessage({ type: 'lease', lease: offered() });
+        }
         if (ev.type === 'serving') {
           serving = ev.addr;
           if (lease) post({ type: 'netmap', netmap: netmapOf(lease, serving, exit) });

@@ -55,7 +55,7 @@ export function parse6(s: string): number[] | undefined {
 
 /**
  * The lease for a guest whose IPv6 doesn't reach the internet: the address stays (the backend's own network, e.g. a
- * tunnel's `fd7a:` services), routed through `keep` only (unless the lease already has IPv6 routes), with no IPv6
+ * tailnet's or tailcat's clients), routed through `keep` only (unless the lease already has IPv6 routes), with no IPv6
  * resolvers. A lease without IPv6, and null, stay as they are.
  */
 export const unreached6 = (lease: Lease | null, keep: Prefix[]): Lease | null =>

@@ -2,7 +2,7 @@
 // (docs/tailnet.md "Tailscale"): the tailnet client (net/ts) in its worker against the test
 // tailnet (tests/net/tailnet.sh): it reaches `Running`, leases the gateway an address and carries UDP
 // to the peer and back (its numbers); a kept node comes back after reloads as the same node (the
-// store in IndexedDB); logging out forgets it. The guest's side is tests/net-tailnet.test.ts's; the
+// store in IndexedDB); logging out forgets it, also with no machine running it. The guest's side is tests/net-tailnet.test.ts's; the
 // hand-over of a node the Go client kept, tests/ts-tailnet.test.ts's.
 // Opt-in: WEBPC_TAILNET=1 (Podman, or WEBPC_TAILNET_SCRIPT=tests/net/tailnet-native.sh;
 // target/net/ts.wasm).
@@ -97,6 +97,14 @@ test('a kept node comes back after a reload as the same node, until it logs out'
     assert.deepEqual(left, [], 'logging out forgets the node');
     const named = (JSON.parse(execFileSync(script, ['nodes'], { encoding: 'utf8' })) as { name: string; expiry?: { seconds: number } }[]).find((n) => n.name === 'kept');
     assert.ok(named?.expiry && named.expiry.seconds * 1000 < Date.now(), `the control server expired the node's key: ${JSON.stringify(named)}`);
+
+    // One no machine runs (a connection on the Machines page): a client of its own logs it out.
+    await open(page, { authkey: execFileSync(script, ['key', 'lasting'], { encoding: 'utf8' }).trim(), persist, hostname: 'idle' });
+    await page.evaluate('window.harness.close()');
+    assert.equal(await page.evaluate(`window.harness.logOutNode(${JSON.stringify({ controlURL: persist, hostname: 'idle', persist })})`), true);
+    assert.deepEqual((await page.evaluate('window.harness.stored()') as string[]).filter((k) => k.startsWith(`${persist}/`)), [], 'logging out forgets the node');
+    const idle = (JSON.parse(execFileSync(script, ['nodes'], { encoding: 'utf8' })) as { name: string; expiry?: { seconds: number } }[]).find((n) => n.name === 'idle');
+    assert.ok(idle?.expiry && idle.expiry.seconds * 1000 < Date.now(), `the control server expired the idle node's key: ${JSON.stringify(idle)}`);
   } finally {
     await ctx.close();
   }

@@ -326,11 +326,40 @@ test("IPv6 routes at their adapter's rank's preference: high, medium, then low (
     for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) if (r.body[k] === 24) return r.body[k + 3] & 0x18;
     return undefined;
   };
-  const routed = routedLease(ECHO_LEASE, false, TAILCAT_ROUTES);
+  const routed = routedLease(ECHO_LEASE, false, TAILNET_ROUTES);
   assert.equal(prf(routed), 0, 'unranked: medium');
   assert.deepEqual([0, 1, 2, 3].map((n) => prf(ranked(routed, n))), [0x08, 0, 0x18, 0x18], 'high 01, medium 00, low 11');
   assert.equal(ranked(ECHO_LEASE, 2), ECHO_LEASE, 'no IPv6 routes (the default router): unchanged');
   assert.equal(ranked(null, 1), null);
+});
+
+test("a lease's peers: a route each, on a default router too, and over as many advertisements as they need", () => {
+  const client = (n: number): [number[], number] => [[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, n], 128];
+  const rios = (f: Uint8Array) => {
+    const { body } = v6(f);
+    const found: number[] = [];
+    for (let k = 16; k < body.length; k += body[k + 1] * 8) if (body[k] === 24) { assert.equal(body[k + 2], 128); found.push(body[k + 23]); }
+    return found;
+  };
+  // tailcat as the primary, beside a tailnet's /48: the client's route goes with the default.
+  const { g, out } = rig({ ...routedLease(ECHO_LEASE, true, TAILCAT_ROUTES)!, peers6: [client(1)] });
+  g.send(rs());
+  const f = out.pop()!;
+  assert.equal(be16(v6(f).body, 6), 1800, 'still the default router');
+  assert.deepEqual(rios(f), [1]);
+  // Not the primary: no default, and the same route.
+  const other = rig({ ...routedLease(ECHO_LEASE, false, TAILCAT_ROUTES)!, peers6: [client(1)] });
+  other.g.send(rs());
+  const o = other.out.pop()!;
+  assert.equal(be16(v6(o).body, 6), 0);
+  assert.deepEqual(rios(o), [1]);
+  // The most clients a served machine takes.
+  const full = rig({ ...ECHO_LEASE, peers6: Array.from({ length: 64 }, (_, n) => client(n)) });
+  full.g.send(rs());
+  assert.ok(full.out.every((x) => x.length <= 1514), `frames: ${full.out.map((x) => x.length)}`);
+  assert.ok(full.out.length > 1);
+  assert.deepEqual(full.out.flatMap(rios), Array.from({ length: 64 }, (_, n) => n), 'all of them');
+  assert.ok(full.out.every((x) => be16(v6(x).body, 6) === 1800), 'each says the same of the default');
 });
 
 test('no longer the default router but still one for routes: advertised again a second later (networkd)', (t) => {

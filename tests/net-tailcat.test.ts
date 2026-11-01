@@ -10,7 +10,7 @@
 // internet and DNS (the lease's 1.1.1.1 through the exit node) are opt-in, WEBPC_TAILCAT_INTERNET=1.
 // The client's IPv6 probe (web/reach6.ts): where this machine has no IPv6 address (the dev VM), the exit node's IPv6
 // doesn't reach out, so the probe is lost and the guest has no IPv6 default route: IPv6 to the internet is
-// unreachable at once, the tunnel's /48 still routed (the tailcat clients come in over it). With one, the probe asks
+// unreachable at once, and tailcat clients still come in (each has a route of its own). With one, the probe asks
 // tests/net/resolver.ts's stand-in on it: the default route is there while it answers, goes when it stops, and comes
 // back with its next answer.
 // The machine also lets tailcat clients in (T3): the real tailcat CLI parses the machine's address,
@@ -18,7 +18,7 @@
 // Realtime: one boot, ~2 min alone. Opt-in: WEBPC_TAILCAT=1 (needs Go for tailcat.sh, the
 // Debian image and target/net/ts.wasm).
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -29,6 +29,7 @@ import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { probeResolver, type ProbeResolver } from './net/resolver.ts';
+import { tailcat } from './net/tailcat-cli.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
@@ -83,24 +84,6 @@ after(async () => {
 });
 
 const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
-
-/** The tailcat CLI (tests/net/tailcat.sh built it) as a client, `input` on its stdin; its stdout. Never synchronous: this
- * process serves the page's disk, and a guest reading it while the CLI waits on the guest would wait for the timeout. */
-async function tailcat(args: string[], input: string): Promise<string> {
-  const child = spawn(`${ROOT}target/net/tailcat-test/bin/tailcat`, args, {
-    env: { ...process.env, SSL_CERT_FILE: `${ROOT}target/net/tailcat-test/certs/127.0.0.1.crt`, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', HOME: `${ROOT}target/net/tailcat-test/run` },
-  });
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8').on('data', (d: string) => { out += d; });
-  child.stderr.setEncoding('utf8').on('data', (d: string) => { err += d; });
-  child.stdin.end(input);
-  const timer = setTimeout(() => child.kill(), 60_000);
-  const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
-  clearTimeout(timer);
-  if (code !== 0 && !out) throw new Error(`tailcat ${args[0]}: exit ${code}; ${err.slice(-800)}`);
-  return out;
-}
 
 test('the guest gets both leases from the tailcat client and reaches the exit node\'s network over IPv4 and IPv6, and lets tailcat clients in', { skip, timeout: 900_000 }, async () => {
   const v4 = lan('IPv4');
@@ -191,17 +174,14 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
 
       // The exit node's IPv6 stops reaching out: within three lost probes the router advertisement withdraws the
       // default, so IPv6 to the internet fails at once (curl's 7, "couldn't connect", not 52's empty reply from the exit
-      // node), while the tunnel's /48 stays routed. The tailcat clients below come in over it.
+      // node). The tailcat clients below still come in: each is a route of its own, the address staying.
       if (!resolver) console.log('# SKIPPED: the IPv6 default route while the probe answers (this machine has no non-link-local IPv6 address)');
       await resolver?.off();
       const gone = await until('no IPv6 default route (the probe lost)', 'ip -6 route', (s) => !default6(s), 60_000);
-      // (networkd drops the default's nexthop and with it the /48 the same advertisement gave: the gateway sends it
-      // again a second later, web/gateway.ts `advertise`.)
-      const kept = await until("the tunnel's /48 stays", 'ip -6 route', (s) => /^fd7a:115c:a1e0::\/48 (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev \S+ proto ra/m.test(s), 5000);
       const routes6 = await run('ip -6 route');
       const unreachable = await run("curl -6 -s -m 20 -o /dev/null -w 'exit=' 'http://[2606:4700:4700::1111]/'; echo $?", 60_000);
       assert.match(unreachable, /exit=7/, `IPv6 to the internet is unreachable at once: ${unreachable}`);
-      console.log(`# IPv6 out: the default route gone after ${gone.toFixed(0)} s, the /48 there ${kept.toFixed(0)} s later; ${routes6.trim().replace(/\n/g, ' | ')}`);
+      console.log(`# IPv6 out: the default route gone after ${gone.toFixed(0)} s; ${routes6.trim().replace(/\n/g, ' | ')}`);
 
       // The machine as a tailcat server: its address is one tailcat reads (the exit node's relay), and the CLI
       // reaches a port the guest listens on (as `tailcat ssh` reaches port 22).
@@ -219,6 +199,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         throw new Error(`${e}; the guest: ${await run("ss -ltn | grep 8080; ip -6 route; nstat -az 2>/dev/null | grep -E 'Ip6In(NoRoutes|AddrErrors|Discards|Receives)|TcpInSegs|TcpOutSegs|ListenDrops' ; cat /proc/net/snmp6 | grep -E 'Ip6InReceives|Ip6InNoRoutes|Ip6InAddrErrors|Ip6InDiscards|Ip6OutRequests'")}${await context()}`);
       }
       assert.match(got, /hello-from-the-guest/, `a tailcat client reaches the guest's port 8080: ${got.slice(0, 500)}`);
+      assert.match(await run('ip -6 route'), /^fd7a:\S+ (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev \S+ proto ra/m, "the client's own route, with no default");
       const entered = (await harness<{ type: string }[]>(page, 'events()')).length;
       console.log(`# tailcat client to the guest's web server: ${got.split('\n')[0].trim()} (${entered} events)`);
 

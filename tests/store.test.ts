@@ -242,7 +242,7 @@ test("the sweep waits for a writer between its bytes and its record (another tab
 });
 
 test('network adapters on the Machines page: added up to the limit, removed; copies and definitions carry the MACs, no connections', async () => {
-  const { createMachine, duplicateMachine, withAdapter, withoutAdapter } = await import('../web/app/machines.ts');
+  const { createMachine, duplicateMachine, movedAdapter, withAdapter, withoutAdapter } = await import('../web/app/machines.ts');
   const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
   const { adaptersOf } = await import('../web/app/shape.ts');
   const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
@@ -256,6 +256,14 @@ test('network adapters on the Machines page: added up to the limit, removed; cop
   x = withoutAdapter(x, adaptersOf(x)[1].id);
   assert.equal(adaptersOf(x).length, MAX_ADAPTERS - 1);
   x.adapters![0].connection = 'c00000000001';
+  // Moved: the MAC and the connection go with the adapter; the ends stay where they are, and the order is the shape's.
+  const order = adaptersOf(x).map((a) => a.id);
+  const moved = movedAdapter(x, order[0], 1);
+  assert.deepEqual(adaptersOf(moved).map((a) => a.id), [order[1], order[0], order[2]]);
+  assert.equal(adaptersOf(moved)[1].connection, 'c00000000001');
+  assert.deepEqual(adaptersOf(movedAdapter(x, order[0], -1)).map((a) => a.id), order);
+  assert.deepEqual(adaptersOf(movedAdapter(x, order[2], 1)).map((a) => a.id), order);
+  assert.notEqual(await shapeHash(shapeOf(moved, () => undefined)), await shapeHash(shapeOf(x, () => undefined)), 'the guest sees eth0 and eth1 change');
   await store.put('machines', x);
   const copy = await duplicateMachine(store, x.id);
   assert.deepEqual(adaptersOf(copy).map((a) => a.mac), adaptersOf(x).map((a) => a.mac));

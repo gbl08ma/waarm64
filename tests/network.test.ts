@@ -280,3 +280,25 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   net.setPrimary(true, 1);
   assert.deepEqual(told, [[false, 0], [true, 0], [true, 1]], 'and on every change (the rank too), once');
 });
+
+test("a port that comes while the client detaches stays, connected or not: the old one is closed", async () => {
+  let give!: (p?: MessagePort) => void;
+  const closed: string[] = [];
+  const start = ((c: { ip: MessagePort }) => ({
+    state: () => 'Running', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
+    setPrimary: () => {}, attach: () => {}, detach: () => new Promise((r) => { give = r; }), setExitNode: async () => {}, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
+    ip: c.ip,
+  })) as never;
+  const n = createNetwork(() => {}, start);
+  n.port();
+  n.connect({ controlURL: 'https://x.example', hostname: 'a' });
+  const going = n.disconnect();
+  n.port();
+  n.connect({ controlURL: 'https://x.example', hostname: 'a' }); // the new machine's port is the new client's
+  const old = new MessageChannel();
+  old.port1.close = () => { closed.push('old'); };
+  give(old.port1);
+  await going;
+  assert.deepEqual(closed, ['old']);
+  old.port2.close();
+});

@@ -45,6 +45,8 @@
     events: () => events,
     echoes,
     logout: () => ts.logout().then(() => 'done'),
+    close: () => ts.close(),
+    logOutNode: async (c) => (await import('../../web/app/network.ts')).logOutNode(c),
     stored: () => new Promise((resolve) => {
       const r = indexedDB.open('webpc-tailscale', 1);
       r.onupgradeneeded = () => r.result.createObjectStore('state');

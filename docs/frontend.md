@@ -270,10 +270,10 @@ Duplicate, Export the definition, Delete; then tabs:
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
 - **Network:** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (a new
-  machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added and removed with the machine
-  off, and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
+  machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added, removed and moved up or down
+  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
   **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
-  once, running or not (a connection isn't in the shape). **Take the connection's settings in the guest** (on; off is
+  once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **Take the connection's settings in the guest** (on; off is
   `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **Connections** (in the list of machines) is the
   browser's connections; **Preferences** under it is the page's, per browser (below, "Leaving the page" and "The status bar"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
@@ -1120,8 +1120,8 @@ the most recently used free one chosen and those in use marked with their machin
 settings and **Keep this connection in this browser** (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
-the page (its Network tab: it connects when that machine starts), makes one on its own and edits one (the Machines
-page's **Connections**: rename, Edit, New address, Log out, Delete, which names the machines that lose it). The live
+the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Machines
+page's **Connections**: rename, Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
@@ -1170,7 +1170,8 @@ and the guest's default way out (below).
   lease runs out; the adapter and its connection stay); **Log out** removes the node from the tailnet and deletes its
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
-  connected.
+  connected. A machine that stops with no start to follow (powered off, suspended, crashed) stops its clients and lets
+  their connections go; they connect again at its next start ([network-adapters.md](network-adapters.md) §1).
 - **tailcat** (docs/tailnet.md "tailcat") has two choices, either or both:
   - **Go online through a computer of mine** (the default): a **tailcat address** (a password
     field; a secret, kept only in a kept connection) and a line on what to run: `tailcat serve exit-node` on a

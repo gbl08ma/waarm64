@@ -7,6 +7,7 @@
   import Check from './Check.svelte';
   import AddDisk from './AddDisk.svelte';
   import Icon from './Icon.svelte';
+  import MoveButtons from './MoveButtons.svelte';
   import Menu from './Menu.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, OverlayRecord } from './store.ts';
@@ -127,8 +128,7 @@
         {#if d?.kind === 'stored' && !a.readOnly}
           <Check compact checked={!!a.inPlace} onchange={(on) => setFlag(a.id, { inPlace: on })} title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it.">write in place</Check>
         {/if}
-        <button class="icon" onclick={() => act('Moving', () => editAttachment(store, plain(machine), a.id, { move: -1 }))} disabled={i === 0} aria-label="Up" title="Move up (an earlier slot)"><Icon name="arrow-up" size={16} /></button>
-        <button class="icon" onclick={() => act('Moving', () => editAttachment(store, plain(machine), a.id, { move: 1 }))} disabled={i === machine.attachments.length - 1} aria-label="Down" title="Move down (a later slot)"><Icon name="arrow-down" size={16} /></button>
+        <MoveButtons index={i} count={machine.attachments.length} onmove={(by) => act('Moving', () => editAttachment(store, plain(machine), a.id, { move: by }))} upTitle="Move up (an earlier slot)" downTitle="Move down (a later slot)" />
         <button onclick={() => detach(a.id, d)} title="Take the disk off this machine (it stays in this browser)">Detach</button>
       </div>
       {#if d?.kind === 'url'}<p class="note">{URL_SLOW}</p>{/if}
@@ -183,6 +183,5 @@
   .hint { margin: 4px 8px; max-width: 260px; }
   .overlays > label { display: inline-flex; align-items: center; gap: 6px; }
   .row > button, .overlays > button, .add { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .row > button.icon { padding: 3px 5px; }
   .add { padding: 5px 12px; }
 </style>

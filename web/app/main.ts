@@ -274,6 +274,7 @@ const jitBudget = () => jitMiB || JIT_DEFAULT_MIB;
 const net = new PageNetwork({
   store,
   state: { forgetTailnet: forgetProfile, forgetTailcat: forgetTailcatIdentity },
+  kept: keptProfiles,
   me: () => machineTitle(),
   onChange: () => { ui.net++; },
   save: async (i, id) => {
@@ -291,7 +292,12 @@ ui.firmware = !!spec.firmware;
 ui.hasNetwork = !!spec.network;
 const folders = new PageFolders({ store, me: () => machineTitle(), onChange: () => { ui.folders.on = folders.running; ui.folders.tick++; } });
 void folders.refresh();
-store.onChange(() => { ui.records++; void net.refresh(); void folders.refresh(); });
+store.onChange((c) => {
+  ui.records++;
+  void net.refresh();
+  void folders.refresh();
+  if (c.kind === 'machines' && c.id === stored?.record.id) void followRecord();
+});
 mount(App, { target: document.body, props: { store, audio, net, folders } });
 flushSync();
 let canvas = $<HTMLCanvasElement>('screen');
@@ -550,6 +556,8 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
   ui.boot.shown = (s === 'loading' || s === 'booting') && !ui.boot.done;
   ui.boot.serial = !!spec.firmware && s === 'booting';
   ui.usb.running = !!run?.usb && (s === 'running' || s === 'booting');
+  // Stopped with no start to follow: a restart doesn't pass here (its clients stay, on the new machine's ports).
+  if (s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle') net.machineOff();
   syncButtons();
 }
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
@@ -1037,6 +1045,7 @@ async function switchMachine(id: string) {
   if ((state === 'running' || state === 'booting') && stored?.record.id !== id && !(await ask.confirm('Open the other machine? This one stops, like pulling the plug: unsaved work in the guest is lost.', { title: 'Open the machine', ok: 'Open it', danger: true }))) return;
   await exclusively(async () => {
     await stop();
+    net.machineOff();
     const next = await loadStored(id);
     stored = next;
     storedError = '';
@@ -1560,15 +1569,26 @@ async function migrateNetwork() {
   else await run();
 }
 
+/** Another tab changed the page's machine's record: its attachments take effect here (docs/network-adapters.md §3). */
+async function followRecord() {
+  const s = stored;
+  const record = s && await store.get('machines', s.record.id);
+  if (!s || !record) return;
+  s.record = record;
+  if (net.machineKey() === record.id) await net.follow(adaptersOf(record));
+}
+
 /** Whether `machine` (an id, or undefined for a transient one) is the page's and its adapters are live here. */
 const netLive = (machine: string | undefined, i: number) => (machine ?? 'transient') === netKey() && net.machineKey() === netKey() && i < net.views().length;
 
 /**
  * Attaches connection `c` to adapter `i` of `machine` (undefined: the page's transient one). The page's machine connects
  * it now (`authKey`: a tailnet's first login); one another tab's machine has is taken from it after asking. Another
- * machine keeps it in its record, and connects it when it starts.
+ * machine keeps it in its record: the tab that runs it, if one does, hears and connects it (`followRecord`), and otherwise it
+ * connects when the machine starts.
  */
 async function netAttach(machine: string | undefined, i: number, c: Connection, authKey?: string) {
+  if (c.ephemeral && machine && machine !== netKey() && await isRunning(machine)) throw new Error(`${c.name} is ephemeral, so it is this page's: the machine that runs in another tab can't use it.`);
   if (netLive(machine, i)) {
     try {
       await net.attach(i, c, authKey);
@@ -1579,9 +1599,9 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
     }
     return;
   }
+  await net.conns.put({ ...c, connectAtStart: true }); // first: a tab that runs the machine hears of the attachment and reads this
   if (machine) await setAdapterConnection(store, machine, i, c.id);
   else remember({ transientNet: c.id });
-  await net.conns.put({ ...c, connectAtStart: true });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
 }
@@ -1598,13 +1618,26 @@ async function netDetach(machine: string | undefined, i: number) {
 async function netDelete(c: Connection) {
   const on = (await store.all('machines')).filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name);
   if (settings().transientNet === c.id) on.push(spec.label);
-  const what = c.kind === 'tailnet' ? (c.ephemeral ? 'Its node leaves the tailnet when it is next seen offline.' : "Its node's keys are deleted here: connecting again is a new node, with a login (log it out first to take it off the tailnet now).") : c.tailcat?.serve ? 'Its tailcat address stops working.' : '';
+  const what = c.kind === 'tailnet' ? (c.ephemeral ? 'Its node leaves the tailnet when it is next seen offline.' : 'Its node is logged out of the tailnet and its keys are forgotten here.') : c.tailcat?.serve ? 'Its tailcat address stops working.' : '';
   if (!(await ask.confirm(`Delete the connection ${c.name}?${on.length ? ` It is detached from ${on.join(', ')}.` : ''} ${what}`.trim(), { title: 'Delete the connection', ok: 'Delete', danger: true }))) return;
-  await net.remove(c);
+  const stranded = await net.remove(c);
   await detachEverywhere(store, c.id);
   if (settings().transientNet === c.id) remember({ transientNet: undefined });
   if (stored) stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
   await net.refresh();
+  if (stranded) throw new Error(`${c.name} is deleted, but its control server didn't answer: its node stays on the tailnet until it expires or an admin removes it.`);
+}
+
+/** Logs out the node of connection `c`, running or not; one another tab's machine has is taken from it after asking. */
+async function netLogoutConnection(c: Connection) {
+  try {
+    await net.logoutKept(c);
+  } catch (e) {
+    if (!(e instanceof HeldError)) throw e;
+    if (!(await ask.confirm(`${e.message} Log it out all the same? That machine disconnects from it.`, { title: 'The connection is in use', ok: 'Log out', danger: true }))) return;
+    if (!(await net.locks.takeFrom(connectionLock(c.id)))) throw e;
+    await net.logoutKept(c);
+  }
 }
 
 /** Forgets tailcat connection `c`'s served identity, after asking: whoever has its address can't come in any more. */
@@ -2176,6 +2209,8 @@ Object.assign(page, {
   },
   netDisconnect: (i: number) => net.disconnect(i),
   netLogout: (i: number) => net.logout(i),
+  netLogoutConnection,
+  netFollow: followRecord,
   netExit: (i: number, peer: string) => net.setExitNode(i, peer),
   netRoutes: (i: number, on: boolean) => net.setAcceptRoutes(i, on),
   netEdit: (c: Connection) => net.edit(c),

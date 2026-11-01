@@ -5,6 +5,7 @@
 <script lang="ts">
   import Check from './Check.svelte';
   import Icon from './Icon.svelte';
+  import MoveButtons from './MoveButtons.svelte';
   import type { PageFolders } from './folders-live.ts';
   import { MAX_FOLDERS } from './folders.ts';
   import type { MachineRecord } from './shape.ts';
@@ -35,8 +36,7 @@
           {#if v?.problem === 'permission'}<span class="meta warn">No permission in this browser</span>{/if}
           {#if v?.problem === 'held'}<span class="meta warn">In use by {v.holder ?? 'a machine in another tab'}</span>{/if}</div>
         <Check compact checked={a.readOnly} disabled={here && !v?.problem} onchange={(on) => void act('Saving', () => page.folderReadOnly(machine.id, a.id, on))} field="folder-read-only" title="This machine only reads it">Read-only</Check>
-        <button disabled={i === 0} onclick={() => act('Moving', () => page.folderMove(machine.id, a.id, -1))} title="Up" aria-label="Up" data-action="folder-up"><Icon name="arrow-up" size={16} /></button>
-        <button disabled={i === (machine.folders?.length ?? 0) - 1} onclick={() => act('Moving', () => page.folderMove(machine.id, a.id, 1))} title="Down" aria-label="Down" data-action="folder-down"><Icon name="arrow-down" size={16} /></button>
+        <MoveButtons index={i} count={machine.folders?.length ?? 0} onmove={(by) => act('Moving', () => page.folderMove(machine.id, a.id, by))} action="folder" />
         {#if v?.problem === 'permission'}<button onclick={() => act('Asking', () => page.folderAllow(a.id))} data-action="allow-folder">Allow…</button>{/if}
         {#if v?.problem === 'held'}<button onclick={() => act('Taking it', () => page.folderUseHere(a.id))} data-action="use-folder">Use it here</button>{/if}
         <button onclick={() => act('Detaching', () => page.folderDetach(machine.id, a.id))} data-action="detach-folder">Detach</button>

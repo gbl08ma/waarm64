@@ -19,6 +19,7 @@ import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { probeResolver } from './net/resolver.ts';
+import { tailcat } from './net/tailcat-cli.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/ts.wasm`;
@@ -243,7 +244,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
       const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // headscale's test CA, the relay's self-signed certificate
       const page = await ctx.newPage();
       page.on('console', (m) => { if (/rror|panic/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
-      type View = { phase: string; text: string; address?: string; internet?: boolean };
+      type View = { phase: string; text: string; address?: string; internet?: boolean; served?: string };
       const views = () => harness<View[]>(page, 'views()');
       const context = async () => `; the adapters: ${JSON.stringify(await views())}`;
       const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
@@ -298,6 +299,17 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
         const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
         const resolved = await run(`getent hosts ${name}`);
         assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved}); ${await run('resolvectl status 2>&1 | grep -v "^ *$" | head -40')}`);
+
+        // A tailcat client comes in over IPv6 from an address in the tailnet's /48: the guest answers it through
+        // tailcat's adapter (its address's own route, the longest match), and the tailnet's peer stays reached.
+        const served = (await views())[1].served ?? '';
+        assert.ok(served.startsWith('tc'), `the machine serves${await context()}`);
+        await run('cd /tmp && echo hello-from-the-guest > index.html && (python3 -m http.server --bind :: 8080 > /dev/null 2>&1 &) && sleep 1');
+        const got = await tailcat([served, '8080'], 'GET /index.html HTTP/1.0\r\n\r\n').catch((e) => String(e));
+        assert.match(got, /hello-from-the-guest/, `a tailcat client beside the tailnet: ${got.slice(0, 300)}; ${await run('ip -6 route')}${await context()}`);
+        const routed = await run('ip -6 route');
+        assert.match(routed, new RegExp(`fd7a:\\S+ (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b} `), `the client's own route: ${routed}`);
+        assert.match(await run(`ping -6 -c 2 -W 5 ${env.WEBPC_TS_PEER_IP6}`, 90_000), /2 packets transmitted, 2 received/, "the tailnet's peer stays reached over IPv6");
       } finally {
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
         await ctx.close();

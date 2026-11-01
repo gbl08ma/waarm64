@@ -43,7 +43,7 @@
   }
   function wizard(i: number) {
     open = false;
-    page.netWizard({ mode: 'attach', machine: ui.current, adapter: i, here: true });
+    page.netWizard({ mode: 'attach', machine: ui.current, adapter: i, here: views[i]?.on });
   }
   function chooseExit(i: number, e: Event) {
     const select = e.currentTarget as HTMLSelectElement;
@@ -94,7 +94,7 @@
       </div>
       <p id={`net-menu-error${s}`} class="net-note net-menu-error" hidden={!errors[a.index]}>{errors[a.index]}</p>
       <div id={`net-actions${s}`} class="net-actions">
-        {#if a.connection && !a.active}<button id={`net-connect-now${s}`} onclick={() => act(a.index, () => page.netConnect(a.index))}>Connect</button>{/if}
+        {#if a.connection && !a.active && a.on}<button id={`net-connect-now${s}`} onclick={() => act(a.index, () => page.netConnect(a.index))}>Connect</button>{/if}
         <button id={`net-setup${s}`} onclick={() => wizard(a.index)}>{a.connection ? 'Change connection…' : 'Connect…'}</button>
         <button id={`net-disconnect${s}`} hidden={!a.active} onclick={() => act(a.index, () => page.netDisconnect(a.index))}>Disconnect</button>
         <button id={`net-logout${s}`} title="Remove this machine from the tailnet and forget its keys" hidden={!a.active || a.connection?.kind !== 'tailnet'} onclick={() => logout(a.index)}>Log out</button>

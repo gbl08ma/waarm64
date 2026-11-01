@@ -9,6 +9,7 @@
 <script lang="ts">
   import Disks from './Disks.svelte';
   import Icon from './Icon.svelte';
+  import MoveButtons from './MoveButtons.svelte';
   import Menu from './Menu.svelte';
   import Check from './Check.svelte';
   import Snapshots from './Snapshots.svelte';
@@ -26,7 +27,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { clearCaches } from '../diskcache.ts';
-  import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
+  import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, movedAdapter, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
   import { leaveWarning, remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
@@ -132,6 +133,7 @@
       if (restartChanged(was, m) && m.id === ui.current && isOn(m.id)) return page.saveSettings(m);
       if (restartChanged(was, m) && isOn(m.id)) throw new Error('It runs in another tab: power it off there first.');
       await updateMachine(store, m);
+      if (m.id === ui.current) await page.netFollow();
     });
     dirty = false;
   }
@@ -186,6 +188,7 @@
     if (await ask.confirm(`Delete ${m.name}? Its snapshots and firmware settings are deleted; its disks and their overlays stay.`, { ok: 'Delete', danger: true })) await act('Deleting', () => deleteMachine(store, m.id));
   }
 
+  const MOVE_ADAPTER = "Move it: the guest's eth numbers follow this order, and the first adapter that reaches the internet is the default way out (the machine restarts with it)";
   // The network: each adapter's connection (the record's: attached while the machine runs too), and the browser's connections.
   const conns = $derived((void ui.net, net.connections));
   const live = $derived((void ui.net, net.views()));
@@ -199,7 +202,7 @@
   }
   async function logoutConnection(c: Connection) {
     if (!(await ask.confirm(`Log ${c.name} out? Its node is removed from the tailnet and its keys are forgotten here; connecting again logs in as a new node.`, { ok: 'Log out', danger: true }))) return;
-    await act('Logging out', () => page.netLogout(net.runs(c.id)));
+    await act('Logging out', () => page.netLogoutConnection(c));
   }
 
   // The page's own disk (a transient machine): its export's options.
@@ -327,7 +330,7 @@
                 </div>
                 <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? 'Its hostname (another control server is another connection)' : 'Its server and relay'}>Edit…</button>
                 {#if c.tailcat?.serve}<button onclick={() => act('Forgetting the address', () => page.netNewAddress(c))} data-action="new-address" title="Forget the connection's tailcat address: whoever has it can't come in any more">New address</button>{/if}
-                {#if c.kind === 'tailnet' && net.runs(c.id) >= 0}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title="Remove the node from the tailnet and forget its keys">Log out</button>{/if}
+                {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title="Remove the node from the tailnet and forget its keys">Log out</button>{/if}
                 <button onclick={() => act('Deleting', () => page.netDelete(c))} data-action="delete-connection" title="Delete the connection and what this browser keeps of it (its machines lose it)"><Icon name="trash" size={16} />Delete</button>
               </li>
             {:else}
@@ -439,13 +442,14 @@
                       {#if here?.note}<span class="meta warn">{here.note}</span>{/if}</div>
                     {#if at >= 0}
                       {#if c}<Check compact checked={c.connectAtStart} onchange={(on) => void act('Saving', () => setAtStart(c, on))} field="connect-at-start" title="Connect it when the machine starts (Disconnect turns it off)">Connect at start</Check>{/if}
-                      <button onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: m.id === ui.current })} data-action="attach-connection" title="A connection of this browser's, or a new one">{c ? 'Change connection…' : 'Attach…'}</button>
+                      <button onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: !!here?.on })} data-action="attach-connection" title="A connection of this browser's, or a new one">{c ? 'Change connection…' : 'Attach…'}</button>
                       {#if c}<button onclick={() => act('Detaching', () => page.netDetach(m.id, at))} data-action="detach-connection" title="Take the connection off the adapter (its client stops)">Detach</button>{/if}
-                      {#if here && c}
+                      {#if here && c && (here.on || here.active)}
                         {#if here.active}<button onclick={() => act('Disconnecting', () => page.netDisconnect(at))} data-action="disconnect">Disconnect</button>
                         {:else}<button onclick={() => act('Connecting', () => page.netConnect(at))} data-action="connect">Connect</button>{/if}
                       {/if}
                     {:else}<span class="meta">Save to attach a connection</span>{/if}
+                    <MoveButtons index={i} count={adaptersOf(draft).length} onmove={(by) => { draft = movedAdapter(draft!, a.id, by); dirty = true; }} upTitle={MOVE_ADAPTER} downTitle={MOVE_ADAPTER} action="adapter" />
                     <button onclick={() => { draft = withoutAdapter(draft!, a.id); dirty = true; }} title="Take the adapter out (the machine restarts without it)" data-action="remove-adapter"><Icon name="trash" size={16} />Remove</button>
                   </li>
                 {:else}
@@ -453,7 +457,7 @@
                 {/each}
               </ul>
               {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network adapter</button></div>{/if}
-              <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding or removing one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.</p>
+              <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding, removing or moving one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.</p>
               <Check checked={draft.netConfig !== false} onchange={(on) => { draft!.netConfig = on ? undefined : false; dirty = true; }} field="net-config" title="At every boot the page has the guest's systemd-networkd take what each connection's lease says">
                 Take the connection's settings in the guest
                 {#snippet note()}<span data-net-config-note>{#if draft?.netConfig !== false}At every boot the page has the guest's systemd-networkd take each connection's MTU (a tailnet's is 1280: at the adapter's 1500, large packets can be lost) and search domain (MagicDNS's), and use DHCP on adapters nothing else sets up, on a guest with systemd 256 or newer. Nothing is written to the guest's disk: it lasts until the guest shuts down. NetworkManager takes them by itself.{:else}The page leaves the guest's network settings alone: the guest takes the MTU and search domain only if it is set up to. The next boot has none of the page's settings.{/if}</span>{/snippet}
