@@ -514,6 +514,11 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   writes, template updates and copies go into both at once (`gpu_write`, the queue's order: Vulkan forbids updating a set
   a pending command buffer uses), rolling on into the next binding past a block's end. 1.3's minimums of four blocks a
   stage and a set, 4,096 bytes each, no update-after-bind (`wg_bindings_fit` counts each as a uniform buffer).
+- **Attachments of different sizes** (VK4 R3; `wg_view_crop` in wg_device.c, `crop_copies` in wg_cmd.c): WebGPU wants a
+  pass's attachments of one size, Vulkan only that the render area fits each. The pass takes the smallest width and
+  height, and an attachment larger than that is drawn in a texture of that size, copied from it before the pass and back
+  after (its resolves drawn, from the image). A draw reading such an attachment as an input attachment reads what it held
+  before the pass.
 - **Layered passes** (VK4 T12; `OP_VIEWS`, `OP_CLEAR_LAYERS` in wg_cmd.c): a pass of several layers without multiview (a
   framebuffer's layers, dynamic rendering's `layerCount`) has no draw past its first layer, nothing writing `gl_Layer`,
   but its load and store ops reach every layer and `vkCmdClearAttachments` names layers, so it replays a layer at a time

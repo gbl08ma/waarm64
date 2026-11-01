@@ -76,7 +76,7 @@ VENUS-VK4-REVIEW.md (or moving them to the backlog with a line). The review's ow
 SwiftShader, and dEQP-VK runs on the prebuilt disk and guest (docs/cloud.md "Venus (vk/)"); `ci-deqp-vk.sh`'s
 programs' replays need the dev VM.
 
-- **R1. Fences per context** (M; H1, then T6's leftover): every fence the GPU worker answers goes through one
+- **R1. Fences per context** (done 2026-11-01: a ring is a lane of the gate, a fence waits for itself; a stalled queue gives ring fences' entries back; dEQP-VK's synchronization groups unchanged. Left: backlog "Synchronization") (M; H1, then T6's leftover): every fence the GPU worker answers goes through one
   in-order `FenceGate` whose check covers all of Venus's pending ring fences, so since T6 a submit held for an unmet
   timeline wait (legal: a CPU `vkSignalSemaphore` later; vkd3d's D3D12 fences) holds every later fence of every
   client, sway's virgl frames included: a stall, a deadlock when the signal waits on the compositor. A fence's check
@@ -85,14 +85,14 @@ programs' replays need the dev VM.
   "Synchronization"). *Done:* a test of each (tests/venus-renderer.test.ts or a GPU-worker-level test), ci-graphics.sh
   for the compositor's fences. *Start:* web/virgl-host.ts `FenceGate`, web/gpu-worker.ts `settled`, web/venus-host.ts,
   docs/devices.md "Venus".
-- **R2. Usage scopes and shadows** (M; R1, R4 of the review, then backlog "Usage scopes' leftovers"): a written shadow
+- **R2. Usage scopes and shadows** (done 2026-11-01: read and written shadows apart, overlapping writable bindings one by a variant, passes cut at barriers. Left: backlog "Usage scopes' leftovers") (M; R1, R4 of the review, then backlog "Usage scopes' leftovers"): a written shadow
   (pointers beside a writable descriptor, T7) and a read shadow share `dev->shadow`, which WebGPU refuses in one scope
   (every program that gives all memory device addresses: vkd3d-proton, VMA with BDA); two read-only storage bindings
   promoted to writable beside a writable one can overlap each other. Then the leftovers: two writable bindings of one
   range; a draw reading what an earlier draw of its pass wrote through storage (split the WebGPU pass there).
   *Done:* each shape a `wg_test.c` scenario (as T3's), dEQP-VK's `buffer_device_address` and `ssbo` groups unchanged.
   *Start:* wg_cmd.c `scope_shadows`, `shadow_place`, `conflicts`, `program_for`; vk/README.md "Usage scopes".
-- **R3. Render passes' replay** (M; review R2, R6, R7 with O7, R3 with O10, R8, R5, R9, R10): attachments of
+- **R3. Render passes' replay** (done 2026-11-01: crops for attachments of other sizes, 256 layers, the packed twin, whose 4 `self_dep` kinds join the list. R10 warns; list +212) (M; review R2, R6, R7 with O7, R3 with O10, R8, R5, R9, R10): attachments of
   different sizes (Vulkan allows; WebGPU refuses: crop to the render area's common size); `LOAD_OP_NONE` taken as
   discard by the alias tracking (stale bytes stored over a mutable image's); layers past 32 of a pass ignored while
   `maxFramebufferLayers` is 256 (and a shift by 32 at view 31); a feedback copy of a packed-format attachment (no
@@ -101,7 +101,7 @@ programs' replays need the dev VM.
   dropped silently (warn, or draw in pieces). *Done:* a test each; the 4
   `renderpasses.*.r5g6b5_unorm_pack16.input.*self_dep*` (backlog "Packed 16-bit formats' leftovers") rechecked: R3 may
   be their cause. *Start:* wg_cmd.c `begin_rendering`, `feedback_copies`, `image_use`; wg_device.c `wg_view_twin`.
-- **R4. Transfers** (M; review X1–X8, then T10's and T12's leftovers): one-row buffer↔image copies with a taller
+- **R4. Transfers** (done 2026-11-01: X1, X3 to X8, multisampled copies between formats by a shader; 122 multisampled clears join the list, 57 and 4 `diff_image_size` stay in the backlog, not X4's; the T4 sRGB-twin cases not newly passing, X2 didn't reproduce) (M; review X1–X8, then T10's and T12's leftovers): one-row buffer↔image copies with a taller
   `bufferImageHeight` (an unaligned `bytesPerRow`: the submit lost); a drawn resolve into an sRGB-twin view (pipeline
   and view formats differ: lost); indirect indexed fans sized by the whole bound index range (past
   `maxStorageBufferBindingSize`: lost; six times the buffer per draw otherwise); multisampled copies of several layers

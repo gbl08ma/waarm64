@@ -4,7 +4,7 @@
 // The real device's side is tests/venus-driver.test.ts's (Chromium).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deviceRequest, L9_LIMITS, l9Suspects, VenusGpu } from '../web/venus-gpu.ts';
+import { bitsBetween, deviceRequest, fanMost, L9_LIMITS, l9Suspects, packedSwizzle, VenusGpu, xfbOpen } from '../web/venus-gpu.ts';
 
 // The classes venus-gpu.ts tells objects apart by.
 class FakeBuffer { destroyed = false; destroy() { this.destroyed = true; } mapAsync() { return Promise.resolve(); } getMappedRange() { return new ArrayBuffer(16); } unmap() {} }
@@ -362,4 +362,36 @@ test('a completion that throws neither completes the next submit before its read
   await settle();
   assert.deepEqual(completed, [2]);
   assert.equal(stagings[0].destroyed, true);
+});
+
+// VK4 R3 (the review's R5): a cut of a Vulkan pass (a feedback copy, a barrier's scope) ends a WebGPU pass with its
+// capture open: its jobs wait for the next part, whose draws would otherwise have no session.
+test('a capture open at a WebGPU pass\'s end goes on in the next part', () => {
+  assert.equal(xfbOpen([]), false);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }]), true);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }, { op: 'end' }]), false);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'end' }, { op: 'begin' }]), true);
+});
+
+// VK4 R4 (the review's X3): the bound index range of an indirect fan is often a whole shared buffer.
+test('an indirect fan\'s list is sized by a fan, not by the bound index range', () => {
+  assert.equal(fanMost(48 << 20, 4), 65536);
+  assert.equal(fanMost(24, 4), 6);
+  assert.ok((fanMost(1 << 30, 2) - 2) * 12 < 128 << 20, 'under WebGPU\'s default storage binding');
+});
+
+test('multisampled copies carry bits: packed layouts\' channels, other formats of a block\'s size', () => {
+  const r5g6b5 = [11, 5, 5, 6, 0, 5, 0, 0], b5g6r5 = [0, 5, 5, 6, 11, 5, 0, 0], a1r5g5b5 = [10, 5, 5, 5, 0, 5, 15, 1];
+  assert.equal(packedSwizzle(r5g6b5, b5g6r5), 'bgra');
+  assert.equal(packedSwizzle(r5g6b5, r5g6b5), 'rgba');
+  assert.equal(packedSwizzle(r5g6b5, a1r5g5b5), undefined, 'bits of another size');
+  assert.equal(bitsBetween('rgba8unorm', 'rgba8unorm'), '');
+  assert.equal(bitsBetween('rgba8unorm', 'r8unorm'), undefined, 'another block size');
+  assert.equal(bitsBetween('rgb10a2unorm', 'rgba8unorm'), undefined, 'channels this doesn\'t take apart');
+  const c = bitsBetween('rgba8unorm', 'rg16uint')!;
+  assert.match(c, /round\(v\[0\] \* 255\.0\)/);
+  assert.match(c, /w\[0\] \|= .* << 24u;/);
+  assert.match(c, /return vec4<u32>\(.*>> 0u\) & 65535u.*>> 16u\) & 65535u.*0u, 1u\);/);
+  const swapped = bitsBetween('bgra8unorm', 'r32float')!;
+  assert.match(swapped.split('\n')[1], /v\[2\]/, 'bgra\'s first byte is its blue');
 });

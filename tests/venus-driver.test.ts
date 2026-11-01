@@ -309,7 +309,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', inlineBlocks: 'inline' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -374,6 +374,19 @@ for (const [scenario, what] of [
   ['twoReads', 'two read-only storage buffers of one range beside a writable one of their memory'],
   ['sameRange', 'two writable storage buffers of one range: what one writes the other reads'],
   ['overlappingRanges', 'two writable storage buffers that overlap: what one writes the other reads'],
+  // VK4 R3: the render passes' replay.
+  ['attachmentSizes', 'attachments of different sizes in a pass over the smallest'],
+  ['loadNone', 'a pass with load op NONE on a view of another format leaves the image as it was'],
+  ['manyLayers', 'a layered pass of 40 layers reaches them all'],
+  ['packedFeedback', 'a draw reading a packed-format attachment of its pass, wider than 64 texels'],
+  ['feedbackLayer', 'a draw of a layered pass reading another layer of its attachment'],
+  // VK4 R4: transfers.
+  ['oneRow', 'one row of an image to and from a buffer whose images are taller'],
+  ['resolveTwin', 'a drawn resolve into an sRGB view of a UNORM image'],
+  ['msLayers', 'a multisampled copy of two layers'],
+  ['msTwins', 'a multisampled copy between sRGB and UNORM twins moves bits'],
+  ['msPacked', 'a multisampled copy between packed layouts moves bits'],
+  ['msFormats', 'a multisampled copy between formats of a block\'s size moves bits'],
   // VK4 T11: no dEQP-VK case loads and stores one image of a format WebGPU gives one way.
   ['rwImage', 'an image of a format WebGPU only gives one way, loaded and stored by a shader between clears and copies'],
   ['rwImageWide', 'such an image of 8 bytes a texel, its rows past what 4 bytes a texel would take'],
@@ -382,9 +395,12 @@ for (const [scenario, what] of [
     // After the first test, which made target/vk/test.
     const out = join(root, 'target/vk/test');
     mkdirSync(out, { recursive: true });
-    const src = `${source[scenario as keyof typeof source] ?? 'push'}.comp`;
-    const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${src}.spv`), join(root, `tests/venus/${src}`)], { encoding: 'utf8' });
-    assert.equal(c.status, 0, c.stderr);
+    const name: string = source[scenario as keyof typeof source] ?? 'push';
+    const src = name.includes('.') ? name : `${name}.comp`;
+    for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert'] : [])]) {
+      const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/${f}`)], { encoding: 'utf8' });
+      assert.equal(c.status, 0, c.stderr);
+    }
     const page = await browser.newPage();
     const logs: string[] = [];
     page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') { logs.push(m.text()); console.log(`page: ${m.text().slice(0, 2000)}`); } });

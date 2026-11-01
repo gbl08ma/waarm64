@@ -488,7 +488,10 @@ export class VenusGpu {
           self.touched.add(D);
           const ps = self.packed.get(S), pd = self.packed.get(D);
           if ((ps || pd) && ps?.join() !== pd?.join() && S.sampleCount === 1) return self.copyPacked(ps, S, sm, sx, sy, sz, pd, D, dm, dx, dy, dz, w, h, depth);
-          if (S.sampleCount > 1) return self.copyMultisampled(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, aspect);
+          if (S.sampleCount > 1) {
+            for (let l = 0; l < depth; l++) self.copyMultisampled(S, sm, sx, sy, sz + l, D, dm, dx, dy, dz + l, w, h, aspect);
+            return;
+          }
           if (/^depth|^stencil/.test(S.format) && !self.depthStencilTT(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect)) return;
           if (S.format.replace('-srgb', '') !== D.format.replace('-srgb', '')) return self.copyBetweenFormats(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, dw, dh, cols, rows, bytes);
           if (S === D && sm === dm && (S.dimension === '3d' || (sz < dz + depth && dz < sz + depth))) return self.copyTextureWithin(S, sm, sx, sy, sz, dx, dy, dz, w, h, depth, aspect);
@@ -553,7 +556,8 @@ export class VenusGpu {
           for (const t of textures) self.touched.add(t);
           self.passAtts = atts;
           self.cur = { groups: [], vb: [] };
-          self.xfbJobs = [];
+          // A later part of a Vulkan pass goes on with its capture.
+          if (j.keep !== 2) self.flushXfb();
           self.pass = self.enc!.beginRenderPass(self.timed(desc));
           self.encPasses++;
         });
@@ -768,6 +772,7 @@ export class VenusGpu {
   private submitNow(slots: number[], temps: (GPUBuffer | GPUTexture)[]): Promise<number> {
     const d = this.device!;
     if (this.pass) this.endPass();
+    this.flushXfb();
     const timing = this.timing, passes = this.encPasses;
     this.timing = undefined;
     this.encPasses = 0;
@@ -1154,11 +1159,17 @@ override bit: u32 = 8u;
   private copyMultisampled(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, aspect: number) {
     const d = this.device!, f = D.format;
     const whole = (t: GPUTexture, m: number, x: number, y: number) => x === 0 && y === 0 && w === Math.max(1, t.width >> m) && h === Math.max(1, t.height >> m);
-    if (S !== D && S.format === f && !aspect && whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST) {
+    const samePacking = this.packed.get(S)?.join() === this.packed.get(D)?.join();
+    if (S !== D && S.format === f && samePacking && !aspect && whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST) {
       this.enc!.copyTextureToTexture(this.texCopy(S, sm, sx, sy, sz, 0), this.texCopy(D, dm, dx, dy, dz, 0), { width: w, height: h, depthOrArrayLayers: 1 });
       return;
     }
-    if (S.format.replace('-srgb', '') !== f.replace('-srgb', '') || D.sampleCount !== S.sampleCount || !(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
+    // Bits, not values: twins through their linear views, packed layouts' channels by where their bits are, other
+    // formats of a block's size through a shader that carries the bits (`bitsBetween`).
+    const base = f.replace('-srgb', '') as GPUTextureFormat, sBase = S.format.replace('-srgb', '') as GPUTextureFormat;
+    const swizzle = this.packed.get(S) || this.packed.get(D) ? packedSwizzle(this.packed.get(S), this.packed.get(D)) : 'rgba';
+    const bits = sBase === base ? '' : bitsBetween(sBase, base);
+    if (swizzle === undefined || bits === undefined || D.sampleCount !== S.sampleCount || !(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
       this.warn(`a multisampled copy of ${S.format} into ${f} that WebGPU can't make: skipped`);
       return;
     }
@@ -1190,13 +1201,17 @@ override bit: u32 = 8u;
       pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: u } }, { binding: 1, resource: view }] }));
       pass.draw(3);
     };
-    const srcView = (a: GPUTextureAspect) => S.createView({ dimension: '2d', aspect: a, baseMipLevel: sm, mipLevelCount: 1, baseArrayLayer: sz, arrayLayerCount: 1 });
-    const dstView = D.createView({ dimension: '2d', baseMipLevel: dm, mipLevelCount: 1, baseArrayLayer: dz, arrayLayerCount: 1 });
+    const twins = S.format !== sBase || f !== base;
+    const srcView = (a: GPUTextureAspect) => S.createView({ dimension: '2d', aspect: a, baseMipLevel: sm, mipLevelCount: 1, baseArrayLayer: sz, arrayLayerCount: 1, ...(twins ? { format: sBase } : {}) });
+    const dstView = D.createView({ dimension: '2d', baseMipLevel: dm, mipLevelCount: 1, baseArrayLayer: dz, arrayLayerCount: 1, ...(twins ? { format: base } : {}) });
     if (!depthy) {
-      const kind = sampleKind(f);
-      const pipeline = pipelineFor(`mscopy:${f}`, `${P}
-@group(0) @binding(1) var t: texture_multisampled_2d<${kind}>;
-@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @location(0) vec4<${kind}> { return textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i)); }`, undefined, [{ format: f }]);
+      const kind = sampleKind(base), from = sampleKind(sBase);
+      const pipeline = pipelineFor(`mscopy:${sBase}:${base}:${swizzle}`, `${P}
+@group(0) @binding(1) var t: texture_multisampled_2d<${from}>;
+@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @location(0) vec4<${kind}> {
+  let v = textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i));
+  ${bits || `return v.${swizzle};`}
+}`, undefined, [{ format: base }]);
       const pass = this.enc!.beginRenderPass({ colorAttachments: [{ view: dstView, loadOp: 'load', storeOp: 'store' }] });
       pass.setScissorRect(dx, dy, w, h);
       draw(pass, pipeline, srcView('all'));
@@ -1364,8 +1379,8 @@ override bit: u32 = 8u;
   }
 
   /** A level and layer (a 3D texture's slice) as a colour attachment. */
-  private attachment(t: GPUTexture, mip: number, layer: number) {
-    const view = this.viewOf(t, mip, t.dimension === '3d' ? 0 : layer);
+  private attachment(t: GPUTexture, mip: number, layer: number, format?: string) {
+    const view = this.viewOf(t, mip, t.dimension === '3d' ? 0 : layer, format);
     return t.dimension === '3d' ? { view, depthSlice: layer } : { view };
   }
 
@@ -1418,7 +1433,7 @@ override bit: u32 = 8u;
       const dw = Math.max(1, tex.width >> j.dstMip), dh = Math.max(1, tex.height >> j.dstMip);
       // WebGPU's own resolve is of a whole level of one size, into a 2D texture, of what isn't an integer format.
       if (!/int$|^r(g|gba)?32float$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT)
-        enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] }).end();
+        enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat)), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer, ownFormat(tex, fmt)), loadOp: 'load', storeOp: 'store' }] }).end();
       else this.resolveByDraw(j, sx, sy, dx, dy, w, h);
       return;
     }
@@ -1466,7 +1481,8 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       this.metaPipelines.set(key, pipeline);
     }
     const [sx0, sy0, sx1, sy1] = j.from as number[], [dx0, dy0, dx1, dy1] = j.to as number[];
-    const [sw, sh] = j.srcSize as number[];
+    // A sample's coordinates are of the texture's level, which a padded compressed image's isn't in proportion to (VK4 T18).
+    const sw = Math.max(1, (j.src as GPUTexture).width >> j.srcMip), sh = Math.max(1, (j.src as GPUTexture).height >> j.srcMip);
     if (dx0 === dx1 || dy0 === dy1) return;
     // Slices: a 3D destination's each, else the one layer; each samples the source's slice at its centre.
     const [sz0, sz1] = (j.srcZ ?? [0, 1]) as number[], [dz0, dz1] = (j.dstZ ?? [0, 1]) as number[];
@@ -1536,10 +1552,11 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       this.metaPipelines.set(key, pipeline);
     }
     const u = this.params([(sx - dx) >>> 0, (sy - dy) >>> 0]);
-    const pass = this.enc!.beginRenderPass({ colorAttachments: [{ ...this.attachment(D, j.dstMip, j.dstLayer), loadOp: 'load', storeOp: 'store' }] });
+    // In the views' formats, which may be their textures' sRGB twins.
+    const pass = this.enc!.beginRenderPass({ colorAttachments: [{ ...this.attachment(D, j.dstMip, j.dstLayer, ownFormat(D, fmt)), loadOp: 'load', storeOp: 'store' }] });
     pass.setScissorRect(dx, dy, w, h);
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: u } }, { binding: 1, resource: this.viewOf(S, j.srcMip, j.srcLayer) }] }));
+    pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: u } }, { binding: 1, resource: this.viewOf(S, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat)) }] }));
     pass.draw(3);
     pass.end();
   }
@@ -1682,6 +1699,12 @@ ${vs}
     this.pass?.end();
     this.pass = undefined;
     this.passAtts = undefined;
+    // A capture still open is one a cut of the Vulkan pass divides (wg_cmd.c `begin_pass`): it goes on in the next part.
+    if (!xfbOpen(this.xfbJobs)) this.flushXfb();
+  }
+
+  /** The transform feedback of the render pass that ended. */
+  private flushXfb() {
     const jobs = this.xfbJobs;
     this.xfbJobs = [];
     if (jobs.length) this.runXfb(jobs);
@@ -2111,7 +2134,7 @@ fn ix(k: u32) -> u32 {
       const end = Math.min(ib.size, from + this.device!.limits.maxStorageBufferBindingSize, Math.ceil((ibOffset + ibSize) / 4) * 4);
       source = { buffer: ib, offset: from, size: Math.max(4, end - from) };
       el0 = (ibOffset - from) / el;
-      most = Math.floor((end - ibOffset) / el);
+      most = fanMost(end - ibOffset, el);
       listBytes = Math.max(12, Math.max(0, most - 2) * 12);
       [list, listAt] = this.scratch(STORAGE | INDEX, listBytes);
     }
@@ -2469,6 +2492,70 @@ export function encodeTexel(fmt: string, c: number[]): Uint8Array | undefined {
 }
 
 /** A texture format's WGSL sample type. */
+/** A view's format, where it isn't its texture's (undefined: the texture's own). */
+const ownFormat = (t: GPUTexture, format: string | undefined) => (format && format !== t.format ? format : undefined);
+
+/**
+ * The indices an indirect indexed fan's list has room for: its count is on the GPU, so the worst case, of the bound
+ * range, but no more than a fan may have (the bound range is often a whole shared buffer: VK4 R4, the review's X3).
+ */
+export const fanMost = (bytes: number, el: number) => Math.min(Math.floor(bytes / el), 65536);
+
+/** The swizzle of a copy between packed layouts (`[shift, bits]` of R, G, B, A; their textures are RGBA8): each channel
+ * of the destination takes the source's whose bits are where its are. Undefined: no such channels. */
+export function packedSwizzle(from?: number[], to?: number[]) {
+  if (!from || !to) return undefined;
+  let s = '';
+  for (let c = 0; c < 4; c++) {
+    if (!to[2 * c + 1]) { s += 'rgba'[c]; continue; }
+    const k = [0, 1, 2, 3].find((i) => from[2 * i] === to[2 * c] && from[2 * i + 1] === to[2 * c + 1]);
+    if (k === undefined) return undefined;
+    s += 'rgba'[k];
+  }
+  return s;
+}
+
+/** A format's channels as raw bits: their number and size, how a texel's value is one, and their order in memory. */
+function rawFormat(f: string) {
+  const m = /^(bgra|rgba|rg|r)(8|16|32)(unorm|uint|sint|float)$/.exec(f);
+  if (!m) return undefined;
+  const size = Number(m[2]), order = m[1] === 'bgra' ? [2, 1, 0, 3] : [0, 1, 2, 3].slice(0, m[1].length);
+  return { size, kind: m[3], order };
+}
+
+/**
+ * WGSL taking `v` (a texel of `from`) to the same bits as a texel of `to`, for formats of one block size: channel by
+ * channel to bits, to the block's two words, to `to`'s channels. '' for one format; undefined where the bits can't
+ * survive a shader (a float16's NaN does; snorm's two minima wouldn't, and isn't multisampled).
+ */
+export function bitsBetween(from: string, to: string) {
+  if (from === to) return '';
+  const a = rawFormat(from), b = rawFormat(to);
+  if (!a || !b || a.size * a.order.length !== b.size * b.order.length || a.size * a.order.length > 64) return undefined;
+  const mask = (n: number) => (n === 32 ? '0xffffffffu' : `${2 ** n - 1}u`);
+  const raw = (c: number) => (a.kind === 'unorm' ? `u32(round(v[${c}] * ${2 ** a.size - 1}.0))` : a.kind === 'float' ? (a.size === 32 ? `bitcast<u32>(v[${c}])` : `pack2x16float(vec2<f32>(v[${c}], 0.0))`) : `(u32(v[${c}]) & ${mask(a.size)})`);
+  const lines = ['var w = array<u32, 2>(0u, 0u);'];
+  a.order.forEach((c, k) => {
+    const at = k * a.size;
+    lines.push(`w[${at >> 5}] |= ${raw(c)} << ${at & 31}u;`);
+  });
+  const out: string[] = ['0', '0', '0', '1'];
+  const kind = b.kind === 'unorm' || b.kind === 'float' ? 'f32' : b.kind === 'uint' ? 'u32' : 'i32';
+  if (kind !== 'f32') out[3] = '1';
+  b.order.forEach((c, k) => {
+    const at = k * b.size;
+    const bits = `((w[${at >> 5}] >> ${at & 31}u) & ${mask(b.size)})`;
+    out[c] = b.kind === 'unorm' ? `f32(${bits}) / ${2 ** b.size - 1}.0`
+      : b.kind === 'float' ? (b.size === 32 ? `bitcast<f32>(${bits})` : `unpack2x16float(${bits}).x`)
+      : b.kind === 'uint' ? bits : `(i32(${bits} << ${32 - b.size}u) >> ${32 - b.size}u)`;
+  });
+  lines.push(`return vec4<${kind}>(${out.map((x) => (/^[01]$/.test(x) ? (kind === 'f32' ? `${x}.0` : kind === 'u32' ? `${x}u` : x) : x)).join(', ')});`);
+  return lines.join('\n  ');
+}
+
+/** Whether a render pass's capture jobs end in a capture still open: a cut of the pass divides it (VK4 R3, the review's R5). */
+export const xfbOpen = (jobs: { op?: unknown }[]) => jobs.findLast((j) => j.op !== 'draw')?.op === 'begin';
+
 /** A render pass's capture (`runXfb`): its buffers' places in `out` (by word; the counters its first 4). */
 type XfbSession = { bufs: ({ guest: GPUBuffer; at: number; size: number; word: number } | null)[]; out: GPUBuffer };
 

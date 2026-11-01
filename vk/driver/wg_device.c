@@ -1080,6 +1080,20 @@ wg_dimension(const struct vk_image *image)
    }
 }
 
+/* What the worker's copies need of a packed format, as a texture's first JSON key: each of R, G, B, A's shift and bits. */
+static void
+packed_key(struct wg_json *j, const struct wg_texture_format *fmt)
+{
+   const struct util_format_description *d = vk_format_description(fmt->vk);
+   wg_json_printf(j, "\"packed\":[");
+   for (uint32_t c = 0; c < 4; c++) {
+      const uint32_t k = d->swizzle[c];
+      wg_json_printf(j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
+                     k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
+   }
+   wg_json_printf(j, "],");
+}
+
 static uint32_t
 wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e)
 {
@@ -1136,25 +1150,19 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 2;
    /* WebGPU wants a compressed texture's size in whole blocks (Vulkan doesn't): rounded up, and copies with it. */
    struct wg_json j = { 0 };
-   /* What the worker's copies need of a packed format: each of R, G, B, A's shift and bits. */
-   if (flags & WG_FMT_PACKED) {
-      const struct util_format_description *d = vk_format_description(fmt->vk);
-      wg_json_printf(&j, "{\"packed\":[");
-      for (uint32_t c = 0; c < 4; c++) {
-         const uint32_t k = d->swizzle[c];
-         wg_json_printf(&j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
-                        k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
-      }
-      wg_json_printf(&j, "],\"size\":[");
-   } else {
-      wg_json_printf(&j, "{\"size\":[");
+   wg_json_printf(&j, "{");
+   if (flags & WG_FMT_PACKED)
+      packed_key(&j, fmt);
+   {
+      wg_json_printf(&j, "\"size\":[");
    }
    wg_json_printf(&j, "%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
                   "\"format\":\"%s\",\"usage\":%u,\"viewFormats\":[",
                   DIV_ROUND_UP(e.width, fmt->bw) * fmt->bw, DIV_ROUND_UP(e.height, fmt->bh) * fmt->bh,
                   vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
                   vi->samples, wg_dimension(vi), fmt->name, usage);
-   if ((vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || shared) {
+   /* A multisampled image's too: a copy into or out of its sRGB twin is a draw, of raw values. */
+   if ((vi->create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || shared || (vi->samples > 1 && !(flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))) {
       const VkFormat twin = vk_format_is_srgb(fmt->vk)
                                ? vk_format_srgb_to_linear(fmt->vk)
                                : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(fmt->vk)));
@@ -1624,6 +1632,8 @@ wg_view_att(struct wg_image_view *view, uint32_t index)
    /* A 3D image's slices are the pass's `depthSlice` of one view. */
    if (!index || index >= WG_MAX_LAYERS || view->slice >= 0 || !view->att)
       return view->att;
+   if (!view->layer_atts)
+      view->layer_atts = calloc(WG_MAX_LAYERS - 1, sizeof(*view->layer_atts));
    if (!view->layer_atts[index - 1]) {
       const struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
       struct wg_json j = { 0 };
@@ -1636,6 +1646,41 @@ wg_view_att(struct wg_image_view *view, uint32_t index)
    return view->layer_atts[index - 1];
 }
 
+struct wg_view_crop *
+wg_view_crop(struct wg_image_view *view, uint32_t width, uint32_t height)
+{
+   for (struct wg_view_crop *c = view->crops; c; c = c->next)
+      if (c->width == width && c->height == height)
+         return c;
+   const uint32_t layers = view->slice >= 0 ? 1 : view->vk.layer_count;
+   struct wg_view_crop *c = calloc(1, sizeof(*c) + layers * sizeof(c->atts[0]));
+   c->width = width, c->height = height;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{");
+   if (view->fmt->flags & WG_FMT_PACKED)
+      packed_key(&j, view->fmt);
+   /* COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT (the worker draws copies it can't make). */
+   wg_json_printf(&j, "\"size\":[%u,%u,%u],\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u}",
+                  width, height, layers, view->fmt->name, view->vk.image->samples,
+                  4 | 16 | ((view->fmt->flags & WG_FMT_NOCOPY) && !(view->fmt->flags & WG_FMT_STENCIL) ? 0 : 3));
+   c->texture = wg_create_json(WG_KIND_TEXTURE, &j);
+   c->next = view->crops;
+   view->crops = c;
+   return c;
+}
+
+uint32_t
+wg_crop_att(struct wg_image_view *view, struct wg_view_crop *crop, uint32_t index)
+{
+   if (!crop->atts[index]) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"texture\":%u,\"dimension\":\"2d\",\"mipLevelCount\":1,\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
+                     crop->texture, index);
+      crop->atts[index] = wg_create_json(WG_KIND_VIEW, &j);
+   }
+   return crop->atts[index];
+}
+
 uint32_t
 wg_view_twin(struct wg_image_view *view)
 {
@@ -1643,14 +1688,18 @@ wg_view_twin(struct wg_image_view *view)
       const VkExtent3D e = vk_image_mip_level_extent(view->vk.image, view->vk.base_mip_level);
       const bool depth = view->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL);
       struct wg_json j = { 0 };
+      wg_json_printf(&j, "{");
+      /* As the image's texture: the worker's copy between them is a packed format's own. */
+      if (view->fmt->flags & WG_FMT_PACKED)
+         packed_key(&j, view->fmt);
       /* TEXTURE_BINDING | COPY_DST | RENDER_ATTACHMENT (depth24plus takes no copies: drawn). */
-      wg_json_printf(&j, "{\"size\":{\"width\":%u,\"height\":%u},\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u}",
+      wg_json_printf(&j, "\"size\":{\"width\":%u,\"height\":%u},\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u}",
                      e.width, e.height, view->fmt->name, view->vk.image->samples,
                      4 | 16 | ((view->fmt->flags & WG_FMT_NOCOPY) && !(view->fmt->flags & WG_FMT_STENCIL) ? 0 : 2));
       view->twin_tex = wg_create_json(WG_KIND_TEXTURE, &j);
       j = (struct wg_json){ 0 };
       wg_json_printf(&j, "{\"texture\":%u,\"dimension\":\"2d\",\"mipLevelCount\":1,\"arrayLayerCount\":1%s%s}", view->twin_tex,
-                     (view->fmt->flags & WG_FMT_OPAQUE) ? ",\"swizzle\":\"rgb1\",\"usage\":4" : "",
+                     (view->fmt->flags & WG_FMT_OPAQUE) && (wg_features & WG_FEATURE_SWIZZLE) ? ",\"swizzle\":\"rgb1\",\"usage\":4" : "",
                      !depth || view->vk.aspects == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ? ""
                      : view->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT ? ",\"aspect\":\"depth-only\""
                                                                     : ",\"aspect\":\"stencil-only\"");
@@ -1674,8 +1723,16 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    wg_id_release(view->faces);
    wg_id_release(view->att);
    wg_id_release(view->word_params);
-   for (uint32_t i = 0; i < ARRAY_SIZE(view->layer_atts); i++)
+   for (uint32_t i = 0; view->layer_atts && i < WG_MAX_LAYERS - 1; i++)
       wg_id_release(view->layer_atts[i]);
+   free(view->layer_atts);
+   for (struct wg_view_crop *c = view->crops, *next; c; c = next) {
+      next = c->next;
+      for (uint32_t i = 0; i < (view->slice >= 0 ? 1 : view->vk.layer_count); i++)
+         wg_id_release(c->atts[i]);
+      wg_id_release(c->texture);
+      free(c);
+   }
    for (uint32_t p = 1; p < view->plane_count; p++)
       wg_id_release(view->planes[p]);
    vk_image_view_destroy(&dev->vk, pAllocator, &view->vk);

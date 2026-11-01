@@ -759,9 +759,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     shader's filter's cost on a program is unmeasured (none replayed has such an image). A corner of the cube's seam
     takes one face's texel, not Vulkan's three. `texture-compression-unaligned`, if Chromium ships it, replaces all of
     it (`padded` false).
-  - **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats that differ other than by sRGB
-    is skipped with a warning (a draw can't carry bit patterns across formats; no dEQP-VK case of the sample met it, a
-    storage-buffer round trip would do it). GFXReconstruct's trimmed captures restore their depth images through the worker's
+  - **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats of a block's size goes through a shader that
+    carries the bits (VK4 R4, `bitsBetween` in web/venus-gpu.ts), for 8-, 16- and 32-bit channels of unorm, uint, sint and
+    float; others (`rgb10a2`, packed layouts whose fields differ) are skipped with a warning. A float16's signalling NaN
+    doesn't survive it. A linear blit from a padded compressed image filters into the padding at its last texels. GFXReconstruct's trimmed captures restore their depth images through the worker's
     paths (vkQuake's first replayed frame).
   - **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
     `image.mutable` is multisampled: view formats WebGPU can't multisample
@@ -779,8 +780,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
     multisample, without a format list saying so: no texture can back those.
-  - **Packed 16-bit formats' leftovers** (VK4 T12; vk/README.md "Packed 16-bit formats"): what's rendered is read back
-    unquantized by a shader, 4 `renderpasses.*.formats.r5g6b5_unorm_pack16.input.*self_dep*`; the two 1.3 orders
+  - **Packed 16-bit formats' leftovers** (VK4 T12; vk/README.md "Packed 16-bit formats"): the two 1.3 orders
     `A4R4G4B4`, `A4B4G4R4` and `A1B5G5R5` aren't offered; the same path would take them. A view of another format of the
     16-bit class isn't offered.
   - **Pulled vertices' leftovers** (VK4 T5; vk/README.md "Pulled vertices"): a program with four groups of resources
@@ -818,9 +818,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     type; shared memory is one array); flat
     varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
     load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
-  - **Multisampled image clears** (VK4 T12, 3 of its sample; not looked into):
-    `clear_color_image.2d.optimal.{multiple_layers,remaining_array_layers}.*8g8*8a8_unorm*sample_count_4` read 0 or another
-    colour, the `uint` ones passing, so likely WebGPU's own resolve; `diff_image_size.dst_256_256_11_4_bit`.
+  - **Multisampled image clears** (VK4 T12; the review's X4, copying every layer, wasn't their cause: VK4 R4): 57 of
+    `clear_color_image.2d.optimal.{multiple_layers,remaining_array_layers}.*_sample_count_4`, unorm and packed formats, read
+    0 or another colour, the `uint` ones passing, so likely WebGPU's own resolve, though `misc: a multisampled copy of two
+    layers` resolves a second layer rightly; 4 `resolve_image.diff_image_size.dst_256_256_11_4_bit*`.
   - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): two queries active at once (Vulkan allows it across pools), one past slot 4,096, or
     one begun in a pass and cut by a WebGPU pass's end inside Vulkan's is reported as passing, warned once;
     `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count); the host's
@@ -843,7 +844,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `CONSTANT_ALPHA` (WebGPU has one constant: the colour's taken, warned; 4 of the Mac's 49 supported
     `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`); a storage buffer the fragment
     stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); non-indexed fans
-    past 65,536 vertices dropped without a warning, indirect ones cut there; an indirect draw with the last vertex
+    past 65,536 vertices not drawn (said once), indirect ones cut there, indexed indirect ones too (their list is sized
+    by a fan: VK4 R4); an indirect draw with the last vertex
     provoking drawn as it is. Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
     dEQP-VK's SAMPLE_ZERO `depth_stencil_resolve` cases in the list since L7.1, stencil8's above); MIN, MAX and AVERAGE
     aren't advertised.

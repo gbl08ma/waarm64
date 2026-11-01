@@ -60,6 +60,7 @@ int wgt_pass_done(void);
 const uint64_t *wgt_pass_query(void);
 int wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words);
 uint8_t *wgt_misc_map(void);
+void wgt_misc_vs(const uint32_t *vs, uint32_t vs_words);
 int wgt_misc_done(void);
 int wgt_misc_signal(void);
 int wgt_misc_pool_refs(void);
@@ -3615,6 +3616,331 @@ dispatch_with(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, uint32
    return 0;
 }
 
+/* A 2D image of `layers` with a view of them (its format `view_format`), usable as a colour attachment and a copy's
+ * either end, `extra` its other usage. */
+static int
+layered_image(VkFormat format, VkFormat view_format, uint32_t w, uint32_t h, uint32_t layers, VkImageUsageFlags extra,
+              VkImageCreateFlags flags, VkImage *out, VkImageView *view)
+{
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = flags, .imageType = VK_IMAGE_TYPE_2D, .format = format,
+      .extent = { w, h, 1 }, .mipLevels = 1, .arrayLayers = layers, .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | extra,
+   };
+   CHECK(CreateImage(dev, &info, NULL, out));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, *out, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, *out, mem, 0));
+   const VkImageViewCreateInfo vi = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = *out,
+      .viewType = layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D, .format = view_format,
+      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers } };
+   CHECK(CreateImageView(dev, &vi, NULL, view));
+   return 0;
+}
+
+static void
+copy_texel(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, uint32_t layer, int32_t x, int32_t y, VkBuffer out,
+           VkDeviceSize at)
+{
+   const VkBufferImageCopy r = { .bufferOffset = at, .imageSubresource = { aspect, 0, layer, 1 }, .imageOffset = { x, y, 0 },
+                                 .imageExtent = { 1, 1, 1 } };
+   CmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1, &r);
+}
+
+/* A 2D image for R4's copies: `layers`, `samples`, of every usage a multisampled one takes. */
+static int
+copy_image(VkFormat format, uint32_t w, uint32_t h, uint32_t layers, VkSampleCountFlagBits samples, VkImage *out)
+{
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = format, .extent = { w, h, 1 },
+      .mipLevels = 1, .arrayLayers = layers, .samples = samples, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+               VK_IMAGE_USAGE_SAMPLED_BIT };
+   CHECK(CreateImage(dev, &info, NULL, out));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, *out, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, *out, mem, 0));
+   return 0;
+}
+
+/* VK4 R4's transfers (`out` as wgt_misc's):
+ * 52 (the review's X1): a 10x1 region of an RGBA8 image from [0, 40) (i + 1 a byte) with bufferImageHeight 4, and back
+ *    to 64: the bytes.
+ * 55 (X4): two layers of 4 samples cleared to A and B, both copied into a second image, each resolved and its
+ *    texel at 0, 4: A, B.
+ * 56 (X5): 4 samples of RGBA8_SRGB cleared to 0.5 (bytes 188), copied into RGBA8_UNORM, resolved: 188 at 0.
+ * 57 (X8): 4 samples of R5G6B5 cleared to red, copied into B5G6R5, resolved: the same bits (0xf800) at 0.
+ * 59 (backlog "Copies WebGPU refuses"): 4 samples of RGBA8 cleared to A, copied into R16G16_UINT, resolved: A's bytes at 0. */
+static int
+r4_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   PFN_vkCmdResolveImage CmdResolveImage = (PFN_vkCmdResolveImage)GetDeviceProcAddr(dev, "vkCmdResolveImage");
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   PFN_vkCmdCopyBufferToImage CmdCopyBufferToImage = (PFN_vkCmdCopyBufferToImage)GetDeviceProcAddr(dev, "vkCmdCopyBufferToImage");
+   const VkImageLayout src = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+   if (scenario == 52) {
+      uint8_t bytes[40];
+      for (uint32_t i = 0; i < 40; i++)
+         bytes[i] = i + 1;
+      CmdUpdateBuffer(cmd, out, 0, sizeof(bytes), bytes);
+      VkImage image;
+      if (copy_image(VK_FORMAT_R8G8B8A8_UNORM, 16, 16, 1, VK_SAMPLE_COUNT_1_BIT, &image))
+         return 1;
+      VkBufferImageCopy r = { .bufferOffset = 0, .bufferImageHeight = 4, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                              .imageExtent = { 10, 1, 1 } };
+      CmdCopyBufferToImage(cmd, out, image, dst, 1, &r);
+      r.bufferOffset = 64;
+      CmdCopyImageToBuffer(cmd, image, src, out, 1, &r);
+      return 0;
+   }
+   const VkFormat from = scenario == 56 ? VK_FORMAT_R8G8B8A8_SRGB : scenario == 57 ? VK_FORMAT_R5G6B5_UNORM_PACK16 : VK_FORMAT_R8G8B8A8_UNORM;
+   const VkFormat to = scenario == 56 ? VK_FORMAT_R8G8B8A8_UNORM : scenario == 57 ? VK_FORMAT_B5G6R5_UNORM_PACK16 :
+                       scenario == 59 ? VK_FORMAT_R16G16_UINT : from;
+   const uint32_t layers = scenario == 55 ? 2 : 1, size = 16;
+   VkImage a, b, c;
+   if (copy_image(from, size, size, layers, VK_SAMPLE_COUNT_4_BIT, &a) || copy_image(to, size, size, layers, VK_SAMPLE_COUNT_4_BIT, &b) ||
+       copy_image(to, size, size, layers, VK_SAMPLE_COUNT_1_BIT, &c))
+      return 1;
+   const VkClearColorValue first = { .float32 = { scenario == 57 ? 1.0f : 0.5f, scenario == 57 ? 0 : 0.5f, scenario == 57 ? 0 : 0.5f, 1 } };
+   const VkClearColorValue second = { .float32 = { 0.25f, 0.5f, 0.75f, 1 } };
+   VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, a, dst, &first, 1, &range);
+   range.baseArrayLayer = 1;
+   if (layers == 2)
+      CmdClearColorImage(cmd, a, dst, &second, 1, &range);
+   const VkImageCopy copy = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers },
+                              .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers }, .extent = { size, size, 1 } };
+   CmdCopyImage(cmd, a, src, b, dst, 1, &copy);
+   for (uint32_t l = 0; l < layers; l++) {
+      const VkImageResolve r = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, l, 1 },
+                                 .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, l, 1 }, .extent = { size, size, 1 } };
+      CmdResolveImage(cmd, b, src, c, dst, 1, &r);
+      copy_texel(cmd, c, VK_IMAGE_ASPECT_COLOR_BIT, l, 8, 8, out, l * 4);
+   }
+   return 0;
+}
+
+/* 53 (the review's X2): a pass of 4 samples of RGBA8_UNORM images' SRGB views over a part of them, cleared to 0.5 and
+ * resolved into the second's: the resolve's a draw (a render area short of the image), in the views' format: 188 at 0. */
+static int
+r4_resolve(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   VkImage images[2];
+   VkImageView views[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkImageCreateInfo info = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, .imageType = VK_IMAGE_TYPE_2D,
+         .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = { 16, 16, 1 }, .mipLevels = 1, .arrayLayers = 1,
+         .samples = i ? VK_SAMPLE_COUNT_1_BIT : VK_SAMPLE_COUNT_4_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
+      CHECK(CreateImage(dev, &info, NULL, &images[i]));
+      VkMemoryRequirements req;
+      GetImageMemoryRequirements(dev, images[i], &req);
+      VkDeviceMemory mem;
+      if (memory_for(req, false, &mem, NULL))
+         return 1;
+      CHECK(BindImageMemory(dev, images[i], mem, 0));
+      const VkImageViewCreateInfo vi = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = images[i], .viewType = VK_IMAGE_VIEW_TYPE_2D,
+         .format = VK_FORMAT_R8G8B8A8_SRGB, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+      CHECK(CreateImageView(dev, &vi, NULL, &views[i]));
+   }
+   const VkRenderingAttachmentInfo c = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = views[0],
+      .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
+      .resolveImageView = views[1], .resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clearValue = { .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1 } } } };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { 12, 12 } },
+                                .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &c };
+   CmdBeginRendering(cmd, &ri);
+   CmdEndRendering(cmd);
+   copy_texel(cmd, images[1], VK_IMAGE_ASPECT_COLOR_BIT, 0, 6, 6, out, 0);
+   return 0;
+}
+
+/* VK4 R3's passes (`out` as wgt_misc's):
+ * 47 (the review's R2): a 32x32 colour attachment and a 64x64 depth one, its whole cleared to 0.75, the pass's area 32x32
+ *    clearing colour to (0.25, 0.5, 0.75, 1) and depth to 0.25: the colour's (16, 16) at 0, depth's (8, 8) at 256 and its
+ *    (48, 48), outside the pass's size, at 260.
+ * 48 (R6): an image of RGBA8 cleared to that colour, a pass with load and store op NONE on an R32_UINT view of it (a
+ *    texture of its own), no draws: the colour at 0.
+ * 49 (R7): 40 layers, a layered pass of 40 clearing them to that colour: layers 35 and 39 at 0 and 4. */
+static int
+r3_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+      (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+   const VkClearValue colour = { .color = { .float32 = { 0.25f, 0.5f, 0.75f, 1 } } };
+   const uint32_t layers = scenario == 49 ? 40 : 1, size = 32;
+   VkImage target;
+   VkImageView view;
+   const VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+   if (layered_image(format, scenario == 48 ? VK_FORMAT_R32_UINT : format, size, size, layers, 0,
+                     scenario == 48 ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0, &target, &view))
+      return 1;
+   const VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers };
+   if (scenario == 48)
+      CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour.color, 1, &all);
+   VkImage depth = VK_NULL_HANDLE;
+   VkImageView dview = VK_NULL_HANDLE;
+   if (scenario == 47) {
+      if (image(VK_FORMAT_D32_SFLOAT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                   VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &dview))
+         return 1;
+      const VkClearDepthStencilValue v = { 0.75f, 0 };
+      const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+      CmdClearDepthStencilImage(cmd, depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &v, 1, &r);
+   }
+   const VkRenderingAttachmentInfo c = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = view,
+      .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .loadOp = scenario == 48 ? VK_ATTACHMENT_LOAD_OP_NONE : VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = scenario == 48 ? VK_ATTACHMENT_STORE_OP_NONE : VK_ATTACHMENT_STORE_OP_STORE, .clearValue = colour };
+   const VkRenderingAttachmentInfo d = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dview,
+      .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { 0.25f, 0 } } };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { size, size } },
+                                .layerCount = layers, .colorAttachmentCount = 1, .pColorAttachments = &c,
+                                .pDepthAttachment = scenario == 47 ? &d : NULL };
+   CmdBeginRendering(cmd, &ri);
+   CmdEndRendering(cmd);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, scenario == 49 ? 35 : 0, 16, 16, out, 0);
+   if (scenario == 49)
+      copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 39, 16, 16, out, 4);
+   if (scenario == 47) {
+      copy_texel(cmd, depth, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 8, 8, out, 256);
+      copy_texel(cmd, depth, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 48, 48, out, 260);
+   }
+   return 0;
+}
+
+/* VK4 R3's input attachments (feedback.vert, set by `wgt_misc_vs`, and `cs`: feedback.frag), a draw reading what it
+ * writes: 50 (the review's R3): one 128x128 R5G6B5 view, cleared to red, attachment and input: red at 0; 51 (R8): a
+ * framebuffer of two layers of RGBA8, layer 0 cleared to one colour and 1 to another, the input a view of layer 1, so the
+ * pass's draw copies layer 1 into layer 0: that colour at 0. */
+static const uint32_t *feedback_vs;
+static uint32_t feedback_vs_words;
+
+EXPORT void
+wgt_misc_vs(const uint32_t *vs, uint32_t vs_words)
+{
+   feedback_vs = vs, feedback_vs_words = vs_words;
+}
+
+static int
+r3_feedback(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const bool packed = scenario == 50;
+   const VkFormat format = packed ? VK_FORMAT_R5G6B5_UNORM_PACK16 : VK_FORMAT_R8G8B8A8_UNORM;
+   const uint32_t size = packed ? 128 : 16, layers = packed ? 1 : 2;
+   VkImage target;
+   VkImageView att, input;
+   if (layered_image(format, format, size, size, layers, VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, 0, &target, &att))
+      return 1;
+   const VkImageViewCreateInfo ivi = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = target, .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = format,
+      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, packed ? 0 : 1, 1 } };
+   CHECK(CreateImageView(dev, &ivi, NULL, &input));
+   const VkClearColorValue first = { .float32 = { 1, 0, 0, 1 } }, second = { .float32 = { 0, 1, 0, 1 } };
+   const VkImageSubresourceRange l0 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }, l1 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 };
+   CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &first, 1, &l0);
+   if (!packed)
+      CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &second, 1, &l1);
+   const VkAttachmentDescription ad[2] = {
+      { 0, format, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL },
+      { 0, format, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL } };
+   const VkAttachmentReference cr = { 0, VK_IMAGE_LAYOUT_GENERAL }, ir = { 1, VK_IMAGE_LAYOUT_GENERAL };
+   const VkSubpassDescription sub = { .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .inputAttachmentCount = 1,
+                                      .pInputAttachments = &ir, .colorAttachmentCount = 1, .pColorAttachments = &cr };
+   const VkRenderPassCreateInfo rpi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = 2,
+                                        .pAttachments = ad, .subpassCount = 1, .pSubpasses = &sub };
+   VkRenderPass rp;
+   CHECK(CreateRenderPass(dev, &rpi, NULL, &rp));
+   const VkImageView views[2] = { att, input };
+   const VkFramebufferCreateInfo fbi = { .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, .renderPass = rp,
+                                         .attachmentCount = 2, .pAttachments = views, .width = size, .height = size,
+                                         .layers = layers };
+   VkFramebuffer fb;
+   CHECK(CreateFramebuffer(dev, &fbi, NULL, &fb));
+   const VkDescriptorSetLayoutBinding b = { 0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL };
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = 1, .pBindings = &b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
+                                            .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1 };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 1, .pPoolSizes = &ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   const VkDescriptorImageInfo ii = { VK_NULL_HANDLE, input, VK_IMAGE_LAYOUT_GENERAL };
+   const VkWriteDescriptorSet wr = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .descriptorCount = 1,
+                                     .descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, .pImageInfo = &ii };
+   UpdateDescriptorSets(dev, 1, &wr, 0, NULL);
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, (float)size, (float)size, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { size, size } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState ba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = stages, .pVertexInputState = &vis,
+      .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs, .pMultisampleState = &ms,
+      .pColorBlendState = &bs, .layout = layout, .renderPass = rp };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = rp, .framebuffer = fb,
+                                       .renderArea = area };
+   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, NULL);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   CmdEndRenderPass(cmd);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, (int32_t)size / 2, (int32_t)size / 2, out, 0);
+   return 0;
+}
+
 /* VK4 R2's dispatches in one host-visible memory (`out`, 4 KiB; tests/venus/):
  * 44 (two-reads.comp, the review's R4): `a` and `b` read-only, both at [1024, 1056) (1, 2, 3, 4), `o` at [0, 32).
  * 45 (two-writes.comp): two writable bindings of [256, 320).
@@ -4382,6 +4708,18 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 39 || scenario == 43) {
       if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43))
+         return 1;
+   } else if (scenario == 53) {
+      if (r4_resolve(cmd, out))
+         return 1;
+   } else if (scenario == 52 || (scenario >= 55 && scenario <= 59)) {
+      if (r4_misc(scenario, cmd, out))
+         return 1;
+   } else if (scenario >= 47 && scenario <= 49) {
+      if (r3_misc(scenario, cmd, out))
+         return 1;
+   } else if (scenario == 50 || scenario == 51) {
+      if (r3_feedback(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario >= 44 && scenario <= 46) {
       if (r2_misc(scenario, cs, cs_words, cmd, out))

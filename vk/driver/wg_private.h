@@ -372,7 +372,7 @@ void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t
 
 /* maxMultiviewViewCount. */
 #define WG_MAX_VIEWS 8
-#define WG_MAX_LAYERS 32 /* of a pass: its load and store ops and clears reach them (wg_CmdBeginRendering) */
+#define WG_MAX_LAYERS 256 /* of a pass: its load and store ops and clears reach them (wg_CmdBeginRendering) */
 /* A view as Vulkan made it (`view`: sampled or storage), and as an attachment (`att`: one level, one layer, 2D). */
 struct wg_image_view {
    struct vk_image_view vk;
@@ -395,12 +395,25 @@ struct wg_image_view {
    /* A copy of what the view shows, read where its image is an attachment of the pass (wg_view_twin, `feedback_copies`
     * in wg_cmd.c), and the mark it was made at. */
    uint32_t twin_tex, twin, twin_mark;
-   uint32_t layer_atts[WG_MAX_LAYERS - 1]; /* multiview, layered passes: layers past the first as attachments (wg_view_att), made at first use */
+   uint32_t *layer_atts;  /* multiview, layered passes: layers past the first as attachments (wg_view_att), WG_MAX_LAYERS - 1 of them */
+   struct wg_view_crop *crops; /* the attachment in a pass smaller than it (wg_view_crop) */
    uint32_t word_params; /* a word binding's parameters (wgsl_print.c `image_words`), made at the first (0: none) */
 };
 
 /* A view's attachment for multiview's view `view`: its layer past the view's first. */
 uint32_t wg_view_twin(struct wg_image_view *view);
+/*
+ * WebGPU wants a render pass's attachments of one size; Vulkan only that the render area fits each. An attachment larger
+ * than its pass's others is drawn in a texture of the pass's size, the crop, copied from it before the pass and back
+ * after (wg_cmd.c `crop_copies`). `wg_view_crop` is the crop, `wg_crop_att` a layer's attachment of it.
+ */
+struct wg_view_crop {
+   struct wg_view_crop *next;
+   uint32_t width, height, texture;
+   uint32_t atts[]; /* a layer's view, of the view's layers */
+};
+struct wg_view_crop *wg_view_crop(struct wg_image_view *view, uint32_t width, uint32_t height);
+uint32_t wg_crop_att(struct wg_image_view *view, struct wg_view_crop *crop, uint32_t index);
 uint32_t wg_view_att(struct wg_image_view *view, uint32_t index);
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
@@ -738,7 +751,10 @@ struct wg_cmd_buffer {
        * samples (dummy_samples; 0: not this command buffer's pass, or given). */
       size_t dummy_at;
       uint32_t view_mask;    /* multiview: the pass replays once a view */
-      uint32_t layer_mask;   /* multiview's views, or a layered pass's layers: what its resolves cover */
+      uint32_t layer_mask;   /* multiview's views: what its resolves cover */
+      uint32_t layer_count;  /* or a layered pass's layers */
+      struct { struct wg_image_view *view; struct wg_view_crop *crop; } crops[10]; /* `crop_copies` */
+      uint32_t crop_count;
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */
    struct wg_pipeline_key last_key;

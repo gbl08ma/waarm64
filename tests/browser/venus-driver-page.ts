@@ -494,7 +494,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks', push: string) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -509,7 +509,13 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51 }[scenario];
+  if (push.endsWith('.frag.spv')) {
+    const vert = new Uint8Array(await (await fetch('/target/vk/test/feedback.vert.spv')).arrayBuffer());
+    const vs = ex.venus_alloc(vert.length) >>> 0;
+    new Uint8Array(memory.buffer, vs, vert.length).set(vert);
+    (ex as unknown as { wgt_misc_vs(p: number, n: number): void }).wgt_misc_vs(vs, vert.length / 4);
+  }
   if (ex.wgt_misc(index, cs, words.length / 4)) return { error: text(ex.wgt_error() >>> 0), errors };
   if (scenario === 'emptyAfterHeld') {
     // The fence of the submit behind the held copy: unsignalled while the copy waits for the host.
@@ -657,6 +663,35 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     u32(want.subarray(1024, 1040)).set([40, 41, 42, 43]);
     u32(want.subarray(32, 48)).set([100, 101, 102, 103]);
     Object.assign(checks, { pointers: [0, 512, want], descriptor: [512, 4096, want] });
+  } else if (scenario === 'oneRow') {
+    // VK4 R4 (wg_test.c 52): the 10 texels there and back.
+    const bytes = Uint8Array.from({ length: 40 }, (_, i) => i + 1);
+    want.set(bytes, 0);
+    want.set(bytes, 64);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'msLayers') {
+    want.set([128, 128, 128, 255, 64, 128, 191, 255], 0);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'msTwins' || scenario === 'resolveTwin') {
+    want.set(scenario === 'msTwins' ? [188, 188, 188, 255] : [188, 188, 188, 255], 0);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'msPacked') {
+    want.set([0x00, 0xf8], 0);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'msFormats') {
+    want.set([128, 128, 128, 255], 0);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'attachmentSizes' || scenario === 'loadNone' || scenario === 'manyLayers') {
+    // VK4 R3 (wg_test.c 47 to 49): (0.25, 0.5, 0.75, 1) as bytes.
+    want.set([64, 128, 191, 255], 0);
+    if (scenario === 'manyLayers') want.set([64, 128, 191, 255], 4);
+    if (scenario === 'attachmentSizes') new Float32Array(want.buffer, want.byteOffset + 256, 2).set([0.25, 0.75]);
+    Object.assign(checks, { written: [0, 4096, want] });
+  } else if (scenario === 'packedFeedback' || scenario === 'feedbackLayer') {
+    // VK4 R3 (wg_test.c 50, 51): pure red as R5G6B5, pure green (layer 1's) as RGBA8.
+    if (scenario === 'packedFeedback') want.set([0x00, 0xf8], 0);
+    else want.set([0, 255, 0, 255], 0);
+    Object.assign(checks, { written: [0, 4096, want] });
   } else if (scenario === 'addressesUniform') {
     // VK4 R2 (wg_test.c 43): the pointers' reads plus the uniform, through the descriptor, and the pointers' writes.
     u32(want.subarray(1024, 1040)).fill(1040);

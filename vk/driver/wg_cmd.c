@@ -633,17 +633,48 @@ dummy_samples(struct wg_cmd_buffer *cmd, uint32_t samples)
    cmd->pass.samples = samples;
 }
 
-/* The pass of `view` (0 without multiview): a pass per view, each view's bit of `mask` a layer of each attachment.
- * `views`, with multiview or a layered pass, gathers each view's JSON; the last view's call emits them. */
+/* Whether a view's extent at its level is other than the pass's. */
+static bool
+other_size(const struct wg_image_view *v, uint32_t width, uint32_t height)
+{
+   const VkExtent3D e = vk_image_mip_level_extent(v->vk.image, v->vk.base_mip_level);
+   return e.width != width || e.height != height;
+}
+
+/* An attachment's texture and its crop (wg_view_crop), one way or the other, at the render pass's size: a copy per
+ * aspect, of the view's layers (a 3D view's one slice). */
+static void
+crop_copies(struct wg_cmd_buffer *cmd, bool back)
+{
+   for (uint32_t i = 0; i < cmd->pass.crop_count; i++) {
+      const struct wg_image_view *v = cmd->pass.crops[i].view;
+      const struct wg_view_crop *c = cmd->pass.crops[i].crop;
+      const uint32_t tex = view_texture(v), layer = v->slice >= 0 ? v->slice : v->vk.base_array_layer;
+      const uint32_t layers = v->slice >= 0 ? 1 : v->vk.layer_count, mip = v->vk.base_mip_level;
+      const bool both = (v->fmt->flags & WG_FMT_DEPTH) && (v->fmt->flags & WG_FMT_STENCIL);
+      for (uint32_t a = both ? 1 : 0; a <= (both ? 2u : 0u); a++) {
+         struct op_copy_tt op = { .src = back ? c->texture : tex, .src_mip = back ? 0 : mip, .sz = back ? 0 : layer,
+                                  .dst = back ? tex : c->texture, .dst_mip = back ? mip : 0, .dz = back ? layer : 0,
+                                  .w = c->width, .h = c->height, .d = layers, .aspect = a, .dst_w = c->width,
+                                  .dst_h = c->height, .cols = c->width, .rows = c->height, .bytes = v->fmt->bytes };
+         emit(cmd, OP_COPY_TT, &op, sizeof(op));
+      }
+   }
+}
+
+/* The pass of `view` (0 without multiview): a pass per view, each view's bit of `mask` (a layered pass's, its index) a
+ * layer of each attachment. `views`, with multiview or a layered pass, gathers each view's JSON; the `last_view` call
+ * emits them. */
 static void
 begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t view, struct util_dynarray *views,
-                uint32_t mask)
+                uint32_t mask, bool last_view)
 {
    memset(&cmd->pass, 0, sizeof(cmd->pass));
    cmd->pass.active = true;
    cmd->pass.samples = 1;
    cmd->pass.view_mask = info->viewMask;
-   cmd->pass.layer_mask = mask;
+   cmd->pass.layer_mask = info->viewMask;
+   cmd->pass.layer_count = info->viewMask ? 0 : MIN2(info->layerCount, WG_MAX_LAYERS);
    forget(cmd);
    const VkRect2D area = info->renderArea;
    uint32_t width = 0, height = 0;
@@ -662,15 +693,32 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       atts_info[n++] = info->pDepthAttachment;
    if (info->pStencilAttachment)
       atts_info[n++] = info->pStencilAttachment;
+   /* The pass's size: the smallest of each; the render area fits every attachment, so it fits that. */
    for (uint32_t i = 0; i < n; i++) {
       VK_FROM_HANDLE(wg_image_view, v, atts_info[i]->imageView);
       if (v) {
          const VkExtent3D e = vk_image_mip_level_extent(v->vk.image, v->vk.base_mip_level);
-         width = e.width, height = e.height;
+         width = width ? MIN2(width, e.width) : e.width;
+         height = height ? MIN2(height, e.height) : e.height;
          cmd->pass.samples = v->vk.image->samples;
-         break;
       }
    }
+   /* An attachment of another size is drawn in a crop. */
+   struct wg_view_crop *crops[10] = { 0 };
+   for (uint32_t i = 0; i < n; i++) {
+      VK_FROM_HANDLE(wg_image_view, v, atts_info[i]->imageView);
+      if (!v || !v->att || !other_size(v, width, height))
+         continue;
+      crops[i] = wg_view_crop(v, width, height);
+      bool known = false;
+      for (uint32_t c = 0; c < cmd->pass.crop_count; c++)
+         known |= cmd->pass.crops[c].view == v;
+      if (!known) {
+         cmd->pass.crops[cmd->pass.crop_count].view = v;
+         cmd->pass.crops[cmd->pass.crop_count++].crop = crops[i];
+      }
+   }
+#define ATT(i, v) (crops[i] ? wg_crop_att(v, crops[i], view) : wg_view_att(v, view))
    /* No attachments: one of the device's, the render area's size, written by no draw. */
    bool dummy = false;
    if (!width && !height) {
@@ -691,6 +739,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
    /* A pass that suspends or resumes (VK_RENDERING_SUSPENDING_BIT, RESUMING_BIT) is part of one render pass instance
     * with its neighbours: only its first part loads or clears, only its last part stores or discards. */
    const bool resumed = info->flags & VK_RENDERING_RESUMING_BIT, suspending = info->flags & VK_RENDERING_SUSPENDING_BIT;
+   cmd->pass.suspending = suspending;
    bool first_clear = true;
    for (uint32_t i = 0; i < cmd->pass.color_count; i++) {
       const VkRenderingAttachmentInfo *a = &info->pColorAttachments[i];
@@ -699,7 +748,9 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
          wg_json_printf(&j, "%snull", i ? "," : "");
          continue;
       }
-      record_attachment_use(cmd, v, a->loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && !partial && !resumed);
+      /* NONE keeps the contents as LOAD does (the review's R6: stale bytes stored over a mutable image's). */
+      record_attachment_use(cmd, v, (a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR || a->loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE) &&
+                                       !partial && !resumed && !crops[i]);
       cmd->pass.colors[i] = v->vk.format;
       const bool clear = !resumed && a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
       const VkClearColorValue *c = &a->clearValue.color;
@@ -715,19 +766,19 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
       const bool resolves = r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE;
       if (resolves)
-         record_attachment_use(cmd, r, !partial);
+         record_attachment_use(cmd, r, !partial && !crops[i] && !other_size(r, width, height));
       /* What WebGPU's resolve can't make (a format it doesn't resolve, part of the attachment, a 3D image) is the worker's draw
        * at the pass's end, which reads the attachment: stored. */
       const bool drawn = resolves && (!(v->fmt->flags & WG_FMT_BLEND) || (v->fmt->flags & WG_FMT_FLOAT32) || partial ||
-                                      r->slice >= 0);
+                                      r->slice >= 0 || crops[i] || other_size(r, width, height));
       if (drawn) {
          cmd->pass.resolve_color_src[i] = v;
          cmd->pass.resolve_color_dst[i] = r;
       }
       wg_json_printf(&j, "%s{\"view\":%u,\"loadOp\":\"%s\",\"storeOp\":\"%s\",\"clearValue\":[%s]", i ? "," : "",
-                     wg_view_att(v, view), load_op(a->loadOp, partial, resumed),
-                     drawn ? "store" : store_op(a->storeOp, suspending, partial), value);
-      if (v->slice >= 0)
+                     ATT(i, v), load_op(a->loadOp, partial, resumed),
+                     drawn || crops[i] ? "store" : store_op(a->storeOp, suspending, partial), value);
+      if (v->slice >= 0 && !crops[i])
          wg_json_printf(&j, ",\"depthSlice\":%d", v->slice + (int)view);
       if (resolves && !drawn)
          wg_json_printf(&j, ",\"resolveTarget\":%u", wg_view_att(r, view));
@@ -763,9 +814,9 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
          cmd->pass.depth = dv->vk.format;
       if (sv)
          cmd->pass.stencil = sv->vk.format;
-      wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", wg_view_att(ds, view));
+      const uint32_t ds_at = cmd->pass.color_count - (dummy ? 1 : 0) + (dv ? 0 : 1);
+      wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", ATT(ds_at, ds));
       /* SAMPLE_ZERO resolves (the modes advertised) of a multisampled depth or stencil, done at the pass's end. */
-      cmd->pass.suspending = suspending;
       for (uint32_t a = 0; a < 2; a++) {
          const VkRenderingAttachmentInfo *at = a ? s : d;
          VK_FROM_HANDLE(wg_image_view, src, at ? at->imageView : VK_NULL_HANDLE);
@@ -828,18 +879,21 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       atts.views[atts.count] = v;
       atts.written[atts.count++] = written;
    }
-   if (atts.count && (!views || !(mask >> (view + 1)) || view == 31))
+#undef ATT
+   if (atts.count && (!views || last_view))
       emit(cmd, OP_PASS_ATTS, &atts, sizeof(atts));
+   if (!views || last_view)
+      crop_copies(cmd, false);
    /* Every view's the same without attachments, which the last's stands for (dummy_samples replaces its id). */
    if (views) {
-      const bool last = view == 31 || !(mask >> (view + 1));
+      const bool last = last_view;
       if (dummy && !last) {
          wg_json_free(&j);
          wg_json_free(&clears);
          return;
       }
       if (last)
-         emit(cmd, OP_VIEWS, (uint32_t[]){ mask, !info->viewMask }, 8);
+         emit(cmd, OP_VIEWS, (uint32_t[]){ mask, !info->viewMask, info->viewMask ? util_bitcount(mask) : cmd->pass.layer_count }, 12);
       const size_t at = views->size;
       memcpy(util_dynarray_grow_bytes(views, 1, j.len + 1), j.data, j.len);
       ((char *)views->data)[at + j.len] = 0;
@@ -870,15 +924,20 @@ wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
    /* Layers without multiview: no draw reaches past the first (nothing writes gl_Layer), but load ops, store ops and
     * vkCmdClearAttachments do, so the pass replays a layer at a time, as multiview's does. */
    const uint32_t layers = MIN2(info->layerCount, WG_MAX_LAYERS);
-   const uint32_t mask = info->viewMask ? info->viewMask : layers > 1 ? BITFIELD_MASK(layers) : 0;
+   const uint32_t mask = info->viewMask ? info->viewMask : layers > 1 ? BITFIELD_MASK(MIN2(layers, 32)) : 0;
    if (!mask) {
-      begin_rendering(cmd, info, 0, NULL, 0);
+      begin_rendering(cmd, info, 0, NULL, 0, true);
       return;
    }
    struct util_dynarray views;
    util_dynarray_init(&views, NULL);
-   u_foreach_bit(view, mask)
-      begin_rendering(cmd, info, view, &views, mask);
+   if (info->viewMask) {
+      u_foreach_bit(view, mask)
+         begin_rendering(cmd, info, view, &views, mask, view == (uint32_t)util_last_bit(mask) - 1);
+   } else {
+      for (uint32_t layer = 0; layer < layers; layer++)
+         begin_rendering(cmd, info, layer, &views, mask, layer == layers - 1);
+   }
    util_dynarray_fini(&views);
 }
 
@@ -891,21 +950,30 @@ end_rendering(struct wg_cmd_buffer *cmd)
       return;
    emit(cmd, OP_PASS_END, NULL, 0);
    cmd->pass.active = false;
+   crop_copies(cmd, true);
    forget(cmd);
    /* A suspended pass's resolves are its last part's, each layer's. */
-   const uint32_t mask = cmd->pass.layer_mask ? cmd->pass.layer_mask : 1;
+   uint32_t layer_list[WG_MAX_LAYERS], layer_total = 0;
+   if (cmd->pass.layer_mask) {
+      u_foreach_bit(l, cmd->pass.layer_mask)
+         layer_list[layer_total++] = l;
+   } else {
+      for (; layer_total < MAX2(cmd->pass.layer_count, 1); layer_total++)
+         layer_list[layer_total] = layer_total;
+   }
    for (uint32_t a = 0; a < 8 && !cmd->pass.suspending; a++) {
       const struct wg_image_view *src = cmd->pass.resolve_color_src[a], *dst = cmd->pass.resolve_color_dst[a];
       if (!src)
          continue;
       const VkRect2D *ra = &cmd->pass.area;
-      u_foreach_bit(l, mask) {
+      for (uint32_t k = 0; k < layer_total; k++) {
+         const uint32_t l = layer_list[k];
          struct wg_json j = { 0 };
          wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
-                        "\"dstLayer\":%u,\"format\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
+                        "\"dstLayer\":%u,\"format\":\"%s\",\"srcFormat\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
                         view_texture(src), src->vk.base_mip_level, src->vk.base_array_layer + l, view_texture(dst),
                         dst->vk.base_mip_level,
-                        (dst->slice >= 0 ? dst->slice : dst->vk.base_array_layer) + l, dst->fmt->name, ra->offset.x,
+                        (dst->slice >= 0 ? dst->slice : dst->vk.base_array_layer) + l, dst->fmt->name, src->fmt->name, ra->offset.x,
                         ra->offset.y, ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
          meta(cmd, &j);
       }
@@ -917,7 +985,8 @@ end_rendering(struct wg_cmd_buffer *cmd)
       const struct wg_image *si = container_of(src->vk.image, struct wg_image, vk);
       const struct wg_image *di = container_of(dst->vk.image, struct wg_image, vk);
       const VkRect2D *ra = &cmd->pass.area;
-      u_foreach_bit(l, mask) {
+      for (uint32_t k = 0; k < layer_total; k++) {
+         const uint32_t l = layer_list[k];
          struct wg_json j = { 0 };
          /* Within the render area only. */
          wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
@@ -1690,6 +1759,12 @@ draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t 
       /* A fan (WebGPU has none) as a triangle list through the device's fan indices (1, 2, 0, 2, 3, 0, ...: each
        * triangle's first vertex Vulkan's provoking one), from the first vertex as the base. */
       struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
+      if (vertices > WG_FAN_VERTICES) {
+         static bool warned;
+         if (!warned)
+            fprintf(stderr, "wg: a triangle fan of %u vertices isn't drawn (past %u)\n", vertices, WG_FAN_VERTICES);
+         warned = true;
+      }
       if (vertices < 3 || vertices > WG_FAN_VERTICES)
          return;
       struct op_ib ib = { .buffer = wg_fan_indices(dev), .wide = 1, .offset = 0, .size = (vertices - 2) * 12.0 };
@@ -2444,7 +2519,7 @@ struct replay {
    struct util_dynarray pass_queries;
    uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
    /* Multiview: the pass's mask, how many of its views have been replayed, this one, and where the pass starts again. */
-   uint32_t view_mask, view_order, view;
+   uint32_t view_mask, view_order, view, view_count;
    bool layered;                      /* the views are a layered pass's layers: draws in the first alone */
    uint32_t clear_first, clear_count; /* OP_CLEAR_LAYERS, for the next OP_CLEAR_RECTS (count 0: every layer) */
    const uint8_t *pass_op;
@@ -2691,8 +2766,9 @@ query_ended(struct replay *r, struct wg_query_pool *pool, uint32_t index)
    pool->ended[index] = r->submit->serial;
    if (!pool->buf)
       return;
+   /* Runs of queries ended: one between them, reset and not ended here, keeps the value it has. */
    util_dynarray_foreach (&r->submit->queries, struct query_readback, q) {
-      if (q->pool == pool) {
+      if (q->pool == pool && index + 1 >= q->lo && index <= q->hi) {
          q->lo = MIN2(q->lo, index), q->hi = MAX2(q->hi, index + 1);
          return;
       }
@@ -2809,11 +2885,12 @@ feedback_att(const struct replay *r, const struct wg_descriptor *d)
    if (!r->atts.count || d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT || !d->view)
       return -1;
    const struct wg_image_view *v = d->view;
+   /* A WebGPU pass attaches one layer: the view's, or a layered pass's first, where it draws. What an input attachment
+    * reads is its first layer, or its view's: the same layer only from the same base. */
    for (uint32_t i = 0; i < r->atts.count; i++) {
       const struct wg_image_view *a = r->atts.views[i];
       if (a->vk.image == v->vk.image && a->vk.base_mip_level == v->vk.base_mip_level &&
-          a->vk.base_array_layer < v->vk.base_array_layer + v->vk.layer_count &&
-          v->vk.base_array_layer < a->vk.base_array_layer + a->vk.layer_count && (r->atts.written[i] & v->vk.aspects))
+          a->vk.base_array_layer == v->vk.base_array_layer && (r->atts.written[i] & v->vk.aspects))
          return i;
    }
    return -1;
@@ -3883,7 +3960,9 @@ copy_bt_replay(const struct op_copy_bt *c, bool to_texture)
    const uint32_t block_rows = DIV_ROUND_UP(c->h, c->block_h);
    /* Depth and stencil copies go whole: WebGPU copies only whole subresources of them (the worker realigns rows). */
    if (c->bpr % 256 == 0 || (block_rows <= 1 && c->d == 1) || c->aspect) {
-      copy(c->buffer, c->offset, c->bpr, c->rows, c->tex, c->mip, c->x, c->y, c->z, c->w, c->h, c->d, c->aspect);
+      /* One row of blocks is one row whatever `bufferImageHeight` says (WebGPU takes a pitch only 256-aligned). */
+      copy(c->buffer, c->offset, c->bpr, block_rows <= 1 && c->d == 1 ? 1 : c->rows, c->tex, c->mip, c->x, c->y, c->z, c->w, c->h, c->d,
+           c->aspect);
       return;
    }
    /* WebGPU's rows are 256 bytes apart: one copy a row of blocks otherwise. */
@@ -3910,6 +3989,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_VIEWS:
          r->view_mask = ((const uint32_t *)d)[0];
          r->layered = ((const uint32_t *)d)[1];
+         r->view_count = ((const uint32_t *)d)[2];
          r->view_order = 0;
          break;
       case OP_PASS: {
@@ -3920,9 +4000,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->view = 0;
          if (r->view_mask) {
             uint32_t mask = r->view_mask;
-            for (uint32_t i = 0; i < r->view_order; i++)
+            for (uint32_t i = 0; !r->layered && i < r->view_order; i++)
                mask &= mask - 1;
-            r->view = ffs(mask) - 1;
+            r->view = r->layered ? r->view_order : (uint32_t)ffs(mask) - 1;
             for (uint32_t i = 0; i < r->view_order; i++) {
                const char *next = json + strlen(json) + 1;
                if (next >= (const char *)d + h->size || !*next)
@@ -3981,11 +4061,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          end_pass(r);
          /* The next view replays the pass, its commands holding all they need since `forget`. */
          if (r->view_mask) {
-            if (++r->view_order < (uint32_t)util_bitcount(r->view_mask)) {
+            if (++r->view_order < r->view_count) {
                p = r->pass_op;
                break;
             }
-            r->view_mask = r->view_order = r->view = 0;
+            r->view_mask = r->view_order = r->view = r->view_count = 0;
             r->layered = false;
          }
          r->atts.count = 0;
