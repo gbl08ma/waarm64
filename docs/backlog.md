@@ -1402,6 +1402,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   for a later feature); `images/stress/` and `bench/stress`/`bench/mem`'s `GO` path route Debian's
   initrd, which the page's UEFI boot ignores (docs/images.md: put the binaries on a second disk
   to revive them).
+- **Guest images built with Docker where Podman is missing** (the user, 2026-11-01): a cloud session (docs/cloud.md)
+  has Docker (`dockerd &` as root pulls from Docker Hub) and no Podman, so `images/build.sh` and `images/deqp/build.sh`
+  can't run there, and with them dEQP-VK's disk and guest (`scripts/ci-deqp-vk.sh`), dEQP's, Alpine, Buildroot and the
+  kernels. The idea: the scripts call one container command, `podman` where it exists and `docker` otherwise (the
+  `podman` shim `tests/net/tailnet.sh` takes in the cloud already does this by hand). What has to be settled first:
+  CLAUDE.md and docs/images.md say "never Docker" (rootless Podman is the binding rule: the user's OK changes it, the
+  exception scoped to machines without Podman); Docker runs as root, so the `:Z` mounts, file ownership in `target/`
+  (`--userns`/`-u`) and `podman`-only flags (`--userns=keep-id`, `-q` on build) each need a translation; and most
+  images build in arm64 containers, which on the cloud's x86_64 would run under qemu-user (binfmt isn't registered
+  there: `qemu-user-static` and `docker run --privileged tonistiigi/binfmt` or the like) at hours a build. So Docker
+  alone doesn't make them practical: worth it for the multi-arch ones (`buildroot`, `ltp`) and for images fetched
+  prebuilt; for dEQP-VK (VK-GL-CTS ~20 min natively on arm64) a prebuilt `deqp-vk.ext4` and `guest-vk.qcow2` from the
+  dev VM, put where the cloud's egress allows (GitHub release downloads are refused), may be the cheaper way.
 
 ## Upstream reports (to file at the project's end)
 
