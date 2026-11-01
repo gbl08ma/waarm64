@@ -54,6 +54,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.md`); read it only to
   generate decoder tables or coverage checks from it.
+- **A timing-bound GPU test flakes in the cloud** (2026-11-01): tests/gpu.test.ts "ring fences that fill the queue and
+  stall…" waits 300 ms for `RING_STALL_MS` (250 ms); when the stall timer fires a little early against
+  `performance.now()`, the check re-arms for another 250 ms and nothing has come back at 300 (`0 !== 25`). In a cloud
+  session it failed 3 to 4 times in 8 alone, the same before and after the commit tested; not seen in the dev VM. Waiting
+  for the entries (bounded) instead of a fixed 300 ms, or a stall check that tolerates an early timer, would settle it.
 - **Corpus depth:** thin FP flag paths (8 `fp_scalar` tests raise Divide-by-Zero); add biased forms
   when touching FP again.
 
