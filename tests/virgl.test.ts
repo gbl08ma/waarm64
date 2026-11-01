@@ -658,17 +658,26 @@ test('portHost: fences answered out of order end only themselves', async () => {
   const sent: { id: number; scope?: unknown }[] = [];
   ch.port2.onmessage = (e) => { sent.push(e.data); };
   const done: string[] = [];
-  void host.fence({ ctx: 3, ring: 1, id: 1n, ringed: true })!.then(() => done.push('ring'));
-  void host.fence()!.then(() => done.push('virgl'));
-  await new Promise((r) => setTimeout(r, 5));
-  assert.deepEqual(sent.map((s) => s.scope), [{ ctx: 3, ring: 1, id: 1n, ringed: true }, undefined]);
-  ch.port2.postMessage({ t: 'fenced', id: sent[1].id, at: clock() });
-  await new Promise((r) => setTimeout(r, 5));
-  assert.deepEqual(done, ['virgl'], 'the ring\'s stays');
-  ch.port2.postMessage({ t: 'fenced', id: sent[0].id, at: clock() });
-  await new Promise((r) => setTimeout(r, 5));
-  assert.deepEqual(done, ['virgl', 'ring']);
-  ch.port1.close();
+  const until = async (ok: () => boolean) => { for (let k = 0; k < 500 && !ok(); k++) await new Promise((r) => setTimeout(r, 2)); };
+  const ring = host.fence({ ctx: 3, ring: 1, id: 1n, ringed: true })!.then(() => done.push('ring'));
+  const virgl = host.fence()!.then(() => done.push('virgl'));
+  try {
+    await until(() => sent.length === 2);
+    assert.deepEqual(sent.map((s) => s.scope), [{ ctx: 3, ring: 1, id: 1n, ringed: true }, undefined]);
+    ch.port2.postMessage({ t: 'fenced', id: sent[1].id, at: clock() });
+    await virgl;
+    assert.deepEqual(done, ['virgl'], 'the ring\'s stays');
+    ch.port2.postMessage({ t: 'fenced', id: sent[0].id, at: clock() });
+    await ring;
+    assert.deepEqual(done, ['virgl', 'ring']);
+  } finally {
+    // Its watch on unanswered fences ends once they're answered.
+    for (const m of sent) ch.port2.postMessage({ t: 'fenced', id: m.id, at: clock() });
+    await until(() => done.length === 2);
+    await new Promise((r) => setTimeout(r, 1100));
+    ch.port1.close();
+    ch.port2.close();
+  }
 });
 
 test('virgl renderer: a query destroyed before its result holds no fence (dEQP-GLES3 hung at a context\'s end)', () => {
