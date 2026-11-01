@@ -826,7 +826,7 @@ interpreter's; the helper runs the instruction otherwise.
     relaxed SIMD: the emulation. `bootVm`'s `fma: false`, `?fma=emul`, `jit_fma(v, 0)` force it (the
     M4 always fuses).
   - *Why one probe holds for every tier:* the spec makes relaxed choices "fixed, that is, parameters
-    are constant during the execution of any given program". In V8 14.6, by its source, Liftoff compiles
+    are constant during the execution of any given program". In V8 14.6 (Node) and 15.3 (Chromium 153), by their source, Liftoff compiles
     these ops itself (no bailout), and both tiers lower them alike: arm64 is always `fmla`/`fmls`
     (Liftoff `EMIT_QFMOP`, TurboFan `VISIT_SIMD_QFMOP`); x86-64 goes through one macro,
     `QFMA`/`QFMS`, in `SharedMacroAssemblerBase`, FMA3's `vfmadd`/`vfnmadd` if
@@ -834,7 +834,7 @@ interpreter's; the helper runs the instruction otherwise.
     `--no-liftoff`, in Node and Chromium 153 on the M4; x64 Node under qemu-user: Haswell fuses,
     Nehalem and `--no-enable-fma3` don't, in those tiers alike. Other engines rest on the spec's sentence.
   - *What it saves* (bench/interp/REPORT.md "FMA through the host's fused op"): FMLA 2D about 64
-    lane ops to 5, FMLA 4S about 23 to 5.
+    lane ops to 5, FMLA 4S about 23 to 5; the FP guest 1,401 -> 2,663 MIPS, a llvmpipe frame 4% less.
   - *Emulated:* the exact product, its sum with the addend, then one final rounding.
   - *Emulated single:* the product of two singles is exact in double, so the double sum is the exact sum
     rounded once (RN64), and its demote rounds a second time (RN32). Two roundings to nearest give

@@ -854,6 +854,44 @@ frame). Checked by the single model in `core/src/fp/tests.rs` (rewritten to the 
 4M cases, 19% of them midpoints by construction) and jit-diff's FP edge cases (two new: FMLA 2S,
 a sum just above a midpoint); planted bugs (midpoints not fixed, scalar and vector) failed both.
 
+## FMA through the host's fused op
+
+2026-11-01, the dev VM (M4, arm64 Linux under Lima), Chromium 153.0.8010.52, one session, the two arms of
+one build (`a46f67f`, the JSONs' `dirty` is their own untracked directory) alternated with `--query=fma=emul`, three
+rounds, the order swapped each round; raw data `results/fma-fused/` (and `../boot/results/fma-fused/`). The JIT's
+FMA forms use relaxed SIMD's `madd` where the host fuses it ([docs/jit.md](../../docs/jit.md) "Floating point", FMA).
+
+| workload | emulated (3 rounds) | fused (3 rounds) | change |
+|---|---|---|---|
+| `jit_fp_mips`, eight placements (MIPS; IQR ≤ 58) | 1403.5, 1400.6, 1399.8 | 2651.6, 2663.1, 2665.8 | **+90%** |
+| `gl_llvmpipe_jit` (ms a frame; IQR ≤ 6.3; 9,924,256,938 steps on both) | 266.6, 268.2, 265.6 | 257.4, 255.0, 255.4 | **-4.2%** |
+| `alpine_user_jit`, total (ms; IQR ≤ 335) | 13,622, 13,603, 13,585 | 13,647, 13,596, 13,786 | none: the rounds overlap |
+
+The GL guest ran on the `alpine-gl` image of 2026-10-14, which `images/build.sh --check` calls stale; both arms used
+it. Beside the benchmarks, the FP suite took 78.1 s on the fused arm, 139.9 s on the emulation (`scripts/ci-fp.sh`).
+
+**Exploration.** Counted from the emitter, lane ops an instruction: FMLA 2D ~64 → ~5 (the emulation's 42, its factor
+bound's 17); FMLA 4S ~23 → ~5 (promotes, shuffles, the midpoint test). The backlog's ~10% for doubles was far short:
+the FP guest's time is mostly these forms. V8's source (14.6-lkgr, Node's; 15.3-lkgr, Chromium 153's): Liftoff compiles
+`Qfma`/`Qfms` itself; arm64 emits `fmla`/`fmls` in both tiers; x86-64's tiers share one macro keyed on
+`CpuFeatures::IsSupported(FMA3)`. Probed through `madd` and `nmadd` of both lane types, 200,000 calls each:
+
+| host | default | `--liftoff-only` | `--no-liftoff` | `--no-enable-fma3` |
+|---|---|---|---|---|
+| M4, Node 26.7, Chromium 153 | fused | fused | fused | n/a |
+| x64 Node, qemu-user Haswell (2,000 calls) | fused | fused | fused | unfused |
+| x64 Node, qemu-user Nehalem (2,000 calls) | unfused | unfused | unfused | unfused |
+
+`jit-diff`'s FMA classes and edge cases pass on both of those x64 hosts under qemu (512 words a class). qemu's FMA isn't a
+real CPU's, but the lowering, the probe's answer and the arm chosen are real.
+
+**Not measured.** No x86 host: the gain there, where `vfmadd` and the emulation's SSE/AVX ops cost otherwise, is
+unknown. Firefox's and Safari's tiers rest on the spec's "fixed" sentence, unverified.
+
+**Next**, by promise: the scalar and double zero results still reach the helper, as in the emulation (a zero product
+and addend could be taken as the vector single does, with the same clause); `relaxed_trunc` on x86 (backlog); what's
+left of the FP guest is now the "Scalar FP in f64 and f32 locals" item's (backlog), worth re-profiling.
+
 ## M8: every FP instruction inline, and results, not operands
 
 2026-10-18, the dev VM, Chromium 153.0.8010.52; builds alternated in place of the served core;
