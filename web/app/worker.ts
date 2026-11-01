@@ -455,6 +455,14 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     if (stopping) return;
     restoring = !resume;
   }
+  // A split made without Vulkan's renderer and window in memory 1 (a definition, `?split=`, a record from before
+  // they moved there, a snapshot of a machine without Vulkan) can't be laid out: say why, not "couldn't reserve".
+  const withVenus = here.some((s) => s.kind === 'gpu') && (gpuTuning().vulkan || !!m.vulkan) && !!m.renderer;
+  const tooBig = withVenus && splitError(split.ramSize, split.spill, VENUS_RESERVE);
+  if (tooBig) {
+    const from = snapshot ? 'the snapshot\'s memory split' : 'its memory split';
+    throw failure('memory', `${machine.label} can't start with Vulkan and ${from}: ${tooBig}.\n${snapshot ? 'Turn Vulkan off for it, or Start it normally.' : 'Change its memory on the Machines page (or the split in the address), or turn Vulkan off for it.'}`);
+  }
   const devices = liveSpecs = specs ?? here.map((s) => device(s, m, machine));
   const kinds = here.map((s) => s.kind);
   // The status's disks and adapters (`Status.disks`, `nets`): the device index of each of the page's, in its order.
