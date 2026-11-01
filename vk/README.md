@@ -306,10 +306,16 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   grown by replacement) and binds them from there: bind groups of the scope's own (their dynamic offsets 0), vertex,
   index and indirect buffers at their places; at the scope's end the groups are bound again without. Each buffer's read
   ranges are merged into spans copied once (from 256 bytes below the first, so offsets keep their alignment). A scope
-  reads what such a range held at its start, so a draw doesn't see what an earlier draw of its pass wrote there (a
-  barrier within a render pass, by region: rare). Two writable bindings whose ranges overlap are still refused (no copy
-  serves both), but for a pointers' binding (below, "Device addresses"), where the descriptor's range goes to a shadow
-  written back at the scope's end. A scope without such a conflict costs the scan alone.
+  reads what such a range held at its start, so a draw doesn't see what an earlier draw of its pass wrote there, until a
+  barrier inside the pass: a pass with shadows ends its WebGPU pass there, what shadows took goes back, and the rest of
+  the pass is a scope of its own (`scope_cut`; not a barrier of a secondary command buffer, which the scan can't go on
+  from). Two writable bindings whose ranges overlap become one, by a variant of the program (`storage_aliases`,
+  `wg_storage_alias`, wg_shader.c `aliased_text`): the lowest binds the whole run, the others' accesses go through it at
+  their distance, their `arrayLength`s the bound size as text, and their own bindings hold a small buffer of the device's
+  no shader reads. A run of atomic and plain arrays can't be one (their arrays' types differ) and past
+  `maxStorageBufferBindingSize` neither: said once, dropped by WebGPU. A writable descriptor beside a pointers' binding
+  (below, "Device addresses") goes to a shadow written back at the scope's end; shadows a scope writes are in a GPUBuffer
+  of their own, apart from those it only reads. A scope without such a conflict costs the scan alone.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
   (`wg_program`: bind group layouts from both stages' resources, a pipeline layout with the immediates). Render

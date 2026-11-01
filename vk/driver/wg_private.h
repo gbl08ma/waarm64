@@ -227,9 +227,12 @@ struct wg_device {
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
    bool aliased;           /* an image has aliases: the replay looks at what each scope binds (wg_cmd.c `scope_images`) */
    /* Copies of what a usage scope reads from a GPUBuffer it also binds as writable storage (VK4 T3; wg_cmd.c
-    * `shadow_place`): `shadow_size` bytes, places taken in order within a submit from `shadow_used`. */
-   uint32_t shadow;
-   uint64_t shadow_size, shadow_used;
+    * `shadow_place`): `shadow_size` bytes, places taken in order within a submit from `shadow_used`. [0] those only read,
+    * [1] those written and copied back: a GPUBuffer written in a scope can't be read otherwise in it, shadows included. */
+   uint32_t shadow[2];
+   uint64_t shadow_size[2], shadow_used[2];
+   /* What a storage binding a program's variant doesn't read binds (`storage_alias` in wg_cmd.c). */
+   uint32_t alias_dummy;
    /* Memory with device addresses (VK4 T7; vk/README.md "Device addresses"): all of it in one GPUBuffer, grown in place
     * (`address_gen` counts that, for the bind groups that name it), an address being a byte of it. */
    uint32_t address_buffer, address_gen;
@@ -486,6 +489,17 @@ void wg_descriptor_write_template(struct wg_descriptor_set *set, const struct vk
 #define WG_DYNAMIC_PUSH (-2)
 /* What a pipeline's shaders share: its bind group layouts and pipeline layout (from the resources both stages declare)
  * and, for graphics, its render pipelines by the state WebGPU bakes into them. */
+/*
+ * A storage binding of a variant whose bytes overlap another writable binding of its draw or dispatch, which WebGPU
+ * refuses ("Writable storage buffer binding aliasing"): the first of such a run binds all of it (`reach` bytes) and the
+ * others' accesses go through it, `delta` bytes on. `bytes`: the size the shader asks of it (the variant's text replaces
+ * its `arrayLength`). `res` and `to` as res_index: equal for the first.
+ */
+struct wg_storage_alias {
+   uint32_t res, to;
+   uint32_t delta, bytes, reach;
+};
+
 struct wg_program {
    uint32_t refs;
    uint32_t bgl[WGSL_MAX_GROUPS];
@@ -522,6 +536,9 @@ struct wg_program {
    uint64_t mask[2];
    struct wgsl_sampler_key *keys;
    uint32_t key_count;
+   /* Writable storage bindings of one range (`wg_storage_alias`). */
+   struct wg_storage_alias *aliases;
+   uint32_t alias_count;
    struct wg_program *variants;
    struct wg_program *base;  /* a variant's program */
    /* A variant's split samplers (wg_program_variant): (group, texture's binding, sampler's binding), the texture
@@ -581,7 +598,7 @@ const char *wg_build_id(void);
  * stages print against `keys`; made at its first use, kept with the program. */
 uint32_t wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z);
 struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys,
-                                      uint32_t key_count);
+                                      uint32_t key_count, const struct wg_storage_alias *aliases, uint32_t alias_count);
 void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs);
 struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
 

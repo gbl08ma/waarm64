@@ -1,0 +1,7 @@
+#version 450
+// VK4 R2 (the review's R4): two read-only storage buffers of one range, beside a writable one elsewhere in their memory.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) readonly buffer A { uint v[]; } a;
+layout(set = 0, binding = 1) readonly buffer B { uint v[]; } b;
+layout(set = 0, binding = 2) buffer Out { uint v[]; } o;
+void main() { o.v[gl_LocalInvocationIndex] = a.v[gl_LocalInvocationIndex] + 2 * b.v[gl_LocalInvocationIndex]; }

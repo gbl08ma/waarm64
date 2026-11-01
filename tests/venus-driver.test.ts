@@ -284,6 +284,7 @@ for (const [mask, what] of [
   [31, 'all of them'],
   [32, 'what an earlier draw of the pass reads'],
   [4 | 64, 'a uniform buffer, with a compute set bound inside the pass dispatched after it'],
+  [4 | 32 | 128, 'a uniform buffer written by an earlier draw of the pass, a barrier between them'],
 ] as const) {
   test(`usage scopes: a render pass writing storage of the memory of ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the scene's shaders.
@@ -302,13 +303,13 @@ for (const [mask, what] of [
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, String(r.error));
     assert.deepEqual(r.errors, [], 'WebGPU errors');
-    assert.deepEqual(r.got, { m: 1230, n: mask & 32 ? 1230 : 0, ...(mask & 64 ? { dispatched: 231 } : {}) });
+    assert.deepEqual(r.got, { m: mask & 128 ? 2430 : 1230, n: mask & 32 && !(mask & 128) ? 1230 : 0, ...(mask & 64 ? { dispatched: 231 } : {}) });
   });
 }
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', inlineBlocks: 'inline' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', inlineBlocks: 'inline' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -368,6 +369,11 @@ for (const [scenario, what] of [
   // VK4 T7: what no dEQP-VK case runs.
   ['inlineBlocks', 'inline uniform blocks written by a template update and a copy that run on into the next binding'],
   ['addresses', 'pointers and a writable descriptor of one memory in a dispatch, after the address buffer grew'],
+  // VK4 R2: usage scopes' shapes no dEQP-VK case runs.
+  ['addressesUniform', 'pointers, a writable descriptor and a uniform buffer of one memory in a dispatch'],
+  ['twoReads', 'two read-only storage buffers of one range beside a writable one of their memory'],
+  ['sameRange', 'two writable storage buffers of one range: what one writes the other reads'],
+  ['overlappingRanges', 'two writable storage buffers that overlap: what one writes the other reads'],
   // VK4 T11: no dEQP-VK case loads and stores one image of a format WebGPU gives one way.
   ['rwImage', 'an image of a format WebGPU only gives one way, loaded and stored by a shader between clears and copies'],
   ['rwImageWide', 'such an image of 8 bytes a texel, its rows past what 4 bytes a texel would take'],

@@ -1,0 +1,15 @@
+#version 450
+// VK4 R2 (the review's R1): through pointers, a writable descriptor and a uniform buffer of one memory in a dispatch:
+// the writable descriptor's shadow is written and the uniform's only read, in one usage scope.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 4) in;
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words { uint v[]; };
+layout(push_constant) uniform Push { Words from, to; } p;
+layout(set = 0, binding = 0, std430) buffer Out { uint o[4]; } d;
+layout(set = 0, binding = 1) uniform K { uint k; } u;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  d.o[i] = p.from.v[i] + u.k;
+  p.to.v[i + 8] = 100 + i;
+}

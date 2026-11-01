@@ -1239,6 +1239,64 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
    return n;
 }
 
+/*
+ * Writable storage buffers of one draw or dispatch whose ranges overlap, which WebGPU refuses ("Writable storage buffer
+ * binding aliasing"), the two of them being one memory's GPUBuffer. Vulkan lets them: a shader that views one range
+ * through two blocks. Each run of overlapping ranges becomes one binding, the lowest's widened over all of them, and
+ * the others' accesses go through it (`wg_storage_alias`, wg_shader.c `aliased_text`). A shader's atomics are of its
+ * array's type, so a run of atomic and plain arrays stays as it is (WebGPU refuses it, said once).
+ */
+static uint32_t
+storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_storage_alias *out)
+{
+   struct run { uint32_t k; VkDeviceSize lo, hi; const struct wg_device_memory *mem; } runs[8];
+   uint32_t n = 0, count = 0;
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      const struct wgsl_resource *r = &p->resources[k];
+      if (r->kind != WGSL_STORAGE || r->image_words || r->binding == WGSL_ADDRESS_BINDING)
+         continue;
+      const struct wg_device_memory *mem = resource_memory(cmd, point, p, k);
+      const int s = p->res_set[k];
+      if (!mem || n == ARRAY_SIZE(runs) || s < 0)
+         continue;
+      const VkDescriptorType type = cmd->sets[point][s].set->slots[r->binding / 2 - p->set_base[s]].type;
+      if (type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER && type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
+         continue;
+      /* In order of memory and start. */
+      VkDeviceSize lo, hi;
+      resource_range(cmd, point, p, k, &lo, &hi);
+      uint32_t at = n++;
+      for (; at && (runs[at - 1].mem > mem || (runs[at - 1].mem == mem && runs[at - 1].lo > lo)); at--)
+         runs[at] = runs[at - 1];
+      runs[at] = (struct run){ k, lo, hi, mem };
+   }
+   for (uint32_t i = 0; i < n;) {
+      const struct wgsl_resource *first = &p->resources[runs[i].k];
+      VkDeviceSize reach = runs[i].hi;
+      uint32_t last = i + 1;
+      bool mixed = false;
+      for (; last < n && runs[last].mem == runs[i].mem && runs[last].lo < reach; last++) {
+         reach = MAX2(reach, runs[last].hi);
+         mixed |= p->resources[runs[last].k].atomic != first->atomic;
+      }
+      const bool wide = reach - runs[i].lo > wg_limits.max_storage_buffer_binding_size;
+      if (last > i + 1 && (mixed || wide)) {
+         static bool warned;
+         if (!warned)
+            fprintf(stderr, "wg: writable storage bindings of one range that can't be one binding\n");
+         warned = true;
+      } else if (last > i + 1) {
+         for (uint32_t j = i; j < last; j++)
+            out[count++] = (struct wg_storage_alias){ (uint32_t)p->resources[runs[j].k].group << 16 | p->resources[runs[j].k].binding,
+                                                      (uint32_t)first->group << 16 | first->binding,
+                                                      (uint32_t)(runs[j].lo - runs[i].lo), (uint32_t)(runs[j].hi - runs[j].lo),
+                                                      j == i ? (uint32_t)(reach - runs[i].lo) : 0 };
+      }
+      i = last;
+   }
+   return count;
+}
+
 static struct wg_program *
 program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
@@ -1254,12 +1312,15 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
          VkDeviceSize lo, hi, jlo, jhi;
          if (mem)
             resource_range(cmd, point, p, k, &lo, &hi);
-         for (uint32_t j = 0; mem && j < n; j++)
-            if (p->resources[j].kind == WGSL_STORAGE && resource_memory(cmd, point, p, j) == mem) {
-               shared = true;
+         for (uint32_t j = 0; mem && j < n; j++) {
+            /* Another of those made writable counts as writable (a read that stays read-only is copied). */
+            const bool promoted = j < k && (mask[j / 64] & (1ull << (j % 64))) && p->resources[j].kind == WGSL_STORAGE_READ;
+            if ((p->resources[j].kind == WGSL_STORAGE || promoted) && resource_memory(cmd, point, p, j) == mem) {
+               shared |= !promoted;
                resource_range(cmd, point, p, j, &jlo, &jhi);
                overlap |= jlo < hi && lo < jhi;
             }
+         }
          if (shared && !overlap)
             mask[k / 64] |= 1ull << (k % 64);
          continue;
@@ -1275,7 +1336,9 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
    struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
    const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd)
                                  ? program_keys(cmd, point, p, keys) : 0;
-   return mask[0] | mask[1] || key_count ? wg_program_variant(p, mask, keys, key_count) : p;
+   struct wg_storage_alias aliases[8];
+   const uint32_t alias_count = storage_aliases(cmd, point, p, aliases);
+   return mask[0] | mask[1] || key_count || alias_count ? wg_program_variant(p, mask, keys, key_count, aliases, alias_count) : p;
 }
 
 /* Whether a draw may go ahead (false: it draws nothing), its state recorded. */
@@ -2391,6 +2454,8 @@ struct replay {
    const char *pass_json;
    uint32_t twin_mark;
    uint32_t address_use; /* the scope's pointers' binding: 0 none, 1 read, 2 written */
+   uint32_t depth;       /* secondary command buffers the replay is inside */
+   bool cuts;            /* the render pass stores its parts, to be cut at its barriers (`scope_cut`) */
    /* Draw parameters (VK3 L7.5): the next draw's (base vertex, base instance, draw index) and, for an indirect draw,
     * the place `prepasses` copied its arguments' into (UINT32_MAX: none); those the current place holds, where
     * `dp_valid`; the render pass's indirect draws' places, in their order (uint32_t), the next one `dp_next`. */
@@ -2761,8 +2826,9 @@ feedback_att(const struct replay *r, const struct wg_descriptor *d)
  * programs (VMA: most engines, DXVK, vkd3d) meet it once a shader writes storage. Before such a scope, each read of a
  * buffer it also binds writable (a uniform or read-only storage binding, a texel buffer's words, a vertex or index
  * buffer, indirect arguments) is copied into the device's shadow buffer and bound from there, so what the scope reads
- * is what the buffer held at its start: a draw doesn't see what an earlier draw of its pass wrote to such a range
- * (Vulkan's pipeline barriers within a pass, by region, are rare). Nothing is copied back: shadows are only read. A
+ * is what the buffer held at its start: a draw doesn't see what an earlier draw of its pass wrote to such a range,
+ * until a barrier inside the pass, which ends the scope there (`scope_cut`). Nothing is copied back, but from the
+ * shadows of writable descriptors beside a pointers' binding (`conflicts`), which are in a GPUBuffer of their own. A
  * dispatch's read-only storage buffer beside storage it writes elsewhere in its memory is bound writable instead,
  * which costs nothing (`program_for`).
  */
@@ -2969,6 +3035,17 @@ scope_images(struct replay *r)
    util_dynarray_clear(&r->images);
 }
 
+/* The binding of a program's storage resource in a run of `wg_storage_alias`, if it is in one. */
+static const struct wg_storage_alias *
+storage_alias(const struct wg_program *p, uint32_t k)
+{
+   const uint32_t res = (uint32_t)p->resources[k].group << 16 | p->resources[k].binding;
+   for (uint32_t i = 0; i < p->alias_count; i++)
+      if (p->aliases[i].res == res)
+         return &p->aliases[i];
+   return NULL;
+}
+
 /* The buffers a bind group binds, at its dynamic offsets (which go by resource, as record_sets puts them). */
 static void
 bind_uses(struct replay *r, const struct op_bind *b)
@@ -2993,8 +3070,11 @@ bind_uses(struct replay *r, const struct op_bind *b)
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       uint32_t buffer;
       VkDeviceSize at, size;
-      if (d && buffer_binding(p, k, d, &buffer, &at, &size))
-         use(r, buffer, (double)at + dynamic, size, res->kind == WGSL_STORAGE);
+      if (!d || !buffer_binding(p, k, d, &buffer, &at, &size))
+         continue;
+      const struct wg_storage_alias *a = storage_alias(p, k);
+      if (!a || a->res == a->to)
+         use(r, buffer, (double)at + dynamic, a ? a->reach : size, res->kind == WGSL_STORAGE);
    }
 }
 
@@ -3077,11 +3157,12 @@ scan_pass(struct replay *r, struct scan *s, const uint8_t *p, const uint8_t *end
    }
 }
 
+/* The shadow of a range: the one read, or with `written` the one a writable binding of it writes. */
 static const struct shadow *
-find_shadow(const struct replay *r, uint32_t buffer, double at, double size)
+find_shadow(const struct replay *r, uint32_t buffer, double at, double size, bool written)
 {
    util_dynarray_foreach (&r->shadows, struct shadow, s)
-      if (s->buffer == buffer && s->at == at && s->size == size)
+      if (s->buffer == buffer && s->at == at && s->size == size && s->written == written)
          return s;
    return NULL;
 }
@@ -3138,31 +3219,32 @@ rebind(struct replay *r, uint32_t point, uint32_t count)
    r->no_readback = false;
 }
 
-/* A place of `size` bytes in the shadow buffer, 256-aligned (WebGPU's binding offsets). Places are taken in order
- * within a submit, so none is written again before the scope that reads it; a buffer too small is replaced by one
- * twice as large (or large enough), the old one destroyed once this submit is encoded. */
+/* A place of `size` bytes in a shadow buffer (`written`: the one for shadows a scope writes), 256-aligned (WebGPU's
+ * binding offsets). Places are taken in order within a submit, so none is written again before the scope that reads
+ * it; a buffer too small is replaced by one twice as large (or large enough), the old one destroyed once this submit is
+ * encoded. */
 static bool
-shadow_place(struct wg_device *dev, double size, uint32_t *to, double *place)
+shadow_place(struct wg_device *dev, bool written, double size, uint32_t *to, double *place)
 {
    const uint64_t bytes = align64((uint64_t)size, 256), most = wg_limits.max_buffer_size & ~255ull;
    if (bytes > most)
       return false;
-   if (!dev->shadow || dev->shadow_used + bytes > dev->shadow_size) {
-      if (dev->shadow)
-         util_dynarray_append_typed(&released_groups, uint32_t, dev->shadow);
-      uint64_t grown = MAX2(dev->shadow_size * 2, 1u << 20);
+   if (!dev->shadow[written] || dev->shadow_used[written] + bytes > dev->shadow_size[written]) {
+      if (dev->shadow[written])
+         util_dynarray_append_typed(&released_groups, uint32_t, dev->shadow[written]);
+      uint64_t grown = MAX2(dev->shadow_size[written] * 2, 1u << 20);
       while (grown < bytes)
          grown *= 2;
-      dev->shadow_size = MIN2(grown, most);
+      dev->shadow_size[written] = MIN2(grown, most);
       struct wg_json j = { 0 };
       /* COPY_DST | INDEX | VERTEX | UNIFORM | STORAGE | INDIRECT */
-      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)dev->shadow_size, 0x1fc);
-      dev->shadow = wg_create_json(WG_KIND_BUFFER, &j);
-      dev->shadow_used = 0;
+      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)dev->shadow_size[written], 0x1fc);
+      dev->shadow[written] = wg_create_json(WG_KIND_BUFFER, &j);
+      dev->shadow_used[written] = 0;
    }
-   *to = dev->shadow;
-   *place = (double)dev->shadow_used;
-   dev->shadow_used += bytes;
+   *to = dev->shadow[written];
+   *place = (double)dev->shadow_used[written];
+   dev->shadow_used[written] += bytes;
    return true;
 }
 
@@ -3170,50 +3252,52 @@ static int
 cmp_span(const void *a, const void *b)
 {
    const double *x = a, *y = b;
-   return x[0] != y[0] ? (x[0] < y[0] ? -1 : 1) : x[1] != y[1] ? (x[1] < y[1] ? -1 : 1) : 0;
+   for (uint32_t i = 0; i < 4; i++)
+      if (x[i] != y[i])
+         return x[i] < y[i] ? -1 : 1;
+   return 0;
 }
 
 /* Copies the scope's reads of buffers it binds writable too into shadows (outside any pass); whether there are any.
  * Each buffer's read ranges are merged where they overlap (draws reading a big buffer at many offsets, each to its
- * end, copy it once), each span from 256 bytes below its first range, so a binding's offset keeps its alignment. */
+ * end, copy it once), each span from 256 bytes below its first range, so a binding's offset keeps its alignment. The
+ * shadows a scope writes are apart from those it reads, by span and by GPUBuffer. */
 static bool
 scope_shadows(struct replay *r)
 {
    util_dynarray_clear(&r->shadows);
-   struct util_dynarray spans; /* (buffer, lo, hi) */
+   struct util_dynarray spans; /* (buffer, written, lo, hi) */
    util_dynarray_init(&spans, NULL);
    util_dynarray_foreach (&r->uses, struct scope_use, u)
       if (conflicts(r, u)) {
-         const double span[3] = { u->buffer, floor(u->at / 256) * 256, u->at + u->size };
-         util_dynarray_append_array(&spans, double, span, 3);
+         const double span[4] = { u->buffer, u->writable, floor(u->at / 256) * 256, u->at + u->size };
+         util_dynarray_append_array(&spans, double, span, 4);
       }
-   const uint32_t n = util_dynarray_num_elements(&spans, double) / 3;
+   const uint32_t n = util_dynarray_num_elements(&spans, double) / 4;
    double *v = spans.data;
-   qsort(v, n, 3 * sizeof(double), cmp_span);
+   qsort(v, n, 4 * sizeof(double), cmp_span);
    for (uint32_t i = 0; i < n;) {
-      double lo = v[3 * i + 1], hi = v[3 * i + 2];
+      double lo = v[4 * i + 2], hi = v[4 * i + 3];
       const uint32_t first = i;
-      for (i++; i < n && v[3 * i] == v[3 * first] && v[3 * i + 1] <= hi; i++)
-         hi = MAX2(hi, v[3 * i + 2]);
+      for (i++; i < n && v[4 * i] == v[4 * first] && v[4 * i + 1] == v[4 * first + 1] && v[4 * i + 2] <= hi; i++)
+         hi = MAX2(hi, v[4 * i + 3]);
+      const bool written = v[4 * first + 1] != 0;
       uint32_t to;
       double place;
-      if (!shadow_place(r->dev, hi - lo, &to, &place)) {
+      if (!shadow_place(r->dev, written, hi - lo, &to, &place)) {
          static bool warned;
          if (!warned)
             fprintf(stderr, "wg: a range read beside storage written in one usage scope is too large to copy\n");
          warned = true;
          continue;
       }
-      const uint32_t buffer = (uint32_t)v[3 * first];
+      const uint32_t buffer = (uint32_t)v[4 * first];
       gpu_copy_bb(buffer, lo, to, place, hi - lo);
-      util_dynarray_foreach (&r->uses, struct scope_use, u) {
-         struct shadow *known = (struct shadow *)find_shadow(r, u->buffer, u->at, u->size);
-         if (known)
-            known->written |= u->writable && conflicts(r, u);
-         else if (u->buffer == buffer && u->at >= lo && u->at + u->size <= hi && conflicts(r, u))
+      util_dynarray_foreach (&r->uses, struct scope_use, u)
+         if (u->buffer == buffer && u->writable == written && u->at >= lo && u->at + u->size <= hi && conflicts(r, u) &&
+             !find_shadow(r, u->buffer, u->at, u->size, written))
             util_dynarray_append_typed(&r->shadows, struct shadow,
-                                       ((struct shadow){ buffer, to, u->at, u->size, place + (u->at - lo), u->writable }));
-      }
+                                       ((struct shadow){ buffer, to, u->at, u->size, place + (u->at - lo), written }));
    }
    util_dynarray_fini(&spans);
    return util_dynarray_num_elements(&r->shadows, struct shadow) != 0;
@@ -3274,11 +3358,13 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          const struct wg_descriptor *d = bound_descriptor(b, p, k);
          uint32_t buffer;
          VkDeviceSize at, size;
-         const struct shadow *s = d && buffer_binding(p, k, d, &buffer, &at, &size)
-                                     ? find_shadow(r, buffer, (double)at + dynamic, size) : NULL;
-         *shadowed = s && (res->kind != WGSL_STORAGE || s->written);
+         const bool bound = d && buffer_binding(p, k, d, &buffer, &at, &size);
+         const struct wg_storage_alias *a = bound ? storage_alias(p, k) : NULL;
+         *shadowed = bound && find_shadow(r, buffer, (double)at + dynamic, a ? a->reach : size, res->kind == WGSL_STORAGE);
       }
    }
+   /* Bindings a program's run of storage aliases binds for all of it: not the set's. */
+   *shadowed |= p->alias_count != 0;
    /* In a multiview pass an input attachment reads its view's layer (declared 2D, its binding that layer): a group a
     * view, like a scope's own. */
    for (uint32_t k = 0; r->view_mask && !r->layered && k < p->resource_count && !*shadowed; k++) {
@@ -3347,9 +3433,23 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                continue;
             break;
          }
-         const struct shadow *s = *shadowed ? find_shadow(r, buffer, (double)at + dynamic, size) : NULL;
-         if (s && res->kind == WGSL_STORAGE && !s->written)
-            s = NULL;
+         const struct wg_storage_alias *a = res->kind == WGSL_STORAGE ? storage_alias(p, k) : NULL;
+         if (a && a->res != a->to) {
+            /* Unused by the variant's text; a binding must be there, and not of what the run's first writes. */
+            if (!r->dev->alias_dummy) {
+               struct wg_json dummy = { 0 };
+               wg_json_printf(&dummy, "{\"size\":256,\"usage\":128}");
+               r->dev->alias_dummy = wg_create_json(WG_KIND_BUFFER, &dummy);
+            }
+            wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":256}", sep, res->binding,
+                           r->dev->alias_dummy);
+            if (p->dynamic[k] >= 0 && dyn_index < b->offset_count)
+               offsets[dyn_index] = 0;
+            break;
+         }
+         if (a)
+            size = a->reach;
+         const struct shadow *s = *shadowed ? find_shadow(r, buffer, (double)at + dynamic, size, res->kind == WGSL_STORAGE) : NULL;
          if (s) {
             buffer = s->to;
             at = (VkDeviceSize)s->place;
@@ -3515,6 +3615,28 @@ feedback_copies(struct replay *r)
    }
 }
 
+/* A barrier inside a render pass with shadows: what a draw reads through one is what the scope's start left, so a later
+ * draw would miss what an earlier one wrote through storage. The WebGPU pass ends here, what was written in shadows goes
+ * back, and the rest of the pass (from `p`) is a scope of its own. A barrier of a secondary command buffer doesn't cut:
+ * the replay is inside its commands, and the scan needs the rest of the pass. */
+static void scope_pass(struct replay *r, const uint8_t *p, const uint8_t *end);
+static void
+scope_cut(struct replay *r, const uint8_t *p, const uint8_t *end)
+{
+   struct wg_query_pool *qp = r->qactive_pool, *pool = r->qpool;
+   if (qp)
+      gpu_end_occlusion();
+   gpu_pass_end();
+   r->pass = NONE;
+   scope_end(r, 0);
+   r->qpool = pool;
+   scope_pass(r, p, end);
+   r->pass = RENDER;
+   begin_pass(r, 2);
+   if (qp)
+      query_carry_on(r, qp);
+}
+
 /* Binds an op_bind's group at its point (with the scope's shadows, if it reads any). */
 static void
 bind(struct replay *r, const struct op_bind *b)
@@ -3570,6 +3692,21 @@ scope_pass(struct replay *r, const uint8_t *p, const uint8_t *end)
    scope_images(r);
    if (scope_conflicts(r) && scope_shadows(r))
       rebind(r, 0, WGSL_MAX_GROUPS);
+}
+
+/* Whether the render pass from `p` on has a barrier in its own commands, where it can be cut (`scope_cut`). */
+static bool
+pass_has_barrier(const uint8_t *p, const uint8_t *end)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      p += sizeof(*h) + h->size;
+      if (h->op == OP_PASS || h->op == OP_PASS_END)
+         return false;
+      if (h->op == OP_PASS_READ)
+         return true;
+   }
+   return false;
 }
 
 /* A dispatch's usage scope: whether it reads a buffer it binds writable too, whose reads are then copied (the compute
@@ -3629,7 +3766,7 @@ apply(struct replay *r, uint32_t point)
       if (r->dirty & RD_VB)
          u_foreach_bit(b, r->vb_mask)
             if (r->vb[b].buffer) {
-               const struct shadow *s = find_shadow(r, r->vb[b].buffer, r->vb[b].offset, r->vb[b].size);
+               const struct shadow *s = find_shadow(r, r->vb[b].buffer, r->vb[b].offset, r->vb[b].size, false);
                const uint32_t to = s ? s->to : r->vb[b].buffer;
                const double place = s ? s->place : r->vb[b].offset;
                /* Offsets WebGPU's vertex buffers refuse: no pipeline but a pulling one reads them. */
@@ -3639,7 +3776,7 @@ apply(struct replay *r, uint32_t point)
                   gpu_set_vertex_buffer(b, to, place, r->vb[b].size);
             }
       if ((r->dirty & RD_IB) && r->have_ib) {
-         const struct shadow *s = find_shadow(r, r->ib.buffer, r->ib.offset, r->ib.size);
+         const struct shadow *s = find_shadow(r, r->ib.buffer, r->ib.offset, r->ib.size, false);
          gpu_set_index_buffer(s ? s->to : r->ib.buffer, r->ib.wide, s ? s->place : r->ib.offset, r->ib.size);
       }
    } else if (r->dirty & RD_PIPELINE) {
@@ -3816,8 +3953,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->tickets = 0;
          r->pass_json = json;
          r->twin_mark = ++r->dev->twin_mark;
-         if (r->qpool || r->atts.count)
-            begin_pass(r, r->atts.count ? 1 : 0);
+         r->cuts = !r->depth && util_dynarray_num_elements(&r->shadows, struct shadow) && pass_has_barrier(p, end);
+         if (r->qpool || r->atts.count || r->cuts)
+            begin_pass(r, r->atts.count || r->cuts ? 1 : 0);
          else
             gpu_render_pass(json, strlen(json));
          r->pass = RENDER;
@@ -3857,6 +3995,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       case OP_PASS_READ:
          r->twin_mark = ++r->dev->twin_mark;
+         if (r->cuts && !r->depth && r->pass == RENDER && util_dynarray_num_elements(&r->shadows, struct shadow))
+            scope_cut(r, p, end);
          break;
       case OP_CLEAR_LAYERS:
          r->clear_first = ((const uint32_t *)d)[0];
@@ -3995,7 +4135,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                continue;
             }
             const struct shadow *s =
-               find_shadow(r, a->buffer, a->offset, (a->count - 1) * (double)a->stride + (a->indexed ? 20 : 16));
+               find_shadow(r, a->buffer, a->offset, (a->count - 1) * (double)a->stride + (a->indexed ? 20 : 16), false);
             gpu_draw_indirect(s ? s->to : a->buffer, (s ? s->place : a->offset) + (double)i * a->stride, a->indexed);
          }
          break;
@@ -4022,7 +4162,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             const uint32_t *n = d;
             gpu_dispatch(n[0], n[1], n[2]);
          } else {
-            const struct shadow *s = find_shadow(r, a->buffer, a->offset, 12);
+            const struct shadow *s = find_shadow(r, a->buffer, a->offset, 12, false);
             gpu_dispatch_indirect(s ? s->to : a->buffer, s ? s->place : a->offset);
          }
          if (scoped)
@@ -4135,7 +4275,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       }
       case OP_EXEC: {
          struct wg_cmd_buffer *secondary = *(struct wg_cmd_buffer *const *)d;
+         r->depth++;
          replay(r, secondary);
+         r->depth--;
          r->dirty = RD_ALL;
          break;
       }
@@ -4489,7 +4631,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
       draws += container_of(cmds[i], struct wg_cmd_buffer, vk)->draws;
    push_reserve(dev, draws * 256);
    dev->push_used = 0;
-   dev->shadow_used = 0;
+   dev->shadow_used[0] = dev->shadow_used[1] = 0;
    for (uint32_t i = 0; i < cmd_count; i++) {
       struct wg_cmd_buffer *cmd = container_of(cmds[i], struct wg_cmd_buffer, vk);
       replay(&r, cmd);

@@ -1,0 +1,13 @@
+#version 450
+// VK4 R2: two writable storage buffers over bytes they share (vk/driver/wg_test.c's scenarios 45, 46): what one writes
+// the other reads, each with its own length.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) buffer A { uint v[]; } a;
+layout(set = 0, binding = 1) buffer B { uint v[]; } b;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  a.v[i] = 10 + i;
+  b.v[i + 4] = 20 + i;
+  b.v[i + 8] = a.v[i] + b.v.length();
+  a.v[i + 12] = b.v[i + 4] + a.v.length();
+}

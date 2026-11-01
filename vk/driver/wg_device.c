@@ -655,7 +655,9 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
       wg_dummy_unref(dev->dummies[i]);
    wg_id_release(dev->query_scratch);
    wg_id_release(dev->query_mux);
-   wg_id_release(dev->shadow);
+   wg_id_release(dev->shadow[0]);
+   wg_id_release(dev->shadow[1]);
+   wg_id_release(dev->alias_dummy);
    wg_id_release(dev->address_buffer);
    if (dev->address_heap_made)
       util_vma_heap_finish(&dev->address_heap);

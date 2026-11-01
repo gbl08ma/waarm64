@@ -1568,7 +1568,9 @@ wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_
  * vkCmdDrawIndexed). 32: another draw before it in the pass, every read from M and its write to N's word 0. 64 (with
  * 4): `cs` (ubo-ssbo.comp) bound inside the pass with its uniform M's (30, the pass's copy of it) and `a` at M's 512
  * (200), `b` at N's 3072; after the pass M's uniform updated to 31 and `cs` dispatched: N's word 768 231 (the pass's
- * copies are its own: the driver records a set's bind at the dispatch, outside the pass, which this keeps true). Each
+ * copies are its own: the driver records a set's bind at the dispatch, outside the pass, which this keeps true). 128
+ * (with 4 and 32, VK4 R2): 32's draw writes M's uniform (1230) rather than N's word, then a barrier, and the mask's draw
+ * reads it: M's word 0 2430 (a pass's draws read copies taken at its start, and a barrier ends that scope). Each
  * VkDeviceMemory is one GPUBuffer, and WebGPU's usage scope (the whole pass) refuses a writable usage beside any other
  * of one buffer. M's and N's word 0 1230 where written, 0 where not; wgt_draw_done says when.
  */
@@ -1602,6 +1604,12 @@ scope_record(VkCommandBuffer cmd, bool in_pass)
       CmdBindIndexBuffer(cmd, sc.m, 1536, VK_INDEX_TYPE_UINT16);
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sc.layout, 0, 1, &sc.sets[1], 0, NULL);
       CmdDrawIndexed(cmd, 3, 1, 0, 0, 0);
+   }
+   if (sc.mask & 128) {
+      const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT };
+      CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_DEPENDENCY_BY_REGION_BIT, 1, &mb, 0, NULL, 0, NULL);
    }
    CmdBindVertexBuffers(cmd, 0, 1, sc.mask & 1 ? &sc.m : &sc.n, &vat);
    CmdBindIndexBuffer(cmd, sc.mask & 2 ? sc.m : sc.n, 1536, VK_INDEX_TYPE_UINT16);
@@ -1708,7 +1716,7 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
    CHECK(AllocateDescriptorSets(dev, &dai, sc.sets));
    const VkDescriptorBufferInfo bi[9] = {
       { mask & 4 ? sc.m : sc.n, 256, 16 }, { mask & 8 ? sc.m : sc.n, 512, 16 }, { sc.m, 0, 16 },
-      { sc.m, 256, 16 }, { sc.m, 512, 16 }, { sc.n, 0, 16 },
+      { sc.m, 256, 16 }, { sc.m, 512, 16 }, mask & 128 ? (VkDescriptorBufferInfo){ sc.m, 256, 16 } : (VkDescriptorBufferInfo){ sc.n, 0, 16 },
       { sc.m, 256, 16 }, { sc.m, 512, 16 }, { sc.n, 3072, 16 },
    };
    VkWriteDescriptorSet wr[9];
@@ -3560,16 +3568,85 @@ t7_inline(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer o
    return 0;
 }
 
+/* `cs` dispatched once with one set of `n` bindings, each of `types[k]` and `ranges[k]` (VK4 R2 on). */
+static int
+dispatch_with(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, uint32_t n, const VkDescriptorType *types,
+              const VkDescriptorBufferInfo *ranges)
+{
+   VkDescriptorSetLayoutBinding b[8];
+   VkDescriptorPoolSize ps[8];
+   for (uint32_t k = 0; k < n; k++) {
+      b[k] = (VkDescriptorSetLayoutBinding){ k, types[k], 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+      ps[k] = (VkDescriptorPoolSize){ types[k], 1 };
+   }
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = n, .pBindings = b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
+                                            .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule module;
+   if (shader(cs, cs_words, &module))
+      return 1;
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = module, .pName = "main" } };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = n, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   VkWriteDescriptorSet wr[8];
+   for (uint32_t k = 0; k < n; k++)
+      wr[k] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = k,
+                                      .descriptorCount = 1, .descriptorType = types[k], .pBufferInfo = &ranges[k] };
+   UpdateDescriptorSets(dev, n, wr, 0, NULL);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+   CmdDispatch(cmd, 1, 1, 1);
+   return 0;
+}
+
+/* VK4 R2's dispatches in one host-visible memory (`out`, 4 KiB; tests/venus/):
+ * 44 (two-reads.comp, the review's R4): `a` and `b` read-only, both at [1024, 1056) (1, 2, 3, 4), `o` at [0, 32).
+ * 45 (two-writes.comp): two writable bindings of [256, 320).
+ * 46 (two-writes.comp): two writable bindings, [256, 768) and [512, 1024). */
+static int
+r2_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   const VkDescriptorType s = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+   const VkDescriptorType types[3] = { s, s, s };
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   static const uint32_t a[4] = { 1, 2, 3, 4 };
+   if (scenario == 44)
+      CmdUpdateBuffer(cmd, out, 1024, sizeof(a), a);
+   const VkDescriptorBufferInfo reads[3] = { { out, 1024, 32 }, { out, 1024, 32 }, { out, 0, 32 } };
+   const VkDescriptorBufferInfo same[2] = { { out, 256, 64 }, { out, 256, 64 } };
+   const VkDescriptorBufferInfo over[2] = { { out, 256, 512 }, { out, 512, 512 } };
+   return dispatch_with(cs, cs_words, cmd, scenario == 44 ? 3 : 2, types, scenario == 44 ? reads : scenario == 45 ? same : over);
+}
+
 /* VK4 T7: device addresses (tests/venus/address.comp). A device-local memory filled and a submit later the address
  * buffer grown past it; then a dispatch reading it through a pointer, writing a host-visible memory through a pointer
- * and through a storage buffer descriptor of that memory, which would alias the pointers' binding. */
+ * and through a storage buffer descriptor of that memory, which would alias the pointers' binding. With `uniform` (VK4
+ * R2, the review's R1; address-ubo.comp): the shader adds a uniform buffer of that memory at 2048 too, whose shadow is
+ * only read while the descriptor's is written, in one usage scope. */
 static int
-t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkCommandPool pool)
+t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkCommandPool pool, bool uniform)
 {
    PFN_vkGetBufferDeviceAddress GetBufferDeviceAddress =
       (PFN_vkGetBufferDeviceAddress)GetDeviceProcAddr(dev, "vkGetBufferDeviceAddress");
    const VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
    const VkMemoryAllocateFlagsInfo flags = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
                                              .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT };
    memory_next = &flags;
@@ -3581,6 +3658,8 @@ t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkComma
    }
    misc.map = map;
    memset(map, 0xee, 4096);
+   if (uniform)
+      *(uint32_t *)((uint8_t *)map + 2048) = 1000;
    VkCommandBuffer first;
    const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
                                              .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
@@ -3597,9 +3676,10 @@ t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkComma
    if (grown)
       return 1;
 
-   const VkDescriptorSetLayoutBinding binding = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+   const VkDescriptorSetLayoutBinding binding[2] = { { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+                                                     { 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL } };
    const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                 .bindingCount = 1, .pBindings = &binding };
+                                                 .bindingCount = uniform ? 2 : 1, .pBindings = binding };
    VkDescriptorSetLayout dsl;
    CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
    const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 16 };
@@ -3618,19 +3698,22 @@ t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkComma
       .layout = layout };
    VkPipeline pipeline;
    CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
-   const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }, { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 } };
    const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
-                                            .poolSizeCount = 1, .pPoolSizes = &ps };
+                                            .poolSizeCount = uniform ? 2 : 1, .pPoolSizes = ps };
    VkDescriptorPool dp;
    CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
    const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                                              .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
    VkDescriptorSet set;
    CHECK(AllocateDescriptorSets(dev, &dai, &set));
-   const VkDescriptorBufferInfo bi = { host, 1024, 16 };
-   const VkWriteDescriptorSet wr = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .descriptorCount = 1,
-                                     .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi };
-   UpdateDescriptorSets(dev, 1, &wr, 0, NULL);
+   const VkDescriptorBufferInfo bi[2] = { { host, 1024, 16 }, { host, 2048, 16 } };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[0] },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[1] } };
+   UpdateDescriptorSets(dev, uniform ? 2 : 1, wr, 0, NULL);
    const VkBufferDeviceAddressInfo from = { .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = local };
    const VkBufferDeviceAddressInfo to = { .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = host };
    const uint64_t push[2] = { GetBufferDeviceAddress(dev, &from), GetBufferDeviceAddress(dev, &to) };
@@ -4297,8 +4380,11 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))
          return 1;
-   } else if (scenario == 39) {
-      if (t7_addresses(cs, cs_words, cmd, pool))
+   } else if (scenario == 39 || scenario == 43) {
+      if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43))
+         return 1;
+   } else if (scenario >= 44 && scenario <= 46) {
+      if (r2_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 40) {
       if (t7_inline(cs, cs_words, cmd, out))

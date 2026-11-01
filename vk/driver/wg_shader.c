@@ -166,6 +166,7 @@ program_free(struct wg_program *p)
    free(p->compute_wgsl);
    stage_nir_free(p->compute_nir);
    free(p->keys);
+   free(p->aliases);
    free(p);
 }
 
@@ -308,10 +309,68 @@ program_layouts(struct wg_program *p)
    p->layout = wg_create_json(WG_KIND_LAYOUT, &j);
 }
 
+static bool
+name_char(char c)
+{
+   return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+/* The first `from` in `text` from `q` on that doesn't end a longer name (`r0_2` isn't the end of `r10_2`). */
+static char *
+word_at(char *text, char *q, const char *from)
+{
+   char *f = strstr(q, from);
+   while (f && f > text && name_char(f[-1]))
+      f = strstr(f + 1, from);
+   return f;
+}
+
+/* `text` with [at, at + n) as `with`, freed. */
+static char *
+spliced(char *text, size_t at, size_t n, const char *with)
+{
+   char *t = malloc(strlen(text) + strlen(with) + 1);
+   memcpy(t, text, at);
+   strcpy(t + at, with);
+   strcat(t, text + at + n);
+   free(text);
+   return t;
+}
+
+/* A variant's text for its storage aliases (`wg_storage_alias`): each alias's words reached through the binding it's
+ * part of (wgsl_print.c names storage words `rG_B[word]`), and arrayLength of every one of a run the size the shader
+ * asks of it. */
+static char *
+aliased_text(const struct wg_program *v, char *text)
+{
+   for (uint32_t i = 0; i < v->alias_count; i++) {
+      const struct wg_storage_alias *a = &v->aliases[i];
+      char from[64], with[64];
+      snprintf(from, sizeof(from), "arrayLength(&r%u_%u)", a->res >> 16, a->res & 0xffff);
+      snprintf(with, sizeof(with), "%uu", a->bytes / 4);
+      for (char *f; (f = word_at(text, text, from));)
+         text = spliced(text, f - text, strlen(from), with);
+      if (a->res == a->to)
+         continue;
+      snprintf(from, sizeof(from), "r%u_%u[", a->res >> 16, a->res & 0xffff);
+      snprintf(with, sizeof(with), "r%u_%u[%uu + (", a->to >> 16, a->to & 0xffff, a->delta / 4);
+      for (char *f; (f = word_at(text, text, from));) {
+         /* Its closing bracket. */
+         size_t end = f - text + strlen(from);
+         for (int depth = 1; text[end] && depth; end++)
+            depth += (text[end] == '[') - (text[end] == ']');
+         const size_t head = f - text;
+         text = spliced(text, end - 1, 1, ")]");
+         text = spliced(text, head, strlen(from), with);
+      }
+   }
+   return text;
+}
+
 /* A module's WGSL as a variant binds it (wgsl_print.c declares each `@group(g) @binding(b) var rG_B…` and samples as
  * `rG_T, rG_S, …`): widened storage buffers `read_write` (WebGPU wants a binding's access in the module to be its layout
- * entry's), and each split sampler's unfilterable textures sampled through its twin at the binding before it. NULL: no
- * change. */
+ * entry's), each split sampler's unfilterable textures sampled through its twin at the binding before it, and storage
+ * bindings of one range through one. NULL: no change. */
 static char *
 variant_text(const struct wg_program *p, const struct wg_program *v, const uint64_t *mask, const char *wgsl)
 {
@@ -357,8 +416,7 @@ variant_text(const struct wg_program *p, const struct wg_program *v, const uint6
          wg_json_printf(&out, "%.*s%s", (int)(q - text), text, twin);
       for (;;) {
          const char *f = strstr(q, from);
-         while (f && (f[-1] == '_' || (f[-1] >= '0' && f[-1] <= '9') || (f[-1] >= 'a' && f[-1] <= 'z') ||
-                      (f[-1] >= 'A' && f[-1] <= 'Z')))
+         while (f && name_char(f[-1]))
             f = strstr(f + 1, from);
          if (!f) {
             wg_json_printf(&out, "%s", q);
@@ -370,6 +428,10 @@ variant_text(const struct wg_program *p, const struct wg_program *v, const uint6
       free(text);
       text = strdup(out.data);
       wg_json_free(&out);
+      changed = true;
+   }
+   if (v->alias_count) {
+      text = aliased_text(v, text);
       changed = true;
    }
    if (!changed) {
@@ -454,7 +516,7 @@ variant_module(const struct wg_program *p, const struct wg_program *v, const uin
 void
 wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs)
 {
-   if ((!v->split_count && !v->key_count) || v->stage_modules_made)
+   if ((!v->split_count && !v->key_count && !v->alias_count) || v->stage_modules_made)
       return;
    v->stage_modules_made = true;
    v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl, vs->nir, &vs->info, MESA_SHADER_VERTEX) : 0;
@@ -499,11 +561,13 @@ compute_pairs(const struct wg_program *p)
 }
 
 struct wg_program *
-wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys, uint32_t key_count)
+wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys, uint32_t key_count,
+                   const struct wg_storage_alias *aliases, uint32_t alias_count)
 {
    for (struct wg_program *v = p->variants; v; v = v->variants)
       if (v->mask[0] == mask[0] && v->mask[1] == mask[1] && v->key_count == key_count &&
-          !memcmp(v->keys, keys, key_count * sizeof(*keys)))
+          v->alias_count == alias_count && !memcmp(v->keys, keys, key_count * sizeof(*keys)) &&
+          !memcmp(v->aliases, aliases, alias_count * sizeof(*aliases)))
          return v;
    struct wg_program *v = malloc(sizeof(*v));
    memcpy(v, p, sizeof(*v));
@@ -523,6 +587,9 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
    v->key_count = key_count;
    v->keys = malloc(MAX2(key_count, 1) * sizeof(*keys));
    memcpy(v->keys, keys, key_count * sizeof(*keys));
+   v->alias_count = alias_count;
+   v->aliases = malloc(MAX2(alias_count, 1) * sizeof(*aliases));
+   memcpy(v->aliases, aliases, alias_count * sizeof(*aliases));
    v->split_count = 0;
    v->vs_module = v->fs_module = 0;
    v->stage_modules_made = false;
@@ -601,7 +668,7 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
          if (res_index(&v->resources[k]) == keys[i].texture)
             v->resources[k].dim = WGSL_DIM_2D_ARRAY;
    program_layouts(v);
-   if ((widened || v->split_count || v->key_count) && p->compute_wgsl) {
+   if ((widened || v->split_count || v->key_count || v->alias_count) && p->compute_wgsl) {
       const struct wgsl_info keyed = compute_pairs(p);
       const uint32_t m = variant_module(p, v, mask, p->compute_wgsl, p->compute_nir, &keyed, MESA_SHADER_COMPUTE);
       if (m) {

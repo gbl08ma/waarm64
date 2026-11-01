@@ -847,12 +847,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     provoking drawn as it is. Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
     dEQP-VK's SAMPLE_ZERO `depth_stencil_resolve` cases in the list since L7.1, stencil8's above); MIN, MAX and AVERAGE
     aren't advertised.
-  - **Usage scopes' leftovers** (VK4 T3: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
-    memory it reads otherwise reads copies taken at its start. Left: two writable bindings of one memory whose ranges
-    overlap in one scope (but pointers beside a descriptor: VK4 T7; "Writable storage buffer binding aliasing": no copy serves both; a GPUBuffer per `VkBuffer`
-    with copies between those that alias, or one binding the shader indexes for both); a draw reading a range an
-    earlier draw of its render pass wrote through storage reads the pass's starting bytes (a barrier within a pass, by
-    region; splitting the WebGPU pass there would serve it); a range past `maxBufferSize` isn't copied (warned, the
+  - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
+    memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
+    atomics and one not, or together past `maxStorageBufferBindingSize` (said once, refused by WebGPU); a descriptor
+    beside a pointers' binding, and overlapping descriptors there, don't see each other's bytes in the scope; a barrier
+    of a secondary command buffer doesn't end the scope; a range past `maxBufferSize` isn't copied (warned, the
     scope dropped as before). Not met by anything measured (dEQP-VK's likeliest groups of the direct set, vkd3d's
     suite: bench/vulkan/REPORT.md "VK4 T3"), so the copies' cost is unmeasured on a program: DXVK or a VMA-based
     program whose shaders write storage would show it (vkQuake met the dispatch's shape in VK3 L6c).
