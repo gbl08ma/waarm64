@@ -1,5 +1,13 @@
 # VK4's out-of-context review (2026-11-01)
 
+**The review of R5 to R7 itself** (a fresh agent, static, ~20 findings): fixed A1 (an import refused lost the context; it's
+made, its pointers null), B1, B5 (slots past WebGPU's never set as vertex buffers, slots a pipeline stops pulling set again), B2
+(a one-level depth cube), B3 (the import freed first), B6 (what any stage compares is depth in all), B7 (host-visible memory
+past its heap with the arena's room is had, a blob that can't be mapped reads zeros), C1, C2, C3, D1, D2, D3, D5, D6 (six times a
+stage's, as Vulkan's table), and the refusal half of B4; A1, B1 to B3, B5 to B7, C1 and C2 with a test seen failing, B3 through
+the patch alone. B8, D4 and the rest of B4 are in the backlog ("What R7's limits leave"); D7's test export stays beside the
+module's other `wgt_` ones.
+
 **The review of R1 to R4 itself** (a fresh agent, static, on the local branch `review/vk4-r1-r4`, 16 findings): fixed C1 (a crop of
 a 3D image's slices), C2 narrowed (entries come back only from a full, stalled queue, one at a time; what's left is in the
 backlog), D1 (attachments have the copies a crop needs), D2 (each dummy binding its own range), D3, D4 (a fan's room apart from its

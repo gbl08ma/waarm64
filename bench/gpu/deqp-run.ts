@@ -14,7 +14,7 @@
 // DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names;
 // DETAIL_NOTSUPPORTED=1: NotSupported ones too, their reasons), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
-// LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
+// RAM_MIB=<the guest's RAM, default the session's>, LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -35,7 +35,7 @@ const CAPTURE = process.env.CAPTURE;
 // costs SwiftShader ~17 s of compile for a 16 KiB array (VK4 T2: `max_workgroup_memory.*` timed out, a crash); Tint's
 // own loop instead takes 19 ms. Both zero it; Metal has no such extension.
 if (vk) process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`;
-const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4' });
+const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4', ...(process.env.RAM_MIB ? { ramMiB: Number(process.env.RAM_MIB) } : {}) });
 const { log, pasteSerial, rootShell, run, runLines } = s;
 const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET };
 const save = () => {
