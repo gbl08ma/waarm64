@@ -1,4 +1,4 @@
-# A local network helper (proposed, not started)
+# A local network helper (in progress: L0)
 
 A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
@@ -10,27 +10,37 @@ Why: a browser has no UDP, so tailcat and a tailnet always go through DERP. The 
 users, rate-limited and best-effort: under 20 Mbit/s and a relay's round trip in the user's experience, and a
 friend's tailcat connection behaves worse still. A helper on the user's machine has the latency of loopback and
 the user's own uplink. Every name here (`webpc-net`, the subprotocol, the kind) is provisional: the project's
-name may change.
+name may change. **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper's own
+README, THIRD_PARTY.md and CLAUDE.md are in `net/webpc-net/`.
 
 ## 1. Decisions (the user's, 2026-10-23)
 
 - **A helper of ours, in Go, in its own repository** (`gbl08ma/webpc-net`, provisional). Users who don't want to
-  trust us keep tailcat and Tailscale. Trust comes from:
-  - **Little code of our own:** the helper is glue, about 250 lines, over libraries users already run (§2). The
-    README says what is ours and what is imported, honestly: about 250 lines of ours on Podman's network stack,
-    not "a small program".
+  trust us keep tailcat and Tailscale. **Until the bulk of it is done it lives in this repository**, in
+  `net/webpc-net/` (the user's, 2026-11-01: page and helper change together while they're young), already under its
+  final module path `github.com/gbl08ma/webpc-net` and with its own README, THIRD_PARTY.md, CLAUDE.md and
+  `build.sh`, importing nothing of webpc's, so the move is a `git filter-repo` of one directory. What waits on the
+  move: releases (GitHub's, built there), the second host's reproducibility check against them, and `go install`
+  (which also waits on the IPv6 fork below). Trust comes from:
+  - **Little code of our own:** the helper is glue over libraries users already run (§2). The README says what is
+    ours and what is imported, honestly: about 650 lines of ours (the 250 first guessed grew with IPv6's reach, the
+    refusals that tell the page why, and the frames' batching) on Podman's network stack, not "a small program".
   - **Reproducible binaries** for Linux, macOS and Windows, each on x86_64 and arm64, whose SHA-256 is published
     (the release, the README, the page's help). No code signing for now (Apple's or Authenticode would change the
     bytes; revisit if Gatekeeper, SmartScreen or Defender get in the way).
   - **Plain install lines**, one per platform and architecture: download with `curl` (PowerShell's
     `Invoke-WebRequest` on Windows) to `~/.local/bin` (`%LOCALAPPDATA%\Programs` on Windows), mark it executable,
-    run it. No `curl | sh`. From source: `go install <module>@<version>`, checked against Go's checksum database.
+    run it. No `curl | sh`. From source: `go install <module>@<version>`, checked against Go's checksum database
+    (once the `replace` below is gone: `go install` refuses a module with one).
 - **Go:** easier to read than Rust for a reviewer, it cross-compiles all six targets with `CGO_ENABLED=0` from
   one host, and the library that does the work is Go. Go is already an accepted build dependency here.
 - **Ethernet frames over a WebSocket, and no gateway in the page** for this kind: the helper's own DHCP, DNS and
   gateway serve the guest, and the page only forwards frames. Less code competing with the VM in the tab.
-- **IPv4 only**, because the library is (§2), as long as the guest sees it cleanly: no router advertisement, so
-  no IPv6 route, so nothing waits on IPv6 (§5).
+- **IPv6 on by default (the user's, 2026-11-01)**, through gvisor-tap-vsock's unmerged
+  [#745](https://github.com/containers/gvisor-tap-vsock/pull/745) (§2), **but never promised when the host can't
+  route it**: the guest gets a default IPv6 route only while the helper's host reaches the internet over IPv6, as the
+  page does for tailcat's and a tailnet's far end (§5). `--no-ipv6` gives IPv4 only. (This replaces "IPv4 only,
+  because the library is".)
 - **Chromium's Local Network Access prompt** (a public site reaching loopback) is acceptable: one click.
 - **Not WebSocket relays or Wisp** (v86's; [networking.md](networking.md) §1 stands), not a hosted proxy (the
   user won't operate an open proxy), not a WebTransport or LAN helper (served by tailnets), not the Direct Sockets
@@ -44,16 +54,29 @@ name may change.
   Podman machine on macOS, Windows and Linux, of Lima and CRC. `virtualnetwork.New(config)` is a userspace
   network on gVisor's netstack with a switch, ARP, DHCP, DNS and TCP, UDP and ICMP forwarders to the host's
   sockets; `vn.AcceptQemu(ctx, conn)` takes a `net.Conn` carrying Ethernet frames, each after a 4-byte big-endian
-  length (QEMU's stream framing). Its stack registers only IPv4, ARP and ICMPv4 (`createStack` in
-  `pkg/virtualnetwork/virtualnetwork.go`); IPv6 has been an open pull request for years
-  ([#59](https://github.com/containers/gvisor-tap-vsock/pull/59)).
+  length (QEMU's stream framing). v0.9.0's stack registers only IPv4, ARP and ICMPv4; IPv6 was an open pull request
+  for years ([#59](https://github.com/containers/gvisor-tap-vsock/pull/59)), and
+  **[#745](https://github.com/containers/gvisor-tap-vsock/pull/745)** (evidolob, built on #59 and karta0807913's
+  fixes; open, unreviewed, last pushed 2026-10-21) makes it an opt-in `EnableIPv6`: the gateway's IPv6 address and a
+  /64, router advertisements (answered to solicitations only, with the M and O flags, the prefix for SLAAC and a
+  1000 s router lifetime), DHCPv6 with the gateway as the resolver, the DNS server on IPv6, AAAA by family. Its TCP
+  and UDP forwarders dial the host's sockets by address, so IPv6 out needs no NAT66; its ICMP forwarder is IPv4's only
+  (the gateway answers its own pings). **How go.mod takes it:** the fork's `go.mod` still says
+  `module github.com/containers/gvisor-tap-vsock`, so it can't be required by its own path; `replace
+  github.com/containers/gvisor-tap-vsock => github.com/evidolob/gvisor-tap-vsock v0.0.0-20261021084248-7fea9a947613`
+  pins one commit of the branch (`guillaumerose-ipv62-fixes`), and Go's module proxy keeps that version once fetched,
+  so the branch's force-pushes don't break builds; `go.sum` checks it. Weighed against a fork of our own (a stable
+  branch, and `go install` if its module path were renamed, at the price of an import path to undo later) and
+  vendoring (a large diff here): the `replace` is the smallest and the easiest to drop. Drop it, and require the
+  release, when #745 lands. The fork needs Go 1.26.
 - **coder/websocket** (ISC; v1.8.15 checked): `AcceptOptions.OriginPatterns` checks the page's origin, and
   `websocket.NetConn` makes the socket the `net.Conn` the network takes.
 
-What that pulls in: 19 modules (gVisor, miekg/dns, insomniacslk/dhcp, gopacket, inetaf/tcpproxy, logrus,
-golang.org/x/…). A sketch of the whole helper built for all six targets: 11.9–13.1 MB stripped, 4.4–5.0 MB
-gzipped, and byte-identical over two clean builds (Go 1.27.1, `CGO_ENABLED=0 -trimpath -ldflags='-s -w
--buildid='`). It carried no traffic yet.
+What that pulls in: 19 modules linked on Linux and Windows, 16 on macOS (gVisor, miekg/dns, insomniacslk/dhcp,
+gopacket, inetaf/tcpproxy, logrus, golang.org/x/…; all permissive, listed with their licenses in
+`net/webpc-net/THIRD_PARTY.md`). The helper (with #745) built for all six targets: 12.5–13.8 MB stripped, 4.7–5.3 MB
+gzipped, byte-identical over two clean builds on one host (Go 1.27.3, `net/webpc-net/build.sh`: `CGO_ENABLED=0
+-trimpath -buildvcs=false -ldflags='-s -w -buildid='`, 2026-11-01).
 
 **Others looked at** (2026-10-23, from their docs; none verified in source): xjasonlyu/tun2socks (gVisor, IPv6,
 reportedly MIT, a GPL-3 fork of a similar name exists) takes IP packets, not frames, so ARP, DHCP, router
@@ -61,8 +84,8 @@ advertisements and DNS would be ours, several times the code; tailcat's exit nod
 reportedly BSD-3) is behind WireGuard, not a library for a LAN; majek/slirpnetstack looks dormant and is built
 around Linux file descriptors; jtolio/tinyemu-go's `slirp` (MIT, pure Go, no gVisor: a far smaller binary) is old
 slirp, IPv4 only, of unknown speed and upkeep. Writing the network ourselves on gVisor would be a thousand lines or
-more of ours. **If IPv6 is wanted later:** help #59 land upstream, or add an IPv6-only path beside it with
-tun2socks-style forwarders.
+more of ours. IPv6 came from #745 (above); had it not, the choice was helping #59 land or an IPv6-only path beside it
+with tun2socks-style forwarders.
 
 **What it does:**
 - Listens on `127.0.0.1` only (a port with a fixed default; `--listen` changes it).
@@ -80,6 +103,13 @@ tun2socks-style forwarders.
   host's own loopback unless `--host-loopback` (gvisor-tap-vsock's NAT table maps a gateway address to
   `127.0.0.1`). No guest-reachable API: gvproxy serves the library's port-forward endpoints on the gateway
   (`GatewayMux`); we don't. Ports from the host into the guest, if ever, are flags, not a guest API.
+- **Refuses with a reason:** the handshake completes and the socket closes with 4001 (another version), 4003 (origin
+  not accepted) or 4004 (wrong token), so the page can say which (a browser shows a WebSocket no HTTP status). The
+  cost: any page can learn that a helper listens (Chromium's Local Network Access prompt gates that first).
+- **Frames:** each binary message one or more whole frames in QEMU's framing, both ways; the frames the switch writes
+  while a message is on its way go out together as the next one. What waits for a slow page is bounded (4 MiB), and
+  past it frames drop as a full NIC queue drops them: the library's switch writes to every link under one lock, so a
+  link that blocked would stall the others.
 - Logs a line per connect and disconnect; nothing about the traffic.
 
 ## 3. The page
@@ -107,39 +137,79 @@ tun2socks-style forwarders.
 
 ## 4. Steps
 
-- **L0, the spike** (not started): the sketch helper and a throwaway adapter on the page. Debian on the page gets a
-  lease, resolves and runs `apt update` through it. Check in Chromium 153 whether the Local Network Access prompt
-  appears for a WebSocket from the page and from a worker, whether a grant persists, and how Playwright grants it
-  for tests. Measure, against tailcat through a public relay and against a tailcat exit node on this machine
-  through a local `derper -dev` (what the relay costs apart from the crypto): round trip, throughput each way,
-  the page's CPU per Mbit, the MTU (1500 against larger). Report in bench/net/REPORT.md with its JSON.
+- **L0, the spike** (in progress): the helper (`net/webpc-net`, with IPv6) and a throwaway adapter on the page
+  (`?localnet=` or `#net=` at a machine's start puts its first adapter's frames on the helper: web/local-net.ts;
+  `tests/browser/netguest.html?ws=` for the test).
+  - **Done** (2026-11-01, a cloud session; NET-HANDOVER.md has the numbers): the helper and its Go tests; the spike
+    adapter; `tests/net-local.test.ts`: Debian on the page gets the helper's lease at boot, resolves through it, moves
+    8 MiB each way to a server on the host, runs `apt-get update`; IPv6 on the link without a default route on a host
+    without IPv6 (§5); a wrong token and another origin refused from Chromium.
+  - **Left, in the dev VM** (each needs what the cloud lacks: Chromium 153 on the user's setup, a public origin, the
+    Mac's IPv6, tailcat's relays and the dev VM's own numbers):
+    1. `scripts/ci-net.sh` there (with `net-local` now in it), and `tests/net-local.test.ts`'s numbers on the dev VM.
+    2. **Local Network Access** in Chromium 153: whether the prompt appears for the WebSocket from a public origin's
+       page (the deployed page, or a copy served from a public address: the tests' 127.0.0.1 page is local, which LNA
+       leaves alone), and from a worker; whether a grant persists across reloads and restarts; how Playwright grants
+       it for tests (a permission, a flag or a policy).
+    3. **Measurements**, against tailcat through a public relay and against a tailcat exit node on this machine
+       through a local `derper -dev` (what the relay costs apart from the crypto): round trip, throughput each way,
+       the page's CPU per Mbit, the MTU (1500 against larger). Report in bench/net/REPORT.md with its JSON. They
+       decide where the client runs (the page or a worker) and whether the guest's frames are batched before the
+       socket (from the guest they go one frame a message today; from the helper 2.6).
+    4. **IPv6 on a host that has it** (the Mac; the dev VM has none): the guest's default route comes, `curl` and
+       `apt` go over IPv6; and the reach changing under a running guest (a network without IPv6), the default
+       following within a minute.
 - **L1, the helper's repository:** flags, the kept token, origins, the subprotocol, logs; a README that states
   the code ours and imported, the install lines, the hashes and how to rebuild them; the pinned toolchain in
   `go.mod`; releases built here, checked by a second build elsewhere.
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
   install`, as `tests/net/tailcat.sh` pins tailcat): Debian's lease, a TCP transfer to a server on this machine, a
-  wrong token and a wrong origin refused, and the IPv6 checks of §5. The framing's unit tests in Node. How it
+  wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these
+  already, from L0, building the helper from its directory; `go install` once the repository is its own). The framing's unit tests in Node. How it
   works goes into tailnet.md's neighbor (a page of its own, or network-adapters.md), frontend.md "Network" and
   the backlog's loose ends.
 - **L4, release:** the first release and the deploy, with the user.
 
-## 5. IPv6 absent, cleanly
+## 5. IPv6 as far as the host has it
 
-Without the page's gateway nothing sends a router advertisement, so the guest has only its link-local IPv6
-address and no IPv6 route. glibc's `getaddrinfo` with `AI_ADDRCONFIG` (most programs) then asks for no AAAA
-records, and a program that tries an IPv6 address anyway gets "network unreachable" at once, so dual-stack
-programs fall back without waiting. DHCPv6 goes unanswered, which shouldn't hold up boot
-(`systemd-networkd-wait-online` is satisfied by an IPv4 route). To check (L0, then L3): `curl` and `apt update`
-against dual-stack hosts (Debian's mirrors have AAAA records) with the time to the first byte close to an
-IPv4-only run's, `getent ahosts` returning only IPv4, boot time to the network unchanged. The dev VM has no IPv6
-of its own, so IPv6 beyond it couldn't be tested here anyway.
+The guest always has IPv6 on the link: the helper's /64 (`fd77:6562:7063::/64`, a ULA of ours) by SLAAC and DHCPv6,
+the gateway and its resolver at `::1`. **The default route is the question.** If the router advertisement offered one
+while the host has no IPv6 out, the guest's IPv6 SYNs would go to the helper, whose forwarder can't dial and answers a
+reset: better than tailcat's exit node (which accepts and closes empty, so curl and browsers never fell back,
+network-adapters.md §4 "IPv6 out"), but each connection would still try IPv6 first and fail. So the helper does what
+the page does for a tunnel's far end (web/reach6.ts), from the host's own sockets: a DNS query for the root's NS
+records over IPv6 to Cloudflare's, Google's and Quad9's resolvers at once, any answer counting, at the start and every
+minute; three lost in a row (3 s each) make IPv6 out, one answer brings it back, and until the first answer it is out.
+While out, every router advertisement to a guest has its router lifetime rewritten to 0 (`ra.go`): the prefix stays on
+the link and the default route goes, so the guest's IPv6 to the internet fails at once ("network unreachable") and
+dual-stack programs use IPv4 without a wait. glibc's `AI_ADDRCONFIG` still asks for AAAA (the ULA counts as an
+address), which costs nothing more since the connect fails at once.
+
+The library answers router solicitations only (Linux sends them when the link comes up) with a 1000 s router lifetime
+and sends nothing unsolicited, so the helper sends solicitations into the switch on each guest's behalf (their MACs,
+learned from their frames): when the reach changes (the guest's default moves at once both ways), when a guest first
+appears on a link (a page reconnected under a running guest), and every 5 minutes (else the default would lapse after
+1000 s). `--no-ipv6` turns IPv6 off in the library: no router advertisement, only the link-local address, which
+glibc's `AI_ADDRCONFIG` ignores, and DHCPv6 unanswered, which doesn't hold up boot (`systemd-networkd-wait-online` is
+satisfied by IPv4).
+
+**Checked:** `helper_test.go` (a solicitation answered with a default route while the probe's resolver answers, an
+unsolicited advertisement without one when it stops and with one when it answers again, valid checksums; nothing
+with `--no-ipv6`); `tests/net-local.test.ts` on the cloud container, which has no IPv6 at all: the guest's address
+in the /64, the gateway's ping, no default route, `curl` to an IPv6 address failing at once (exit 7), a dual-stack
+name connecting over IPv4 at once. **To check:** a host with IPv6 (the Mac; the dev VM has none of its own): the
+default route, and `curl` and `apt` over IPv6 out; and the reach changing under a running guest (a Wi-Fi without IPv6).
 
 ## 6. Open questions
 
 - The kind's name on the page ("This computer", "Local helper", …) and the helper's.
 - The default port.
 - Where the install lines download from: GitHub's releases (one more party users already know) or vm.tny.im.
-- Whether gvisor-tap-vsock's DNS forwarder follows the host's resolvers on every platform (Windows especially).
+- Whether gvisor-tap-vsock's DNS forwarder follows the host's resolvers on every platform (Windows especially: it
+  asks Go's `net.Resolver`, the system's own there, and forwards other types to `/etc/resolv.conf`'s servers, which
+  Windows hasn't).
+- When #745 lands, or whether it stalls: then a fork of ours with the module path renamed is what gives `go install`
+  back (§2).
 - What Defender and SmartScreen make of an unsigned Go binary fetched by `Invoke-WebRequest`; Firefox's and
   Safari's handling of `ws://127.0.0.1` from an https page (never blockers).
