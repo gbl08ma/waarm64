@@ -385,6 +385,7 @@ wg_caps_properties(struct vk_properties *p)
    p->maxComputeWorkgroupSubgroups = L->max_compute_invocations_per_workgroup;
    p->requiredSubgroupSizeStages = VK_SHADER_STAGE_COMPUTE_BIT;
    p->maxPerSetDescriptors = 1024;
+   p->maxPushDescriptors = 32; /* VK_KHR_push_descriptor's (Vulkan's minimum); a set's descriptors as any other's */
    p->maxMemoryAllocationSize = max_buffer;
    p->maxBufferSize = max_buffer;
 

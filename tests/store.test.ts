@@ -307,6 +307,11 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   for (const ramSplit of [[2048, 512], [3072, 0], [4096], 'no']) {
     assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, ramSplit } })), /damaged/, JSON.stringify(ramSplit));
   }
+  // A split is checked with Vulkan's renderer and window in memory 1 when the definition has Vulkan (it couldn't boot).
+  const big = { ...def, machine: { ...def.machine, ramMiB: 7167, ramSplit: [3071, 4096] } };
+  assert.deepEqual(parseDefinition(JSON.stringify(big)).machine.ramSplit, [3071, 4096]);
+  assert.throws(() => parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, display: '3d', vulkan: true } })), /damaged/);
+  assert.ok(parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, ramMiB: 5631, ramSplit: [3071, 2560], display: '3d', vulkan: true } })));
 });
 
 test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule; its keyboard layout and network settings by its definition", async () => {

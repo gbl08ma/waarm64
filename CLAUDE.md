@@ -46,7 +46,8 @@ there.
 
 **Cloud sessions** (Claude Code on the web) are a secondary path: an Ubuntu x86_64 container without Lima, Podman or
 the macOS oracles, set up by `scripts/cloud-setup.sh`; there `systemd-run` doesn't work (run under `timeout` only).
-Details: [docs/cloud.md](docs/cloud.md).
+dEQP-VK's disk and guest, which they can't build, are prebuilt at `https://static.gbl08ma.com/diskimages/deqp-vk.ext4`
+and `.../guest-vk.qcow2` (fetch them into `target/deqp/`). Details: [docs/cloud.md](docs/cloud.md).
 
 ## Commands
 

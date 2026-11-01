@@ -1321,6 +1321,13 @@ fn the_window_is_in_memory_1_after_its_renderer() {
         );
         assert_eq!(vm.mem.ram_pa(1, AT + 0x1000), WINDOW + 0x1000);
         assert_eq!(vm.mem.ram_pa(1, cfg.spill_at() + 0x100), node1 + 0x100);
+        // The edges: the window's last byte, node 1's first (the window's end offset, which a lookup of no bytes
+        // took for the window's: an IC IVAU or a block key there named the PA past the window).
+        assert_eq!(
+            vm.mem.ram_pa(1, cfg.spill_at() - 1),
+            WINDOW + (cfg.spill_at() - 1 - AT)
+        );
+        assert_eq!(vm.mem.ram_pa(1, cfg.spill_at()), node1);
     }
     // A machine whose memory 1 holds the window but no RAM: no NUMA node, the window still reached.
     let cfg = VmConfig {

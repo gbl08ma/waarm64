@@ -630,12 +630,12 @@ wgt_imported(void)
  * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
  * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
  * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, vendorID and pipelineCacheUUID's first
- * word, the sample counts and features below, then NV12's queries (last); NULL with wgt_error(). Its own instance: the
+ * word, the sample counts and features below, NV12's queries, then maxPushDescriptors (last); NULL with wgt_error(). Its own instance: the
  * device's caps are read when the instance enumerates it. */
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[29];
+   static uint32_t out[30];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -738,6 +738,11 @@ wgt_caps(void)
       VkImageFormatProperties2 ip = { .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2, .pNext = k == 2 ? &ep : NULL };
       out[i++] = (uint32_t)image_formats2(pdev, &fi, &ip);
    }
+   /* The out-of-context review of VK4: VK_KHR_push_descriptor's maxPushDescriptors (Vulkan: at least 32). */
+   VkPhysicalDevicePushDescriptorPropertiesKHR push = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR };
+   VkPhysicalDeviceProperties2 r = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &push };
+   props2(pdev, &r);
+   out[i++] = push.maxPushDescriptors;
    destroy(inst, NULL);
    return out;
 }

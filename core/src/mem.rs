@@ -447,7 +447,8 @@ impl Mem {
         match m {
             0 => self.phys + off,
             m => {
-                let s = self.region(m, off, 0).expect("an offset in a region");
+                // A byte's: with no bytes the window's end, node 1's first byte, would be the window's.
+                let s = self.region(m, off, 1).expect("an offset in a region");
                 s.phys + off - s.off
             }
         }
