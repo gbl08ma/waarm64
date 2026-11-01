@@ -145,7 +145,7 @@ programs' replays need the dev VM.
   `api.info.image_format_properties.*` passing on SwiftShader and the M4, whatever is taken off said in vk/README.md.
   *Start:* wg_caps.c, wg_format.c, web/venus-gpu.ts `gpuFeatures`; tests/venus-renderer.test.ts's caps test.
 
-An out-of-context review again after R1–R4 (the passes' and the worker's areas), over what they change.
+An out-of-context review again after R1–R4 (the passes' and the worker's areas), over what they change: done 2026-11-01, its triage at the top of VENUS-VK4-REVIEW.md.
 
 ### Tier 3: performance on real workloads
 
