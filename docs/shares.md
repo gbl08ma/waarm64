@@ -107,6 +107,9 @@ after the request it names**. What changes while the machine runs comes over the
   would fail otherwise). v9fs takes per-attach owners under `cache=none`: root and `nobody` each see themselves as owner
   (tests/page-folders.test.ts).
 - **Times:** a file's `lastModified` (ms); directories have none and answer the folder's attach time.
+- **`qid.version`:** a file's from its `lastModified` and size as last seen (QEMU's way), so a change on the host shows
+  as a new version to a caching mount; a directory's counts the changes to its entries this tree saw (its own, and what
+  a lookup or a readdir found).
 - **No symlinks, hard links or device nodes:** `symlink`, `link`, `mknod` answer `EPERM`. Entries that aren't files
   or directories don't appear.
 - **Names:** what Chromium refuses answers `EINVAL`. In a folder in the browser that's `/`, `\`, `.` and `..`; a host
@@ -141,8 +144,9 @@ after the request it names**. What changes while the machine runs comes over the
   was, and `EIO` answers later writes and `Tfsync` until the last clunk.
 - A session's swap file (`<name>.crswap`) is hidden from listings while it's the session's.
 - **Attributes:** `getattr` needs a `getFile()` (size, time): cached per node for 1 s, dropped by the server's own
-  writes; a readdir starts its entries' in the background, 32 at a time (5–8× cheaper side by side). A readdir takes the directory's entries once at offset 0 and serves later offsets from that list (offsets
-  are entry indices), so the host changing it mid-listing doesn't skip or repeat entries.
+  writes; a readdir starts its entries' in the background, 32 at a time (5–8× cheaper side by side). A readdir takes the directory's entries once at offset 0 and serves later offsets from that list (its
+  offsets are positions in that list, which doesn't change), so the host or the guest changing the directory mid-listing
+  doesn't skip or repeat entries.
 
 ## 4. The page
 
@@ -205,4 +209,6 @@ can't be granted headless, so a real folder's writes are `bench/shares/index.htm
 - virtio-fs: FUSE over virtio needs a FUSE server and, for its speed, DAX windows on shared memory; 9p's server
   exists and the costs above are the browser's, not the protocol's.
 - `FileSystemObserver` (the host's changes pushed to the guest): with `cache=none` the guest asks every time.
-- xattrs, ACLs, POSIX locks between machines (one writer: rule 4).
+- xattrs and ACLs (the server has them, `docs/devices.md` "9p"; a directory handle can't keep them, and keeping them in
+  memory for the session, as `chmod` is, would lose a `cp -a`'s labels at power-off without a word: they answer
+  `EOPNOTSUPP`), POSIX locks between machines (one writer: rule 4).

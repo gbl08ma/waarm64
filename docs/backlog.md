@@ -434,8 +434,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   bytes answers `EIO` (its session can't open), and creating a name past 255 `EIO` rather than `ENAMETOOLONG`
   (bench/shares/REPORT.md). Write permission can't be granted headless, so the tests' host backend writes OPFS directories
   and `bench/shares/index.html` is opened by hand.
-- 9p: no HTTP-served tree, as v86's lazy filesystem; no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
-  entry indices; whole-second timestamps.
+- 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
+  (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
 - Input: the keyboard layout reaches only guests with systemd 256+ (the firmware, GRUB and older guests type a US
   layout; Latin layouts only: frontend.md "The keyboard layout"); no horizontal wheel (the tablet and the mouse have
   `REL_WHEEL` only: `REL_HWHEEL`, or the high-resolution wheels, would be guest-visible); the touchscreen's

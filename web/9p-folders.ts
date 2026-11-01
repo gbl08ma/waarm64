@@ -10,7 +10,7 @@
 // A host file is written through a write session: Chromium copies the file into a swap file, and closing swaps it in.
 // A session is closed by the last clunk of a fid writing the file, by a Tfsync and by `flush` (a snapshot, a power-off),
 // so that a file's writes are one session; what it wrote is kept to read back (`Overlay`).
-import { EACCES, EBADF, EBUSY, EEXIST, EINVAL, EIO, EISDIR, ENOENT, ENOSPC, ENOTDIR, ENOTEMPTY, EPERM, EROFS, Err, ESTALE, EXDEV, p9Backend, P9Server, S_IFDIR, S_IFREG, type P9Fid, type P9SetAttr, type P9Stat, type P9StatFs, type P9Tree, type P9Time } from './9p.ts';
+import { EACCES, EBADF, EBUSY, EEXIST, EINVAL, EIO, EISDIR, ENOENT, ENOSPC, ENOTDIR, ENOTEMPTY, EPERM, EROFS, Err, ESTALE, EXDEV, p9Backend, P9Server, S_IFDIR, S_IFREG, type P9Entry, type P9Fid, type P9SetAttr, type P9Stat, type P9StatFs, type P9Tree, type P9Time } from './9p.ts';
 import { uniqueName } from './app/shape.ts';
 import type { Ctx } from './devices.ts';
 
@@ -116,6 +116,8 @@ type FNode = {
   mtime: number;
   attrs: number;
   moved: number;
+  /** A directory's qid version: counts the changes to its entries seen. */
+  version: number;
   /** Fids open on it, and those writing. */
   opens: number;
   writers: number;
@@ -155,7 +157,7 @@ export class FolderTree implements P9Tree<FNode> {
   }
 
   private node(name: string, parent: FNode | undefined, mount: Mount | undefined, dir: boolean): FNode {
-    return { id: ++this.ids, name, parent: parent!, dir, mount, seen: performance.now(), chain: Promise.resolve(), size: 0, mtime: 0, attrs: -Infinity, moved: 0, opens: 0, writers: 0, ...(dir ? { children: new Map() } : {}) };
+    return { id: ++this.ids, name, parent: parent!, dir, mount, seen: performance.now(), chain: Promise.resolve(), size: 0, mtime: 0, attrs: -Infinity, moved: 0, version: 0, opens: 0, writers: 0, ...(dir ? { children: new Map() } : {}) };
   }
 
   /** Adds a folder at the root. */
@@ -327,7 +329,7 @@ export class FolderTree implements P9Tree<FNode> {
   /** `name` removed behind our back. */
   private forget(d: FNode, name: string) {
     const c = d.children!.get(name);
-    if (c) c.gone = true;
+    if (c) [c.gone, d.version] = [true, d.version + 1];
     d.children!.delete(name);
   }
 
@@ -356,7 +358,10 @@ export class FolderTree implements P9Tree<FNode> {
       this.forget(d, name);
       c = undefined;
     }
-    if (!c) d.children!.set(name, (c = this.node(name, d, d.mount, dir)));
+    if (!c) {
+      d.children!.set(name, (c = this.node(name, d, d.mount, dir)));
+      d.version++;
+    }
     c.handle ??= h;
     c.seen = performance.now();
     return c;
@@ -364,6 +369,8 @@ export class FolderTree implements P9Tree<FNode> {
 
   id(n: FNode) { return n.id; }
   type(n: FNode) { return n.dir ? S_IFDIR : S_IFREG; }
+  /** A file's from its time and size as last seen (QEMU's way: what changed on the host shows), a directory's counted. */
+  version(n: FNode) { return n.dir ? n.version : (n.mtime ^ (n.size * 256)) >>> 0; }
 
   walk(d: FNode, name: string): FNode | undefined | Promise<FNode | undefined> {
     if (!d.dir) return undefined;
@@ -565,8 +572,9 @@ export class FolderTree implements P9Tree<FNode> {
     if (off > 0 && f.list) return f.list;
     return this.serial([d], async () => {
       this.live(d);
-      const dots: [string, FNode][] = [['.', d], ['..', d.parent]];
-      if (!d.mount) return (f.list = [...dots, ...d.children!]);
+      // The listing as it is now, kept for the offsets past 0: they index it, so a change mid-listing skips nothing.
+      const list = (): P9Entry<FNode>[] => (f.list = ([['.', d], ['..', d.parent], ...d.children!] as [string, FNode][]).map(([k, n], i): P9Entry<FNode> => [k, n, i + 1]));
+      if (!d.mount) return list();
       const seen = new Set<string>();
       for await (const [name, h] of (await this.dirHandle(d) as Entries).entries()) {
         if (name.endsWith('.crswap') && d.children!.get(name.slice(0, -'.crswap'.length))?.session) continue; // a write session's swap file
@@ -575,7 +583,7 @@ export class FolderTree implements P9Tree<FNode> {
       }
       for (const name of [...d.children!.keys()]) if (!seen.has(name)) this.forget(d, name);
       this.prefill([...d.children!.values()]);
-      return (f.list = [...dots, ...d.children!]);
+      return list();
     });
   }
 
@@ -653,6 +661,7 @@ export class FolderTree implements P9Tree<FNode> {
     await (await this.dirHandle(d)).removeEntry(n.name);
     [n.gone, n.orphan] = [true, orphan];
     d.children!.delete(n.name);
+    d.version++;
   }
 
   unlink(f: P9Fid<FNode>, name: string, rmdir: boolean) {
@@ -697,6 +706,7 @@ export class FolderTree implements P9Tree<FNode> {
       od.children!.delete(oname);
       [n.name, n.parent] = [nname, nd];
       nd.children!.set(nname, n);
+      [od.version, nd.version] = [od.version + 1, nd.version + 1];
     });
   }
 
