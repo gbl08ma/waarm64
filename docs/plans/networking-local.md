@@ -137,14 +137,28 @@ with tun2socks-style forwarders.
 
 ## 4. Steps
 
-- **L0, the spike** (in progress; NET-HANDOVER.md has what's done): the helper (`net/webpc-net`, with IPv6) and a
-  throwaway adapter on the page (`?localnet=` or `#net=` at a machine's start puts its first adapter's frames on the
-  helper: web/local-net.ts; `tests/browser/netguest.html?ws=` for the test). Debian on the page gets a
-  lease, resolves and runs `apt update` through it. Check in Chromium 153 whether the Local Network Access prompt
-  appears for a WebSocket from the page and from a worker, whether a grant persists, and how Playwright grants it
-  for tests. Measure, against tailcat through a public relay and against a tailcat exit node on this machine
-  through a local `derper -dev` (what the relay costs apart from the crypto): round trip, throughput each way,
-  the page's CPU per Mbit, the MTU (1500 against larger). Report in bench/net/REPORT.md with its JSON.
+- **L0, the spike** (in progress): the helper (`net/webpc-net`, with IPv6) and a throwaway adapter on the page
+  (`?localnet=` or `#net=` at a machine's start puts its first adapter's frames on the helper: web/local-net.ts;
+  `tests/browser/netguest.html?ws=` for the test).
+  - **Done** (2026-11-01, a cloud session; NET-HANDOVER.md has the numbers): the helper and its Go tests; the spike
+    adapter; `tests/net-local.test.ts`: Debian on the page gets the helper's lease at boot, resolves through it, moves
+    8 MiB each way to a server on the host, runs `apt-get update`; IPv6 on the link without a default route on a host
+    without IPv6 (§5); a wrong token and another origin refused from Chromium.
+  - **Left, in the dev VM** (each needs what the cloud lacks: Chromium 153 on the user's setup, a public origin, the
+    Mac's IPv6, tailcat's relays and the dev VM's own numbers):
+    1. `scripts/ci-net.sh` there (with `net-local` now in it), and `tests/net-local.test.ts`'s numbers on the dev VM.
+    2. **Local Network Access** in Chromium 153: whether the prompt appears for the WebSocket from a public origin's
+       page (the deployed page, or a copy served from a public address: the tests' 127.0.0.1 page is local, which LNA
+       leaves alone), and from a worker; whether a grant persists across reloads and restarts; how Playwright grants
+       it for tests (a permission, a flag or a policy).
+    3. **Measurements**, against tailcat through a public relay and against a tailcat exit node on this machine
+       through a local `derper -dev` (what the relay costs apart from the crypto): round trip, throughput each way,
+       the page's CPU per Mbit, the MTU (1500 against larger). Report in bench/net/REPORT.md with its JSON. They
+       decide where the client runs (the page or a worker) and whether the guest's frames are batched before the
+       socket (from the guest they go one frame a message today; from the helper 2.6).
+    4. **IPv6 on a host that has it** (the Mac; the dev VM has none): the guest's default route comes, `curl` and
+       `apt` go over IPv6; and the reach changing under a running guest (a network without IPv6), the default
+       following within a minute.
 - **L1, the helper's repository:** flags, the kept token, origins, the subprotocol, logs; a README that states
   the code ours and imported, the install lines, the hashes and how to rebuild them; the pinned toolchain in
   `go.mod`; releases built here, checked by a second build elsewhere.

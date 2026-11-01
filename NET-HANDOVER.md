@@ -35,18 +35,12 @@ of 2026-11-01 below.
 
 ## Next
 
-1. **L0's remaining checks, in the dev VM** (Chromium 153), as the plan's L0 lists them: whether the Local Network
-   Access prompt appears for the page's WebSocket (from the deployed page or another public origin: the tests' page is
-   on 127.0.0.1, which LNA leaves alone), from a worker too, whether a grant persists, how Playwright grants it.
-   Measure against tailcat through a public relay and an exit node behind a local `derper -dev`: round trip,
-   throughput each way, the page's CPU per Mbit, MTU 1500 against larger; bench/net/REPORT.md with its JSON.
-2. **On a host with IPv6** (the Mac): the default route comes, curl and apt go over IPv6; the reach changing under a
-   running guest (`helper_test.go` covers the mechanism; a real network change doesn't yet).
-3. **The page's batching from the guest is 1.00 frames a message** (the device worker posts each frame as its own
+1. **L0's remaining items, in the dev VM:** the plan's L0 "Left, in the dev VM" (ci-net.sh there, Local Network
+   Access, the measurements against tailcat, IPv6 on the Mac). Its item 3 settles the batching below.
+2. **The page's batching from the guest is 1.00 frames a message** (the device worker posts each frame as its own
    port message, so the client's microtask batch never holds two); the helper's side batches (2.62). Batch in the
-   device worker or flush on the socket's `bufferedAmount`, after measuring (L0's CPU per Mbit decides, with where
-   the client runs: page or worker).
-4. Then L1 (the README's install lines, the release's license file: THIRD_PARTY.md says what it needs), L2 (the
+   device worker or flush on the socket's `bufferedAmount`, after measuring.
+3. Then L1 (the README's install lines, the release's license file: THIRD_PARTY.md says what it needs), L2 (the
    connection kind replacing `?localnet=`), L3, L4 as the plan says.
 
 ## Found (worth not re-discovering)
