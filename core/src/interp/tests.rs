@@ -1930,6 +1930,12 @@ fn v8_x_feature_gates() {
         let mut t = T::new(&[insn]).x(2, DATA);
         assert_eq!(t.step(), Ok(()), "{insn:#x}");
     }
+    // FRINTTS's reserved forms (ftype 1x; doubles without Q) are UNDEFINED ahead of the FPEN trap.
+    for insn in [0x1ee8_4020u32, 0x1ea8_4020, 0x0e61_e820] {
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
     // LDAPR loads as LDAR does: aligned, all 8 bytes.
     let t = T::new(&[ldapr])
         .x(2, DATA)

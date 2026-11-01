@@ -15,8 +15,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **ABI 59's extensions' measurement and golden files** (JSCVT, LRCPC, SB, FlagM, DIT, FRINTTS; docs/cpu.md): built
   in a cloud session, which has no arm64 guest with a JS engine, no M4 oracle and no benchmark numbers worth recording
   (docs/cloud.md). Still to do in the dev VM: JSCVT's A/B for the rule (a JS workload in the desktop guest's Firefox,
-  `?jscvt=0` against on; off by default if it isn't faster; the others replace nothing slower), the step counts of
-  `tests/steps.txt` if the guests' boots moved, and `tests/corpus/jscvt.txt` and `ext.txt` regenerated with both
+  `?jscvt=0` against on; off by default if it isn't faster; FlagM's helper calls inline if a workload shows them),
+  **the step counts of `tests/steps.txt`**, which move (the guests' Linux detects SB, LRCPC and DIT, prints them and
+  patches its alternatives; the cloud session had no guest images to boot, so `scripts/ci.sh`'s exact-step boots
+  fail until they're recorded, with the user's OK for the guest-visible change), and `tests/corpus/jscvt.txt` and `ext.txt` regenerated with both
   oracles (`node tools/corpus/run.ts jscvt ext`, the reserved encodings back in `ext`'s FRINTTS forms then).
   **DotProd** next, in the dev VM with an A/B: guests switch their codecs' and ML kernels' paths on its hwcap, so it
   needs an inline JIT form that beats the NEON paths it replaces.

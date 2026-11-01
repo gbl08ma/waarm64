@@ -916,13 +916,22 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             fp_enabled(c)?;
             float::exec(c, i, op)?
         }
-        // FEAT_FRINTTS, scalar and vector: UNDEFINED without it, before the FPEN trap.
+        // FEAT_FRINTTS, scalar and vector: UNDEFINED without it, and its reserved
+        // forms (ftype 1x, doubles without Q), before the FPEN trap.
         FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1 | FRINT32X_float | FRINT64X_float
         | FRINT32Z_float | FRINT64Z_float
             if c.features & crate::cpu::FEATURE_FRINTTS != 0 =>
         {
+            let vector = matches!(op, FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1);
+            if if vector {
+                bit(i, 22) && !bit(i, 30)
+            } else {
+                bit(i, 23)
+            } {
+                return Err(Exit::Undefined);
+            }
             fp_enabled(c)?;
-            if matches!(op, FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1) {
+            if vector {
                 simd_fp::frintts(c, i)?
             } else {
                 float::exec(c, i, op)?

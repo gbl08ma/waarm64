@@ -31,8 +31,11 @@ match it step for step.
   entry points with it. JS engines use it for ToInt32 when the hwcap says so (V8 does); the JIT runs it
   inline ([jit.md](jit.md) "Floating point").
 - **Small extensions past v8.0** (ABI 59), each its own `VmConfig.features` bit, on and switched as JSCVT is
-  (`rcpc: false` and `?rcpc=0`, and so on), in the shape's hash; none is faster or slower for guests that use it,
-  since none costs more than what it replaces:
+  (`rcpc: false` and `?rcpc=0`, and so on), in the shape's hash. **Not measured** (a cloud session: backlog
+  "ABI 59's extensions"). LDAPR runs LDAR's code, SB is free, and FRINTTS is inline. The FlagM forms are helper
+  calls, slower than the inline flag code a compiler emits without them. That costs only code built for v8.4 and
+  up, which has no other path anyway; distributions' binaries target v8.0, and nothing known dispatches on the
+  hwcap:
   - **FEAT_LRCPC** (bit 5, `FEATURE_RCPC`, `rcpc`): `LDAPR`, `LDAPRB`, `LDAPRH` run as `LDAR` (RCsc is stronger
     than RCpc asks, which is allowed), the JIT's inline LDAR included. Not FEAT_LRCPC2 (`LDAPUR`, `STLUR`: not
     in dynarmic's table).

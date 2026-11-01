@@ -381,7 +381,8 @@ impl Cpu {
         if !matches!(
             pstate & !(DAIF | PSTATE_SS | PSTATE_DIT),
             M_EL0T | M_EL1T | M_EL1H
-        ) || !matches!(self.monitor.size, 0 | 1 | 2 | 4 | 8 | 16)
+        ) || pstate & PSTATE_DIT != 0 && self.features & FEATURE_DIT == 0
+            || !matches!(self.monitor.size, 0 | 1 | 2 | 4 | 8 | 16)
         {
             return Err(snapshot::Error::Corrupt);
         }
@@ -551,6 +552,28 @@ mod tests {
         assert_eq!(refused(&|c| c.pstate = 0b0001), corrupt, "EL0h");
         assert_eq!(refused(&|c| c.pstate = M_EL1H | 1 << 4), corrupt, "AArch32");
         assert_eq!(refused(&|c| c.pstate = M_EL0T | PSTATE_SS), Ok(()), "SS");
+        // DIT only on a vCPU that has it (exception entry would copy it into SPSR).
+        let mut w = Writer::default();
+        Cpu {
+            pstate: M_EL0T | PSTATE_DIT,
+            ..c.clone()
+        }
+        .save(&mut w);
+        let mut no_dit = Cpu {
+            features: FEATURES & !FEATURE_DIT,
+            ..Cpu::reset()
+        };
+        assert_eq!(
+            no_dit.restore(&mut Reader(&w.0)),
+            corrupt,
+            "DIT without FEAT_DIT"
+        );
+        let mut dit = Cpu {
+            features: FEATURES,
+            ..Cpu::reset()
+        };
+        assert_eq!(dit.restore(&mut Reader(&w.0)), Ok(()), "DIT with FEAT_DIT");
+        assert_eq!(dit.pstate, M_EL0T | PSTATE_DIT);
         assert_eq!(refused(&|c| c.monitor.size = 3), corrupt);
         assert_eq!(refused(&|c| c.cntv_ctl_el0 = 7), Ok(()));
         assert_eq!(
