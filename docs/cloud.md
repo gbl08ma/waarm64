@@ -44,7 +44,8 @@ run (31 tests, ~20 s). dEQP-VK (`scripts/ci-deqp-vk.sh`) needs `images/deqp/buil
 (arm64 Podman, "Images" below); the user keeps them prebuilt (2026-11-01, built in the dev VM) at
 `https://static.gbl08ma.com/diskimages/deqp-vk.ext4` (448 MiB) and `https://static.gbl08ma.com/diskimages/guest-vk.qcow2`
 (858 MiB), reachable through the proxy (HTTP redirects to HTTPS; ranges served, so the page can boot them from there
-too). Fetch them into `target/deqp/` (`curl -sS --fail -o target/deqp/deqp-vk.ext4 <url>`, the same for the guest) and
+too). Fetch them into `target/deqp/` (`curl -sS --fail -C - -o target/deqp/deqp-vk.ext4 <url>`, the same for the guest; on
+2026-11-01 the guest came at ~0.5 MB/s, so ~30 min: run it in the background, and `-C -` resumes one cut by a timeout) and
 `bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2` runs on them; `scripts/ci-deqp-vk.sh` as a whole also wants
 `images/debian-vulkan` and `images/vkframes`' disks for the programs' replays, which aren't hosted.
 
