@@ -325,9 +325,9 @@ const NOT_OURS: &[&str] = &[
     // FEAT_FlagM, FEAT_FlagM2, FEAT_SB, FEAT_LOR, FEAT_WFxT, FEAT_LS64
     "cfinv", "rmif", "setf8", "setf16", "xaflag", "axflag", "sb", "wfet", "wfit", "ld64b", "st64b",
     "st64bv", "st64bv0",
-    // FP/AdvSIMD beyond v8.0: FEAT_JSCVT, FEAT_FRINTTS, FEAT_FHM, FEAT_RDM, FEAT_DotProd,
-    // FEAT_I8MM, FEAT_FCMA, FEAT_SM3, FEAT_SM4.
-    "fjcvtzs", "frint32x", "frint32z", "frint64x", "frint64z", "fmlal", "fmlal2", "fmlsl", "fmlsl2",
+    // FP/AdvSIMD beyond v8.0: FEAT_FRINTTS, FEAT_FHM, FEAT_RDM, FEAT_DotProd, FEAT_I8MM,
+    // FEAT_FCMA, FEAT_SM3, FEAT_SM4 (FEAT_JSCVT is ours since ABI 59).
+    "frint32x", "frint32z", "frint64x", "frint64z", "fmlal", "fmlal2", "fmlsl", "fmlsl2",
     "sqrdmlah", "sqrdmlsh", "sdot", "udot", "usdot", "sudot", "smmla", "ummla", "usmmla", "fcmla",
     "fcadd",
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no

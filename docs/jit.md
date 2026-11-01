@@ -881,6 +881,10 @@ interpreter's; the helper runs the instruction otherwise.
   rounded value fits, under FPOK (Inexact), into the saturating truncation (2D lane by lane);
   FCVTXN rounds to odd from the RNE demote (inexact, it steps toward zero where the demote went away
   from the operand, then sets the odd bit), with an RNE result from the second binade up and finite;
+  FJCVTZS (FEAT_JSCVT, when the vCPU has it) from `f64.trunc` and `i32.trunc_sat_f64_s` for an
+  operand in (-2^31 - 1, 2^31), exact (Z set unless it's -0), or inexact under FPOK and, under FZ, not a
+  denormal; NZCV lazy as a 32-bit logical result of !Z (the helper's Z read back after it); out of range,
+  infinite or a NaN (Invalid) is the helper's;
   FCVT to and from half (scalar), as the vector half forms below, single or double straight to half
   in integer arithmetic (no double rounding);
   FCVT single↔double, scalar and vector (FCVTL/FCVTN): widening is exact without FPOK for a zero,

@@ -70,6 +70,11 @@ pub fn isar0(features: u64) -> u64 {
         r
     }
 }
+/// ID_AA64ISAR1_EL1 for a vCPU with `features`: JSCVT = 1 (15:12) with
+/// `FEATURE_JSCVT`, else nothing.
+pub fn isar1(features: u64) -> u64 {
+    ((features & crate::cpu::FEATURE_JSCVT != 0) as u64) << 12
+}
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.
 const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
 
@@ -126,6 +131,7 @@ const REVIDR: u32 = sr(3, 0, 0, 0, 6);
 const PFR0: u32 = sr(3, 0, 0, 4, 0);
 const DFR0: u32 = sr(3, 0, 0, 5, 0);
 const ISAR0: u32 = sr(3, 0, 0, 6, 0);
+const ISAR1: u32 = sr(3, 0, 0, 6, 1);
 const MMFR0: u32 = sr(3, 0, 0, 7, 0);
 const MMFR2: u32 = sr(3, 0, 0, 7, 2);
 const CCSIDR: u32 = sr(3, 1, 0, 0, 0);
@@ -394,6 +400,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         PFR0 => pfr0(c.features),
         DFR0 => ID_AA64DFR0,
         ISAR0 => isar0(c.features),
+        ISAR1 => isar1(c.features),
         k if icc(c.features, k).is_some_and(|r| r.readable()) => return Err(Exit::Platform(i)),
         MMFR0 => ID_AA64MMFR0,
         MMFR2 => mmfr2(c.features),

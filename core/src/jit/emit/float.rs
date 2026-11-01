@@ -959,6 +959,48 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(FPOK);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
+        // FJCVTZS (FEAT_JSCVT): Wd = ToInt32(Dn), NZCV = 0Z00. An operand in
+        // (-2^31 - 1, 2^31) truncates to an i32 (a NaN isn't in it); exact (and
+        // not -0: Z) it raises nothing, inexact Inexact, which FPOK has set
+        // already (a denormal: under FZ the helper's, for IDC). The rest (out
+        // of range, infinite or a NaN: Invalid) is the helper's. NZCV stays
+        // lazy: a 32-bit logical result of !Z.
+        FJCVTZS if cx.jscvt => {
+            fpa_guard(c);
+            let (v, e, fr) = (super::FT[1], super::tmp(false, 0), flag_locals(false).2);
+            f.load(c, rn);
+            c.local_tee(x);
+            f.to_float(c);
+            c.local_tee(v);
+            c.op(0x9d).local_get(v).op(0x61).local_set(e); // f64.trunc, f64.eq
+            c.local_get(v).f64_const(-2147483649.0).op(0x64); // f64.gt
+            c.local_get(v).f64_const(2147483648.0).op(0x63).op(AND); // f64.lt
+            c.local_get(FPOK);
+            under_fz(c, |c| no_denormal(c, f, &[x]));
+            c.local_get(e).op(0x72).op(AND); // i32.or
+            guarded_with(
+                c,
+                cx,
+                i,
+                k,
+                xmask(rd),
+                |c| {
+                    set(c, false, rd, |c| {
+                        c.local_get(v).op(0xfc).op(2); // i32.trunc_sat_f64_s
+                    });
+                    c.local_get(e);
+                    c.local_get(x).i64_const(i64::MIN).op(0x52); // i64.ne
+                    c.op(AND).op(EQZ).local_set(fr);
+                },
+                |_| {},
+                |c| {
+                    // The helper's Z.
+                    c.local_get(VCPU).i32_load(NZCV);
+                    c.i32_const(1 << 30).op(AND).op(EQZ).local_set(fr);
+                },
+            );
+            c.set_flags(Kind::Logic, false);
+        }
         // FCVT{N,M,A,P,Z}{S,U} to a general register or (the AdvSIMD scalar
         // forms) to Vd, as wide as the float: the operand rounded in the
         // instruction's mode (FRINTA's sum for ties away), then a normal or

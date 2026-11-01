@@ -53,6 +53,12 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
             let x = elem(c.v[rn], 0, from.bits());
             c.v[rd] = f.convert(from, to, x, rmode) as u128;
         }
+        // FEAT_JSCVT (the caller checks the feature): NZCV = 0Z00.
+        FJCVTZS => {
+            let (r, z) = f.to_int_js(elem(c.v[rn], 0, 64));
+            c.set_reg(rd as u32, r as u64);
+            c.nzcv = (z as u64) << 30;
+        }
         SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix => {
             let t = ftype(i)?;
             let (width, fbits) = int_width(i, op == SCVTF_float_fix || op == UCVTF_float_fix)?;

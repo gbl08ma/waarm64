@@ -862,17 +862,25 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             fp_enabled(c)?;
             crypto_exec(c, i, op)
         }
-        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, FRINTTS, JSCVT,
-        // BF16, SM3, SM4.
+        // FEAT_JSCVT (`cpu::FEATURE_JSCVT`): UNDEFINED without it, before the FPEN trap.
+        FJCVTZS => {
+            if c.features & crate::cpu::FEATURE_JSCVT == 0 {
+                return Err(Exit::Undefined);
+            }
+            fp_enabled(c)?;
+            float::exec(c, i, op)?
+        }
+        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, FRINTTS, BF16,
+        // SM3, SM4.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element
         | USDOT_vec | FCMLA_vec | FCADD_vec | FCMLA_elt | FMLAL_vec_1 | FMLSL_vec_1
         | FMLAL_vec_2 | FMLSL_vec_2 | FMLAL_elt_1 | FMLAL_elt_2 | FMLSL_elt_1 | FMLSL_elt_2
         | FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1 | FRINT32X_float | FRINT64X_float
-        | FRINT32Z_float | FRINT64Z_float | FJCVTZS | BFCVT | BFCVTN | BFDOT_element
-        | BFDOT_vec | BFMLALX_element | BFMLALX_vector | BFMMLA | SM3TT1A | SM3TT1B | SM3TT2A
-        | SM3TT2B | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E => return Err(Exit::Undefined),
+        | FRINT32Z_float | FRINT64Z_float | BFCVT | BFCVTN | BFDOT_element | BFDOT_vec
+        | BFMLALX_element | BFMLALX_vector | BFMMLA | SM3TT1A | SM3TT1B | SM3TT2A | SM3TT2B
+        | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E => return Err(Exit::Undefined),
         // Half-precision AdvSIMD arithmetic (FEAT_FP16).
         FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
         | FCMGT_reg_1 | FACGT_1 | FCVTNS_1 | FCVTMS_1 | FCVTAS_1 | SCVTF_int_1 | FCMGT_zero_1

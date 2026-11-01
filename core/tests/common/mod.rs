@@ -918,11 +918,12 @@ impl<'a> Boot<'a> {
             max_steps: 20_000_000_000,
             echo: false,
             fb: (0, 0),
-            // The crypto extensions (M6.5 loop 7), FEAT_RNG, FEAT_E0PD and SHA512/SHA3, as `bootVm` gives them.
+            // The crypto extensions (M6.5 loop 7), FEAT_RNG, FEAT_E0PD, SHA512/SHA3 and JSCVT, as `bootVm` gives them.
             features: webpc_core::cpu::FEATURE_CRYPTO
                 | webpc_core::cpu::FEATURE_RNG
                 | webpc_core::cpu::FEATURE_E0PD
-                | webpc_core::cpu::FEATURE_SHA3,
+                | webpc_core::cpu::FEATURE_SHA3
+                | webpc_core::cpu::FEATURE_JSCVT,
             ncpus: 1,
             parallel: false,
             input: None,

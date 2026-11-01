@@ -940,7 +940,24 @@ const crypto: Form[] = [
   vform("eor3_bcax", "1100111000ommmmm0aaaaannnnnddddd", 400, { fix: (r) => alias(r, "dnma"), src: "nma", esize: () => 64 }),
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto };
+// FEAT_JSCVT: FJCVTZS on FP edge values (near the int32 limits and integers, wide
+// exponents for the modular wrap, NaNs, denormals). Its NZCV is 0Z00. Not a denormal
+// under FZ: QEMU before 9.0.2 sets Z for it (the pseudocode clears it; QEMU's 7619129f0d).
+const fjcvtzs = fpForm("fjcvtzs", "0001111001111110000000nnnnnddddd", 1000, { fmt: () => FD, fp: "n" });
+const jscvt: Form[] = [
+  {
+    ...fjcvtzs,
+    gen(r, seed) {
+      const g = fjcvtzs.gen(r, seed)!;
+      const n = (g.code[0] >>> 5) & 31;
+      const d = g.in.get(`v${n}`)! & M64;
+      const fpcr = g.in.get("fpcr") ?? 0n;
+      return (d >> 52n) & 0x7ffn || !(d & ((1n << 52n) - 1n)) || !(fpcr & (1n << 24n)) ? g : undefined;
+    },
+  },
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

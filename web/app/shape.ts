@@ -189,15 +189,15 @@ export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'blk';
-/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`). */
-export type CpuFeature = 'rng' | 'e0pd' | 'sha3';
-export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3'];
+/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`). */
+export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt';
+export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt'];
 /**
  * The features the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and suspended
  * machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's `cpu`),
  * whatever the machine's are now, so the hash needn't tell them apart.
  */
-const UNHASHED_CPU: CpuFeature[] = ['sha3'];
+const UNHASHED_CPU: CpuFeature[] = ['sha3', 'jscvt'];
 const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));
 
 /**

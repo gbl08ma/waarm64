@@ -1196,6 +1196,9 @@ pub struct Ctx {
     /// The vCPU has FEAT_SHA512 and FEAT_SHA3 (`cpu::has_sha3`, fixed for its
     /// life): without them the helper runs those words (UNDEFINED).
     pub sha3: bool,
+    /// The vCPU has FEAT_JSCVT (`cpu::FEATURE_JSCVT`, fixed for its life):
+    /// without it the helper runs `FJCVTZS` (UNDEFINED).
+    pub jscvt: bool,
     /// The host's relaxed-SIMD `madd` fuses (`jit::Config::fma`): the FMA forms use it ([`float`]).
     pub fma: bool,
     /// Parallel SMP (`cpu::FEATURE_PARALLEL`): DSB is the helper's, which
@@ -4129,6 +4132,7 @@ mod tests {
         el1: false,
         crypto: true,
         sha3: true,
+        jscvt: true,
         fma: false,
         parallel: false,
         pair_locks: 0x100,
@@ -4784,6 +4788,7 @@ mod tests {
             el1: true,
             crypto: true,
             sha3: true,
+            jscvt: true,
             fma: false,
             parallel: false,
             pair_locks: 0x100,

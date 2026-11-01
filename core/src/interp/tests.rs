@@ -1876,6 +1876,39 @@ fn crypto_feature_gate() {
 }
 
 #[test]
+fn jscvt_feature_gate() {
+    // fjcvtzs w1, d2: UNDEFINED without FEATURE_JSCVT, ahead of the FPEN trap;
+    // with it, Wd zero-extended and NZCV = 0Z00 whatever NZCV was.
+    use crate::cpu::FEATURE_JSCVT;
+    let insn = 0x1e7e_0041;
+    for (features, cpacr) in [(0, 3 << 20), (0, 0)] {
+        let mut t = T::new(&[insn]);
+        t.c.features = features;
+        t.c.cpacr_el1 = cpacr;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{features} {cpacr:#x}");
+    }
+    let mut t = T::new(&[insn]);
+    t.c.features = FEATURE_JSCVT;
+    t.c.cpacr_el1 = 0;
+    assert!(matches!(t.step(), Err(Exit::Trap(_))));
+    for (x, w, nzcv, fpsr) in [
+        (-3.0f64, 0xffff_fffd, 0x4000_0000, 0),
+        (-3.25, 0xffff_fffd, 0, crate::fp::IXC),
+        (-0.0, 0, 0, 0),
+        (4294967298.0, 2, 0, crate::fp::IOC),
+    ] {
+        let mut t = T::new(&[insn]).x(1, u64::MAX).nzcv(0xf000_0000);
+        t.c.features = FEATURE_JSCVT;
+        t.c.v[2] = 0xdead_beef << 64 | x.to_bits() as u128;
+        assert_eq!(t.step(), Ok(()), "{x}");
+        assert_eq!((t.c.x[1], t.c.nzcv, t.c.fpsr), (w, nzcv, fpsr), "{x}");
+    }
+    assert_eq!(sys::isar1(0), 0);
+    assert_eq!(sys::isar1(FEATURE_JSCVT), 1 << 12);
+    assert_eq!(sys::isar1(crate::cpu::FEATURES), 1 << 12);
+}
+
+#[test]
 fn fast_completion_classes() {
     // mrs x1, cntvct_el0; mrs x1, cntpct_el0: counter reads; msr cntv_cval_el0, x1 and mrs x1, cntfrq_el0 aren't.
     assert!(sys::is_counter_read(0xd53be041));

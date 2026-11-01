@@ -102,6 +102,8 @@ const CLASSES: Record<string, [number, number]> = {
   'SHA three-register': [0xffe08c00, 0x5e000000], // opcodes 0-6, and 7 (reserved)
   'SHA two-register': [0xffffcc00, 0x5e280800], // SHA1H, SHA1SU1, SHA256SU0, and 3 (reserved)
   'PMULL, 64-bit': [0xbfe0fc00, 0x0ee0e000],
+  // FEAT_JSCVT (ABI 59): FJCVTZS, NZCV lazy; the V registers' FP values as the FP classes'.
+  'FJCVTZS': [0xfffffc00, 0x1e7e0000],
 };
 const CRYPTO = new Set(['AES', 'SHA three-register', 'SHA two-register', 'PMULL, 64-bit']);
 /** Vector states from the known-answer vectors: FIPS 197 C.1's plaintext, key and
@@ -545,6 +547,24 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fcvtzs w0, d1 (2^31 - 0.1)', 0x1e780020, [0n, f64bits(2147483647.9)]],
   ['fcvtzs x0, s1 (2^63)', 0x9e380020, [0n, 0x5f000000n]],
   ['fcvtzu w0, s1 (-0.5)', 0x1e390020, [0n, 0xbf000000n]],
+  ['fjcvtzs w0, d1 (0)', 0x1e7e0020, [0n, 0n]],
+  ['fjcvtzs w0, d1 (-0)', 0x1e7e0020, [0n, 1n << 63n]],
+  ['fjcvtzs w0, d1 (-1)', 0x1e7e0020, [0n, f64bits(-1)]],
+  ['fjcvtzs w0, d1 (1.5)', 0x1e7e0020, [0n, f64bits(1.5)]],
+  ['fjcvtzs w0, d1 (-0.5)', 0x1e7e0020, [0n, f64bits(-0.5)]],
+  ['fjcvtzs w0, d1 (2^31 - 1)', 0x1e7e0020, [0n, f64bits(2147483647)]],
+  ['fjcvtzs w0, d1 (2^31 - 0.1)', 0x1e7e0020, [0n, f64bits(2147483647.9)]],
+  ['fjcvtzs w0, d1 (2^31)', 0x1e7e0020, [0n, f64bits(2147483648)]],
+  ['fjcvtzs w0, d1 (-2^31)', 0x1e7e0020, [0n, f64bits(-2147483648)]],
+  ['fjcvtzs w0, d1 (-2^31 - 0.5)', 0x1e7e0020, [0n, f64bits(-2147483648.5)]],
+  ['fjcvtzs w0, d1 (-2^31 - 1)', 0x1e7e0020, [0n, f64bits(-2147483649)]],
+  ['fjcvtzs w0, d1 (2^32 + 5.75)', 0x1e7e0020, [0n, f64bits(4294967301.75)]],
+  ['fjcvtzs w0, d1 (2^63)', 0x1e7e0020, [0n, f64bits(2 ** 63)]],
+  ['fjcvtzs w0, d1 (1e300)', 0x1e7e0020, [0n, f64bits(1e300)]],
+  ['fjcvtzs w0, d1 (a denormal)', 0x1e7e0020, [0n, 1n]],
+  ['fjcvtzs w0, d1 (a negative denormal)', 0x1e7e0020, [0n, (1n << 63n) | 1n]],
+  ['fjcvtzs w0, d1 (infinity)', 0x1e7e0020, [0n, 0x7ffn << 52n]],
+  ['fjcvtzs w0, d1 (a NaN)', 0x1e7e0020, [0n, (0x7ffn << 52n) | 1n]],
   ['fcvtzu w0, s1 (2^32)', 0x1e390020, [0n, 0x4f800000n]],
   // The same midpoint case in every lane of a vector FMLA (the values replicated).
   ['v fmla v0.4s, v1.4s, v2.4s', 0x4e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
@@ -671,7 +691,7 @@ const VHELPERS = [
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x7ee03800 | (n << 5) | d, // usqadd dd, dn
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

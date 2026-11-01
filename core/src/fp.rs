@@ -705,6 +705,52 @@ impl Fpu {
         r as u64 & (u64::MAX >> (64 - width))
     }
 
+    /// FPToFixedJS (`FJCVTZS`, FEAT_JSCVT): the double `a` rounded toward zero,
+    /// modulo 2^32 (JavaScript's ToInt32), and Z: the result is exact, that is
+    /// `a` is an integer in the 32-bit signed range and not -0. A NaN, an infinity
+    /// (both giving 0) or a value out of range raises Invalid Operation, anything
+    /// else inexact Inexact; a denormal flushed under FZ raises Input Denormal only.
+    pub fn to_int_js(&mut self, a: u64) -> (u32, bool) {
+        let va = self.unpack(D, a);
+        match va.class {
+            Class::QNaN | Class::SNaN | Class::Inf => {
+                self.flags |= IOC;
+                return (0, false);
+            }
+            // -0, and a denormal flushed to zero (its fraction isn't), aren't exact.
+            Class::Zero => return (0, a == 0),
+            Class::Num => {}
+        }
+        // At exp >= 0 the value is at least 2^52 (a normal): out of range, and a
+        // multiple of 2^32 from exp 32 on.
+        let (mag, rest) = if va.exp >= 0 {
+            let m = if va.exp < 64 {
+                (va.mant as u128) << va.exp
+            } else {
+                1 << 64
+            };
+            (m, Rest::Zero)
+        } else {
+            shift_rest(va.mant as u128, -va.exp, false)
+        };
+        let r = if va.sign {
+            (mag as u32).wrapping_neg()
+        } else {
+            mag as u32
+        };
+        let limit = (1u128 << 31) - !va.sign as u128;
+        let z = if mag > limit {
+            self.flags |= IOC;
+            false
+        } else if rest != Rest::Zero {
+            self.flags |= IXC;
+            false
+        } else {
+            true
+        };
+        (r, z)
+    }
+
     /// FixedToFP: the `width`-bit integer `x` divided by 2^fbits, rounded.
     pub fn from_fixed(
         &mut self,

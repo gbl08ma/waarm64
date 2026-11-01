@@ -244,8 +244,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
   split), the display (2D or 3D: different devices) and Vulkan, the transports in slot order, each disk's size,
   read-only flag, serial and base identity, the CPU features (`cpu`), the network adapters' MACs (left out for one adapter at the default MAC). **A feature that
   came later joins only when it's on** (the USB controller as `usb: true`; the mouse, the touchscreen, the clock and
-  9p as transports on machines that have them), so machines made before it keep their hash; `sha3` among the CPU
-  features is left out of the hash for the same reason. Its SHA-256 is the **shape hash** (`shapeHash`). Names, the
+  9p as transports on machines that have them), so machines made before it keep their hash; `sha3` and `jscvt` among the CPU
+  features are left out of the hash for the same reason. Its SHA-256 is the **shape hash** (`shapeHash`). Names, the
   overlay chosen and writing in place aren't in it. The machine's JIT cache budget (`jitMiB`, when set) rides in the
   shape **outside the hash**: the guest doesn't see it and a state restores under any budget, so lowering it after a
   crash orphans nothing. The snapshot header carries the whole shape, so a snapshot file can make its machine.

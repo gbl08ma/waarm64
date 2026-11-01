@@ -114,8 +114,13 @@ pub const FEATURE_E0PD: u64 = 4;
 /// `RAX1`, `XAR`, `BCAX`, advertised in ID_AA64ISAR0_EL1 and UNDEFINED without
 /// it. Only with `FEATURE_CRYPTO` (SHA512 needs SHA256): alone it is nothing.
 pub const FEATURE_SHA3: u64 = 8;
+/// FEAT_JSCVT (ABI 59): `FJCVTZS`, JavaScript's ToInt32 of a double (rounded
+/// toward zero, modulo 2^32, Z set when exact), advertised in ID_AA64ISAR1_EL1
+/// and UNDEFINED without it.
+pub const FEATURE_JSCVT: u64 = 16;
 /// Every feature bit the core knows.
-pub const FEATURES: u64 = FEATURE_CRYPTO | FEATURE_RNG | FEATURE_E0PD | FEATURE_SHA3;
+pub const FEATURES: u64 =
+    FEATURE_CRYPTO | FEATURE_RNG | FEATURE_E0PD | FEATURE_SHA3 | FEATURE_JSCVT;
 
 /// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
 #[inline]
