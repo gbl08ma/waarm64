@@ -1628,7 +1628,7 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
          }
          const bool written = k->fs->info.outputs & (1u << i);
          wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":%u", i ? "," : "", f->name,
-                        written ? k->blend[i].mask : 0);
+                        written ? k->blend[i].mask & ((f->flags & WG_FMT_OPAQUE) ? 7 : 15) : 0);
          if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND)) {
             const bool cmin = k->blend[i].op >= 3, amin = k->blend[i].aop >= 3;
             wg_json_printf(&j, ",\"blend\":{\"color\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"},"

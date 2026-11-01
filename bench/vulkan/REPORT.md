@@ -771,6 +771,55 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T12: the smaller rendering gaps — layered passes, feedback loops, indirect fans, multisampled arrays, packed 16-bit formats
+
+**2026-10-31.** JSON in `results/vk4/t12/`: `base` a sample of the task's causes before (2,378 cases not in the list), `wide` them after, `ms` the
+multisampled ones, `qc` clipping and queries, `p16w` every 14th packed-format case, `p16f` its failures again; `m4a`, `m4b`, `m4c` on the M4 (Metal, Chrome for
+Testing 153.0.8010.12); `vkquake-kept.json`, `vkquake-forced.json` the replay. `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52.
+How each works: vk/README.md "Layered passes", "Feedback loops", "Multisampled arrays", "Packed 16-bit formats".
+
+The kickoff's list was older than the code. Before: 97 failures of 780 supported cases, and nothing failed for `ssbo.layout`'s `int16_t`, `numcalls2` or
+the clears counted inside a query (T1's causes, gone since). Of what was left:
+
+| cause | before | after | what it took |
+|---|---|---|---|
+| input attachment reading its own pass's attachment (`self_dep`, `max_attachments`) | 40 of 325 | 0 | a copy, in a cut of the WebGPU pass, at the first such draw and after a barrier or clear |
+| indirect fans | 15 of 166 | 0 | a compute pass working out what the arguments draw |
+| layers of `vkCmdClearAttachments` and load ops | 6 of 303 | 0 | a pass of several layers replayed a layer at a time, as multiview |
+| `a2b10g10r10_uint` clear values past 255 | every one | 0 | a draw: Dawn cuts this format's clear value to 8 bits a channel |
+| depth clip with clamp on | 6 of 10 | 0 | `unclippedDepth` only where not clipping: after clipping nothing needs its clamp |
+| occlusion queries of two pools, or begun outside a pass | 1 | 0 | a query set of the device's for such a pass; a query spanning passes adds them up |
+| multisampled arrays | 568 of 590 run | 183, none of this cause | a texture a layer behind one object in the worker |
+| `R5G6B5`, `A1R5G5B5`, `B4G4R4A4` (T1's "refused at creation though advertised") | 33 of 223 | 5 of 3,299 | they weren't advertised at all, and Vulkan requires them: see below |
+
+**The packed formats were a compliance gap the task's line hid.** `render_to_image.*.mipmap` doesn't ask for its format, so what looked like a refusal beside a
+depth format was a device without Vulkan's three mandatory 16-bit formats (`api.info.format_properties.r5g6b5_unorm_pack16` failed): 76,976 of the direct set's
+cases name one. WebGPU has none, so they are `rgba8unorm` textures whose copies pack and unpack in a compute pass. 3,274 of the 5,698 sampled pass, 2,399 not
+supported for other reasons (a compute-only queue, `VK_EXT_filter_cubic`), and every one kept for the list passes on the M4. The 183 left of the multisampled
+sample are 124 mutable images viewed as r32 formats, 48 multiview cases on `r32g32b32a32_sfloat` (T7 filed them as multisampled arrays: the cause is the format, which
+WebGPU doesn't multisample), 3 sRGB-twin resolves in each of 2D and arrays (T4's), 3 of `diff_image_size.dst_256_256_11` and 2 clears.
+
+**The M4's `generate_mipmaps.from_previous_level` (46 cases, from VK3 L6b) wasn't a hazard.** Halving an image puts each nearest sample exactly on a texel's edge, and an
+interpolated coordinate came a hair short of it on Metal, so `floor` took the other texel of two. A texel from the fragment's position by Vulkan's sum, `x0 + (i + 0.5) *
+scale`, is exact for such ratios: all 46 pass there. `early_fragment`, the two `texture.mipmap` and `stencil_samplemask` stay filed, with the `e5b9g9r9` copies; two of three
+`descriptorset_random.sets4` still fail, the third passed (`m4b`).
+
+**vkQuake's 1.7% is lavapipe's.** A map of the difference showed noise everywhere, and a crop's rows showed our texels repeating where lavapipe's didn't, on a texture
+sampled by `NEAREST` with `anisotropyEnable` (logged: `mag 0 min 0 mip 1 aniso 1 16`). WebGPU's anisotropy needs linear filters, so the driver drops it for such a sampler; lavapipe
+filters linearly. A trial build forcing linear filters and anisotropy:
+
+| vkQuake, frame 5, SwiftShader | bytes that differ | off by more than 24 |
+|---|---|---|
+| kept: nearest, no anisotropy (`vkquake-kept.json`) | 723,502 | 15,438 |
+| forced: linear with anisotropy, a trial (`vkquake-forced.json`) | 289,073 | 109 |
+
+So the frames are right to the reference's reading, and the driver stays as it was: what `NEAREST` with anisotropy does is the implementation's (radv keeps point sampling, `ANISO_POINT`),
+vkQuake asks for that look by name, and the tolerance of 3% stays. The list goes 23,083 → 26,002 cases, all new ones passing on the M4; `tests/deqp/vk.txt` holds a third of the packed sample.
+
+Not measured: the feedback copies' and the packed copies' cost on a program (nothing in the images leans on them). The cuts' price is bounded by design: only a draw reading
+an attachment of its pass pays, once per barrier. 3D images through 2D views turned out to be `VK_EXT_image_2d_view_of_3d`, which isn't offered: attachments work, and a stray invalid
+view of every such image is gone. Next, by promise: blends with both constants (backlog "Rendering"), then the multisampled clears of `unorm` formats (backlog).
+
 ## VK4 T11: storage images as words — any format loaded and stored, tier1's offered everywhere, libplacebo's compute on `rg16f`
 
 **2026-10-31.** JSON in `results/vk4/t11/`. `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52; `m4/`

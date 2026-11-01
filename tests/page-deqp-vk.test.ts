@@ -16,7 +16,7 @@ const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh
 
 // The seconds dEQP may run the list: ~2 times what it takes, so a hung device (every later fence held: the guest waits
 // for good) fails the test in minutes, with the guest's serial log kept.
-const LIMIT_S = 2100;
+const LIMIT_S = 2400;
 
 /** Runs a pass list on the page (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr=off`); every case must pass. */
 function passList(t: { skip(m: string): void }, list: string, gpu?: string) {

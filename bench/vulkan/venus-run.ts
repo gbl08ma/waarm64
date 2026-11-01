@@ -7,7 +7,7 @@
 // is made so (`PROFILE=images/vkframes/venus-profile.json`, on SwiftShader, whenever what the device advertises changes).
 //   node bench/vulkan/venus-run.ts [image] [outdir]   (the image also IMAGE=, default target/images/debian-vulkan/disk.qcow2;
 //   the form bench/gpu/sway-mac.sh calls with SCRIPT=../vulkan/venus-run.ts, mode `-`); GPU_KNOBS: more of `?gpu=`, comma-separated
-//   (e.g. `vkvendor=nvidia,vkreadback`: web/app/main.ts)
+//   (e.g. `vkvendor=nvidia,vkreadback`: web/app/main.ts); AFTER: commands after the replays, one a line
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { openSession } from '../gpu/guest-session.ts';
@@ -57,6 +57,8 @@ try {
     if (before && after) results[`replay ${key} pipelines`] = Object.fromEntries(Object.keys(after).map((k) => [k, +(after[k] - (before[k] ?? 0)).toFixed(2)]));
     results[`replay ${key} log`] = await s.run(`grep -E 'Measured|oad' /tmp/vkf/${name}.log | head -4`);
   }
+  // AFTER: commands run after the replays (a look at their frames, one a line).
+  for (const cmd of (process.env.AFTER ?? '').split('\n').filter(Boolean)) results[cmd] = (await s.runLines(cmd, 300_000)).join('\n');
   // How Vulkan's frames reached virgl in the end (web/venus-share.ts: the way and its check), if any were shared.
   results.share = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { share?: unknown }[] }).__renderStats ?? []).at(-1)?.share ?? null);
 } finally {

@@ -1,0 +1,42 @@
+{
+ "chromium": "153.0.8010.52",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "adapter": "google swiftshader",
+ "kernel": "6.12.107+deb13-arm64[   11.018215] [drm] Host memory window: 0x80000000 +0x10000000[   11.018415] [drm] features: +virgl +edid +resource_blob +host_visible[   11.018445] [drm] features: +context_init[   11.019229] [drm] number of scanouts: 1[   11.019310] [drm] number of cap sets: 3[   11.045370] [drm] cap set 0: id 1, max-version 1, max-size 308[   11.046229] [drm] cap set 1: id 2, max-version 2, max-size 1408[   11.049695] [drm] cap set 2: id 4, max-version 0, max-size 160[   11.070025] [drm] Initialized virtio_gpu 0.1.0 for a000800.virtio_mmio on minor 0[   11.366334] virtio-mmio a000800.virtio_mmio: [drm] fb0: virtio_gpudrmfb frame buffer device",
+ "vulkaninfo": "surface_capabilities2       : extension revision 1VK_KHR_portability_enumeration         : extension revision 1VK_KHR_surface                         : extension revision 25VK_KHR_surface_protected_capabilities  : extension revision 1VK_KHR_wayland_surface                 : extension revision 6VK_KHR_xcb_surface                     : extension revision 6VK_KHR_xlib_surface                    : extension revision 6VK_LUNARG_direct_driver_loading        : extension revision 1Instance Layers: count = 2--------------------------VK_LAYER_MESA_device_select Linux device selection layer 1.4.303  version 1VK_LAYER_MESA_overlay       Mesa Overlay layer           1.4.303  version 1Devices:========GPU0:        apiVersion         = 1.3.269        driverVersion      = 25.0.7        vendorID           = 0x1ae0        deviceID           = 0x0000        deviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU        deviceName         = Virtio-GPU Venus (webpc WebGPU)",
+ "replay vkquake": "replay 0 fps 11.735334 tolerance 0.03frame 15 bytes 921654 differ 288757 over 108 max 217frame 30 bytes 921654 differ 289221 over 109 max 217frame 5 bytes 921654 differ 289073 over 109 max 217",
+ "replay vkquake s": "12.8",
+ "replay vkquake pipelines": {
+  "pipelines": 18,
+  "ready": 18,
+  "readyMs": 2336.53,
+  "deferred": 9,
+  "deferredMs": 1801.16,
+  "syncPipelines": 0,
+  "translations": 285,
+  "translateMs": 238.16,
+  "cacheHits": 471,
+  "cacheMisses": 282,
+  "cacheStores": 282,
+  "cacheBytes": 4682516,
+  "cacheEntries": 282
+ },
+ "replay vkquake log": "[gfxrecon] INFO - Loading state for captured frame 200[gfxrecon] INFO - Finished loading state for captured frame 200Load time:  1.220700 seconds (frame 200)Measured FPS: 11.735334 fps, 2.641595 seconds, 31 frames, 1 loop, framerange [1-32)",
+ "share": {
+  "way": "readback",
+  "state": "reference",
+  "dropped": [],
+  "checks": 0,
+  "checksWrong": 0,
+  "unshared": 0
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus: wg: sampler mag 0 min 0 mip 0 aniso 0 0 bias 0": 1,
+  "venus-gpu: a stencil copy WebGPU can't make (into depth32float-stencil8, 640x480 at 0,0 of mip 0): skipped": 1,
+  "venus: wg: sampler mag 0 min 0 mip 1 aniso 0 1 bias 0": 3,
+  "venus: wg: sampler mag 0 min 0 mip 1 aniso 1 16 bias 0": 2,
+  "venus: wg: sampler mag 1 min 1 mip 1 aniso 0 1 bias 0": 3,
+  "venus: wg: sampler mag 1 min 1 mip 1 aniso 1 16 bias 0": 2
+ }
+}

@@ -9,7 +9,7 @@
 import type { ShaderCache } from './venus-cache.ts';
 
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
-const INDEX = 16, COPY_SRC = 4, COPY_DST = 8, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
+const INDEX = 16, INDIRECT = 256, COPY_SRC = 4, COPY_DST = 8, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -267,9 +267,12 @@ export class VenusGpu {
   /** The render pass's draws through indices of their own (`gpu_provoke`), by ticket; and the scratch buffers they and
    * their parameters take places in, from the start at each encoder (the queue's order keeps an earlier submit's reads
    * of a place before a later one's writes). */
-  private readonly tickets: ({ buffer: GPUBuffer; offset: number; size: number } | undefined)[] = [];
+  private readonly tickets: ({ buffer: GPUBuffer; offset: number; size: number; args?: GPUBuffer; argsAt?: number } | undefined)[] = [];
   private readonly scratches = new Map<number, { buffer: GPUBuffer; at: number }>();
   private dummyStorage: GPUBuffer | undefined;
+  private dummyWrite: GPUBuffer | undefined;
+  /** Textures of packed formats (wg_format.c `WG_FMT_PACKED`): each of R, G, B, A's shift and bits. */
+  private readonly packed = new WeakMap<GPUTexture, number[]>();
   /** Transform feedback (VK3 L7.4): a vertex module's WGSL where it captures (`wg_xo`), each render pipeline's capture
    * (its JSON's `xfb`, by id), what the render pass last set (a captured draw runs on it), and the pass's captures,
    * run as compute once it ends (`runXfb`). */
@@ -408,7 +411,7 @@ export class VenusGpu {
       gpu_destroy(id: number) {
         const o = self.objs[id];
         self.objs[id] = undefined;
-        if (o instanceof GPUBuffer || o instanceof GPUTexture || o instanceof GPUQuerySet) later(() => o.destroy());
+        if (o instanceof GPUBuffer || o instanceof GPUTexture || o instanceof GPUQuerySet || o instanceof MsLayers) later(() => o.destroy());
       },
       gpu_grow(id: number, size: number) {
         const old = buf(id);
@@ -465,6 +468,8 @@ export class VenusGpu {
         later(() => {
           self.touched.add(T);
           if (aspect) return self.depthStencilCopy(true, B, offset, bpr, rows, T, mip, x, y, z, w, h, depth, aspect);
+          const p = self.packed.get(T);
+          if (p) return self.unpack(p, B, offset, bpr, rows || h, T, mip, x, y, z, w, h, depth);
           self.enc!.copyBufferToTexture(self.layout(B, offset, bpr, rows, h, depth), self.texCopy(T, mip, x, y, z, aspect), { width: w, height: h, depthOrArrayLayers: depth });
         });
       },
@@ -472,6 +477,8 @@ export class VenusGpu {
         const B = buf(b), T = self.get<GPUTexture>(tex);
         later(() => {
           if (aspect) return self.depthStencilCopy(false, B, offset, bpr, rows, T, mip, x, y, z, w, h, depth, aspect);
+          const p = self.packed.get(T);
+          if (p) return self.pack(p, B, offset, bpr, rows || h, T, mip, x, y, z, w, h, depth);
           self.enc!.copyTextureToBuffer(self.texCopy(T, mip, x, y, z, aspect), self.layout(B, offset, bpr, rows, h, depth), { width: w, height: h, depthOrArrayLayers: depth });
         });
       },
@@ -479,6 +486,8 @@ export class VenusGpu {
         const S = self.get<GPUTexture>(src), D = self.get<GPUTexture>(dst);
         later(() => {
           self.touched.add(D);
+          const ps = self.packed.get(S), pd = self.packed.get(D);
+          if ((ps || pd) && ps?.join() !== pd?.join() && S.sampleCount === 1) return self.copyPacked(ps, S, sm, sx, sy, sz, pd, D, dm, dx, dy, dz, w, h, depth);
           if (S.sampleCount > 1) return self.copyMultisampled(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, aspect);
           if (/^depth|^stencil/.test(S.format) && !self.depthStencilTT(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect)) return;
           if (S.format.replace('-srgb', '') !== D.format.replace('-srgb', '')) return self.copyBetweenFormats(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, dw, dh, cols, rows, bytes);
@@ -509,6 +518,8 @@ export class VenusGpu {
       },
       gpu_render_pass(ptr: number, len: number) {
         const j = parseJson(self.text(ptr, len));
+        // A pass in parts (wg_cmd.c `begin_pass`): each part stores, the later ones load.
+        const keepOps = j.keep ? { storeOp: 'store', ...(j.keep === 2 ? { loadOp: 'load' } : {}) } : {};
         const colors: (GPUTextureFormat | null)[] = [];
         const textures: GPUTexture[] = [];
         let samples = 1;
@@ -520,7 +531,7 @@ export class VenusGpu {
             samples = v.samples;
             textures.push(v.tex);
             if (a.resolveTarget) textures.push(self.get<View>(a.resolveTarget).tex);
-            return { ...a, view: v.view, resolveTarget: a.resolveTarget ? self.get<View>(a.resolveTarget).view : undefined } as GPURenderPassColorAttachment;
+            return { ...a, ...keepOps, view: v.view, resolveTarget: a.resolveTarget ? self.get<View>(a.resolveTarget).view : undefined } as GPURenderPassColorAttachment;
           }),
         };
         let depth: GPUTextureFormat | undefined;
@@ -528,7 +539,12 @@ export class VenusGpu {
           const v = self.get<View>(j.depthStencilAttachment.view);
           depth = v.format;
           samples = v.samples;
-          desc.depthStencilAttachment = { ...j.depthStencilAttachment, view: v.view };
+          const ds = { ...j.depthStencilAttachment, view: v.view };
+          if (j.keep) for (const k of ['depth', 'stencil']) if (ds[`${k}StoreOp`]) {
+            ds[`${k}StoreOp`] = 'store';
+            if (j.keep === 2) ds[`${k}LoadOp`] = 'load';
+          }
+          desc.depthStencilAttachment = ds;
         }
         if (j.occlusionQuerySet) desc.occlusionQuerySet = self.get<GPUQuerySet>(j.occlusionQuerySet);
         const atts = { colors, depth, samples, width: j.width as number, height: j.height as number };
@@ -607,6 +623,19 @@ export class VenusGpu {
         if (j.indirect) j.indirect = [buf((j.indirect as number[])[0]), (j.indirect as number[])[1]];
         for (const k of ['buffers', 'counters']) if (j[k]) j[k] = (j[k] as (number[] | null)[]).map((e) => e && [buf(e[0]), ...e.slice(1)]);
         later(() => self.xfbJobs.push(j.op === 'draw' ? { ...j, xfb: self.cur.xfb, groups: [...self.cur.groups], vb: [...self.cur.vb], imm: self.cur.imm } : j));
+      },
+      gpu_fan_indirect(ticket: number, b: number, offset: number, ib: number, ibOffset: number, ibSize: number, wide: number, restart: number) {
+        const B = buf(b), I = buf(ib);
+        later(() => self.fanIndirect(ticket, B, offset, I, ibOffset, ibSize, wide, restart));
+      },
+      gpu_draw_ticket_indirect(ticket: number) {
+        self.stats.draws++;
+        later(() => {
+          const t = self.tickets[ticket];
+          if (!t?.args) return;
+          rp().setIndexBuffer(t.buffer, 'uint32', t.offset, t.size);
+          rp().drawIndexedIndirect(t.args, t.argsAt!);
+        });
       },
       gpu_draw_ticket(ticket: number, inst: number, base: number, firstInst: number) {
         self.stats.draws++;
@@ -1204,7 +1233,8 @@ override bit: u32 = 8u;
   }
 
   private texCopy(tex: GPUTexture, mip: number, x: number, y: number, z: number, aspect: number): GPUTexelCopyTextureInfo {
-    return { texture: tex, mipLevel: mip, origin: { x, y, z }, aspect: aspect === 1 ? 'depth-only' : aspect === 2 ? 'stencil-only' : 'all' };
+    const texture = tex instanceof MsLayers ? tex.layers[z] : tex;
+    return { texture, mipLevel: mip, origin: { x, y, z: tex instanceof MsLayers ? 0 : z }, aspect: aspect === 1 ? 'depth-only' : aspect === 2 ? 'stencil-only' : 'all' };
   }
 
   /** A buffer of `size` bytes written by `fill` on the CPU, for a copy in the encoder (destroyed after its submit). */
@@ -1221,7 +1251,12 @@ override bit: u32 = 8u;
     const ids = (a: number[]) => a.map((i) => this.objs[i]);
     switch (kind) {
       case 0: this.objs[id] = d.createBuffer({ size: j.size, usage: j.usage }); return;
-      case 1: this.objs[id] = d.createTexture(j as GPUTextureDescriptor); return;
+      case 1: {
+        const tex = (j.sampleCount ?? 1) > 1 && (j.size as number[])[2] > 1 ? new MsLayers(d, j as GPUTextureDescriptor) as unknown as GPUTexture : d.createTexture(j as GPUTextureDescriptor);
+        this.objs[id] = tex;
+        if (j.packed) this.packed.set(tex, j.packed);
+        return;
+      }
       case 2: {
         const tex = this.get<GPUTexture>(j.texture);
         const { texture: _, ...desc } = j;
@@ -1354,8 +1389,21 @@ override bit: u32 = 8u;
       } else {
         // A 3D texture: every slice of the level (Vulkan clears the whole subresource).
         const slices = tex.dimension === '3d' ? Math.max(1, tex.depthOrArrayLayers >> j.dstMip) : 1;
-        for (let z = 0; z < slices; z++)
-          enc.beginRenderPass({ colorAttachments: [{ ...this.attachment(j.dst, j.dstMip, tex.dimension === '3d' ? z : j.dstLayer), loadOp: 'clear', storeOp: 'store', clearValue: j.color ?? [0, 0, 0, 0] }] }).end();
+        for (let z = 0; z < slices; z++) {
+          const att = this.attachment(j.dst, j.dstMip, tex.dimension === '3d' ? z : j.dstLayer);
+          if (fmt === 'rgb10a2uint') {
+            // Dawn cuts a clear value of this format to 8 bits a channel: a draw (the driver's `wide_clear`).
+            const pass = enc.beginRenderPass({ colorAttachments: [{ ...att, loadOp: 'load', storeOp: 'store' }] });
+            const w = Math.max(1, tex.width >> j.dstMip), h = Math.max(1, tex.height >> j.dstMip);
+            this.pass = pass;
+            this.passAtts = { colors: [fmt], depth: undefined, samples: tex.sampleCount, width: w, height: h };
+            this.clearRects({ rects: [[0, 0, w, h]], colors: [[0, ...((j.color ?? [0, 0, 0, 0]) as number[])]] });
+            pass.end();
+            this.pass = undefined;
+            continue;
+          }
+          enc.beginRenderPass({ colorAttachments: [{ ...att, loadOp: 'clear', storeOp: 'store', clearValue: j.color ?? [0, 0, 0, 0] }] }).end();
+        }
       }
       return;
     }
@@ -1388,11 +1436,14 @@ override bit: u32 = 8u;
       const out = kind === 'f32' ? 'vec4<f32>' : kind === 'u32' ? 'vec4<u32>' : 'vec4<i32>';
       const tex = `texture_${src3d ? '3d' : '2d'}<${srcKind}>`;
       const read = src3d
-        ? (linear ? 'textureSampleLevel(t, s, vec3<f32>(uv, u.z.x), 0.0)' : 'textureLoad(t, vec3<i32>(floor(vec3<f32>(uv, u.z.x) * vec3<f32>(textureDimensions(t)))), 0)')
-        : (linear ? 'textureSampleLevel(t, s, uv, 0.0)' : 'textureLoad(t, vec2<i32>(floor(uv * vec2<f32>(textureDimensions(t)))), 0)');
+        ? (linear ? 'textureSampleLevel(t, s, vec3<f32>(uv, u.z.x), 0.0)' : 'textureLoad(t, min(vec3<i32>(vec2<i32>(floor(texel)), i32(floor(u.z.x * f32(textureDimensions(t).z)))), vec3<i32>(textureDimensions(t)) - 1), 0)')
+        : (linear ? 'textureSampleLevel(t, s, uv, 0.0)' : 'textureLoad(t, min(vec2<i32>(floor(texel)), vec2<i32>(textureDimensions(t)) - 1), 0)');
       const range = integerRange(fmt);
       const conv = range ? `clamp(v, ${out}(${range[0]}), ${out}(${range[1]}))` : kind === srcKind ? 'v' : kind === 'f32' ? 'vec4<f32>(v)' : `${out}(v)`;
-      const code = `struct U { r: vec4<f32>, flip: vec4<f32>, z: vec4<f32> }
+      // Nearest texels by Vulkan's sum, from the fragment's own position: x0 + (i + 0.5) * (source / destination). The
+      // interpolated uv comes a hair short of whole texels on Metal, and an image halved reads the wrong one of two
+      // (VK4 T12: generate_mipmaps.from_previous_level).
+      const code = `struct U { r: vec4<f32>, flip: vec4<f32>, z: vec4<f32>, d: vec4<f32>, s: vec4<f32> }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var t: ${tex};
 ${linear ? '@group(0) @binding(2) var s: sampler;' : ''}
@@ -1405,6 +1456,8 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
 @fragment fn fs(v_in: V) -> @location(0) ${out} {
   let t01 = select(v_in.q, 1.0 - v_in.q, u.flip.xy > vec2<f32>(0.5));
   let uv = u.r.xy + t01 * u.r.zw;
+  let at_dst = v_in.p.xy - u.d.xy;
+  let texel = u.s.xy + select(at_dst, u.d.zw - at_dst, u.flip.xy > vec2<f32>(0.5)) * u.s.zw;
   let v = ${byHand ? (src3d ? 'blit(uv, u.z.x)' : 'blit(uv)') : read};
   return ${conv};
 }`;
@@ -1434,9 +1487,11 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     for (const slice of slices) {
       const at = dst3d ? slice : dz0;
       const w = (sz0 + ((at + 0.5 - dz0) / ((dz1 - dz0) || 1)) * (sz1 - sz0)) / sd;
-      const u = this.staging(48, (m) => new Float32Array(m).set([sx0 / sw, sy0 / sh, (sx1 - sx0) / sw, (sy1 - sy0) / sh, dx0 > dx1 ? 1 : 0, dy0 > dy1 ? 1 : 0, 0, 0, w, 0, 0, 0]));
-      const uniform = this.device!.createBuffer({ size: 48, usage: UNIFORM | COPY_DST });
-      enc.copyBufferToBuffer(u, 0, uniform, 0, 48);
+      const dw = Math.abs(dx1 - dx0), dh = Math.abs(dy1 - dy0), x0 = Math.min(dx0, dx1), y0 = Math.min(dy0, dy1);
+      const u = this.staging(80, (m) => new Float32Array(m).set([sx0 / sw, sy0 / sh, (sx1 - sx0) / sw, (sy1 - sy0) / sh, dx0 > dx1 ? 1 : 0, dy0 > dy1 ? 1 : 0, 0, 0, w, 0, 0, 0,
+        x0, y0, dw, dh, sx0, sy0, (sx1 - sx0) / dw, (sy1 - sy0) / dh]));
+      const uniform = this.device!.createBuffer({ size: 80, usage: UNIFORM | COPY_DST });
+      enc.copyBufferToBuffer(u, 0, uniform, 0, 80);
       this.temps.push(uniform);
       const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: srcView }];
       if (linear) entries.push({ binding: 2, resource: this.sampler() });
@@ -1983,6 +2038,193 @@ var<workgroup> wl: array<u32, 256>;
     this.tickets[ticket] = { buffer: out, offset: at, size: bytes };
   }
 
+  /**
+   * An indirect fan's draw, in a compute pass before the render pass (wg_gpu.h `gpu_fan_indirect`): its arguments are the
+   * GPU's, so what they draw is worked out there. Arguments of an indexed draw for a list of triangles (Vulkan's
+   * order, its provoking vertex first; restarts end a fan) of 32-bit indices, or, without an index buffer, for the
+   * device's fan indices. One invocation walks it: nothing a program does every frame.
+   */
+  private fanIndirect(ticket: number, a: GPUBuffer, offset: number, ib: GPUBuffer, ibOffset: number, ibSize: number, wide: number, restart: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('fan');
+    if (!pipeline) {
+      const code = `struct P { arg: u32, el0: u32, wide: u32, restart: u32, most: u32, pad0: u32, pad1: u32, pad2: u32 }
+@group(0) @binding(0) var<storage, read> a: array<u32>;
+@group(0) @binding(1) var<storage, read> s: array<u32>;
+@group(0) @binding(2) var<storage, read_write> o: array<u32>;
+@group(0) @binding(3) var<storage, read_write> out: array<u32, 5>;
+@group(0) @binding(4) var<uniform> p: P;
+fn ix(k: u32) -> u32 {
+  if (p.wide == 1u) { return s[k]; }
+  return (s[k >> 1u] >> ((k & 1u) * 16u)) & 0xffffu;
+}
+@compute @workgroup_size(1) fn main() {
+  if (p.wide == 2u) {
+    let n = min(a[p.arg], p.most);
+    out[0] = select(0u, (n - 2u) * 3u, n >= 3u);
+    out[1] = a[p.arg + 1u];
+    out[2] = 0u;
+    out[3] = a[p.arg + 2u];
+    out[4] = a[p.arg + 3u];
+    return;
+  }
+  let count = min(a[p.arg], p.most - min(a[p.arg + 2u], p.most));
+  let first = p.el0 + a[p.arg + 2u];
+  let r = select(0xffffu, 0xffffffffu, p.wide == 1u);
+  var w = 0u;
+  var run = 0u;
+  var c = 0u;
+  var b = 0u;
+  for (var i = 0u; i < count; i++) {
+    let x = ix(first + i);
+    if (p.restart != 0u && x == r) { run = 0u; continue; }
+    if (run == 0u) { c = x; }
+    else if (run >= 2u) {
+      o[w] = b; o[w + 1u] = x; o[w + 2u] = c;
+      w += 3u;
+    }
+    b = x;
+    run++;
+  }
+  out[0] = w;
+  out[1] = a[p.arg + 1u];
+  out[2] = 0u;
+  out[3] = a[p.arg + 3u];
+  out[4] = a[p.arg + 4u];
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('fan', pipeline);
+    }
+    const argFrom = offset - (offset % 256);
+    const [out, at] = this.scratch(STORAGE | INDIRECT, 20);
+    let source: GPUBufferBinding, el0 = 0, most: number, list: GPUBuffer, listAt: number, listBytes: number;
+    if (wide === 2) {
+      this.dummyStorage ??= d.createBuffer({ size: 16, usage: STORAGE });
+      source = { buffer: this.dummyStorage };
+      most = ibSize / 12 + 2;
+      list = ib;
+      listAt = 0;
+      listBytes = ibSize;
+    } else {
+      const el = wide ? 4 : 2, from = ibOffset - (ibOffset % 256);
+      const end = Math.min(ib.size, from + this.device!.limits.maxStorageBufferBindingSize, Math.ceil((ibOffset + ibSize) / 4) * 4);
+      source = { buffer: ib, offset: from, size: Math.max(4, end - from) };
+      el0 = (ibOffset - from) / el;
+      most = Math.floor((end - ibOffset) / el);
+      listBytes = Math.max(12, Math.max(0, most - 2) * 12);
+      [list, listAt] = this.scratch(STORAGE | INDEX, listBytes);
+    }
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 32);
+    d.queue.writeBuffer(u, uat, new Uint32Array([(offset - argFrom) / 4, el0, wide, restart, most, 0, 0, 0]));
+    const dummy = (this.dummyWrite ??= d.createBuffer({ size: 16, usage: STORAGE }));
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: a, offset: argFrom, size: Math.min(a.size - argFrom, 256 + 20) } },
+      { binding: 1, resource: source },
+      { binding: 2, resource: wide === 2 ? { buffer: dummy } : { buffer: list, offset: listAt, size: listBytes } },
+      { binding: 3, resource: { buffer: out, offset: at, size: 20 } },
+      { binding: 4, resource: { buffer: u, offset: uat, size: 32 } },
+    ] });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+    this.tickets[ticket] = { buffer: list, offset: listAt, size: listBytes, args: out, argsAt: at };
+  }
+
+  /**
+   * A buffer's 16-bit packed texels into a packed format's rgba8unorm texture (wg_format.c `WG_FMT_PACKED`): `bpr` and
+   * `rows` the buffer's, a compute pass unpacking them into a temporary buffer in the encoder's order, which is copied in.
+   */
+  private unpack(p: number[], b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number) {
+    const d = this.device!;
+    const tb = Math.ceil((w * 4) / 256) * 256;
+    const temp = d.createBuffer({ size: tb * h * depth, usage: STORAGE | COPY_SRC });
+    this.temps.push(temp);
+    this.packPass('unpack', p, b, offset, bpr, rows, temp, 0, tb, h, w, h, depth);
+    this.enc!.copyBufferToTexture({ buffer: temp, bytesPerRow: tb, rowsPerImage: h }, this.texCopy(t, mip, x, y, z, 0), { width: w, height: h, depthOrArrayLayers: depth });
+  }
+
+  /** The other way: the texture's texels into a temporary buffer, packed from there into the buffer's. */
+  private pack(p: number[], b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number) {
+    const d = this.device!;
+    const tb = Math.ceil((w * 4) / 256) * 256;
+    const temp = d.createBuffer({ size: tb * h * depth, usage: STORAGE | COPY_DST });
+    this.temps.push(temp);
+    this.enc!.copyTextureToBuffer(this.texCopy(t, mip, x, y, z, 0), { buffer: temp, bytesPerRow: tb, rowsPerImage: h }, { width: w, height: h, depthOrArrayLayers: depth });
+    this.packPass('pack', p, temp, 0, tb, h, b, offset, bpr, rows, w, h, depth);
+  }
+
+  /** A copy between images of size-compatible formats, a packed one among them: the bits through a temporary buffer. */
+  private copyPacked(ps: number[] | undefined, S: GPUTexture, sm: number, sx: number, sy: number, sz: number, pd: number[] | undefined, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number) {
+    const bpr = Math.ceil((w * 2) / 256) * 256;
+    const temp = this.device!.createBuffer({ size: bpr * h * depth, usage: STORAGE | COPY_SRC | COPY_DST });
+    this.temps.push(temp);
+    const size = { width: w, height: h, depthOrArrayLayers: depth };
+    if (ps) this.pack(ps, temp, 0, bpr, h, S, sm, sx, sy, sz, w, h, depth);
+    else this.enc!.copyTextureToBuffer(this.texCopy(S, sm, sx, sy, sz, 0), { buffer: temp, bytesPerRow: bpr, rowsPerImage: h }, size);
+    if (pd) this.unpack(pd, temp, 0, bpr, h, D, dm, dx, dy, dz, w, h, depth);
+    else this.enc!.copyBufferToTexture({ buffer: temp, bytesPerRow: bpr, rowsPerImage: h }, this.texCopy(D, dm, dx, dy, dz, 0), size);
+  }
+
+  /** `unpack` or `pack`'s compute pass: an invocation a row, `w` texels each, each buffer's rows and images its own; 16-bit
+   * words shared with neighbours written by atomics. */
+  private packPass(way: 'pack' | 'unpack', p: number[], src: GPUBuffer, srcAt: number, srcBpr: number, srcRows: number, dst: GPUBuffer, dstAt: number, dstBpr: number, dstRows: number, w: number, h: number, depth: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get(way);
+    if (!pipeline) {
+      const unpack = way === 'unpack';
+      const code = `struct P { w: u32, src_at: u32, src_bpr: u32, src_rows: u32, dst_at: u32, dst_bpr: u32, dst_rows: u32, pad: u32, shift: vec4<u32>, bits: vec4<u32> }
+@group(0) @binding(0) var<storage, read> s: array<u32>;
+@group(0) @binding(1) var<storage, read_write> o: array<${unpack ? 'u32' : 'atomic<u32>'}>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let sa = p.src_at + (id.z * p.src_rows + id.y) * p.src_bpr;
+  let da = p.dst_at + (id.z * p.dst_rows + id.y) * p.dst_bpr;
+  for (var x = 0u; x < p.w; x++) {
+${unpack ? `    let at = sa + x * 2u;
+    let v = (s[at >> 2u] >> ((at & 2u) * 8u)) & 0xffffu;
+    var out = 0u;
+    for (var c = 0u; c < 4u; c++) {
+      let m = (1u << p.bits[c]) - 1u;
+      let k = select(255u, (((v >> p.shift[c]) & m) * 510u + m) / (2u * m), p.bits[c] != 0u);
+      out |= k << (c * 8u);
+    }
+    o[(da + x * 4u) >> 2u] = out;` : `    let t = s[(sa + x * 4u) >> 2u];
+    var v = 0u;
+    for (var c = 0u; c < 4u; c++) {
+      let m = (1u << p.bits[c]) - 1u;
+      if (p.bits[c] != 0u) { v |= ((((t >> (c * 8u)) & 255u) * m * 2u + 255u) / 510u) << p.shift[c]; }
+    }
+    let at = da + x * 2u;
+    let sh = (at & 2u) * 8u;
+    atomicAnd(&o[at >> 2u], ~(0xffffu << sh));
+    atomicOr(&o[at >> 2u], v << sh);`}
+  }
+}`;
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: d.createShaderModule({ code }), entryPoint: 'main' } });
+      this.metaComputes.set(way, pipeline);
+    }
+    const srcTexel = way === 'unpack' ? 2 : 4, dstTexel = way === 'unpack' ? 4 : 2;
+    const range = (b: GPUBuffer, at: number, bpr: number, rows: number, texel: number) => {
+      const from = at - (at % 256);
+      const end = Math.min(b.size, Math.ceil((at + ((depth - 1) * rows + h - 1) * bpr + w * texel) / 4) * 4);
+      return { from, binding: { buffer: b, offset: from, size: Math.min(end - from, d.limits.maxStorageBufferBindingSize) } };
+    };
+    const a = range(src, srcAt, srcBpr, srcRows, srcTexel), c = range(dst, dstAt, dstBpr, dstRows, dstTexel);
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 64);
+    d.queue.writeBuffer(u, uat, new Uint32Array([w, srcAt - a.from, srcBpr, srcRows, dstAt - c.from, dstBpr, dstRows, 0, p[0], p[2], p[4], p[6], p[1], p[3], p[5], p[7]]));
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: a.binding }, { binding: 1, resource: c.binding }, { binding: 2, resource: { buffer: u, offset: uat, size: 64 } },
+    ] });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(1, h, depth);
+    pass.end();
+  }
+
   /** A copy between two ranges of one GPUBuffer (two VkBuffers of one VkDeviceMemory, or one's disjoint ranges), which
    * WebGPU refuses (VK3 L8a, the track-end review's finding 1: the submit was lost): through a temporary buffer. */
   private copyWithin(b: GPUBuffer, so: number, dO: number, size: number) {
@@ -2163,6 +2405,27 @@ ${outs.length ? `struct O { ${outs.join(', ')} }
   }
 }
 
+/**
+ * A multisampled image of several layers, which WebGPU hasn't: a multisampled texture a layer, standing in for one
+ * texture wherever the worker takes a layer of it (views, `texCopy`). A view of several layers shows the first: a shader
+ * can't sample such an image (WGSL has no multisampled arrays), and passes, copies and resolves go a layer at a time.
+ */
+class MsLayers {
+  readonly width: number; readonly height: number; readonly depthOrArrayLayers: number;
+  readonly format: GPUTextureFormat; readonly sampleCount: number; readonly usage: number;
+  readonly dimension = '2d'; readonly mipLevelCount = 1;
+  readonly layers: GPUTexture[] = [];
+  constructor(d: GPUDevice, desc: GPUTextureDescriptor) {
+    [this.width, this.height, this.depthOrArrayLayers] = desc.size as number[];
+    this.format = desc.format; this.sampleCount = desc.sampleCount ?? 1; this.usage = desc.usage;
+    for (let i = 0; i < this.depthOrArrayLayers; i++) this.layers.push(d.createTexture({ ...desc, size: [this.width, this.height] }));
+  }
+  createView(desc?: GPUTextureViewDescriptor) {
+    return this.layers[desc?.baseArrayLayer ?? 0].createView({ ...desc, dimension: '2d', baseArrayLayer: 0, arrayLayerCount: 1 });
+  }
+  destroy() { for (const t of this.layers) t.destroy(); }
+}
+
 /** The driver's JSON, whose numbers are C's %g: NaN and infinities come as `nan` and `inf` (a clear value may be
  * either), which JSON lacks and WebGPU's colours don't take. */
 function parseJson(text: string): Json {
@@ -2321,5 +2584,5 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
-  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
+  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
   'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

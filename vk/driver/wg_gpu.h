@@ -103,6 +103,12 @@ WG_IMPORT(gpu_provoke) void gpu_provoke(uint32_t ticket, uint32_t buffer, double
  * vertex buffers and immediates, as the worker last set them), {op: "end", counters}. */
 WG_IMPORT(gpu_xfb) void gpu_xfb(const char *json, uint32_t len);
 /* In the pass: the ticket's indices drawn (an indexed draw, the index buffer the driver's to set again after). */
+/* An indirect fan's draw (`buffer` its arguments at `offset`): a compute pass before the render pass writes its triangles'
+ * indices from `ib` (`wide` 0 or 1) or, with `wide` 2, its arguments for `ib`, the device's fan indices, and
+ * gpu_draw_ticket_indirect draws them. */
+WG_IMPORT(gpu_fan_indirect) void gpu_fan_indirect(uint32_t ticket, uint32_t buffer, double offset, uint32_t ib, double ib_offset,
+                                                  double ib_size, uint32_t wide, uint32_t restart);
+WG_IMPORT(gpu_draw_ticket_indirect) void gpu_draw_ticket_indirect(uint32_t ticket);
 WG_IMPORT(gpu_draw_ticket) void gpu_draw_ticket(uint32_t ticket, uint32_t instances, int32_t base,
                                                 uint32_t first_instance);
 WG_IMPORT(gpu_dispatch) void gpu_dispatch(uint32_t x, uint32_t y, uint32_t z);

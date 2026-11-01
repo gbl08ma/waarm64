@@ -52,7 +52,7 @@ only edits docs: `.md` files or code comments):
   all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2`, `gles3` or `vk`, the last with `VIRGL_GPU=virgl,vulkan`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
-- **`scripts/ci-deqp-vk.sh`** (~35 min) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
+- **`scripts/ci-deqp-vk.sh`** (~40 min) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
   every case expected to pass, one guest boot; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
   second boot), then `page-venus` (the programs' captures against lavapipe's frames,
   also ci-graphics.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK); it must pass too when a change touches Vulkan (the renderer's driver

@@ -140,6 +140,10 @@ enum wg_format_flags {
    WG_FMT_BGRA8 = 1 << 20,      /* storage with bgra8unorm-storage */
    /* WebGPU has storage textures of it. WG_FMT_STORAGE alone: offered for storage all the same, by the image's words. */
    WG_FMT_STORAGE_TEXTURE = 1 << 21,
+   /* A format of 16-bit packed texels, which WebGPU hasn't: an rgba8unorm texture, its texels unpacked and packed by the
+    * worker's copies (`packed` there); OPAQUE: without alpha, which stays 1. */
+   WG_FMT_PACKED = 1 << 22,
+   WG_FMT_OPAQUE = 1 << 23,
 };
 
 struct wg_texture_format {
@@ -218,6 +222,8 @@ struct wg_device {
    uint32_t fan_indices;   /* wg_fan_indices */
    /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size and samples. */
    struct wg_dummy *dummies[16];
+   uint32_t twin_mark; /* feedback_copies' marks: taken in order, across command buffers */
+   uint32_t query_mux; /* the query set of a pass of several pools' queries (`query_count` in wg_cmd.c) */
    uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
    bool aliased;           /* an image has aliases: the replay looks at what each scope binds (wg_cmd.c `scope_images`) */
    /* Copies of what a usage scope reads from a GPUBuffer it also binds as writable storage (VK4 T3; wg_cmd.c
@@ -363,6 +369,7 @@ void wg_image_subresource(const struct vk_image *image, uint32_t level, uint32_t
 
 /* maxMultiviewViewCount. */
 #define WG_MAX_VIEWS 8
+#define WG_MAX_LAYERS 32 /* of a pass: its load and store ops and clears reach them (wg_CmdBeginRendering) */
 /* A view as Vulkan made it (`view`: sampled or storage), and as an attachment (`att`: one level, one layer, 2D). */
 struct wg_image_view {
    struct vk_image_view vk;
@@ -382,11 +389,15 @@ struct wg_image_view {
    uint32_t planes[3];
    uint32_t first_plane; /* of a one-plane view */
    uint32_t alias;       /* the image's texture it views: 0 its own, i + 1 aliases[i] */
-   uint32_t layer_atts[WG_MAX_VIEWS - 1]; /* multiview: layers past the first as attachments (wg_view_att), made at first use */
+   /* A copy of what the view shows, read where its image is an attachment of the pass (wg_view_twin, `feedback_copies`
+    * in wg_cmd.c), and the mark it was made at. */
+   uint32_t twin_tex, twin, twin_mark;
+   uint32_t layer_atts[WG_MAX_LAYERS - 1]; /* multiview, layered passes: layers past the first as attachments (wg_view_att), made at first use */
    uint32_t word_params; /* a word binding's parameters (wgsl_print.c `image_words`), made at the first (0: none) */
 };
 
 /* A view's attachment for multiview's view `view`: its layer past the view's first. */
+uint32_t wg_view_twin(struct wg_image_view *view);
 uint32_t wg_view_att(struct wg_image_view *view, uint32_t index);
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
@@ -710,6 +721,7 @@ struct wg_cmd_buffer {
        * samples (dummy_samples; 0: not this command buffer's pass, or given). */
       size_t dummy_at;
       uint32_t view_mask;    /* multiview: the pass replays once a view */
+      uint32_t layer_mask;   /* multiview's views, or a layered pass's layers: what its resolves cover */
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */
    struct wg_pipeline_key last_key;

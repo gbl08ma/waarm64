@@ -386,8 +386,17 @@ static bool
 view_format_aliasable(const struct wg_texture_format *f, VkFormat view)
 {
    const struct wg_texture_format *v = wg_texture_format(view);
-   return v && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !(v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) &&
-          v->bytes == f->bytes && v->bw == f->bw && v->bh == f->bh;
+   return v && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)) &&
+          !(v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)) && v->bytes == f->bytes && v->bw == f->bw &&
+          v->bh == f->bh;
+}
+
+/* Whether WebGPU multisamples the format: not the 32-bit integer ones nor the float ones of two or four channels. */
+static bool
+format_multisamples(const struct wg_texture_format *f)
+{
+   return strncmp(f->name, "rg32", 4) && strncmp(f->name, "rgba32", 6) && strcmp(f->name, "r32uint") &&
+          strcmp(f->name, "r32sint");
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -471,6 +480,12 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
                                            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) ||
                            ((info->usage & VK_IMAGE_USAGE_SAMPLED_BIT) && tf &&
                             (tf->flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL)));
+   /* A view's format is a texture of the image's (VK4 T4): it must multisample too. */
+   bool views_multisample = true;
+   for (uint32_t i = 0; list && (info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && i < list->viewFormatCount; i++) {
+      const struct wg_texture_format *v = wg_texture_format(list->pViewFormats[i]);
+      views_multisample &= !v || format_multisamples(v);
+   }
    pProps->imageFormatProperties = (VkImageFormatProperties){
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
       .maxMipLevels = ycbcr ? 1 : util_logbase2(dim) + 1,
@@ -478,9 +493,7 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage, and none of the 32-bit
        * integer formats nor the float ones of two or four channels. */
       .sampleCounts = info->tiling == VK_IMAGE_TILING_OPTIMAL && info->type == VK_IMAGE_TYPE_2D && attachment &&
-                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) && tf && strncmp(tf->name, "rg32", 4) &&
-                            strncmp(tf->name, "rgba32", 6) && strcmp(tf->name, "r32uint") &&
-                            strcmp(tf->name, "r32sint") &&
+                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) && tf && format_multisamples(tf) && views_multisample &&
                             !(info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
                          ? VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT
                          : VK_SAMPLE_COUNT_1_BIT,
@@ -641,6 +654,7 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    for (uint32_t i = 0; i < 16; i++)
       wg_dummy_unref(dev->dummies[i]);
    wg_id_release(dev->query_scratch);
+   wg_id_release(dev->query_mux);
    wg_id_release(dev->shadow);
    wg_id_release(dev->address_buffer);
    if (dev->address_heap_made)
@@ -1081,6 +1095,10 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 8;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
+   /* A draw may read it as an input attachment while it's an attachment: from a copy (`feedback_copies`). */
+   if ((vi->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) &&
+       (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)))
+      usage |= 1;
    /* A multisampled image is read by the draws of its resolves and copies (the worker's resolveDepth, resolveByDraw,
     * copyMultisampled). */
    if (vi->samples > 1)
@@ -1116,7 +1134,20 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 2;
    /* WebGPU wants a compressed texture's size in whole blocks (Vulkan doesn't): rounded up, and copies with it. */
    struct wg_json j = { 0 };
-   wg_json_printf(&j, "{\"size\":[%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
+   /* What the worker's copies need of a packed format: each of R, G, B, A's shift and bits. */
+   if (flags & WG_FMT_PACKED) {
+      const struct util_format_description *d = vk_format_description(fmt->vk);
+      wg_json_printf(&j, "{\"packed\":[");
+      for (uint32_t c = 0; c < 4; c++) {
+         const uint32_t k = d->swizzle[c];
+         wg_json_printf(&j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
+                        k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
+      }
+      wg_json_printf(&j, "],\"size\":[");
+   } else {
+      wg_json_printf(&j, "{\"size\":[");
+   }
+   wg_json_printf(&j, "%u,%u,%u],\"mipLevelCount\":%u,\"sampleCount\":%u,\"dimension\":\"%s\","
                   "\"format\":\"%s\",\"usage\":%u,\"viewFormats\":[",
                   DIV_ROUND_UP(e.width, fmt->bw) * fmt->bw, DIV_ROUND_UP(e.height, fmt->bh) * fmt->bh,
                   vi->image_type == VK_IMAGE_TYPE_3D ? e.depth : vi->array_layers, vi->mip_levels,
@@ -1461,6 +1492,9 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                                     VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
+   /* A 2D view of a 3D image is an attachment (`slice` below; VK_EXT_image_2d_view_of_3d isn't offered): WebGPU has none. */
+   if (!layered)
+      dim = "3d";
    /* A compressed image that isn't whole blocks is a corner of its texture (below, wg_CreateImage): sampled by the shader
     * (wgsl_sampler.c), which sees a cube's faces as a 2D array: such a texture needn't be square. */
    view->padded = image->fmt && (image->fmt->bw > 1 || image->fmt->bh > 1) &&
@@ -1515,7 +1549,10 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    bool identity = true;
    char letters[5] = "";
    for (uint32_t i = 0; i < 4; i++) {
-      const VkComponentSwizzle m = mapping[i] == VK_COMPONENT_SWIZZLE_IDENTITY ? VK_COMPONENT_SWIZZLE_R + i : mapping[i];
+      VkComponentSwizzle m = mapping[i] == VK_COMPONENT_SWIZZLE_IDENTITY ? VK_COMPONENT_SWIZZLE_R + i : mapping[i];
+      /* Rendered alpha stays out of an opaque format's texture only by the write mask: reads say 1 whatever came in. */
+      if (m == VK_COMPONENT_SWIZZLE_A && (view->fmt->flags & WG_FMT_OPAQUE))
+         m = VK_COMPONENT_SWIZZLE_ONE;
       letters[i] = m == VK_COMPONENT_SWIZZLE_ZERO ? '0' : m == VK_COMPONENT_SWIZZLE_ONE ? '1' : channels[m - VK_COMPONENT_SWIZZLE_R];
       identity &= m == (VkComponentSwizzle)(VK_COMPONENT_SWIZZLE_R + i);
    }
@@ -1583,7 +1620,7 @@ uint32_t
 wg_view_att(struct wg_image_view *view, uint32_t index)
 {
    /* A 3D image's slices are the pass's `depthSlice` of one view. */
-   if (!index || index >= WG_MAX_VIEWS || view->slice >= 0 || !view->att)
+   if (!index || index >= WG_MAX_LAYERS || view->slice >= 0 || !view->att)
       return view->att;
    if (!view->layer_atts[index - 1]) {
       const struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
@@ -1597,6 +1634,29 @@ wg_view_att(struct wg_image_view *view, uint32_t index)
    return view->layer_atts[index - 1];
 }
 
+uint32_t
+wg_view_twin(struct wg_image_view *view)
+{
+   if (!view->twin) {
+      const VkExtent3D e = vk_image_mip_level_extent(view->vk.image, view->vk.base_mip_level);
+      const bool depth = view->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL);
+      struct wg_json j = { 0 };
+      /* TEXTURE_BINDING | COPY_DST | RENDER_ATTACHMENT (depth24plus takes no copies: drawn). */
+      wg_json_printf(&j, "{\"size\":{\"width\":%u,\"height\":%u},\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u}",
+                     e.width, e.height, view->fmt->name, view->vk.image->samples,
+                     4 | 16 | ((view->fmt->flags & WG_FMT_NOCOPY) && !(view->fmt->flags & WG_FMT_STENCIL) ? 0 : 2));
+      view->twin_tex = wg_create_json(WG_KIND_TEXTURE, &j);
+      j = (struct wg_json){ 0 };
+      wg_json_printf(&j, "{\"texture\":%u,\"dimension\":\"2d\",\"mipLevelCount\":1,\"arrayLayerCount\":1%s%s}", view->twin_tex,
+                     (view->fmt->flags & WG_FMT_OPAQUE) ? ",\"swizzle\":\"rgb1\",\"usage\":4" : "",
+                     !depth || view->vk.aspects == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ? ""
+                     : view->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT ? ",\"aspect\":\"depth-only\""
+                                                                    : ",\"aspect\":\"stencil-only\"");
+      view->twin = wg_create_json(WG_KIND_VIEW, &j);
+   }
+   return view->twin;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallbacks *pAllocator)
 {
@@ -1604,6 +1664,8 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    VK_FROM_HANDLE(wg_image_view, view, _view);
    if (!view)
       return;
+   wg_id_release(view->twin);
+   wg_id_release(view->twin_tex);
    wg_id_release(view->view);
    wg_id_release(view->storage);
    wg_id_release(view->sampled);

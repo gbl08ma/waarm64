@@ -555,7 +555,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   } else if (scenario === 'queryAfterDispatch') {
     const w = u32(want.subarray(0, 16));
     for (let k = 0; k < 4; k++) w[k] = k * 3 + 1;
-    u32(want.subarray(1024, 1028))[0] = 1;
+    u32(want.subarray(1024, 1028))[0] = 0; // no pass inside it: nothing counted
     Object.assign(checks, { dispatched: [0, 1024, want], query: [1024, 4096, want] });
   } else if (scenario === 'oddStorage') {
     const w = u32(want.subarray(0, 16));

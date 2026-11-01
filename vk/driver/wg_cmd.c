@@ -27,10 +27,14 @@ void (*wg_submitted)(void);
 
 /* The ops. */
 enum op {
-   OP_VIEWS,           /* uint32_t: the next pass's view mask (multiview: it replays once a view) */
+   OP_VIEWS,           /* uint32_t[2]: the next pass's view mask (multiview: it replays once a view), and whether its
+                        * views are a layered pass's layers (draws in the first alone) */
    OP_PASS,            /* JSON of the render pass (with OP_VIEWS, one after another, a view's each; fewer: the last serves) */
    OP_PASS_END,
    OP_CLEAR_RECTS,     /* JSON */
+   OP_CLEAR_LAYERS,    /* uint32_t[2]: the next OP_CLEAR_RECTS's first layer and count, in a layered pass */
+   OP_PASS_ATTS,       /* struct op_pass_atts: the next pass's attachments, where one can be read as an input attachment */
+   OP_PASS_READ,       /* nothing: a barrier inside a pass, or its clear: what reads an attachment reads it anew */
    OP_PIPELINE,        /* struct op_pipeline */
    OP_COMPUTE,         /* struct wg_program * */
    OP_COMPUTE_BASED,   /* uint32_t: the compute pipeline of a dispatch's base */
@@ -58,6 +62,12 @@ enum op {
    OP_EXEC,            /* struct wg_cmd_buffer * */
    OP_PROVOKE,         /* struct op_provoke */
    OP_XFB,             /* struct op_xfb, then gpu_xfb's JSON */
+};
+
+struct op_pass_atts {
+   struct wg_image_view *views[10]; /* colour, then depth, stencil */
+   VkImageAspectFlags written[10];  /* what the pass may write of each */
+   uint32_t count;
 };
 
 struct op_head {
@@ -99,6 +109,12 @@ struct op_draw_indexed {
 struct op_indirect {
    uint32_t buffer, indexed, count, stride;
    double offset;
+   /* A fan (WebGPU has none, and its indices depend on the arguments): each draw's a ticket (gpu_fan_indirect), its
+    * indices from `ib` (the device's fan indices without an index buffer: `wide` 2). */
+   bool fan, restart;
+   uint8_t wide;
+   uint32_t ib;
+   double ib_offset, ib_size;
 };
 
 /* Transform feedback's begin, draw or end (gpu_xfb): its JSON follows; a begin's host-visible buffers are read back. */
@@ -617,15 +633,17 @@ dummy_samples(struct wg_cmd_buffer *cmd, uint32_t samples)
    cmd->pass.samples = samples;
 }
 
-/* The pass of `view` (0 without multiview): a pass per view, each view's bit of the mask a layer of each attachment.
- * `views`, with multiview, gathers each view's JSON; the last view's call emits them. */
+/* The pass of `view` (0 without multiview): a pass per view, each view's bit of `mask` a layer of each attachment.
+ * `views`, with multiview or a layered pass, gathers each view's JSON; the last view's call emits them. */
 static void
-begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t view, struct util_dynarray *views)
+begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t view, struct util_dynarray *views,
+                uint32_t mask)
 {
    memset(&cmd->pass, 0, sizeof(cmd->pass));
    cmd->pass.active = true;
    cmd->pass.samples = 1;
    cmd->pass.view_mask = info->viewMask;
+   cmd->pass.layer_mask = mask;
    forget(cmd);
    const VkRect2D area = info->renderArea;
    uint32_t width = 0, height = 0;
@@ -636,16 +654,16 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
                   area.extent.height);
    cmd->pass.color_count = MIN2(info->colorAttachmentCount, 8);
    /* The size of the first attachment: a render area short of it clears with draws, not load ops. */
-   const VkRenderingAttachmentInfo *atts[10];
+   const VkRenderingAttachmentInfo *atts_info[10];
    uint32_t n = 0;
    for (uint32_t i = 0; i < cmd->pass.color_count; i++)
-      atts[n++] = &info->pColorAttachments[i];
+      atts_info[n++] = &info->pColorAttachments[i];
    if (info->pDepthAttachment)
-      atts[n++] = info->pDepthAttachment;
+      atts_info[n++] = info->pDepthAttachment;
    if (info->pStencilAttachment)
-      atts[n++] = info->pStencilAttachment;
+      atts_info[n++] = info->pStencilAttachment;
    for (uint32_t i = 0; i < n; i++) {
-      VK_FROM_HANDLE(wg_image_view, v, atts[i]->imageView);
+      VK_FROM_HANDLE(wg_image_view, v, atts_info[i]->imageView);
       if (v) {
          const VkExtent3D e = vk_image_mip_level_extent(v->vk.image, v->vk.base_mip_level);
          width = e.width, height = e.height;
@@ -658,7 +676,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
    if (!width && !height) {
       bool any = false;
       for (uint32_t i = 0; i < n; i++)
-         any |= atts[i]->imageView != VK_NULL_HANDLE;
+         any |= atts_info[i]->imageView != VK_NULL_HANDLE;
       if (!any && area.extent.width && area.extent.height) {
          width = area.offset.x + area.extent.width, height = area.offset.y + area.extent.height;
          dummy = true;
@@ -693,7 +711,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
          snprintf(value, sizeof(value), "%d,%d,%d,%d", c->int32[0], c->int32[1], c->int32[2], c->int32[3]);
       else
          snprintf(value, sizeof(value), "%.9g,%.9g,%.9g,%.9g", c->float32[0], c->float32[1], c->float32[2],
-                  c->float32[3]);
+                  (v->fmt->flags & WG_FMT_OPAQUE) ? 1.0f : c->float32[3]);
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
       const bool resolves = r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE;
       if (resolves)
@@ -714,7 +732,10 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       if (resolves && !drawn)
          wg_json_printf(&j, ",\"resolveTarget\":%u", wg_view_att(r, view));
       wg_json_printf(&j, "}");
-      if (partial && clear) {
+      /* Dawn cuts a clear value of this format to 8 bits a channel: a draw after it. */
+      const bool wide_clear = v->vk.format == VK_FORMAT_A2B10G10R10_UINT_PACK32 &&
+                              (c->uint32[0] > 255 || c->uint32[1] > 255 || c->uint32[2] > 255);
+      if ((partial || wide_clear) && clear) {
          wg_json_printf(&clears, "%s[%u,%s]", first_clear ? "" : ",", i, value);
          first_clear = false;
          any_clear = true;
@@ -789,16 +810,36 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
    wg_json_printf(&j, ",\"width\":%u,\"height\":%u}", width, height);
    wg_json_printf(&clears, "}");
    cmd->pass.width = width, cmd->pass.height = height;
+   /* A draw may read an attachment as an input attachment (`feedback_copies`). */
+   struct op_pass_atts atts = { 0 };
+   for (uint32_t i = 0; i < n; i++) {
+      VK_FROM_HANDLE(wg_image_view, v, atts_info[i]->imageView);
+      if (!v || !(v->vk.image->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) || v->slice >= 0 || atts.count == 10)
+         continue;
+      VkImageAspectFlags written = v->vk.aspects;
+      if (v->vk.aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+         /* Depth and stencil share a view here: what isn't read-only. */
+         written = 0;
+         if (cmd->pass.depth && !cmd->pass.depth_ro)
+            written |= VK_IMAGE_ASPECT_DEPTH_BIT;
+         if (cmd->pass.stencil && !cmd->pass.stencil_ro)
+            written |= VK_IMAGE_ASPECT_STENCIL_BIT;
+      }
+      atts.views[atts.count] = v;
+      atts.written[atts.count++] = written;
+   }
+   if (atts.count && (!views || !(mask >> (view + 1)) || view == 31))
+      emit(cmd, OP_PASS_ATTS, &atts, sizeof(atts));
    /* Every view's the same without attachments, which the last's stands for (dummy_samples replaces its id). */
    if (views) {
-      const bool last = !(info->viewMask >> (view + 1));
+      const bool last = view == 31 || !(mask >> (view + 1));
       if (dummy && !last) {
          wg_json_free(&j);
          wg_json_free(&clears);
          return;
       }
       if (last)
-         emit(cmd, OP_VIEWS, &info->viewMask, sizeof(info->viewMask));
+         emit(cmd, OP_VIEWS, (uint32_t[]){ mask, !info->viewMask }, 8);
       const size_t at = views->size;
       memcpy(util_dynarray_grow_bytes(views, 1, j.len + 1), j.data, j.len);
       ((char *)views->data)[at + j.len] = 0;
@@ -826,14 +867,18 @@ VKAPI_ATTR void VKAPI_CALL
 wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
 {
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
-   if (!info->viewMask) {
-      begin_rendering(cmd, info, 0, NULL);
+   /* Layers without multiview: no draw reaches past the first (nothing writes gl_Layer), but load ops, store ops and
+    * vkCmdClearAttachments do, so the pass replays a layer at a time, as multiview's does. */
+   const uint32_t layers = MIN2(info->layerCount, WG_MAX_LAYERS);
+   const uint32_t mask = info->viewMask ? info->viewMask : layers > 1 ? BITFIELD_MASK(layers) : 0;
+   if (!mask) {
+      begin_rendering(cmd, info, 0, NULL, 0);
       return;
    }
    struct util_dynarray views;
    util_dynarray_init(&views, NULL);
-   u_foreach_bit(view, info->viewMask)
-      begin_rendering(cmd, info, view, &views);
+   u_foreach_bit(view, mask)
+      begin_rendering(cmd, info, view, &views, mask);
    util_dynarray_fini(&views);
 }
 
@@ -847,20 +892,23 @@ end_rendering(struct wg_cmd_buffer *cmd)
    emit(cmd, OP_PASS_END, NULL, 0);
    cmd->pass.active = false;
    forget(cmd);
-   /* A suspended pass's resolves are its last part's. */
+   /* A suspended pass's resolves are its last part's, each layer's. */
+   const uint32_t mask = cmd->pass.layer_mask ? cmd->pass.layer_mask : 1;
    for (uint32_t a = 0; a < 8 && !cmd->pass.suspending; a++) {
       const struct wg_image_view *src = cmd->pass.resolve_color_src[a], *dst = cmd->pass.resolve_color_dst[a];
       if (!src)
          continue;
       const VkRect2D *ra = &cmd->pass.area;
-      struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
-                     "\"dstLayer\":%u,\"format\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
-                     view_texture(src), src->vk.base_mip_level, src->vk.base_array_layer, view_texture(dst),
-                     dst->vk.base_mip_level,
-                     dst->slice >= 0 ? dst->slice : dst->vk.base_array_layer, dst->fmt->name, ra->offset.x, ra->offset.y,
-                     ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
-      meta(cmd, &j);
+      u_foreach_bit(l, mask) {
+         struct wg_json j = { 0 };
+         wg_json_printf(&j, "{\"op\":\"resolve\",\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,"
+                        "\"dstLayer\":%u,\"format\":\"%s\",\"from\":[%d,%d],\"to\":[%d,%d],\"size\":[%u,%u]}",
+                        view_texture(src), src->vk.base_mip_level, src->vk.base_array_layer + l, view_texture(dst),
+                        dst->vk.base_mip_level,
+                        (dst->slice >= 0 ? dst->slice : dst->vk.base_array_layer) + l, dst->fmt->name, ra->offset.x,
+                        ra->offset.y, ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
+         meta(cmd, &j);
+      }
    }
    for (uint32_t a = 0; a < 2 && !cmd->pass.suspending; a++) {
       const struct wg_image_view *src = cmd->pass.resolve_src[a], *dst = cmd->pass.resolve_dst[a];
@@ -868,15 +916,17 @@ end_rendering(struct wg_cmd_buffer *cmd)
          continue;
       const struct wg_image *si = container_of(src->vk.image, struct wg_image, vk);
       const struct wg_image *di = container_of(dst->vk.image, struct wg_image, vk);
-      struct wg_json j = { 0 };
-      /* Within the render area only (WebGPU has no multisampled arrays: one layer). */
       const VkRect2D *ra = &cmd->pass.area;
-      wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
-                     "\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,\"dstLayer\":%u,\"area\":[%d,%d,%u,%u]}",
-                     a ? "stencil" : "depth", di->fmt->name, si->tex, src->vk.base_mip_level, src->vk.base_array_layer,
-                     di->tex, dst->vk.base_mip_level, dst->vk.base_array_layer, ra->offset.x, ra->offset.y,
-                     ra->extent.width, ra->extent.height);
-      meta(cmd, &j);
+      u_foreach_bit(l, mask) {
+         struct wg_json j = { 0 };
+         /* Within the render area only. */
+         wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
+                        "\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,\"dstLayer\":%u,\"area\":[%d,%d,%u,%u]}",
+                        a ? "stencil" : "depth", di->fmt->name, si->tex, src->vk.base_mip_level,
+                        src->vk.base_array_layer + l, di->tex, dst->vk.base_mip_level, dst->vk.base_array_layer + l,
+                        ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
+         meta(cmd, &j);
+      }
    }
 }
 
@@ -892,11 +942,10 @@ wg_CmdEndRendering2KHR(VkCommandBuffer commandBuffer, const VkRenderingEndInfoKH
    end_rendering(wg_cmd_buffer_from_handle(commandBuffer));
 }
 
-VKAPI_ATTR void VKAPI_CALL
-wg_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t count, const VkClearAttachment *atts,
-                       uint32_t rect_count, const VkClearRect *rects)
+static void
+clear_rects(struct wg_cmd_buffer *cmd, uint32_t count, const VkClearAttachment *atts, uint32_t rect_count,
+            const VkClearRect *rects)
 {
-   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"rects\":[");
    for (uint32_t r = 0; r < rect_count; r++)
@@ -920,7 +969,7 @@ wg_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t count, const VkCl
                         c->int32[3]);
       else
          wg_json_printf(&j, "%s[%u,%.9g,%.9g,%.9g,%.9g]", first ? "" : ",", a, c->float32[0], c->float32[1],
-                        c->float32[2], c->float32[3]);
+                        c->float32[2], f && (f->flags & WG_FMT_OPAQUE) ? 1.0f : c->float32[3]);
       first = false;
    }
    wg_json_printf(&j, "]");
@@ -932,6 +981,22 @@ wg_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t count, const VkCl
    }
    wg_json_printf(&j, "}");
    emit_json(cmd, OP_CLEAR_RECTS, &j);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t count, const VkClearAttachment *atts,
+                       uint32_t rect_count, const VkClearRect *rects)
+{
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   /* Rects of one range of layers together (each OP_CLEAR_RECTS cuts an occlusion query); a secondary doesn't know
+    * the pass's layers, so the range always goes with them. */
+   for (uint32_t r = 0, n; r < rect_count; r += n) {
+      for (n = 1; r + n < rect_count && rects[r + n].baseArrayLayer == rects[r].baseArrayLayer &&
+                  rects[r + n].layerCount == rects[r].layerCount; n++)
+         ;
+      emit(cmd, OP_CLEAR_LAYERS, (uint32_t[]){ rects[r].baseArrayLayer, rects[r].layerCount }, 8);
+      clear_rects(cmd, count, atts, n, &rects[r]);
+   }
    forget(cmd);
 }
 
@@ -1322,7 +1387,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
     * range, as the attachment would anyway). */
    const bool clip = dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_TRUE ||
                      (dyn->rs.depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP && !dyn->rs.depth_clamp_enable);
-   k.unclipped = (dyn->rs.depth_clamp_enable || !clip) && (wg_features & WG_FEATURE_DEPTH_CLIP);
+   k.unclipped = !clip && (wg_features & WG_FEATURE_DEPTH_CLIP);
    k.flip = dyn->vp.viewport_count && dyn->vp.viewports[0].height < 0;
    /* WebGPU wants minDepth <= maxDepth: an inverted range (reverse-Z) is the range the right way round and the vertex
     * shader's z mirrored (w - z), which lands each depth where the inverted range would. */
@@ -1753,20 +1818,33 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
    if (!count)
       return;
    const uint32_t faces = draw_faces(cmd);
-   if (provoke_mode(cmd, indexed) >= 0) {
+   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+   const bool fan = dyn->ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+   if (provoke_mode(cmd, indexed) >= 0 && (!fan || dyn->rs.provoking_vertex == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT)) {
       static bool warned;
       if (!warned)
-         fprintf(stderr, "wg: an indirect draw whose provoking vertex is the last, or an indexed fan: drawn as is\n");
+         fprintf(stderr, "wg: an indirect draw whose provoking vertex is the last: drawn as is\n");
       warned = true;
    }
    stride = stride ? stride : (indexed ? 20 : 16);
+   struct op_indirect op = { .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count, .stride = stride,
+                             .offset = buffer->offset + offset, .fan = fan, .wide = 2 };
+   if (fan && indexed) {
+      op.ib = buffer_gpu(cmd->ib);
+      if (!op.ib)
+         return;
+      op.wide = cmd->ib_type == VK_INDEX_TYPE_UINT32;
+      op.restart = dyn->ia.primitive_restart_enable;
+      op.ib_offset = cmd->ib->offset + cmd->ib_offset;
+      op.ib_size = cmd->ib_size;
+   } else if (fan) {
+      op.ib = wg_fan_indices(container_of(cmd->vk.base.device, struct wg_device, vk));
+      op.ib_size = (WG_FAN_VERTICES - 2) * 12.0;
+   }
    for (uint32_t i = 0; i < faces; i++) {
       if (!record_draw(cmd, indexed, face_of(faces, i), -1))
          break;
-      emit(cmd, OP_DRAW_INDIRECT,
-           &(struct op_indirect){ .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count, .stride = stride,
-                                  .offset = buffer->offset + offset },
-           sizeof(struct op_indirect));
+      emit(cmd, OP_DRAW_INDIRECT, &op, sizeof(op));
    }
    /* Captured with its arguments read at the capture (the counts here are only the most it may draw: none). */
    for (uint32_t i = 0; i < count; i++)
@@ -1881,7 +1959,8 @@ copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct 
    /* A multi-planar image's plane (VK3 L7.2): its own texture, the region in its texels. */
    const struct wg_image_plane *plane = &image->planes[wg_image_plane(image, aspect)];
    const struct wg_texture_format *f = plane->fmt;
-   uint32_t bytes = f->bytes;
+   /* The buffer's texels are the format's, a packed one's 2 bytes (the worker unpacks them). */
+   uint32_t bytes = (f->flags & WG_FMT_PACKED) ? 2 : f->bytes;
    uint32_t a = 0;
    if ((f->flags & WG_FMT_DEPTH) && (f->flags & WG_FMT_STENCIL)) {
       a = aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : 1;
@@ -2055,7 +2134,7 @@ clear_image(struct wg_cmd_buffer *cmd, struct wg_image *image, const VkClearColo
                               color->int32[3]);
             else if (color)
                wg_json_printf(&j, ",\"color\":[%.9g,%.9g,%.9g,%.9g]", color->float32[0], color->float32[1],
-                              color->float32[2], color->float32[3]);
+                              color->float32[2], (f->flags & WG_FMT_OPAQUE) ? 1.0f : color->float32[3]);
             if (ds && (ranges[i].aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) && (f->flags & WG_FMT_DEPTH))
                wg_json_printf(&j, ",\"depth\":%.9g", CLAMP(ds->depth, 0, 1));
             if (ds && (ranges[i].aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) && (f->flags & WG_FMT_STENCIL))
@@ -2187,6 +2266,10 @@ wg_CmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t count, const VkEvent *
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependencyInfo *info)
 {
+   /* WebGPU orders a queue; inside a pass, a read of an attachment afterwards reads what's there now. */
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   if (cmd->pass.active)
+      emit(cmd, OP_PASS_READ, NULL, 0);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2237,6 +2320,7 @@ struct pass_query {
    uint32_t index;
    bool passing;
    uint32_t of; /* a spare slot's: the query it carries on (its value added to that one's), else UINT32_MAX */
+   uint32_t mux; /* in a pass of several pools: its slot of the device's set, whose value goes to `index`; else UINT32_MAX */
 };
 
 struct cpu_write {
@@ -2288,11 +2372,24 @@ struct replay {
    struct wg_query_pool *qpool, *qactive_pool;
    uint32_t qactive;
    uint32_t qspares; /* the pass's spare slots taken */
+   /* A query begun outside a render pass: it counts the passes it spans, each one's count added to it. */
+   struct wg_query_pool *qouter;
+   uint32_t qouter_index;
+   bool qouter_counted;
+   bool qmux;        /* the pass's queries are of several pools: all in the device's set (`qslot`), `qmux_next` taken */
+   uint32_t qmux_next;
    struct util_dynarray pass_queries;
    uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
    /* Multiview: the pass's mask, how many of its views have been replayed, this one, and where the pass starts again. */
    uint32_t view_mask, view_order, view;
+   bool layered;                      /* the views are a layered pass's layers: draws in the first alone */
+   uint32_t clear_first, clear_count; /* OP_CLEAR_LAYERS, for the next OP_CLEAR_RECTS (count 0: every layer) */
    const uint8_t *pass_op;
+   /* The pass's attachments that can be read as input attachments (none: `atts.count` 0), its view's JSON, and the
+    * mark of what a read of them finds: a copy (wg_image_view.twin) older than it is stale (`feedback_copies`). */
+   struct op_pass_atts atts;
+   const char *pass_json;
+   uint32_t twin_mark;
    uint32_t address_use; /* the scope's pointers' binding: 0 none, 1 read, 2 written */
    /* Draw parameters (VK3 L7.5): the next draw's (base vertex, base instance, draw index) and, for an indirect draw,
     * the place `prepasses` copied its arguments' into (UINT32_MAX: none); those the current place holds, where
@@ -2342,7 +2439,8 @@ static void
 query_passing(struct replay *r, struct wg_query_pool *pool, uint32_t index)
 {
    if (r->pass == RENDER) {
-      util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, true, UINT32_MAX }));
+      util_dynarray_append_typed(&r->pass_queries, struct pass_query,
+                                 ((struct pass_query){ pool, index, true, UINT32_MAX, UINT32_MAX }));
       return;
    }
    if (r->pass != NONE)
@@ -2375,10 +2473,14 @@ resolve_queries(struct replay *r)
    }
    uint32_t *idx = malloc(n * sizeof(uint32_t)), k = 0;
    util_dynarray_foreach (&r->pass_queries, struct pass_query, q) {
-      if (q->passing)
+      if (q->passing) {
          query_passing(r, q->pool, q->index);
-      else if (idx)
+      } else if (q->mux != UINT32_MAX) {
+         gpu_resolve_queries(dev->query_mux, q->mux, 1, dev->query_scratch, 0);
+         gpu_copy_bb(dev->query_scratch, 0, q->pool->buf, q->index * 8.0, 8);
+      } else if (idx) {
          idx[k++] = q->index;
+      }
    }
    if (idx && k) {
       qsort(idx, k, sizeof(uint32_t), cmp_u32);
@@ -2401,10 +2503,10 @@ static void
 end_pass(struct replay *r)
 {
    if (r->pass == RENDER && r->qactive_pool) {
-      /* A query the pass's end cuts (WebGPU's pass ends inside Vulkan's): passing. */
+      /* A query the pass's end cuts (WebGPU's pass ends inside Vulkan's): passing, unless it was begun outside. */
       gpu_end_occlusion();
       util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
-         if (q->pool == r->qactive_pool && q->index == r->qactive)
+         if (q->pool == r->qactive_pool && q->index == r->qactive && r->qactive_pool != r->qouter)
             q->passing = true;
       r->qactive_pool = NULL;
    }
@@ -2419,9 +2521,10 @@ end_pass(struct replay *r)
    r->qpool = NULL;
 }
 
-/* The pool whose occlusion queries the render pass starting at `p` begins (the first), NULL for none. */
+/* The pool whose occlusion queries the render pass starting at `p` begins (the first), NULL for none; `*several`: it
+ * begins queries of another too. */
 static struct wg_query_pool *
-pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop)
+pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop, struct wg_query_pool *pool, bool *several)
 {
    while (p < end) {
       const struct op_head *h = (const void *)p;
@@ -2429,21 +2532,38 @@ pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop)
       p += sizeof(*h) + h->size;
       if (h->op == OP_PASS || h->op == OP_PASS_END) {
          *stop = true;
-         return NULL;
+         return pool;
       }
       if (h->op == OP_QUERY) {
          const struct op_query *q = d;
-         if (q->kind == 2 && q->pool->set && q->first < WG_QUERY_SET_MAX)
-            return q->pool;
+         if (q->kind == 2 && q->pool->set && q->first < WG_QUERY_SET_MAX) {
+            *several |= pool && pool != q->pool;
+            pool = pool ? pool : q->pool;
+         }
       } else if (h->op == OP_EXEC) {
          const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
-         struct wg_query_pool *pool =
-            pass_query_pool(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, stop);
-         if (pool || *stop)
+         pool = pass_query_pool(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, stop, pool, several);
+         if (*stop)
             return pool;
       }
    }
-   return NULL;
+   return pool;
+}
+
+/* An occlusion query begins counting, in its slot of its pool's set or, in a pass of several pools, the device's
+ * (WebGPU's pass takes one set). False past that set's slots. */
+static bool
+query_count(struct replay *r, struct wg_query_pool *pool, uint32_t index, uint32_t of)
+{
+   uint32_t mux = UINT32_MAX;
+   if (r->qmux) {
+      if (r->qmux_next >= WG_QUERY_SET_MAX)
+         return false;
+      mux = r->qmux_next++;
+   }
+   gpu_begin_occlusion(r->qmux ? mux : index);
+   util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, false, of, mux }));
+   return true;
 }
 
 /* The compute passes a render pass's draws need, made before it begins (the render-pass rule, docs/graphics.md:
@@ -2485,6 +2605,9 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
                memcpy(r->dev->push_data + at + WGSL_DRAW_PARAMS + 8, (uint32_t[2]){ i, 0 }, 8);
             }
             util_dynarray_append_typed(&r->dp_places, uint32_t, at);
+            if (a->fan)
+               gpu_fan_indirect(ticket++, a->buffer, a->offset + (double)i * a->stride, a->ib, a->ib_offset, a->ib_size,
+                                a->wide, a->restart);
          }
       } else if (h->op == OP_EXEC) {
          const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
@@ -2611,6 +2734,24 @@ bound_descriptor(const struct op_bind *b, const struct wg_program *p, uint32_t k
    const struct wg_descriptor_set *set = b->sets[s - b->group];
    const uint32_t slot = p->resources[k].binding / 2 - p->set_base[s];
    return set && slot < set->layout->slot_count ? &set->slots[slot] : NULL;
+}
+
+/* The attachment of the pass an input attachment's descriptor reads, written by the pass, or -1. In a multiview pass
+ * both are of the view's layer. */
+static int
+feedback_att(const struct replay *r, const struct wg_descriptor *d)
+{
+   if (!r->atts.count || d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT || !d->view)
+      return -1;
+   const struct wg_image_view *v = d->view;
+   for (uint32_t i = 0; i < r->atts.count; i++) {
+      const struct wg_image_view *a = r->atts.views[i];
+      if (a->vk.image == v->vk.image && a->vk.base_mip_level == v->vk.base_mip_level &&
+          a->vk.base_array_layer < v->vk.base_array_layer + v->vk.layer_count &&
+          v->vk.base_array_layer < a->vk.base_array_layer + a->vk.layer_count && (r->atts.written[i] & v->vk.aspects))
+         return i;
+   }
+   return -1;
 }
 
 /*
@@ -3140,10 +3281,16 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
    }
    /* In a multiview pass an input attachment reads its view's layer (declared 2D, its binding that layer): a group a
     * view, like a scope's own. */
-   for (uint32_t k = 0; r->view_mask && k < p->resource_count && !*shadowed; k++) {
+   for (uint32_t k = 0; r->view_mask && !r->layered && k < p->resource_count && !*shadowed; k++) {
       const struct wg_descriptor *d = p->resources[k].group == b->group && p->resources[k].kind == WGSL_TEXTURE
                                          ? bound_descriptor(b, p, k) : NULL;
       *shadowed = d && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+   }
+   /* Likewise one reading a copy of an attachment of its pass (`feedback_copies`). */
+   for (uint32_t k = 0; r->atts.count && k < p->resource_count && !*shadowed; k++) {
+      const struct wg_descriptor *d = p->resources[k].group == b->group && p->resources[k].kind == WGSL_TEXTURE
+                                         ? bound_descriptor(b, p, k) : NULL;
+      *shadowed = d && feedback_att(r, d) >= 0;
    }
    uint32_t group = 0;
    if (holder && !*shadowed)
@@ -3224,7 +3371,8 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          if (!d->view)
             continue;
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
-                        r->view_mask && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
+                        res->kind == WGSL_TEXTURE && feedback_att(r, d) >= 0 ? wg_view_twin(d->view)
+                        : r->view_mask && !r->layered && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
                         : res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage
                         : d->plane && d->plane < d->view->plane_count       ? d->view->planes[d->plane]
                         : res->kind != WGSL_TEXTURE                         ? d->view->view
@@ -3293,6 +3441,78 @@ found:
                   vk_buffer_range(&d->buffer->vk, d->offset, d->range));
    }
    return group;
+}
+
+/* The WebGPU render pass of the Vulkan one being replayed. `keep`: 0 as its JSON says, 1 storing every attachment (a
+ * later part goes on from them), 2 as a later part: loading and storing. */
+static void
+begin_pass(struct replay *r, uint32_t keep)
+{
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{");
+   if (r->qpool)
+      wg_json_printf(&j, "\"occlusionQuerySet\":%u,", r->qmux ? r->dev->query_mux : r->qpool->set);
+   if (keep)
+      wg_json_printf(&j, "\"keep\":%u,", keep);
+   wg_json_printf(&j, "%s", r->pass_json + 1);
+   gpu_render_pass(j.data, j.len);
+   wg_json_free(&j);
+   r->dirty = RD_ALL;
+}
+
+/* A query cut around something the pass mustn't count (a clear's draw, a part of the pass ended): it carries on in a
+ * spare slot of the set (WebGPU can't take a query's index again in one pass), added to it at the resolve. Past the
+ * spares, the query is reported as passing. */
+static void
+query_carry_on(struct replay *r, struct wg_query_pool *qp)
+{
+   if (r->qspares < qp->spares && query_count(r, qp, qp->vk.query_count + r->qspares, r->qactive)) {
+      r->qspares++;
+      return;
+   }
+   util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
+      if (q->pool == qp && q->index == r->qactive)
+         q->passing = true;
+   r->qactive_pool = NULL;
+}
+
+/* A feedback loop: WebGPU refuses a texture written and sampled in one render pass, and Vulkan lets an input attachment
+ * read an attachment of its own pass. A draw that does reads a copy of the attachment (wg_image_view.twin), made in a
+ * break of the WebGPU pass where it's stale: at the pass's first such draw, and after a barrier or clear inside it
+ * (without one a draw's read of what its pass wrote is undefined). */
+static void
+feedback_copies(struct replay *r)
+{
+   const struct wg_program *p = r->program[0];
+   struct wg_query_pool *qp = NULL;
+   bool cut = false;
+   for (uint32_t k = 0; p && k < p->resource_count; k++) {
+      const struct wgsl_resource *res = &p->resources[k];
+      const struct op_bind *b = res->kind == WGSL_TEXTURE ? r->binds[0][res->group] : NULL;
+      const struct wg_descriptor *d = b ? bound_descriptor(b, p, k) : NULL;
+      const int a = d ? feedback_att(r, d) : -1;
+      if (a < 0 || d->view->twin_mark == r->twin_mark)
+         continue;
+      if (!cut) {
+         qp = r->qactive_pool;
+         if (qp)
+            gpu_end_occlusion();
+         gpu_pass_end();
+         cut = true;
+      }
+      const struct wg_image_view *att = r->atts.views[a];
+      const VkExtent3D e = vk_image_mip_level_extent(att->vk.image, att->vk.base_mip_level);
+      const uint32_t layer = att->vk.base_array_layer + (r->layered ? 0 : r->view);
+      wg_view_twin(d->view);
+      gpu_copy_tt(view_texture(att), att->vk.base_mip_level, 0, 0, layer, d->view->twin_tex, 0, 0, 0, 0, e.width, e.height,
+                  1, 0, e.width, e.height, e.width, e.height, att->fmt->bytes);
+      d->view->twin_mark = r->twin_mark;
+   }
+   if (cut) {
+      begin_pass(r, 2);
+      if (qp)
+         query_carry_on(r, qp);
+   }
 }
 
 /* Binds an op_bind's group at its point (with the scope's shadows, if it reads any). */
@@ -3389,6 +3609,8 @@ static void
 apply(struct replay *r, uint32_t point)
 {
    if (point == 0) {
+      if (r->atts.count)
+         feedback_copies(r);
       if (r->dirty & RD_PIPELINE)
          gpu_set_pipeline(r->pipeline);
       if (r->dirty & RD_DYN) {
@@ -3542,9 +3764,15 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       const struct op_head *h = (const void *)p;
       const void *d = h + 1;
       p += sizeof(*h) + h->size;
+      /* A layered pass's layers past the first see its clears alone. */
+      if (r->layered && r->view_order &&
+          (h->op == OP_DRAW || h->op == OP_DRAW_INDEXED || h->op == OP_DRAW_INDIRECT || h->op == OP_PROVOKE ||
+           h->op == OP_XFB || h->op == OP_QUERY))
+         continue;
       switch ((enum op)h->op) {
       case OP_VIEWS:
-         r->view_mask = *(const uint32_t *)d;
+         r->view_mask = ((const uint32_t *)d)[0];
+         r->layered = ((const uint32_t *)d)[1];
          r->view_order = 0;
          break;
       case OP_PASS: {
@@ -3567,23 +3795,42 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          }
          /* Its occlusion queries' set (WebGPU's pass takes one, at its start). */
          bool stop = false;
-         r->qpool = pass_query_pool(p, end, &stop);
+         const bool draws = !r->layered || !r->view_order;
+         bool several = false;
+         r->qpool = draws ? pass_query_pool(p, end, &stop, r->qouter, &several) : NULL;
          r->qspares = 0;
+         r->qmux = several;
+         r->qmux_next = 0;
+         if (several && !r->dev->query_mux) {
+            struct wg_json j = { 0 };
+            wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", WG_QUERY_SET_MAX);
+            r->dev->query_mux = wg_create_json(WG_KIND_QUERY_SET, &j);
+         }
          util_dynarray_clear(&r->dp_places);
          r->dp_next = 0;
          const struct wg_program *prog = r->program[0];
-         prepasses(r, &prog, p, end, 0, true);
-         scope_pass(r, p, end);
-         r->tickets = 0;
-         if (r->qpool) {
-            struct wg_json j = { 0 };
-            wg_json_printf(&j, "{\"occlusionQuerySet\":%u,%s", r->qpool->set, json + 1);
-            gpu_render_pass(j.data, j.len);
-            wg_json_free(&j);
-         } else {
-            gpu_render_pass(json, strlen(json));
+         if (draws) {
+            prepasses(r, &prog, p, end, 0, true);
+            scope_pass(r, p, end);
          }
+         r->tickets = 0;
+         r->pass_json = json;
+         r->twin_mark = ++r->dev->twin_mark;
+         if (r->qpool || r->atts.count)
+            begin_pass(r, r->atts.count ? 1 : 0);
+         else
+            gpu_render_pass(json, strlen(json));
          r->pass = RENDER;
+         if (r->qouter && r->qpool) {
+            r->qactive_pool = r->qouter;
+            r->qactive = r->qouter_index;
+            if (r->qouter_counted)
+               query_carry_on(r, r->qouter);
+            else if (query_count(r, r->qouter, r->qouter_index, UINT32_MAX))
+               r->qouter_counted = true;
+            else
+               r->qactive_pool = NULL;
+         }
          /* The attachments' size, for scissors (in the JSON's tail). */
          const char *w = strstr(json, "\"width\":");
          r->width = w ? strtoul(w + 8, NULL, 10) : 0;
@@ -3601,31 +3848,37 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                break;
             }
             r->view_mask = r->view_order = r->view = 0;
+            r->layered = false;
          }
+         r->atts.count = 0;
          break;
-      case OP_CLEAR_RECTS:
-         if (r->pass == RENDER) {
-            /* A clear draws (the worker's), and a Vulkan occlusion query doesn't count clears: the active query ends
-             * before it and carries on in a spare slot of the set (WebGPU can't take a query's index again in one
-             * pass), added to it at the resolve. Past the spares, the query is reported as passing. */
+      case OP_PASS_ATTS:
+         memcpy(&r->atts, d, sizeof(r->atts));
+         break;
+      case OP_PASS_READ:
+         r->twin_mark = ++r->dev->twin_mark;
+         break;
+      case OP_CLEAR_LAYERS:
+         r->clear_first = ((const uint32_t *)d)[0];
+         r->clear_count = ((const uint32_t *)d)[1];
+         break;
+      case OP_CLEAR_RECTS: {
+         const bool here = !r->layered || !r->clear_count ||
+                           (r->view >= r->clear_first && r->view - r->clear_first < r->clear_count);
+         r->clear_count = 0;
+         if (r->pass == RENDER && here) {
+            /* A clear draws (the worker's), and a Vulkan occlusion query doesn't count clears. */
             struct wg_query_pool *qp = r->qactive_pool;
             if (qp)
                gpu_end_occlusion();
             gpu_clear_rects(d, strlen(d));
             r->dirty = RD_ALL;
-            if (qp && r->qspares < qp->spares) {
-               const uint32_t slot = qp->vk.query_count + r->qspares++;
-               gpu_begin_occlusion(slot);
-               util_dynarray_append_typed(&r->pass_queries, struct pass_query,
-                                          ((struct pass_query){ qp, slot, false, r->qactive }));
-            } else if (qp) {
-               util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
-                  if (q->pool == qp && q->index == r->qactive)
-                     q->passing = true;
-               r->qactive_pool = NULL;
-            }
+            r->twin_mark = ++r->dev->twin_mark;
+            if (qp)
+               query_carry_on(r, qp);
          }
          break;
+      }
       case OP_PIPELINE: {
          const struct op_pipeline *op = d;
          r->pipeline = wg_render_pipeline(op->program, &op->key);
@@ -3736,6 +3989,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             }
             set_draw_params(r, 0, 0, i, at);
             apply(r, 0);
+            if (a->fan) {
+               gpu_draw_ticket_indirect(r->tickets++);
+               r->dirty |= RD_IB;
+               continue;
+            }
             const struct shadow *s =
                find_shadow(r, a->buffer, a->offset, (a->count - 1) * (double)a->stride + (a->indexed ? 20 : 16));
             gpu_draw_indirect(s ? s->to : a->buffer, (s ? s->place : a->offset) + (double)i * a->stride, a->indexed);
@@ -3830,22 +4088,32 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             pool->values[first] = os_time_get_nano();
             query_ended(r, pool, first);
          } else if (q->kind == 2 && occlusion) {
-            if (r->pass == RENDER && pool == r->qpool && !r->qactive_pool && first < WG_QUERY_SET_MAX) {
-               gpu_begin_occlusion(first);
+            if (r->pass == RENDER && r->qpool && (pool == r->qpool || r->qmux) && !r->qactive_pool &&
+                first < WG_QUERY_SET_MAX && query_count(r, pool, first, UINT32_MAX)) {
                r->qactive_pool = pool;
                r->qactive = first;
-               util_dynarray_append_typed(&r->pass_queries, struct pass_query,
-                                          ((struct pass_query){ pool, first, false, UINT32_MAX }));
+            } else if (r->pass != RENDER && !r->qouter && pool->set && first < WG_QUERY_SET_MAX) {
+               r->qouter = pool;
+               r->qouter_index = first;
+               r->qouter_counted = false;
             } else {
                static bool warned;
                if (!warned)
-                  fprintf(stderr, "wg: an occlusion query begun outside a render pass or beside another pool's: "
-                                  "reported as passing\n");
+                  fprintf(stderr, "wg: an occlusion query begun inside another: reported as passing\n");
                warned = true;
             }
          } else if (q->kind == 3) {
             if (occlusion) {
-               if (r->pass == RENDER && r->qactive_pool == pool && r->qactive == first) {
+               if (r->qouter == pool && r->qouter_index == first && r->pass != RENDER) {
+                  r->qouter = NULL;
+                  if (!r->qouter_counted) {
+                     /* No pass inside it: nothing counted. */
+                     static const uint64_t zero;
+                     if (r->pass != NONE)
+                        end_pass(r);
+                     gpu_update(pool->buf, first * 8.0, &zero, 8);
+                  }
+               } else if (r->pass == RENDER && r->qactive_pool == pool && r->qactive == first) {
                   gpu_end_occlusion();
                   r->qactive_pool = NULL;
                } else {

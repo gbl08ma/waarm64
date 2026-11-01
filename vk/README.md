@@ -366,9 +366,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   the order between its front and back primitives is lost where they overlap (stencil ops, blending, depth ties) and
   its vertex stage runs twice; faces differing only in what they don't use draw once (VK3 L6c); with one face culled
   the other's is used (VK3 L6a); occlusion queries on the GPU (VK3 L6a): a pool is a WebGPU query set and a buffer of each query's last value;
-  a render pass whose commands begin a query takes the pool's set (the first pool's: a query of another pool, or one
-  begun outside a pass, is reported as passing, warned once), its queries are resolved into the buffer at the pass's
-  end (consecutive ones together, through the device's scratch buffer); a `vkCmdClearAttachments` inside a query (the
+  a render pass whose commands begin a query takes the pool's set, or with queries of several pools the device's own
+  (`query_mux`: WebGPU's pass takes one set; each query a slot of it, resolved one by one into its pool's buffer, VK4 T12),
+  and a query begun outside a pass counts each pass it spans, added up (none: 0); a pass's queries are resolved into the
+  buffer at its end (consecutive ones together, through the device's scratch buffer); a `vkCmdClearAttachments` inside a query (the
   worker's draw, which Vulkan doesn't count) ends the WebGPU query and carries it on in one of the set's 64 spare slots,
   whose count the worker adds to the query's on the GPU at the resolve (VK3 L6c; past the spares, passing), and `vkCmdCopyQueryPoolResults` copies each value
   from it on the GPU, with each availability (the queue's order: what the replay has seen ended and not reset since),
@@ -387,7 +388,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   temporary texture first (VK3 L8a; the invalid copy lost the submit). An image clear of a
   format WebGPU can't render to (`rgb9e5ufloat`, the snorm8 formats without tier1, `rg11b10ufloat` without its
   feature) is its clear colour encoded in the worker (`encodeTexel`) and copied in; a 3D image's clear covers every
-  slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F). Buffer ↔ image copies whose rows
+  slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F); a nearest blit finds its
+  texel by Vulkan's sum from the fragment's position (an interpolated coordinate came a hair short of whole texels on Metal:
+  VK4 T12, `generate_mipmaps.from_previous_level`); Buffer ↔ image copies whose rows
   aren't 256 bytes apart go a row of blocks at a time, but for depth and stencil, which WebGPU copies only whole
   (the worker realigns their rows through a temporary buffer); depth WebGPU won't copy (into depth32float's or
   depth24plus's depth, out of depth24plus's, part of a subresource, and image copies of part of one or of depth24plus,
@@ -505,6 +508,31 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   writes, template updates and copies go into both at once (`gpu_write`, the queue's order: Vulkan forbids updating a set
   a pending command buffer uses), rolling on into the next binding past a block's end. 1.3's minimums of four blocks a
   stage and a set, 4,096 bytes each, no update-after-bind (`wg_bindings_fit` counts each as a uniform buffer).
+- **Layered passes** (VK4 T12; `OP_VIEWS`, `OP_CLEAR_LAYERS` in wg_cmd.c): a pass of several layers without multiview (a
+  framebuffer's layers, dynamic rendering's `layerCount`) has no draw past its first layer, nothing writing `gl_Layer`,
+  but its load and store ops reach every layer and `vkCmdClearAttachments` names layers, so it replays a layer at a time
+  as multiview does (up to `WG_MAX_LAYERS`, 32): the later layers see the clears whose range holds them, no draws, no
+  queries; resolves cover every layer (`layer_mask`).
+- **Feedback loops** (VK4 T12; `feedback_copies` in wg_cmd.c): Vulkan lets an input attachment read an attachment of its
+  own pass, and WebGPU refuses a texture written and sampled in one pass. Where a pass's attachment can be an input
+  attachment (`OP_PASS_ATTS`, none otherwise: ordinary passes pay nothing), a draw reading one reads a copy (the input view's
+  `twin`, same format and samples, made at the first such read; its bind group the scope's own). The copy is made in a
+  cut of the WebGPU pass (`begin_pass`'s `keep`: 1 the parts store whatever the store op, 2 later parts load) at the
+  pass's first such draw and after a barrier or clear inside it (`OP_PASS_READ`; without one, reading what the pass
+  wrote is undefined), through `gpu_copy_tt`, so multisampled and depth images take their usual paths. An occlusion
+  query carries on across a cut as across a clear. No sampled images: only input attachments reach this.
+- **Multisampled arrays** (VK4 T12; `MsLayers` in web/venus-gpu.ts): WebGPU's multisampled textures have one layer, so the
+  worker makes a texture a layer behind one object, which the driver sees as one texture; every path takes a layer at a
+  time (views, `texCopy`), so passes, resolves, clears and copies work as they do for any array. A view of several
+  layers shows its first: WGSL has no multisampled arrays to sample, a shader on `sampler2DMSArray` is out of reach.
+  Formats WebGPU doesn't multisample stay out, also as a view's format where a format list says so (one sample then).
+- **Packed 16-bit formats** (VK4 T12; `WG_FMT_PACKED`, `packPass` in web/venus-gpu.ts): `R5G6B5`, `A1R5G5B5` and `B4G4R4A4`,
+  which Vulkan requires, and their four orders, are `rgba8unorm` textures, optimal tiling only. Buffer ↔ image copies are
+  2 bytes a texel and the worker unpacks or packs them in a compute pass in the encoder's order, through a temporary
+  buffer; copies with a size-compatible format (`r16_uint`, `r8g8_unorm`) keep their bits the same way. So a texture holds
+  8 bits a channel: sampling what was rendered reads it unrounded (4 `self_dep` cases of `r5g6b5` out of the list) and
+  blends run at 8 bits. Formats without alpha (`WG_FMT_OPAQUE`) keep it 1: masked in the pipeline, 1 in clears, a swizzle on
+  reads. A view of another format isn't offered.
 - **Multiview** (VK4 T7; `begin_rendering` and `OP_VIEWS` in wg_cmd.c): WebGPU has no layered rendering, so a pass with a
   view mask (dynamic rendering's `viewMask`; legacy passes through the runtime's emulation, secondaries through their
   inheritance) is replayed once a view: `OP_PASS` holds each view's JSON one after another, each attachment that view's
@@ -512,8 +540,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   they need since `forget`, so each view repeats them whole (load ops, clears, prepasses, draws); the push buffer is
   counted for it (`cmd->draws`). A stage that reads `gl_ViewIndex` declares `override wg_view`, the key's `view`: a pipeline
   per view, only for such stages. A query is one a view, consecutive, as Vulkan allows (`q->first + view_order`). An input
-  attachment binds its view's layer, 2D as declared, in a group per view. Eight views. No multisampled arrays
-  (docs/backlog.md), so a multisampled multiview pass fails as any multisampled array does.
+  attachment binds its view's layer, 2D as declared, in a group per view. Eight views. Multisampled multiview passes
+  go by "Multisampled arrays"; dEQP-VK's 48 ask for `r32g32b32a32_sfloat`, which WebGPU doesn't multisample.
 - **Device addresses** (VK4 T7; `address_place` in wg_device.c, `lower_global` in wgsl_nir.c): WGSL has no pointers, and a
   stage could reach more memories than WebGPU binds, so memory allocated with `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT` is
   all in one GPUBuffer of the device's (`util_vma_heap`, each memory 256-aligned with 64 KiB past it for widened uniform
@@ -572,7 +600,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   again at each encoder (the queue's order keeps an earlier submit's reads before a later one's writes); in the pass
   the draw is an indexed list draw of its ticket's indices (`gpu_draw_ticket`). Non-indexed fans take the device's fan
   indices, (i + 1, i + 2, 0) for triangle i (Vulkan's order; they used to be (0, i + 1, i + 2), each triangle provoked
-  by the fan's centre). Indirect draws so are drawn as they are, warned once.
+  by the fan's centre). An indirect fan's draws are worked out on the GPU, whose arguments they are (VK4 T12, `fanIndirect`,
+  `gpu_draw_ticket_indirect`): a compute pass before the render pass writes arguments for the device's fan indices or, with
+  an index buffer, a list of its triangles (one invocation walks it; a restart ends a fan), and each draw is an indexed
+  indirect draw of those. Other indirect draws with the last vertex provoking are drawn as they are, warned once.
 - **Draw parameters** (VK3 L7.5): a draw whose vertex stage reads them (its program's push buffer past 128 bytes,
   "The shader path") has its base vertex (the first vertex, or an indexed draw's vertex offset), first instance and
   draw index in its place of the push buffer after the push constants; a draw whose parameters differ from its place's
@@ -680,7 +711,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
   the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
   mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits, sampling 3D images through 2D views.
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits.
 
 ## Pipelines made asynchronously
 
@@ -757,8 +788,11 @@ bytes that may be off by more than 24 (vkcube 0.2%, vkmark 0.3%, vkQuake 3%).
 (`bench/vulkan/results/vk2/l3/`, `l5/`.) What differs is edges and texture filtering, but for vkQuake: its frames
 match lavapipe's to the eye with no bias (the mean signed difference per channel under 0.2), yet 78% of their bytes
 differ by a little and 1.7% by more than 24, the same on SwiftShader and Metal, so it is systematic, not the GPU's
-rasterization: not identified (its text and grid edges hold the large ones; candidates are its screen effects'
-dithering and a conversion's rounding). The replay
+rasterization. **It is lavapipe's reading of anisotropy** (VK4 T12): vkQuake's textures use samplers of `NEAREST` filters with
+`anisotropyEnable`, which lavapipe filters linearly. WebGPU's anisotropy needs linear filters, and with them forced in a trial
+build the frames differ by 109 bytes over 24 (`results/vk4/t12/vkquake-forced.json`). The driver keeps the program's nearest
+filters and drops anisotropy instead: Vulkan leaves this to the implementation, and radv keeps point sampling here, so the
+3% tolerance stands. The replay
 checks the driver; vkcube's own frames in the guest also pass through Mesa's WSI, whose CPU path
 (`MESA_VK_WSI_DEBUG=sw`) copies each image to a host-visible buffer on the same driver.
 

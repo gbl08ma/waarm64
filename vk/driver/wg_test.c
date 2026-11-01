@@ -2614,8 +2614,8 @@ wgt_fl_done(uint32_t i)
  * 34: dispatched indirectly with its arguments (1, 1, 1) at [512, 524) of the result: the same at [0, 16);
  * 35: `a` at [0, 16) of the result, the words `b` writes (1, 2, 3, 4 written by the submit): 101 to 104 there.
  * 20: as 7 (4,096 bytes) inside an occlusion query begun and ended outside a render pass, its result copied to
- *    [1024, 1028): v[k] at [0, 16) and 1 there (passing; the L5-L6a review's finding 3: the query's write was recorded
- *    with the compute pass open, which invalidated the submit).
+ *    [1024, 1028): v[k] at [0, 16) and 0 there (no pass in it; the L5-L6a review's finding 3: the query's write was
+ *    recorded with the compute pass open, which invalidated the submit).
  * 21: a render pass (a 4×4 RGBA8 image, cleared) with an occlusion query of a pool of four begun and ended in it, the
  *    pool destroyed as soon as the submit is made, and 32 blocks of 32 bytes allocated at once (one in the place of the
  *    pool's values, freed with its other arrays) filled 0xab (`wgt_misc_canary`): still 0xab once the fence signals (the L5-L6a review's finding 8: the completion

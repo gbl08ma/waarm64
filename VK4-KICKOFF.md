@@ -192,7 +192,13 @@ T2–T14; the rest of the order is judgement, said with each.
   attachment, indirect fans, the M4's 7 Metal-only failures, vkQuake's 1.7%; T1's smaller causes (clears of image
   layers, 16-bit packed colour formats beside depth refused at creation, `int16_t` in storage buffers, push
   descriptors pushed twice, the M4's `descriptorset_random.sets4`). *Start:* backlog "Queries",
-  "Rendering", "Formats", "The M4's own failures", "vkQuake's frames".
+  "Rendering", "Formats", "The M4's own failures", "vkQuake's frames". **Done 2026-10-31** (REPORT.md "VK4 T12"): a pass of several layers
+  replayed a layer at a time for its clears and load ops; feedback loops through a copy in a cut of the WebGPU pass; indirect fans worked out in a compute pass; queries of
+  several pools and queries spanning passes; `unclippedDepth` only where not clipping; multisampled arrays as a texture a layer in the worker (what fails is formats WebGPU doesn't
+  multisample, 124 of `image.mutable` and T7's 48); `R5G6B5`, `A1R5G5B5`, `B4G4R4A4` and their orders, which Vulkan requires and the device lacked, as `rgba8unorm` with packing copies;
+  the M4's 46 `generate_mipmaps.from_previous_level` were an interpolated coordinate, fixed; vkQuake's 1.7% is lavapipe filtering `NEAREST` anisotropic samplers linearly (109 bytes off
+  when forced), kept as it is. 97 failures of the sample's 780 supported cases to 10 of 1,780; the list 23,083 → 26,002, all new cases passing on the M4. `int16_t` and `numcalls2` had
+  gone already. Left: backlog "Multisampled image clears", "Packed 16-bit formats' leftovers", "Multisampled arrays' leftovers", "The M4's own failures", blends with both constants.
 
 - **T18. Compressed images whose size isn't whole blocks** (M; found by T1: 102 failures on each host): the
   texture is padded to whole blocks (WebGPU's rule for level 0), so sampling reads a larger texture than the image

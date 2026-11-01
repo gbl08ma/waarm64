@@ -36,6 +36,13 @@ static const struct wg_texture_format table[] = {
    F(R8G8B8A8_SINT, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | ST),
    F(B8G8R8A8_UNORM, "bgra8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_BGRA8),
    F(B8G8R8A8_SRGB, "bgra8unorm-srgb", 4, 1, 1, CS | FL | RB),
+   F(R5G6B5_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED | WG_FMT_OPAQUE),
+   F(B5G6R5_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED | WG_FMT_OPAQUE),
+   F(A1R5G5B5_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(R5G5B5A1_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(B5G5R5A1_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(R4G4B4A4_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(B4G4R4A4_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
    F(R16_UINT, "r16uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R16_SINT, "r16sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),
    F(R16_SFLOAT, "r16float", 2, 1, 1, CS | FL | RB | T1S),
@@ -279,7 +286,8 @@ wg_view_formats_features(const struct wg_texture_format *f, const VkFormat *list
    VkFormatFeatureFlags all = 0;
    for (uint32_t i = 0; i < FORMAT_COUNT; i++) {
       const struct wg_texture_format *v = wg_texture_format(formats[i].vk);
-      if (!v || v->bytes != f->bytes || v->bw != f->bw || v->bh != f->bh || (v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
+      if (!v || v->bytes != f->bytes || v->bw != f->bw || v->bh != f->bh ||
+          (v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)))
          continue;
       bool listed = !list;
       for (uint32_t k = 0; list && k < count; k++)
@@ -322,7 +330,7 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
          o |= VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT;
    }
    *optimal = o;
-   *linear = f && f->bw == 1 && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL))
+   *linear = f && f->bw == 1 && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED))
                 ? o & (VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
                 : 0;
    /* A multi-planar format (VK3 L7.2): its planes sampled through a YCbCr conversion and copied, optimal tiling only;
