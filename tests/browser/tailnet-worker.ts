@@ -6,7 +6,8 @@
 // echo backend, for tests/net-guest.test.ts; with `adapters` (and `page`), that many cards, each on its own gateway and
 // echo lease (docs/network-adapters.md §4); with `ports`, a card per port on the page's end (its leases are the
 // page's to send: the primary's with the default route, the others' with their network's routes only), as the page's
-// machine with several adapters has them (a two-minute lease).
+// machine with several adapters has them (a two-minute lease); with `frames` (and `page`), one card on a frame port
+// with no gateway in the page, for the local helper (tests/net-local.test.ts).
 import { bootVm, Exit } from '../../web/vm.ts';
 import { SEVERAL_ADAPTERS } from '../../web/devices.ts';
 import { credentialFiles, MACHINES } from '../../web/app/machine.ts';
@@ -18,7 +19,7 @@ const get = async (url: string) => {
   return new Uint8Array(await r.arrayBuffer());
 };
 
-self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[]; page?: boolean; adapters?: number; serial: MessagePort; overlay?: string }>) => {
+self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; frames?: MessagePort; ports?: MessagePort[]; page?: boolean; adapters?: number; serial: MessagePort; overlay?: string }>) => {
   try {
     const m = MACHINES.debian;
     const [wasm, kernel] = await Promise.all([
@@ -29,7 +30,9 @@ self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[
       firmware: { fwCfg: credentialFiles([...UNATTENDED, ...(e.data.page ? m.network.credentials : [])]) },
       devices: [
         { type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay },
-        ...(e.data.ports
+        ...(e.data.frames
+          ? [{ type: 'net' as const, adapter: e.data.frames }]
+          : e.data.ports
           ? e.data.ports.map((ip, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, ...SEVERAL_ADAPTERS, adapter: { ip } }))
           : e.data.adapters
           ? Array.from({ length: e.data.adapters }, (_, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, adapter: 'echo' as const }))

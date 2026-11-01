@@ -74,6 +74,15 @@ versions), all permissive: `tailscale.com` v1.102.5 (BSD-3-Clause); `github.com/
 (BSD-3-Clause). Go's `wasm_exec.js` (BSD-3-Clause) is copied next to the module. Re-run the listing
 when bumping the pin.
 
+## The local network helper (`net/webpc-net`)
+
+A program of its own (docs/plans/networking-local.md), in this repository while it is young and moving to
+`github.com/gbl08ma/webpc-net` later, so its dependencies are listed in its own
+[net/webpc-net/THIRD_PARTY.md](net/webpc-net/THIRD_PARTY.md) (checked 2026-11-01, all permissive): gvisor-tap-vsock
+(Apache-2.0) at a commit of the unmerged IPv6 pull request [#745](https://github.com/containers/gvisor-tap-vsock/pull/745)
+from its author's fork (`go.mod`'s `replace`), gVisor (Apache-2.0), coder/websocket (ISC), and what they link.
+Nothing in it is copied from another project. The page's side (web/local-net.ts) is ours and imports nothing.
+
 ## Development dependencies (not distributed)
 
 | Package | Version | License |

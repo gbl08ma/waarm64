@@ -72,6 +72,11 @@ WebSocket upgrades (a 20-line Node script will do; there is no Caddy), a userspa
 `WEBPC_TAILNET_SCRIPT` at a script that prints `tailnet.sh`'s `up` output, and put a `podman` shim
 first on `PATH` that answers `exec webpc-peer tailscale ...` with the native `tailscale`.
 
+**The local helper** (`net/webpc-net`, docs/plans/networking-local.md) builds and tests here (Go fetches its
+pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` passed in Chromium (2026-11-01: DNS,
+`apt-get update` and TCP straight out, which the container allows). The container has **no IPv6 at all** (no
+`AF_INET6` sockets): the helper's probe and the guest's IPv6 out are tested only for being off here.
+
 ## Images
 
 `images/build.sh` needs Podman and native arm64, so the cloud can't build Alpine, Buildroot, the

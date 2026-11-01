@@ -16,7 +16,8 @@ export WEBPC_TAILNET=${WEBPC_TAILNET-$(command -v podman > /dev/null && echo 1)}
 export WEBPC_TAILCAT=${WEBPC_TAILCAT-$(command -v go > /dev/null && echo 1)}
 step tailscale;   node --disable-warning=ExperimentalWarning tools/tailscale.ts # the Network menu's client, and the hand-over test's Go one
 step 'network tests'
-node --disable-warning=ExperimentalWarning --test tests/net-guest.test.ts tests/page-network.test.ts tests/net-tailnet.test.ts tests/tailcat-browser.test.ts tests/net-tailcat.test.ts
+(cd net/webpc-net && go vet ./... && go test -race -count=1 ./...) # the local helper on its own (needs Go)
+node --disable-warning=ExperimentalWarning --test tests/net-guest.test.ts tests/page-network.test.ts tests/net-tailnet.test.ts tests/tailcat-browser.test.ts tests/net-tailcat.test.ts tests/net-local.test.ts
 # The tailnet client without a guest: in Node (a node the Go client kept handed over both ways, the
 # data plane) and in the page. One at a time: each brings up the test tailnet (tests/net/tailnet.sh)
 # on the same ports as the guest's test above.

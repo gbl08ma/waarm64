@@ -51,7 +51,10 @@ for A/B measurements; docs/jit.md "Sharing"), `?fma=emul` (the JIT's FMA forms e
 A/B measurements: docs/jit.md "Floating point"), `?growcore` (the core on the memory's growable import instead of its
 exact-limits copy, for A/B measurements: [abi.md](abi.md) "A fixed-size memory"), `?jitmb=MiB` (the JIT's code cache budget, over a stored machine's
 own: `VmConfig.jit_bytes`, docs/jit.md "Memory"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
-its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page").
+its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page"),
+`?localnet=ws://127.0.0.1:<port>/<token>` or `#net=…` (the local helper's link, read at a machine's start: its first
+adapter's frames go straight to the helper, no gateway in the page and no connection, the Network menu unaware;
+web/local-net.ts, the spike of [plans/networking-local.md](plans/networking-local.md) L0, which L2 replaces).
 
 ## The machines
 
