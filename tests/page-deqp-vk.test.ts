@@ -18,10 +18,9 @@ const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh
 // for good) fails the test in minutes, with the guest's serial log kept.
 const LIMIT_S = 2400;
 
-// The direct list runs as this many machines at once, each on its own server, browser and page. One machine peaks at
-// 8.9 GiB; two, on the dev VM's 14 GiB under an 11 GiB cap, were killed at 16 minutes (twice, the second with
-// SHARD_RAM_MIB): the list's memory-heavy stretch reaches both at once. So two want more RAM than that, and at least 14
-// GiB of `MemoryMax` (unmeasured: docs/testing.md "dEQP-VK"). WEBPC_DEQP_VK_SHARDS says otherwise.
+// The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes, one machine ~38,
+// at 13.7 GiB (one machine: 8.9). The list's memory-heavy stretch reaches both at once, at ~16 minutes: under an 11 GiB
+// cap they were killed there. WEBPC_DEQP_VK_SHARDS says otherwise.
 const SHARDS = Number(process.env.WEBPC_DEQP_VK_SHARDS ?? (availableParallelism() >= 8 && totalmem() >= 17 * 2 ** 30 ? 2 : 1));
 // Cases go to the shards in blocks: alternate ones would have every case follow others than the list's, which some
 // failures depend on (docs/testing.md "dEQP-VK"), and a shard of the list's first half would have its slow groups.

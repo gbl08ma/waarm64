@@ -36,7 +36,7 @@ its doc, never here. Facts most sessions need:
 
 ## Development environment
 
-Development happens in the Lima VM **`dev`** (openSUSE Tumbleweed aarch64, 8 vCPUs, 14 GiB) on the M4 Mac mini
+Development happens in the Lima VM **`dev`** (openSUSE Tumbleweed aarch64, 8 vCPUs, 18 GiB) on the M4 Mac mini
 (`macmini.lan`), not on the x86_64 desktop (which the user needs for other work). The repo is `~/Development/webpc`
 (remote `origin` on GitHub). Real hardware is the `oracle` VM on the same Mac
 (`ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`); real-GPU runs go to the Mac host through
@@ -59,7 +59,7 @@ scripts/ci-graphics.sh         # graphics on Debian (~3 min): also for the displ
 scripts/ci-machines.sh         # machines as the unit on Debian (~3.5 min): also for stored machines, their disks (stored, blank, ramdisk, overlays), their snapshots, the Machines page, track ends
 scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, alone): also when a change touches sound (docs/testing.md)
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
-scripts/ci-deqp-vk.sh          # dEQP-VK's pass list and the programs' replays on the page (~40 min): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus), Vulkan track ends; needs images/deqp/build.sh vk
+scripts/ci-deqp-vk.sh          # dEQP-VK's pass list on two machines and the programs' replays on the page (~28 min, under a 14 GiB `MemoryMax`): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus), Vulkan track ends; needs images/deqp/build.sh vk
 scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
 scripts/ci-fp.sh               # the FP suite in the guest (~5 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
@@ -149,7 +149,7 @@ their code.**
   experiment 9). Bound every wait too; if a run's CPU or progress doesn't match its expected time,
   kill it and investigate.
 - **Cap memory on heavy runs** (`npm test`, `scripts/ci.sh`, multi-machine experiments):
-  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>`. A leak
+  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>` (14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
   once grew a Node test process to 7 GB and the VM's OOM kill took the whole Claude session down
   (M8 loop 8); a capped scope dies alone. **Subagents cap every `node` and `cargo` run**, small
   ones too, with caps that sum under the VM's memory (a "pure TypeScript" unit test run uncapped

@@ -52,7 +52,7 @@ only edits docs: `.md` files or code comments):
   all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2`, `gles3` or `vk`, the last with `VIRGL_GPU=virgl,vulkan`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
-- **`scripts/ci-deqp-vk.sh`** (~40 min; `WEBPC_DEQP_VK_SHARDS=2`, the default past 17 GiB of RAM, splits the list across two machines in blocks of 256, which on the 14 GiB VM were killed at its 11 GiB cap, at the list's memory-heavy stretch at ~16 min) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
+- **`scripts/ci-deqp-vk.sh`** (~28 min, 13.7 GiB at its peak: run it under a 14 GiB `MemoryMax`; two machines by default past 17 GiB of RAM, `WEBPC_DEQP_VK_SHARDS` to say otherwise, the list split in blocks of 256, each machine with 1,536 MiB of guest RAM; one machine takes ~40 min and 8.9 GiB; two under an 11 GiB cap were killed at the list's memory-heavy stretch at ~16 min, one GPU process going 0.9 → 2.3 GiB) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
   every case expected to pass, one guest boot; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
   second boot), then `page-venus` (the programs' captures against lavapipe's frames,
   also ci-graphics.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK); it must pass too when a change touches Vulkan (the renderer's driver

@@ -7,11 +7,11 @@ essentials and the CI scripts; this page has the rest. Cloud sessions differ: [c
 
 Development happens in the Lima VM **`dev`** on the M4 Mac mini (`macmini.lan`: 10 cores, 24 GiB, macOS 26), not on
 the x86_64 desktop (which the user needs for other work).
-- openSUSE Tumbleweed aarch64, Lima `vz`, 8 vCPUs, 14 GiB, 150 GiB disk, no host mounts, from
+- openSUSE Tumbleweed aarch64, Lima `vz`, 8 vCPUs, 18 GiB, 150 GiB disk, no host mounts, from
   `template:experimental/opensuse-tumbleweed` with Lima's containerd off. Home is `/home/gabriel.guest`; the repo is
   `~/Development/webpc` (remote `origin` on GitHub).
 - From outside: `ssh macmini.lan /opt/homebrew/bin/limactl shell dev`. Inside, `macmini.lan` points at the Mac host
-  (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 8 GiB) shares the Mac:
+  (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 4 GiB) shares the Mac:
   `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
 - The Mac host runs real-GPU benchmarks from `~/webpc-gpu-bench` (`bench/gpu/sway-mac.sh` copies what they need;
   nothing is installed there; its disk has little room: keep it small).
