@@ -882,11 +882,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
     (WebGPU's vertex stage has no writable storage; were it offered, a draw split by face for its stencil state, whose
     vertex stage runs twice, would double its stores: vk/README.md "Commands"). A submit of signals alone behind held
-    ones is held too. **A program that queues 16 or more submits that wait for its own later signal, from the thread
-    that sends the signal, hangs in `vkQueueSubmit`** (VK4 T6; none seen, dEQP's largest is 12): each held batch's fence
-    holds a slot of the guest's control queue, 16 on the page, and a full queue blocks the ioctl. A larger queue isn't
-    the fix: that queue being full is what paces a compositor (docs/devices.md, "Flush replies are paced"), and 256 of
-    them would put 4 s of replies ahead of each fence. Retiring fences early past a bound would bring T6's bug back.
+    ones is held too. Past 4 held ring fences with none retired for 250 ms a fence gives its queue entry back and is signalled by the next
+    one of its ring with an entry (VK4 R1, docs/devices.md "Venus"): **a program waiting in the guest for such a fence
+    alone, while a later fence of that ring waits for what it does next, waits for ever** (needs that stall first; none
+    seen).
+    A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
+    are paced"), and 256 of them would put 4 s of replies ahead of each fence.
   - **Device addresses' leftovers** (VK4 T7; vk/README.md "Device addresses"): all address memory is one storage binding
     away, so an allocation with the flag past `maxStorageBufferBindingSize` fails though the heap has room: DXVK puts every
     allocation there (no shader of it reads through pointers, so it needs none of this but the place). Every use of a

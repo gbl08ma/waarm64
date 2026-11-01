@@ -56,6 +56,22 @@ test("a blob's bytes move into the window at its map and back at its unmap", { s
   assert.equal(v.stats.contexts, 1);
 });
 
+// VK4 R1: a fence waits for itself: a queue's work may wait for what the guest does later, and neither another
+// context's fences nor one sent after it on its ring may wait for that.
+test("a fence is retired by itself, not by others of its ring or context", { skip }, async () => {
+  const { v } = await renderer();
+  v.call({ t: 'vctx', id: 7, create: true, name: 'a' });
+  v.call({ t: 'vctx', id: 8, create: true, name: 'b' });
+  v.wake = () => {}; // no poll: the fences stay pending
+  assert.equal(v.retired(7, 1, 1n), true, 'not sent');
+  v.call({ t: 'vsubmit', ctx: 7, bytes: new Uint8Array(0), fence: { flags: 3, ring: 1, id: 1n } });
+  assert.equal(v.retired(7, 1, 1n), false);
+  assert.equal(v.retired(7, 2, 1n), true, 'another ring of the context');
+  assert.equal(v.retired(8, 1, 1n), true, 'the same ring of another context');
+  v.call({ t: 'vctx', id: 7, create: false });
+  assert.equal(v.retired(7, 1, 1n), true, 'a context destroyed takes its fences');
+});
+
 // A virtio reset (a guest reboot) ends every Venus context with its blobs: the new guest makes its contexts again under
 // the same ids (vkr refuses an id it has), and a blob of the old one is gone.
 test('a virtio reset ends the contexts and their blobs', { skip }, async () => {

@@ -5,7 +5,7 @@
 // (web/virgl-screen.ts), and answers fences once everything before them has run. With video, what follows a
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withVideo } from './virgl-caps.ts';
-import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type VenusCall, type WorkerCall } from './virgl-host.ts';
+import { CallQueue, clock, FenceGate, fenceLane, fenceSettled, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type VenusCall, type WorkerCall } from './virgl-host.ts';
 import { deviceRequest, l9Suspects, subgroupsRight, type VenusGpuStats } from './venus-gpu.ts';
 import { VenusRenderer, type VenusPoll, type VenusTimes } from './venus-host.ts';
 import { idbBackend, ShaderCache } from './venus-cache.ts';
@@ -88,7 +88,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
   let fences = 0, fenceMs = 0, fenceMaxMs = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
-  // A fence waits for the query results before it (FenceGate).
+  // A fence waits for the query results before it, or a Venus fence for its ring's work (FenceGate).
   const fenced = new FenceGate<{ id: number; at: number }>((c) => {
     const now = clock();
     fences++;
@@ -112,11 +112,6 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     } catch (err) {
       console.warn('venus: a call failed', c.t, err);
     }
-  };
-  const settled = () => {
-    const queries = renderer.queriesSettled();
-    const vk = venus?.settled();
-    return () => queries() && !venusBacklog?.length && (!vk || vk());
   };
   let held = 0;
   const poll = () => {
@@ -183,7 +178,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       return;
     }
     if (c.t === 'fence') {
-      fenced.fence(c, settled());
+      fenced.fence(c, fenceSettled(c.scope, { queries: () => renderer.queriesSettled(), backlog: () => !!venusBacklog?.length, venus: () => venus }), fenceLane(c.scope));
       if (fenced.waiting && !pollTimer) poll();
       return;
     }

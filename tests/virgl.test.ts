@@ -12,7 +12,7 @@ import { Gpu, gpuBackend } from '../web/gpu.ts';
 import { decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
-import { FenceGate, localHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
+import { clock, FenceGate, fenceSettled, localHost, portHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
 import { VirglRenderer, readbackOf, toHalf, type RendererSnapshot } from '../web/virgl-renderer.ts';
 import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
@@ -571,6 +571,104 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
   gate.release();
   assert.deepEqual(answered, ['before', 'after', 'later']);
   assert.equal(new DataView(ram.buffer).getUint32(0, true), 1, 'the result is written before the fence is answered');
+});
+
+// VK4 R1: a submit held for a signal the guest sends later (a CPU vkSignalSemaphore) holds its ring's fences only.
+test('fences: a held fence of one lane holds its lane, not the others or the unnamed one', () => {
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((f) => answered.push(f));
+  let a = false, b = false;
+  gate.fence('held', () => a, '3:1');
+  gate.fence('virgl', () => true);
+  gate.fence('other ring', () => true, '3:2');
+  gate.fence('other context', () => b, '4:1');
+  gate.fence('behind it', () => true, '3:1');
+  assert.deepEqual(answered, ['virgl', 'other ring']);
+  gate.fence('virgl later', () => true);
+  assert.deepEqual(answered, ['virgl', 'other ring', 'virgl later']);
+  assert.equal(gate.waiting, 3);
+  b = true;
+  gate.release();
+  assert.deepEqual(answered.slice(3), ['other context'], 'each lane on its own');
+  assert.equal(gate.oldest, undefined, 'the oldest held of the unnamed lane: the others wait for what the guest does');
+  a = true;
+  gate.release();
+  assert.deepEqual(answered.slice(4), ['held', 'behind it'], 'in order in a lane');
+});
+
+test('fences: a fence in the unnamed lane still waits for those before it there', () => {
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((f) => answered.push(f));
+  let ready = false;
+  gate.fence('first', () => ready);
+  gate.fence('second', () => true);
+  gate.fence('lane', () => true, '1:1');
+  assert.deepEqual(answered, ['lane']);
+  assert.equal(gate.oldest, 'first');
+  ready = true;
+  gate.release();
+  assert.deepEqual(answered, ['lane', 'first', 'second']);
+});
+
+test('fences: what a fence waits for follows its scope', () => {
+  const asked: unknown[] = [];
+  let queries = false, backlog = false, retired = new Set<bigint>();
+  const venus = { retired(ctx: number, ring: number, id: bigint) { asked.push([ctx, ring, id]); return retired.has(id); } };
+  const host = { queries: () => () => queries, backlog: () => backlog, venus: () => venus as typeof venus | undefined };
+  const virgl = fenceSettled(undefined, host);
+  assert.equal(virgl(), false, 'virgl\'s waits for its queries');
+  queries = true;
+  assert.equal(virgl(), true, 'and for nothing of Venus\'s');
+  assert.deepEqual(asked, []);
+  backlog = true;
+  assert.equal(virgl(), false, 'but the calls waiting for the renderer are before it');
+  const ring = fenceSettled({ ctx: 3, ring: 1, id: 5n, ringed: true }, host);
+  retired = new Set([5n]);
+  assert.equal(ring(), false, 'its submit hasn\'t run');
+  backlog = false;
+  queries = false;
+  assert.equal(ring(), true, 'a ring\'s fence waits for no queries');
+  assert.deepEqual(asked, [[3, 1, 5n]]);
+  host.venus = () => undefined;
+  assert.equal(fenceSettled({ ctx: 3, ring: 1, id: 6n, ringed: true }, host)(), true, 'no renderer, nothing to wait for');
+});
+
+// dEQP's timeline_semaphore.device_host: a fence checked late, behind another of its ring, once took in the fences sent
+// after it, and one of those waited for what the guest does after this one: every case hung.
+test('fences: a fence held behind another of its ring doesn\'t wait for those after it', () => {
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((f) => answered.push(f));
+  const pending = new Set([1n, 2n, 3n]);
+  const venus = { retired: (_c: number, _r: number, id: bigint) => !pending.has(id) };
+  const host = { queries: () => () => true, backlog: () => false, venus: () => venus };
+  const fence = (id: bigint) => gate.fence(`f${id}`, fenceSettled({ ctx: 3, ring: 1, id, ringed: true }, host), '3:1');
+  fence(1n);
+  fence(2n);
+  fence(3n); // held for the guest's signal, which follows f2's answer
+  pending.delete(1n);
+  gate.release();
+  pending.delete(2n);
+  gate.release();
+  assert.deepEqual(answered, ['f1', 'f2']);
+});
+
+test('portHost: fences answered out of order end only themselves', async () => {
+  const ch = new MessageChannel();
+  const host = portHost(ch.port1);
+  const sent: { id: number; scope?: unknown }[] = [];
+  ch.port2.onmessage = (e) => { sent.push(e.data); };
+  const done: string[] = [];
+  void host.fence({ ctx: 3, ring: 1, id: 1n, ringed: true })!.then(() => done.push('ring'));
+  void host.fence()!.then(() => done.push('virgl'));
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(sent.map((s) => s.scope), [{ ctx: 3, ring: 1, id: 1n, ringed: true }, undefined]);
+  ch.port2.postMessage({ t: 'fenced', id: sent[1].id, at: clock() });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(done, ['virgl'], 'the ring\'s stays');
+  ch.port2.postMessage({ t: 'fenced', id: sent[0].id, at: clock() });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(done, ['virgl', 'ring']);
+  ch.port1.close();
 });
 
 test('virgl renderer: a query destroyed before its result holds no fence (dEQP-GLES3 hung at a context\'s end)', () => {

@@ -538,9 +538,20 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   may wait for the guest's own signal (a held submit, vk/README.md "Waits before their signal"), and held in order it
   held what follows, including the unfenced `SUBMIT_3D` every queue submit also sends, so 8 such submits filled the page's
   16 entries and the guest stopped in the kernel before it signalled. The kernel takes fences of different rings in any
-  order. A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
-  which happens once the GPU's work before it is done (`VenusRenderer.settled`: the GPU worker holds the device's fence
-  until then). The render stats (`?displaystats`) carry the way back a second (`venus`: submits done in, polls apart,
+  order. A program that queues work waiting for its own signal, from the thread that sends it, could fill the queue and stop
+  that thread in the kernel, so while more than 4 ring fences are held and none has retired for 250 ms (`RING_SLOTS`,
+  `RING_STALL_MS`) the second newest of the ring with most is answered with no fence flag: its entry comes back, its
+  fence stays unsignalled in the kernel, and the next fence of that ring to be answered signals it (a fence signals the
+  earlier ones of its dma-fence context). The newest of a ring always keeps its entry. Only when stalled: giving entries
+  back whenever more than 8 were held hung dEQP's `timeline_semaphore.device_host`, whose guest waits for such a fence
+  alone while its fences go on retiring.
+  A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
+  which happens once the GPU's work before it on that context's ring is done (`VenusRenderer.retired`: the GPU worker
+  holds the device's fence until then). A fence names its context, ring and id (`FenceScope`) and waits for itself alone, not for what's sent after it on its ring, and a ring is a lane of the GPU
+  worker's `FenceGate`, so a held submit holds its own ring's fences only: virgl's fences wait for virgl's queries,
+  and a hold of the device's (a blob's create, map, unmap or unref, a context's end) for nothing but the calls before
+  it. A Venus fence without `FLAG_INFO_RING_IDX` (Mesa's Venus sends none) is of the guest's global dma-fence context
+  with virgl's, and stays in their order. The render stats (`?displaystats`) carry the way back a second (`venus`: submits done in, polls apart,
   nudges, fences retired in, and a submit's parts: encoding, `queue.submit`, writes, passes, draws, the GPU's ms with
   `?gpu=vkgputime`; `?gpu=vknudge=<ms>` sets the nudges' period, VK3 L2b). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
   Calls that come before the module is ready wait in a backlog, and so does the device's fence. The driver's

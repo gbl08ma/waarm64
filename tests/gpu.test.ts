@@ -624,6 +624,106 @@ test('gpu: a ring fence\'s reply is out of line: what follows it is answered whi
   assert.deepEqual(done, [12, 10], 'nothing is answered after a reset');
 });
 
+test('gpu: a Venus fence names its context and ring to the host; virgl\'s and a blob\'s hold name none', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
+  const scopes: unknown[] = [];
+  b.gpu.host = { call() {}, fence: (scope) => { scopes.push(scope); return new Promise<void>(() => {}); } };
+  const send = (w0: number, c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] }); };
+  send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
+  send(2, ctxCmd(4, V.CTX_CREATE, 0, 1));
+  const fenced = (ctxId: number, flags: number) => {
+    const s = ctxCmd(ctxId, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
+    const v = new DataView(s.buffer);
+    v.setUint32(4, flags, true);
+    v.setBigUint64(8, 9n, true);
+    v.setUint8(20, 2);
+    return s;
+  };
+  send(3, fenced(3, 1 | 2));
+  send(4, fenced(3, 1));
+  const empty = ctxCmd(4, V.SUBMIT_3D, 0, 0);
+  new DataView(empty.buffer).setUint32(4, 1, true);
+  send(5, empty);
+  assert.deepEqual(scopes, [{ ctx: 3, ring: 2, id: 9n, ringed: true }, { ctx: 3, ring: 0, id: 9n, ringed: false }, undefined], 'virgl\'s names none');
+});
+
+// A queue's work may wait for a signal the guest sends after it, from the thread that queued it; each ring fence held
+// takes an entry of the page's 16, so 16 stopped that thread in the kernel (backlog "Synchronization", VK4 R1).
+test('gpu: ring fences stalled past the slots give their entries back, the next fence of their ring standing for them', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const done: number[] = [];
+  const replies = new Map<number, { flags: number; id: bigint }>();
+  const at = (w0: number) => 0x1000 + w0 * 64;
+  const reply = (w0: number) => { const v = new DataView(ram.buffer, at(w0)); return { flags: v.getUint32(4, true), id: v.getBigUint64(8, true) }; };
+  const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); replies.set(w0, reply(w0)); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
+  const retire: (() => void)[] = [];
+  b.gpu.host = { call() {}, fence: () => new Promise<void>((r) => retire.push(r)) };
+  const send = (w0: number, c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: at(w0), len: 64, mem: 0 }] }); };
+  send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
+  const ringed = (id: bigint) => {
+    const s = ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
+    const v = new DataView(s.buffer);
+    v.setUint32(4, 1 | 2, true);
+    v.setBigUint64(8, id, true);
+    v.setUint8(20, 1);
+    return s;
+  };
+  done.length = 0;
+  replies.clear();
+  for (let i = 1; i <= 40; i++) assert.equal(send(100 + i, ringed(BigInt(i))), undefined);
+  assert.equal(done.length, 0, 'no entry comes back before a stall: the guest may wait for any of these fences alone');
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(done.length, 40 - 4, 'stalled, at most 4 entries stay held, whatever the number of fences');
+  for (const r of replies.values()) assert.equal(r.flags & 1, 0, 'a reply given back says no fence: its fence hasn\'t retired');
+  assert.ok(!done.includes(140), 'the newest keeps its entry: it stands for those before it');
+  assert.ok(!done.includes(101), 'the oldest keeps its own');
+  done.length = 0;
+  retire[0]();
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(done, [101]);
+  // In order, as the worker answers them; a fence without an entry is said by the next with one.
+  for (let i = 1; i < 40; i++) retire[i]();
+  await new Promise((r) => setTimeout(r));
+  assert.equal(done.length, 4, 'those that kept their entries');
+  assert.equal(done.at(-1), 140);
+  const last = replies.get(140)!;
+  assert.deepEqual([last.flags & 1, last.id], [1, 40n], 'the last reply is the newest fence\'s, which signals every earlier one of its ring');
+  b.reset();
+});
+
+test('gpu: ring fences that go on retiring keep their entries, however many are held', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const done: number[] = [];
+  const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
+  const retire: (() => void)[] = [];
+  b.gpu.host = { call() {}, fence: () => new Promise<void>((r) => retire.push(r)) };
+  const send = (w0: number, c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] }); };
+  send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
+  for (let i = 1; i <= 12; i++) {
+    const s = ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
+    const v = new DataView(s.buffer);
+    v.setUint32(4, 1 | 2, true);
+    v.setBigUint64(8, BigInt(i), true);
+    v.setUint8(20, 1);
+    send(100 + i, s);
+  }
+  done.length = 0;
+  for (let i = 0; i < 4; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    retire[i]();
+  }
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(done, [101, 102, 103, 104], 'only those retired');
+  b.reset();
+});
+
 // ---- virgl on the null renderer (web/gpu.ts `virgl`, web/virgl.ts) ----
 
 const V = { CAPSET_INFO: 0x108, CAPSET: 0x109, CTX_CREATE: 0x200, CTX_DESTROY: 0x201, CTX_ATTACH: 0x202, CTX_DETACH: 0x203, CREATE_3D: 0x204, TO_HOST_3D: 0x205, FROM_HOST_3D: 0x206, SUBMIT_3D: 0x207 };

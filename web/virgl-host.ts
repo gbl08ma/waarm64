@@ -54,10 +54,19 @@ export type VenusCall =
 /** What a host's `save` answers: the renderer's state, or why it can't be saved now. */
 export type HostSave = { state: RendererSnapshot } | { refused: string };
 
+/**
+ * A Venus fence: its context, ring and id. It stands for that ring's work, and only that: another client's fence doesn't
+ * depend on it (and may not wait for it: a queue's work can wait for what the guest does later, vk/README.md "Waits
+ * before their signal"). `ringed`: the guest said the ring (`FLAG_INFO_RING_IDX`), so the fence is of a dma-fence
+ * context of its own in the guest and may be answered out of the device's order; one without shares the virgl fences'
+ * context, whose answers must stay in order (a later one signals the earlier ones).
+ */
+export type FenceScope = { ctx: number; ring: number; id: bigint; ringed: boolean };
+
 export interface VirglHost {
   call(c: HostCall): void;
-  /** Resolves when every call before it has run; undefined if they all have already (an in-thread host). */
-  fence(): Promise<void> | undefined;
+  /** Resolves when every call before it has run; undefined if they all have already (an in-thread host). With `scope`, a Venus fence: `FenceScope`. */
+  fence(scope?: FenceScope): Promise<void> | undefined;
   /** A resource's bytes as the guest would store them (`VirglRenderer.readResource`), once every call before it has run. */
   read?(res: number): Promise<Uint8Array | null>;
   /** The renderer's state for a snapshot, once every call before it has run and its queries have their results. */
@@ -98,30 +107,58 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
 }
 
 /**
- * Fences in order, each answered once the occlusion queries ended before it have their results: GL's are ready at a
- * fence (a `glFinish` makes them available), WebGL's only after the task that ended them, so the GPU worker holds a
- * fence while they're pending and releases it from its query poll (dEQP-GLES3 occlusion_query).
+ * Fences in order within a lane, each answered once what it waits for has happened. Virgl's (the unnamed lane): GL's
+ * occlusion queries are ready at a fence (a `glFinish` makes them available), WebGL's only after the task that ended
+ * them, so the GPU worker holds a fence while they're pending and releases it from its query poll (dEQP-GLES3
+ * occlusion_query). A ring of Venus's is a lane of its own: its fences wait for the ring's work, and that can be as long
+ * as the guest likes, so nothing else may wait with them (VK4 R1).
  */
 export class FenceGate<F> {
-  private held: { f: F; settled: () => boolean }[] = [];
+  private held: { f: F; settled: () => boolean; lane?: string }[] = [];
   private readonly answer: (f: F) => void;
   constructor(answer: (f: F) => void) { this.answer = answer; }
-  /** A fence after the calls so far; `settled` says whether the queries they ended have their results. */
-  fence(f: F, settled: () => boolean) {
-    if (!this.held.length && settled()) return this.answer(f);
-    this.held.push({ f, settled });
+  /** A fence after the calls so far; `settled` says whether what it waits for has happened. */
+  fence(f: F, settled: () => boolean, lane?: string) {
+    if (!this.held.some((h) => h.lane === lane) && settled()) return this.answer(f);
+    this.held.push({ f, settled, lane });
   }
-  /** Answers the held fences whose queries have settled, in order. */
+  /** Answers the held fences that have settled, in order in each lane. */
   release() {
-    while (this.held.length && this.held[0].settled()) this.answer(this.held.shift()!.f);
+    const stopped = new Set<string | undefined>();
+    this.held = this.held.filter((h) => {
+      if (stopped.has(h.lane) || !h.settled()) {
+        stopped.add(h.lane);
+        return true;
+      }
+      this.answer(h.f);
+      return false;
+    });
   }
   get waiting() { return this.held.length; }
-  /** The oldest fence held. */
-  get oldest(): F | undefined { return this.held[0]?.f; }
+  /** The oldest fence held in the unnamed lane (a ring's may wait for the guest as long as it likes). */
+  get oldest(): F | undefined { return this.held.find((h) => h.lane === undefined)?.f; }
+}
+
+/** The lane of `FenceGate` a fence goes in. */
+export const fenceLane = (scope?: FenceScope) => (scope?.ringed ? `${scope.ctx}:${scope.ring}` : undefined);
+
+/**
+ * What a fence waits for: every earlier call to have run (`backlog`: Venus's wait for its module) and, by its scope,
+ * its own retirement (a ring's are in order, and its lane keeps them so; nothing sent after it: a later fence of the
+ * ring may wait for what the guest does once this one is answered) or virgl's queries. A hold of the device's (a blob's,
+ * a context's end) has no scope: those calls run at once, and they mustn't wait for a queue's work.
+ */
+export function fenceSettled(scope: FenceScope | undefined, host: { queries(): () => boolean; backlog(): boolean; venus(): { retired(ctx: number, ring: number, id: bigint): boolean } | undefined }) {
+  const queries = scope ? undefined : host.queries();
+  return () => {
+    if (host.backlog()) return false;
+    if (!scope) return queries!();
+    return host.venus()?.retired(scope.ctx, scope.ring, scope.id) ?? true;
+  };
 }
 
 /** What the GPU worker takes from the device worker's port: the calls, fences and reads (`portHost`). */
-export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number } | { t: 'read'; id: number; res: number } | { t: 'save'; id: number };
+export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number; scope?: FenceScope } | { t: 'read'; id: number; res: number } | { t: 'save'; id: number };
 
 /**
  * Whether a submit only decodes: video commands (CCMD 53–61: codecs, buffers, a picture's BEGIN/DECODE/END_FRAME)
@@ -340,18 +377,19 @@ export function portHost(port: MessagePort): VirglHost {
   // A fence unanswered for `STUCK_MS` is said on the console once (the guest's GPU tasks wait behind it; the GPU
   // worker says why when it holds one for queries), and when it's answered.
   const sent = new Map<number, number>();
-  let stuck = 0;
+  const stuck = new Set<number>();
   let watch: ReturnType<typeof setInterval> | undefined;
   const check = () => {
-    const [id, at] = sent.entries().next().value ?? [];
-    if (id === undefined) {
+    if (!sent.size) {
       clearInterval(watch);
       watch = undefined;
       return;
     }
-    if (id !== stuck && clock() - at! > STUCK_MS) {
-      stuck = id;
-      console.warn(`virgl: fence ${id} unanswered for ${((clock() - at!) / 1000).toFixed(0)} s (the guest's 3D waits behind it)`);
+    for (const [id, at] of sent) {
+      if (clock() - at <= STUCK_MS) break;
+      if (stuck.has(id)) continue;
+      stuck.add(id);
+      console.warn(`virgl: fence ${id} unanswered for ${((clock() - at) / 1000).toFixed(0)} s (the guest's 3D waits behind it)`);
     }
   };
   const reads = new Map<number, (bytes: Uint8Array | null) => void>();
@@ -374,14 +412,13 @@ export function portHost(port: MessagePort): VirglHost {
     fenceLag.n++;
     fenceLag.ms += lag;
     fenceLag.maxMs = Math.max(fenceLag.maxMs, lag);
-    // Fences complete in order: this one and every earlier one.
-    for (const [id, done] of waiting) {
-      if (id > e.data.id) break;
-      waiting.delete(id);
-      if (id === stuck) console.warn(`virgl: fence ${id} answered after ${((clock() - sent.get(id)!) / 1000).toFixed(0)} s`);
-      sent.delete(id);
-      done();
-    }
+    // This one alone: a ring's fences are answered out of the others' order (`FenceGate`).
+    const id = e.data.id, done = waiting.get(id);
+    if (!done) return;
+    waiting.delete(id);
+    if (stuck.delete(id)) console.warn(`virgl: fence ${id} answered after ${((clock() - sent.get(id)!) / 1000).toFixed(0)} s`);
+    sent.delete(id);
+    done();
   };
   return {
     call(c) {
@@ -389,10 +426,10 @@ export function portHost(port: MessagePort): VirglHost {
       else if (c.t === 'load') port.postMessage(c, snapshotBuffers(c.state));
       else port.postMessage(c);
     },
-    fence() {
+    fence(scope) {
       const id = next++;
       const at = clock();
-      port.postMessage({ t: 'fence', id, at });
+      port.postMessage({ t: 'fence', id, at, ...(scope ? { scope } : {}) });
       sent.set(id, at);
       watch ??= setInterval(check, 1000);
       return new Promise<void>((resolve) => waiting.set(id, resolve));

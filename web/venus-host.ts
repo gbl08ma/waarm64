@@ -4,7 +4,7 @@
 // `VenusCall`) and polls the rings while they are active or a submit is in flight (`VenusPoll`; an idle ring waits for
 // the guest's notify). The driver's WebGPU calls are web/venus-gpu.ts's, on the GPU worker's device; at each submit the
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
-// `settled` says when the fences sent so far have.
+// `retired` says when a fence has.
 import type { ShaderCache } from './venus-cache.ts';
 import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps, type L9Suspect } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
@@ -282,12 +282,8 @@ export class VenusRenderer {
     }, 2000);
   }
 
-  /** Whether the fences sent so far have retired (a closure over them, to check later). */
-  settled(): () => boolean {
-    if (!this.pending.size) return () => true;
-    const keys = [...this.pending];
-    return () => keys.every((k) => !this.pending.has(k));
-  }
+  /** Whether a fence sent has retired (or its context ended). */
+  retired(ctx: number, ring: number, id: bigint) { return !this.pending.has(`${ctx}:${ring}:${id}`); }
 
   /** Copies `bytes` into the module's heap for a call, then frees them. */
   private withBytes<T>(bytes: Uint8Array, f: (p: number) => T): T {
@@ -300,7 +296,7 @@ export class VenusRenderer {
     }
   }
 
-  /** Runs one of the device's Venus calls (a fenced submit's fence retires later: `settled`). */
+  /** Runs one of the device's Venus calls (a fenced submit's fence retires later: `retired`). */
   call(c: VenusCall) {
     switch (c.t) {
       case 'vctx':
@@ -346,7 +342,7 @@ export class VenusRenderer {
         if (!this.withBytes(c.bytes, (p) => this.ex.venus_submit(c.ctx, p, c.bytes.length))) console.warn(`venus: context ${c.ctx}'s submit failed`);
         const fence = c.fence;
         if (fence) {
-          // Retired once the queue's work before it is done (`settled`); a ring fence of no queue's work retires at
+          // Retired once the queue's work before it is done (`retired`); a ring fence of no queue's work retires at
           // the next poll.
           const key = `${c.ctx}:${fence.ring}:${fence.id}`;
           this.pending.add(key);

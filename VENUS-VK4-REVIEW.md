@@ -9,6 +9,7 @@ file goes when the last one does.
 
 **Fixed in the review's own commits** (each with its test, failing first): H2 (`Mem::ram_pa`), H3 (splits checked
 with Vulkan's reserve: definitions and the worker), O4 (`maxPushDescriptors`).
+**Fixed by VK4's tier 2b** (its row in VK4-KICKOFF.md): H1 (R1).
 
 | Id | Area |
 |---|---|
