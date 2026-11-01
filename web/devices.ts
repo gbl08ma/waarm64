@@ -3,6 +3,7 @@
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
+import { bytesText } from './app/bytes.ts';
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
 import { p9, type P9Files } from './9p.ts';
 import { folders9p, type FolderSpec } from './9p-folders.ts';
@@ -61,6 +62,16 @@ export type DeviceSpec =
 export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][] };
 
 const RAMDISK_FULL = "The ramdisk is out of memory: this tab can't have more, so the guest's writes to it fail (I/O errors). Deleting files there and trimming it (fstrim) makes room again.";
+
+/**
+ * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
+ * numbers where the browser gives them (as the Machines page's storage line has them).
+ */
+export async function storageFullText() {
+  const est = await globalThis.navigator?.storage?.estimate?.().catch(() => undefined);
+  const numbers = est?.quota ? ` (${bytesText(est.usage ?? 0)} used of ${bytesText(est.quota)})` : '';
+  return `The browser's storage is full${numbers}: the guest's writes to its disk fail (I/O errors). Make room on the Machines page (the browser's storage, at its bottom: what takes it, the remote disks' blocks), or delete files in the guest; writes that come after work again.`;
+}
 
 /** Whether a disk takes the guest's writes: through an overlay, or a ramdisk. */
 export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
@@ -756,7 +767,12 @@ export async function fileSource(url: string): Promise<Source> {
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk', concurrent = false): Backend {
+/**
+ * A virtio-blk device over `src`, writable through `files` (an overlay) or by `src` itself (a ramdisk). `onFull`: a write
+ * the browser's storage refused (a short write, `QuotaExceededError`) failed the guest's request, told once until a
+ * write lands again (a ramdisk says so through its own `onFull`).
+ */
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk', concurrent = false, onFull?: () => void): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
@@ -776,6 +792,30 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
   }
   const disk: Disk = rw ?? base;
   const io = ctx.io ?? new Float64Array(2); // bytes read, written (completed requests)
+  /** Whether the user was told the storage is full (since the last write that landed). */
+  let told = false;
+  /**
+   * A write: true when it landed; false when it failed, with `onFull` told when the storage refused it (a write that
+   * returns false is a short write or a refused one; `QuotaExceededError` is thrown by some sync handles).
+   */
+  const attempt = async (w: () => Promise<boolean>): Promise<boolean | 'full'> => {
+    let full: boolean;
+    try {
+      if (await w()) return true;
+      full = true;
+    } catch (e) {
+      full = (e as DOMException)?.name === 'QuotaExceededError' || /storage is full/.test(String((e as Error)?.message));
+    }
+    return full ? 'full' : false;
+  };
+  const outcome = (r: boolean | 'full') => {
+    if (r === true) told = false;
+    else if (r === 'full' && onFull && !told) {
+      told = true;
+      onFull();
+    }
+    return r === true;
+  };
   const backend: Backend = {
     async request(r) {
       const ram = ctx.ram();
@@ -802,9 +842,11 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         // The data follows the header in the readable buffers. Read-only: IOERR.
         const len = r.read.reduce((k, s) => k + s.len, 0);
         const payload = st ? st.time('gather', len, () => gather(ram, r.read, len)) : gather(ram, r.read, len);
-        const write = () => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)).catch(() => false);
+        const write = () => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16));
         // A failed write is most likely the storage full (OPFS over quota): the remote disks' kept blocks give way, once.
-        const ok = rw && ((await write()) || (releaseStores() && (await write())));
+        let tried = rw ? await attempt(write) : false;
+        if (tried !== true && rw && releaseStores()) tried = await attempt(write);
+        const ok = rw ? outcome(tried) : false;
         status = ok ? S_OK : S_IOERR;
         if (ok) io[1] += len - 16;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
@@ -820,7 +862,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         else if (seg.getUint32(12, true) & (zeroes ? ~1 : ~0)) status = S_UNSUPP;
         else {
           const [off, bytes] = [Number(seg.getBigUint64(0, true)) * 512, seg.getUint32(8, true) * 512];
-          const ok = bytes <= BLK_MAX_UNMAP_SECTORS * 512 && off + bytes <= disk.size && (zeroes ? await rw.zero(off, bytes).catch(() => false) : rw.discard(off, bytes));
+          const ok = bytes <= BLK_MAX_UNMAP_SECTORS * 512 && off + bytes <= disk.size && (zeroes ? outcome(await attempt(() => rw.zero(off, bytes))) : rw.discard(off, bytes));
           status = ok ? S_OK : S_IOERR;
         }
       }
@@ -957,7 +999,7 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void, onFull?: () => void) {
     [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
@@ -982,7 +1024,7 @@ export class Devices {
         case 'clock': return clock(ctx, deterministic);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic);
+          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull);
         }
         case 'net': return net(ctx, d);
         case '9p': return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);
@@ -1045,7 +1087,7 @@ export class Devices {
   }
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
-  /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory). */
+  /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory, the storage full). */
   static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (text: string) => void = () => {}) {
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
@@ -1061,7 +1103,7 @@ export class Devices {
       if (d.url.startsWith('file:')) return fileSource(d.url);
       return remoteSource(d.url, d.keep ?? true, !init.deterministic);
     }));
-    return new Devices(init, overlays, sources, out);
+    return new Devices(init, overlays, sources, out, () => void storageFullText().then(notice));
   }
 
   /** The I/O timers of the blk devices that have them (spec `stats`), by device index. */

@@ -74,6 +74,17 @@ test('a short write (the storage full) gives up: nothing kept, its space given b
   s.put(4, blockOf(4)); // a store that gave up keeps nothing more
   assert.equal(s.get(4), undefined);
   s.close();
+  // A write that throws QuotaExceededError instead (Chromium's sync handles in an on-disk profile): the same, and the
+  // put that met it doesn't throw (it's in a guest's read).
+  const thrown = memFile();
+  const quota: SyncFile = { ...thrown, read: thrown.read.bind(thrown), getSize: thrown.getSize.bind(thrown), truncate: thrown.truncate.bind(thrown), flush: thrown.flush.bind(thrown),
+    write: (buf, o) => { if (thrown.getSize() + buf.length > 2 * BLOCK) throw new DOMException('No space available for this operation', 'QuotaExceededError'); return thrown.write(buf, o); } };
+  const t = blockStore(quota, memFile(), SIZE, BLOCK, 64);
+  t.put(0, blockOf(0));
+  t.put(1, blockOf(1));
+  t.put(2, blockOf(2));
+  assert.deepEqual([t.get(0), t.stats().gaveUp, thrown.getSize()], [undefined, true, 0]);
+  t.close();
   // Two open stores: releasing them frees what one holds; again, nothing is left to free.
   const [a, b] = [blockStore(memFile(), memFile(), SIZE, BLOCK, 8), blockStore(memFile(), memFile(), SIZE, BLOCK, 8)];
   a.put(5, blockOf(5));

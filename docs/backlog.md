@@ -1067,8 +1067,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     test now runs on an on-disk profile, as a user's, where the estimate holds. A user in an Incognito window can still
     meet it: the snapshot and suspend writers could give the cache's stores up on a short write and try once more, as
     a guest's disk write does (`releaseStores`), or the cache could stay small off the record.
-  - A full quota still reaches the guest as `IOERR` (and an import or a kept snapshot fails with "is it full?"): the
-    page should say so where it happens, with the storage view's numbers.
+  - A full quota stops an import or a kept snapshot with "is it full?" and no numbers (a guest's write says so with
+    them: machines.md "Storage"); those messages could carry `estimate()`'s too. `Storage.overrideQuotaForOrigin`
+    (tests/page-quota.test.ts) makes the case cheap to test; `estimate()` doesn't report the override.
   - A stored disk's SHA-256 isn't computed in the background (once would do: it never changes; machines.md §3.1), and a definition carries a file's hash only
     where the record has one: a definition's file is checked by name, size and date unless something hashed it.
   - **Chromium 153 crashes reading a file handle back from IndexedDB in an off-the-record context** (the whole
