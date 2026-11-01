@@ -773,6 +773,17 @@ pub fn take_exception(c: &mut Cpu, e: Exit) {
         };
         (ec + !lower as u32) << 26 | cm << 8 | wnr << 6 | f.kind.fsc()
     };
+    // A stepped instruction's external abort (the run loop's MMIO shares
+    // `FaultKind::Bus`, which completes it) leaves it to run again, as
+    // `debug::step` does for the other aborts.
+    if let Exit::Fault(Fault {
+        kind: FaultKind::Bus,
+        ..
+    }) = e
+        && debug::stepping(c)
+    {
+        c.pstate |= PSTATE_SS;
+    }
     let (esr, far, ret) = match e {
         Exit::Undefined => (0, None, pc),
         Exit::Svc(imm) => (0x15 << 26 | imm as u32, None, pc.wrapping_add(4)),

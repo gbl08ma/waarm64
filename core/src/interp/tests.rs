@@ -1894,3 +1894,72 @@ fn fast_completion_classes() {
     assert!(!sys::is_daif_write(0xd53b4221));
     assert!(!sys::is_daif_write(0xd5181001));
 }
+
+#[test]
+fn undefined_before_sp_alignment_and_fpen() {
+    // Each with SP misaligned (SA0 set): a reserved encoding is UNDEFINED,
+    // which decoding finds before the SP alignment check.
+    let undefined = |insn: u32, cpacr: u64| {
+        let mut t = T::new(&[insn]).x(31, DATA + 8).x(1, 8);
+        t.c.cpacr_el1 = cpacr;
+        t.step()
+    };
+    for insn in [
+        0xf8610be0u32, // ldr x0, [sp, w1, uxtb] (option 000)
+        0xe94003e0,    // ldp with opc 11
+        0x48217fe0,    // casp with an odd Rs
+        0x7dc003e0,    // ldr (SIMD&FP, unsigned offset) with size 01, opc 11
+        0x0c400fe0,    // ld4 {.1d}
+        0x4c4013e0,    // ld1-ld4 (multiple) with opcode 0001
+    ] {
+        assert_eq!(undefined(insn, 3 << 20), Err(Exit::Undefined), "{insn:#x}");
+    }
+    // And the SIMD&FP ones before the FPEN trap.
+    for insn in [0x7dc003e0u32, 0x0c400fe0, 0x4c4013e0] {
+        assert_eq!(undefined(insn, 0), Err(Exit::Undefined), "{insn:#x}");
+    }
+    // Their allocated neighbours: FPEN, then SP's alignment.
+    assert_eq!(undefined(0xf8616be0, 3 << 20), Err(Exit::Trap(0x26 << 26))); // ldr x0, [sp, x1]
+    assert_eq!(undefined(0x48207fe0, 3 << 20), Err(Exit::Trap(0x26 << 26))); // casp x0, x1, x0, x1, [sp]
+    assert_eq!(undefined(0x4c4003e0, 3 << 20), Err(Exit::Trap(0x26 << 26))); // ld4 {v0.16b-v3.16b}, [sp]
+    assert_eq!(
+        undefined(0x4c4003e0, 0),
+        Err(Exit::Trap(0x07 << 26 | sys::ISS_COND_AL))
+    );
+}
+
+#[test]
+fn stepped_external_abort_runs_again() {
+    use crate::cpu::PSTATE_SS;
+    // ldr x0, [x9] past RAM, stepped at EL0: the external abort leaves the
+    // step active-not-pending (SPSR.SS = 1), as the other aborts do.
+    let mut t = T::new(&[0xf9400120]).x(9, 0xffff_0000);
+    t.c.vbar_el1 = VBAR;
+    t.c.mdscr_el1 = debug::MDSCR_SS;
+    t.c.pstate |= PSTATE_SS;
+    debug::arm(&mut t.c);
+    t.sys().unwrap();
+    assert_eq!(t.c.esr_el1, 0x24 << 26 | 1 << 25 | 0x10);
+    assert_eq!((t.c.elr_el1, t.c.spsr_el1 & PSTATE_SS), (CODE, PSTATE_SS));
+    // Not stepped: SPSR.SS stays 0.
+    let mut t = T::new(&[0xf9400120]).x(9, 0xffff_0000);
+    t.c.vbar_el1 = VBAR;
+    t.sys().unwrap();
+    assert_eq!(t.c.spsr_el1 & PSTATE_SS, 0);
+}
+
+#[test]
+fn run_loops_retire_the_smp_exits() {
+    use crate::cpu::FEATURE_SMP;
+    // wfe, sev, sevl at EL0 (nTWE set): each retires in `run`.
+    let mut t = T::new(&[0xd503205f, 0xd503209f, 0xd50320bf]);
+    t.c.features |= FEATURE_SMP;
+    assert_eq!(run(&mut t.c, &t.r.mem, 3), (3, Ok(())));
+    assert_eq!(t.c.pc, CODE + 12);
+    // tlbi vmalle1is and wfe at EL1: they retire in `run_system`, no exception.
+    let mut t = T::new(&[0xd508831f, 0xd503205f]).el1();
+    t.c.features |= FEATURE_SMP;
+    let mut v = crate::mmu::Vcpu::new(t.c.clone());
+    assert_eq!(run_system(&mut v, &t.r.mem, 2), (2, Ok(())));
+    assert_eq!((v.cpu.pc, v.cpu.el()), (CODE + 8, 1));
+}

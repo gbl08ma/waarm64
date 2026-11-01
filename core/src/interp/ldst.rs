@@ -11,6 +11,10 @@ use crate::mmu::Bus;
 pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let (rt, rn, rs) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    // Decoding comes before the SP alignment check.
+    if undefined(i, op) {
+        return Err(Exit::Undefined);
+    }
     let base = match op {
         LDR_lit_gen | LDRSW_lit | PRFM_lit => 0, // no base register
         _ => super::base_reg(c, rn)?,
@@ -47,9 +51,6 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
         }
         STRx_reg | LDRx_reg => {
             let option = bits(i, 15, 13);
-            if option & 2 == 0 {
-                return Err(Exit::Undefined);
-            }
             let amt = if bit(i, 12) { bits(i, 31, 30) } else { 0 };
             let off = extend(c.reg(rs), option, amt);
             single(c, m, i, base.wrapping_add(off), None, true, c.el())?;
@@ -61,8 +62,8 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
             let (size, signed) = match (opc, load) {
                 (0, _) => (4, false),
                 (2, _) => (8, false),
-                (1, true) if op == STP_LDP_gen => (4, true), // LDPSW
-                _ => return Err(Exit::Undefined),            // STGP, or reserved
+                (1, true) => (4, true), // LDPSW
+                _ => unreachable!("ldst::undefined"),
             };
             let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(size as u64);
             // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
@@ -158,9 +159,6 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
             c.set_reg(rs, old);
         }
         CASP => {
-            if rs & 1 == 1 || rt & 1 == 1 {
-                return Err(Exit::Undefined);
-            }
             let (e, n) = ([c.reg(rs), c.reg(rs + 1)], [c.reg(rt), c.reg(rt + 1)]);
             let old = if bit(i, 30) {
                 m.cas_pair(c, base, e, n)?
@@ -181,6 +179,29 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
         }
     }
     Ok(())
+}
+
+/// The UNDEFINED encodings among `exec`'s, which it rejects before anything else.
+fn undefined(i: u32, op: Op) -> bool {
+    use Op::*;
+    let (size, opc) = (bits(i, 31, 30), bits(i, 23, 22));
+    // `single`'s: sign-extending to the access's size, or PRFM where it isn't one.
+    let single =
+        |prfm: bool| opc >= 2 && (size == 3 && !(prfm && opc == 2) || size == 2 && opc == 3);
+    match op {
+        STRx_LDRx_imm_2 | STURx_LDURx => single(true),
+        STRx_reg | LDRx_reg => bits(i, 15, 13) & 2 == 0 || single(true),
+        STRx_LDRx_imm_1 | STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR
+        | LDTRSW => single(false),
+        // STGP, or reserved; LDPSW has no non-temporal form.
+        STP_LDP_gen | STNP_LDNP_gen => match size {
+            0 | 2 => false,
+            1 => !(bit(i, 22) && op == STP_LDP_gen),
+            _ => true,
+        },
+        CASP => bits(i, 20, 16) & 1 == 1 || bits(i, 4, 0) & 1 == 1,
+        _ => false,
+    }
 }
 
 /// Store-exclusive alignment check.
@@ -222,7 +243,7 @@ fn single(
             c.set_reg(rt, v);
         }
         2 if size == 3 && prfm => return Ok(()),
-        _ if size == 3 || (size == 2 && opc == 3) => return Err(Exit::Undefined),
+        _ if size == 3 || (size == 2 && opc == 3) => unreachable!("ldst::undefined"),
         _ => {
             // Sign-extending: opc 2 to 64 bits, opc 3 to 32 bits.
             let v = sext(m.read_el(c, addr, bytes, el)?, 8 * bytes);
