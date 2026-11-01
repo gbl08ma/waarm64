@@ -238,6 +238,88 @@ About 1.5 times fewer packets through the guest's stack (its driver, GRO, IP and
 after a boot took 4.9 s (13.7 Mbit/s); the other two first downloads ran at 65 Mbit/s like every earlier run's but
 one; not explained from these runs.
 
+## The local helper against tailcat (L0, 2026-11-01)
+
+docs/plans/networking-local.md L0's questions, in Chromium 153.0.8010.52 on the dev VM (Lima, M4 Mac mini, 8 vCPUs, 18 GiB).
+Raw JSON in `results/local-helper/`: `arms.json`, `variants.json`, `lna.json`, `ipv6-mac.json`, `ipv6-reach.json`.
+
+**Setup.** The page's Debian, curl in the guest to a Node server on this machine's LAN address, so every arm crosses the
+same path past its own tunnel: 32 MiB each way (8 MiB through the public relay, rate-limited), three rounds per boot, alternated
+boots (`local`, `tailcat`, `public`; `arms.json` holds three boots of each, two of `public`: the run hit its 2000 s cap on the
+stalled uploads below). Round trip is curl's TCP connect, 20 in a row, because a tailcat exit node doesn't forward ICMP. CPU
+is in cores over the transfer, from /proc: the renderer's threads, the network service, and the helper apart. The server is a
+hop away, so these are ceilings: a real connection stops at its uplink.
+
+| Arm | Connect (ms) | Down (Mbit/s), median, IQR | Up | Page's and network service's CPU per 100 Mbit/s, down, up |
+|---|---|---|---|---|
+| The helper, MTU 1500 | 1.81 | 556, 479–605 | 355, 351–377 | 0.52, 0.67 |
+| tailcat, relay on this machine | 2.03 | 123, 119–133 | 218, 217–225 | 2.13, 0.99 |
+| tailcat, public relay | 101 | 4.2, 3.5–4.4 | 18.9, 18.8–18.9 | 15.7, 5.6 |
+
+The relay's distance is the whole round-trip difference: a relay on this machine adds 0.2 ms. Against that relay the helper moves 4.5× more down
+and 1.6× more up, at a quarter of the CPU per Mbit down, which fits the client's crypto being the limit (T1) but wasn't broken out here. The public relay's upload is flat at 18.9 Mbit/s, a
+rate limit; its download is worse and noisy (2–19 Mbit/s). The helper's ping (3.6 ms) is worse than its TCP connect (1.8 ms) and
+wasn't looked into; no tailcat arm has a ping to compare.
+
+**Where the client runs, and batching** (`variants.json`, two boots of each, the patch in `variants.patch`):
+
+| Client | Down | Up | Main thread, down, up (cores) | Network service, up | Frames per message from the guest, down, up |
+|---|---|---|---|---|---|
+| The page, a message per frame | 540, 405–580 | 357, 332–366 | 0.53, 0.62 | 0.36 | 1.0, 1.0 |
+| The page, batched | 500, 409–544 | 766, 725–789 | 0.45, 0.53 | 0.13 | 1.7–2.9, 31–42 |
+| A worker, a message per frame | 575, 482–604 | 363, 362–364 | 0.01, 0 | 0.40 | 1.0, 1.0 |
+| A worker, batched | 606, 489–612 | 754, 750–757 | 0.01, 0 | 0.15 | 3.4–3.9, 28–33 |
+
+"Batched" flushes on `setTimeout(0)` instead of a microtask, so the frames that arrive while a task runs share a message.
+**Upload doubles** (its IQR doesn't overlap), the network service drops by 60%, and the round trip doesn't move (connect 1.8 ms in all
+four). Down doesn't change: the helper batches already (15–19 frames a message). **A worker takes the client off the main thread** (half a
+core off the thread the display and the UI share) at no cost in throughput or round trip. Decided: a worker, batched.
+
+**The MTU.** The first run stalled every upload past 1500: `web/offload.ts` `transmit` drops a plain frame over `MAX_FRAME`
+(1518), which is what a NIC does, so the guest's large non-GSO segments vanish while it believes the helper's lease. Downloads
+worked (612, 687 and 1080 Mbit/s at 4000, 9000, 65520). With `MAX_FRAME` raised for the run, one boot each, unbatched, in the page:
+
+| MTU | Down | Up | Main thread, down, up | All CPU per 100 Mbit/s, down, up |
+|---|---|---|---|---|
+| 1500 | 540 | 357 | 0.53, 0.62 | 0.59, 0.69 |
+| 9000 | 702 | 821 | 0.48, 0.46 | 0.38, 0.27 |
+| 65520 | 998 | 1410 | 0.35, 0.30 | 0.19, 0.11 |
+
+One boot each is a direction, not a measurement, and a larger MTU wasn't run with batching or in a worker. It's a large win, past what most uplinks
+need: the helper terminates TCP, so a guest's segments never reach the internet at that size.
+
+**Local Network Access** (`lna.ts`, headless, so no prompt is seen: an ask ends denied at once):
+- In Chromium 153 a page reaching loopback needs the permission **`loopback-network`**, not `local-network-access` (a grant of that or
+  of `local-network` leaves the socket refused; `local-network` is for the LAN). `navigator.permissions.query` answers for all three.
+- A public page's socket to `ws://127.0.0.1` is **gated**: on `https://vm.tny.im` as deployed (cross-origin isolated) and on a local
+  copy that `--ip-address-space-overrides=127.0.0.1:<port>=public` calls public. Refused, it closes 1006 within 1–8 ms, indistinguishable from a
+  helper that isn't running; `permissions.query` tells them apart (`denied`). Granted, it opens in 1–6 ms: no mixed-content block from an https page.
+- **The same from a worker**, and a worker's socket alone makes the request (state `prompt` to `denied` with nothing from the page).
+- A `127.0.0.1` page isn't gated at all, which is why the tests never saw any of this.
+- A grant through CDP (`Browser.setPermission`) lasts through reloads but not a restart. A content setting in the profile's Preferences
+  (`profile.content_settings.exceptions.loopback_network`, where a click on the prompt stores it) reads back as `granted` after a
+  restart, page and worker. A refusal stays until the user changes it in the site's settings, so the page has to say where.
+- **For tests:** Playwright 1.63's `grantPermissions` doesn't know `loopback-network`: use CDP's `Browser.setPermission`, or
+  `--disable-features=LocalNetworkAccessChecks`.
+- Not seen: the prompt itself, its words, and whether it appears over a page without a user gesture. That takes a headed browser: the user's, at L2.
+
+**IPv6 on a host that has it.** `local-ipv6.ts mac`: the helper built for macOS, on the Mac with its real IPv6, over an ssh tunnel to
+the page here. Default route at the lease; `curl -6` by name and over TLS, connect 55 ms; a dual-stack name chooses IPv6 by itself; `apt-get update` with
+`ForceIPv6` exits 0. It found the bug below only in the second rig, since traffic kept the neighbor fresh.
+
+`local-ipv6.ts netns` (`unshare -Urn`): everything in a namespace whose "internet" is a dummy interface holding the probe's address,
+removed and put back under a running guest. Removed: the default goes in 48 s, on the helper's minute probe; `curl` exits 7 within 1 ms.
+Back: the default returns in 60 s. Both bound by the minute, as designed.
+
+**A bug that found:** the guest's default route vanished 5.4 s after each pause in its traffic (the same 5.4 s twice, nothing logged by networkd or the
+helper). gVisor sets a neighbor advertisement's Router flag only on a forwarding stack, and the library's doesn't forward, so when Linux re-checked its
+router the answer said "not a router", and it dropped the default (`ndisc_recv_na`) until the next router advertisement, up to 5 minutes. Every host
+with IPv6 would have had it. The helper now sets the flag on the gateway's advertisements (`markRouter`, `TestGatewayIsARouter`, which failed first); both rigs check the default after 40 s idle.
+
+**`ci-net.sh` on the dev VM:** passes, 582 s. `tests/net-local.test.ts`: login 31 s, 8 MiB at 432 Mbit/s down, 291 up, IPv4 only here. The first run failed in
+the helper's Go tests: under `-race` an idle gVisor stack keeps every core busy (0 CPU without it), and the stacks the earlier tests left starved
+`TestTCPToHost` into its deadline. They're now destroyed in cleanup. Not a defect of the helper.
+
 ## Reproduce
 ```sh
 # T1: a tailcat exit node on derper, both on this machine
@@ -252,4 +334,10 @@ node bench/net/transfer.ts <label> bench/results/local/<label>.json    # brings 
 # the Go column came from the same harness before the Go client left the page: git show 762cadc:bench/net/clients.ts)
 net/ts/build.sh
 WEBPC_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
+# The local helper: the arms, then (with results/local-helper/variants.patch applied) the client's variants and the MTU
+node bench/net/local.ts bench/net/results/local-helper/arms.json local tailcat public local tailcat public --rounds 3 --mib 32
+node bench/net/local.ts bench/net/results/local-helper/variants.json local local::batch local::worker local::worker,batch local:9000 local:65520 --rounds 3 --mib 32
+node bench/net/lna.ts bench/net/results/local-helper/lna.json
+node bench/net/local-ipv6.ts mac bench/net/results/local-helper/ipv6-mac.json
+(cd net/webpc-net && go build -o ../../target/net/webpc-net .) && unshare -Urn node bench/net/local-ipv6.ts netns bench/net/results/local-helper/ipv6-reach.json
 ```

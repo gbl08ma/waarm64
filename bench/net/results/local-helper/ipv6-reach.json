@@ -1,0 +1,20 @@
+{
+ "date": "2026-11-01T20:48:04.745Z",
+ "mode": "netns",
+ "addresses": "2: eth0    inet6 fd77:6562:7063::2/128 scope global dynamic noprefixroute \\       valid_lft 28796sec preferred_lft 14396sec\n2: eth0    inet6 fd77:6562:7063:0:5054:ff:fe12:3456/64 scope global dynamic mngtmpaddr noprefixroute \\       valid_lft 86395sec preferred_lft 14395sec\nroot@localhost:~# echo __END$((40+2))__",
+ "defaultAfter": 0.262,
+ "route": "default nhid 1993653964 via fe80::1 dev eth0 proto ra metric 100 expires 993sec pref medium\nroot@localhost:~# echo __END$((40+2))__",
+ "curl": "hello over IPv6\n 2606:4700:4700::1111\nroot@localhost:~# echo __END$((40+2))__",
+ "goneAfter": 47.888,
+ "whileOut": "7 in 0.001265 s\nroot@localhost:~# echo __END$((40+2))__",
+ "backAfter": 59.603,
+ "helperLog": [
+  "time=\"2026-11-01T20:48:04Z\" level=info msg=\"dns: listening on [fd77:6562:7063::1]:53 (IPv6 UDP)\"",
+  "time=\"2026-11-01T20:48:04Z\" level=info msg=\"dns: listening on [fd77:6562:7063::1]:53 (IPv6 TCP)\"",
+  "time=\"2026-11-01T20:48:04Z\" level=info msg=\"dhcpv6: listening on :547\"",
+  "2026/11/01 20:48:04 webpc-net devel listening on 127.0.0.1:18743 (IPv6 on); pages accepted from https://vm.tny.im, http://127.0.0.1:39673",
+  "2026/11/01 20:48:04 IPv6 to the internet reached: the guest's IPv6 default route is on",
+  "2026/11/01 20:50:04 IPv6 to the internet out: the guest's IPv6 default route is off",
+  "2026/11/01 20:51:04 IPv6 to the internet reached: the guest's IPv6 default route is on"
+ ]
+}

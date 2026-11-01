@@ -1,0 +1,18 @@
+{
+ "date": "2026-11-01T20:51:28.967Z",
+ "mode": "mac",
+ "addresses": "2: eth0    inet6 fd77:6562:7063::2/128 scope global dynamic noprefixroute \\       valid_lft 28796sec preferred_lft 14396sec\n2: eth0    inet6 fd77:6562:7063:0:5054:ff:fe12:3456/64 scope global dynamic mngtmpaddr noprefixroute \\       valid_lft 86395sec preferred_lft 14395sec\nroot@localhost:~# echo __END$((40+2))__",
+ "defaultAfter": 0.279,
+ "route": "default nhid 1749466540 via fe80::1 dev eth0 proto ra metric 100 expires 994sec pref medium\nroot@localhost:~# echo __END$((40+2))__",
+ "curl": "200 2a04:4e42:600::644 connect 0.054955 total 0.118496\nroot@localhost:~# echo __END$((40+2))__",
+ "curlTls": "200 2606:4700::6810:7b60 connect 0.055795\nroot@localhost:~# echo __END$((40+2))__",
+ "dual": "2a04:4e42::644 connect 0.054074\nroot@localhost:~# echo __END$((40+2))__",
+ "apt": "exit 0\nGet:18 https://deb.debian.org/debian-security trixie-security/main Translation-en [176 kB]\nFetched 28.5 MB in 33s (858 kB/s)\nReading package lists...\nroot@localhost:~# echo __END$((40+2))__",
+ "helperLog": [
+  "\u001b[36mINFO\u001b[0m[0000] dns: listening on [fd77:6562:7063::1]:53 (IPv6 UDP)",
+  "\u001b[36mINFO\u001b[0m[0000] dns: listening on [fd77:6562:7063::1]:53 (IPv6 TCP)",
+  "\u001b[36mINFO\u001b[0m[0000] dhcpv6: listening on :547",
+  "2026/11/01 20:51:29 webpc-net devel listening on 127.0.0.1:18753 (IPv6 on); pages accepted from https://vm.tny.im, http://127.0.0.1:42437",
+  "2026/11/01 20:51:29 IPv6 to the internet reached: the guest's IPv6 default route is on"
+ ]
+}

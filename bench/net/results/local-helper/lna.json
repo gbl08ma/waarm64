@@ -1,0 +1,278 @@
+{
+ "date": "2026-11-01T19:53:32.581Z",
+ "results": [
+  {
+   "label": "127.0.0.1 page (local: what the tests see)",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "http://127.0.0.1:41765",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "open in 1 ms",
+   "fromWorker": "open in 1 ms",
+   "after": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "prompt",
+     "local-network": "prompt",
+     "loopback-network": "prompt"
+    },
+    "fromPage": "open in 1 ms"
+   }
+  },
+  {
+   "label": "public by override, nothing granted",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "http://127.0.0.1:41765",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "closed 1006 in 1 ms",
+   "fromWorker": "closed 1006 in 2 ms",
+   "after": {
+    "local-network-access": "denied",
+    "local-network": "prompt",
+    "loopback-network": "denied"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "denied",
+     "local-network": "prompt",
+     "loopback-network": "denied"
+    },
+    "fromPage": "closed 1006 in 1 ms"
+   }
+  },
+  {
+   "label": "public by override, CDP grant local-network-access",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "http://127.0.0.1:41765",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "granted",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "closed 1006 in 7 ms",
+   "fromWorker": "closed 1006 in 7 ms",
+   "after": {
+    "local-network-access": "granted",
+    "local-network": "prompt",
+    "loopback-network": "denied"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "granted",
+     "local-network": "prompt",
+     "loopback-network": "denied"
+    },
+    "fromPage": "closed 1006 in 1 ms"
+   }
+  },
+  {
+   "label": "public by override, CDP grant local-network",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "http://127.0.0.1:41765",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "granted",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "closed 1006 in 4 ms",
+   "fromWorker": "closed 1006 in 5 ms",
+   "after": {
+    "local-network-access": "denied",
+    "local-network": "granted",
+    "loopback-network": "denied"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "denied",
+     "local-network": "granted",
+     "loopback-network": "denied"
+    },
+    "fromPage": "closed 1006 in 1 ms"
+   }
+  },
+  {
+   "label": "public by override, CDP grant loopback-network",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "http://127.0.0.1:41765",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "granted"
+   },
+   "fromPage": "open in 3 ms",
+   "fromWorker": "open in 6 ms",
+   "after": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "granted"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "prompt",
+     "local-network": "prompt",
+     "loopback-network": "granted"
+    },
+    "fromPage": "open in 2 ms"
+   }
+  },
+  {
+   "label": "the real public origin https://vm.tny.im, nothing granted",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "https://vm.tny.im",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "closed 1006 in 1 ms",
+   "fromWorker": "closed 1006 in 7 ms",
+   "after": {
+    "local-network-access": "denied",
+    "local-network": "prompt",
+    "loopback-network": "denied"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "denied",
+     "local-network": "prompt",
+     "loopback-network": "denied"
+    },
+    "fromPage": "closed 1006 in 2 ms"
+   }
+  },
+  {
+   "label": "the real public origin https://vm.tny.im, CDP grant loopback-network",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "https://vm.tny.im",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "granted"
+   },
+   "fromPage": "open in 1 ms",
+   "fromWorker": "open in 7 ms",
+   "after": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "granted"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "prompt",
+     "local-network": "prompt",
+     "loopback-network": "granted"
+    },
+    "fromPage": "open in 17 ms"
+   }
+  },
+  {
+   "label": "public by override, the feature off",
+   "version": "153.0.8010.52",
+   "page": {
+    "origin": "http://127.0.0.1:41765",
+    "secure": true,
+    "isolated": true
+   },
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "open in 3 ms",
+   "fromWorker": "open in 7 ms",
+   "after": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "afterReload": {
+    "perm": {
+     "local-network-access": "prompt",
+     "local-network": "prompt",
+     "loopback-network": "prompt"
+    },
+    "fromPage": "open in 2 ms"
+   }
+  },
+  {
+   "label": "a worker first",
+   "before": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromWorker": "closed 1006 in 2 ms",
+   "after": {
+    "local-network-access": "denied",
+    "local-network": "prompt",
+    "loopback-network": "denied"
+   }
+  },
+  {
+   "label": "a CDP grant, then a restart",
+   "before": "open in 2 ms",
+   "prefKeys": [
+    "has_migrated_local_network_access",
+    "local_network",
+    "local_network_access",
+    "loopback_network"
+   ],
+   "perm": {
+    "local-network-access": "prompt",
+    "local-network": "prompt",
+    "loopback-network": "prompt"
+   },
+   "fromPage": "closed 1006 in 1 ms"
+  },
+  {
+   "label": "a stored content setting, as a click leaves it",
+   "perm": {
+    "local-network-access": "granted",
+    "local-network": "prompt",
+    "loopback-network": "granted"
+   },
+   "fromPage": "open in 6 ms",
+   "fromWorker": "open in 5 ms"
+  }
+ ],
+ "helperLog": "2026/11/01 19:53:28 webpc-net devel listening on 127.0.0.1:18742 (IPv6 off); pages accepted from https://vm.tny.im, https://vm.tny.im, http://127.0.0.1:41765\n\nPair the page with this link:\n\n    https://vm.tny.im/#net=ws://127.0.0.1:18742/<token>\n\nor, on https://vm.tny.im:\n\n    https://vm.tny.im/#net=ws://127.0.0.1:18742/<token>\n\nor, on http://127.0.0.1:41765:\n\n    http://127.0.0.1:41765/#net=ws://127.0.0.1:18742/<token>\n\n2026/11/01 19:53:28 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:28Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:28 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:28 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:28Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:28 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:28 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:28Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:28 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:29 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:29Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:29 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:29 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:29Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:29 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:29 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:29Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:29 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:30 connected: a page from https://vm.tny.im\ntime=\"2026-11-01T19:53:30Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:30 disconnected: the page from https://vm.tny.im, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:30 connected: a page from https://vm.tny.im\ntime=\"2026-11-01T19:53:30Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:30 disconnected: the page from https://vm.tny.im, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:31 connected: a page from https://vm.tny.im\ntime=\"2026-11-01T19:53:31Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:31 disconnected: the page from https://vm.tny.im, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:31 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:31Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:31 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:31 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:31Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:31 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:31 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:31Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:31 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:32 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:32Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:32 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:32 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:32Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:32 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n2026/11/01 19:53:32 connected: a page from http://127.0.0.1:41765\ntime=\"2026-11-01T19:53:32Z\" level=error msg=\"cannot receive packets from page, disconnecting: cannot read size from socket: EOF\"\n2026/11/01 19:53:32 disconnected: the page from http://127.0.0.1:41765, after 0s (cannot receive packets from page, disconnecting: cannot read size from socket: EOF)\n"
+}

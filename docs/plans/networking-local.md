@@ -1,4 +1,4 @@
-# A local network helper (in progress: L0)
+# A local network helper (L0 done; L1 next)
 
 A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
@@ -41,7 +41,8 @@ README, THIRD_PARTY.md and CLAUDE.md are in `net/webpc-net/`.
   route it**: the guest gets a default IPv6 route only while the helper's host reaches the internet over IPv6, as the
   page does for tailcat's and a tailnet's far end (§5). `--no-ipv6` gives IPv4 only. (This replaces "IPv4 only,
   because the library is".)
-- **Chromium's Local Network Access prompt** (a public site reaching loopback) is acceptable: one click.
+- **Chromium's Local Network Access prompt** (a public site reaching loopback) is acceptable: one click. In Chromium 153 the
+  permission is `loopback-network`; bench/net/REPORT.md "The local helper" has what L0 found.
 - **Not WebSocket relays or Wisp** (v86's; [networking.md](networking.md) §1 stands), not a hosted proxy (the
   user won't operate an open proxy), not a WebTransport or LAN helper (served by tailnets), not the Direct Sockets
   API (Isolated Web Apps only, not a user path yet), not a helper assembled from QEMU and websockify or websocat
@@ -120,8 +121,10 @@ with tun2socks-style forwarders.
   (`navigator.userAgentData.getHighEntropyValues(["architecture", "platform"])`, the others listed too) and the
   published hashes.
 - **The client** opens the WebSocket and moves frames between it and the adapter's machine port, with QEMU's
-  framing, several frames per message (as DERP's are joined, tailnet.md "Transports and DERP"). Where it runs (a
-  small worker, or the page) is L0's question: the prompt's behavior in a worker and the CPU per Mbit decide.
+  framing, several frames per message (as DERP's are joined, tailnet.md "Transports and DERP"). **In a small worker,
+  and batched** (measured, L0; bench/net/REPORT.md "The local helper"): a worker takes half a core off the main thread at no
+  cost, and a worker's socket makes the permission's request as the page's does; flushing on `setTimeout(0)` instead of a microtask
+  doubles the upload (357 to 766 Mbit/s) without moving the round trip. L0's spike does neither yet.
 - **No gateway:** the machine port's frames go to the helper untouched, and the helper's DHCP gives the guest its
   lease, routes and resolvers.
 - **The primary** ([network-adapters.md](../network-adapters.md) §4): a connected `local` adapter reaches the
@@ -130,35 +133,34 @@ with tun2socks-style forwarders.
   or tailnet adapter beside it gets the routed lease. Two `local` adapters both offer a default route; say so,
   don't fix it.
 - **Errors:** the helper not running (the socket fails at once on loopback), the wrong token or origin, the prompt
-  refused, the helper's version: each a plain message in the Network menu, with Retry. Reconnecting after the
+  refused, the helper's version: each a plain message in the Network menu, with Retry. A refused prompt and a helper
+  that isn't running look the same to the socket (1006 within milliseconds): `navigator.permissions.query({ name:
+  'loopback-network' })` tells them apart, and a refusal stays until the user changes the site's settings, so the message
+  says where.
+- **The MTU:** 1500 for now. A larger one isn't possible as things stand: `web/offload.ts` drops a plain frame past
+  `MAX_FRAME`, so uploads stall (L0 saw 0.1 Mbit/s). With that raised, 65520 gave 1.4 Gbit/s up and 1 Gbit/s down on a sixth
+  to a third of the CPU per Mbit (one boot each, unbatched). L2 raises it for frame ports and measures it with the worker and
+  batching; the helper's TCP is terminated, so the guest's segments never reach the internet at that size, but its UDP does. Reconnecting after the
   helper restarts keeps the guest's lease if the helper kept its network; otherwise the guest's next renewal
   fixes it.
 - Snapshots: a connection isn't in the shape, so nothing changes; after a load the guest renews its lease.
 
 ## 4. Steps
 
-- **L0, the spike** (in progress): the helper (`net/webpc-net`, with IPv6) and a throwaway adapter on the page
+- **L0, the spike** (done 2026-11-01): the helper (`net/webpc-net`, with IPv6) and a throwaway adapter on the page
   (`?localnet=` or `#net=` at a machine's start puts its first adapter's frames on the helper: web/local-net.ts;
   `tests/browser/netguest.html?ws=` for the test).
-  - **Done** (2026-11-01, a cloud session; NET-HANDOVER.md has the numbers): the helper and its Go tests; the spike
+  - **Done** (2026-11-01, a cloud session, then the dev VM: bench/net/REPORT.md "The local helper"): the helper and its Go tests; the spike
     adapter; `tests/net-local.test.ts`: Debian on the page gets the helper's lease at boot, resolves through it, moves
     8 MiB each way to a server on the host, runs `apt-get update`; IPv6 on the link without a default route on a host
     without IPv6 (§5); a wrong token and another origin refused from Chromium.
-  - **Left, in the dev VM** (each needs what the cloud lacks: Chromium 153 on the user's setup, a public origin, the
-    Mac's IPv6, tailcat's relays and the dev VM's own numbers):
-    1. `scripts/ci-net.sh` there (with `net-local` now in it), and `tests/net-local.test.ts`'s numbers on the dev VM.
-    2. **Local Network Access** in Chromium 153: whether the prompt appears for the WebSocket from a public origin's
-       page (the deployed page, or a copy served from a public address: the tests' 127.0.0.1 page is local, which LNA
-       leaves alone), and from a worker; whether a grant persists across reloads and restarts; how Playwright grants
-       it for tests (a permission, a flag or a policy).
-    3. **Measurements**, against tailcat through a public relay and against a tailcat exit node on this machine
-       through a local `derper -dev` (what the relay costs apart from the crypto): round trip, throughput each way,
-       the page's CPU per Mbit, the MTU (1500 against larger). Report in bench/net/REPORT.md with its JSON. They
-       decide where the client runs (the page or a worker) and whether the guest's frames are batched before the
-       socket (from the guest they go one frame a message today; from the helper 2.6).
-    4. **IPv6 on a host that has it** (the Mac; the dev VM has none): the guest's default route comes, `curl` and
-       `apt` go over IPv6; and the reach changing under a running guest (a network without IPv6), the default
-       following within a minute.
+  - **Answered in the dev VM** (bench/net/REPORT.md "The local helper"): `scripts/ci-net.sh` passes with `net-local` in it
+    (8 MiB at 432 and 291 Mbit/s); Local Network Access (the `loopback-network` permission gates a public page's socket, from
+    a worker too; a stored grant survives restarts; CDP's `Browser.setPermission` for tests); against tailcat (1.8 ms and 556/355
+    Mbit/s, against 2.0 ms and 123/218 through a relay here and 101 ms and 4/19 through a public one), which settled
+    a worker and batching (§3) and the MTU's limit; IPv6 on the Mac, and the reach changing under a running guest (a
+    namespace), the default following within a minute. That also found the gateway not saying it's a router (§5).
+  - **Not seen:** the prompt itself, which needs a headed browser: the user's, at L2.
 - **L1, the helper's repository:** flags, the kept token, origins, the subprotocol, logs; a README that states
   the code ours and imported, the install lines, the hashes and how to rebuild them; the pinned toolchain in
   `go.mod`; releases built here, checked by a second build elsewhere.
@@ -194,12 +196,18 @@ appears on a link (a page reconnected under a running guest), and every 5 minute
 glibc's `AI_ADDRCONFIG` ignores, and DHCPv6 unanswered, which doesn't hold up boot (`systemd-networkd-wait-online` is
 satisfied by IPv4).
 
+**The gateway has to say it's a router.** gVisor sets a neighbor advertisement's Router flag only on a forwarding stack, and
+the library's doesn't forward; Linux takes that as its router having become a host and drops the default route when it next
+checks the neighbor, 5.4 s after traffic pauses, until the next router advertisement. So `markRouter` (`ra.go`) sets the flag on
+the gateway's advertisements, and only the gateway's: another guest on the switch isn't one.
+
 **Checked:** `helper_test.go` (a solicitation answered with a default route while the probe's resolver answers, an
 unsolicited advertisement without one when it stops and with one when it answers again, valid checksums; nothing
 with `--no-ipv6`); `tests/net-local.test.ts` on the cloud container, which has no IPv6 at all: the guest's address
 in the /64, the gateway's ping, no default route, `curl` to an IPv6 address failing at once (exit 7), a dual-stack
-name connecting over IPv4 at once. **To check:** a host with IPv6 (the Mac; the dev VM has none of its own): the
-default route, and `curl` and `apt` over IPv6 out; and the reach changing under a running guest (a Wi-Fi without IPv6).
+name connecting over IPv4 at once. On the Mac, with its real IPv6: the default route, `curl` and `apt` over IPv6 out, the default still there after 40 s idle. In a
+network namespace, the probe's address removed and put back under a running guest: the default gone in 48 s and back in 60 s, `curl`
+failing at once in between (`bench/net/local-ipv6.ts`).
 
 ## 6. Open questions
 

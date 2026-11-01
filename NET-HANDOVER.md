@@ -15,33 +15,20 @@ of 2026-11-01 below.
   **On by default, but never promised when the helper's host can't route it**, as tailcat and the tailnet do it
   (plan §5).
 
-## Done (L0, first session, 2026-11-01, a cloud session)
+## State
 
-- **The helper**, `net/webpc-net/`: about 650 lines of ours (`main.go` flags and the pairing link, `helper.go` the
-  network's settings, origin/token/subprotocol checks with close codes 4001/4003/4004, `link.go` the WebSocket as the
-  switch's `net.Conn` with frames batched per message and a bounded queue, `ra.go` and `reach6.go` IPv6 out, `token.go`).
-  `go test -race ./...` (~10 s): a gVisor-netstack guest over a real WebSocket, the refusals, DHCP, the router
-  advertisement's lifetime following the probe both ways (planted bugs caught), TCP 1 MiB each way to the host's
-  loopback. `build.sh`: the six targets, 12.5–13.8 MB (4.7–5.3 MB gzipped), byte-identical over two clean builds on one
-  host.
-- **The spike on the page**: web/local-net.ts (the client: framing, the close codes as messages), `?localnet=` or
-  `#net=` at a machine's start puts its first adapter's frames on the helper (web/app/main.ts, `frames` in the start
-  message, web/app/worker.ts), `tests/browser/netguest.html?ws=` for tests. `tests/local-net.test.ts` (Node).
-- **`tests/net-local.test.ts`** (in `scripts/ci-net.sh`) passed in the cloud's Chromium: Debian on the page took the
-  helper's lease at boot (login at 79 s, the lease by 80 s), resolved through it, moved 8 MiB each way to a server on
-  this machine (65 Mbit/s down, 48 up, JIT guest in the cloud container: not a benchmark), ran `apt-get update`, had
-  its address in the /64 and pinged the gateway, no IPv6 default (the container has no IPv6), curl's IPv6 failing at
-  once and deb.debian.org connecting over IPv4 in 0.06 s; a wrong token and another origin refused from Chromium.
+**L0 is done** (2026-11-01): the helper in `net/webpc-net/`, the spike on the page (`?localnet=`, `#net=`, web/local-net.ts),
+`tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's questions answered in bench/net/REPORT.md "The local helper".
 
 ## Next
 
-1. **L0's remaining items, in the dev VM:** the plan's L0 "Left, in the dev VM" (ci-net.sh there, Local Network
-   Access, the measurements against tailcat, IPv6 on the Mac). Its item 3 settles the batching below.
-2. **The page's batching from the guest is 1.00 frames a message** (the device worker posts each frame as its own
-   port message, so the client's microtask batch never holds two); the helper's side batches (2.62). Batch in the
-   device worker or flush on the socket's `bufferedAmount`, after measuring.
-3. Then L1 (the README's install lines, the release's license file: THIRD_PARTY.md says what it needs), L2 (the
-   connection kind replacing `?localnet=`), L3, L4 as the plan says.
+1. **L1:** the README's install lines, the release's license file (THIRD_PARTY.md says what it needs).
+2. **L2:** the connection kind replacing `?localnet=`, and in it, as measured: the client **in a worker, batched** (flush on
+   `setTimeout(0)`: bench/net/results/local-helper/variants.patch has both); a refused prompt told apart from a stopped helper
+   through `permissions.query({ name: 'loopback-network' })`, the message saying where the setting is; **the user looks at the
+   prompt once** (nothing headless shows it); raising `MAX_FRAME` for frame ports and measuring MTU 65520 with the rest.
+3. **L3:** a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
+   `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
 ## Found (worth not re-discovering)
 
@@ -55,3 +42,9 @@ of 2026-11-01 below.
   a bounded queue that drops past 4 MiB. The first version of the writer's buffer swap aliased two buffers when a
   wake found nothing queued (caught by `-race` and a framing panic in the TCP test).
 - The cloud container has no `AF_INET6` at all: the probe's "reached" side is tested over IPv4 loopback in Go.
+- gVisor's neighbor advertisements carry the Router flag only on a forwarding stack: Linux then drops the default route 5.4 s after traffic
+  pauses. `markRouter` fixes it; a default route that vanishes with nothing logged on either side is this kind of thing.
+- `go test -race`: an idle gVisor stack spins on every core under the race detector (0 CPU without it), and `VirtualNetwork.Close` doesn't
+  stop the stack, so the tests destroy it themselves. Performance of anything under `-race` means nothing here.
+- Lima forwards the VM's loopback ports to the Mac's: a tunnel's local port and a helper on the Mac need different ports.
+- A dummy interface in `unshare -Urn` holding the probe's address makes "the internet" removable under a running guest.
