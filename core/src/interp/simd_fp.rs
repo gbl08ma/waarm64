@@ -134,6 +134,30 @@ fn three_same(c: &mut Cpu, i: u32) -> R {
     Ok(())
 }
 
+/// FEAT_FRINTTS's vector forms (the caller checks it): U (29) is the FPCR's
+/// mode (X) or zero (Z), opcode<0> (12) 64 bits (dynarmic's table names the
+/// X forms the other way round).
+pub(super) fn frintts(c: &mut Cpu, i: u32) -> R {
+    let f = fmt(i);
+    let n = lanes(i, f)?;
+    let (rd, rn, _) = regs(i);
+    let w = f.bits();
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
+    let rm = if bit(i, 29) {
+        fpu.rounding()
+    } else {
+        Rounding::Zero
+    };
+    let intsize = if bit(i, 12) { 64 } else { 32 };
+    let src = c.v[rn];
+    let mut r = 0u128;
+    for e in 0..n {
+        r = set_elem(r, e, w, fpu.round_int_n(f, elem(src, e, w), rm, intsize));
+    }
+    finish(c, rd, r, n * w, fpu);
+    Ok(())
+}
+
 fn two_misc(c: &mut Cpu, i: u32) -> R {
     use Rounding::*;
     let f = fmt(i);

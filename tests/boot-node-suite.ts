@@ -91,7 +91,7 @@ const windowed = (f: string) => /^\/\/ window/m.test(readFileSync(new URL(f.repl
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
 // Its `// flash` line: the firmware configuration (M8 phase B), for its flash bank.
 const flashOf = (f: string) => /^\/\/ flash$/m.test(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8'));
-const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined, rng: false, e0pd: false, sha3: false }); // the ID registers as core/tests/baremetal.rs has them
+const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined, rng: false, e0pd: false, sha3: false, jscvt: false, rcpc: false, sb: false, flagm: false, dit: false, frintts: false }); // the ID registers as core/tests/baremetal.rs has them
 // Its `// input: <text>` line, typed once it waits: at its idle, or once it printed "ready" (parallel).
 const inputOf = (f: string): ConsoleInput | undefined => {
   const text = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ input: (.*)$/m)?.[1];
@@ -391,7 +391,7 @@ guest('crypto test kernel', () => ({
 }), (r) => {
   poweredOff(r);
   assert.match(r.console, /webpc: test ok \(0 failed, 0 pending\)/);
-  assert.match(r.console, /cpuinfo: Features\t: fp asimd aes pmull sha1 sha2 .* sha3 .*sha512/);
+  assert.match(r.console, /cpuinfo: Features\t: fp asimd aes pmull sha1 sha2 .* jscvt .*sha3 .*sha512/);
   for (const d of CE_DRIVERS) assert.match(r.console, new RegExp(`^crypto: ${d} \\S+ passed\r?$`, 'm'), d);
   const totals = [...r.console.matchAll(/# Totals: pass:(\d+) fail:(\d+)/g)];
   assert.deepEqual(totals.map((m) => m[2]), ['0', '0', '0', '0', '0'], 'the sha1, sha224, sha256, sha384 and sha512 KUnit suites');

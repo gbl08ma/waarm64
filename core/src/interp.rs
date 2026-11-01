@@ -265,6 +265,40 @@ pub(crate) fn sha3_enabled(c: &Cpu) -> R {
     }
 }
 
+/// FEAT_FlagM's and FEAT_FlagM2's NZCV (bits 31:28 of the result).
+fn flagm(c: &Cpu, i: u32, op: Op) -> u64 {
+    let f = c.nzcv >> 28;
+    let (z, cy, v) = (f >> 2 & 1, f >> 1 & 1, f & 1);
+    let r = match op {
+        Op::CFINV => f ^ 0b0010,
+        // RMIF Xn, #shift, #mask: the masked flags from Xn rotated right.
+        Op::RMIF => {
+            let (x, mask) = (
+                c.reg(bits(i, 9, 5)).rotate_right(bits(i, 20, 15)),
+                bits(i, 3, 0) as u64,
+            );
+            f & !mask | x & mask
+        }
+        // SETF8/SETF16 Wn: N the top bit, Z the low bits all zero, V the top bit
+        // XOR the one above it; C unchanged.
+        Op::SETF8 | Op::SETF16 => {
+            let top = if bit(i, 14) { 15 } else { 7 };
+            let w = c.reg(bits(i, 9, 5));
+            let t = w >> top & 1;
+            let zero = (w & ((2 << top) - 1) == 0) as u64;
+            t << 3 | zero << 2 | cy << 1 | (t ^ w >> (top + 1) & 1)
+        }
+        // XAFLAG: the external format (FCMP's NZCV) from the Arm one; AXFLAG back.
+        Op::XAFlag => {
+            let (nc, nz) = (cy ^ 1, z ^ 1);
+            (nc & nz) << 3 | (z & cy) << 2 | (cy | z) << 1 | (nc & z)
+        }
+        Op::AXFlag => (z | v) << 2 | (cy & (v ^ 1)) << 1,
+        _ => unreachable!("{op:?}"),
+    };
+    r << 28
+}
+
 /// The AES, SHA1, SHA256, SHA512 and SHA3 instructions (`crate::crypto`); FPEN checked by the caller.
 fn crypto_exec(c: &mut Cpu, i: u32, op: Op) {
     use crate::crypto::*;
@@ -842,8 +876,20 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             simd::exec(c, i, op)?
         }
 
-        // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, SB,
-        // v8.2+ flag manipulation, RCpc, LOR, DPB, LS64, WFxT, FP16).
+        // FEAT_SB: nothing speculates, so a NOP.
+        SB if c.features & crate::cpu::FEATURE_SB != 0 => {}
+        // FEAT_LRCPC: the RCpc loads as LDAR (RCsc is stronger: allowed).
+        LDAPRB | LDAPRH | LDAPR if c.features & crate::cpu::FEATURE_RCPC != 0 => {
+            ldst::exec(c, m, i, pc, LDAR)?
+        }
+        // FEAT_FlagM and FEAT_FlagM2.
+        CFINV | RMIF | SETF8 | SETF16 | XAFlag | AXFlag
+            if c.features & crate::cpu::FEATURE_FLAGM != 0 =>
+        {
+            c.nzcv = flagm(c, i, op);
+        }
+        // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, LOR,
+        // DPB, LS64, WFxT, FP16), or the vCPU doesn't have (SB, FlagM, RCpc).
         UnallocatedEncoding | ADDG | SUBG | PACIA_1 | PACIB_1 | AUTIA_1 | AUTIB_1 | PACDA
         | PACDB | AUTDA | AUTDB | XPAC_1 | PACGA | BLRA | BRA | RETA | ERETA | LDRA | SUBP
         | SUBPS | IRG | GMI | STGP_1 | STGP_2 | STGP_3 | STG_1 | STG_2 | STG_3 | LDG | STZG_1
@@ -865,17 +911,46 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             fp_enabled(c)?;
             crypto_exec(c, i, op)
         }
-        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, FRINTTS, JSCVT,
-        // BF16, SM3, SM4.
+        // FEAT_JSCVT (`cpu::FEATURE_JSCVT`): UNDEFINED without it, before the FPEN trap.
+        FJCVTZS => {
+            if c.features & crate::cpu::FEATURE_JSCVT == 0 {
+                return Err(Exit::Undefined);
+            }
+            fp_enabled(c)?;
+            float::exec(c, i, op)?
+        }
+        // FEAT_FRINTTS, scalar and vector: UNDEFINED without it, and its reserved
+        // forms (ftype 1x, doubles without Q), before the FPEN trap.
+        FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1 | FRINT32X_float | FRINT64X_float
+        | FRINT32Z_float | FRINT64Z_float
+            if c.features & crate::cpu::FEATURE_FRINTTS != 0 =>
+        {
+            let vector = matches!(op, FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1);
+            if if vector {
+                bit(i, 22) && !bit(i, 30)
+            } else {
+                bit(i, 23)
+            } {
+                return Err(Exit::Undefined);
+            }
+            fp_enabled(c)?;
+            if vector {
+                simd_fp::frintts(c, i)?
+            } else {
+                float::exec(c, i, op)?
+            }
+        }
+        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, BF16, SM3, SM4,
+        // and FRINTTS without the feature.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element
         | USDOT_vec | FCMLA_vec | FCADD_vec | FCMLA_elt | FMLAL_vec_1 | FMLSL_vec_1
         | FMLAL_vec_2 | FMLSL_vec_2 | FMLAL_elt_1 | FMLAL_elt_2 | FMLSL_elt_1 | FMLSL_elt_2
         | FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1 | FRINT32X_float | FRINT64X_float
-        | FRINT32Z_float | FRINT64Z_float | FJCVTZS | BFCVT | BFCVTN | BFDOT_element
-        | BFDOT_vec | BFMLALX_element | BFMLALX_vector | BFMMLA | SM3TT1A | SM3TT1B | SM3TT2A
-        | SM3TT2B | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E => return Err(Exit::Undefined),
+        | FRINT32Z_float | FRINT64Z_float | BFCVT | BFCVTN | BFDOT_element | BFDOT_vec
+        | BFMLALX_element | BFMLALX_vector | BFMMLA | SM3TT1A | SM3TT1B | SM3TT2A | SM3TT2B
+        | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E => return Err(Exit::Undefined),
         // Half-precision AdvSIMD arithmetic (FEAT_FP16).
         FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
         | FCMGT_reg_1 | FACGT_1 | FCVTNS_1 | FCVTMS_1 | FCVTAS_1 | SCVTF_int_1 | FCMGT_zero_1

@@ -23,6 +23,32 @@ match it step for step.
   a snapshot keeps its machine's, and the shape's hash leaves the feature out, so the snapshots kept
   before it still match: [frontend.md](frontend.md)); the bare-metal tests run without them. The
   user-mode entry points have them (the corpus is the M4's).
+- **FEAT_JSCVT** (`FJCVTZS`: JavaScript's ToInt32 of a double, toward zero, modulo 2^32, NZCV = 0Z00
+  with Z set when exact; `fp::Fpu::to_int_js`): `VmConfig.features` bit 4 (`FEATURE_JSCVT`, ABI 59),
+  `ID_AA64ISAR1_EL1.JSCVT` = 1, Linux's `jscvt` hwcap. **On by default** in `bootVm` (`jscvt: false`
+  turns it off), the native runners and the page's machines (`?jscvt=0`; a snapshot keeps its machine's,
+  and the feature is in the shape's hash); the bare-metal tests run without it, the user-mode
+  entry points with it. JS engines use it for ToInt32 when the hwcap says so (V8 does); the JIT runs it
+  inline ([jit.md](jit.md) "Floating point").
+- **Small extensions past v8.0** (ABI 59), each its own `VmConfig.features` bit, on and switched as JSCVT is
+  (`rcpc: false` and `?rcpc=0`, and so on), in the shape's hash. **Not measured** (a cloud session: backlog
+  "ABI 59's extensions"). LDAPR runs LDAR's code, SB is free, and FRINTTS is inline. The FlagM forms are helper
+  calls, slower than the inline flag code a compiler emits without them. That costs only code built for v8.4 and
+  up, which has no other path anyway; distributions' binaries target v8.0, and nothing known dispatches on the
+  hwcap:
+  - **FEAT_LRCPC** (bit 5, `FEATURE_RCPC`, `rcpc`): `LDAPR`, `LDAPRB`, `LDAPRH` run as `LDAR` (RCsc is stronger
+    than RCpc asks, which is allowed), the JIT's inline LDAR included. Not FEAT_LRCPC2 (`LDAPUR`, `STLUR`: not
+    in dynarmic's table).
+  - **FEAT_SB** (bit 6, `FEATURE_SB`, `sb`): `SB` is a NOP (nothing speculates), inline in the JIT.
+  - **FEAT_FlagM and FEAT_FlagM2** (bit 7, `FEATURE_FLAGM`, `flagm`): `CFINV`, `RMIF`, `SETF8`, `SETF16`,
+    `XAFLAG`, `AXFLAG` (`interp::flagm`); helper calls in the JIT (compilers rarely emit them).
+  - **FEAT_DIT** (bit 8, `FEATURE_DIT`, `dit`): PSTATE.DIT (`cpu::PSTATE_DIT`, bit 24 as in SPSR) through
+    `MSR DIT, #imm`, `MSR`/`MRS DIT`; exception entry keeps it and copies it to SPSR, ERET takes it back
+    (an illegal return too). It changes no timing: the emulator promises no data-independent timing either way.
+  - **FEAT_FRINTTS** (bit 9, `FEATURE_FRINTTS`, `frintts`): `FRINT32Z`, `FRINT32X`, `FRINT64Z`, `FRINT64X`,
+    scalar and vector (`fp::Fpu::round_int_n`, FPRoundIntN: out of range, a NaN or an infinity gives
+    -2^(N-1) and Invalid only), inline in the JIT ([jit.md](jit.md)). dynarmic's table swaps the vector X forms'
+    names (its `FRINT32X_1` is opcode 11111, FRINT64X): the handlers read the size from the encoding.
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -42,8 +68,8 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (FP16, BF16, FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS, LSE2, RCpc, FlagM, SB, DIT,
-  SM3/SM4, LOR, MOPS, HBC) is UNDEFINED and unadvertised. Candidates for later are in
+  (FP16, BF16, FHM, RDM, DotProd, I8MM, FCMA, LSE2, LRCPC2, SM3/SM4, LOR, MOPS, HBC) is
+  UNDEFINED and unadvertised. Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: ID registers advertise exactly what's implemented.** `ID_AA64DFR0_EL1` advertises
   v8.0 self-hosted debug with the architectural minimum (2 breakpoints, 2 watchpoints, 1 context
@@ -57,11 +83,12 @@ match it step for step.
 - `ID_AA64PFR0_EL1`: FP and AdvSIMD = 0 (present, no FP16); **CSV2 and CSV3 set** (nothing
   speculates, which spares the guest Spectre mitigations and KPTI, unless its kernel has KASLR and
   the CPU no E0PD: above); GIC = 1 in a VM (the GICv3's
-  system-register interface, `cpu::FEATURE_GICV3`), 0 for user-mode vCPUs.
+  system-register interface, `cpu::FEATURE_GICV3`), 0 for user-mode vCPUs; DIT = 1 with FEAT_DIT.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
-  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), and RNDR = 1 with FEAT_RNG.
-  `ID_AA64ISAR1_EL1` reports none of RDM, DotProd, FHM, FCMA, JSCVT, FRINTTS, BF16, I8MM; no AFP.
+  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM.
+  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, LRCPC = 1, FRINTTS = 1 and SB = 1 with their
+  features; none of DotProd, FHM, FCMA, BF16, I8MM (RDM is ISAR0's: none); no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after

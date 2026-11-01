@@ -98,6 +98,8 @@ pub const DISPATCH_INTERP: u8 = 1;
 pub const DISPATCH_MMU: u8 = 2;
 /// PSTATE.SS (bit 21, as in SPSR) and PSTATE.D.
 pub const PSTATE_SS: u64 = 1 << 21;
+/// PSTATE.DIT (FEAT_DIT), at its SPSR position.
+pub const PSTATE_DIT: u64 = 1 << 24;
 pub const PSTATE_D: u64 = 1 << 9;
 
 /// FEAT_AES (with PMULL), FEAT_SHA1 and FEAT_SHA256 (M6.5): advertised in
@@ -114,8 +116,36 @@ pub const FEATURE_E0PD: u64 = 4;
 /// `RAX1`, `XAR`, `BCAX`, advertised in ID_AA64ISAR0_EL1 and UNDEFINED without
 /// it. Only with `FEATURE_CRYPTO` (SHA512 needs SHA256): alone it is nothing.
 pub const FEATURE_SHA3: u64 = 8;
+/// FEAT_JSCVT (ABI 59): `FJCVTZS`, JavaScript's ToInt32 of a double (rounded
+/// toward zero, modulo 2^32, Z set when exact), advertised in ID_AA64ISAR1_EL1
+/// and UNDEFINED without it.
+pub const FEATURE_JSCVT: u64 = 16;
+/// FEAT_LRCPC (ABI 59): `LDAPR`, `LDAPRB`, `LDAPRH`, run as `LDAR` (stronger
+/// ordering than RCpc asks is allowed), advertised in ID_AA64ISAR1_EL1.
+pub const FEATURE_RCPC: u64 = 32;
+/// FEAT_SB (ABI 59): `SB`, a NOP (nothing speculates), advertised in ID_AA64ISAR1_EL1.
+pub const FEATURE_SB: u64 = 64;
+/// FEAT_FlagM and FEAT_FlagM2 (ABI 59): `CFINV`, `RMIF`, `SETF8`, `SETF16`,
+/// `XAFLAG`, `AXFLAG`, advertised in ID_AA64ISAR0_EL1 (TS = 2).
+pub const FEATURE_FLAGM: u64 = 128;
+/// FEAT_DIT (ABI 59): PSTATE.DIT (`MSR DIT`, `MRS DIT`, kept through SPSR and
+/// unchanged by exception entry), advertised in ID_AA64PFR0_EL1. Nothing's
+/// timing depends on data any less with it set.
+pub const FEATURE_DIT: u64 = 256;
+/// FEAT_FRINTTS (ABI 59): `FRINT32Z`, `FRINT32X`, `FRINT64Z`, `FRINT64X`,
+/// scalar and vector, advertised in ID_AA64ISAR1_EL1.
+pub const FEATURE_FRINTTS: u64 = 512;
 /// Every feature bit the core knows.
-pub const FEATURES: u64 = FEATURE_CRYPTO | FEATURE_RNG | FEATURE_E0PD | FEATURE_SHA3;
+pub const FEATURES: u64 = FEATURE_CRYPTO
+    | FEATURE_RNG
+    | FEATURE_E0PD
+    | FEATURE_SHA3
+    | FEATURE_JSCVT
+    | FEATURE_RCPC
+    | FEATURE_SB
+    | FEATURE_FLAGM
+    | FEATURE_DIT
+    | FEATURE_FRINTTS;
 
 /// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
 #[inline]
@@ -348,7 +378,10 @@ impl Cpu {
             cntv_ctl_el0,
             cntv_cval_el0,
         ] = s;
-        if !matches!(pstate & !(DAIF | PSTATE_SS), M_EL0T | M_EL1T | M_EL1H)
+        if !matches!(
+            pstate & !(DAIF | PSTATE_SS | PSTATE_DIT),
+            M_EL0T | M_EL1T | M_EL1H
+        ) || pstate & PSTATE_DIT != 0 && self.features & FEATURE_DIT == 0
             || !matches!(self.monitor.size, 0 | 1 | 2 | 4 | 8 | 16)
         {
             return Err(snapshot::Error::Corrupt);
@@ -519,6 +552,28 @@ mod tests {
         assert_eq!(refused(&|c| c.pstate = 0b0001), corrupt, "EL0h");
         assert_eq!(refused(&|c| c.pstate = M_EL1H | 1 << 4), corrupt, "AArch32");
         assert_eq!(refused(&|c| c.pstate = M_EL0T | PSTATE_SS), Ok(()), "SS");
+        // DIT only on a vCPU that has it (exception entry would copy it into SPSR).
+        let mut w = Writer::default();
+        Cpu {
+            pstate: M_EL0T | PSTATE_DIT,
+            ..c.clone()
+        }
+        .save(&mut w);
+        let mut no_dit = Cpu {
+            features: FEATURES & !FEATURE_DIT,
+            ..Cpu::reset()
+        };
+        assert_eq!(
+            no_dit.restore(&mut Reader(&w.0)),
+            corrupt,
+            "DIT without FEAT_DIT"
+        );
+        let mut dit = Cpu {
+            features: FEATURES,
+            ..Cpu::reset()
+        };
+        assert_eq!(dit.restore(&mut Reader(&w.0)), Ok(()), "DIT with FEAT_DIT");
+        assert_eq!(dit.pstate, M_EL0T | PSTATE_DIT);
         assert_eq!(refused(&|c| c.monitor.size = 3), corrupt);
         assert_eq!(refused(&|c| c.cntv_ctl_el0 = 7), Ok(()));
         assert_eq!(

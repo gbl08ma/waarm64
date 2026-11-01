@@ -959,6 +959,48 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(FPOK);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
+        // FJCVTZS (FEAT_JSCVT): Wd = ToInt32(Dn), NZCV = 0Z00. An operand in
+        // (-2^31 - 1, 2^31) truncates to an i32 (a NaN isn't in it); exact (and
+        // not -0: Z) it raises nothing, inexact Inexact, which FPOK has set
+        // already (a denormal: under FZ the helper's, for IDC). The rest (out
+        // of range, infinite or a NaN: Invalid) is the helper's. NZCV stays
+        // lazy: a 32-bit logical result of !Z.
+        FJCVTZS if cx.jscvt => {
+            fpa_guard(c);
+            let (v, e, fr) = (super::FT[1], super::tmp(false, 0), flag_locals(false).2);
+            f.load(c, rn);
+            c.local_tee(x);
+            f.to_float(c);
+            c.local_tee(v);
+            c.op(0x9d).local_get(v).op(0x61).local_set(e); // f64.trunc, f64.eq
+            c.local_get(v).f64_const(-2147483649.0).op(0x64); // f64.gt
+            c.local_get(v).f64_const(2147483648.0).op(0x63).op(AND); // f64.lt
+            c.local_get(FPOK);
+            under_fz(c, |c| no_denormal(c, f, &[x]));
+            c.local_get(e).op(0x72).op(AND); // i32.or
+            guarded_with(
+                c,
+                cx,
+                i,
+                k,
+                xmask(rd),
+                |c| {
+                    set(c, false, rd, |c| {
+                        c.local_get(v).op(0xfc).op(2); // i32.trunc_sat_f64_s
+                    });
+                    c.local_get(e);
+                    c.local_get(x).i64_const(i64::MIN).op(0x52); // i64.ne
+                    c.op(AND).op(EQZ).local_set(fr);
+                },
+                |_| {},
+                |c| {
+                    // The helper's Z.
+                    c.local_get(VCPU).i32_load(NZCV);
+                    c.i32_const(1 << 30).op(AND).op(EQZ).local_set(fr);
+                },
+            );
+            c.set_flags(Kind::Logic, false);
+        }
         // FCVT{N,M,A,P,Z}{S,U} to a general register or (the AdvSIMD scalar
         // forms) to Vd, as wide as the float: the operand rounded in the
         // instruction's mode (FRINTA's sum for ties away), then a normal or
@@ -1355,9 +1397,52 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
+        // FRINT32Z/X, FRINT64Z/X (FEAT_FRINTTS; opcode<1> (16) is 64 bits,
+        // opcode<0> (15) the FPCR's mode): FRINTZ's or FRINTI's rounding
+        // (nearest even under FPOK), then a rounded value in the integer's
+        // range (a NaN or an infinity isn't), under FPOK (Inexact), and no NaN
+        // or, under FZ, denormal operand. The rest (Invalid) is the helper's.
+        FRINT32X_float | FRINT64X_float | FRINT32Z_float | FRINT64Z_float
+            if cx.features & crate::cpu::FEATURE_FRINTTS != 0 =>
+        {
+            fpa_guard(c);
+            f.load(c, rn);
+            c.local_set(x);
+            round(
+                c,
+                f,
+                x,
+                if bit(i, 15) {
+                    Round::Nearest
+                } else {
+                    Round::Trunc
+                },
+            );
+            f.to_int(c);
+            c.local_set(r);
+            in_int_range(c, f, r, if bit(i, 16) { 64 } else { 32 });
+            scalar_plain(c, f, x, false, false);
+            c.op(AND).local_get(FPOK).op(AND);
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
+        }
         _ => return false,
     }
     true
+}
+
+/// Pushes an i32: the integral float bits in local `l` lie in [-2^(n-1), 2^(n-1)).
+fn in_int_range(c: &mut Func, f: F, l: u32, n: i32) {
+    let lim = 2f64.powi(n - 1);
+    for (v, cmp) in [(-lim, 0), (lim, 1)] {
+        c.local_get(l);
+        f.to_float(c);
+        if f.d {
+            c.f64_const(v).op([0x66, 0x63][cmp]); // f64.ge, f64.lt
+        } else {
+            c.f32_const(v as f32).op([0x60, 0x5d][cmp]); // f32.ge, f32.lt
+        }
+    }
+    c.op(AND);
 }
 
 // Vector FP (M6 loop 6): the same rules lane by lane; any lane off the fast
@@ -2475,6 +2560,32 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             } else {
                 every_lane(c, d, q, 1);
             }
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+        }
+        // FRINT32Z/X, FRINT64Z/X (FEAT_FRINTTS; U (29) is the FPCR's mode,
+        // opcode<0> (12) 64 bits): the scalar forms' rule lane by lane.
+        FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1
+            if cx.features & crate::cpu::FEATURE_FRINTTS != 0 =>
+        {
+            fpa_guard(c);
+            vreg(c, rn);
+            c.simd(op::ROUND[d as usize][if bit(i, 29) { 0 } else { 3 }])
+                .local_set(tr);
+            vreg(c, rn);
+            plain_lanes(c, d);
+            let lim = 2f64.powi(if bit(i, 12) { 63 } else { 31 });
+            let bits = |v: f64| {
+                if d {
+                    v.to_bits()
+                } else {
+                    (v as f32).to_bits() as u64
+                }
+            };
+            for (v, cmp) in [(-lim, 4), (lim, 1)] {
+                c.local_get(tr).v128_const(splat(d, bits(v)));
+                c.simd(op::CMP[d as usize][cmp]); // ge, lt
+            }
+            all_lanes(c, d, q, 3);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FCVTL(2), half to single: exact and without flags but for NaNs (FZ

@@ -674,7 +674,7 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   the other registers stay in their locals on both arms. Before, each arm wrote back every dirty register and
   stored the flags itself: Alpine's boot made 6.1% less wasm with it, Liftoff 8.6% less code and TurboFan 6%
   (`bench/boot/REPORT.md` "M8: smaller slow arms of loads and stores").
-- **Atomics:** LDAR/STLR as aligned wasm atomics, single exclusives and the LSE atomics
+- **Atomics:** LDAR/STLR (and FEAT_LRCPC's LDAPR*, as LDAR) as aligned wasm atomics, single exclusives and the LSE atomics
   (add/clr/eor/set/swp as `atomic.rmw`, CAS as `cmpxchg`) inline; DC ZVA as a 64-byte zero.
   CASP inline too: the W pair as one 64-bit `cmpxchg`, the X pair as `Mem::cas_pair`'s protocol
   ([cpu.md](cpu.md) "Memory accesses and atomics"), its pair lock taken with an
@@ -881,6 +881,13 @@ interpreter's; the helper runs the instruction otherwise.
   rounded value fits, under FPOK (Inexact), into the saturating truncation (2D lane by lane);
   FCVTXN rounds to odd from the RNE demote (inexact, it steps toward zero where the demote went away
   from the operand, then sets the odd bit), with an RNE result from the second binade up and finite;
+  FJCVTZS (FEAT_JSCVT, when the vCPU has it) from `f64.trunc` and `i32.trunc_sat_f64_s` for an
+  operand in (-2^31 - 1, 2^31), exact (Z set unless it's -0), or inexact under FPOK and, under FZ, not a
+  denormal; NZCV lazy as a 32-bit logical result of !Z (the helper's Z read back after it); out of range,
+  infinite or a NaN (Invalid) is the helper's; FRINT32Z/X and FRINT64Z/X (FEAT_FRINTTS), scalar and
+  vector, as FRINTZ and FRINTI/X (nearest even under FPOK) and then the rounded value (lanes) in the
+  integer's range, under FPOK (Inexact) with no NaN or, under FZ, denormal operand: the saturating
+  -2^(N-1) and its Invalid are the helper's;
   FCVT to and from half (scalar), as the vector half forms below, single or double straight to half
   in integer arithmetic (no double rounding);
   FCVT single↔double, scalar and vector (FCVTL/FCVTN): widening is exact without FPOK for a zero,

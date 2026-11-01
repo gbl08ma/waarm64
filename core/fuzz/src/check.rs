@@ -231,10 +231,9 @@ const SYS_NOT_OURS: &[&str] = &[
     "cntpctss",
     "cntvctss",
     "ccsidr2",
-    // PSTATE fields after v8.0: PAN, UAO, DIT, SSBS.
+    // PSTATE fields after v8.0: PAN, UAO, SSBS (DIT is ours since ABI 59).
     "pan",
     "uao",
-    "dit",
     "ssbs",
     // EL2 maintenance (TLBI ALLE1, VMALLS12E1, IPAS2*, AT S1E2*/S1E3*) and RME's TLBI PAALL.
     "alle1",
@@ -322,12 +321,11 @@ const NOT_OURS: &[&str] = &[
     // FEAT_MTE
     "addg", "subg", "irg", "gmi", "subp", "subps", "cmpp", "stg", "stzg", "st2g", "stz2g", "stgp",
     "ldg", "ldgm", "stgm", "stzgm",
-    // FEAT_FlagM, FEAT_FlagM2, FEAT_SB, FEAT_LOR, FEAT_WFxT, FEAT_LS64
-    "cfinv", "rmif", "setf8", "setf16", "xaflag", "axflag", "sb", "wfet", "wfit", "ld64b", "st64b",
-    "st64bv", "st64bv0",
-    // FP/AdvSIMD beyond v8.0: FEAT_JSCVT, FEAT_FRINTTS, FEAT_FHM, FEAT_RDM, FEAT_DotProd,
-    // FEAT_I8MM, FEAT_FCMA, FEAT_SM3, FEAT_SM4.
-    "fjcvtzs", "frint32x", "frint32z", "frint64x", "frint64z", "fmlal", "fmlal2", "fmlsl", "fmlsl2",
+    // FEAT_LOR, FEAT_WFxT, FEAT_LS64 (FlagM, FlagM2 and SB are ours since ABI 59)
+    "wfet", "wfit", "ld64b", "st64b", "st64bv", "st64bv0",
+    // FP/AdvSIMD beyond v8.0: FEAT_FHM, FEAT_RDM, FEAT_DotProd, FEAT_I8MM, FEAT_FCMA,
+    // FEAT_SM3, FEAT_SM4 (FEAT_JSCVT and FEAT_FRINTTS are ours since ABI 59).
+    "fmlal", "fmlal2", "fmlsl", "fmlsl2",
     "sqrdmlah", "sqrdmlsh", "sdot", "udot", "usdot", "sudot", "smmla", "ummla", "usmmla", "fcmla",
     "fcadd",
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
@@ -341,8 +339,8 @@ const NOT_OURS_PREFIX: &[&str] = &[
     // FEAT_SM3/SM4, FEAT_BF16 (AES, SHA1 and SHA256 are ours since M6.5, SHA512 and SHA3 since ABI 51)
     "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla", // FEAT_PAuth
     "pac", "aut", "xpac", "braa", "brab", "blraa", "blrab", "retaa", "retab", "eretaa", "eretab",
-    "ldraa", "ldrab", // FEAT_LRCPC, FEAT_LRCPC2, FEAT_LOR
-    "ldapr", "ldapur", "stlur", "ldlar", "stllr",
+    "ldraa", "ldrab", // FEAT_LRCPC2, FEAT_LOR (FEAT_LRCPC's LDAPR is ours since ABI 59)
+    "ldapur", "stlur", "ldlar", "stllr",
     // FEAT_HBC, FEAT_MOPS, SVE element counts
     "bc.", "cpy", "setp", "setm", "sete", "setg", "sqinc", "sqdec", "uqinc", "uqdec", "incb",
     "inch", "incw", "incd", "cterm", "setffr", "decb", "dech", "decw", "decd", "cntb", "cnth",

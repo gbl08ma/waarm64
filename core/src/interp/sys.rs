@@ -9,7 +9,8 @@
 
 use super::{Exit, R, bit, bits, debug};
 use crate::cpu::{
-    Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_I, PSTATE_SS, SPSR_IL, sctlr,
+    Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_DIT, PSTATE_I, PSTATE_SS,
+    SPSR_IL, sctlr,
 };
 use crate::decode::Op;
 use crate::mem::{Access, Fault, FaultKind};
@@ -35,7 +36,9 @@ const ID_AA64PFR0: u64 = 1 << 60 | 1 << 56 | 1 << 4 | 1;
 
 /// ID_AA64PFR0_EL1 for a vCPU with `features`.
 pub fn pfr0(features: u64) -> u64 {
-    ID_AA64PFR0 | ((features & crate::cpu::FEATURE_GICV3 != 0) as u64) << 24
+    ID_AA64PFR0
+        | ((features & crate::cpu::FEATURE_GICV3 != 0) as u64) << 24
+        | ((features & crate::cpu::FEATURE_DIT != 0) as u64) << 48
 }
 
 /// The GICv3 CPU interface register an MSR/MRS key (bits 20:5) names, if
@@ -57,18 +60,28 @@ const ID_AA64ISAR0: u64 = 2 << 20 | 1 << 16;
 const ISAR0_CRYPTO: u64 = 1 << 12 | 1 << 8 | 2 << 4;
 const ISAR0_SHA3: u64 = 2 << 12 | 1 << 32;
 const ISAR0_RNDR: u64 = 1 << 60;
+/// TS = 2: FEAT_FlagM and FEAT_FlagM2.
+const ISAR0_TS: u64 = 2 << 52;
 
 /// ID_AA64ISAR0_EL1 for a vCPU with `features`.
 pub fn isar0(features: u64) -> u64 {
     let has = |f: u64, v: u64| if features & f != 0 { v } else { 0 };
     let r = ID_AA64ISAR0
         | has(crate::cpu::FEATURE_CRYPTO, ISAR0_CRYPTO)
-        | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR);
+        | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR)
+        | has(crate::cpu::FEATURE_FLAGM, ISAR0_TS);
     if crate::cpu::has_sha3(features) {
         r & !(0xf << 12) | ISAR0_SHA3
     } else {
         r
     }
+}
+/// ID_AA64ISAR1_EL1 for a vCPU with `features`: JSCVT = 1 (15:12), LRCPC = 1
+/// (23:20), FRINTTS = 1 (35:32) and SB = 1 (39:36), each with its feature.
+pub fn isar1(features: u64) -> u64 {
+    use crate::cpu::*;
+    let has = |f: u64, sh: u32| ((features & f != 0) as u64) << sh;
+    has(FEATURE_JSCVT, 12) | has(FEATURE_RCPC, 20) | has(FEATURE_FRINTTS, 32) | has(FEATURE_SB, 36)
 }
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.
 const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
@@ -99,6 +112,8 @@ const TPIDRRO_EL0: u32 = sr(3, 3, 13, 0, 3);
 /// FEAT_RNG: a random number, and one from a reseeded source (ours are one stream).
 const RNDR: u32 = sr(3, 3, 2, 4, 0);
 const RNDRRS: u32 = sr(3, 3, 2, 4, 1);
+/// FEAT_DIT's PSTATE.DIT.
+const DIT: u32 = sr(3, 3, 4, 2, 5);
 const SPSR_EL1: u32 = sr(3, 0, 4, 0, 0);
 const ELR_EL1: u32 = sr(3, 0, 4, 0, 1);
 const SP_EL0: u32 = sr(3, 0, 4, 1, 0);
@@ -126,6 +141,7 @@ const REVIDR: u32 = sr(3, 0, 0, 0, 6);
 const PFR0: u32 = sr(3, 0, 0, 4, 0);
 const DFR0: u32 = sr(3, 0, 0, 5, 0);
 const ISAR0: u32 = sr(3, 0, 0, 6, 0);
+const ISAR1: u32 = sr(3, 0, 0, 6, 1);
 const MMFR0: u32 = sr(3, 0, 0, 7, 0);
 const MMFR2: u32 = sr(3, 0, 0, 7, 2);
 const CCSIDR: u32 = sr(3, 1, 0, 0, 0);
@@ -254,7 +270,10 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
                     return unmasked(before, c);
                 }
                 (0, 5) => c.set_pstate(c.pstate & !1 | crm & 1), // SPSel
-                _ => return Err(Exit::Undefined), // PAN, UAO, DIT, SSBS, TCO: not implemented
+                (3, 2) if c.features & crate::cpu::FEATURE_DIT != 0 => {
+                    c.pstate = c.pstate & !PSTATE_DIT | (crm & 1) << 24;
+                }
+                _ => return Err(Exit::Undefined), // PAN, UAO, SSBS, TCO: not implemented
             }
         }
         DC_ZVA => {
@@ -345,6 +364,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
     let el0 = c.el() == 0;
     Ok(match key {
         NZCV => c.nzcv,
+        DIT if c.features & crate::cpu::FEATURE_DIT != 0 => c.pstate & PSTATE_DIT,
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
         DAIF_R => c.pstate & DAIF,
         FPCR => {
@@ -394,6 +414,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         PFR0 => pfr0(c.features),
         DFR0 => ID_AA64DFR0,
         ISAR0 => isar0(c.features),
+        ISAR1 => isar1(c.features),
         k if icc(c.features, k).is_some_and(|r| r.readable()) => return Err(Exit::Platform(i)),
         MMFR0 => ID_AA64MMFR0,
         MMFR2 => mmfr2(c.features),
@@ -535,6 +556,9 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     let (asid, copy, pstate) = (mmu::asid(c), c.sctlr_el1 & (sctlr::M | sctlr::A), c.pstate);
     match key {
         NZCV => c.nzcv = v & 0xf000_0000,
+        DIT if c.features & crate::cpu::FEATURE_DIT != 0 => {
+            c.pstate = c.pstate & !PSTATE_DIT | v & PSTATE_DIT;
+        }
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
         DAIF_R => c.pstate = c.pstate & !DAIF | v & DAIF,
         FPCR => {
@@ -743,6 +767,9 @@ fn eret(c: &mut Cpu) {
     c.nzcv = spsr & 0xf000_0000;
     c.monitor.size = 0;
     let mut p = if legal { m } else { c.pstate & 0xf } | spsr & DAIF;
+    if c.features & crate::cpu::FEATURE_DIT != 0 {
+        p |= spsr & PSTATE_DIT; // legal or not
+    }
     // PSTATE.SS comes back only while software step is on at the target; the
     // step it leaves pending reports no ISV.
     if c.mdscr_el1 & debug::MDSCR_SS != 0 && legal && debug::enabled_for(c, p) {
@@ -838,7 +865,7 @@ fn vector(c: &mut Cpu, ret: u64, spsr_extra: u64, kind: u64) {
     c.elr_el1 = ret;
     c.spsr_el1 = c.nzcv | c.pstate | spsr_extra;
     c.monitor.size = 0;
-    c.set_pstate(M_EL1H | DAIF);
+    c.set_pstate(M_EL1H | DAIF | c.pstate & PSTATE_DIT);
     c.pc = c.vbar_el1.wrapping_add(base + kind);
 }
 

@@ -469,3 +469,96 @@ fn check32(n: &mut u32, fast: &mut u32, mid: &mut u32, c: u32, a: u32, b: u32) {
         assert_eq!(z as u64, slow(S, c, a, b), "{a:#x} * {b:#x} + {c:#x}");
     }
 }
+
+#[test]
+fn to_int_js() {
+    // FJCVTZS: (result, Z), flags. Toward zero, modulo 2^32; Z only when exact.
+    let js = |fpcr: u64, x: u64| {
+        let mut f = Fpu::new(fpcr);
+        let (r, z) = f.to_int_js(x);
+        (r, z, f.flags)
+    };
+    assert_eq!(js(RN, d(0.0)), (0, true, 0));
+    assert_eq!(js(RN, d(-0.0)), (0, false, 0));
+    assert_eq!(js(RN, d(1.0)), (1, true, 0));
+    assert_eq!(js(RN, d(-1.0)), (u32::MAX, true, 0));
+    assert_eq!(js(RN, d(1.5)), (1, false, IXC));
+    assert_eq!(js(RP, d(-1.5)), (u32::MAX, false, IXC)); // FPCR.RMode doesn't matter
+    assert_eq!(js(RN, d(-0.5)), (0, false, IXC));
+    assert_eq!(js(RN, d(2147483647.0)), (0x7fff_ffff, true, 0));
+    assert_eq!(js(RN, d(2147483647.9)), (0x7fff_ffff, false, IXC));
+    assert_eq!(js(RN, d(-2147483648.0)), (0x8000_0000, true, 0));
+    assert_eq!(js(RN, d(-2147483648.5)), (0x8000_0000, false, IXC));
+    // Out of range: modulo 2^32, Invalid and not Inexact.
+    assert_eq!(js(RN, d(2147483648.0)), (0x8000_0000, false, IOC));
+    assert_eq!(js(RN, d(-2147483649.0)), (0x7fff_ffff, false, IOC));
+    assert_eq!(js(RN, d(4294967296.5)), (0, false, IOC));
+    assert_eq!(js(RN, d(4294967301.75)), (5, false, IOC));
+    assert_eq!(js(RN, d(-4294967301.75)), (5u32.wrapping_neg(), false, IOC));
+    assert_eq!(js(RN, d(1e10)), (1e10 as u64 as u32, false, IOC));
+    assert_eq!(js(RN, d(2f64.powi(52) + 3.0)), (3, false, IOC));
+    assert_eq!(
+        js(RN, d(2f64.powi(31) * 3.0 + 7.0)),
+        (0x8000_0007, false, IOC)
+    );
+    assert_eq!(js(RN, d(2f64.powi(63) + 2f64.powi(40))), (0, false, IOC));
+    assert_eq!(js(RN, d(2f64.powi(84) * 1.5)), (0, false, IOC));
+    assert_eq!(js(RN, d(1e300)), (0, false, IOC));
+    // Infinities and NaNs give 0 and Invalid (a quiet NaN too).
+    assert_eq!(js(RN, d(f64::INFINITY)), (0, false, IOC));
+    assert_eq!(js(RN, d(f64::NEG_INFINITY)), (0, false, IOC));
+    assert_eq!(js(RN, d(f64::NAN)), (0, false, IOC));
+    assert_eq!(js(RN, 0x7ff0_0000_0000_0001), (0, false, IOC));
+    // A denormal is inexact; under FZ it flushes (Input Denormal) and isn't exact either.
+    assert_eq!(js(RN, 1), (0, false, IXC));
+    assert_eq!(js(RN, 1 << 63 | 1), (0, false, IXC));
+    assert_eq!(js(FZ, 1), (0, false, IDC));
+    assert_eq!(js(FZ, 1 << 63 | 1), (0, false, IDC));
+    assert_eq!(js(FZ, d(3.0)), (3, true, 0));
+}
+
+#[test]
+fn round_int_n() {
+    // FRINT32Z/X, FRINT64Z/X: in range rounded (Inexact if not exact), else the
+    // most negative integer and Invalid only.
+    let r = |fpcr: u64, f: Fmt, x: u64, rm: Rounding, n: u32| {
+        let mut u = Fpu::new(fpcr);
+        (u.round_int_n(f, x, rm, n), u.flags)
+    };
+    use Rounding::*;
+    assert_eq!(r(RN, D, d(2.5), TieEven, 32), (d(2.0), IXC));
+    assert_eq!(r(RN, D, d(-0.4), Zero, 32), (d(-0.0), IXC));
+    assert_eq!(r(RN, D, d(-0.0), Zero, 32), (d(-0.0), 0));
+    assert_eq!(r(RN, D, d(7.0), Zero, 32), (d(7.0), 0));
+    assert_eq!(r(RN, D, d(2147483647.5), Zero, 32), (d(2147483647.0), IXC));
+    assert_eq!(
+        r(RN, D, d(2147483647.5), TieEven, 32),
+        (d(-2147483648.0), IOC)
+    );
+    assert_eq!(
+        r(RN, D, d(-2147483648.5), TieEven, 32),
+        (d(-2147483648.0), IXC)
+    );
+    assert_eq!(
+        r(RN, D, d(-2147483648.75), TieEven, 32),
+        (d(-2147483648.0), IOC)
+    );
+    assert_eq!(r(RN, D, d(2147483648.0), Zero, 64), (d(2147483648.0), 0));
+    assert_eq!(
+        r(RN, D, d(2f64.powi(63)), Zero, 64),
+        (d(-(2f64.powi(63))), IOC)
+    );
+    assert_eq!(
+        r(RN, D, d(-(2f64.powi(63))), Zero, 64),
+        (d(-(2f64.powi(63))), 0)
+    );
+    assert_eq!(r(RN, S, s(1e10), Zero, 32), (s(-2147483648.0), IOC));
+    assert_eq!(r(RN, S, s(1e10), Zero, 64), (s(1e10), 0));
+    assert_eq!(r(RN, S, s(f32::NAN), Zero, 64), (s(-(2f32.powi(63))), IOC));
+    assert_eq!(
+        r(RN, D, d(f64::NEG_INFINITY), Zero, 32),
+        (d(-2147483648.0), IOC)
+    );
+    assert_eq!(r(RN, D, 1, PosInf, 32), (d(1.0), IXC)); // a denormal rounded up
+    assert_eq!(r(FZ, D, 1, PosInf, 32), (d(0.0), IDC)); // flushed first
+}

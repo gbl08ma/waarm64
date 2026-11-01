@@ -1025,6 +1025,12 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // Hints that are NOPs here (docs/cpu.md) and don't end a block.
         NOP | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI | ESB | PSB | TSB
         | CSDB | DGH => {}
+        // FEAT_SB: a NOP, as in the interpreter.
+        SB if cx.features & crate::cpu::FEATURE_SB != 0 => {}
+        // FEAT_LRCPC: LDAPR* as LDAR (the same fields: size 31:30, Rn, Rt).
+        LDAPRB | LDAPRH | LDAPR if cx.features & crate::cpu::FEATURE_RCPC != 0 => {
+            return ldst(c, cx, i, LDAR, k);
+        }
         // Barriers order nothing for vCPUs sharing a thread (one vCPU or
         // round-robin), and don't end a block. In parallel SMP every flavor is
         // a full fence (`dmb ish` on arm64; stronger than DMB LD/ST need), and
@@ -1196,6 +1202,13 @@ pub struct Ctx {
     /// The vCPU has FEAT_SHA512 and FEAT_SHA3 (`cpu::has_sha3`, fixed for its
     /// life): without them the helper runs those words (UNDEFINED).
     pub sha3: bool,
+    /// The vCPU has FEAT_JSCVT (`cpu::FEATURE_JSCVT`, fixed for its life):
+    /// without it the helper runs `FJCVTZS` (UNDEFINED).
+    pub jscvt: bool,
+    /// The vCPU's features (`cpu::FEATURE_*`, fixed for its life), for the
+    /// instructions that have no flag of their own above: without one, the
+    /// helper runs its words (UNDEFINED).
+    pub features: u64,
     /// The host's relaxed-SIMD `madd` fuses (`jit::Config::fma`): the FMA forms use it ([`float`]).
     pub fma: bool,
     /// Parallel SMP (`cpu::FEATURE_PARALLEL`): DSB is the helper's, which
@@ -4129,6 +4142,8 @@ mod tests {
         el1: false,
         crypto: true,
         sha3: true,
+        jscvt: true,
+        features: crate::cpu::FEATURES,
         fma: false,
         parallel: false,
         pair_locks: 0x100,
@@ -4784,6 +4799,8 @@ mod tests {
             el1: true,
             crypto: true,
             sha3: true,
+            jscvt: true,
+            features: crate::cpu::FEATURES,
             fma: false,
             parallel: false,
             pair_locks: 0x100,
