@@ -101,7 +101,7 @@ programs' replays need the dev VM.
   dropped silently (warn, or draw in pieces). *Done:* a test each; the 4
   `renderpasses.*.r5g6b5_unorm_pack16.input.*self_dep*` (backlog "Packed 16-bit formats' leftovers") rechecked: R3 may
   be their cause. *Start:* wg_cmd.c `begin_rendering`, `feedback_copies`, `image_use`; wg_device.c `wg_view_twin`.
-- **R4. Transfers** (done 2026-11-01: X1, X3 to X8, multisampled copies between formats by a shader; 122 multisampled clears join the list, 57 and 4 `diff_image_size` stay in the backlog, not X4's; the T4 sRGB-twin cases not newly passing, X2 didn't reproduce) (M; review X1–X8, then T10's and T12's leftovers): one-row buffer↔image copies with a taller
+- **R4. Transfers** (done 2026-11-01: X1, X3 to X8, multisampled copies between formats by a shader; some multisampled clears join the list, the RGBA8 family's and 4 `diff_image_size` stay in the backlog, not X4's; the T4 sRGB-twin cases not newly passing, X2 didn't reproduce) (M; review X1–X8, then T10's and T12's leftovers): one-row buffer↔image copies with a taller
   `bufferImageHeight` (an unaligned `bytesPerRow`: the submit lost); a drawn resolve into an sRGB-twin view (pipeline
   and view formats differ: lost); indirect indexed fans sized by the whole bound index range (past
   `maxStorageBufferBindingSize`: lost; six times the buffer per draw otherwise); multisampled copies of several layers

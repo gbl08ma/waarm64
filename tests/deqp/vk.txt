@@ -26306,7 +26306,6 @@ dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.a2b
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.b10g11r11_ufloat_pack32_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.b8g8r8a8_srgb_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.b8g8r8a8_srgb_sample_count_4
-dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.b8g8r8a8_unorm_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.r16_sfloat_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.r16_sint_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.multiple_layers.r16_uint_sample_count_4
@@ -26361,7 +26360,6 @@ dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_lay
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_srgb_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_srgb_sample_count_4
 dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_uint_sample_count_4
-dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_unorm_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.a2b10g10r10_uint_pack32_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.a2b10g10r10_unorm_pack32_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.a2b10g10r10_unorm_pack32_sample_count_4
@@ -26369,7 +26367,6 @@ dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.mul
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.b5g6r5_unorm_pack16_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.b8g8r8a8_srgb_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.b8g8r8a8_srgb_sample_count_4
-dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.b8g8r8a8_unorm_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.r16_sint_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.r16_uint_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.r16g16_sfloat_sample_count_4
@@ -26398,7 +26395,6 @@ dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.rem
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b10g11r11_ufloat_pack32_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b8g8r8a8_srgb_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b8g8r8a8_srgb_sample_count_4
-dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b8g8r8a8_unorm_clamp_input_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r16_sfloat_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r16_sint_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r16_uint_sample_count_4
