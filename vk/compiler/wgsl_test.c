@@ -183,7 +183,7 @@ wgsl_test_translate(const uint32_t *words, size_t nwords, int stage)
    }
    /* WebGPU's default workgroup storage. */
    const struct wgsl_print_options print = { .max_immediates = 64, .max_workgroup_storage = 16384,
-                                             .features = test_features & ~WGSL_TEST_SAMPLE_SHADING };
+                                             .max_inter_stage = 16, .features = test_features & ~WGSL_TEST_SAMPLE_SHADING };
    struct blob kept;
    blob_init(&kept);
    nir_serialize(&kept, nir, true);

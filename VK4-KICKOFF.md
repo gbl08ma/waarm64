@@ -111,7 +111,7 @@ programs' replays need the dev VM.
   formats: the storage round trip) and "Multisampled image clears" (X4 may be their cause). *Done:* a test each, the
   T4 `image.mutable` sRGB-twin cases and the clears in the list if they pass. *Start:* wg_cmd.c `copy_bt_replay`,
   web/venus-gpu.ts `layout`, `resolveByDraw`, `copyMultisampled`, `copyPacked`, the fans' compute pass.
-- **R5. The translator's defects** (M; review C1–C7): **C1 first** (S, corruption: a variant copies its base's
+- **R5. The translator's defects** (done 2026-11-01: C1 to C7. Depth textures' plain samples go through fetches, a shared sampler splits, borders across levels are fetched, a variant that can't print refuses its draws; ufloats past their range are the largest finite, as Vulkan says. Left: backlog "Samplers' leftovers") (M; review C1–C7): **C1 first** (S, corruption: a variant copies its base's
   depth-less fragment module, `fs_no_depth`, so it draws with the unkeyed module and its id is released twice, then two
   objects share a worker id; the fix is zeroing `fs_no_depth` and `fs_no_depth_of` in `wg_program_variant`); one depth
   texture sampled with and without comparison in a stage (invalid WGSL: PCSS shadows, DXVK's and vkd3d's

@@ -34,6 +34,7 @@ struct ctx {
    char *error;
    size_t error_size;
    struct wgsl_info *info;
+   uint32_t max_inter_stage;
    const struct wgsl_varyings *fs;
    bool tier1; /* texture-formats-tier1: storage textures of more formats */
    bool tier2; /* texture-formats-tier2: read-write storage for more formats */
@@ -762,10 +763,6 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
       struct res_use *s = resource(c, tex->sampler_index, tex->is_shadow ? WGSL_SAMPLER_COMPARE : WGSL_SAMPLER);
       if (tex->is_shadow)
          s->r.kind = WGSL_SAMPLER_COMPARE;
-      /* Integer textures reach here only gathered (wgsl_sampler.c fetches the rest): WebGPU's integer textures take
-       * only non-filtering samplers, and Vulkan's are nearest. */
-      if (t->r.sample == WGSL_SAMPLE_SINT || t->r.sample == WGSL_SAMPLE_UINT)
-         s->r.nonfiltering = true;
       bool known = false;
       for (unsigned i = 0; i < c->info->pair_count; i++)
          known |= c->info->pairs[i][0] == tex->texture_index && c->info->pairs[i][1] == tex->sampler_index;
@@ -1069,18 +1066,26 @@ declare_small_floats(struct ctx *c)
    line(c, "  if (e == 0u) { return s | bitcast<u32>(f32(m) * 5.9604644775390625e-8); }");
    line(c, "  return s | ((e + 112u) << 23u) | (m << 13u);");
    line(c, "}");
+   /* A finite float's magnitude in `mantissa` bits of mantissa over an exponent of 5 bits, rounded once, to even. */
+   line(c, "fn wg_f32_round(f: u32, mantissa: u32) -> u32 {");
+   line(c, "  let e = (f >> 23u) & 255u; let m = f & 0x7fffffu; let drop = 23u - mantissa;");
+   line(c, "  if (e < drop + 89u) { return 0u; }");
+   line(c, "  let w = select(m, m | 0x800000u, e <= 112u);");
+   line(c, "  let n = select(drop, drop + 113u - e, e <= 112u);");
+   line(c, "  let r = (w >> n) + select(0u, (e - 112u) << mantissa, e > 112u);");
+   line(c, "  let rest = w & ((1u << n) - 1u); let half = 1u << (n - 1u);");
+   line(c, "  return r + select(0u, 1u, rest > half || (rest == half && (r & 1u) != 0u));");
+   line(c, "}");
    line(c, "fn wg_f32_to_f16(f: u32) -> u32 {");
-   line(c, "  let s = (f >> 16u) & 0x8000u; let e = (f >> 23u) & 255u; let m = f & 0x7fffffu;");
-   line(c, "  if (e == 255u) { return s | 0x7c00u | select(0u, 0x200u, m != 0u); }");
-   line(c, "  if (e < 102u) { return s; }");
-   line(c, "  if (e <= 112u) { let w = m | 0x800000u; let n = 126u - e; return s | ((w >> n) + ((w >> (n - 1u)) & 1u)); }");
-   line(c, "  return s | min((((e - 112u) << 10u) | (m >> 13u)) + ((m >> 12u) & 1u), 0x7c00u);");
+   line(c, "  let s = (f >> 16u) & 0x8000u; let e = (f >> 23u) & 255u;");
+   line(c, "  if (e == 255u) { return s | 0x7c00u | select(0u, 0x200u, (f & 0x7fffffu) != 0u); }");
+   line(c, "  return s | min(wg_f32_round(f, 10u), 0x7c00u);");
    line(c, "}");
    line(c, "fn wg_f32_to_ufloat(f: u32, mantissa: u32) -> u32 {");
    line(c, "  if ((f & 0x7fffffffu) > 0x7f800000u) { return (32u << mantissa) - 1u; }");
    line(c, "  if ((f >> 31u) != 0u) { return 0u; }");
-   line(c, "  let n = 10u - mantissa;");
-   line(c, "  return min((wg_f32_to_f16(f) + (1u << (n - 1u))) >> n, 31u << mantissa);");
+   line(c, "  if (f == 0x7f800000u) { return 31u << mantissa; }");
+   line(c, "  return min(wg_f32_round(f, mantissa), (31u << mantissa) - 1u);");
    line(c, "}");
 }
 
@@ -1194,6 +1199,8 @@ declare_io(struct ctx *c)
             v->interp[loc] = v->base[loc] == WGSL_F32 ? WGSL_INTERP_PERSPECTIVE : WGSL_INTERP_FLAT;
          }
       }
+      if (c->max_inter_stage && util_last_bit(v->mask) + (c->info->clip_distances ? MAX2(DIV_ROUND_UP(c->info->clip_distance_count, 4), 1) : 0) > c->max_inter_stage)
+         failf(c, "more inter-stage variables with its clip distances than WebGPU's %u", c->max_inter_stage);
       line(c, "struct Out {");
       line(c, "  @builtin(position) pos: vec4<f32>,");
       if (c->info->clip_distances)
@@ -1219,6 +1226,8 @@ declare_io(struct ctx *c)
          c->vary.base[to] = c->vary.base[30 + k];
          c->vary.clip[k] = to + 1;
       }
+      if (c->max_inter_stage && util_last_bit(c->vary.mask) > c->max_inter_stage)
+         failf(c, "more inter-stage variables with its clip distances than WebGPU's %u", c->max_inter_stage);
       if (c->vary.mask || c->uses_frag_coord) {
          line(c, "struct In {");
          if (c->uses_frag_coord)
@@ -2683,7 +2692,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    const uint32_t max_immediates = o->max_immediates;
    const unsigned features = o->features;
    memset(info, 0, sizeof(*info));
-   const bool samplers_ok = wgsl_lower_samplers(nir, o->keys, o->key_count, info);
+   const bool samplers_ok = wgsl_lower_samplers(nir, o, info);
    wgsl_finish(nir);
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_index_ssa_defs(impl);
@@ -2694,6 +2703,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       .error_size = error_size,
       .info = info,
       .fs = nir->info.stage == MESA_SHADER_VERTEX ? fs : NULL,
+      .max_inter_stage = o->max_inter_stage,
       .tier1 = features & WGSL_TIER1,
       .tier2 = features & WGSL_TIER2,
       .max_uniform_size = o->max_uniform_size ? o->max_uniform_size & ~15u : 65536,
@@ -2704,7 +2714,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
    if (!samplers_ok)
-      failf(&c, "an integer cube texture both sampled and gathered");
+      failf(&c, "a cube bound as its faces, gathered");
    /* Transform feedback (VK3 L7.4): each captured buffer's record in `wg_xo`, one after another. */
    if (nir->info.stage == MESA_SHADER_VERTEX && nir->xfb_info) {
       unsigned words = 0;
@@ -2718,6 +2728,18 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       c.xfb = words > 0;
    }
    gather(&c, impl);
+   /* A binding has one type: what another stage compares is depth here. */
+   for (uint32_t i = 0; i < o->depth_count; i++)
+      for (unsigned k = 0; k < c.res_count; k++)
+         if (c.res[k].r.kind == WGSL_TEXTURE && ((uint32_t)c.res[k].r.group << 16 | c.res[k].r.binding) == o->depths[i])
+            c.res[k].r.sample = WGSL_SAMPLE_DEPTH;
+   /* WebGPU's integer and depth textures take only non-filtering samplers (Vulkan's integers are nearest, and depth
+    * filters only through a comparison): a shared one's float textures keep theirs (wg_program_variant splits it). */
+   for (uint32_t i = 0; i < info->pair_count; i++) {
+      struct res_use *t = resource(&c, info->pairs[i][0], WGSL_TEXTURE), *z = resource(&c, info->pairs[i][1], WGSL_SAMPLER);
+      if (z->r.kind == WGSL_SAMPLER && (t->r.sample == WGSL_SAMPLE_SINT || t->r.sample == WGSL_SAMPLE_UINT || t->r.sample == WGSL_SAMPLE_DEPTH))
+         z->r.nonfiltering = true;
+   }
    /* A storage buffer this stage doesn't write is read-only, in every stage: the driver binds it as writable storage
     * where a dispatch writes its memory through another binding (WebGPU's usage scopes: wg_cmd.c `program_for`). */
    /* The uniform conditions' word (emit_cf_list). */

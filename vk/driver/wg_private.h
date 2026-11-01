@@ -547,6 +547,9 @@ struct wg_program {
     * writes through another, by a mask of those resources, and samplers WebGPU's can't express, by `keys` (each pair's
     * that isn't plain, in the program's order); a base's list, through `variants`. */
    uint64_t mask[2];
+   uint64_t mixed[2]; /* a base's: wg_program_mixed */
+   bool mixed_known;
+   char *refused;     /* a variant's: why a stage doesn't print against its keys, its draws dropped */
    struct wgsl_sampler_key *keys;
    uint32_t key_count;
    /* Writable storage bindings of one range (`wg_storage_alias`). */
@@ -601,6 +604,8 @@ struct wg_shader {
 };
 
 extern const struct vk_device_shader_ops wg_device_shader_ops;
+void wg_program_mixed(struct wg_program *p);
+bool wg_counts_sane(uint32_t resources, uint32_t pairs, uint32_t int_pairs, uint32_t key_pairs);
 void wg_cmd_bind_shaders(struct vk_command_buffer *cmd, uint32_t count, const mesa_shader_stage *stages,
                          struct vk_shader **const shaders);
 void wg_program_unref(struct wg_program *p);

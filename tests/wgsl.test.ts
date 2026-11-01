@@ -733,7 +733,7 @@ test('interpolateAtOffset and interpolateAtSample move the input along its deriv
  * its bytes at its WGSL binding (`mips`: its further levels' bytes), a sampler (`filter`) at `sampler` (none: no
  * sampler), a storage buffer of `size` bytes at `out`, read back.
  */
-async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; layers?: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string; address?: string } | undefined, out: { binding: number; size: number }) {
+async function runSampled(code: string, textures: { binding: number; format: string; w: number; h: number; layers?: number; data: number[]; mips?: number[][] }[], sampler: { binding: number; filter: string; address?: string; lodMinClamp?: number } | undefined, out: { binding: number; size: number }) {
   const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
@@ -762,7 +762,7 @@ async function runSampled(code: string, textures: { binding: number; format: str
         });
         return { binding: t.binding, resource: tex.createView(layers > 1 ? { dimension: '2d-array' } : {}) };
       });
-      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode, addressModeU: (sampler.address ?? 'clamp-to-edge') as GPUAddressMode }) });
+      if (sampler) entries.push({ binding: sampler.binding, resource: device.createSampler({ lodMinClamp: sampler.lodMinClamp ?? 0, mipmapFilter: sampler.lodMinClamp ? 'linear' : 'nearest', magFilter: sampler.filter as GPUFilterMode, minFilter: sampler.filter as GPUFilterMode, addressModeU: (sampler.address ?? 'clamp-to-edge') as GPUAddressMode }) });
       const buffer = device.createBuffer({ size: out.size, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
       entries.push({ binding: out.binding, resource: { buffer } });
       const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
@@ -1113,9 +1113,14 @@ const IMAGE_FORMATS: [string, string, number, number[][], string, number[][]][] 
   ['rg8i', s, 2, [[-1, 2, 0, 0], [-128, 127, 0, 0], [0, 0, 0, 0], [3, -4, 0, 0]], 'ff02 807f 0000 03fc', [[-1, 2, 0, 1], [-128, 127, 0, 1], [0, 0, 0, 1], [3, -4, 0, 1]]],
   ['rg8_snorm', f, 2, [[1, -1, 0, 0], [0.5, -0.5, 0, 0], [0, 0, 0, 0], [2, -2, 0, 0]], '7f81 40c1 0000 7f81', [[1, -1, 0, 1], [S8(64), S8(-63), 0, 1], [0, 0, 0, 1], [1, -1, 0, 1]]],
   ['r16f', f, 2, [[1, 0, 0, 0], [-2, 0, 0, 0], [0.5, 0, 0, 0], [65536, 0, 0, 0]], '003c 00c0 0038 007c', [[1, 0, 0, 1], [-2, 0, 0, 1], [0.5, 0, 0, 1], [Infinity, 0, 0, 1]]],
-  // What's past the range: NaN keeps being NaN, a value too large is infinity, one too small 0; ufloats have no sign.
+  // What's past the range: NaN keeps being NaN, a value too large is infinity, one too small 0.
   ['r16f', f, 2, [[NaN, 0, 0, 0], [1e6, 0, 0, 0], [-1e6, 0, 0, 0], [1e-9, 0, 0, 0]], '007e 007c 00fc 0000', [[NaN, 0, 0, 1], [Infinity, 0, 0, 1], [-Infinity, 0, 0, 1], [0, 0, 0, 1]]],
-  ['r11f_g11f_b10f', f, 4, [[NaN, 1e6, 0, 0], [1e-9, 0, 0, 0], [65535, 0, 0, 0], [0, 0, 1e6, 0]], 'ff073e00 00000000 c0070000 000000f8', [[NaN, Infinity, 0, 1], [0, 0, 0, 1], [Infinity, 0, 0, 1], [0, 0, Infinity, 1]]],
+  // Ties to even, a subnormal's too (VK4 R5, the review's C7).
+  ['r16f', f, 2, [[1 + 2 ** -11, 0, 0, 0], [1 + 3 * 2 ** -11, 0, 0, 0], [1.5 * 2 ** -24, 0, 0, 0], [2 ** -25, 0, 0, 0]], '003c 023c 0200 0000', [[1, 0, 0, 1], [1 + 2 ** -9, 0, 0, 1], [2 ** -23, 0, 0, 1], [0, 0, 0, 1]]],
+  // Ufloats have no sign, and a finite value too large is the largest finite (Vulkan's "Unsigned 11-Bit Floating-Point
+  // Numbers"); infinity stays one; a value just under a tie isn't rounded twice.
+  ['r11f_g11f_b10f', f, 4, [[NaN, 1e6, 0, 0], [1e-9, 0, 0, 0], [65535, 0, 0, 0], [0, 0, 1e6, 0]], 'ffff3d00 00000000 bf070000 0000c0f7', [[NaN, 65024, 0, 1], [0, 0, 0, 1], [65024, 0, 0, 1], [0, 0, 64512, 1]]],
+  ['r11f_g11f_b10f', f, 4, [[1.0078125 - 2 ** -12, 0, 0, 0], [Infinity, 0, 0, 0], [0, 0, Infinity, 0], [-Infinity, 0, 0, 0]], 'c0030000 c0070000 000000f8 00000000', [[1, 0, 0, 1], [Infinity, 0, 0, 1], [0, 0, Infinity, 1], [0, 0, 0, 1]]],
   ['r16ui', u, 2, [[1, 0, 0, 0], [65535, 0, 0, 0], [258, 0, 0, 0], [0, 0, 0, 0]], '0100 ffff 0201 0000', [[1, 0, 0, 1], [65535, 0, 0, 1], [258, 0, 0, 1], [0, 0, 0, 1]]],
   ['r16i', s, 2, [[-1, 0, 0, 0], [-32768, 0, 0, 0], [32767, 0, 0, 0], [2, 0, 0, 0]], 'ffff 0080 ff7f 0200', [[-1, 0, 0, 1], [-32768, 0, 0, 1], [32767, 0, 0, 1], [2, 0, 0, 1]]],
   ['r16', f, 2, [[1, 0, 0, 0], [0.5, 0, 0, 0], [0, 0, 0, 0], [-1, 0, 0, 0]], 'ffff 0080 0000 0000', [[1, 0, 0, 1], [N16(32768), 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1]]],
@@ -1291,6 +1296,46 @@ test('a shadow sample past level 0 compares each texel of its level and filters 
     const res = await runSampled(clamped.text, [{ binding: 0, format: 'depth16unorm', w: 4, h: 4, data: full, mips: [half] }], undefined, { binding: 2, size: 8 * 16 });
     assert.deepEqual(res?.errors, []);
     assert.equal(res?.out[0], 1, 'the reference clamped: 1 <= 1');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a depth texture sampled with and without comparison prints, from its first module to a key of a bias (VK4 R5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const texts = [glslStage(translate, tmp, 'tests/venus/r5/depth-and-compare.frag'), glslStage(translate, tmp, 'tests/venus/r5/depth-and-compare.frag', { sampler: key(ADDRESS.edge, { bias: 1 }) })];
+    for (const r of texts) assert.equal(r.rc, 0, r.text);
+    const errors = await compile(texts.map((r) => r.text));
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', '']);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a border across levels is each level\'s, whatever clamps WebGPU\'s sampler has (VK4 R5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/r5/border-levels.comp', { sampler: key(ADDRESS.border, { flags: 16 | 1 | 2 | 4, levels: 2, min: 0.5 }) });
+    assert.equal(r.rc, 0, r.text);
+    const sampled = /var r0_1: sampler/.test(r.text) ? { binding: 1, filter: 'linear', lodMinClamp: 0.5 } : undefined;
+    const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 2, h: 2, data: Array(4).fill([255, 0, 0, 255]).flat(), mips: [[0, 0, 0, 255]] }], sampled, { binding: 2, size: 8 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    assert.ok(Math.abs(res.out[0] - 0.5) < 0.01, `red ${res.out[0]}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('inter-stage variables past WebGPU\'s with a clip distance fail the stage, saying so (VK4 R5)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/r5/clip-many.vert');
+    assert.notEqual(r.rc, 0, r.text);
+    assert.match(r.text, /inter-stage variables/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

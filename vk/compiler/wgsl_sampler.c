@@ -19,6 +19,9 @@ struct sampler_pass {
    /* Integer cube textures sampled (texture indices): their bindings are 2D arrays, which WGSL can fetch from. */
    uint32_t cubes[WGSL_MAX_PAIRS];
    uint32_t cube_count;
+   /* Textures of a stage's comparisons (texture indices): declared depth, whatever else samples them. */
+   uint32_t depths[WGSL_MAX_PAIRS];
+   uint32_t depth_count;
    bool cube_gathered;
    bool padded_cube_gather; /* can't be fetched: refused */
 };
@@ -76,6 +79,15 @@ is_int_cube(const struct sampler_pass *s, const nir_tex_instr *tex)
 {
    for (uint32_t i = 0; i < s->cube_count; i++)
       if (s->cubes[i] == tex->texture_index)
+         return true;
+   return false;
+}
+
+static bool
+is_depth(const struct sampler_pass *s, const nir_tex_instr *tex)
+{
+   for (uint32_t i = 0; i < s->depth_count; i++)
+      if (s->depths[i] == tex->texture_index)
          return true;
    return false;
 }
@@ -215,7 +227,8 @@ biased_lod(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_k
    nir_def *sum = nir_imm_float(b, key->bias);
    if (bias)
       sum = nir_fadd(b, sum, bias);
-   return nir_fadd(b, base, sum);
+   /* Vulkan's λ': maxSamplerLodBias bounds the two together. */
+   return nir_fadd(b, base, nir_fmin(b, nir_fmax(b, sum, nir_imm_float(b, -WGSL_MAX_LOD_BIAS)), nir_imm_float(b, WGSL_MAX_LOD_BIAS)));
 }
 
 static nir_def *
@@ -632,7 +645,7 @@ fetched_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key
    return nir_fadd(b, nir_fmul(b, res[0], nir_vec4(b, g, g, g, g)), nir_fmul(b, res[1], nir_vec4(b, f, f, f, f)));
 }
 
-/* `tex` sampled at a level, explicit: what border emulation does for each mip of a blend. */
+/* `tex` sampled at a level, explicit. */
 static nir_def *
 sample_level(nir_builder *b, const nir_tex_instr *tex, nir_def *coord, nir_def *lod)
 {
@@ -654,18 +667,17 @@ sample_level(nir_builder *b, const nir_tex_instr *tex, nir_def *coord, nir_def *
    return &l->def;
 }
 
-/* How much of a sample at level `level` (float, whole) comes from inside the image, the border's share being the rest:
- * per axis, the part of the filter's footprint on this side of the edge. */
+/* How much of a sample comes from inside the image, the border's share being the rest: per axis, the part of the
+ * filter's footprint on this side of the edge. */
 static nir_def *
 inside(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key, nir_def *coord, nir_def *size,
-       nir_def *level, nir_def *lambda)
+       nir_def *lambda)
 {
    nir_def *weight = nir_imm_float(b, 1.0f);
-   nir_def *shift = level ? nir_f2i32(b, level) : nir_imm_int(b, 0);
    for (unsigned i = 0; i < spatial(tex); i++) {
       if (key->address[i] != WGSL_ADDRESS_BORDER)
          continue;
-      nir_def *extent = nir_i2f32(b, nir_imax(b, nir_ishr(b, nir_channel(b, size, i), shift), nir_imm_int(b, 1)));
+      nir_def *extent = nir_i2f32(b, nir_channel(b, size, i));
       nir_def *u = nir_fadd(b, nir_fmul(b, nir_channel(b, coord, i), extent), nir_i2f32(b, offset_of(b, tex, i)));
       nir_def *linear = nir_fmul(b, nir_fsat(b, nir_fadd_imm(b, u, 0.5)),
                                  nir_fsat(b, nir_fadd_imm(b, nir_fsub(b, extent, u), 0.5)));
@@ -760,8 +772,11 @@ float_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
       nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
       return true;
    }
-   /* An offset is in texels of the level before the wrap: past a reflection only the shader can have it there. */
-   if (once && tex_source(tex, nir_tex_src_offset)) {
+   /* An offset is in texels of the level before the wrap: past a reflection only the shader can have it there. The
+    * border across levels: a sample per level would be WebGPU's, its lodMinClamp and magFilter between it and the level
+    * asked for; of one level, likewise a sampler's bias where it picks the filter. */
+   if ((once && tex_source(tex, nir_tex_src_offset)) ||
+       (border && (key->levels > 1 || (key->bias != 0.0f && key->mag_linear != key->min_linear)))) {
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
    }
@@ -815,13 +830,10 @@ float_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
       return true;
    }
    /* The sample at clamp-to-edge (the sampler's address there), blended towards the border by how much of the
-    * filter's footprint fell past the edge. Whole views of one level need no LOD; else the levels are chosen here, so
-    * that each blends by its own size (anisotropy doesn't survive: Vulkan leaves its footprint to the implementation).
-    * A shadow sample here is of one level (fetched_sample takes the others). */
-   nir_def *derivative_dx[3], *derivative_dy[3];
+    * filter's footprint fell past the edge. A view of one level: more go through fetches, above. */
    nir_def *lambda = NULL;
-   const bool multi = key->levels > 1;
-   if (multi || key->mag_linear != key->min_linear) {
+   if (key->mag_linear != key->min_linear) {
+      nir_def *derivative_dx[3], *derivative_dy[3];
       if (coord_derivatives(b, tex, coord, derivative_dx, derivative_dy)) {
          nir_def *x[3], *y[3];
          for (unsigned i = 0; i < n; i++) {
@@ -833,35 +845,7 @@ float_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
       }
       lambda = clamped_lod(b, key, biased_lod(b, tex, key, lambda));
    }
-   nir_def *weight;
-   if (!multi) {
-      weight = inside(b, tex, key, adjusted, size, NULL, lambda);
-   } else {
-      nir_def *last = nir_imm_float(b, (float)(key->levels - 1));
-      nir_def *clamped = nir_fmin(b, nir_fmax(b, lambda, nir_imm_float(b, 0.0f)), last);
-      if (!key->mip_linear) {
-         nir_def *level = nir_i2f32(b, nearest_level(b, tex, key, lambda));
-         weight = inside(b, tex, key, adjusted, size, level, lambda);
-         if (!shadow) {
-            nir_def_replace(&tex->def, blend_border(b, tex, key, sample_level(b, tex, adjusted, level), weight));
-            return true;
-         }
-      } else {
-         nir_def *l0 = nir_ffloor(b, clamped), *l1 = nir_fmin(b, nir_fadd_imm(b, l0, 1.0f), last);
-         nir_def *f = nir_fsub(b, clamped, l0), *g = nir_fsub_imm(b, 1.0f, f);
-         nir_def *w0 = inside(b, tex, key, adjusted, size, l0, lambda), *w1 = inside(b, tex, key, adjusted, size, l1, lambda);
-         if (!shadow) {
-            nir_def *x = blend_border(b, tex, key, sample_level(b, tex, adjusted, l0), w0);
-            nir_def *y = blend_border(b, tex, key, sample_level(b, tex, adjusted, l1), w1);
-            nir_def *mix[4];
-            for (unsigned i = 0; i < tex->def.num_components; i++)
-               mix[i] = nir_fadd(b, nir_fmul(b, nir_channel(b, x, i), g), nir_fmul(b, nir_channel(b, y, i), f));
-            nir_def_replace(&tex->def, nir_vec(b, mix, tex->def.num_components));
-            return true;
-         }
-         weight = nir_fadd(b, nir_fmul(b, w0, g), nir_fmul(b, w1, f));
-      }
-   }
+   nir_def *weight = inside(b, tex, key, adjusted, size, lambda);
    b->cursor = nir_after_instr(&tex->instr);
    nir_def_rewrite_uses_after(&tex->def, blend_border(b, tex, key, &tex->def, weight));
    return true;
@@ -1042,7 +1026,25 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
       return true;
    }
-   /* A cube bound as its faces: every op on it; a shadow sample of several levels, whose level is the shader's. */
+   /* A texture a stage compares is a depth texture in WGSL, which has no bias or gradients and takes no filtering
+    * sampler: its other samples come from fetches, as their own sampler says (a cube's gather can't: WGSL's, the sampler
+    * non-filtering). A cube's fetches are of its faces; a module without a key is never drawn with. */
+   if (!tex->is_shadow && is_depth(s, tex)) {
+      const bool cube = tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE;
+      if (tex->op == nir_texop_tg4) {
+         if (cube)
+            return false;
+         nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key ? key : &plain_key), tex->def.num_components));
+         return true;
+      }
+      add_key_pair(s, tex, WGSL_KEY_ALWAYS | (cube ? WGSL_KEY_FACES : 0));
+      nir_def *res = cube && !(key && key->faces) ? sample_level(b, tex, tex_source(tex, nir_tex_src_coord), nir_imm_float(b, 0.0f))
+                                                  : fetched_sample(b, tex, key ? key : &plain_key);
+      nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
+      return true;
+   }
+   /* A cube bound as its faces: every op on it (the driver keys each of its pairs); a shadow sample of several levels,
+    * whose level is the shader's. */
    if (!key)
       key = faces_key(s, tex);
    if (key && (key->faces || (tex->is_shadow && key->levels > 1))) {
@@ -1062,13 +1064,25 @@ static bool
 find_cubes(nir_builder *b, nir_tex_instr *tex, void *data)
 {
    struct sampler_pass *s = data;
-   if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE || (!samples(tex) && tex->op != nir_texop_lod) || tex->op == nir_texop_tg4)
+   if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE)
       return false;
    const struct wgsl_sampler_key *faces = faces_key(s, tex);
-   if (!is_integer(tex) && !(faces && !faces->padded))
-      return false;
-   if (!is_int_cube(s, tex) && s->cube_count < WGSL_MAX_PAIRS)
+   const bool bound = faces && !faces->padded;
+   /* A size or levels asked of what's bound as its faces, in a stage that may not sample it; a gather refused below. */
+   const bool wanted = tex->op == nir_texop_txs || tex->op == nir_texop_query_levels || tex->op == nir_texop_tg4
+                          ? bound
+                          : (samples(tex) || tex->op == nir_texop_lod) && (is_integer(tex) || bound);
+   if (wanted && !is_int_cube(s, tex) && s->cube_count < WGSL_MAX_PAIRS)
       s->cubes[s->cube_count++] = tex->texture_index;
+   return false;
+}
+
+static bool
+find_depths(nir_builder *b, nir_tex_instr *tex, void *data)
+{
+   struct sampler_pass *s = data;
+   if (tex->is_shadow && !is_depth(s, tex) && s->depth_count < ARRAY_SIZE(s->depths))
+      s->depths[s->depth_count++] = tex->texture_index;
    return false;
 }
 
@@ -1082,9 +1096,12 @@ find_gathered(nir_builder *b, nir_tex_instr *tex, void *data)
 }
 
 bool
-wgsl_lower_samplers(nir_shader *nir, const struct wgsl_sampler_key *keys, uint32_t key_count, struct wgsl_info *info)
+wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info)
 {
-   struct sampler_pass s = { .keys = keys, .key_count = key_count, .info = info };
+   struct sampler_pass s = { .keys = o->keys, .key_count = o->key_count, .info = info };
+   for (uint32_t i = 0; i < MIN2(o->depth_count, ARRAY_SIZE(s.depths)); i++)
+      s.depths[s.depth_count++] = o->depths[i];
+   nir_shader_tex_pass(nir, find_depths, nir_metadata_all, &s);
    nir_shader_tex_pass(nir, find_cubes, nir_metadata_all, &s);
    nir_shader_tex_pass(nir, find_gathered, nir_metadata_all, &s);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_tex, nir_metadata_control_flow, &s);

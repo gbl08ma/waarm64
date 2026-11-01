@@ -494,7 +494,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks', push: string) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight', push: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -509,9 +509,9 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75 }[scenario];
   if (push.endsWith('.frag.spv')) {
-    const vert = new Uint8Array(await (await fetch('/target/vk/test/feedback.vert.spv')).arrayBuffer());
+    const vert = new Uint8Array(await (await fetch(`/target/vk/test/${scenario === 'cubeSized' ? 'r5/cube-sized' : 'feedback'}.vert.spv`)).arrayBuffer());
     const vs = ex.venus_alloc(vert.length) >>> 0;
     new Uint8Array(memory.buffer, vs, vert.length).set(vert);
     (ex as unknown as { wgt_misc_vs(p: number, n: number): void }).wgt_misc_vs(vs, vert.length / 4);
@@ -611,6 +611,17 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     const blue = scenario === 'resolve3d' ? [...Array(16).keys()].map((i) => 16 + i) : [0, 1, 4, 5, 10, 11, 14, 15];
     for (const i of blue) t[i] = BLUE;
     Object.assign(checks, { texels: [0, 64 * slices, want] });
+  } else if (scenario === 'depthLess' || scenario === 'depthAndCompare' || scenario === 'intGather' || scenario === 'cubeSized' || scenario === 'cubeGather' || scenario === 'depthEight') {
+    // VK4 R5 (wg_test.c 70 to 74): texel (1, 1), a filtered byte within 1.
+    const texel = { depthLess: [255, 255, 255, 255], depthAndCompare: [255, 64, 64, 128], intGather: [0, 128, 0, 255], cubeSized: [255, 0, 4, 255], cubeGather: [17, 17, 17, 17], depthEight: [255, 0, 0, 255] }[scenario];
+    want.set(texel);
+    for (let i = 0; i < 4; i++) if (Math.abs(got[i] - want[i]) <= 1) got[i] = want[i];
+    if (scenario === 'depthEight') {
+      // The shader store's counts, as a byte.
+      got[4] = (ex as unknown as { wgt_info_refused(): number }).wgt_info_refused();
+      want[4] = 1;
+    }
+    Object.assign(checks, { texel: [0, 4, want], rest: [4, 4096, want] });
   } else if (scenario === 'immutableSampler' || scenario === 'immutableCopied') {
     u32(want.subarray(0, 4))[0] = 50;
     Object.assign(checks, { linear: [0, 4096, want] });

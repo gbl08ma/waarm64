@@ -309,7 +309,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -394,6 +394,13 @@ for (const [scenario, what] of [
   // VK4 T11: no dEQP-VK case loads and stores one image of a format WebGPU gives one way.
   ['rwImage', 'an image of a format WebGPU only gives one way, loaded and stored by a shader between clears and copies'],
   ['rwImageWide', 'such an image of 8 bytes a texel, its rows past what 4 bytes a texel would take'],
+  // VK4 R5 (the review's C findings).
+  ['depthLess', 'a variant of a stage writing depth, without an attachment for it, has a module of its own'],
+  ['depthAndCompare', 'a depth texture sampled with and without comparison, its plain sampler filtering a float texture'],
+  ['intGather', 'a sampler gathering an integer texture still filters a float one'],
+  ['cubeSized', 'a shadow cube from its faces: each sampler by its own state, and sized in another stage'],
+  ['depthEight', 'a stage writing depth beside every colour location, without an attachment for it'],
+  ['cubeGather', 'a keyed stage that can\'t be printed refuses its draw, with no invalid pipeline'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -401,7 +408,8 @@ for (const [scenario, what] of [
     mkdirSync(out, { recursive: true });
     const name: string = source[scenario as keyof typeof source] ?? 'push';
     const src = name.includes('.') ? name : `${name}.comp`;
-    for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert'] : [])]) {
+    mkdirSync(join(out, 'r5'), { recursive: true });
+    for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert', 'r5/cube-sized.vert'] : [])]) {
       const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/${f}`)], { encoding: 'utf8' });
       assert.equal(c.status, 0, c.stderr);
     }
@@ -424,6 +432,7 @@ for (const [scenario, what] of [
       delete checks.ran;
     }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
+    if (scenario === 'cubeGather') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).
     if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);

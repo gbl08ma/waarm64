@@ -417,8 +417,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   pass's attachment, which the pass's end resolves that way within its render area, stored whatever its store op, as
   depth's. Formats a multisampled copy can't cross (they differ other than by sRGB: bit patterns don't survive a draw)
   are skipped with a warning, since one invalid command invalidates the whole submit. A fragment stage writing depth
-  into a pass without a depth aspect (Vulkan drops the write, WebGPU refuses the pipeline) gets a module with that output
-  at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
+  into a pass without a depth aspect (Vulkan drops the write, WebGPU refuses the pipeline) gets a module without that
+  output, or, if it was the stage's only one, with it at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
   the module would leave its state half updated.
 - **Samplers in the shader** (VK4 T8; `wgsl_sampler.c`, `pair_key` in wg_cmd.c): a Vulkan sampler says more than
@@ -452,14 +452,25 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
     and `VK_KHR_sampler_mirror_clamp_to_edge` are advertised.
   - **Unnormalized coordinates**: divided by the view's size (Vulkan allows them only at one level, clamped).
   - **The sampler's LOD bias**: a shader bias, added to an explicit LOD, or the derivatives scaled by 2^bias.
-    `maxSamplerLodBias` is 15.
+    `maxSamplerLodBias` is 15, which bounds the sampler's and the shader's together where the shader works out the LOD.
   - **Shadow samples past level 0** (VK4 T9): WGSL's compare has an implicit LOD or level 0, so a bias, an explicit LOD
     or gradients on a view of several levels go through the fetches below, each texel compared and the results
     filtered, as Vulkan does, the reference clamped for fixed-point formats (`clamp_dref`). Their pairs ask for a key
     where the sampler wouldn't (`wgsl_info.key_pairs`, `WGSL_KEY_LEVELS`). A view of one level, the usual shadow map,
     and a constant LOD of 0 stay WGSL's and make no variant. A shadow cube of several levels with a key is bound as its
     faces (`key.faces`, every op on it fetched; a gather of one is refused). A key on a multi-level shadow sample takes
-    this path too: borders, mirror-once and bias all come with it.
+    this path too: borders, mirror-once and bias all come with it. Every pair of a cube bound so has a key of its own, its
+    sampler's, and a stage that only asks its size or levels is printed against the keys too (VK4 R5).
+  - **A depth texture also sampled without a comparison** (VK4 R5): WGSL declares a binding one way, and on
+    `texture_depth_*` has no bias and no gradients, and WebGPU takes no filtering sampler with it. So a stage's plain
+    samples of a texture it compares go through the fetches below, as their own sampler says (`WGSL_KEY_ALWAYS`; a cube's
+    bound as its faces, `WGSL_KEY_FACES`; a gather of one stays WGSL's, the sampler non-filtering). The fragment stage
+    is printed first, so a vertex stage that samples or sizes what it compares is told (`wgsl_print_options.depths`).
+  - **A sampler shared by an integer or depth texture and a float one** (VK4 R5): the former want it non-filtering, so the
+    program's variants split it as they do for unfilterable textures (`wg_program_mixed`, the twin at the binding
+    before): the float textures keep their filters.
+  - **A variant that can't be printed** (VK4 R5, a gather of a cube bound as its faces): its draws and dispatches are
+    dropped, said once (`draw_refused`), not drawn with a module that doesn't match its layout.
   - **`textureQueryLod`** (VK4 T9): λ from the coordinate's derivatives and the view's size, x the level or levels the
     sampler's mode reads after its clamps, y the LOD before them (dEQP's reading). WGSL has no query, so such a pair
     always takes a key (`WGSL_KEY_ALWAYS`), its sampler known by no binding. The coordinate has no layer (SPIR-V's).

@@ -167,6 +167,7 @@ program_free(struct wg_program *p)
    stage_nir_free(p->compute_nir);
    free(p->keys);
    free(p->aliases);
+   free(p->refused);
    free(p);
 }
 
@@ -449,15 +450,29 @@ print_options(const struct wgsl_varyings *fs)
       .max_immediates = wg_max_immediates,
       .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
       .max_uniform_size = wg_limits.max_uniform_buffer_binding_size,
+      .max_inter_stage = wg_limits.max_inter_stage_shader_variables,
       .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) | ((wg_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
                   ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
                   (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
    };
 }
 
-/* A stage printed against a variant's sampler keys, NULL if none is of a pair it samples (its own text serves). */
+/* What `r` of `count` resources are compared, for a stage printed after them (wgsl_print_options.depths): `out` has
+ * room for WGSL_MAX_RESOURCES. */
+static uint32_t
+depth_textures(const struct wgsl_resource *r, uint32_t count, uint32_t *out)
+{
+   uint32_t n = 0;
+   for (uint32_t i = 0; i < count; i++)
+      if (r[i].kind == WGSL_TEXTURE && r[i].sample == WGSL_SAMPLE_DEPTH)
+         out[n++] = (uint32_t)r[i].group << 16 | r[i].binding;
+   return n;
+}
+
+/* A stage printed against a variant's sampler keys, NULL if none is of a pair it samples (its own text serves), or if
+ * it can't be: `refused` says why, for the draws of the variant to say. */
 static char *
-keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struct wgsl_info *info, mesa_shader_stage stage)
+keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struct wgsl_info *info, char **refused)
 {
    if (!v->key_count || !n)
       return NULL;
@@ -469,8 +484,9 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
          touched |= info->int_pairs[i][0] == v->keys[k].texture && info->int_pairs[i][1] == v->keys[k].sampler;
       for (uint32_t i = 0; i < info->key_pair_count; i++)
          touched |= info->key_pairs[i][0] == v->keys[k].texture && info->key_pairs[i][1] == v->keys[k].sampler;
-      /* A padded texture's size queries, a stage that doesn't sample it (no NIR kept if it samples nothing at all). */
-      for (uint32_t i = 0; v->keys[k].padded && i < info->resource_count; i++)
+      /* A padded texture's size queries, or a cube's bound as its faces, a stage that doesn't sample it (no NIR kept if
+       * it samples nothing at all). */
+      for (uint32_t i = 0; (v->keys[k].padded || v->keys[k].faces) && i < info->resource_count; i++)
          touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
    }
    if (!touched)
@@ -481,12 +497,15 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
    struct wgsl_print_options options = print_options(n->has_fs ? &n->fs : NULL);
    options.keys = v->keys;
    options.key_count = v->key_count;
+   uint32_t depths[WGSL_MAX_RESOURCES];
+   options.depths = depths;
+   options.depth_count = depth_textures(v->resources, v->resource_count, depths);
    struct wgsl_info *printed = malloc(sizeof(*printed));
    char error[512] = "";
    char *text = wgsl_print(NULL, nir, &options, printed, error, sizeof(error));
    char *out = text ? strdup(text) : NULL;
-   if (!text)
-      fprintf(stderr, "wg: a stage's samplers didn't translate: %s\n", error);
+   if (!text && refused && !*refused)
+      *refused = strdup(error);
    ralloc_free(text);
    ralloc_free(nir);
    free(printed);
@@ -495,10 +514,10 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
 
 /* A variant's module of `wgsl` (0: the stage's own serves it). */
 static uint32_t
-variant_module(const struct wg_program *p, const struct wg_program *v, const uint64_t *mask, const char *wgsl,
-               const struct wg_stage_nir *nir, const struct wgsl_info *info, mesa_shader_stage stage)
+variant_module(const struct wg_program *p, struct wg_program *v, const uint64_t *mask, const char *wgsl,
+               const struct wg_stage_nir *nir, const struct wgsl_info *info)
 {
-   char *keyed = keyed_text(v, nir, info, stage);
+   char *keyed = keyed_text(v, nir, info, &v->refused);
    char *text = variant_text(p, v, mask, keyed ? keyed : wgsl);
    if (text)
       free(keyed);
@@ -519,8 +538,8 @@ wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struc
    if ((!v->split_count && !v->key_count && !v->alias_count) || v->stage_modules_made)
       return;
    v->stage_modules_made = true;
-   v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl, vs->nir, &vs->info, MESA_SHADER_VERTEX) : 0;
-   v->fs_module = fs ? variant_module(v->base, v, v->mask, fs->wgsl, fs->nir, &fs->info, MESA_SHADER_FRAGMENT) : 0;
+   v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl, vs->nir, &vs->info) : 0;
+   v->fs_module = fs ? variant_module(v->base, v, v->mask, fs->wgsl, fs->nir, &fs->info) : 0;
 }
 
 /* `twin` into `v`'s resources before index `at` (a split sampler's twin, at the binding before it). */
@@ -560,6 +579,30 @@ compute_pairs(const struct wg_program *p)
    return i;
 }
 
+/* The integer and depth textures of a program's samplers that also sample a float texture: a variant's mask has them,
+ * so that it splits those samplers, the float textures keeping their filters (wgsl_print.c makes such a sampler
+ * non-filtering). */
+void
+wg_program_mixed(struct wg_program *p)
+{
+   p->mixed_known = true;
+   for (uint32_t i = 0; i < p->pair_count; i++) {
+      const struct wgsl_resource *r = NULL;
+      for (uint32_t k = 0; k < p->resource_count; k++)
+         if (res_index(&p->resources[k]) == p->pairs[i][0] && p->resources[k].kind == WGSL_TEXTURE)
+            r = &p->resources[k];
+      if (!r || r->sample == WGSL_SAMPLE_FLOAT || r->sample == WGSL_SAMPLE_UNFILTERABLE)
+         continue;
+      for (uint32_t j = 0; j < p->pair_count; j++)
+         for (uint32_t k = 0; p->pairs[j][1] == p->pairs[i][1] && k < p->resource_count; k++)
+            if (res_index(&p->resources[k]) == p->pairs[j][0] && p->resources[k].kind == WGSL_TEXTURE &&
+                p->resources[k].sample == WGSL_SAMPLE_FLOAT && !p->resources[k].multisampled) {
+               const uint32_t at = r - p->resources;
+               p->mixed[at / 64] |= 1ull << (at % 64);
+            }
+   }
+}
+
 struct wg_program *
 wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys, uint32_t key_count,
                    const struct wg_storage_alias *aliases, uint32_t alias_count)
@@ -592,7 +635,10 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
    memcpy(v->aliases, aliases, alias_count * sizeof(*aliases));
    v->split_count = 0;
    v->vs_module = v->fs_module = 0;
+   v->fs_no_depth = 0; /* the base's is printed without this variant's keys */
+   v->fs_no_depth_of = NULL;
    v->stage_modules_made = false;
+   v->refused = NULL;
    memcpy(v->mask, mask, sizeof(v->mask));
    bool widened = false;
 #define MASKED(k) (mask[(k) / 64] & (1ull << ((k) % 64)))
@@ -605,7 +651,8 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
          widened = true;
          continue;
       }
-      v->resources[k].sample = WGSL_SAMPLE_UNFILTERABLE;
+      if (v->resources[k].sample == WGSL_SAMPLE_FLOAT)
+         v->resources[k].sample = WGSL_SAMPLE_UNFILTERABLE;
    }
    /* An unfilterable texture's samplers: non-filtering (the bind group gives them the sampler's nearest twin), or,
     * where a sampler also samples a filterable texture (VK3 L7a, the binding review's finding 2: HLSL's shared
@@ -659,6 +706,7 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
       struct wgsl_resource twin = p->resources[r];
       twin.binding = b - 1;
       twin.nonfiltering = true;
+      v->resources[at].nonfiltering = false; /* an integer or depth texture's asked it of the whole binding */
       insert_resource(v, at, &twin);
    }
 #undef MASKED
@@ -670,13 +718,13 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
    program_layouts(v);
    if ((widened || v->split_count || v->key_count || v->alias_count) && p->compute_wgsl) {
       const struct wgsl_info keyed = compute_pairs(p);
-      const uint32_t m = variant_module(p, v, mask, p->compute_wgsl, p->compute_nir, &keyed, MESA_SHADER_COMPUTE);
+      const uint32_t m = variant_module(p, v, mask, p->compute_wgsl, p->compute_nir, &keyed);
       if (m) {
          v->compute_module = m;
          v->owns_compute_module = true;
       }
    }
-   if (p->compute_module) {
+   if (p->compute_module && !v->refused) {
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", v->layout,
                      v->compute_module);
@@ -698,6 +746,8 @@ resource_merge(struct wgsl_resource *m, const struct wgsl_resource *r)
       m->access |= r->access;
    m->size = MAX2(m->size, r->size);
    m->nonfiltering |= r->nonfiltering;
+   if (r->sample == WGSL_SAMPLE_DEPTH)
+      m->sample = WGSL_SAMPLE_DEPTH;
 }
 
 /* A pair that needs a key into a program's, the wider of the two whens. */
@@ -1130,6 +1180,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 
    /* Fragment shaders first: a vertex shader's outputs are typed by what its fragment shader reads. */
    const struct wgsl_varyings *fs_reads = NULL;
+   const struct wgsl_info *fs_info = NULL;
    for (uint32_t pass = 0; pass < 2 && ok; pass++) {
       for (uint32_t i = 0; i < count && ok; i++) {
          const bool frag = infos[i].stage == MESA_SHADER_FRAGMENT;
@@ -1141,7 +1192,12 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             break;
          }
          shaders[i] = s;
-         const struct wgsl_print_options options = print_options(infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL);
+         struct wgsl_print_options options = print_options(infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL);
+         uint32_t depths[WGSL_MAX_RESOURCES];
+         if (fs_info) {
+            options.depths = depths;
+            options.depth_count = depth_textures(fs_info->resources, fs_info->resource_count, depths);
+         }
          s->nir = stage_nir_keep(infos[i].nir, options.fs);
          char *text = wgsl_print(NULL, infos[i].nir, &options, &s->info, error, sizeof(error));
          if (!text) {
@@ -1152,8 +1208,10 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          ralloc_free(text);
          s->module = wg_id();
          gpu_shader(s->module, s->wgsl, strlen(s->wgsl));
-         if (frag)
+         if (frag) {
             fs_reads = &s->info.varyings;
+            fs_info = &s->info;
+         }
       }
    }
    /* A storage image the stages bind with different access: its one layout entry can't match both modules' (WebGPU
@@ -1294,6 +1352,12 @@ wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *
    return !blob->out_of_memory;
 }
 
+bool
+wg_counts_sane(uint32_t resources, uint32_t pairs, uint32_t int_pairs, uint32_t key_pairs)
+{
+   return resources <= WGSL_MAX_RESOURCES && pairs <= WGSL_MAX_PAIRS && int_pairs <= WGSL_MAX_PAIRS && key_pairs <= WGSL_MAX_PAIRS;
+}
+
 static VkResult
 wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t version,
                const VkAllocationCallbacks *pAllocator, struct vk_shader **out)
@@ -1324,6 +1388,11 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
       }
    }
    blob_copy_bytes(blob, &s->info, sizeof(s->info));
+   /* A corrupt store's counts mustn't take the fixed arrays they count past their ends. */
+   if (blob->overrun || !wg_counts_sane(s->info.resource_count, s->info.pair_count, s->info.int_pair_count, s->info.key_pair_count)) {
+      vk_shader_free(device, pAllocator, &s->vk);
+      return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+   }
    struct wg_program *p = calloc(1, sizeof(*p));
    if (!p) {
       vk_shader_free(device, pAllocator, &s->vk);
@@ -1579,15 +1648,23 @@ fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
 {
    if (p->fs_no_depth && p->fs_no_depth_of == fs)
       return p->fs_no_depth;
-   char *keyed = keyed_text(p, fs->nir, &fs->info, MESA_SHADER_FRAGMENT);
+   char *keyed = keyed_text(p, fs->nir, &fs->info, NULL);
    char *text = p->split_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
    if (!text)
       text = keyed ? strdup(keyed) : strdup(fs->wgsl);
    free(keyed);
-   static const char from[] = "@builtin(frag_depth)", to[] = "@location(7)        ";
+   /* With outputs, the member goes (a stage with 8, or dual-source's, has no location to spare); without, it is the
+    * struct's only one: a location no target takes. */
+   static const char from[] = "  @builtin(frag_depth) depth: f32,\n", to[] = "  @location(7) depth: f32,\n";
    char *at = strstr(text, from);
-   if (at)
-      memcpy(at, to, sizeof(to) - 1);
+   if (at && !fs->info.outputs) {
+      text = spliced(text, at - text, strlen(from), to);
+   } else if (at) {
+      text = spliced(text, at - text, strlen(from), "");
+      static const char store[] = "o.depth = ";
+      for (char *f; (f = strstr(text, store));)
+         text = spliced(text, f - text, strlen(store), "_ = ");
+   }
    wg_id_release(p->fs_no_depth);
    p->fs_no_depth = wg_id();
    p->fs_no_depth_of = fs;

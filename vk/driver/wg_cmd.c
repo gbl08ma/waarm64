@@ -1225,7 +1225,7 @@ padded_key_fill(const struct wg_image_view *view, struct wgsl_sampler_key *key)
  * clamp-to-edge from the level its LOD selects unless a key says otherwise. */
 static bool
 pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, const uint32_t *pair, bool integer,
-         struct wgsl_sampler_key *key)
+         bool must, struct wgsl_sampler_key *key)
 {
    const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
    const struct wg_descriptor *s = pair_descriptor(cmd, point, p, pair[1]);
@@ -1233,10 +1233,12 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    const struct wg_descriptor *t = pair_descriptor(cmd, point, p, pair[0]);
    const struct wg_image_view *view = t ? t->view : NULL;
    /* An op that needs a key whatever the sampler (wgsl_info.key_pairs). */
-   bool forced = false;
+   bool forced = must, faces = false;
    for (uint32_t i = 0; view && i < p->key_pair_count; i++)
-      if (p->key_pairs[i][0] == pair[0] && p->key_pairs[i][1] == pair[1])
-         forced = p->key_pairs[i][2] == WGSL_KEY_ALWAYS || view->vk.level_count > 1;
+      if (p->key_pairs[i][0] == pair[0] && p->key_pairs[i][1] == pair[1]) {
+         forced |= (p->key_pairs[i][2] & WGSL_KEY_ALWAYS) || view->vk.level_count > 1;
+         faces = p->key_pairs[i][2] & WGSL_KEY_FACES;
+      }
    const bool padded = view && view->padded;
    if (!sampler || !view || (!integer && !sampler->emulated && !padded && !forced))
       return false;
@@ -1254,6 +1256,7 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    sampler_border(view, sampler, integer, key->border);
    if (padded)
       padded_key_fill(view, key);
+   key->faces |= faces;
    if (sampler->compare) {
       key->clamp_dref = view->vk.view_format != VK_FORMAT_D32_SFLOAT && view->vk.view_format != VK_FORMAT_D32_SFLOAT_S8_UINT;
       /* WGSL can't fetch from a cube: past level 0 one is sampled from its faces. */
@@ -1280,10 +1283,10 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       for (uint32_t k = 0; k < p->int_pair_count; k++)
          integer |= p->int_pairs[k][0] == p->pairs[i][0] && p->int_pairs[k][1] == p->pairs[i][1];
       if (!integer)
-         n += pair_key(cmd, point, p, p->pairs[i], false, &keys[n]);
+         n += pair_key(cmd, point, p, p->pairs[i], false, false, &keys[n]);
    }
    for (uint32_t i = 0; i < p->int_pair_count; i++)
-      n += pair_key(cmd, point, p, p->int_pairs[i], true, &keys[n]);
+      n += pair_key(cmd, point, p, p->int_pairs[i], true, false, &keys[n]);
    /* Pairs no sampler is declared for but an op's: a LOD query's. */
    for (uint32_t i = 0; i < p->key_pair_count; i++) {
       bool keyed = false;
@@ -1291,7 +1294,17 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
          keyed |= keys[k].texture == p->key_pairs[i][0] && keys[k].sampler == p->key_pairs[i][1];
       const struct wg_descriptor *t = pair_descriptor(cmd, point, p, p->key_pairs[i][0]);
       if (!keyed && t && t->view)
-         n += pair_key(cmd, point, p, p->key_pairs[i], vk_format_is_int(t->view->vk.view_format), &keys[n]);
+         n += pair_key(cmd, point, p, p->key_pairs[i], vk_format_is_int(t->view->vk.view_format), false, &keys[n]);
+   }
+   /* A cube bound as its faces is fetched by every pair of it, each with its own sampler's state. */
+   for (uint32_t i = 0; i < p->pair_count; i++) {
+      bool bound = false, keyed = false;
+      for (uint32_t k = 0; k < n; k++) {
+         bound |= keys[k].texture == p->pairs[i][0] && keys[k].faces;
+         keyed |= keys[k].texture == p->pairs[i][0] && keys[k].sampler == p->pairs[i][1];
+      }
+      if (bound && !keyed)
+         n += pair_key(cmd, point, p, p->pairs[i], false, true, &keys[n]);
    }
    /* A padded texture only asked its size: what it answers is the image's. */
    const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
@@ -1411,6 +1424,9 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       if (view && !wg_format_filterable(view->fmt))
          mask[k / 64] |= 1ull << (k % 64);
    }
+   if (!p->mixed_known)
+      wg_program_mixed(p);
+   mask[0] |= p->mixed[0], mask[1] |= p->mixed[1];
    struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
    const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd)
                                  ? program_keys(cmd, point, p, keys) : 0;
@@ -1483,6 +1499,19 @@ draw_faces(struct wg_cmd_buffer *cmd)
              : 1;
 }
 
+/* A variant that can't be printed: said once, its draws and dispatches dropped, not an invalid pipeline. */
+static bool
+draw_refused(const struct wg_program *p)
+{
+   if (!p->refused)
+      return false;
+   static bool warned;
+   if (!warned)
+      fprintf(stderr, "wg: a draw or dispatch refused, its samplers don't translate: %s\n", p->refused);
+   warned = true;
+   return true;
+}
+
 /* `face`: 0 the whole draw, 1 its front faces, 2 its back faces (draw_faces); `provoke`: a WG_PROVOKE_* mode for a draw
  * through indices of its own (a list then, its index buffer the replay's), or -1. */
 static bool
@@ -1500,6 +1529,9 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    if (fs && fs->program && fs->program != base)
       base = wg_program_merge(base, fs->program);
    struct wg_program *p = program_for(cmd, 0, base);
+   wg_variant_modules(p, vs, fs && fs->program ? fs : NULL);
+   if (draw_refused(p))
+      return false;
 
    struct wg_pipeline_key k;
    memset(&k, 0, sizeof(k));
@@ -2021,6 +2053,8 @@ record_dispatch(struct wg_cmd_buffer *cmd)
    if (!cs || !cs->program || !cs->program->compute)
       return false;
    struct wg_program *p = program_for(cmd, 1, cs->program);
+   if (draw_refused(p))
+      return false;
    if (cmd->last_compute != cs || cmd->last_program[1] != p) {
       emit(cmd, OP_COMPUTE, &p, sizeof(p));
       cmd->last_compute = cs;

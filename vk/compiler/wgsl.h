@@ -157,6 +157,8 @@ struct wgsl_info {
  * WGSL's), or always (a LOD query, which WGSL doesn't have). */
 #define WGSL_KEY_LEVELS 0
 #define WGSL_KEY_ALWAYS 1
+/* With either: a cube, bound as its faces (WGSL can't fetch from a cube). */
+#define WGSL_KEY_FACES 2
 
 /* VkSamplerAddressMode's order. */
 enum wgsl_address { WGSL_ADDRESS_REPEAT, WGSL_ADDRESS_MIRROR, WGSL_ADDRESS_EDGE, WGSL_ADDRESS_BORDER, WGSL_ADDRESS_MIRROR_ONCE };
@@ -178,6 +180,9 @@ struct wgsl_sampler_key {
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */
 };
+
+/* vkCreateSampler's mipLodBias and a shader's, together, at most (Vulkan's maxSamplerLodBias: the device's). */
+#define WGSL_MAX_LOD_BIAS 15.0f
 
 /* A key's `sampler` where the texture is what it's about (a padded texture's size queries, whatever samples it). */
 #define WGSL_NO_SAMPLER 0xffffffffu
@@ -229,6 +234,11 @@ struct wgsl_print_options {
    /* What a variant's samplers need of the shader (none: the stage's own module). */
    const struct wgsl_sampler_key *keys;
    uint32_t key_count;
+   /* Textures another stage compares (group << 16 | binding): depth textures here too, a binding having one type. */
+   const uint32_t *depths;
+   uint32_t depth_count;
+   /* WebGPU's maxInterStageShaderVariables (0: unchecked). */
+   uint32_t max_inter_stage;
 };
 
 /* Prints a lowered shader. Returns ralloc'd text owned by `mem_ctx`, or NULL with `error`. */
@@ -237,7 +247,7 @@ char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options
 
 /* wgsl_print's first step: sampling as the keys say, and integer textures' fetches (recorded in info->int_pairs). False
  * for what it can't do (a gather of an integer cube that is also sampled: the one binding can't be both). */
-bool wgsl_lower_samplers(nir_shader *nir, const struct wgsl_sampler_key *keys, uint32_t key_count, struct wgsl_info *info);
+bool wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);

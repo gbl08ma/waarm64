@@ -321,7 +321,7 @@ wg_caps_properties(struct vk_properties *p)
    p->mipmapPrecisionBits = 4;
    p->maxDrawIndexedIndexValue = 0xffffffffu;
    p->maxDrawIndirectCount = 1;
-   p->maxSamplerLodBias = 15; /* WebGPU's samplers have no bias: the shader's (wgsl_sampler.c), WGSL's within 16 */
+   p->maxSamplerLodBias = WGSL_MAX_LOD_BIAS; /* WebGPU's samplers have no bias: the shader's (wgsl_sampler.c), WGSL's within 16 */
    p->maxSamplerAnisotropy = 16;
    p->maxCustomBorderColorSamplers = 4000;
    p->maxViewports = 1;

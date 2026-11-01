@@ -797,11 +797,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     shadow sample past level 0 and a mirror-once with an offset pick their levels in the shader, so those samples lose
     anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
     mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a shadow cube's filter past a corner
-    of three faces takes the two nearest; a depth texture sampled without a comparison at an explicit LOD picks the
-    nearest level (a linear mip filter's blend is lost, WebGPU filtering no depth); an op on a shadow cube bound as its
-    faces through a sampler of no key takes the key of the sampler that made it so; a gather of a shadow cube bound so
+    of three faces takes the two nearest; a depth texture sampled without a comparison in a stage that doesn't compare it
+    picks the nearest level at an explicit LOD (a linear mip filter's blend is lost, WebGPU filtering no depth); a
+    vertex stage that compares a texture the fragment stage samples plainly isn't told (the fragment stage is printed
+    first: the pipeline is invalid; none seen); a gather of a shadow cube bound as its faces
     is refused; an integer cube both sampled and gathered is refused (its
-    one binding can't be both; none seen); a browser without `texture-component-swizzle` ignores mappings, said once
+    one binding can't be both; none seen); each base of `vkCmdDispatchBase` is a compute pipeline, never evicted (a
+    tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
   - **SwiftShader's fetch from a view with a base level** (VK4 T8): `textureLoad` at a view's level 0 reads the level

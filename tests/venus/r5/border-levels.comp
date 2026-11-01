@@ -1,0 +1,7 @@
+#version 450
+// VK4 R5 (the review's C4): a sample at LOD 0 of two levels, red 1 and 0, through a border sampler whose minLod is 0.5:
+// half of each level, whatever clamp WebGPU's sampler has.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform sampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[8]; };
+void main() { o[0] = textureLod(img, vec2(0.5), 0.0); }
