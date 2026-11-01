@@ -820,10 +820,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
   - **Multisampled image clears** (VK4 T12, R4): 60 to 63 of 184 run of `clear_color_image.2d.optimal.{multiple_layers,
     remaining_array_layers}.*_sample_count_4` read 0 where a colour is expected, or the reverse or a colour of neither,
-    the same cases each run but for a few (3 of 26,337 failed in one full run after passing in a subset): every
+    which cases hanging on what ran before them, so likely a read of memory nothing wrote (3 of 26,337 failed in one full run, some of which pass in the list's order and fail run as a group): every
     `r8g8b8a8_unorm`, `b8g8r8a8_unorm` and packed format (RGBA8 underneath) fails; `r8`, `rg8`, sRGB, integer and float
     formats pass. Not the review's X4 (a copy of several layers) and not reproduced by `misc: a multisampled copy of two
-    layers`, which resolves a second layer rightly. The cases of those formats stay out of the list. Also 4
+    layers`, which resolves a second layer rightly. Every case of those formats is out of the list (VK4 R4: some had been in it, passing by their order). Also 4
     `resolve_image.diff_image_size.dst_256_256_11_4_bit*`.
   - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): two queries active at once (Vulkan allows it across pools), one past slot 4,096, or
     one begun in a pass and cut by a WebGPU pass's end inside Vulkan's is reported as passing, warned once;
