@@ -1,6 +1,8 @@
 **Approved by the user (2026-10-29).** Drafted by the session that closed VK3. Covers **VK4** of the Vulkan plan
 ([docs/plans/graphics.md](docs/plans/graphics.md) §3), M8's graphics track; how Vulkan works now is
 [docs/graphics.md](docs/graphics.md) "Vulkan through Venus".
+**Updated with the user's OK (2026-11-01)**: tiers 1 and 2 done and summarized; the out-of-context review's
+findings and the leftovers that drop work as tier 2b (R1–R7, before tier 3); T20 and the leftovers after tier 3.
 
 ## How VK4 runs: tasks the user starts
 
@@ -38,179 +40,107 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Tier 1: measure, then what crashes or drops work
+### Done: tiers 1 and 2 (2026-10-29 to 2026-10-31)
 
-- **T1. A census of dEQP-VK** (S). The whole mustpass list sampled (a stride over `vk-main.txt`, ~10–20 k cases, on
-  SwiftShader; the same sample on the M4 through `bench/gpu/sway-mac.sh`), every not-passed case classed by cause
-  against the backlog's "The Vulkan driver's gaps" (dEQP's messages through `DETAIL`, WebGPU's warnings), committed
-  as a ranked table in bench/vulkan/REPORT.md. *Done:* counts per cause, cases that now pass added to the list,
-  this list re-ranked. *Start:* docs/testing.md "dEQP", `bench/gpu/deqp-run.ts`. **Done 2026-10-29** (REPORT.md "VK4
-  T1"): every 100th case (16,489) on SwiftShader and the M4; 17.0% and 16.5% of the supported cases don't pass, 499
-  and 542 of 500 and 545 classed (`bench/vulkan/census.ts`); the list 4,725 → 7,126. The samplers' causes are two
-  fifths of the failures (T8, with component swizzles added), compressed images padded to whole blocks a fifth (new:
-  T18), copies between formats the most dropped work (T10). It can't count T3, T4, T6 and T7 (their groups aren't in
-  `vk-main.txt`): they keep their programs' ranks. **The order after T1**: T2, T3, T10, T5, T4, T6; T8, T18, T7, T9,
-  T11, T12; then tier 3 as it stands. Of the features not advertised, a compute-only queue family is what dEQP-VK
-  asks most (18% of the not-supported cases; backlog "Not advertised, by what dEQP-VK asks").
-- **T2. The renderer's robustness** (M): what takes Vulkan down for the guest. `memory.allocation.random.*` and
-  `memory.mapping.suballocation.random.*` crash deqp-vk after enough earlier cases (something the renderer keeps:
-  the arena's high-water mark is now measured, `heapUse`); vkr's `vkFreeMemory resulted in CS error`;
-  `compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.*`; NVIDIA's one-off trap in
-  `wg_complete`; **Venus's contexts outliving a virtio reset** (a guest reboot meets the old rings); T1's two crashes
-  (`api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16`,
-  `api.external.memory.opaque_fd.dedicated.device_only.dup2`, on both hosts). *Done:* each
-  reproduced and fixed, or bounded with a test; the crashing groups in the list. *Start:* backlog "Memory",
-  "Compute", "A trap in the module's completion", "Venus's contexts outlive a virtio reset". **Done 2026-10-30** (REPORT.md "VK4 T2", "VK4 T19"): a dead context's objects are destroyed in the driver (they
-  leaked: a 17th device failed, the cause of the "crashes after earlier cases"); the guest's export imported again
-  aliases its memory (every supported `api.external.memory` case passes; was fatal); a sync freed while a submit names
-  it is dropped (likely NVIDIA's `wg_complete` trap: confirm in the next NVIDIA run); a virtio reset ends Venus's
-  contexts; the memory budget filled; `max_workgroup_memory` was SwiftShader's 17 s compile of Vulkan's zero-init
-  (dEQP-VK's runs use Tint's); `r12x4` is 34 s of synchronous queries past dEQP's watchdog (T13). Once T19 gave the
-  arena room, host-visible memory got a 1 GiB heap of its own, which the arena backs, and `memory.*.random` (300, 242
-  MiB at their peak) joined the list: 7,126 → 7,509. Left (backlog "Memory"): an allocation past the arena still loses
-  the context rather than failing.
-- **T3. Usage scopes** (L): the driver binds a `VkDeviceMemory` as one GPUBuffer, so a pass or dispatch that reads
-  and writes storage of one memory through different bindings fails WebGPU's validation and is dropped. Every
-  sub-allocating program meets it (VMA: most engines, DXVK, vkd3d) once its shaders write storage. The fix: a
-  GPUBuffer per binding (or per `VkBuffer`) over the same bytes, with copies where they alias. *Done:* a test of
-  each conflicting shape (the backlog lists them), dEQP-VK's failing cases of that cause, a real sub-allocating
-  program's frame (a VMA sample in the guest, or vkd3d's tests), the copies' cost measured on the scene. *Start:*
-  backlog "Usage scopes", graphics.md "Known limits". **Done 2026-10-30** (REPORT.md "VK4 T3"): the replay scans each scope (a render
-  pass to its end, a dispatch) and copies its reads of a GPUBuffer it binds writable (uniform, read-only storage, texel,
-  vertex, index, indirect) into a shadow buffer, each buffer's ranges merged; a dispatch's disjoint read-only storage
-  still bound writable, an overlapping one copied. Every shape a test (10, failing first with WebGPU's errors). No
-  dEQP-VK case of the direct set meets it (32,607 cases of its likeliest groups: none logged a usage-scope error), nor
-  vkd3d's 175 tests (dedicated memory per resource); both the same after. VK0's scene, which writes no storage, the
-  same (three alternated rounds overlapping). Left (backlog "Usage scopes' leftovers"): two writable bindings of one
-  range; a draw reading what an earlier draw of its pass wrote; a program that meets it, to measure the copies on.
-- **T4. Views in another format** (M–L): a mutable image viewed in a format other than its sRGB twin gets an invalid
-  view and its submit is dropped (ffmpeg's and libplacebo's filters, DXVK alias formats this way), and YCbCr's plane
-  views of another format of their class (66 cases) have the same root. A texture per view format with copies
-  between them, or aliasing through a storage buffer. *Done:* `image.mutable.*` and the plane views in the lists.
-  *Start:* backlog "Rendering" (the mutable images), "YCbCr's gaps". **Done 2026-10-30** (REPORT.md "VK4 T4"): a texture per
-  view format, the replay copying each subresource where it is used in a texture that doesn't hold it; `EXTENDED_USAGE`
-  and sampled images' sample counts in the image-format query. `image.mutable` 3,198 pass, on SwiftShader and the M4
-  (the 66 plane views among them), the lists 9,602 → 12,733 and 773 → 839; the 445 failures left are multisampled (380
-  arrays, 62 formats WebGPU can't multisample, 3 twin resolves not understood). Left: backlog "Views in another
-  format's leftovers"; the copies' cost unmeasured.
-- **T5. Vertex strides and offsets that aren't multiples of 4** (M): WebGPU refuses them, which invalidates the
-  pipeline and drops its submit (vkd3d's test_instance_id; Direct3D content through vkd3d and DXVK uses such
-  layouts). Vertex pulling from a storage buffer for the attributes WebGPU can't take. *Done:* the dEQP-VK cases,
-  test_instance_id's stride rows. *Start:* backlog "Formats", "vkd3d on Venus". **Done 2026-10-30** (REPORT.md "VK4 T5"): such a binding is read by the vertex
-  stage from a read-only storage binding, in a free bind group; the 1,002 `vertex_input` cases that failed pass on
-  SwiftShader and the M4, the list 8,600 → 9,602; test_instance_id 84 → 24 of 372 (those seen divisors). Left (backlog
-  "Pulled vertices' leftovers"): a program with no group free stays refused; the cost unmeasured.
-- **T6. Synchronization's failures** (S–M): `synchronization*.timeline_semaphore.device_host.*` fails 41 of 110
-  ("Memory contents don't match"): a host thread copying between iterations through a timeline semaphore, likely
-  a real ordering bug. *Done:* the cause, a test, the group in the list. *Start:* backlog "Synchronization". **Done 2026-10-30** (REPORT.md "VK4 T6"): a
-  timeline semaphore in the guest is signalled by the ring fence sent after its batch, and those fences went ahead of
-  held submits, so a value read as reached before its batch ran (the group's other cases pass with their data all
-  zeros). Fences now hold with the rest, and the device answers them out of line, which is what the old hang needed.
-  `device_host`'s 202 failures to 0, 576 cases of the group and its neighbours, the list 12,733 → 13,217. Left (backlog
-  "Synchronization"): 16 held submits from the thread that signals them fill the control queue.
+Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
+docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
+below. dEQP-VK's pass list went 4,725 → 26,002 over them, every new case passing on SwiftShader and the M4.
 
-- **T19. The renderer out of memory 0** (L; added 2026-10-29 by the user, next): Vulkan takes 511 MiB of memory 0
-  (the 256 MiB window and the renderer's 255 MiB arena), so a machine with Vulkan has 2,560 MiB of fast RAM against
-  3,071 without, and the arena is too small to back a host-visible heap programs accept (~1 GiB: T2). The goal: Vulkan
-  costs memory 0 no RAM, and host-visible memory has an arena that backs a heap of ~1 GiB or more. The renderer is C
-  for wasm32 (Mesa, vkr: one linear memory) and reads Venus's rings and command streams in the window in place, so
-  the window and the arena go together; the guest writes every Vulkan command into the window, so where the window
-  lives decides what its writes cost. **Measure first, then choose**, by the guest's cost on Venus's frame workloads
-  (vkcube, mpv on Vulkan, GTK4 on Vulkan: bench/run.ts rules) and memory 0's RAM:
-  (a) the window and the arena in the renderer's own wasm32 memory, reached by the guest through a JIT arm as spill
-  memory 1 is (every Vulkan machine's commands then take that path, not only NUMA machines'); (b) as (a), with all
-  spill RAM in one memory64 behind a generic arm (none through the interpreter); (c) memory 0 as memory64 (a wasm64
-  core, an i64 ABI; the renderer off memory 0 anyway); others the measurements suggest. With M0.5's kernels re-run for
-  memory64 on the current Chromium (backlog "Re-measure memory64 against the alternatives"). *Done:* memory 0's RAM
-  with Vulkan as without, a host-visible heap the arena backs (then T2's random groups in the list), the chosen
-  layout's cost on the workloads measured against today's. *Start:* docs/devices.md "The host-visible window",
-  docs/spill-memories.md, docs/architecture.md "Guest memory: layout A", bench/spike/memory/REPORT.md, vk/README.md
-  "The build", web/ram.ts, web/vm.ts `bootVm`. **Done 2026-10-30** (bench/spike/memory/REPORT.md §6, REPORT.md "VK4 T19"): memory64 measured first: V8 checks
-  each memory64 access, ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in),
-  and the user set (b) and (c) aside. Built (a′): memory 1 is the renderer's own, an arena of 1,280 MiB, then the window
-  (`VmConfig.window_at`, ABI 55), then node 1's RAM, reached through the existing memory-1 arm; memory 0 holds 3,071
-  MiB with Vulkan as without (was 2,560), node 1 at most 2,560. On the Mac against the old layout: vkcube the same, mpv
-  decoding in software +7.5% of its CPU, fishbowl within its spread. Host-visible memory's 1 GiB heap is the arena's
-  (T2 closed with it).
+| Task | What it did | Its leftovers (backlog) |
+|---|---|---|
+| T1. A census of dEQP-VK | every 100th case (16,489) on SwiftShader and the M4, 17.0% and 16.5% of supported cases not passing, classed by cause (`bench/vulkan/census.ts`); re-ranked tiers 1–2; list 4,725 → 7,126 | "Not advertised, by what dEQP-VK asks" (a compute-only queue family: 18%) |
+| T2. The renderer's robustness | a dead context's objects destroyed (the 17th device); an export imported again aliases; a sync freed under a held submit dropped from it; a virtio reset ends Venus's contexts; list → 7,509 | "Memory" (an allocation past the arena loses the context), "External memory's leftovers", "A trap in the module's completion on NVIDIA" (confirm in the next run) |
+| T19. The renderer out of memory 0 | memory 1 is the renderer's (1,280 MiB arena, the window, node 1); memory 0 holds 3,071 MiB with Vulkan as without; host-visible heap 1 GiB | "Nodes 2 and up in one memory64" |
+| T3. Usage scopes | reads of a buffer a scope binds writable copied to a shadow | "Usage scopes' leftovers" |
+| T4. Views in another format | a texture per view format, copies where used | "Views in another format's leftovers" (multisampled only); list → 12,733 |
+| T5. Vertex strides and offsets | pulled from storage in a free group; list → 9,602 | "Pulled vertices' leftovers" |
+| T6. Synchronization | ring fences held with held submits, answered out of line; list → 13,217 | "Synchronization" (16 held submits from the signalling thread hang) |
+| T7. API 1.3's required features | R32 image atomics, inline uniform blocks, multiview, device addresses; list → 18,943 | "Device addresses' leftovers" |
+| T8. Samplers | sampling lowered in the shader against a key per pair; swizzles; list → 16,711 | "Samplers' leftovers", "SwiftShader's fetch from a view with a base level" |
+| T18. Compressed images not whole blocks | sampled by their own size from fetches; list → 17,208 | "Compressed images that aren't whole blocks' leftovers" |
+| T9. The translator's wrong results | shadow samples past level 0, offsets, `textureQueryLod`, helpers, dispatch base; list → 21,198 | "Samplers' leftovers", "Shaders" (`_pcoffset`) |
+| T10. Copies and resolves WebGPU refuses | copies between formats, drawn resolves, depth16; list → 8,600 | "Copies WebGPU refuses", "The M4's own failures" |
+| T11. Storage images WebGPU gives one way | such images as words, any format's encoding; list → 23,083 | "Storage images as words' leftovers" |
+| T12. The smaller rendering gaps | layered passes, feedback loops, indirect fans, queries, packed 16-bit formats; list → 26,002 | "Multisampled image clears", "Packed 16-bit formats' leftovers", "Multisampled arrays' leftovers", "The M4's own failures", "Rendering" |
 
-### Tier 2: what's advertised and missing (API 1.3), and wrong pixels programs meet
+### Tier 2b: the review's defects and what still drops work (before tier 3)
 
-- **T7. API 1.3's required features** (each S–M; L for addresses), one task each, in this order: **image and texel
-  buffer atomics on R32** (compute programs and libplacebo use them; the translator refuses them today: storage
-  images or texel buffers as storage buffers of words, atomics on those), **inline uniform blocks** (data in the
-  set: a uniform buffer the driver writes), **multiview** (a pass per view, or layered rendering), **buffer device
-  addresses** (pointers into GPUBuffers: one big storage buffer and offsets, or per-buffer bindings by address; the
-  hardest, and DXVK and vkd3d need it). *Done:* each feature's dEQP-VK groups in the list. *Start:* backlog "API
-  1.3's required features". **Done 2026-10-31** (REPORT.md "VK4 T7"): atomics on R32 through the image's words in a buffer, tracked
-  with T4's textures (705 of 705); inline uniform blocks as a uniform buffer of the set's; multiview as a pass per view (547
-  pass, the 48 failures multisampled arrays, T12's); device addresses as bytes of one GPUBuffer that grows in place, a
-  pointer two 32-bit words, a writable descriptor beside pointers in a shadow copied back; `scalarBlockLayout` with them (1,811
-  pass, 0 fail). All 1,735 new cases pass on the M4; the list 17,208 → 18,943. Left: backlog "Device addresses' leftovers"
-  (`shaderInt64`, memory past one storage binding, the copies' cost on a program).
-- **T8. Samplers** (M; T1: 203 of SwiftShader's 500 failures): border colours (shadow maps), mirror-once,
-  unnormalized coordinates, the sampler's LOD bias and min/max LOD, integer textures' address modes and their min/max
-  LOD (fetched today: clamp-to-edge whatever the sampler says), integer cube textures (the stage refused: 31),
-  **component swizzles** (ignored today; Vulkan requires them: 55). In the shader where WebGPU's sampler can't. *Done:* `texture.*` and `glsl.texture_functions.*`
-  cases of those causes in the list. *Start:* backlog "Samplers". **Done 2026-10-31** (REPORT.md "VK4 T8"): a stage that
-  samples keeps its NIR (+12.5% over the programs' WGSL) and prints again against the bound samplers as a variant, plain
-  samplers' modules unchanged; integer textures fetched by the sampler's address modes and LOD, their cubes from a 2D
-  array, borders, mirror-once, unnormalized coordinates and the bias in the shader, swizzles through WebGPU's views.
-  203 failures of T1's to 0 of those causes but on SwiftShader's own bug, on both hosts; mirror-once, custom border
-  colours and their swizzles advertised, the list 13,217 → 16,711. Left (backlog "Samplers' leftovers"): shadow samples'
-  bias (T9's), a border's anisotropy on several levels, SwiftShader's `textureLoad` on views from a base level.
-- **T9. The translator's wrong results** (M): shadow sampling with a bias, an explicit LOD or gradients (a mipmapped
-  shadow map sampled at level 0, silently), non-constant texture offsets (print constants as literals: cheap),
-  `textureQueryLod`, `gl_HelperInvocation`, a fragment shader writing depth without a depth aspect (a variant
-  without the output), `vkCmdDispatchBase`'s base. *Done:* each cause's cases in the list. *Start:* backlog "Shaders",
-  "Rendering". **Done 2026-10-31** (REPORT.md "VK4 T9"): shadow samples past level 0 from fetches, each texel compared, keyed by
-  the sampler (one-level views and a constant LOD of 0 stay WGSL's, no variant); offsets were constants the printer couldn't
-  see through a vec; `textureQueryLod` in the shader; helpers as an empty `sample_mask`; a dispatch's base as overrides, a pipeline
-  per base; `gl_ClipDistance` read by a fragment stage and mirror-once offsets besides; the depth output was T10's. 417 failures of
-  1,911 to 0 of 3,270, the list 18,943 → 21,198, 0 failures on the M4 (8 not supported). Left: backlog "Samplers' leftovers"
-  (anisotropy on what's fetched), `_pcoffset`'s `maintenance8`, the fetches' cost on a program.
-- **T10. Copies and resolves WebGPU refuses** (M): size-compatible copies between formats (compressed ↔
-  uncompressed: texture tools, DXVK), multisampled copies, integer resolves, Stencil8's resolves, depth16's offsets,
-  a resolve into a 3D image; whole depth and stencil copies through WebGPU's own path (taken never today: slower).
-  *Done:* `copy_and_blit`'s and `depth_stencil_resolve`'s cases of those causes. *Start:* backlog "Copies WebGPU
-  refuses", "Stencil8's resolves", "Transfers". **Done 2026-10-30** (REPORT.md "VK4 T10"): copies between formats as bytes
-  through a temporary buffer; multisampled copies and the resolves WebGPU refuses (integer formats, parts of an image,
-  3D images, formats it doesn't resolve) as draws; depth16's parts and offsets; whole depth and stencil copies through
-  WebGPU's path; `vkCmdResolveImage`'s regions, which it had dropped; Stencil8's resolves were a pipeline refused for a
-  depth output (fixed for every such stage: T9's item); 32-bit float and 16-bit norm linear blits, integer blits clamped.
-  A sample's 189 failures left 13, none of these causes; the wide sample's 84 are T12's (multisampled arrays, feedback
-  loops). The list 7,509 → 8,600; on the M4 37 of the new cases fail and stayed out (backlog "The M4's own failures").
-- **T11. Storage images WebGPU gives one way** (M–L): load and store of a format WebGPU allows only one way (most
-  formats without tier2) fails the stage. A storage buffer of the texels with the format's encode and decode in the
-  shader. *Done:* the cases, libplacebo's compute paths on such formats. *Start:* backlog "Storage images WebGPU
-  gives one way". **Done 2026-10-31** (REPORT.md "VK4 T11"): such an image is, in that stage, its view's words (T7's), any format's encoding
-  printed from its description; tier1's formats offered on every adapter, by words where WebGPU has no storage texture of them, so SwiftShader
-  runs the encodings. No dEQP-VK case had the cause (1,156 of a sample were not supported, none failed): 194 to 426 passes of it, 0 failures, the
-  list 21,198 → 23,083, all of 3,481 new passes on the M4. libplacebo's compute on `rg16f` right on both hosts (refused before). Left: backlog
-  "Storage images as words' leftovers"; the words' cost on a program unmeasured.
-- **T12. The smaller rendering gaps** (S each, one task): queries (clears counted inside an occlusion query, two
-  pools in one pass), depth clamping without clipping, 3D images through 2D views, feedback loops through an input
-  attachment, indirect fans, the M4's 7 Metal-only failures, vkQuake's 1.7%; T1's smaller causes (clears of image
-  layers, 16-bit packed colour formats beside depth refused at creation, `int16_t` in storage buffers, push
-  descriptors pushed twice, the M4's `descriptorset_random.sets4`). *Start:* backlog "Queries",
-  "Rendering", "Formats", "The M4's own failures", "vkQuake's frames". **Done 2026-10-31** (REPORT.md "VK4 T12"): a pass of several layers
-  replayed a layer at a time for its clears and load ops; feedback loops through a copy in a cut of the WebGPU pass; indirect fans worked out in a compute pass; queries of
-  several pools and queries spanning passes; `unclippedDepth` only where not clipping; multisampled arrays as a texture a layer in the worker (what fails is formats WebGPU doesn't
-  multisample, 124 of `image.mutable` and T7's 48); `R5G6B5`, `A1R5G5B5`, `B4G4R4A4` and their orders, which Vulkan requires and the device lacked, as `rgba8unorm` with packing copies;
-  the M4's 46 `generate_mipmaps.from_previous_level` were an interpolated coordinate, fixed; vkQuake's 1.7% is lavapipe filtering `NEAREST` anisotropic samplers linearly (109 bytes off
-  when forced), kept as it is. 97 failures of the sample's 780 supported cases to 10 of 1,780; the list 23,083 → 26,002, all new cases passing on the M4. `int16_t` and `numcalls2` had
-  gone already. Left: backlog "Multisampled image clears", "Packed 16-bit formats' leftovers", "Multisampled arrays' leftovers", "The M4's own failures", blends with both constants.
+The out-of-context review of T2–T19 (2026-11-01, [VENUS-VK4-REVIEW.md](VENUS-VK4-REVIEW.md): five static reviews,
+~55 findings, ids by area) found defects in code the tasks wrote, about half of which crash, hang or drop work. They
+go **before tier 3**: tier 3 measures programs on this code, and the bar's order (a crash or a lost device first, then
+dropped work, then wrong pixels) puts them ahead of performance. Each task below is one session, takes its findings in
+the order listed, starts each fix with its confirming test failing first (the review names one per finding: a
+`wg_test.c` scenario, a `tests/venus-*.test.ts` row, a dEQP-VK case), and ends by marking the findings it fixed in
+VENUS-VK4-REVIEW.md (or moving them to the backlog with a line). The review's own commits fixed H2, H3 and O4.
+**Cloud sessions** can do all of tier 2b: the renderer builds there and the driver's and translator's tests run on
+SwiftShader, and dEQP-VK runs on the prebuilt disk and guest (docs/cloud.md "Venus (vk/)"); `ci-deqp-vk.sh`'s
+programs' replays need the dev VM.
 
-- **T18. Compressed images whose size isn't whole blocks** (M; found by T1: 102 failures on each host): the
-  texture is padded to whole blocks (WebGPU's rule for level 0), so sampling reads a larger texture than the image
-  and cube views of it are refused; ASTC's 5-, 6-, 10- and 12-texel blocks meet it at most sizes. Coordinates scaled
-  to the image in the shader and a cube's faces apart, or such images decoded to an uncompressed texture. *Done:* the
-  `pipeline.*.image`, `image_view`, `sampler` and `texture.compressed` cases of that cause in the list. *Start:*
-  backlog "Compressed images whose size isn't whole blocks". **Done 2026-10-31** (REPORT.md "VK4 T18"): such an image is
-  sampled in the shader through T8's keys, by its own size and levels from texel fetches, its cubes bound as faces with a
-  filter across their edges (`texture-compression-unaligned` is behind Chromium's unsafe flag; scaled coordinates can't
-  work). 648 failures to 146 on SwiftShader, all its own `textureLoad` bug, 0 on the M4 (5 cases left the list for that bug;
-  `nvidia.sh VK2_STEPS=t18` asks NVIDIA). The list 16,711 → 17,208. Left: backlog "Compressed images that aren't whole
-  blocks' leftovers".
+- **R1. Fences per context** (M; H1, then T6's leftover): every fence the GPU worker answers goes through one
+  in-order `FenceGate` whose check covers all of Venus's pending ring fences, so since T6 a submit held for an unmet
+  timeline wait (legal: a CPU `vkSignalSemaphore` later; vkd3d's D3D12 fences) holds every later fence of every
+  client, sway's virgl frames included: a stall, a deadlock when the signal waits on the compositor. A fence's check
+  scoped to its own context and ring, fences of other contexts answered out of order (the device side's in-line queue
+  too). With it, T6's leftover: 16 held submits from the signalling thread fill the control queue (backlog
+  "Synchronization"). *Done:* a test of each (tests/venus-renderer.test.ts or a GPU-worker-level test), ci-graphics.sh
+  for the compositor's fences. *Start:* web/virgl-host.ts `FenceGate`, web/gpu-worker.ts `settled`, web/venus-host.ts,
+  docs/devices.md "Venus".
+- **R2. Usage scopes and shadows** (M; R1, R4 of the review, then backlog "Usage scopes' leftovers"): a written shadow
+  (pointers beside a writable descriptor, T7) and a read shadow share `dev->shadow`, which WebGPU refuses in one scope
+  (every program that gives all memory device addresses: vkd3d-proton, VMA with BDA); two read-only storage bindings
+  promoted to writable beside a writable one can overlap each other. Then the leftovers: two writable bindings of one
+  range; a draw reading what an earlier draw of its pass wrote through storage (split the WebGPU pass there).
+  *Done:* each shape a `wg_test.c` scenario (as T3's), dEQP-VK's `buffer_device_address` and `ssbo` groups unchanged.
+  *Start:* wg_cmd.c `scope_shadows`, `shadow_place`, `conflicts`, `program_for`; vk/README.md "Usage scopes".
+- **R3. Render passes' replay** (M; review R2, R6, R7 with O7, R3 with O10, R8, R5, R9, R10): attachments of
+  different sizes (Vulkan allows; WebGPU refuses: crop to the render area's common size); `LOAD_OP_NONE` taken as
+  discard by the alias tracking (stale bytes stored over a mutable image's); layers past 32 of a pass ignored while
+  `maxFramebufferLayers` is 256 (and a shift by 32 at view 31); a feedback copy of a packed-format attachment (no
+  `packed` key on the twin) and its swizzle; a feedback copy of the wrong layer; transform feedback cut by a feedback
+  copy's pass end; drawn resolves at every part of a colour-only suspended pass; non-indexed fans past 65,536 vertices
+  dropped silently (warn, or draw in pieces). *Done:* a test each; the 4
+  `renderpasses.*.r5g6b5_unorm_pack16.input.*self_dep*` (backlog "Packed 16-bit formats' leftovers") rechecked: R3 may
+  be their cause. *Start:* wg_cmd.c `begin_rendering`, `feedback_copies`, `image_use`; wg_device.c `wg_view_twin`.
+- **R4. Transfers** (M; review X1–X8, then T10's and T12's leftovers): one-row buffer↔image copies with a taller
+  `bufferImageHeight` (an unaligned `bytesPerRow`: the submit lost); a drawn resolve into an sRGB-twin view (pipeline
+  and view formats differ: lost); indirect indexed fans sized by the whole bound index range (past
+  `maxStorageBufferBindingSize`: lost; six times the buffer per draw otherwise); multisampled copies of several layers
+  (only the first); multisampled copies between sRGB twins converting values, not bits (likely T4's "3 sRGB-twin
+  resolves not understood"); linear blits from padded compressed images; query readbacks overwriting queries the
+  submit didn't end; multisampled packed copies. Then backlog "Copies WebGPU refuses" (a multisampled copy between
+  formats: the storage round trip) and "Multisampled image clears" (X4 may be their cause). *Done:* a test each, the
+  T4 `image.mutable` sRGB-twin cases and the clears in the list if they pass. *Start:* wg_cmd.c `copy_bt_replay`,
+  web/venus-gpu.ts `layout`, `resolveByDraw`, `copyMultisampled`, `copyPacked`, the fans' compute pass.
+- **R5. The translator's defects** (M; review C1–C7): **C1 first** (S, corruption: a variant copies its base's
+  depth-less fragment module, `fs_no_depth`, so it draws with the unkeyed module and its id is released twice, then two
+  objects share a worker id; the fix is zeroing `fs_no_depth` and `fs_no_depth_of` in `wg_program_variant`); one depth
+  texture sampled with and without comparison in a stage (invalid WGSL: PCSS shadows, DXVK's and vkd3d's
+  `mipLodBias`); a sampler shared by an integer gather and a float sample filters nearest; a border across levels
+  skewed by the WebGPU sampler's LOD clamps; a cube bound as its faces leaking into other pairs and stages; a keyed
+  print's failure falling back to the unkeyed module (an invalid pipeline in place of a refusal); C7's minors
+  (location 7 for depth, inter-stage variable counts, `wg_deserialize`'s bounds on a corrupt cache, small floats'
+  rounding, the bias's clamp). *Done:* a `tests/wgsl.test.ts` row or a `wg_test.c` scenario each. *Start:*
+  wg_shader.c `wg_program_variant`, `keyed_text`, `fragment_without_depth`; wgsl_print.c; wgsl_sampler.c.
+- **R6. Memory and objects** (M; review O1–O3, O11, O12, O14–O17, H4, then backlog "Memory" and "External memory's
+  leftovers"): an import aliasing an earlier export ignores `DEVICE_ADDRESS_BIT` (address 0, or writes into another
+  memory: VMA with BDA); an alias no longer rebound by map and unmap once the original vkr memory is freed (vkr's
+  patch); a large binding number overflowing the set layout's 32-bit size (a renderer-wide crash: the guest's input);
+  device-local allocations past the heap succeeding then failing silently, and T2's "an allocation past the arena
+  loses the context" with them; an inline uniform block past its set's buffer; the minors; a snapshot's blob resources
+  that outlive their context and its capsets rebuilt without Venus (H4, with snapshots refused while a Venus context
+  exists). *Done:* a test each (wg_test.c, tests/venus-renderer.test.ts); `memory.*` and `api.external.memory.*`
+  unchanged. *Start:* wg_device.c `wg_AllocateMemory`, vk/patches/vkr-wasm.patch, wg_descriptor.c `layout_create`.
+- **R7. What's advertised** (S–M; review O5, O6, O8, O9, then backlog "Sample counts Vulkan wants but WebGPU lacks"
+  and "API 1.3's required features"): the bar's rule, what's advertised must work. `textureCompressionBC` without
+  `BC1_RGB_*` (refused at creation, which Venus's asynchronous creation turns into a lost context: an RGBA texture whose
+  alpha reads 1, or BC off); `shaderStorageImageExtendedFormats` on adapters without tier1, whose 16-bit normalized
+  formats don't exist there (off there, or those formats as words); the memory pad and `maxMemoryAllocationSize`
+  wrapping; Vulkan 1.3's 1 GiB minimums on adapters with WebGPU's default buffer size; the sample counts. *Done:*
+  dEQP-VK's `api.info.format_properties.*`, `api.info.vulkan1p*_limits_validation.*` and
+  `api.info.image_format_properties.*` passing on SwiftShader and the M4, whatever is taken off said in vk/README.md.
+  *Start:* wg_caps.c, wg_format.c, web/venus-gpu.ts `gpuFeatures`; tests/venus-renderer.test.ts's caps test.
+
+An out-of-context review again after R1–R4 (the passes' and the worker's areas), over what they change.
 
 ### Tier 3: performance on real workloads
 
@@ -233,6 +163,14 @@ T2–T14; the rest of the order is judgement, said with each.
   the shader store compressed, shown on the Machines page and its budget configurable (the user's ask, 2026-10-26).
   *Start:* backlog "Pipelines' loose ends after VK3 L3".
 
+- **T20. What tier 2's emulations cost a program** (M; T3's to T12's "the cost unmeasured", each task's leftover):
+  the shadow copies of usage scopes, the copies between view formats, pulled vertices, the sampler variants' compile
+  and their fetches, storage images as words, the drawn resolves and packed copies, all measured only on dEQP-VK or
+  not at all. A program that meets each (ffmpeg's and libplacebo's filters for views and words, DXVK or a VMA program
+  that writes storage for the shadows, vkd3d's tests for pulling, a replayed capture with border or mirror-once
+  samplers), its frame's GPU-worker and guest time measured with the path and with the case forced away, by
+  bench/run.ts's rules. *Done:* a table in REPORT.md, the costly ones filed or fixed.
+
 ### Tier 4: breadth (each its own task when a program asks for it)
 
 vkd3d's 11_1 and 12_0 gaps (256 bytes of push constants, multi-draw indirect, vertex attribute divisors, storage
@@ -240,6 +178,20 @@ images without a format, min/max reduction, multiple viewports), then geometry a
 pre-passes; transform feedback's leftovers; YCbCr's 10-bit formats; snapshots while Vulkan is in use; Dawn in the
 guest's Chromium (a guest Mesa patch for opaque-fd semaphores); a prebuilt renderer module for `npm start`; and **on
 by default**, per program that meets its bar (the track's end).
+
+**After tier 3: the leftovers nothing meets yet** (backlog entries named; each a task when a program or the census
+asks): multisampled formats WebGPU can't multisample, multisampled arrays sampled whole and `r32g32b32a32` multiview
+("Views in another format's leftovers", "Multisampled arrays' leftovers"); compressed images not whole blocks' variant
+per size, padded cubes' gather and their anisotropy; the samplers' anisotropy on what's fetched, the shadow cube's
+corner, depth sampled at an explicit LOD ("Samplers' leftovers"); `shaderInt64`, memory past one storage binding and
+capture-replay for device addresses ("Device addresses' leftovers"); a pull for a program with four groups, divisors
+and the formats WebGPU's vertex buffers lack ("Pulled vertices' leftovers": the divisors with vkd3d above); the packed
+1.3 orders and their 16-bit views; `_pcoffset` (`maintenance8`), derivatives in non-uniform flow, `umulExtended`
+("Shaders"); `gl_Layer`, early fragment tests, both blend constants, per-face stencil order, MIN/MAX/AVERAGE resolves
+("Rendering"); D24's unit and RGB32 attachments ("Formats"); queries' precise counts and GPU timestamps ("Queries");
+a compute-only queue family, the commonest not-supported reason (T1); and the hosts' own: the M4's failures,
+SwiftShader's fetch from a base level and `buffer_1048577` on NVIDIA (the user's next NVIDIA run decides those and
+T2's `wg_complete` trap).
 
 ## The gate (the track's end)
 
