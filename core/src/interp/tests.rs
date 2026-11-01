@@ -481,6 +481,16 @@ fn fp_load_store_structures() {
         (seq(12, 4) * 0x1_0000_0001, DATA + 16)
     );
     assert_eq!(fp(&[0x0c407c40]).run().c.v[0], seq(0, 8)); // ld1 {v0.1d}, [x2]
+    // ld4 {v0.16b-v3.16b}, [x2] and ld1 {v0.16b-v3.16b}, [x2] with the last
+    // bytes past RAM: the fault leaves every register as it was.
+    for insn in [0x4c400040, 0x4c402040] {
+        let mut t = fp(&[insn]).x(2, RAM as u64 - 63);
+        let before = t.c.v;
+        assert_eq!(t.step(), fault(RAM as u64, Access::Read, FaultKind::Bus));
+        assert!(t.c.v == before, "{insn:#x} wrote registers");
+    }
+    let t = fp(&[0x4c402040]).run(); // ld1 {v0.16b-v3.16b}, [x2]: v4 untouched
+    assert_eq!([t.c.v[3], t.c.v[4]], [seq(48, 16), u128::MAX - 4]);
     // ld2 {v0.1d, v1.1d}: size 3 with Q=0 and more than one element per structure is reserved.
     assert_eq!(fp(&[0x0c408c40]).step(), Err(Exit::Undefined));
 }

@@ -189,32 +189,28 @@ fn multiple(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
     let (t, base) = (bits(i, 4, 0) as usize, base(c, bits(i, 9, 5))?);
-    // Loads build the new registers in a copy and commit after the last read.
-    let mut v = c.v;
-    if load_ {
-        // Every element of each register gets written; Q=0 also clears the upper half.
-        for r in 0..rpt * selem {
-            v[(t + r) % 32] = 0;
-        }
-    }
+    // Loads build the new registers (at most four: register t + k is v[k])
+    // and commit after the last read. Every element of each gets written, and
+    // Q=0 clears the upper half, so they start at zero.
+    let mut v = [0u128; 4];
     let mut addr = base;
     for r in 0..rpt {
         for e in 0..elements {
             for s in 0..selem {
-                let tt = (t + r + s) % 32;
-                let sh = e * esize;
+                let (k, sh) = (r + s, e * esize);
                 if load_ {
-                    let x = load(c, m, addr, ebytes)?;
-                    v[tt] = (v[tt] & !(emask << sh)) | x << sh;
+                    v[k] |= load(c, m, addr, ebytes)? << sh;
                 } else {
-                    store(c, m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
+                    store(c, m, addr, ebytes, (c.v[(t + k) % 32] >> sh) & emask)?;
                 }
                 addr = addr.wrapping_add(ebytes as u64);
             }
         }
     }
     if load_ {
-        c.v = v;
+        for (k, x) in v.iter().take(rpt * selem).enumerate() {
+            c.v[(t + k) % 32] = *x;
+        }
     }
     post_index(c, i, base, addr.wrapping_sub(base));
     Ok(())

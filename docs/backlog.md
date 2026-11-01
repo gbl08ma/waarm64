@@ -78,8 +78,6 @@ left open, most promising first.
   end` test, LdO/StO runs in a loop (docs/cpu.md "Tried and not kept"). Any code in `hot` moves V8's register
   allocation for all of it, and a guest branch must stay a host branch (loop 12: a `select` there cost 30%): measure
   on the small guests too.
-- `ldst_fp::multiple` copies all of `c.v` (512 bytes) for every structure access, stores included, to commit loads
-  after the last read; up to four `u128`s would do. LD1/ST1 are inline in the JIT, so this is LD2-4 and cold code.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
