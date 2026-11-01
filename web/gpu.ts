@@ -1159,19 +1159,20 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     scatter(ctx.ram(), h.write, h.reply);
     ctx.complete(h.w0, h.len);
   };
+  const full = () => rings.size + held.length >= QUEUE_FULL;
   const watchRings = () => {
     ringWatch = undefined;
-    if (!rings.size) return;
-    if (rings.size + held.length >= QUEUE_FULL && performance.now() - ringActive >= RING_STALL_MS) {
-      while (rings.size + held.length >= QUEUE_FULL && rings.size > 1) {
-        const before = rings.size;
+    if (!full()) return;
+    if (performance.now() - ringActive >= RING_STALL_MS) {
+      for (let before = 0; full() && rings.size > 1 && rings.size !== before;) {
+        before = rings.size;
         giveBack();
-        if (rings.size === before) break;
       }
       ringActive = performance.now();
     }
-    ringWatch = setTimeout(watchRings, RING_STALL_MS);
+    armRings();
   };
+  const armRings = () => { if (full()) ringWatch ??= setTimeout(watchRings, RING_STALL_MS); };
   // The stats' queue occupancy (`?displaystats`): the most replies held at once, and the time QUEUE_FULL of them were
   // (the page's queue size: the guest's ring had no free entry, so its next command waited).
   let fullSince = -1;
@@ -1235,7 +1236,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
           ringActive = performance.now();
           if (rings.delete(h)) ctx.complete(h.w0, h.len);
         });
-        ringWatch ??= setTimeout(watchRings, RING_STALL_MS);
+        armRings();
         return undefined;
       }
       if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
@@ -1243,6 +1244,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now, type };
         held.push(h);
         occupancy();
+        armRings();
         if (wait) {
           busy.fences++;
           void wait.then(() => {
