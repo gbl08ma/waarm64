@@ -1175,11 +1175,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   has the status and interrupt counts; the next step is the GIC's view of SPI 51 when the line is high (the
   instrumentation that hid it: `Gicv3::dbg` into the device's spare config bytes).
 
-- **9p's state isn't saved** (the server's tree and its fids): a VM with a 9p device refuses a
-  snapshot. The page's machines have none; the device test and Alpine's test image do, so their
-  host round trips run without it (`tests/snapshot.test.ts`). It needs the tree serialized with
-  node identities (fids and unlinked-but-open files point into it). Shared folders save theirs
-  ([shares.md](shares.md) §6); this entry is the in-memory tree's.
 - **The base image's hash is never written by the page**, so a snapshot only loads on a disk of
   the same identity (a URL's path and size, or a chosen file's name, size and modification time): a
   copy of the same image with another date is refused. `readSnapshot` already accepts a matching

@@ -841,7 +841,7 @@ export function p9Backend<N>(ctx: Ctx, server: P9Server<N>) {
 export function p9(ctx: Ctx, files: P9Files, deterministic: boolean) {
   return {
     ...p9Backend(ctx, new P9Server(new MemoryTree(files, deterministic))),
-    // The tree and the open fids aren't saved (docs/backlog.md "9p's state isn't saved").
+    // The in-memory tree is the tests' and Alpine's only: its tree and fids aren't saved (docs/shares.md §6).
     save(): unknown { throw new Error("a machine with a 9p device can't be saved to a snapshot yet"); },
   };
 }

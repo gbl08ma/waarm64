@@ -185,8 +185,8 @@ after the request it names**. What changes while the machine runs comes over the
 
 ## 6. Snapshots
 
-A machine with `shares` saves and restores (the refusal stays for the in-memory tree only: backlog "9p's state isn't
-saved"). The server's state for a folders tree is its fids (node, open mode, uid), the nodes seen by folder and path (their
+A machine with `shares` saves and restores. The in-memory tree (the tests' and Alpine's) refuses a snapshot: it serves
+no feature, so its tree and fids aren't serialized. The server's state for a folders tree is its fids (node, open mode, uid), the nodes seen by folder and path (their
 qids and chmods); the write sessions are closed first (`drain`). On restore the nodes are made from their paths and
 nothing is asked of the folders until the guest does: a folder detached since, or a path gone, makes those fids answer
 `ESTALE` (the guest's open file fails, the mount lives on). A file unlinked while open isn't kept: its fids go stale. A host folder changed

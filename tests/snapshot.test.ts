@@ -62,7 +62,7 @@ test('console input waiting in the RX ring and in the host goes through a snapsh
 
 test('held receive and event buffers are the new backends\' after a restore', { skip }, async () => {
   // Input devices fill their event queues at probe; the buffers are held by the backends for good.
-  // (Not the device test: its 9p server's state isn't saved yet.)
+  // (Not the device test: its in-memory 9p tree isn't saved.)
   const devices = [...guestDevices(disk), { type: 'input', kind: 'keyboard' }, { type: 'input', kind: 'tablet' }, { type: 'net', adapter: 'loopback' }] as BootOptions['devices'];
   const whole = await runToPowerOff(WASM, buildroot({ devices }));
   poweredOff(whole);
