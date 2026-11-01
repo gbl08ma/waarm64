@@ -163,11 +163,11 @@ test("what the driver advertises follows the WebGPU device's features and limits
     const { v, memory } = await renderer(c, options);
     const at = (v.raw.wgt_caps as () => number)() >>> 0;
     assert.ok(at, 'wgt_caps failed');
-    const w = new Uint32Array(memory.buffer, at, 30);
+    const w = new Uint32Array(memory.buffer, at, 34);
     return {
       dim2D: w[0], invocations: w[1], sizeX: w[2], storageImages: w[3], sampledImages: w[4], storageRange: w[5], subgroupSize: w[6],
       subgroupOps: w[7], bc: w[8], extendedFormats: w[9], depthClamp: w[10], r16float: w[11], r16unorm: w[12], rg11b10: w[13], r32float: w[14], vendor: w[15],
-      cacheUuid: w[16], rgba32Samples: w[17], rgba8Samples: w[18], r32uintSamples: w[19], integerSamples: w[20], sharedMemory: w[21], dualSource: w[22], integerMissing: w[23], ycbcr: w[24], nv12: w[25], nv12Planes: w[26] | 0, nv12Other: w[27] | 0, nv12External: w[28] | 0, maxPush: w[29],
+      cacheUuid: w[16], rgba32Samples: w[17], rgba8Samples: w[18], r32uintSamples: w[19], integerSamples: w[20], sharedMemory: w[21], dualSource: w[22], integerMissing: w[23], ycbcr: w[24], nv12: w[25], nv12Planes: w[26] | 0, nv12Other: w[27] | 0, nv12External: w[28] | 0, maxPush: w[29], maxAllocation: w[30] + w[31] * 2 ** 32, bc1Rgb: w[32], vertexBindings: w[33],
     };
   };
   const SAMPLED = 0x1, STORAGE = 0x2, COLOR = 0x80, BLEND = 0x100, FILTER = 0x1000;
@@ -199,6 +199,19 @@ test("what the driver advertises follows the WebGPU device's features and limits
   assert.deepEqual([mac.dualSource, swiftshader.dualSource, none.dualSource], [1, 0, 0]);
   // VK_KHR_push_descriptor is advertised: its maxPushDescriptors at least Vulkan's 32 (the out-of-context review of VK4).
   assert.deepEqual([mac.maxPush, none.maxPush], [32, 32]);
+  // VK4 R7: BC's RGB formats with the feature, Vulkan's 16 vertex bindings, an allocation as large as a GPUBuffer. BC off
+  // without a view's swizzle, which they need; the extended storage formats off without tier1, which has some of them;
+  // the pad under a large uniform binding not costing an allocation its room.
+  assert.equal(mac.bc1Rgb & (SAMPLED | FILTER), SAMPLED | FILTER);
+  assert.deepEqual([mac.vertexBindings, none.vertexBindings], [16, 16]);
+  assert.equal(swiftshader.maxAllocation, 2 ** 30);
+  const noSwizzle = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { hold: ['texture-component-swizzle'] });
+  assert.deepEqual([noSwizzle.bc, noSwizzle.bc1Rgb], [0, 0]);
+  const noTier1 = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { hold: ['texture-formats-tier1'] });
+  assert.equal(noTier1.extendedFormats, 0);
+  const large = adapter('2026-10-01-vm-swiftshader.json', 'google');
+  const wide = await caps({ ...large, limits: { ...large.limits, maxUniformBufferBindingSize: 2 ** 30, maxBufferSize: 2 ** 28 } });
+  assert.equal(wide.maxAllocation, 2 ** 28);
   // Subgroups of one invocation, basic operations only (the translator has none of WebGPU's yet).
   assert.deepEqual([mac.subgroupSize, mac.subgroupOps], [1, 1]);
   // Features: BC and depth clamp where the adapter has them; texture-formats-tier1 (the Mac's) adds the 16-bit normalized

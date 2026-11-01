@@ -160,14 +160,16 @@ wg_caps_features(struct vk_features *f)
       .samplerAnisotropy = true,
       .textureCompressionETC2 = HAS(ETC2),
       .textureCompressionASTC_LDR = HAS(ASTC),
-      .textureCompressionBC = HAS(BC),
+      /* BC1's RGB formats need a view's swizzle (wg_format.c). */
+      .textureCompressionBC = HAS(BC) && HAS(SWIZZLE),
       .fragmentStoresAndAtomics = true,
       .inlineUniformBlock = true,
       /* A pass per view (wg_cmd.c `begin_rendering`), no geometry or tessellation to multiply. */
       .multiview = true,
       /* Bytes of one GPUBuffer (wgsl_nir.c `lower_global`). */
       .bufferDeviceAddress = true,
-      .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE),
+      /* Its list has the 16-bit normalized formats, which only tier1 has at all. */
+      .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE) && HAS(TIER1),
       .shaderClipDistance = HAS(CLIP_DISTANCES),
       /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
        * backend requires all four). */
@@ -280,21 +282,22 @@ wg_caps_properties(struct vk_properties *p)
    p->maxDescriptorSetUpdateAfterBindInlineUniformBlocks = 4;
    p->maxInlineUniformTotalSize = 4 * 4096;
    /* Samplers aren't counted; a fragment shader's colour attachments are. */
-   p->maxPerStageResources = sampled + storage_tex + ubo + ssbo + L->max_color_attachments;
-   /* WebGPU counts per stage, Vulkan per layout: a layout whose bindings every stage sees gets one stage's. */
-   p->maxDescriptorSetSamplers = L->max_samplers;
-   /* A pipeline's two stages' (uniform buffers past a stage's room go by stage: fold_uniforms). */
-   p->maxDescriptorSetUniformBuffers = 2 * ubo;
-   /* Less the push buffer's (VK3 L7a, the L7.4-L7.5 review's finding 5: a ninth with draw parameters). */
-   p->maxDescriptorSetUniformBuffersDynamic = L->max_dynamic_uniform_buffers - 1;
-   p->maxDescriptorSetStorageBuffers = ssbo;
+   p->maxPerStageResources = MAX2(sampled + storage_tex + ubo + ssbo + L->max_color_attachments, 53);
+   /* WebGPU counts per stage, Vulkan per layout: a stage's for each of Vulkan's five, which a layout may spread over
+    * them. What a stage of a pipeline binds is held to a stage's (wg_bindings_fit); the rest of a set isn't bound. */
+   p->maxDescriptorSetSamplers = 5 * L->max_samplers;
+   p->maxDescriptorSetUniformBuffers = 5 * ubo;
+   /* All of WebGPU's: with the push buffer past them, it takes a dynamic storage binding (`push_storage`). */
+   p->maxDescriptorSetUniformBuffersDynamic = L->max_dynamic_uniform_buffers;
+   p->maxDescriptorSetStorageBuffers = 5 * ssbo;
    p->maxDescriptorSetStorageBuffersDynamic = L->max_dynamic_storage_buffers;
-   p->maxDescriptorSetSampledImages = sampled;
-   p->maxDescriptorSetStorageImages = storage_tex;
+   p->maxDescriptorSetSampledImages = 5 * sampled;
+   p->maxDescriptorSetStorageImages = 5 * storage_tex;
    p->maxDescriptorSetInputAttachments = 4;
    /* Attributes past their binding's stride take vertex buffer slots of their own (wg_vertex_slots). */
    p->maxVertexInputAttributes = MIN2(L->max_vertex_attributes, 16);
-   p->maxVertexInputBindings = MIN2(L->max_vertex_buffers, 8);
+   /* Vulkan's 16, those past WebGPU's vertex buffers pulled from storage (wg_vertex_pull). */
+   p->maxVertexInputBindings = storage ? WG_VERTEX_BINDINGS : MIN2(L->max_vertex_buffers, 8);
    p->maxVertexInputAttributeOffset = L->max_vertex_buffer_array_stride - 1;
    p->maxVertexInputBindingStride = L->max_vertex_buffer_array_stride;
    p->maxVertexOutputComponents = 4 * L->max_inter_stage_shader_variables;

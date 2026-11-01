@@ -500,6 +500,8 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
    uint32_t depths[WGSL_MAX_RESOURCES];
    options.depths = depths;
    options.depth_count = depth_textures(v->resources, v->resource_count, depths);
+   for (uint32_t k = 0; k < v->resource_count; k++)
+      options.push_storage |= v->dynamic[k] == WG_DYNAMIC_PUSH && v->resources[k].kind == WGSL_STORAGE_READ;
    struct wgsl_info *printed = malloc(sizeof(*printed));
    char error[512] = "";
    char *text = wgsl_print(NULL, nir, &options, printed, error, sizeof(error));
@@ -1120,6 +1122,23 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
    fold_uniforms(out, layouts);
 }
 
+/* Whether a layout's dynamic uniform buffers take all of WebGPU's, so that the push buffer, a dynamic binding of its own
+ * (a draw's push constants at an offset), goes as dynamic storage. */
+static bool
+push_storage(struct vk_descriptor_set_layout *const *layouts, uint32_t count)
+{
+   uint32_t dynamic = 0;
+   for (uint32_t s = 0; s < count; s++) {
+      if (!layouts[s])
+         continue;
+      const struct wg_descriptor_set_layout *l = container_of(layouts[s], struct wg_descriptor_set_layout, vk);
+      for (uint32_t b = 0; b < l->binding_count; b++)
+         if (l->first[b] >= 0 && l->type[b] == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+            dynamic += l->count[b];
+   }
+   return dynamic >= wg_limits.max_dynamic_uniform_buffers;
+}
+
 /* The lowered stage as variants will print it, if it samples (what wgsl_print's first step decides by samplers). */
 static struct wg_stage_nir *
 stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
@@ -1193,6 +1212,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          }
          shaders[i] = s;
          struct wgsl_print_options options = print_options(infos[i].stage == MESA_SHADER_VERTEX ? fs_reads : NULL);
+         options.push_storage = push_storage(infos[i].set_layouts, infos[i].set_layout_count);
          uint32_t depths[WGSL_MAX_RESOURCES];
          if (fs_info) {
             options.depths = depths;
@@ -1533,7 +1553,7 @@ wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vert
    u_foreach_bit(loc, inputs)
       if (k->attr[loc].format)
          out->used |= 1u << k->attr[loc].binding;
-   for (uint32_t b = 0; b < 8; b++)
+   for (uint32_t b = 0; b < WG_VERTEX_BINDINGS; b++)
       out->binding[b] = b;
    u_foreach_bit(loc, inputs) {
       if (!k->attr[loc].format)
@@ -1586,7 +1606,7 @@ wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *bound
       if (!k->attr[loc].format)
          continue;
       const uint32_t b = k->attr[loc].binding, size = vk_format_get_blocksize(k->attr[loc].format);
-      if ((k->vb[b].stride & 3) || (bound[b] & 3) || (k->attr[loc].offset % MIN2(size, 4)))
+      if (b >= MIN2(wg_limits.max_vertex_buffers, 8) || (k->vb[b].stride & 3) || (bound[b] & 3) || (k->attr[loc].offset % MIN2(size, 4)))
          k->vb[b].pull = 1;
       past |= k->vb[b].stride && k->attr[loc].offset + size > k->vb[b].stride;
    }
@@ -1629,7 +1649,7 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    wg_json_printf(&j, "{\"entries\":[");
    u_foreach_bit(s, mask)
       wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"read-only-storage\"}},", s);
-   wg_json_printf(&j, "{\"binding\":8,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}}]}");
+   wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}}]}", WG_VERTEX_BINDINGS);
    u->bgl = wg_create_json(WG_KIND_BGL, &j);
    wg_json_printf(&j, "{\"bindGroupLayouts\":[");
    for (uint32_t g = 0; g < MAX2(p->group_count, group + 1); g++)

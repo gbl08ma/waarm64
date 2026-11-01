@@ -873,6 +873,12 @@ declare_resources(struct ctx *c)
          break;
       case WGSL_STORAGE:
       case WGSL_STORAGE_READ: {
+         /* The push buffer, as storage (wgsl_print_options.push_storage): read as a uniform one is. */
+         if (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_PUSH_BINDING) {
+            r->size = MAX2(align(r->size, 16), 16);
+            line(c, "%s var<storage, read> %s: array<vec4<u32>, %u>;", at, name, r->size / 16);
+            break;
+         }
          const char *el = r->atomic ? (c->res[i].signed_atomic ? "atomic<i32>" : "atomic<u32>") : "u32";
          if (r->atomic)
             r->kind = WGSL_STORAGE;
@@ -2757,7 +2763,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    /* Push constants past the immediates: a uniform buffer of the driver's, bound at a dynamic offset per draw; with
     * the draw parameters there too, which the driver's copies write for indirect draws (immediates can't be). */
    if (info->immediate_size > max_immediates || c.uses_draw_params) {
-      struct res_use *r = resource(&c, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_PUSH_BINDING, WGSL_UNIFORM);
+      struct res_use *r = resource(&c, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_PUSH_BINDING, o->push_storage ? WGSL_STORAGE_READ : WGSL_UNIFORM);
       r->r.size = info->immediate_size;
       info->push_ubo_size = info->immediate_size;
       info->immediate_size = 0;

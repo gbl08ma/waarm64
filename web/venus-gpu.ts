@@ -1306,6 +1306,8 @@ override bit: u32 = 8u;
           if (j.vertex.pullGroup !== undefined) {
             j.vertex.module = this.pulledModule(j.vertex.module, j.vertex.buffers, j.vertex.pullGroup);
             j.vertex.buffers = j.vertex.buffers.map((b: Json | null) => (b?.pull ? null : b));
+            // Bindings past WebGPU's vertex buffers are all pulled: nulls don't count, but do past the limit.
+            while (j.vertex.buffers.length && !j.vertex.buffers[j.vertex.buffers.length - 1]) j.vertex.buffers.pop();
             delete j.vertex.pullGroup;
           }
           if (j.fragment) j.fragment.module = this.objs[j.fragment.module];
@@ -1675,13 +1677,13 @@ ${vs}
     return module;
   }
 
-  /** The pipeline's pulled bindings' group (wg_pull's, its bindings the slots' and 8 the bytes each slot's range starts
+  /** The pipeline's pulled bindings' group (wg_pull's, its bindings the slots' and `PULL_SLOTS` the bytes each slot's range starts
    * past a storage offset WebGPU takes), from the ranges the driver last gave: to the end of each buffer's range, a
    * whole number of words, as much of it as WebGPU's storage binding reaches. */
   private pullBind(group: number, layout: GPUBindGroupLayout, slots: number) {
-    const d = this.device!, align = d.limits.minStorageBufferOffsetAlignment, into = new Uint32Array(8);
+    const d = this.device!, align = d.limits.minStorageBufferOffsetAlignment, into = new Uint32Array(PULL_SLOTS);
     const entries: GPUBindGroupEntry[] = [];
-    for (let slot = 0; slot < 8; slot++) {
+    for (let slot = 0; slot < PULL_SLOTS; slot++) {
       if (!((slots >>> slot) & 1)) continue;
       const v = this.cur.vb[slot];
       if (!v) { this.warn('vertices pulled from a binding without a buffer'); return; }
@@ -1692,7 +1694,7 @@ ${vs}
     }
     const [u, at] = this.scratch(UNIFORM | COPY_DST, into.byteLength);
     d.queue.writeBuffer(u, at, into);
-    entries.push({ binding: 8, resource: { buffer: u, offset: at, size: into.byteLength } });
+    entries.push({ binding: PULL_SLOTS, resource: { buffer: u, offset: at, size: into.byteLength } });
     (this.pass as GPURenderPassEncoder).setBindGroup(group, d.createBindGroup({ layout, entries }));
   }
 
@@ -2571,6 +2573,9 @@ type Xfb = {
 
 /** A WebGPU vertex format's value as WGSL `vec4<T>` from the words `word(byte)` reads (transform feedback's fetch, VK3
  * L7.4); `undefined` for one it doesn't know. */
+/** Vertex bindings a pipeline may pull (wg_private.h `WG_VERTEX_BINDINGS`); past them, the bytes each starts past its offset. */
+const PULL_SLOTS = 16;
+
 /** A render pipeline's vertex buffer as its JSON gives it (`pull`: read from a storage binding). */
 type PulledBuffer = { pull?: boolean; arrayStride: number; stepMode: string; attributes: { format: string; offset: number; shaderLocation: number }[] };
 
@@ -2585,7 +2590,7 @@ export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group
   const base: Record<number, string> = {};
   for (const m of declared) base[Number(m[1])] = m[2];
   const pulled = new Set<number>();
-  const lines = [`@group(${group}) @binding(8) var<uniform> wgv_at: array<vec4<u32>, 2>;`];
+  const lines = [`@group(${group}) @binding(${PULL_SLOTS}) var<uniform> wgv_at: array<vec4<u32>, ${PULL_SLOTS / 4}>;`];
   let fetch = '';
   buffers.forEach((b, slot) => {
     if (!b?.pull) return;

@@ -115,7 +115,7 @@ loads, so it is `var<storage, read>` and its layout entry `read-only-storage`). 
 same way: a stage's room is WebGPU's uniform buffers less one for the push buffer (counted always), its texel buffers'
 parameters and its dynamic uniform buffers (never folded: WebGPU's dynamic storage buffers are fewer); the rest, in
 set and binding order, are storage (the set layouts' hash carries the stage flags, the shaders' keys with it).
-`maxDescriptorSetUniformBuffers` is twice the stage's, a pipeline's two stages counting apart.
+`maxDescriptorSetUniformBuffers` and the other set-wide limits are five times a stage's (Vulkan's five stages, VK4 R7): a set may spread its descriptors over stages, what one stage of a pipeline binds being held to a stage's.
 
 **Draw parameters** (VK3 L7.5, `shaderDrawParameters`, vkd3d's row): WGSL has no built-ins for SPIR-V's `BaseVertex`,
 `BaseInstance` and `DrawIndex` (its `vertex_index` and `instance_index` include the bases, as Vulkan's `VertexIndex`
@@ -596,6 +596,15 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   sampled image takes samples where its format renders. Not backed (docs/backlog.md "Views in another format's
   leftovers"): shared and linear images, a block-size change, a multisampled copy between formats, a view format
   WebGPU can't multisample, and within one render pass a write in one texture read in another.
+- **What Vulkan requires and isn't offered** (VK4 R7; `api.info.*`): `R32G32_SFLOAT` and `R32G32B32A32_SFLOAT` multisampled
+  (WebGPU multisamples neither, and they're mandatory attachments: docs/backlog.md "Sample counts Vulkan wants but WebGPU
+  lacks"); `textureCompressionBC` needs `texture-component-swizzle` (BC1's RGB formats read alpha 1 through a view's swizzle)
+  and `shaderStorageImageExtendedFormats` needs `texture-formats-tier1` (its list has the 16-bit normalized formats): each
+  off without them. `maxMemoryAllocationSize` is the adapter's `maxBufferSize` (a memory that large has what room is left
+  for its pad): under Vulkan 1.3's 1 GiB on an adapter of WebGPU's default 256 MiB, as nothing can back more. Multi-planar
+  formats list copies for linear tiling, as dEQP asks, but the image query refuses a linear image of one.
+- **Vertex bindings past WebGPU's** (VK4 R7): Vulkan's minimum is 16, WebGPU's vertex buffers commonly 8, so bindings 8 and
+  up are always pulled, below; each takes a storage binding of the vertex stage, which WebGPU's limit may refuse.
 - **Pulled vertices** (VK4 T5): WebGPU wants strides and bound offsets in multiples of 4 and an attribute's offset in
   multiples of its size up to 4, and Vulkan doesn't. A binding that breaks one (`wg_vertex_pull`, at each draw: the
   bound offset is part of the key, `vb[b].pull`), or with an attribute past its stride that no slot serves, is read by
@@ -665,8 +674,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   counts, dynamic in its layout), a texel buffer's two (a storage buffer and a uniform buffer, where Vulkan counts an
   image), uniform buffers past a stage's room as storage, a YCbCr binding's other planes and an input attachment as
   textures, a capture's compute pass's three, and a split sampler's twin (below). The device advertises what fits
-  whatever the program: each stage's uniform buffers less the push buffer's, its dynamic uniform buffers less one
-  (`maxDescriptorSetUniformBuffersDynamic` 7 of WebGPU's 8: with draw parameters the push buffer was a ninth),
+  whatever the program: each stage's uniform buffers less the push buffer's, all of WebGPU's dynamic uniform buffers
+  (a layout with them all puts the push buffer on a dynamic storage binding, `wgsl_print_options.push_storage`; VK4 R7),
   storage buffers less the folded ones, every stage's least (the vertex and fragment stages' own limits too), the
   uniform offset alignment the larger of the uniform and storage ones (a folded buffer is bound at it). What can't be
   advertised apart from what Vulkan counts with it (texel buffers beside a full count of storage buffers, input

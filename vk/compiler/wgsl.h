@@ -237,6 +237,8 @@ struct wgsl_print_options {
    /* Textures another stage compares (group << 16 | binding): depth textures here too, a binding having one type. */
    const uint32_t *depths;
    uint32_t depth_count;
+   /* The push buffer as read-only storage: a layout's dynamic uniform buffers leave it no dynamic uniform binding. */
+   bool push_storage;
    /* WebGPU's maxInterStageShaderVariables (0: unchecked). */
    uint32_t max_inter_stage;
 };

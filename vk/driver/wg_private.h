@@ -629,6 +629,8 @@ void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const 
 struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
 
 /* The state a render pipeline is made with (wg_cmd.c fills it at each draw; zeroed whole so it hashes as bytes). */
+#define WG_VERTEX_BINDINGS 16
+
 struct wg_pipeline_key {
    struct wg_shader *vs, *fs;
    uint8_t topology, strip_index, front_face, cull, unclipped, flip, samples, alpha_to_coverage;
@@ -649,7 +651,7 @@ struct wg_pipeline_key {
       uint16_t stride;
       uint8_t instance;
       uint8_t pull;         /* read through a storage binding (wg_vertex_pull) */
-   } vb[8];
+   } vb[WG_VERTEX_BINDINGS];
    struct {
       uint8_t binding, pad[3];
       VkFormat format;
@@ -664,8 +666,8 @@ uint32_t wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *
  * (wg_vertex_pull) stays at slot b with its offsets, whatever they are. */
 struct wg_vertex_slots {
    uint32_t used;           /* slots */
-   uint8_t binding[8];      /* by slot: the Vulkan binding */
-   uint32_t base[8];        /* by slot: bytes past the binding's offset */
+   uint8_t binding[WG_VERTEX_BINDINGS]; /* by slot: the Vulkan binding */
+   uint32_t base[WG_VERTEX_BINDINGS];   /* by slot: bytes past the binding's offset */
    uint8_t slot[32];        /* by attribute location */
    uint32_t offset[32];     /* by attribute location: its offset in its slot */
    uint32_t stuck;          /* bindings with an attribute past the stride that no slot of its own serves */
@@ -742,7 +744,7 @@ struct wg_cmd_buffer {
    struct {
       struct wg_buffer *buffer;
       VkDeviceSize offset, size;
-   } vbs[8];
+   } vbs[WG_VERTEX_BINDINGS];
    struct wg_buffer *ib;
    VkDeviceSize ib_offset, ib_size;
    VkIndexType ib_type;
@@ -781,7 +783,7 @@ struct wg_cmd_buffer {
    uint32_t last_dynamic[2][WGSL_MAX_GROUPS][32];
    uint8_t last_push[256];
    uint32_t last_push_size;
-   struct wg_op_vb last_vb[8];
+   struct wg_op_vb last_vb[WG_VERTEX_BINDINGS];
    struct wg_op_ib last_ib;
    struct wg_shader *last_compute;
    struct wg_program *last_program[2];

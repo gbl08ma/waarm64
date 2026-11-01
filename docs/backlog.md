@@ -869,7 +869,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     program whose shaders write storage would show it (vkQuake met the dispatch's shape in VK3 L6c).
   - **Sample counts Vulkan wants but WebGPU lacks** (the review of L4f's finding 3): `framebufferColorSampleCounts` is
     1|4 (Vulkan's minimum) though `R32G32B32A32_SFLOAT` and `R32G32_SFLOAT` colour attachments have 1 sample (WebGPU
-    multisamples neither): `api.info.image_format_properties.*` checks the superset; an emulation (a 4-layer texture
+    multisamples neither): `api.info.image_format_properties.2d.optimal.r32g32_sfloat` and `.r32g32b32a32_sfloat` fail,
+    the last of that group (VK4 R7), out of `tests/deqp/vk.txt`; an emulation (a 4-layer texture
     resolved by a draw) or nothing. An image made for sampling only reports 1 sample, which falls short of
     `sampledImageColorSampleCounts` (1|4) for formats WebGPU multisamples (its textures are multisampled only as render
     attachments: the driver would add that usage). A multisampled image of more than one layer is accepted but invalid

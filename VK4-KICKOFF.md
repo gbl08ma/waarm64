@@ -130,7 +130,7 @@ programs' replays need the dev VM.
   that outlive their context and its capsets rebuilt without Venus (H4, with snapshots refused while a Venus context
   exists). *Done:* a test each (wg_test.c, tests/venus-renderer.test.ts); `memory.*` and `api.external.memory.*`
   unchanged. *Start:* wg_device.c `wg_AllocateMemory`, vk/patches/vkr-wasm.patch, wg_descriptor.c `layout_create`.
-- **R7. What's advertised** (S–M; review O5, O6, O8, O9, then backlog "Sample counts Vulkan wants but WebGPU lacks"
+- **R7. What's advertised** (done 2026-11-01: A8B8G8R8 and BC1_RGB formats, set-wide limits, all of WebGPU's dynamic uniform buffers, 16 vertex bindings; list +1,370, every `api.info` limit and format query passing on SwiftShader but `image_format_properties.2d.optimal.r32g32_sfloat` and `.r32g32b32a32_sfloat`, sample counts WebGPU can't give. On the M4 not run. Left: backlog "Sample counts Vulkan wants but WebGPU lacks") (S–M; review O5, O6, O8, O9, then backlog "Sample counts Vulkan wants but WebGPU lacks"
   and "API 1.3's required features"): the bar's rule, what's advertised must work. `textureCompressionBC` without
   `BC1_RGB_*` (refused at creation, which Venus's asynchronous creation turns into a lost context: an RGBA texture whose
   alpha reads 1, or BC off); `shaderStorageImageExtendedFormats` on adapters without tier1, whose 16-bit normalized

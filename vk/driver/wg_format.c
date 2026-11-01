@@ -34,6 +34,12 @@ static const struct wg_texture_format table[] = {
    F(R8G8B8A8_SNORM, "rgba8snorm", 4, 1, 1, CS | FL | ST | T1R),
    F(R8G8B8A8_UINT, "rgba8uint", 4, 1, 1, CS | WG_FMT_RENDER | U | ST),
    F(R8G8B8A8_SINT, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | ST),
+   /* The same bytes on a little-endian guest. */
+   F(A8B8G8R8_UNORM_PACK32, "rgba8unorm", 4, 1, 1, CS | FL | RB | ST),
+   F(A8B8G8R8_SRGB_PACK32, "rgba8unorm-srgb", 4, 1, 1, CS | FL | RB),
+   F(A8B8G8R8_SNORM_PACK32, "rgba8snorm", 4, 1, 1, CS | FL | ST | T1R),
+   F(A8B8G8R8_UINT_PACK32, "rgba8uint", 4, 1, 1, CS | WG_FMT_RENDER | U | ST),
+   F(A8B8G8R8_SINT_PACK32, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | ST),
    F(B8G8R8A8_UNORM, "bgra8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_BGRA8),
    F(B8G8R8A8_SRGB, "bgra8unorm-srgb", 4, 1, 1, CS | FL | RB),
    F(R5G6B5_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED | WG_FMT_OPAQUE),
@@ -80,6 +86,9 @@ static const struct wg_texture_format table[] = {
    F(D32_SFLOAT, "depth32float", 4, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH),
    F(D32_SFLOAT_S8_UINT, "depth32float-stencil8", 4, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_D32S8),
    /* Compressed: the adapter's texture-compression-* features. */
+   /* Its alpha reads 1: WebGPU's has only the format that keeps BC1's 1-bit alpha, under a view's swizzle. */
+   F(BC1_RGB_UNORM_BLOCK, "bc1-rgba-unorm", 8, 4, 4, CS | FL | WG_FMT_BC | WG_FMT_OPAQUE),
+   F(BC1_RGB_SRGB_BLOCK, "bc1-rgba-unorm-srgb", 8, 4, 4, CS | FL | WG_FMT_BC | WG_FMT_OPAQUE),
    F(BC1_RGBA_UNORM_BLOCK, "bc1-rgba-unorm", 8, 4, 4, CS | FL | WG_FMT_BC),
    F(BC1_RGBA_SRGB_BLOCK, "bc1-rgba-unorm-srgb", 8, 4, 4, CS | FL | WG_FMT_BC),
    F(BC2_UNORM_BLOCK, "bc2-rgba-unorm", 16, 4, 4, CS | FL | WG_FMT_BC),
@@ -158,6 +167,7 @@ wg_texture_format(VkFormat format)
          continue;
       if (!f->name ||
           ((f->flags & WG_FMT_BC) && !(device_features & WG_FEATURE_BC)) ||
+          ((f->flags & WG_FMT_BC) && (f->flags & WG_FMT_OPAQUE) && !(device_features & WG_FEATURE_SWIZZLE)) ||
           ((f->flags & WG_FMT_ETC2) && !(device_features & WG_FEATURE_ETC2)) ||
           ((f->flags & WG_FMT_ASTC) && !(device_features & WG_FEATURE_ASTC)) ||
           ((f->flags & WG_FMT_D32S8) && !(device_features & WG_FEATURE_D32S8)) ||
@@ -181,6 +191,8 @@ static const struct {
    { VK_FORMAT_R8_UINT, "uint8" }, { VK_FORMAT_R8G8_UINT, "uint8x2" }, { VK_FORMAT_R8G8B8A8_UINT, "uint8x4" },
    { VK_FORMAT_R8_SINT, "sint8" }, { VK_FORMAT_R8G8_SINT, "sint8x2" }, { VK_FORMAT_R8G8B8A8_SINT, "sint8x4" },
    { VK_FORMAT_R8_UNORM, "unorm8" }, { VK_FORMAT_R8G8_UNORM, "unorm8x2" }, { VK_FORMAT_R8G8B8A8_UNORM, "unorm8x4" },
+   { VK_FORMAT_A8B8G8R8_UINT_PACK32, "uint8x4" }, { VK_FORMAT_A8B8G8R8_SINT_PACK32, "sint8x4" },
+   { VK_FORMAT_A8B8G8R8_UNORM_PACK32, "unorm8x4" }, { VK_FORMAT_A8B8G8R8_SNORM_PACK32, "snorm8x4" },
    { VK_FORMAT_R8_SNORM, "snorm8" }, { VK_FORMAT_R8G8_SNORM, "snorm8x2" }, { VK_FORMAT_R8G8B8A8_SNORM, "snorm8x4" },
    { VK_FORMAT_B8G8R8A8_UNORM, "unorm8x4-bgra" },
    { VK_FORMAT_R16_UINT, "uint16" }, { VK_FORMAT_R16G16_UINT, "uint16x2" }, { VK_FORMAT_R16G16B16A16_UINT, "uint16x4" },
@@ -341,7 +353,8 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
                  VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
                  VK_FORMAT_FEATURE_MIDPOINT_CHROMA_SAMPLES_BIT | VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT |
                  VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT | VK_FORMAT_FEATURE_DISJOINT_BIT;
-      *linear = 0;
+      /* No linear image of one exists (the image query says so), but a format's copies are the query's to refuse. */
+      *linear = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
    }
    *buffer = wg_vertex_format(format) ? VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT : 0;
    uint32_t x, p1[3];

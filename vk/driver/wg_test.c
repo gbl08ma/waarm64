@@ -637,12 +637,12 @@ wgt_imported(void)
  * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
  * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
  * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, vendorID and pipelineCacheUUID's first
- * word, the sample counts and features below, NV12's queries, then maxPushDescriptors (last); NULL with wgt_error(). Its own instance: the
+ * word, the sample counts and features below, NV12's queries, maxPushDescriptors, then what's below it; NULL with wgt_error(). Its own instance: the
  * device's caps are read when the instance enumerates it. */
 EXPORT const uint32_t *
 wgt_caps(void)
 {
-   static uint32_t out[30];
+   static uint32_t out[40];
    PFN_vkCreateInstance create = (PFN_vkCreateInstance)vkGetInstanceProcAddr(NULL, "vkCreateInstance");
    const VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
    const VkInstanceCreateInfo ii = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -750,6 +750,16 @@ wgt_caps(void)
    VkPhysicalDeviceProperties2 r = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &push };
    props2(pdev, &r);
    out[i++] = push.maxPushDescriptors;
+   /* VK4 R7: maxMemoryAllocationSize's low and high words; BC1_RGB's features; maxVertexInputBindings. */
+   VkPhysicalDeviceMaintenance3Properties m3 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES };
+   VkPhysicalDeviceProperties2 s = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &m3 };
+   props2(pdev, &s);
+   out[i++] = (uint32_t)m3.maxMemoryAllocationSize;
+   out[i++] = (uint32_t)(m3.maxMemoryAllocationSize >> 32);
+   VkFormatProperties bc1;
+   formats(pdev, VK_FORMAT_BC1_RGB_UNORM_BLOCK, &bc1);
+   out[i++] = bc1.optimalTilingFeatures;
+   out[i++] = s.properties.limits.maxVertexInputBindings;
    destroy(inst, NULL);
    return out;
 }
@@ -4106,7 +4116,8 @@ r5_image(VkCommandBuffer cmd, VkFormat format, uint32_t size, uint32_t layers, u
  * 73 (C5): a cube of D32 of 3 levels at 0; comparison samplers GREATER at 2 and LESS at 3 (the vertex stage's size through
  * the one at 3): 255, 0, 4, 255.
  * 74 (C6): as 73: refused, so not drawn: the clear.
- * 75 (C7): depth-eight.frag, every colour location and depth, no attachment for depth: red. */
+ * 75 (C7): depth-eight.frag, every colour location and depth, no attachment for depth: red.
+ * 78 (VK4 R7): r7/sixteen.vert with 16 vertex bindings of a float each, 1/16 at every vertex: 255, 128, 64, 255. */
 static int
 r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
 {
@@ -4135,7 +4146,7 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    int bad;
    if (cube)
       bad = r5_image(cmd, VK_FORMAT_D32_SFLOAT, 4, 6, 3, NULL, &i0, &v0, VK_IMAGE_VIEW_TYPE_CUBE);
-   else if (scenario == 70 || scenario == 75)
+   else if (scenario == 70 || scenario == 75 || scenario == 78)
       bad = r5_image(cmd, format, 4, 1, 1, &red, &i0, &v0, VK_IMAGE_VIEW_TYPE_2D);
    else if (scenario == 71)
       bad = r5_image(cmd, VK_FORMAT_D32_SFLOAT, 4, 1, 1, NULL, &i0, &v0, VK_IMAGE_VIEW_TYPE_2D);
@@ -4215,7 +4226,21 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    const VkPipelineShaderStageCreateInfo stage[2] = {
       { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
       { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
-   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   VkVertexInputBindingDescription vib[16];
+   VkVertexInputAttributeDescription via[16];
+   VkBuffer vbufs[16];
+   const VkDeviceSize voffs[16] = { 0 };
+   for (uint32_t i = 0; scenario == 78 && i < 16; i++) {
+      vib[i] = (VkVertexInputBindingDescription){ i, 4, VK_VERTEX_INPUT_RATE_VERTEX };
+      via[i] = (VkVertexInputAttributeDescription){ i, i, VK_FORMAT_R32_SFLOAT, 0 };
+      float *v;
+      if (buffer(16, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true, &vbufs[i], (void **)&v))
+         return 1;
+      v[0] = v[1] = v[2] = 1 / 16.0f;
+   }
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                                                      .vertexBindingDescriptionCount = scenario == 78 ? 16 : 0, .pVertexBindingDescriptions = vib,
+                                                      .vertexAttributeDescriptionCount = scenario == 78 ? 16 : 0, .pVertexAttributeDescriptions = via };
    const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
                                                        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
    const VkViewport vp = { 0, 0, 4, 4, 0, 1 };
@@ -4250,6 +4275,8 @@ r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffe
    BeginRendering(cmd, &ri);
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[0], 0, NULL);
+   if (scenario == 78)
+      ((PFN_vkCmdBindVertexBuffers)GetDeviceProcAddr(dev, "vkCmdBindVertexBuffers"))(cmd, 0, 16, vbufs, voffs);
    CmdDraw(cmd, 3, 1, 0, 0);
    if (scenario == 70) {
       CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[1], 0, NULL);
@@ -5050,7 +5077,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 76) {
       if (t7_inline(cs, cs_words, cmd, out, 4096))
          return 1;
-   } else if (scenario >= 70 && scenario <= 75) {
+   } else if ((scenario >= 70 && scenario <= 75) || scenario == 78) {
       if (r5_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario >= 47 && scenario <= 49) {

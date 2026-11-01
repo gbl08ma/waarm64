@@ -501,7 +501,7 @@ wg_CmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t first, uint32_t
                          const VkDeviceSize *offsets, const VkDeviceSize *sizes, const VkDeviceSize *strides)
 {
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
-   for (uint32_t i = 0; i < count && first + i < 8; i++) {
+   for (uint32_t i = 0; i < count && first + i < WG_VERTEX_BINDINGS; i++) {
       VK_FROM_HANDLE(wg_buffer, b, buffers[i]);
       cmd->vbs[first + i].buffer = b;
       cmd->vbs[first + i].offset = offsets[i];
@@ -1616,19 +1616,19 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    }
    const struct vk_vertex_input_state *vi = dyn->vi;
    if (vi) {
-      u_foreach_bit(b, vi->bindings_valid & 0xff) {
+      u_foreach_bit(b, vi->bindings_valid & BITFIELD_MASK(WG_VERTEX_BINDINGS)) {
          k.vb[b].stride = dyn->vi_binding_strides[b];
          k.vb[b].instance = vi->bindings[b].input_rate == VK_VERTEX_INPUT_RATE_INSTANCE;
       }
       u_foreach_bit(a, vi->attributes_valid & vs->info.inputs) {
-         if (vi->attributes[a].binding >= 8)
+         if (vi->attributes[a].binding >= WG_VERTEX_BINDINGS)
             continue;
          k.attr[a].binding = vi->attributes[a].binding;
          k.attr[a].format = vi->attributes[a].format;
          k.attr[a].offset = vi->attributes[a].offset;
       }
-      uint64_t bound[8] = { 0 };
-      for (uint32_t b = 0; b < 8; b++)
+      uint64_t bound[WG_VERTEX_BINDINGS] = { 0 };
+      for (uint32_t b = 0; b < WG_VERTEX_BINDINGS; b++)
          if (cmd->vbs[b].buffer)
             bound[b] = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
       wg_vertex_pull(&k, vs->info.inputs, bound);
@@ -1717,10 +1717,10 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
          return false;
       ib.offset = cmd->ib->offset + cmd->ib_offset;
       ib.size = cmd->ib_size;
-      if (!(cmd->emitted & (1u << 8)) || memcmp(&cmd->last_ib, &ib, sizeof(ib))) {
+      if (!(cmd->emitted & (1u << 16)) || memcmp(&cmd->last_ib, &ib, sizeof(ib))) {
          emit(cmd, OP_IB, &ib, sizeof(ib));
          cmd->last_ib = ib;
-         cmd->emitted |= 1u << 8;
+         cmd->emitted |= 1u << 16;
       }
    }
    record_push(cmd, p);
@@ -1810,7 +1810,7 @@ draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t 
          return;
       struct op_ib ib = { .buffer = wg_fan_indices(dev), .wide = 1, .offset = 0, .size = (vertices - 2) * 12.0 };
       emit(cmd, OP_IB, &ib, sizeof(ib));
-      cmd->emitted &= ~(1u << 8);
+      cmd->emitted &= ~(1u << 16);
       emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ (vertices - 2) * 3, instances, 0, (int32_t)first, first_instance },
            sizeof(struct op_draw_indexed));
       return;
@@ -2539,7 +2539,7 @@ struct replay {
       uint32_t offsets[32];
    } groups[2][WGSL_MAX_GROUPS];
    uint32_t group_count[2];
-   struct op_vb vb[8];
+   struct op_vb vb[WG_VERTEX_BINDINGS];
    uint32_t vb_mask;
    const struct wg_pull *pull; /* the render pipeline's */
    struct op_ib ib;
@@ -2851,7 +2851,7 @@ push_buffer(struct wg_device *dev)
       if (!dev->push_size)
          dev->push_size = WG_PUSH_BUFFER_SIZE;
       struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", dev->push_size, 0x40 | 0x8); /* UNIFORM | COPY_DST */
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", dev->push_size, 0x40 | 0x80 | 0x8); /* UNIFORM | STORAGE | COPY_DST */
       dev->push_buffer = wg_create_json(WG_KIND_BUFFER, &j);
       dev->push_data = malloc(dev->push_size);
       dev->push_gen = ++gens;
@@ -2970,7 +2970,7 @@ struct scan {
    const struct op_bind *binds[WGSL_MAX_GROUPS];
    bool added[WGSL_MAX_GROUPS]; /* its uses taken since it was bound */
    uint32_t group_count;
-   struct op_vb vb[8];
+   struct op_vb vb[WG_VERTEX_BINDINGS];
    uint32_t vb_mask, vb_added;
    struct op_ib ib;
    bool have_ib, ib_added;
