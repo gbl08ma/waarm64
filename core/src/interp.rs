@@ -260,6 +260,40 @@ pub(crate) fn sha3_enabled(c: &Cpu) -> R {
     }
 }
 
+/// FEAT_FlagM's and FEAT_FlagM2's NZCV (bits 31:28 of the result).
+fn flagm(c: &Cpu, i: u32, op: Op) -> u64 {
+    let f = c.nzcv >> 28;
+    let (z, cy, v) = (f >> 2 & 1, f >> 1 & 1, f & 1);
+    let r = match op {
+        Op::CFINV => f ^ 0b0010,
+        // RMIF Xn, #shift, #mask: the masked flags from Xn rotated right.
+        Op::RMIF => {
+            let (x, mask) = (
+                c.reg(bits(i, 9, 5)).rotate_right(bits(i, 20, 15)),
+                bits(i, 3, 0) as u64,
+            );
+            f & !mask | x & mask
+        }
+        // SETF8/SETF16 Wn: N the top bit, Z the low bits all zero, V the top bit
+        // XOR the one above it; C unchanged.
+        Op::SETF8 | Op::SETF16 => {
+            let top = if bit(i, 14) { 15 } else { 7 };
+            let w = c.reg(bits(i, 9, 5));
+            let t = w >> top & 1;
+            let zero = (w & ((2 << top) - 1) == 0) as u64;
+            t << 3 | zero << 2 | cy << 1 | (t ^ w >> (top + 1) & 1)
+        }
+        // XAFLAG: the external format (FCMP's NZCV) from the Arm one; AXFLAG back.
+        Op::XAFlag => {
+            let (nc, nz) = (cy ^ 1, z ^ 1);
+            (nc & nz) << 3 | (z & cy) << 2 | (cy | z) << 1 | (nc & z)
+        }
+        Op::AXFlag => (z | v) << 2 | (cy & (v ^ 1)) << 1,
+        _ => unreachable!("{op:?}"),
+    };
+    r << 28
+}
+
 /// The AES, SHA1, SHA256, SHA512 and SHA3 instructions (`crate::crypto`); FPEN checked by the caller.
 fn crypto_exec(c: &mut Cpu, i: u32, op: Op) {
     use crate::crypto::*;
@@ -839,8 +873,20 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             simd::exec(c, i, op)?
         }
 
-        // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, SB,
-        // v8.2+ flag manipulation, RCpc, LOR, DPB, LS64, WFxT, FP16).
+        // FEAT_SB: nothing speculates, so a NOP.
+        SB if c.features & crate::cpu::FEATURE_SB != 0 => {}
+        // FEAT_LRCPC: the RCpc loads as LDAR (RCsc is stronger: allowed).
+        LDAPRB | LDAPRH | LDAPR if c.features & crate::cpu::FEATURE_RCPC != 0 => {
+            ldst::exec(c, m, i, pc, LDAR)?
+        }
+        // FEAT_FlagM and FEAT_FlagM2.
+        CFINV | RMIF | SETF8 | SETF16 | XAFlag | AXFlag
+            if c.features & crate::cpu::FEATURE_FLAGM != 0 =>
+        {
+            c.nzcv = flagm(c, i, op);
+        }
+        // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, LOR,
+        // DPB, LS64, WFxT, FP16), or the vCPU doesn't have (SB, FlagM, RCpc).
         UnallocatedEncoding | ADDG | SUBG | PACIA_1 | PACIB_1 | AUTIA_1 | AUTIB_1 | PACDA
         | PACDB | AUTDA | AUTDB | XPAC_1 | PACGA | BLRA | BRA | RETA | ERETA | LDRA | SUBP
         | SUBPS | IRG | GMI | STGP_1 | STGP_2 | STGP_3 | STG_1 | STG_2 | STG_3 | LDG | STZG_1
@@ -870,8 +916,20 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             fp_enabled(c)?;
             float::exec(c, i, op)?
         }
-        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, FRINTTS, BF16,
-        // SM3, SM4.
+        // FEAT_FRINTTS, scalar and vector: UNDEFINED without it, before the FPEN trap.
+        FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1 | FRINT32X_float | FRINT64X_float
+        | FRINT32Z_float | FRINT64Z_float
+            if c.features & crate::cpu::FEATURE_FRINTTS != 0 =>
+        {
+            fp_enabled(c)?;
+            if matches!(op, FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1) {
+                simd_fp::frintts(c, i)?
+            } else {
+                float::exec(c, i, op)?
+            }
+        }
+        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, BF16, SM3, SM4,
+        // and FRINTTS without the feature.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element

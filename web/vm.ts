@@ -572,6 +572,12 @@ export type BootOptions = {
   sha3?: boolean;
   /** `VmConfig.features` bit 4 (ABI 59): FEAT_JSCVT (`FJCVTZS`), advertised and implemented; on unless false. */
   jscvt?: boolean;
+  /** `VmConfig.features` bits 5 to 9 (ABI 59): FEAT_LRCPC, FEAT_SB, FEAT_FlagM with FlagM2, FEAT_DIT, FEAT_FRINTTS; each on unless false. */
+  rcpc?: boolean;
+  sb?: boolean;
+  flagm?: boolean;
+  dit?: boolean;
+  frintts?: boolean;
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
   stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
@@ -853,7 +859,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
-  const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n) | (o.jscvt === false ? 0n : 16n);
+  const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n) | (o.jscvt === false ? 0n : 16n)
+    | (o.rcpc === false ? 0n : 32n) | (o.sb === false ? 0n : 64n) | (o.flagm === false ? 0n : 128n) | (o.dit === false ? 0n : 256n) | (o.frintts === false ? 0n : 512n);
   new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)

@@ -112,6 +112,12 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
                         FABS_float => x & !t.zero(true),
                         FNEG_float => neg(t, x),
                         FSQRT_float => f.sqrt(t, x),
+                        // FEAT_FRINTTS (the caller checks it): opcode<1> (16) is
+                        // 64 bits, opcode<0> (15) the FPCR's mode (X) or zero (Z).
+                        FRINT32X_float | FRINT64X_float | FRINT32Z_float | FRINT64Z_float => {
+                            let rm = if bit(i, 15) { rmode } else { Rounding::Zero };
+                            f.round_int_n(t, x, rm, if bit(i, 16) { 64 } else { 32 })
+                        }
                         FRINTN_float | FRINTP_float | FRINTM_float | FRINTZ_float
                         | FRINTA_float | FRINTX_float | FRINTI_float => {
                             let rm = match bits(i, 17, 15) {

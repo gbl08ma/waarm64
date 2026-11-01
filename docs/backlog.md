@@ -7,16 +7,19 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 ## CPU and ISA
 
 - **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
-  AdvSIMD), DotProd, RDM, FHM, FCMA, FRINTTS, BF16, I8MM, LSE2,
-  RCpc, FlagM, SB, DIT. Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
+  AdvSIMD), DotProd, RDM, FHM, FCMA, BF16, I8MM, LSE2, LRCPC2. Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
   copies run at 7-21 GB/s under the JIT and are under 2% of a browser's profile (`bench/boot/REPORT.md`
   "M8: the device round trip"). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
-- **FEAT_JSCVT's measurement and golden file** (ABI 59, docs/cpu.md): built in a cloud session, which has no arm64
-  guest with a JS engine, no M4 oracle and no benchmark numbers worth recording (docs/cloud.md). Still to do in the dev
-  VM: the rule's A/B (a JS workload in the desktop guest's Firefox, `?jscvt=0` against on; off by default if it isn't
-  faster), and `tests/corpus/jscvt.txt` regenerated with both oracles (`node tools/corpus/run.ts jscvt`).
+- **ABI 59's extensions' measurement and golden files** (JSCVT, LRCPC, SB, FlagM, DIT, FRINTTS; docs/cpu.md): built
+  in a cloud session, which has no arm64 guest with a JS engine, no M4 oracle and no benchmark numbers worth recording
+  (docs/cloud.md). Still to do in the dev VM: JSCVT's A/B for the rule (a JS workload in the desktop guest's Firefox,
+  `?jscvt=0` against on; off by default if it isn't faster; the others replace nothing slower), the step counts of
+  `tests/steps.txt` if the guests' boots moved, and `tests/corpus/jscvt.txt` and `ext.txt` regenerated with both
+  oracles (`node tools/corpus/run.ts jscvt ext`, the reserved encodings back in `ext`'s FRINTTS forms then).
+  **DotProd** next, in the dev VM with an A/B: guests switch their codecs' and ML kernels' paths on its hwcap, so it
+  needs an inline JIT form that beats the NEON paths it replaces.
 - **OpenSSL's MIDR-gated paths:** OpenSSL 3.5 uses its EOR3/RAX1/XAR/BCAX Keccak only on Apple M1/M2 MIDRs and
   its EOR3 AES-GCM only on Neoverse V1/V2/N2, Cobalt 100 and Ampere (`crypto/armcap.c`); our MIDR (implementer 0)
   gets neither. Forced on through `OPENSSL_armcap`, they're **+83% on SHA3-256 and +9-10% on AES-GCM** at 16 KiB

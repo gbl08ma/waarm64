@@ -957,7 +957,41 @@ const jscvt: Form[] = [
   },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt };
+// FEAT_LRCPC, FEAT_SB, FEAT_FlagM and FlagM2, FEAT_DIT, FEAT_FRINTTS (ABI 59). NZCV comes from the seed.
+const fixed = (name: string, count: number, w: number): Form => ({ name, count, gen: () => ({ code: [w >>> 0], in: new Map() }) });
+const ext: Form[] = [
+  exclusive("ldapr", 200, (r, m) => {
+    const [sz, n, t] = [r.int(4), r.int(32), r.int(32)];
+    return base(r, m, n, 1 << sz, 1 << sz) ? [((sz << 30) | 0x38bfc000 | (n << 5) | t) >>> 0] : undefined;
+  }),
+  fixed("sb", 10, 0xd50330ff),
+  fixed("cfinv", 30, 0xd500401f),
+  fixed("xaflag", 50, 0xd500403f),
+  fixed("axflag", 50, 0xd500405f),
+  dp("rmif", "10111010000iiiiii00001nnnnn0IIII", 200, { src: "n" }),
+  dp("setf", "00111010000000000o0010nnnnn01101", 200, { src: "n" }),
+  {
+    // MSR DIT (immediate or a register), MRS of it, then DIT cleared (the harness keeps PSTATE between tests).
+    name: "dit",
+    count: 100,
+    gen(r) {
+      const [t, u] = [r.int(31), r.int(31)];
+      const m = new Map<string, bigint>();
+      const byReg = r.chance(0.5);
+      const set = byReg ? 0xd51b42a0 | t : 0xd503405f | (r.int(16) << 8);
+      if (byReg) m.set(`x${t}`, r.chance(0.5) ? r.pick(EDGES) : r.u64());
+      return { code: [set >>> 0, (0xd53b42a0 | u) >>> 0, 0xd503405f], in: m };
+    },
+  },
+  // a (16) is 64 bits, b (15) the FPCR's mode; vector: U the FPCR's mode, a (12) 64 bits. No reserved
+  // encodings (ftype 2, doubles without Q): QEMU's user mode reports them as ILL_ILLOPN, the M4 and we as ILL_ILLOPC.
+  fpForm("frintts", "00011110yy10100ab10000nnnnnddddd", 600, { fix: (r) => ({ y: r.int(2) }) }),
+  vfpForm("frintts_vec", "0QU011100z100001111a10nnnnnddddd", 600, [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]], {
+    fix: (r): Fields => (r.chance(0.5) ? { z: 1, Q: 1 } : { z: 0 }),
+  }),
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

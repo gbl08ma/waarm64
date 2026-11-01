@@ -656,6 +656,47 @@ impl Fpu {
         }
     }
 
+    /// FPRoundIntN (FRINT32Z/X, FRINT64Z/X, FEAT_FRINTTS): `a` rounded to an
+    /// integer in `rm`, which must fit a signed `intsize`-bit integer; a NaN, an
+    /// infinity or a value out of range gives -2^(intsize - 1) and Invalid
+    /// Operation (not Inexact), anything else inexact Inexact. Zeros keep their sign.
+    pub fn round_int_n(&mut self, f: Fmt, a: u64, rm: Rounding, intsize: u32) -> u64 {
+        let min = f.sign() | ((f.bias() + intsize as i32 - 1) as u64) << f.f;
+        let va = self.unpack(f, a);
+        let (mag, rest) = match va.class {
+            Class::QNaN | Class::SNaN | Class::Inf => {
+                self.flags |= IOC;
+                return min;
+            }
+            Class::Zero => return f.zero(va.sign),
+            Class::Num if va.exp >= 0 => {
+                // An integer already: at least 2^52 or 2^23, past 2^64 from exp 64 on.
+                let m = if va.exp < 64 {
+                    (va.mant as u128) << va.exp
+                } else {
+                    1 << 64
+                };
+                (m, Rest::Zero)
+            }
+            Class::Num => shift_rest(va.mant as u128, -va.exp, false),
+        };
+        let mag = mag + round_up(rm, rest, mag & 1 == 1, va.sign) as u128;
+        let limit = (1u128 << (intsize - 1)) - !va.sign as u128;
+        if mag > limit {
+            self.flags |= IOC;
+            return min;
+        }
+        if rest != Rest::Zero {
+            self.flags |= IXC;
+        }
+        if mag == 0 {
+            f.zero(va.sign)
+        } else {
+            // Exact: an integer below 2^64 that the format's value had, or one up from it.
+            self.round(f, va.sign, 0, mag, false, Rounding::Zero)
+        }
+    }
+
     /// FPToFixed: `a × 2^fbits` rounded to a `width`-bit integer, saturating.
     pub fn to_fixed(
         &mut self,

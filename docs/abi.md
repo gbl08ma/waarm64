@@ -109,7 +109,7 @@ Design notes for an ABI change go in this file before the code.
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
 | `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
-| `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35), bit 3 `FEATURE_SHA3`: FEAT_SHA512 and FEAT_SHA3, only with bit 0 (51), bit 4 `FEATURE_JSCVT`: `FJCVTZS` (59); other bits reserved, and `vm_new` refuses them |
+| `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35), bit 3 `FEATURE_SHA3`: FEAT_SHA512 and FEAT_SHA3, only with bit 0 (51), bit 4 `FEATURE_JSCVT`: `FJCVTZS`, bits 5 to 9 `FEATURE_RCPC`, `FEATURE_SB`, `FEATURE_FLAGM` (FlagM and FlagM2), `FEATURE_DIT`, `FEATURE_FRINTTS` (59); other bits reserved, and `vm_new` refuses them |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
 | `smp` | 0 round-robin on the calling thread (`vm_run`), 1 parallel: a thread per vCPU (`vm_run_cpu`), realtime only (25) |
@@ -579,7 +579,7 @@ implemented by this step).
 | 55 | the window in memory 1: `VmConfig.window_at`; memory 0 holds RAM alone (`vm_new`'s `ram`), memory 1 the bytes before the window (Venus's renderer), the window, then node 1's RAM; a device's (memory, offset) counts from the memory's first byte (VK4 T19) |
 | 56 | `jit_exec_span(vcpu, pc, n, w0, w1, w2)`: `jit_exec_mmu` for up to six instructions, their words as constants; returns how many retired (a group of accesses' cold arm, docs/jit.md "Loads and stores") |
 | 58 | `VmConfig.fma` and `jit_fma(v, on)`: the JIT's FMA forms on the host's fused relaxed-SIMD `madd` (`web/fma.ts`; docs/jit.md "Floating point") |
-| 59 | FEAT_JSCVT: `VmConfig.features` bit 4 (`FEATURE_JSCVT`); `ID_AA64ISAR1_EL1` JSCVT = 1 |
+| 59 | FEAT_JSCVT, FEAT_LRCPC, FEAT_SB, FEAT_FlagM/FlagM2, FEAT_DIT, FEAT_FRINTTS: `VmConfig.features` bits 4 to 9; their ID fields (ISAR0 TS, ISAR1 JSCVT, LRCPC, FRINTTS, SB, PFR0 DIT) |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

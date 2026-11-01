@@ -104,6 +104,11 @@ const CLASSES: Record<string, [number, number]> = {
   'PMULL, 64-bit': [0xbfe0fc00, 0x0ee0e000],
   // FEAT_JSCVT (ABI 59): FJCVTZS, NZCV lazy; the V registers' FP values as the FP classes'.
   'FJCVTZS': [0xfffffc00, 0x1e7e0000],
+  // FEAT_FRINTTS (ABI 59): FRINT32Z/X, FRINT64Z/X, scalar (ftype random) and vector.
+  'FRINTTS': [0xff3e7c00, 0x1e284000],
+  'AdvSIMD FP FRINTTS': [0x9fbfec00, 0x0e21e800],
+  // FEAT_FlagM's RMIF (a helper; the rest of FlagM is among the sequences' helpers).
+  'RMIF': [0xffe07c10, 0xba000400],
 };
 const CRYPTO = new Set(['AES', 'SHA three-register', 'SHA two-register', 'PMULL, 64-bit']);
 /** Vector states from the known-answer vectors: FIPS 197 C.1's plaintext, key and
@@ -124,6 +129,7 @@ const MEMORY: Record<string, [number, number]> = {
   'load/store pair': [0x3e000000, 0x28000000],
   'load literal': [0x3f000000, 0x18000000],
   'load-acquire, store-release': [0x3fa08000, 0x08808000], // LDAR, STLR (M6 loop 1)
+  'load-acquire RCpc (LDAPR)': [0x3ffffc00, 0x38bfc000], // FEAT_LRCPC (ABI 59): LDAR's path
   'DC ZVA': [0xffffffe0, 0xd50b7420],
   // M6 loop 7; the exclusives with the monitor armed at random (below).
   'LSE atomics': [0x3f200c00, 0x38200000], // LD<op>, SWP (min/max: helpers)
@@ -400,6 +406,7 @@ const SYSREG_KEYS = [
   sr(3, 0, 7, 4, 0), sr(3, 0, 10, 2, 0), sr(3, 0, 12, 0, 0), sr(3, 0, 14, 1, 0), sr(3, 0, 13, 0, 1), sr(2, 0, 0, 2, 2), // PAR MAIR VBAR CNTKCTL CONTEXTIDR MDSCR
   sr(3, 0, 0, 0, 0), sr(3, 0, 0, 0, 5), sr(3, 0, 0, 0, 6), sr(3, 0, 0, 4, 0), sr(3, 0, 0, 5, 0), sr(3, 0, 0, 6, 0), sr(3, 0, 0, 7, 0), // MIDR MPIDR REVIDR ID_AA64*
   sr(3, 3, 4, 4, 0), sr(3, 3, 4, 4, 1), sr(3, 3, 14, 0, 0), sr(3, 3, 14, 0, 2), sr(3, 0, 12, 1, 0), sr(3, 1, 0, 0, 0), // FPCR FPSR CNTFRQ CNTVCT ISR CCSIDR
+  sr(3, 3, 4, 2, 5), sr(3, 0, 0, 6, 1), // DIT ID_AA64ISAR1
 ];
 // MSR (M6 loop 7): the registers the JIT writes inline (DAIF, SP_EL0, SPSR, ELR, TPIDR_EL0/EL1, TPIDRRO_EL0).
 const MSR_KEYS = [sr(3, 3, 4, 2, 1), sr(3, 0, 4, 1, 0), sr(3, 0, 4, 0, 0), sr(3, 0, 4, 0, 1), sr(3, 3, 13, 0, 2), sr(3, 0, 13, 0, 4), sr(3, 3, 13, 0, 3)];
@@ -547,6 +554,17 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fcvtzs w0, d1 (2^31 - 0.1)', 0x1e780020, [0n, f64bits(2147483647.9)]],
   ['fcvtzs x0, s1 (2^63)', 0x9e380020, [0n, 0x5f000000n]],
   ['fcvtzu w0, s1 (-0.5)', 0x1e390020, [0n, 0xbf000000n]],
+  ['frint32z s0, s1 (2^31)', 0x1e284020, [0n, f32bits(2 ** 31)]],
+  ['frint32z s0, s1 (-2^31)', 0x1e284020, [0n, f32bits(-(2 ** 31))]],
+  ['frint32z s0, s1 (-0.5)', 0x1e284020, [0n, f32bits(-0.5)]],
+  ['frint32x d0, d1 (2^31 - 0.5)', 0x1e68c020, [0n, f64bits(2 ** 31 - 0.5)]],
+  ['frint32x d0, d1 (-2^31 - 0.5)', 0x1e68c020, [0n, f64bits(-(2 ** 31) - 0.5)]],
+  ['frint32x d0, d1 (-2^31 - 0.75)', 0x1e68c020, [0n, f64bits(-(2 ** 31) - 0.75)]],
+  ['frint64z d0, d1 (2^63)', 0x1e694020, [0n, f64bits(2 ** 63)]],
+  ['frint64z d0, d1 (-2^63)', 0x1e694020, [0n, f64bits(-(2 ** 63))]],
+  ['frint64x s0, s1 (a NaN)', 0x1e29c020, [0n, 0x7fc00001n]],
+  ['frint64x s0, s1 (a denormal)', 0x1e29c020, [0n, 1n]],
+  ['frint32z d0, d1 (infinity)', 0x1e684020, [0n, 0x7ffn << 52n]],
   ['fjcvtzs w0, d1 (0)', 0x1e7e0020, [0n, 0n]],
   ['fjcvtzs w0, d1 (-0)', 0x1e7e0020, [0n, 1n << 63n]],
   ['fjcvtzs w0, d1 (-1)', 0x1e7e0020, [0n, f64bits(-1)]],
@@ -679,6 +697,10 @@ const HELPERS = [
   (d: number, n: number) => 0x9e660000 | (n << 5) | d, // fmov xd, dn (inline since M6 loop 4)
   (d: number, n: number) => 0x9e670000 | (n << 5) | d, // fmov dd, xn (likewise)
   (d: number, n: number) => 0x9e780000 | (n << 5) | d, // fcvtzs xd, dn (a helper that writes an X register)
+  (_d: number, _n: number) => 0xd500401f, // cfinv (FlagM: helpers that read and write NZCV)
+  (_d: number, _n: number) => 0xd500403f, // xaflag
+  (_d: number, _n: number) => 0xd500405f, // axflag
+  (_d: number, n: number) => 0x3a00080d | (n << 5), // setf8 wn
 ];
 // Helper-only words on V registers, among inline NEON, FP and V loads and
 // stores on the same few registers: a dirty V local must be written back before
@@ -691,7 +713,7 @@ const VHELPERS = [
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x7ee03800 | (n << 5) | d, // usqadd dd, dn
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

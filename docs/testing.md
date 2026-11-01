@@ -234,8 +234,10 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   the oracles and writes the golden files: `node tools/corpus/run.ts [--oracle qemu|m4|both]
   [group…]`), `core/tests/corpus.rs` (the comparator). `WEBPC_CORPUS=<groups>` filters the wasm run.
 - **Groups:** branch, dp_imm, dp_reg, ldst, excl, lse, sys, fp_scalar, ldst_fp, simd_same,
-  simd_diff, simd_fp, simd_misc, simd_move, simd_perm, simd_shift, crypto, jscvt (FJCVTZS; its golden
-  file is QEMU's so far: `--oracle qemu`, from a cloud session; regenerate it with both oracles in the dev VM).
+  simd_diff, simd_fp, simd_misc, simd_move, simd_perm, simd_shift, crypto, jscvt (FJCVTZS), ext (LDAPR, SB,
+  FlagM and FlagM2, DIT, FRINTTS). The last two golden files are QEMU's so far (`--oracle qemu`, from a cloud
+  session; regenerate them with both oracles in the dev VM), so they leave out reserved encodings: QEMU's user
+  mode reports some as `ILL_ILLOPN` where the M4 and we report `ILL_ILLOPC`.
 - The generator avoids CONSTRAINED UNPREDICTABLE and IMPLEMENTATION DEFINED cases (e.g. `LDP`
   with `Rt == Rt2`, writeback with `Rn == Rt`), where the oracles legitimately disagree.
 - **Known oracle behavior** (the generator avoids it):
@@ -249,7 +251,8 @@ Realtime runs and the rw-overlay boots aren't step-exact.
     bf16 afp dit`, `lrcpc ilrcpc dcpop dcpodp flagm uscat asimddp asimdrdm fphp
     jscvt fcma`, FP16 (incl. FP16 FMOV and fixed-point conversions with immh = 001x), BF16 (BFCVT
     is the FCVT encoding with ftype 01, opc 10), FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS. The
-    generator emits none of them but JSCVT's FJCVTZS (ours since ABI 59, group `jscvt`).
+    generator emits none of them but what's ours since ABI 59 (groups `jscvt` and `ext`): JSCVT, LRCPC,
+    SB, FlagM, FlagM2, DIT, FRINTTS.
   - **QEMU before 9.0.2 sets FJCVTZS's Z for a denormal flushed under FZ** (Ubuntu 24.04's 8.2 does);
     the pseudocode clears it, and QEMU's 7619129f0d does too. The `jscvt` group leaves that case out;
     `fp::tests::to_int_js` and the JIT differential test have it.

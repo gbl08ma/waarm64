@@ -516,3 +516,49 @@ fn to_int_js() {
     assert_eq!(js(FZ, 1 << 63 | 1), (0, false, IDC));
     assert_eq!(js(FZ, d(3.0)), (3, true, 0));
 }
+
+#[test]
+fn round_int_n() {
+    // FRINT32Z/X, FRINT64Z/X: in range rounded (Inexact if not exact), else the
+    // most negative integer and Invalid only.
+    let r = |fpcr: u64, f: Fmt, x: u64, rm: Rounding, n: u32| {
+        let mut u = Fpu::new(fpcr);
+        (u.round_int_n(f, x, rm, n), u.flags)
+    };
+    use Rounding::*;
+    assert_eq!(r(RN, D, d(2.5), TieEven, 32), (d(2.0), IXC));
+    assert_eq!(r(RN, D, d(-0.4), Zero, 32), (d(-0.0), IXC));
+    assert_eq!(r(RN, D, d(-0.0), Zero, 32), (d(-0.0), 0));
+    assert_eq!(r(RN, D, d(7.0), Zero, 32), (d(7.0), 0));
+    assert_eq!(r(RN, D, d(2147483647.5), Zero, 32), (d(2147483647.0), IXC));
+    assert_eq!(
+        r(RN, D, d(2147483647.5), TieEven, 32),
+        (d(-2147483648.0), IOC)
+    );
+    assert_eq!(
+        r(RN, D, d(-2147483648.5), TieEven, 32),
+        (d(-2147483648.0), IXC)
+    );
+    assert_eq!(
+        r(RN, D, d(-2147483648.75), TieEven, 32),
+        (d(-2147483648.0), IOC)
+    );
+    assert_eq!(r(RN, D, d(2147483648.0), Zero, 64), (d(2147483648.0), 0));
+    assert_eq!(
+        r(RN, D, d(2f64.powi(63)), Zero, 64),
+        (d(-(2f64.powi(63))), IOC)
+    );
+    assert_eq!(
+        r(RN, D, d(-(2f64.powi(63))), Zero, 64),
+        (d(-(2f64.powi(63))), 0)
+    );
+    assert_eq!(r(RN, S, s(1e10), Zero, 32), (s(-2147483648.0), IOC));
+    assert_eq!(r(RN, S, s(1e10), Zero, 64), (s(1e10), 0));
+    assert_eq!(r(RN, S, s(f32::NAN), Zero, 64), (s(-(2f32.powi(63))), IOC));
+    assert_eq!(
+        r(RN, D, d(f64::NEG_INFINITY), Zero, 32),
+        (d(-2147483648.0), IOC)
+    );
+    assert_eq!(r(RN, D, 1, PosInf, 32), (d(1.0), IXC)); // a denormal rounded up
+    assert_eq!(r(FZ, D, 1, PosInf, 32), (d(0.0), IDC)); // flushed first
+}

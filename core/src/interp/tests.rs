@@ -1905,7 +1905,91 @@ fn jscvt_feature_gate() {
     }
     assert_eq!(sys::isar1(0), 0);
     assert_eq!(sys::isar1(FEATURE_JSCVT), 1 << 12);
-    assert_eq!(sys::isar1(crate::cpu::FEATURES), 1 << 12);
+    assert_eq!(sys::isar1(crate::cpu::FEATURES) >> 12 & 0xf, 1);
+}
+
+#[test]
+fn v8_x_feature_gates() {
+    // ABI 59's small extensions: UNDEFINED without their feature bit, run with it.
+    use crate::cpu::*;
+    let ldapr = 0xf8bf_c041; // ldapr x1, [x2]
+    for (feature, insn) in [
+        (FEATURE_RCPC, ldapr),
+        (FEATURE_SB, 0xd503_30ff),
+        (FEATURE_FLAGM, 0xd500_401f),   // cfinv
+        (FEATURE_FLAGM, 0xd500_403f),   // xaflag
+        (FEATURE_FLAGM, 0x3a00_084d),   // setf8 w2
+        (FEATURE_DIT, 0xd503_415f),     // msr dit, #1
+        (FEATURE_DIT, 0xd53b_42a1),     // mrs x1, dit
+        (FEATURE_FRINTTS, 0x1e28_4020), // frint32z s0, s1
+        (FEATURE_FRINTTS, 0x4e61_e820), // frint32z v0.2d, v1.2d
+    ] {
+        let mut t = T::new(&[insn]).x(2, DATA);
+        t.c.features = FEATURES & !feature;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+        let mut t = T::new(&[insn]).x(2, DATA);
+        assert_eq!(t.step(), Ok(()), "{insn:#x}");
+    }
+    // LDAPR loads as LDAR does: aligned, all 8 bytes.
+    let t = T::new(&[ldapr])
+        .x(2, DATA)
+        .mem(DATA, 8, 0x1122_3344_5566_7788)
+        .run();
+    assert_eq!(t.c.x[1], 0x1122_3344_5566_7788);
+    let mut t = T::new(&[ldapr]).x(2, DATA + 4);
+    assert!(matches!(t.step(), Err(Exit::Fault(_))));
+    // FlagM: CFINV flips C; AXFLAG maps FCMP's unordered (0011) to Z (0100);
+    // XAFLAG maps it back; RMIF x2, #4, #0b1010 sets N and C from bits 7 and 5.
+    let step_flags = |insn: u32, nzcv: u64, x2: u64| {
+        let mut t = T::new(&[insn]).x(2, x2).nzcv(nzcv);
+        t.step().unwrap();
+        t.c.nzcv >> 28
+    };
+    assert_eq!(step_flags(0xd500_401f, 0b1010 << 28, 0), 0b1000);
+    assert_eq!(step_flags(0xd500_405f, 0b0011 << 28, 0), 0b0100);
+    assert_eq!(step_flags(0xd500_403f, 0b0100 << 28, 0), 0b0011);
+    assert_eq!(step_flags(0xd500_403f, 0b0110 << 28, 0), 0b0110); // equal
+    assert_eq!(
+        step_flags(
+            0xba00_0000 | 4 << 15 | 1 << 10 | 2 << 5 | 0b1010,
+            0b0101 << 28,
+            0xa0
+        ),
+        0b1111
+    );
+    // SETF8 w2: N bit 7, Z bits 7:0 zero, V bit 8 ^ bit 7, C kept.
+    assert_eq!(step_flags(0x3a00_084d, 0b0010 << 28, 0x180), 0b1010);
+    assert_eq!(step_flags(0x3a00_084d, 0, 0x100), 0b0101);
+    // The ID fields.
+    assert_eq!(sys::isar1(FEATURES), 1 << 36 | 1 << 32 | 1 << 20 | 1 << 12);
+    assert_eq!(sys::isar0(FEATURE_FLAGM) >> 52 & 0xf, 2);
+    assert_eq!(sys::pfr0(FEATURE_DIT) >> 48 & 0xf, 1);
+    assert_eq!(sys::pfr0(0) >> 48 & 0xf, 0);
+}
+
+#[test]
+fn dit_through_an_exception_and_eret() {
+    use crate::cpu::{DAIF, M_EL0T, M_EL1H, PSTATE_DIT};
+    // msr dit, #1; svc #0 at EL0: SPSR has DIT, and EL1 runs with it still set.
+    let mut t = T::new(&[0xd503_415f, 0xd400_0001]).x(31, 0x3000);
+    t.c.vbar_el1 = VBAR;
+    t.sys().unwrap();
+    assert_eq!(t.c.pstate, M_EL0T | PSTATE_DIT);
+    t.sys().unwrap();
+    assert_eq!(t.c.pstate, M_EL1H | DAIF | PSTATE_DIT);
+    assert_eq!(t.c.spsr_el1 & PSTATE_DIT, PSTATE_DIT);
+    // ERET takes DIT from SPSR: clear there, clear after.
+    let mut t = T::new(&[0xd69f_03e0]).el1();
+    t.c.pstate |= PSTATE_DIT;
+    (t.c.spsr_el1, t.c.elr_el1) = (M_EL0T, 0x4000);
+    t.sys().unwrap();
+    assert_eq!(t.c.pstate, M_EL0T);
+    // Without the feature, an SPSR's bit 24 isn't restored.
+    let mut t = T::new(&[0xd69f_03e0]).el1();
+    t.c.features &= !crate::cpu::FEATURE_DIT;
+    (t.c.spsr_el1, t.c.elr_el1) = (M_EL0T | PSTATE_DIT, 0x4000);
+    t.sys().unwrap();
+    assert_eq!(t.c.pstate, M_EL0T);
 }
 
 #[test]
