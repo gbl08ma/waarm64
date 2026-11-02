@@ -1022,6 +1022,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **Errors written as one message** ([copy.md](copy.md) "The elements": a headline, then the cause as details): where
+  the code throws a single message, its words are "Couldn't …" and a second line after `\n` instead of a `MsgError`
+  headline with a cause of its own (`machines.needsOff.*`, `definitions.*`, `store.diskAttached` in machines.ts,
+  definitions.ts, store.ts; `net-live.off`, `network.notStarted`, `net-live.onOtherAdapter`, `net-live.notLoggedOut`;
+  the worker's errors without a cause). Each would split into a headline key and a cause key, and its caller wrap one
+  in the other. The checker doesn't see it either (a lone-line check is to add).
 - **The i18n checks' holes** (tools/i18n-check.ts; review/i18n, 2026-11-02): parameters aren't checked when a key comes
   through a map (`STATE_WORDS`, `PHASE_WORD`) or the parameters are a conditional or built elsewhere; sentences in lower
   case, or with `;` or `=`, aren't flagged as copy; a quote in the docs split across two lines isn't seen; nothing

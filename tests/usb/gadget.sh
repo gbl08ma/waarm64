@@ -97,7 +97,11 @@ EOF
   rm -r "$tmp"
   sudo udevadm control --reload
   # Nodes that exist already take the rule now (a "change" doesn't reapply MODE to them; an "add" does).
-  sudo udevadm trigger --action=add --sysname-match='ttyGS*' --sysname-match=uhid --subsystem-match=hidraw
+  # One trigger each: udevadm ANDs a sysname match with a subsystem match, so uhid (subsystem misc) beside
+  # `--subsystem-match=hidraw` was never triggered and kept root's 0600 until a reboot.
+  sudo udevadm trigger --action=add --sysname-match='ttyGS*'
+  sudo udevadm trigger --action=add --sysname-match=uhid
+  sudo udevadm trigger --action=add --subsystem-match=hidraw
   sudo udevadm settle
   echo "installed: dummy_hcd for $KVER, $RULES, $MODPROBE, $POLICY"
 }

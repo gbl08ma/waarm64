@@ -15,7 +15,9 @@ TESTS=(tests/usb-e2e-webusb.test.ts tests/usb-e2e-hid.test.ts tests/usb-guest.te
 GADGETS=(zero acm)
 
 why=$(tests/usb/gadget.sh check 2>&1) || skipped "${why//$'\n'/; }"
-[ -c /dev/uhid ] || sudo -n modprobe uhid 2> /dev/null || true
+# Load uhid if it isn't (/dev/uhid exists before that: a static node kmod makes at boot, root's 0600, that udev
+# never saw); loading it is udev's add, which applies the rig's rule (MODE 0666).
+[ -d /sys/module/uhid ] || { sudo -n modprobe uhid && sudo -n udevadm settle; } 2> /dev/null || true
 [ -r /dev/uhid ] && [ -w /dev/uhid ] || skipped "/dev/uhid isn't usable by $(id -un) (tests/usb/gadget.sh install)"
 
 step "gadgets up: ${GADGETS[*]}"
