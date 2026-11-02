@@ -1273,11 +1273,15 @@
   },
   "MachinesPage.busy.asking": {
     "message": "Asking",
-    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Keep it when space runs short (the browser is asked)."
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Protect from automatic deletion (the browser is asked)."
   },
   "MachinesPage.storage.persist": {
-    "message": "Keep it when space runs short",
-    "note": "Machines page: the browser's storage, in the bar at the page's bottom. A button that asks the browser to keep this web app's storage when space runs short."
+    "message": "Protect from automatic deletion",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. A button that asks the browser to mark this web app's storage as persistent, so the browser doesn't delete it by itself when the device runs low on space. Shown only while the storage isn't persistent."
+  },
+  "MachinesPage.storage.persist.title": {
+    "message": "Without this, the browser may delete this page's machines, disks and snapshots on its own when the device runs low on space. This asks the browser to keep them until you delete them yourself. The browser decides whether to agree, and may do so without asking you; if it declines, this button stays.",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. Tooltip of Protect from automatic deletion (MachinesPage.storage.persist)."
   },
   "MachinesPage.storage.clear.title": {
     "message": "Delete the cached parts of URL disks. They will be read from the network again, by a running machine too. The cache is kept at most a week after its last use, and the browser may clear it sooner when space runs short.",
