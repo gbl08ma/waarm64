@@ -4,9 +4,9 @@
   Delete, Merge into the disk (a stored disk) and Export. Which overlay a machine uses is chosen on its Disks tab.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import ExportMenu from './ExportMenu.svelte';
   import Icon from './Icon.svelte';
+  import Modal from './Modal.svelte';
   import { ask } from './ask.svelte.ts';
   import { errorText, msg, MsgError, t } from '../i18n.ts';
   import type { OverlayRecord, Store } from './store.ts';
@@ -25,9 +25,8 @@
   };
   let { store, disk, overlays, machines, act, close }: Props = $props();
 
-  let dialog: HTMLDialogElement;
+  let dialog: Modal;
   let error = $state('');
-  onMount(() => dialog.showModal());
 
   const mine = $derived(overlays.filter((o) => o.disk === disk.id).sort((a, b) => a.created - b.created));
   /** The machines whose attachment of this disk writes to overlay `id`. */
@@ -64,50 +63,33 @@
   }
 </script>
 
-<dialog id="overlays" bind:this={dialog} onclose={close} aria-labelledby="overlays-title" data-disk={disk.id}>
-  <div class="body">
-    <h2 id="overlays-title">{t('disks:Overlays.title', { disk: disk.name })}</h2>
-    <p class="note">{t('disks:Overlays.note')}</p>
-    <ul class="list">
-      {#each mine as o (o.id)}
-        {@const users = usersOf(o.id)}
-        <li data-overlay={o.id}>
-          <div class="what">
-            <strong>{o.name}</strong>
-            <span class="meta">{o.fork ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) }) : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length ? t('disks:Overlays.usedBy', { machines: users }) : t('disks:Overlays.usedByNone')}</span>
-          </div>
-          <div class="actions">
-            <button onclick={() => rename(o)} title={t('disks:Overlays.renameButton.title')} data-action="rename-overlay"><Icon name="pencil" size={16} />{t('disks:Overlays.renameButton')}</button>
-            <button onclick={() => remove(o)} title={t('disks:Overlays.deleteButton.title')} data-action="delete-overlay"><Icon name="trash" size={16} />{t('disks:Overlays.deleteButton')}</button>
-            {#if disk.kind === 'stored'}<button onclick={() => merge(o)} title={t('disks:Overlays.mergeButton.title')} data-action="merge-overlay"><Icon name="git-merge" size={16} />{t('disks:Overlays.mergeButton')}</button>{/if}
-            <ExportMenu id={o.id} {disk} overlay={o.id} changes={disk.kind !== 'blank'} />
-          </div>
-        </li>
-      {:else}
-        <li class="none">{t('disks:Overlays.none')}</li>
-      {/each}
-    </ul>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <div class="buttons">
-      <span class="grow"></span>
-      <button onclick={() => dialog.close()} data-action="close-overlays">{t('disks:Overlays.close')}</button>
-    </div>
-  </div>
-</dialog>
+<Modal id="overlays" bind:this={dialog} title={t('disks:Overlays.title', { disk: disk.name })} onclose={close} data-disk={disk.id}>
+  <p class="note">{t('disks:Overlays.note')}</p>
+  <ul class="rows">
+    {#each mine as o (o.id)}
+      {@const users = usersOf(o.id)}
+      <li data-overlay={o.id}>
+        <div class="what">
+          <strong>{o.name}</strong>
+          <span class="meta">{o.fork ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) }) : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length ? t('disks:Overlays.usedBy', { machines: users }) : t('disks:Overlays.usedByNone')}</span>
+        </div>
+        <div class="actions">
+          <button onclick={() => rename(o)} title={t('disks:Overlays.renameButton.title')} data-action="rename-overlay"><Icon name="pencil" size={16} />{t('disks:Overlays.renameButton')}</button>
+          <button onclick={() => remove(o)} title={t('disks:Overlays.deleteButton.title')} data-action="delete-overlay"><Icon name="trash" size={16} />{t('disks:Overlays.deleteButton')}</button>
+          {#if disk.kind === 'stored'}<button onclick={() => merge(o)} title={t('disks:Overlays.mergeButton.title')} data-action="merge-overlay"><Icon name="git-merge" size={16} />{t('disks:Overlays.mergeButton')}</button>{/if}
+          <ExportMenu id={o.id} {disk} overlay={o.id} changes={disk.kind !== 'blank'} />
+        </div>
+      </li>
+    {:else}
+      <li class="none">{t('disks:Overlays.none')}</li>
+    {/each}
+  </ul>
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()} data-action="close-overlays">{t('disks:Overlays.close')}</button>{/snippet}
+</Modal>
 
 <style>
-  dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; }
-  .body { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
-  h2 { margin: 0; font-size: 16px; font-weight: 600; }
-  .note { margin: 0; color: var(--dim); font-size: 13px; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
-  .list li.none { color: var(--dim); }
-  .what { flex: 1; min-width: 200px; display: flex; flex-direction: column; }
-  .meta { color: var(--dim); font-size: 12px; }
+  /* An overlay's line (size, date, machines) is long: it takes the row, its actions go under it. */
+  :global(.body) .rows > li > .what { flex-basis: 100%; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .actions > button, .buttons button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .error { color: #ff8f8f; white-space: pre-wrap; margin: 0; }
-  .buttons { display: flex; gap: 8px; }
-  .grow { flex: 1; }
 </style>

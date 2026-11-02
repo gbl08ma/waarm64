@@ -20,7 +20,7 @@
   import { createOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
   import { page } from './ui.svelte.ts';
-  import type { IconName } from './icons.ts';
+  import { diskKind } from './disk-kind.ts';
 
   type Props = {
     store: Store;
@@ -36,13 +36,6 @@
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();
 
   const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
-  const KIND: Record<string, { text: string; icon: IconName }> = {
-    url: { text: t('disks:Disks.kind.url'), icon: 'world-www' },
-    file: { text: t('disks:Disks.kind.file'), icon: 'file' },
-    stored: { text: t('disks:Disks.kind.stored'), icon: 'database' },
-    blank: { text: t('disks:Disks.kind.blank'), icon: 'square-dashed' },
-    ramdisk: { text: t('disks:Disks.kind.ramdisk'), icon: 'bolt' },
-  };
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string, disk: DiskRecord) {
     const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), { title: t('disks:Disks.newOverlay.title'), ok: t('disks:Disks.newOverlay.ok') });
@@ -98,9 +91,9 @@
     {@const d = disks.get(a.disk)}
     <li data-attachment={a.id}>
       <div class="row">
-        <span class="kind" title={d ? KIND[d.kind].text : ''}><Icon name={d ? KIND[d.kind].icon : 'x'} size={18} /></span>
+        <span class="kind" title={d ? diskKind(d.kind).text : ''}><Icon name={d ? diskKind(d.kind).icon : 'x'} size={18} /></span>
         <strong>{d?.name ?? t('disks:Disks.missing')}</strong>
-        <span class="meta">{d ? t('disks:Disks.meta', { kind: KIND[d.kind].text, size: bytesText(d.size), letter: String.fromCharCode(97 + i) }) : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</span>
+        <span class="meta">{d ? t('disks:Disks.meta', { kind: diskKind(d.kind).text, size: bytesText(d.size), letter: String.fromCharCode(97 + i) }) : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</span>
         <span class="grow"></span>
         <Check compact checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(on) => setFlag(a.id, { readOnly: on })}>{t('disks:Disks.readOnly')}</Check>
         {#if d?.kind === 'ramdisk'}

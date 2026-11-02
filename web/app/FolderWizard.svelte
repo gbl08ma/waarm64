@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import Modal from './Modal.svelte';
   import Check from './Check.svelte';
   import { errorText, msg, t } from '../i18n.ts';
   import { preselect, type Folder } from './folders.ts';
@@ -16,7 +17,7 @@
   let { folders }: { folders: PageFolders } = $props();
 
   type Step = 'pick' | 'kind' | 'host' | 'opfs';
-  let wizard: HTMLDialogElement;
+  let wizard: Modal;
   let step = $state<Step>('kind');
   let attached = $state<FolderAttachment[]>([]);
   let picked = $state<string>();
@@ -44,7 +45,7 @@
     readOnly = false;
     holders = {};
     picked = preselect(all, attached);
-    if (!wizard.open) wizard.showModal();
+    wizard.open();
     step = o.machine && choices.length ? 'pick' : 'kind';
     for (const id of folders.held) void folders.locks.holder(`webpc-folder:${id}`).then((who) => { if (who) holders = { ...holders, [id]: who }; });
   }
@@ -85,12 +86,10 @@
   const hasPicker = 'showDirectoryPicker' in globalThis;
 </script>
 
-<dialog id="folder-wizard" aria-labelledby="folder-title" bind:this={wizard} onclose={() => { ui.folderWizard = undefined; }}>
-  <form id="folder-form" onsubmit={makeOpfs}>
-    <h2 id="folder-title">{title}</h2>
+<Modal id="folder-wizard" bodyId="folder-form" bind:this={wizard} {title} auto={false} onclose={() => { ui.folderWizard = undefined; }} onsubmit={makeOpfs}>
     {#if step === 'pick'}
       <section class="net-step">
-        <p class="net-note">{t('folders:FolderWizard.pick.note')}</p>
+        <p class="note">{t('folders:FolderWizard.pick.note')}</p>
         <button type="button" class="net-choice" id="folder-pick-new" onclick={() => (step = 'kind')}><b>{t('folders:FolderWizard.pick.new')}</b><span>{t('folders:FolderWizard.pick.new.text')}</span></button>
         {#each choices as f (f.id)}
           <button type="button" class="net-choice" data-folder={f.id} aria-pressed={picked === f.id} onclick={() => (picked = f.id)}><b>{f.name}</b><span>{stateOf(f)}</span></button>
@@ -99,7 +98,7 @@
       </section>
     {:else if step === 'kind'}
       <section class="net-step">
-        <p class="net-note">{t('folders:FolderWizard.kind')}</p>
+        <p class="note">{t('folders:FolderWizard.kind')}</p>
         <button type="button" class="net-choice" id="folder-kind-host" disabled={!hasPicker} onclick={() => (step = 'host')}><b>{t('folders:FolderWizard.kind.host')}</b><span>{t('folders:FolderWizard.kind.host.text')}</span></button>
         <button type="button" class="net-choice" id="folder-kind-opfs" onclick={() => (step = 'opfs')}><b>{t('folders:FolderWizard.kind.opfs')}</b><span>{t('folders:FolderWizard.kind.opfs.text')}</span></button>
       </section>
@@ -109,7 +108,7 @@
           <li>{t('folders:FolderWizard.host.readOnly')}<Check id="folder-host-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check></li>
           <li>{readOnly ? t('folders:FolderWizard.host.read') : t('folders:FolderWizard.host.readWrite')}</li>
         </ol>
-        <p class="net-note">{t('folders:FolderWizard.host.refused')}</p>
+        <p class="note">{t('folders:FolderWizard.host.refused')}</p>
       </section>
     {:else}
       <section class="net-step">
@@ -117,15 +116,14 @@
         <Check id="folder-opfs-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
       </section>
     {/if}
-    <p id="folder-error" class="net-note" hidden={!formError}>{formError}</p>
-    <div class="net-buttons">
+    <p id="folder-error" class="error" hidden={!formError}>{formError}</p>
+    {#snippet buttons()}
       <button type="button" id="folder-back" hidden={step === 'pick' || (step === 'kind' && !(machine && choices.length))} onclick={() => (step = step === 'kind' ? 'pick' : 'kind')}>{t('folders:FolderWizard.back')}</button><span class="grow"></span>
       <button type="button" id="folder-cancel" onclick={close}>{t('folders:FolderWizard.cancel')}</button>
       {#if step === 'host'}<button type="button" id="folder-choose" disabled={working} onclick={pickHost}>{t('folders:FolderWizard.choose')}</button>{/if}
-      {#if step === 'opfs' || step === 'pick'}<button type="submit" id="folder-ok" disabled={working || (step === 'pick' && !picked)}>{machine ? t('folders:FolderWizard.attach') : t('folders:FolderWizard.create')}</button>{/if}
-    </div>
-  </form>
-</dialog>
+      {#if step === 'opfs' || step === 'pick'}<button type="submit" class="primary" id="folder-ok" disabled={working || (step === 'pick' && !picked)}>{machine ? t('folders:FolderWizard.attach') : t('folders:FolderWizard.create')}</button>{/if}
+    {/snippet}
+</Modal>
 
 <style>
   .steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding-left: 20px; }

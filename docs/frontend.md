@@ -120,7 +120,7 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
   the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
 - **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
-  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:Disks.kind.stored)
+  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:disk-kind.stored)
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
   boot, the guest's reboot too; its memory counts in the page's memory check). A snapshot and a suspended copy hold
@@ -154,7 +154,12 @@ everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes use
 **Styles** are scoped to the component that writes them, and nothing warns when they don't arrive: the Machines page's
 `.settings`, `.head`, `.tab`, `.meta` and button rules reach only its own markup (its snippets too), so a tab's settings
 stay in `MachinesPage.svelte` and a child component holds a list with styles of its own (`Usb.svelte`, `Folders.svelte`).
-The wizards' rules are `index.html`'s, by id: a new wizard is added to each of them.
+Dialogs are built on `Modal.svelte` (Add a disk…, Add a device…, the Network and Folder wizards, a disk's Overlays,
+Attach to a machine; the page's questions are `Ask.svelte`'s): the shell, its title, its row of buttons and the rules its
+content shares (notes, errors, labels, choices, lists of rows, the primary button), so a new dialog looks like the
+others by using it; `index.html` keeps the wizards' choices and what's particular to the Network and Folder wizards.
+A disk in a list is `DiskInfo.svelte` (its kind's icon, name and line), and a disk's kind in words and icon is
+`disk-kind.ts`.
 
 **Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~2 s) checks them
 with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10) and

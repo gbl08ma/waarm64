@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import AttachDisk from './AttachDisk.svelte';
+  import DiskInfo from './DiskInfo.svelte';
   import Icon from './Icon.svelte';
   import Overlays from './Overlays.svelte';
   import { ask } from './ask.svelte.ts';
@@ -12,7 +13,6 @@
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
-  import type { IconName } from './icons.ts';
 
   type Props = {
     store: Store;
@@ -25,13 +25,6 @@
   };
   let { store, machines, disks, overlays, running, act, offFirst }: Props = $props();
 
-  const KIND: Record<string, { text: string; icon: IconName }> = {
-    url: { text: t('disks:Disks.kind.url'), icon: 'world-www' },
-    file: { text: t('disks:Disks.kind.file'), icon: 'file' },
-    stored: { text: t('disks:Disks.kind.stored'), icon: 'database' },
-    blank: { text: t('disks:Disks.kind.blank'), icon: 'square-dashed' },
-    ramdisk: { text: t('disks:Disks.kind.ramdisk'), icon: 'bolt' },
-  };
   const all = $derived([...disks.values()].sort((a, b) => a.name.localeCompare(b.name)));
   const overlaysOf = (id: string) => overlays.filter((o) => o.disk === id);
   const usersOf = (id: string) => machines.filter((m) => m.attachments.some((a) => a.disk === id)).map((m) => m.name);
@@ -55,14 +48,9 @@
 <ul class="cards">
   {#each all as d (d.id)}
     {@const mine = overlaysOf(d.id)}
-    {@const bytes = mine.reduce((n, o) => n + o.bytes, 0)}
     {@const users = usersOf(d.id)}
     <li data-disk={d.id} data-kind={d.kind}>
-      <span class="kind" title={KIND[d.kind].text}><Icon name={KIND[d.kind].icon} size={18} /></span>
-      <div class="what">
-        <strong>{d.name}</strong>
-        <span class="meta">{t('disks:DisksPane.meta', { kind: KIND[d.kind].text, size: bytesText(d.size) })}{#if d.kind !== 'ramdisk'}{' · '}{bytes ? t('disks:DisksPane.overlaysSized', { count: mine.length, size: bytesText(bytes) }) : t('disks:DisksPane.overlays', { count: mine.length })}{/if}{' · '}{users.length ? t('disks:DisksPane.on', { machines: users }) : t('disks:DisksPane.onNone')}</span>
-      </div>
+      <DiskInfo disk={d} overlays={mine} {users} />
       {#if mine.length}<button onclick={() => (showing = { disk: d.id, what: 'overlays' })} data-action="disk-overlays" title={t('disks:DisksPane.overlaysButton.title')}>{t('disks:DisksPane.overlaysButton')}</button>{/if}
       <button onclick={() => (showing = { disk: d.id, what: 'attach' })} data-action="attach-disk" title={t('disks:DisksPane.attach.title')}>{t('disks:DisksPane.attach')}</button>
       <button onclick={() => remove(d)} disabled={users.length > 0} data-action="delete-disk" title={users.length ? t('disks:DisksPane.deleteAttached.title', { machines: users }) : t('disks:DisksPane.deleteButton.title')}><Icon name="trash" size={16} />{t('disks:DisksPane.deleteButton')}</button>
@@ -81,8 +69,5 @@
   .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .cards > li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .cards > li.none { color: var(--dim); }
-  .kind { color: var(--dim); display: inline-flex; }
-  .what { flex: 1; min-width: 200px; display: flex; flex-direction: column; }
-  .meta { color: var(--dim); font-size: 12px; }
   button { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
 </style>

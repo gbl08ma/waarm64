@@ -1,23 +1,51 @@
 {
-  "Disks.kind.url": {
+  "disk-kind.url": {
     "message": "from a URL",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name (\"from a URL, 2.0 GiB\"); also in Add a disk… › A disk already in this browser and on the Machines page's Disks pane. A disk read from a web server."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane) (\"from a URL, 2.0 GiB\"), and in Add a disk… › A disk already in this browser. A disk read from a web server."
   },
-  "Disks.kind.file": {
+  "disk-kind.file": {
     "message": "a file on your computer",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser and on the Machines page's Disks pane. A disk whose base image is read where it is, a file on the user's computer."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is read where it is, a file on the user's computer."
   },
-  "Disks.kind.stored": {
+  "disk-kind.stored": {
     "message": "stored in this browser",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser and on the Machines page's Disks pane. A disk whose base image is copied into this browser's storage."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is copied into this browser's storage."
   },
-  "Disks.kind.blank": {
+  "disk-kind.blank": {
     "message": "blank",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser and on the Machines page's Disks pane. An empty disk (its base image all zeros) whose overlay is kept in this browser as the guest writes it."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. An empty disk (its base image all zeros) whose overlay is kept in this browser as the guest writes it."
   },
-  "Disks.kind.ramdisk": {
+  "disk-kind.ramdisk": {
     "message": "ramdisk",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser and on the Machines page's Disks pane. A disk held in memory, empty at every boot."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk held in memory, empty at every boot."
+  },
+  "DiskInfo.meta": {
+    "message": "{{kind}}, {{size}}",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{size}} its size."
+  },
+  "DiskInfo.overlays_one": {
+    "message": "{{count}} overlay",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, its overlay empty, in its small line. {{count}} is 1."
+  },
+  "DiskInfo.overlays_other": {
+    "message": "{{count}} overlays",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, they empty (or none), in its small line. {{count}} is how many."
+  },
+  "DiskInfo.overlaysSized_one": {
+    "message": "{{count}} overlay ({{size}})",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlay, holding something, in its small line. {{count}} is 1, {{size}} what it holds."
+  },
+  "DiskInfo.overlaysSized_other": {
+    "message": "{{count}} overlays ({{size}})",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlays, holding something, in its small line. {{count}} is how many, {{size}} what they hold together."
+  },
+  "DiskInfo.on": {
+    "message": "attached to {{machines}}",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line: the machines that have it. {{machines}} is their names, joined with commas."
+  },
+  "DiskInfo.onNone": {
+    "message": "not attached to a machine",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line when no machine has it."
   },
   "Disks.newOverlay.text": {
     "message": "With an empty overlay, the disk's contents will reflect its image. Enter a name for the new overlay:",
@@ -306,34 +334,6 @@
   "AddDisk.where": {
     "message": "Where does the disk come from?",
     "note": "Add a disk wizard: the note above the choices of the first step."
-  },
-  "AddDisk.known.overlays_one": {
-    "message": "{{count}} overlay",
-    "note": "Add a disk wizard › A disk already in this browser: how many overlays a listed disk has, its overlay empty, in its line (AddDisk.known.meta). {{count}} is 1."
-  },
-  "AddDisk.known.overlays_other": {
-    "message": "{{count}} overlays",
-    "note": "Add a disk wizard › A disk already in this browser: how many overlays a listed disk has, they empty (or none), in its line (AddDisk.known.meta). {{count}} is how many."
-  },
-  "AddDisk.known.overlaysSized_one": {
-    "message": "{{count}} overlay ({{size}})",
-    "note": "Add a disk wizard › A disk already in this browser: a listed disk's overlay, holding something, in its line (AddDisk.known.meta). {{count}} is 1, {{size}} what it holds."
-  },
-  "AddDisk.known.overlaysSized_other": {
-    "message": "{{count}} overlays ({{size}})",
-    "note": "Add a disk wizard › A disk already in this browser: a listed disk's overlays, holding something, in its line (AddDisk.known.meta). {{count}} is how many, {{size}} what they hold together."
-  },
-  "AddDisk.known.on": {
-    "message": "on {{machines}}",
-    "note": "Add a disk wizard › A disk already in this browser: which machines have a listed disk, in its line (AddDisk.known.meta). {{machines}} is their names, joined with commas."
-  },
-  "AddDisk.known.onNone": {
-    "message": "on no machine",
-    "note": "Add a disk wizard › A disk already in this browser: in a listed disk's line (AddDisk.known.meta) when no machine has it (it can be deleted on the Machines page's Disks pane)."
-  },
-  "AddDisk.known.meta": {
-    "message": "{{kind}}, {{size}} · {{overlays}} · {{users}}",
-    "note": "Add a disk wizard › A disk already in this browser: the small line under a listed disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{overlays}} AddDisk.known.overlays or .overlaysSized, {{users}} AddDisk.known.on or .onNone."
   },
   "AddDisk.known.attach": {
     "message": "Attach",
@@ -986,34 +986,6 @@
   "AttachDisk.busy": {
     "message": "Attaching the disk",
     "note": "Machines page: the busy line (shown with a trailing …) while the Attach to a machine dialog attaches a disk."
-  },
-  "DisksPane.meta": {
-    "message": "{{kind}}, {{size}}",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the start of the small line under a disk's name, before its overlays and its machines. {{kind}} is what it is (Disks.kind.*), {{size}} its size."
-  },
-  "DisksPane.overlays_one": {
-    "message": "{{count}} overlay",
-    "note": "Machines page, Disks pane (Disks under the list of machines): how many overlays a disk has, its overlay empty, in its small line. {{count}} is 1."
-  },
-  "DisksPane.overlays_other": {
-    "message": "{{count}} overlays",
-    "note": "Machines page, Disks pane (Disks under the list of machines): how many overlays a disk has, they empty (or none), in its small line. {{count}} is how many."
-  },
-  "DisksPane.overlaysSized_one": {
-    "message": "{{count}} overlay ({{size}})",
-    "note": "Machines page, Disks pane (Disks under the list of machines): a disk's overlay, holding something, in its small line. {{count}} is 1, {{size}} what it holds."
-  },
-  "DisksPane.overlaysSized_other": {
-    "message": "{{count}} overlays ({{size}})",
-    "note": "Machines page, Disks pane (Disks under the list of machines): a disk's overlays, holding something, in its small line. {{count}} is how many, {{size}} what they hold together."
-  },
-  "DisksPane.on": {
-    "message": "attached to {{machines}}",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the end of a disk's small line: the machines that have it. {{machines}} is their names, joined with commas."
-  },
-  "DisksPane.onNone": {
-    "message": "not attached to a machine",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the end of a disk's small line when no machine has it (it can be deleted)."
   },
   "DisksPane.overlaysButton.title": {
     "message": "Show all of this disk's overlays, to rename, delete or export them.",

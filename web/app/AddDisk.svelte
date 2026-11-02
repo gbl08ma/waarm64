@@ -5,9 +5,11 @@
 <script lang="ts">
   import Check from './Check.svelte';
   import { onMount } from 'svelte';
+  import DiskInfo from './DiskInfo.svelte';
   import Icon from './Icon.svelte';
+  import Modal from './Modal.svelte';
   import { ask } from './ask.svelte.ts';
-  import { errorText, msg, MsgError, t, text } from '../i18n.ts';
+  import { errorText, MsgError, t, text } from '../i18n.ts';
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { askPersist, attach, bytesText, createDisk, knownDisk, type NewDisk } from './machines.ts';
@@ -34,7 +36,7 @@
     { kind: 'ramdisk', icon: 'bolt', name: t('disks:AddDisk.source.ramdisk'), text: t('disks:AddDisk.source.ramdisk.text'), title: t('disks:AddDisk.title.ramdisk') },
   ];
 
-  let dialog: HTMLDialogElement;
+  let dialog: Modal;
   let source = $state<Source | undefined>();
   let error = $state('');
   let url = $state('');
@@ -56,9 +58,8 @@
       .map((disk) => ({ disk, overlays: overlays.filter((o) => o.disk === disk.id), users: machines.filter((m) => m.attachments.some((a) => a.disk === disk.id)) }));
   }
   const sources = $derived(SOURCES.filter((s) => s.kind !== 'known' || known.length));
-  const KIND_TEXT: Record<string, string> = { url: t('disks:Disks.kind.url'), file: t('disks:Disks.kind.file'), stored: t('disks:Disks.kind.stored'), blank: t('disks:Disks.kind.blank'), ramdisk: t('disks:Disks.kind.ramdisk') };
 
-  onMount(() => { dialog.showModal(); void readKnown(); });
+  onMount(() => void readKnown());
 
   /** Attaches a disk the browser has. */
   async function attachKnown(k: Known) {
@@ -148,81 +149,58 @@
   }
 </script>
 
-<dialog id="add-disk" bind:this={dialog} onclose={close} aria-labelledby="add-disk-title">
-  <form onsubmit={add}>
-    <h2 id="add-disk-title">{chosen ? chosen.title : t('disks:AddDisk.title', { machine: machine.name })}</h2>
-    {#if !source}
-      <p class="note">{t('disks:AddDisk.where')}</p>
-      <div class="choices">
-        {#each sources as s (s.kind)}
-          <button type="button" class="choice" data-source={s.kind} onclick={() => choose(s.kind)}>
-            <b><Icon name={s.icon} size={18} />{s.name}</b><span>{s.text}</span>
-          </button>
-        {/each}
-      </div>
-    {:else}
-      <p class="note">{chosen?.text}</p>
-      {#if source === 'known'}
-        <ul class="known">
-          {#each known as k (k.disk.id)}
-            {@const bytes = k.overlays.reduce((n, o) => n + o.bytes, 0)}
-            <li data-disk={k.disk.id}>
-              <div class="what">
-                <strong>{k.disk.name}</strong>
-                <span class="meta">{t('disks:AddDisk.known.meta', { kind: KIND_TEXT[k.disk.kind], size: bytesText(k.disk.size), overlays: bytes ? msg('disks:AddDisk.known.overlaysSized', { count: k.overlays.length, size: bytesText(bytes) }) : msg('disks:AddDisk.known.overlays', { count: k.overlays.length }), users: k.users.length ? msg('disks:AddDisk.known.on', { machines: k.users.map((u) => u.name) }) : msg('disks:AddDisk.known.onNone') })}</span>
-              </div>
-              <button type="button" class="primary" onclick={() => attachKnown(k)} data-action="attach-known">{t('disks:AddDisk.known.attach')}</button>
-            </li>
-          {/each}
-        </ul>
-      {:else if source === 'url'}
-        <label>{t('disks:AddDisk.url')}<span class="line"><input type="url" placeholder="https://…/disk.qcow2" bind:value={url} data-field="url" required><!-- i18n-ignore: an example URL -->
-          <button type="button" onclick={check} disabled={!url || checking}>{checking ? t('disks:AddDisk.url.checking') : t('disks:AddDisk.url.check')}</button></span></label>
-        {#if urlCheck}
-          {#if urlCheck.ok}<p class="ok">{urlCheck.bytes ? t('disks:AddDisk.url.ok', { size: bytesText(urlCheck.bytes) }) : t('disks:AddDisk.url.okUnknown')} {text(URL_SLOW)}</p>
-          {:else}<ul class="problems">{#each urlCheck.problems as p}<li>{text(p)}</li>{/each}</ul>{/if}
-        {/if}
-      {:else if source === 'file' || source === 'stored'}
-        <div class="line"><button type="button" onclick={pick}><Icon name="file" size={16} />{t('disks:AddDisk.pick')}</button><span data-field="picked">{picked ? t('disks:AddDisk.picked', { name: picked.file.name, size: bytesText(picked.file.size) }) : t('disks:AddDisk.picked.none')}</span></div>
-        <input type="file" hidden bind:this={fileInput} onchange={picked1} data-field="file">
-      {:else}
-        <label>{t('disks:AddDisk.size')}<span class="line"><input type="number" min="1" bind:value={sizeMiB} data-field="size"> {t('disks:AddDisk.size.unit')}</span></label>
-      {/if}
-      {#if source !== 'blank' && source !== 'ramdisk' && source !== 'known'}
-        <Check bind:checked={readOnly} title={t('disks:AddDisk.readOnly.title')}>{t('disks:AddDisk.readOnly')}</Check>
-      {/if}
-    {/if}
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <div class="buttons">
-      {#if source}<button type="button" onclick={() => { source = undefined; error = ''; }}>{t('disks:AddDisk.back')}</button>{/if}
-      <span class="grow"></span>
-      <button type="button" onclick={() => dialog.close()}>{t('disks:AddDisk.cancel')}</button>
-      {#if source && source !== 'known'}<button type="submit" class="primary" data-action="add-disk">{t('disks:AddDisk.add')}</button>{/if}
+<Modal id="add-disk" bind:this={dialog} title={chosen ? chosen.title : t('disks:AddDisk.title', { machine: machine.name })} onclose={close} onsubmit={add}>
+  {#if !source}
+    <p class="note">{t('disks:AddDisk.where')}</p>
+    <div class="choices">
+      {#each sources as s (s.kind)}
+        <button type="button" class="choice" data-source={s.kind} onclick={() => choose(s.kind)}>
+          <b><Icon name={s.icon} size={18} />{s.name}</b><span>{s.text}</span>
+        </button>
+      {/each}
     </div>
-  </form>
-</dialog>
+  {:else}
+    <p class="note">{chosen?.text}</p>
+    {#if source === 'known'}
+      <ul class="rows">
+        {#each known as k (k.disk.id)}
+          <li data-disk={k.disk.id}>
+            <DiskInfo disk={k.disk} overlays={k.overlays} users={k.users.map((u) => u.name)} />
+            <button type="button" class="primary" onclick={() => attachKnown(k)} data-action="attach-known">{t('disks:AddDisk.known.attach')}</button>
+          </li>
+        {/each}
+      </ul>
+    {:else if source === 'url'}
+      <label>{t('disks:AddDisk.url')}<span class="line"><input type="url" placeholder="https://…/disk.qcow2" bind:value={url} data-field="url" required><!-- i18n-ignore: an example URL -->
+        <button type="button" onclick={check} disabled={!url || checking}>{checking ? t('disks:AddDisk.url.checking') : t('disks:AddDisk.url.check')}</button></span></label>
+      {#if urlCheck}
+        {#if urlCheck.ok}<p class="ok">{urlCheck.bytes ? t('disks:AddDisk.url.ok', { size: bytesText(urlCheck.bytes) }) : t('disks:AddDisk.url.okUnknown')} {text(URL_SLOW)}</p>
+        {:else}<ul class="problems">{#each urlCheck.problems as p}<li>{text(p)}</li>{/each}</ul>{/if}
+      {/if}
+    {:else if source === 'file' || source === 'stored'}
+      <div class="line"><button type="button" onclick={pick}><Icon name="file" size={16} />{t('disks:AddDisk.pick')}</button><span data-field="picked">{picked ? t('disks:AddDisk.picked', { name: picked.file.name, size: bytesText(picked.file.size) }) : t('disks:AddDisk.picked.none')}</span></div>
+      <input type="file" hidden bind:this={fileInput} onchange={picked1} data-field="file">
+    {:else}
+      <label>{t('disks:AddDisk.size')}<span class="line"><input type="number" min="1" bind:value={sizeMiB} data-field="size"> {t('disks:AddDisk.size.unit')}</span></label>
+    {/if}
+    {#if source !== 'blank' && source !== 'ramdisk' && source !== 'known'}
+      <Check bind:checked={readOnly} title={t('disks:AddDisk.readOnly.title')}>{t('disks:AddDisk.readOnly')}</Check>
+    {/if}
+  {/if}
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#snippet buttons()}
+    {#if source}<button type="button" onclick={() => { source = undefined; error = ''; }}>{t('disks:AddDisk.back')}</button>{/if}
+    <span class="grow"></span>
+    <button type="button" onclick={() => dialog.close()}>{t('disks:AddDisk.cancel')}</button>
+    {#if source && source !== 'known'}<button type="submit" class="primary" data-action="add-disk">{t('disks:AddDisk.add')}</button>{/if}
+  {/snippet}
+</Modal>
 
 <style>
-  dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; }
-  form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
-  h2 { margin: 0; font-size: 16px; font-weight: 600; }
-  .choices { display: flex; flex-direction: column; gap: 8px; }
-  .choice b { display: flex; align-items: center; gap: 8px; }
-  .note { margin: 0; color: var(--dim); font-size: 13px; }
-  label { display: flex; flex-direction: column; gap: 4px; color: var(--dim); font-size: 12px; }
   .line { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
   .line input { flex: 1; }
   .line input[type=number] { flex: 0 1 140px; }
+  .line button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--bg); }
   .ok { color: #8fd18f; margin: 0; }
   .problems { color: #ffb36b; margin: 0; }
-  .error { color: #ff8f8f; white-space: pre-wrap; margin: 0; }
-  .known { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; }
-  .known li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
-  .known .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .known .meta { color: var(--dim); font-size: 12px; }
-  .known button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .buttons { display: flex; gap: 8px; }
-  .grow { flex: 1; }
-  .buttons button, .line button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--bg); }
-  .primary { background: #24406b !important; border-color: #3b6db3 !important; color: #fff; }
 </style>

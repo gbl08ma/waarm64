@@ -78,13 +78,10 @@
   .net-row { display: flex; gap: 8px; }
   .net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-  /* Dialogs: the Network and Folder wizards, Add a disk, the page's questions. */
+  /* Dialogs (their shell and shared rules: Modal.svelte; the page's questions: Ask.svelte). Below, the wizards' choices and
+     what's particular to the Network and Folder wizards. */
   dialog { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px #000a; }
   dialog::backdrop { background: rgb(0 0 0 / 0.55); }
-  #net-wizard, #folder-wizard { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; }
-  #net-wizard label:not(.check), #folder-wizard label:not(.check) { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
-  #net-form, #folder-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
-  #net-form h2, #folder-form h2 { margin: 0; font-size: 16px; }
   .net-step { display: flex; flex-direction: column; gap: 10px; }
   .choice { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .choice:hover, .choice:focus-visible { border-color: var(--accent); background: var(--bg); }
@@ -97,10 +94,8 @@
   #net-wizard details summary { cursor: pointer; color: var(--dim); font-size: 12px; }
   #net-wizard details[open] { display: flex; flex-direction: column; gap: 8px; }
   #net-wizard code { font-size: 12px; }
-  .net-buttons { display: flex; gap: 8px; }
-  .net-buttons .grow { flex: 1; }
-  #net-wizard button:not(.net-choice), #folder-wizard button:not(.net-choice) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-  #net-wizard #net-connect, #folder-wizard #folder-ok, #folder-wizard #folder-choose { border-color: var(--accent); }
+  #net-wizard button:not(.net-choice):not(.primary), #folder-wizard button:not(.net-choice):not(.primary) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  #folder-wizard #folder-choose { border-color: var(--accent); }
 
   /* The message bar. */
   #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
