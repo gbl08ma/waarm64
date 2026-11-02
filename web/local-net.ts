@@ -3,14 +3,20 @@
 // sockets, so this only moves Ethernet frames: between a card's frame port (web/net.ts `portAdapter`: one frame per
 // message, the page's gateway bypassed: web/gateway.ts `FramePath`) and a WebSocket on loopback. On the socket each
 // binary message is one or more whole frames, each after its 4-byte big-endian length (QEMU's stream framing, what the
-// helper's switch speaks); the frames that come before a timer's turn go out as one message (`setTimeout(0)`, measured:
-// twice the upload of a microtask's batches at the same round trip, bench/net/REPORT.md "The local helper"). It runs in
-// a worker of its own (web/local-net-worker.ts: off the page's main thread), behind the tailnet clients' handle
+// helper's switch speaks); the frames that come before a timer's turn go out as one message, up to `LOCAL_MAX_MESSAGE`
+// (`setTimeout(0)`, measured: twice the upload of a microtask's batches at the same round trip, bench/net/REPORT.md
+// "The local helper"). It runs in a worker of its own (web/local-net-worker.ts: off the page's main thread), behind the tailnet clients' handle
 // (`startLocal`), so the page's network drives it as it drives them.
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
 /** The framing's name and version, checked by both ends (net/webpc-net `Subprotocol`). */
 export const LOCAL_SUBPROTOCOL = 'webpc-net.v1';
+
+/**
+ * The most a message may hold (net/webpc-net `MaxMessage`): past it the helper closes the socket. A burst of the guest's
+ * frames can pass it before the timer's turn, at any MTU, so a batch goes out early rather than growing past it.
+ */
+export const LOCAL_MAX_MESSAGE = 1 << 20;
 
 /** Why the helper closed the socket (net/webpc-net's close codes), as the page says it. */
 export const LOCAL_CLOSE: Record<number, string> = {
@@ -126,10 +132,12 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   const ws = new WebSocket(url, LOCAL_SUBPROTOCOL);
   ws.binaryType = 'arraybuffer';
   let pending: Uint8Array[] = [];
+  let pendingBytes = 0;
   let lease: { address: string; mtu?: number } | undefined;
   const flush = () => {
     const b = pending;
     pending = [];
+    pendingBytes = 0;
     if (ws.readyState !== WebSocket.OPEN || !b.length) return;
     stats.txMessages++;
     ws.send(frameMessage(b));
@@ -138,8 +146,10 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     const f = new Uint8Array(e.data as ArrayBuffer);
     stats.txFrames++;
     stats.txBytes += f.length;
+    if (pendingBytes + 4 + f.length > LOCAL_MAX_MESSAGE) flush();
     if (!pending.length) setTimeout(flush, 0);
     pending.push(f);
+    pendingBytes += 4 + f.length;
   };
   ws.onopen = () => {
     if (ws.protocol !== LOCAL_SUBPROTOCOL) {

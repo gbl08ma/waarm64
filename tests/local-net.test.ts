@@ -1,10 +1,53 @@
 // The local helper's framing on the page's side (web/local-net.ts): QEMU's stream framing, several whole frames per
 // message, as net/webpc-net speaks it; and the helper's link as the page takes it.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { dhcpAck, frameMessage, framesOf, parseLocalURL } from '../web/local-net.ts';
+import { dhcpAck, frameMessage, framesOf, LOCAL_MAX_MESSAGE, LOCAL_SUBPROTOCOL, parseLocalURL, startLocalNet } from '../web/local-net.ts';
+import { MAX_PORT_FRAME } from '../web/offload.ts';
 
 const frame = (n: number, fill: number) => new Uint8Array(n).fill(fill);
+
+/** Hands `n` frames of `size` bytes to a client in one turn (as a burst from the guest comes), and gives the messages it sent. */
+async function burst(n: number, size: number) {
+  const sent: Uint8Array[] = [];
+  const realSocket = globalThis.WebSocket;
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    protocol = LOCAL_SUBPROTOCOL;
+    send(m: Uint8Array) { sent.push(m); }
+    close() {}
+  } as unknown as typeof WebSocket;
+  const port = { postMessage() {} } as unknown as MessagePort;
+  try {
+    startLocalNet('ws://127.0.0.1:1/t', port);
+    for (let k = 0; k < n; k++) port.onmessage!({ data: frame(size, k & 255).buffer } as MessageEvent);
+    await new Promise((r) => setTimeout(r, 5));
+  } finally {
+    globalThis.WebSocket = realSocket;
+  }
+  return sent;
+}
+
+// 1 MiB of a page's batch closed the helper's socket mid-upload (bench/net/REPORT.md "The stalled uploads").
+test("a burst of the guest's frames stays under the helper's limit on a message, whole and in order", async () => {
+  for (const [n, size] of [[40, MAX_PORT_FRAME], [1000, 1514], [20000, 60]]) {
+    const sent = await burst(n, size);
+    assert.ok(sent.length > 1, `${n} of ${size}: more than one message`);
+    assert.ok(sent.every((m) => m.length <= LOCAL_MAX_MESSAGE), `${n} of ${size}: past the limit, ${Math.max(...sent.map((m) => m.length))}`);
+    const got = sent.flatMap((m) => framesOf(m)!);
+    assert.equal(got.length, n);
+    assert.ok(got.every((f, k) => f.length === size && f[0] === (k & 255)), `${n} of ${size}: out of order`);
+  }
+});
+
+test('the limit on a message is the helper\'s, and holds the largest frame', () => {
+  const go = readFileSync(new URL('../net/webpc-net/link.go', import.meta.url), 'utf8');
+  const m = /MaxMessage\s*=\s*1 << (\d+)/.exec(go);
+  assert.equal(1 << Number(m?.[1]), LOCAL_MAX_MESSAGE);
+  assert.ok(4 + MAX_PORT_FRAME <= LOCAL_MAX_MESSAGE);
+});
 
 test('frames go in one message, each after its big-endian length, and come back out whole', () => {
   const a = frame(60, 1);

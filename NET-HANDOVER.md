@@ -38,9 +38,8 @@ host's build check, and **L2** but for what needs a person or the dev VM: the pl
 2. **The dev VM:** `grep -v '^#' bench/net/results/local-helper/build-x86_64.txt > $TMPDIR/sums && net/webpc-net/build.sh --check $TMPDIR/sums v0.0.0-repro`
    at the commit that wrote that file (`git log -1 -- bench/net/results/local-helper/build-x86_64.txt`), and record it beside.
 3. **L2's left:** the user looks at Chromium's Local Network Access prompt once (headed: the deployed page, or `npm run
-   serve` with `--origin`), and refuses it once to see the page's message; in the dev VM, MTU 65520 against 1500 with
-   the worker and the batching (`bench/net/local.ts`, its `local:<mtu>` arm, now with no patch: the frame port takes
-   65553-byte frames), then the helper's default `--mtu`.
+   serve` with `--origin`), and refuses it once to see the page's message; the helper's default `--mtu`, now that 65520
+   is measured and its stalls fixed (bench/net/REPORT.md "The stalled uploads").
 4. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
    `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
@@ -53,6 +52,8 @@ host's build check, and **L2** but for what needs a person or the dev VM: the pl
   each (`carrier_changes`, networkd's "Lost carrier"). `FLAP_MS` is 7 s. `tests/browser/netguest.html?debugnet=1`
   logs networkd at debug from the boot.
 
+- **A page's message past the helper's 1 MiB closes the socket**, and the card stays up on frames to nothing: to a guest that's
+  a stall, then new connections failing in 2-3 s. The page's error and the helper's log say so at once (`bench/net/local.ts` prints them).
 - The fork's `go.mod` keeps `module github.com/containers/gvisor-tap-vsock`, so only `replace` can use it; `go install
   module@version` refuses any module with a `replace`. The fork needs Go ≥ 1.26.
 - #745's switch answers router solicitations only, with a 1000 s router lifetime, and never advertises unsolicited:

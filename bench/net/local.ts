@@ -134,7 +134,7 @@ async function helper(mtu: number) {
   child.stderr.on('data', (d) => { log += d; });
   for (let k = 0; k < 100 && !log.includes('listening on'); k++) await new Promise((r) => setTimeout(r, 100));
   if (!log.includes('listening on')) throw new Error(`the helper: ${log}`);
-  return { ws: `ws://127.0.0.1:${listen}/${token}`, child };
+  return { ws: `ws://127.0.0.1:${listen}/${token}`, child, log: () => log };
 }
 
 async function measure(page: Page, label: string, mib: number, stats?: () => Promise<Record<string, number> | undefined>) {
@@ -163,6 +163,8 @@ async function measure(page: Page, label: string, mib: number, stats?: () => Pro
       const mbit = speed * 8 / 1e6;
       const batch = st0 && st1 ? { fromGuest: (st1.txFrames - st0.txFrames) / (st1.txMessages - st0.txMessages), toGuest: (st1.rxFrames - st0.rxFrames) / (st1.rxMessages - st0.rxMessages) } : undefined;
       r.push({ dir, mbit: Math.round(mbit * 10) / 10, bytes: size, wall, cpu, mainPerMbit: Math.round(cpu.main / mbit * 1e5) / 1e5, batch });
+      const gone = helperLog().split('\n').filter((l) => l.includes('disconnected')).pop();
+      if (gone) console.log(`# ${label} the helper: ${gone}; the page: ${JSON.stringify(await page.evaluate(() => (window as unknown as { harness: { local(): unknown } }).harness.local()))}`);
       console.log(`# ${label} ${dir} ${mbit.toFixed(1)} Mbit/s, main ${cpu.main} workers ${cpu.workers.join(' ')} other ${cpu.other} network ${cpu.network} helper ${cpu.helper}${batch ? ` frames/msg from ${batch.fromGuest.toFixed(2)} to ${batch.toGuest.toFixed(2)}` : ''}`);
     }
   }
@@ -170,6 +172,7 @@ async function measure(page: Page, label: string, mib: number, stats?: () => Pro
 }
 
 const results: Record<string, unknown>[] = [];
+let helperLog = () => '';
 let failed = false;
 for (const spec of arms) {
   const [arm, mtuS] = spec.split(':');
@@ -177,6 +180,7 @@ for (const spec of arms) {
   const overlay = 'webpc-net-bench';
   let child: ChildProcess | undefined;
   let rig = false;
+  helperLog = () => '';
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
   try {
@@ -186,6 +190,7 @@ for (const spec of arms) {
       if (arm === 'local') {
         const h = await helper(mtu);
         child = h.child;
+        helperLog = h.log;
         await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay, port: '1' })}`);
         await page.evaluate((u) => (window as unknown as { harness: { connectLocal(u: string): void } }).harness.connectLocal(u), h.ws);
       } else {

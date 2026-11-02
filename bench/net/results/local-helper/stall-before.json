@@ -1,0 +1,235 @@
+{
+ "date": "2026-11-02T02:47:28.097Z",
+ "host": "dev VM (Lima, M4 Mac mini)",
+ "cpus": 8,
+ "memGiB": 17.525535583496094,
+ "chromium": "153.0.8010.52",
+ "mib": 64,
+ "rounds": 6,
+ "results": [
+  {
+   "arm": "local:65520",
+   "mib": 64,
+   "mtu": 65520,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5965ms\nrtt min/avg/max/mdev = 0.965/3.498/5.075/0.956 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 0.965,
+    "avg": 3.498,
+    "max": 5.075
+   },
+   "connectMs": {
+    "min": 1.7149999999999999,
+    "median": 1.86,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 1087.8,
+     "bytes": 67108864,
+     "wall": 0.783,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.485,
+       0.434,
+       0.358,
+       0.294
+      ],
+      "other": 0.358,
+      "network": 0.115,
+      "helper": 0.23
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 4.2,
+     "bytes": 31385806,
+     "wall": 60.385,
+     "cpu": {
+      "main": 0.011,
+      "workers": [
+       0.029,
+       0.021
+      ],
+      "other": 0.011,
+      "network": 0.001,
+      "helper": 0.002
+     },
+     "mainPerMbit": 0.00263
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.194,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.041,
+       0.028
+      ],
+      "other": 0.009,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.466,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.081,
+       0.035
+      ],
+      "other": 0.014,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.156,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.048,
+       0.038
+      ],
+      "other": 0.029,
+      "network": 0.003,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.186,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.078,
+       0.025
+      ],
+      "other": 0.006,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.175,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.038,
+       0.035
+      ],
+      "other": 0.009,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.436,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.079,
+       0.023
+      ],
+      "other": 0.015,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.171,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.041,
+       0.032
+      ],
+      "other": 0.006,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.437,
+     "cpu": {
+      "main": 0.015,
+      "workers": [
+       0.076,
+       0.032
+      ],
+      "other": 0.009,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.167,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.041,
+       0.038
+      ],
+      "other": 0.006,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.17,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.082,
+       0.028
+      ],
+      "other": 0.006,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    }
+   ]
+  }
+ ]
+}

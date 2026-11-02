@@ -110,7 +110,9 @@ with tun2socks-style forwarders.
 - **Frames:** each binary message one or more whole frames in QEMU's framing, both ways; the frames the switch writes
   while a message is on its way go out together as the next one. What waits for a slow page is bounded (4 MiB), and
   past it frames drop as a full NIC queue drops them: the library's switch writes to every link under one lock, so a
-  link that blocked would stall the others.
+  link that blocked would stall the others. A message from the page is bounded too (1 MiB, `MaxMessage`): past it the
+  WebSocket closes, so the page's batches stop there (`LOCAL_MAX_MESSAGE`). Unbounded, they closed it mid-upload at any
+  MTU, which looked like a stall that took the link until the next boot (bench/net/REPORT.md "The stalled uploads").
 - Logs a line per connect and disconnect; nothing about the traffic.
 
 ## 3. The page
@@ -124,7 +126,8 @@ with tun2socks-style forwarders.
   framing, several frames per message (as DERP's are joined, tailnet.md "Transports and DERP"). **In a small worker,
   and batched** (measured, L0; bench/net/REPORT.md "The local helper"): a worker takes half a core off the main thread at no
   cost, and a worker's socket makes the permission's request as the page's does; flushing on `setTimeout(0)` instead of a microtask
-  doubles the upload (357 to 766 Mbit/s) without moving the round trip. L2 does both (web/local-net-worker.ts).
+  doubles the upload (357 to 766 Mbit/s) without moving the round trip. L2 does both (web/local-net-worker.ts). A
+  batch goes out early at the helper's limit on a message (§2 "Frames").
 - **No gateway:** the machine port's frames go to the helper untouched, and the helper's DHCP gives the guest its
   lease, routes and resolvers.
 - **The primary** ([network-adapters.md](../network-adapters.md) §4): a connected `local` adapter reaches the
@@ -193,8 +196,9 @@ with tun2socks-style forwarders.
     `?localnet=` is gone. Tests: tests/page-local.test.ts (the pairing link, the wizard, the real helper, Retry),
     tests/net-local.test.ts (now through the card's IP port: the gateway's lease, then the helper's after the switch),
     and the unit tests docs/testing.md lists.
-  - **Left:** the prompt seen by a person (headed: the user's); MTU 65520 measured with the worker and the batching
-    (the dev VM: the cloud's numbers aren't recorded, docs/cloud.md), and then the helper's default MTU.
+  - **Left:** the prompt seen by a person (headed: the user's); the helper's default MTU. MTU 65520 is measured with
+    the worker and the batching (bench/net/REPORT.md "The stalled uploads": 1.1 Gbit/s down, 1.5 up against 0.6 and 0.95
+    at 1500, one boot each) and the uploads that stalled at every MTU are fixed; the default stays the user's call.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
   install`, as `tests/net/tailcat.sh` pins tailcat): Debian's lease, a TCP transfer to a server on this machine, a
   wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these

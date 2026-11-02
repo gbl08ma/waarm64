@@ -275,7 +275,7 @@ wasn't looked into; no tailcat arm has a ping to compare.
 four). Down doesn't change: the helper batches already (15–19 frames a message). **A worker takes the client off the main thread** (half a
 core off the thread the display and the UI share) at no cost in throughput or round trip. Decided: a worker, batched.
 
-**The MTU.** The first run stalled every upload past 1500: `web/offload.ts` `transmit` drops a plain frame over `MAX_FRAME`
+**The MTU.** (Past L0: "The stalled uploads" below.) The first run stalled every upload past 1500: `web/offload.ts` `transmit` drops a plain frame over `MAX_FRAME`
 (1518), which is what a NIC does, so the guest's large non-GSO segments vanish while it believes the helper's lease. Downloads
 worked (612, 687 and 1080 Mbit/s at 4000, 9000, 65520). With `MAX_FRAME` raised for the run, one boot each, unbatched, in the page:
 
@@ -315,6 +315,28 @@ Back: the default returns in 60 s. Both bound by the minute, as designed.
 helper). gVisor sets a neighbor advertisement's Router flag only on a forwarding stack, and the library's doesn't forward, so when Linux re-checked its
 router the answer said "not a router", and it dropped the default (`ndisc_recv_na`) until the next router advertisement, up to 5 minutes. Every host
 with IPv6 would have had it. The helper now sets the flag on the gateway's advertisements (`markRouter`, `TestGatewayIsARouter`, which failed first); both rigs check the default after 40 s idle.
+
+**The stalled uploads (2026-11-02).** `mtu.json`, the worker and the batching at 1500, 9000 and 65520, 64 MiB each way with `curl -m 60`:
+1.0-1.25 Gbit/s down and 1.35 up at 65520 against 0.5-0.75 and 0.8-0.9 at 1500, but 4 of about 21 uploads stalled, at every MTU (3.8 to
+8.9 Mbit/s over the 60 s), and every connection after one failed within 2-3 s until the next boot. **The cause:** the page's client
+batches what comes before a `setTimeout(0)` with no bound, and the helper reads at most `MaxMessage` (1 MiB). A burst past that (16 frames
+at 65520, about 700 at 1500; what holds the worker's timer back that long wasn't looked into) made coder/websocket close the socket
+("read limited at 1048577 bytes"), so the guest's card went on sending to nothing: the transfer hung until curl's limit, and new
+connections failed in the 2-3 s (ARP's retries, by the timing; not traced). It looked like a stall because nothing in the bench showed the helper's log or the page's error; `local.ts` prints both now.
+Once they were printed the first run named it: 2 boots of 2 lost the link, at the first upload at 65520 (`stall-before.json`) and the second
+at 1500 (the run was stopped there, so the file holds only the first), each with the helper's "disconnected" and the page's "read limited".
+**The fix:** a batch goes out early at `LOCAL_MAX_MESSAGE` (web/local-net.ts); a test pins that number to the helper's and that frames
+stay whole and in order, and `TestMessageAtTheLimit` that the helper takes a message of exactly that size. After it (`stall-after.json`:
+one boot each, 12 rounds): 36 uploads with no disconnect or stall, the slowest 857 Mbit/s:
+
+| MTU | Down, mean (slowest) | Up, mean (slowest) |
+|---|---|---|
+| 1500 | 627 (466) | 947 (857) |
+| 9000 | 722 (111) | 1322 (1172) |
+| 65520 | 1082 (458) | 1481 (1350) |
+
+(The slowest downloads are one transfer each in a boot of 24; not looked into.) A closed socket still leaves the guest's link up, by design
+(a reconnect keeps its lease, plan §3): the Network menu says why and offers Retry; the bench's harness has no such hand.
 
 **`ci-net.sh` on the dev VM:** passes, 582 s. `tests/net-local.test.ts`: login 31 s, 8 MiB at 432 Mbit/s down, 291 up, IPv4 only here. The first run failed in
 the helper's Go tests: under `-race` an idle gVisor stack keeps every core busy (0 CPU without it), and the stacks the earlier tests left starved

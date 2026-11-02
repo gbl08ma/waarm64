@@ -1,0 +1,1462 @@
+{
+ "date": "2026-11-02T02:53:14.093Z",
+ "host": "dev VM (Lima, M4 Mac mini)",
+ "cpus": 8,
+ "memGiB": 17.525535583496094,
+ "chromium": "153.0.8010.52",
+ "mib": 64,
+ "rounds": 12,
+ "results": [
+  {
+   "arm": "local:1500",
+   "mib": 64,
+   "mtu": 1500,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5938ms\nrtt min/avg/max/mdev = 1.261/3.590/4.843/0.736 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.261,
+    "avg": 3.59,
+    "max": 4.843
+   },
+   "connectMs": {
+    "min": 1.6700000000000002,
+    "median": 1.7799999999999998,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 465.7,
+     "bytes": 67108864,
+     "wall": 1.293,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.688,
+       0.673,
+       0.518,
+       0.503
+      ],
+      "other": 0.75,
+      "network": 0.147,
+      "helper": 0.302
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 857.1,
+     "bytes": 67108864,
+     "wall": 1.045,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.555,
+       0.478,
+       0.354,
+       0.278
+      ],
+      "other": 0.268,
+      "network": 0.134,
+      "helper": 0.411
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 632.5,
+     "bytes": 67108864,
+     "wall": 0.928,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.733,
+       0.668,
+       0.625,
+       0.614
+      ],
+      "other": 0.399,
+      "network": 0.194,
+      "helper": 0.388
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 858,
+     "bytes": 67108864,
+     "wall": 1.037,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.511,
+       0.492,
+       0.386,
+       0.318,
+       0.019
+      ],
+      "other": 0.251,
+      "network": 0.145,
+      "helper": 0.434
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 701,
+     "bytes": 67108864,
+     "wall": 1.036,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.627,
+       0.618,
+       0.541,
+       0.531
+      ],
+      "other": 0.251,
+      "network": 0.154,
+      "helper": 0.347
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 870.9,
+     "bytes": 67108864,
+     "wall": 1.045,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.478,
+       0.469,
+       0.344,
+       0.306
+      ],
+      "other": 0.191,
+      "network": 0.144,
+      "helper": 0.44
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 715.1,
+     "bytes": 67108864,
+     "wall": 1.061,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.641,
+       0.622,
+       0.556,
+       0.556
+      ],
+      "other": 0.17,
+      "network": 0.151,
+      "helper": 0.386
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 914.2,
+     "bytes": 67108864,
+     "wall": 1.038,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.482,
+       0.482,
+       0.337,
+       0.318
+      ],
+      "other": 0.125,
+      "network": 0.135,
+      "helper": 0.424
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "down",
+     "mbit": 670.2,
+     "bytes": 67108864,
+     "wall": 1.042,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.633,
+       0.633,
+       0.585,
+       0.557
+      ],
+      "other": 0.192,
+      "network": 0.163,
+      "helper": 0.374
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 892.3,
+     "bytes": 67108864,
+     "wall": 1.052,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.599,
+       0.494,
+       0.342,
+       0.228
+      ],
+      "other": 0.152,
+      "network": 0.162,
+      "helper": 0.466
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 642.6,
+     "bytes": 67108864,
+     "wall": 1.061,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.613,
+       0.584,
+       0.575,
+       0.537
+      ],
+      "other": 0.16,
+      "network": 0.141,
+      "helper": 0.368
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1027.9,
+     "bytes": 67108864,
+     "wall": 0.775,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.581,
+       0.555,
+       0.387,
+       0.374,
+       0.013
+      ],
+      "other": 0.142,
+      "network": 0.168,
+      "helper": 0.542
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 595.9,
+     "bytes": 67108864,
+     "wall": 1.022,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.685,
+       0.656,
+       0.597,
+       0.587
+      ],
+      "other": 0.166,
+      "network": 0.186,
+      "helper": 0.382
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 998.2,
+     "bytes": 67108864,
+     "wall": 0.781,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.589,
+       0.589,
+       0.41,
+       0.384,
+       0.013
+      ],
+      "other": 0.141,
+      "network": 0.179,
+      "helper": 0.525
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 592.5,
+     "bytes": 67108864,
+     "wall": 1.033,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.668,
+       0.639,
+       0.591,
+       0.561
+      ],
+      "other": 0.145,
+      "network": 0.174,
+      "helper": 0.378
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 974.4,
+     "bytes": 67108864,
+     "wall": 0.798,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.589,
+       0.539,
+       0.426,
+       0.388
+      ],
+      "other": 0.138,
+      "network": 0.175,
+      "helper": 0.539
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 526.1,
+     "bytes": 67108864,
+     "wall": 1.296,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.548,
+       0.502,
+       0.471,
+       0.448
+      ],
+      "other": 0.177,
+      "network": 0.139,
+      "helper": 0.293
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 976.6,
+     "bytes": 67108864,
+     "wall": 0.78,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.577,
+       0.564,
+       0.436,
+       0.41,
+       0.013
+      ],
+      "other": 0.115,
+      "network": 0.167,
+      "helper": 0.526
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 620,
+     "bytes": 67108864,
+     "wall": 1.03,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.66,
+       0.602,
+       0.573,
+       0.563
+      ],
+      "other": 0.155,
+      "network": 0.165,
+      "helper": 0.359
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 969,
+     "bytes": 67108864,
+     "wall": 0.782,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.601,
+       0.588,
+       0.46,
+       0.396,
+       0.013
+      ],
+      "other": 0.128,
+      "network": 0.179,
+      "helper": 0.55
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 718.2,
+     "bytes": 67108864,
+     "wall": 1.031,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.621,
+       0.582,
+       0.582,
+       0.543
+      ],
+      "other": 0.155,
+      "network": 0.155,
+      "helper": 0.388
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1042.8,
+     "bytes": 67108864,
+     "wall": 0.782,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.588,
+       0.575,
+       0.384,
+       0.345
+      ],
+      "other": 0.128,
+      "network": 0.166,
+      "helper": 0.537
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 646.1,
+     "bytes": 67108864,
+     "wall": 1.028,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.642,
+       0.584,
+       0.574,
+       0.564
+      ],
+      "other": 0.185,
+      "network": 0.165,
+      "helper": 0.35
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 983.2,
+     "bytes": 67108864,
+     "wall": 0.786,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.598,
+       0.547,
+       0.407,
+       0.369
+      ],
+      "other": 0.14,
+      "network": 0.165,
+      "helper": 0.534
+     },
+     "mainPerMbit": 0.00001
+    }
+   ]
+  },
+  {
+   "arm": "local:65520",
+   "mib": 64,
+   "mtu": 65520,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5953ms\nrtt min/avg/max/mdev = 1.083/3.649/4.774/0.853 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.083,
+    "avg": 3.649,
+    "max": 4.774
+   },
+   "connectMs": {
+    "min": 1.605,
+    "median": 1.825,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 457.5,
+     "bytes": 67108864,
+     "wall": 1.288,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.342,
+       0.287,
+       0.28,
+       0.194
+      ],
+      "other": 0.248,
+      "network": 0.078,
+      "helper": 0.148
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1350.1,
+     "bytes": 67108864,
+     "wall": 0.811,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.567,
+       0.37,
+       0.321,
+       0.197,
+       0.012
+      ],
+      "other": 0.259,
+      "network": 0.086,
+      "helper": 0.271
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1263.1,
+     "bytes": 67108864,
+     "wall": 0.515,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.621,
+       0.621,
+       0.583,
+       0.427
+      ],
+      "other": 0.524,
+      "network": 0.175,
+      "helper": 0.311
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1359,
+     "bytes": 67108864,
+     "wall": 0.813,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.48,
+       0.369,
+       0.369,
+       0.209,
+       0.012
+      ],
+      "other": 0.246,
+      "network": 0.098,
+      "helper": 0.283
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1112.2,
+     "bytes": 67108864,
+     "wall": 0.789,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.444,
+       0.431,
+       0.406,
+       0.317,
+       0.013
+      ],
+      "other": 0.317,
+      "network": 0.114,
+      "helper": 0.253
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1496.5,
+     "bytes": 67108864,
+     "wall": 0.534,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.805,
+       0.524,
+       0.431,
+       0.356
+      ],
+      "other": 0.318,
+      "network": 0.131,
+      "helper": 0.412
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1171.2,
+     "bytes": 67108864,
+     "wall": 0.515,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.641,
+       0.583,
+       0.466,
+       0.408,
+       0.019
+      ],
+      "other": 0.233,
+      "network": 0.194,
+      "helper": 0.311
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1525,
+     "bytes": 67108864,
+     "wall": 0.531,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.81,
+       0.527,
+       0.358,
+       0.207
+      ],
+      "other": 0.339,
+      "network": 0.132,
+      "helper": 0.377
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 1214.1,
+     "bytes": 67108864,
+     "wall": 0.513,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.624,
+       0.585,
+       0.565,
+       0.37,
+       0.019
+      ],
+      "other": 0.214,
+      "network": 0.175,
+      "helper": 0.37
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1473.3,
+     "bytes": 67108864,
+     "wall": 0.804,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.498,
+       0.361,
+       0.236,
+       0.236,
+       0.012
+      ],
+      "other": 0.137,
+      "network": 0.087,
+      "helper": 0.236
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1147.3,
+     "bytes": 67108864,
+     "wall": 0.518,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.637,
+       0.579,
+       0.56,
+       0.405,
+       0.019
+      ],
+      "other": 0.27,
+      "network": 0.212,
+      "helper": 0.386
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1362.2,
+     "bytes": 67108864,
+     "wall": 0.795,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.503,
+       0.377,
+       0.277,
+       0.252,
+       0.013
+      ],
+      "other": 0.138,
+      "network": 0.088,
+      "helper": 0.314
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1282.2,
+     "bytes": 67108864,
+     "wall": 0.527,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.626,
+       0.55,
+       0.512,
+       0.361
+      ],
+      "other": 0.247,
+      "network": 0.152,
+      "helper": 0.304
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1454.4,
+     "bytes": 67108864,
+     "wall": 0.797,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.464,
+       0.376,
+       0.276,
+       0.238,
+       0.013
+      ],
+      "other": 0.113,
+      "network": 0.113,
+      "helper": 0.238
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 809.9,
+     "bytes": 67108864,
+     "wall": 0.785,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.433,
+       0.433,
+       0.331,
+       0.255
+      ],
+      "other": 0.127,
+      "network": 0.102,
+      "helper": 0.255
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1621.7,
+     "bytes": 67108864,
+     "wall": 0.542,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.683,
+       0.498,
+       0.332,
+       0.314,
+       0.018
+      ],
+      "other": 0.111,
+      "network": 0.148,
+      "helper": 0.387
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 1353.3,
+     "bytes": 67108864,
+     "wall": 0.54,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.574,
+       0.519,
+       0.463,
+       0.352
+      ],
+      "other": 0.13,
+      "network": 0.148,
+      "helper": 0.296
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1534.6,
+     "bytes": 67108864,
+     "wall": 0.532,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.714,
+       0.526,
+       0.376,
+       0.357
+      ],
+      "other": 0.188,
+      "network": 0.15,
+      "helper": 0.395
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 1243.4,
+     "bytes": 67108864,
+     "wall": 0.514,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.623,
+       0.603,
+       0.486,
+       0.37,
+       0.019
+      ],
+      "other": 0.136,
+      "network": 0.175,
+      "helper": 0.331
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1575.8,
+     "bytes": 67108864,
+     "wall": 0.534,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.655,
+       0.524,
+       0.431,
+       0.337
+      ],
+      "other": 0.15,
+      "network": 0.131,
+      "helper": 0.449
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1196.2,
+     "bytes": 67108864,
+     "wall": 0.523,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.612,
+       0.593,
+       0.516,
+       0.382,
+       0.019
+      ],
+      "other": 0.115,
+      "network": 0.172,
+      "helper": 0.325
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1559.8,
+     "bytes": 67108864,
+     "wall": 0.574,
+     "cpu": {
+      "main": 0.017,
+      "workers": [
+       0.627,
+       0.488,
+       0.366,
+       0.279
+      ],
+      "other": 0.122,
+      "network": 0.139,
+      "helper": 0.366
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 737.6,
+     "bytes": 67108864,
+     "wall": 1.037,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.357,
+       0.338,
+       0.222,
+       0.193
+      ],
+      "other": 0.087,
+      "network": 0.096,
+      "helper": 0.203
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1457.8,
+     "bytes": 67108864,
+     "wall": 0.794,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.504,
+       0.365,
+       0.353,
+       0.214
+      ],
+      "other": 0.176,
+      "network": 0.101,
+      "helper": 0.277
+     },
+     "mainPerMbit": 0.00001
+    }
+   ]
+  },
+  {
+   "arm": "local:9000",
+   "mib": 64,
+   "mtu": 9000,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5962ms\nrtt min/avg/max/mdev = 1.968/3.783/6.440/0.768 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.968,
+    "avg": 3.783,
+    "max": 6.44
+   },
+   "connectMs": {
+    "min": 1.675,
+    "median": 1.865,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 738.9,
+     "bytes": 67108864,
+     "wall": 0.79,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.671,
+       0.658,
+       0.57,
+       0.418,
+       0.013
+      ],
+      "other": 0.62,
+      "network": 0.152,
+      "helper": 0.329
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1194.5,
+     "bytes": 67108864,
+     "wall": 0.814,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.651,
+       0.442,
+       0.283,
+       0.197,
+       0.012
+      ],
+      "other": 0.332,
+      "network": 0.123,
+      "helper": 0.356
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 766.9,
+     "bytes": 67108864,
+     "wall": 0.77,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.61,
+       0.571,
+       0.532,
+       0.39
+      ],
+      "other": 0.416,
+      "network": 0.195,
+      "helper": 0.351
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1172.2,
+     "bytes": 67108864,
+     "wall": 0.811,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.567,
+       0.444,
+       0.358,
+       0.308,
+       0.012
+      ],
+      "other": 0.308,
+      "network": 0.123,
+      "helper": 0.345
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 111.1,
+     "bytes": 67108864,
+     "wall": 4.938,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.138,
+       0.134,
+       0.095,
+       0.073
+      ],
+      "other": 0.059,
+      "network": 0.032,
+      "helper": 0.061
+     },
+     "mainPerMbit": 0.00007
+    },
+    {
+     "dir": "up",
+     "mbit": 1268.7,
+     "bytes": 67108864,
+     "wall": 0.824,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.473,
+       0.425,
+       0.328,
+       0.255,
+       0.012,
+       0.012
+      ],
+      "other": 0.194,
+      "network": 0.121,
+      "helper": 0.352
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 808.4,
+     "bytes": 67108864,
+     "wall": 0.77,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.623,
+       0.571,
+       0.545,
+       0.39
+      ],
+      "other": 0.234,
+      "network": 0.208,
+      "helper": 0.351
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1268.8,
+     "bytes": 67108864,
+     "wall": 0.867,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.427,
+       0.392,
+       0.358,
+       0.254,
+       0.012
+      ],
+      "other": 0.15,
+      "network": 0.127,
+      "helper": 0.334
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 742.6,
+     "bytes": 67108864,
+     "wall": 1.042,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.451,
+       0.422,
+       0.413,
+       0.326
+      ],
+      "other": 0.125,
+      "network": 0.144,
+      "helper": 0.259
+     },
+     "mainPerMbit": 0.00003
+    },
+    {
+     "dir": "up",
+     "mbit": 1349.2,
+     "bytes": 67108864,
+     "wall": 0.835,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.455,
+       0.395,
+       0.299,
+       0.228
+      ],
+      "other": 0.132,
+      "network": 0.108,
+      "helper": 0.299
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 672,
+     "bytes": 67108864,
+     "wall": 0.93,
+     "cpu": {
+      "main": 0.011,
+      "workers": [
+       0.538,
+       0.43,
+       0.376,
+       0.333,
+       0.022
+      ],
+      "other": 0.183,
+      "network": 0.14,
+      "helper": 0.269
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1389.2,
+     "bytes": 67108864,
+     "wall": 0.566,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.76,
+       0.565,
+       0.336,
+       0.247
+      ],
+      "other": 0.124,
+      "network": 0.177,
+      "helper": 0.459
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 829.9,
+     "bytes": 67108864,
+     "wall": 0.771,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.661,
+       0.571,
+       0.441,
+       0.35,
+       0.013
+      ],
+      "other": 0.182,
+      "network": 0.182,
+      "helper": 0.35
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1383.8,
+     "bytes": 67108864,
+     "wall": 0.831,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.517,
+       0.385,
+       0.229,
+       0.108
+      ],
+      "other": 0.084,
+      "network": 0.108,
+      "helper": 0.289
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 570,
+     "bytes": 67108864,
+     "wall": 1.028,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.477,
+       0.447,
+       0.428,
+       0.321
+      ],
+      "other": 0.146,
+      "network": 0.156,
+      "helper": 0.253
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1315.2,
+     "bytes": 67108864,
+     "wall": 0.867,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.45,
+       0.369,
+       0.369,
+       0.231
+      ],
+      "other": 0.092,
+      "network": 0.115,
+      "helper": 0.323
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 934.3,
+     "bytes": 67108864,
+     "wall": 0.771,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.558,
+       0.493,
+       0.441,
+       0.363,
+       0.013
+      ],
+      "other": 0.104,
+      "network": 0.156,
+      "helper": 0.324
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1352.5,
+     "bytes": 67108864,
+     "wall": 0.847,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.449,
+       0.378,
+       0.272,
+       0.26,
+       0.012
+      ],
+      "other": 0.083,
+      "network": 0.118,
+      "helper": 0.307
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 834.2,
+     "bytes": 67108864,
+     "wall": 0.772,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.596,
+       0.531,
+       0.453,
+       0.376
+      ],
+      "other": 0.104,
+      "network": 0.168,
+      "helper": 0.324
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1380.9,
+     "bytes": 67108864,
+     "wall": 0.815,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.429,
+       0.393,
+       0.393,
+       0.245,
+       0.012
+      ],
+      "other": 0.098,
+      "network": 0.123,
+      "helper": 0.331
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 841.8,
+     "bytes": 67108864,
+     "wall": 0.78,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.577,
+       0.538,
+       0.526,
+       0.385
+      ],
+      "other": 0.128,
+      "network": 0.179,
+      "helper": 0.333
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1391.1,
+     "bytes": 67108864,
+     "wall": 0.566,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.671,
+       0.548,
+       0.406,
+       0.353
+      ],
+      "other": 0.106,
+      "network": 0.177,
+      "helper": 0.477
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 811.5,
+     "bytes": 67108864,
+     "wall": 0.767,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.574,
+       0.535,
+       0.522,
+       0.404,
+       0.026
+      ],
+      "other": 0.143,
+      "network": 0.169,
+      "helper": 0.339
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1401.6,
+     "bytes": 67108864,
+     "wall": 0.836,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.502,
+       0.371,
+       0.239,
+       0.144
+      ],
+      "other": 0.12,
+      "network": 0.12,
+      "helper": 0.299
+     },
+     "mainPerMbit": 0.00001
+    }
+   ]
+  }
+ ]
+}
