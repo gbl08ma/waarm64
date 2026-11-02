@@ -1,4 +1,4 @@
-# A local network helper (L0 to L2 done; L3 next)
+# A local network helper (L0 to L2 done, v0.1.0 released; L3 next)
 
 A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
@@ -10,8 +10,9 @@ Why: a browser has no UDP, so tailcat and a tailnet always go through DERP. The 
 users, rate-limited and best-effort: under 20 Mbit/s and a relay's round trip in the user's experience, and a
 friend's tailcat connection behaves worse still. A helper on the user's machine has the latency of loopback and
 the user's own uplink. Every name here (`webpc-net`, the subprotocol, the kind) is provisional: the project's
-name may change. **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper's own
-README, THIRD_PARTY.md and CLAUDE.md are in `net/webpc-net/`.
+name may change. **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper,
+with its README, THIRD_PARTY.md and CLAUDE.md, is its own repository, `github.com/gbl08ma/webpc-net` (private until the
+user makes it public).
 
 ## 1. Decisions (the user's, 2026-10-23)
 
@@ -19,9 +20,14 @@ README, THIRD_PARTY.md and CLAUDE.md are in `net/webpc-net/`.
   trust us keep tailcat and Tailscale. **Until the bulk of it is done it lives in this repository**, in
   `net/webpc-net/` (the user's, 2026-11-01: page and helper change together while they're young), already under its
   final module path `github.com/gbl08ma/webpc-net` and with its own README, THIRD_PARTY.md, CLAUDE.md and
-  `build.sh`, importing nothing of webpc's, so the move is a `git filter-repo` of one directory. What waits on the
-  move: releases (GitHub's, built there), the second host's reproducibility check against them, and `go install`
-  (which also waits on the IPv6 fork below). Trust comes from:
+  `build.sh`, importing nothing of webpc's, so the move is a `git filter-repo` of one directory. **Moved** on
+  2026-11-02, after L2 (the user's timing), its history kept. Its releases are GitHub's, built by its own Actions
+  (`release.yml`: a `v*` tag built on an x86_64 and an arm64 Linux runner, published only when both builds are
+  identical), **separate from webpc's deploy** (the user's, 2026-11-02): the page offers a release once
+  `web/local-release.ts` takes its SHA256SUMS. **v0.1.0** (2026-11-02) is the first; its sums also matched a build in
+  the dev VM. webpc's tests build the helper at a commit `tests/webpc-net.ts` pins (the user's choice over a sibling
+  checkout or a submodule), or a checkout named by `WEBPC_NET_SRC`. `go install` still waits on the IPv6 fork below.
+  Trust comes from:
   - **Little code of our own:** the helper is glue over libraries users already run (§2). The README says what is
     ours and what is imported, honestly: about 650 lines of ours (the 250 first guessed grew with IPv6's reach, the
     refusals that tell the page why, and the frames' batching) on Podman's network stack, not "a small program".
@@ -75,8 +81,8 @@ README, THIRD_PARTY.md and CLAUDE.md are in `net/webpc-net/`.
 
 What that pulls in: 19 modules linked on Linux and Windows, 16 on macOS (gVisor, miekg/dns, insomniacslk/dhcp,
 gopacket, inetaf/tcpproxy, logrus, golang.org/x/…; all permissive, listed with their licenses in
-`net/webpc-net/THIRD_PARTY.md`). The helper (with #745) built for all six targets: 12.5–13.8 MB stripped, 4.7–5.3 MB
-gzipped, byte-identical over two clean builds on one host (Go 1.27.3, `net/webpc-net/build.sh`: `CGO_ENABLED=0
+webpc-net's THIRD_PARTY.md). The helper (with #745) built for all six targets: 12.5–13.8 MB stripped, 4.7–5.3 MB
+gzipped, byte-identical over two clean builds on one host (Go 1.27.3, its `build.sh`: `CGO_ENABLED=0
 -trimpath -buildvcs=false -ldflags='-s -w -buildid='`, 2026-11-01).
 
 **Others looked at** (2026-10-23, from their docs; none verified in source): xjasonlyu/tun2socks (gVisor, IPv6,
@@ -182,13 +188,13 @@ with tun2socks-style forwarders.
     hashes, for the release notes and the README); `--check` rebuilds a version and compares with published sums. The
     helper has its own `LICENSE` now. Two clean builds matched on x86_64 Linux
     (`bench/net/results/local-helper/build-x86_64.txt`); the Linux install line ran against a `file://` copy.
-  - **Left:** the second host's check (the dev VM, arm64: `build.sh --check` against that file, from the same source);
-    GitHub's releases wait on the move (L3/L4, and the download location in §6).
+  - **Since:** the second host's check passed (the dev VM, aarch64, 2026-11-02), and the move brought GitHub's releases
+    (§1): v0.1.0 built identically on GitHub's x86_64 and arm64 runners and in the dev VM.
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
   - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/network-adapters.md): the kind `local` (its
     link in the record); the wizard's [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal) step (the link, or the pairing link, pasted; the
-    install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s; none until a
-    release); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
+    install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s: v0.1.0's since
+    2026-11-02); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
     a worker, batched on `setTimeout(0)`; the card's frame path beside the gateway's (`FramePath`) with a **link flap**
     on a change of path and on a lease for another address (the user's, for every kind: §3 "Reconnecting" and
     devices.md "net"); `primaryOf` taking it first, two of them said; the errors as sentences, a refused prompt told
@@ -203,13 +209,14 @@ with tun2socks-style forwarders.
   - **The default MTU stays 1500** (the user's, 2026-11-02), for compatibility with every protocol: 65520 is measured
     with the worker and the batching (bench/net/REPORT.md "The stalled uploads": 1.1 Gbit/s down, 1.5 up against 0.6
     and 0.95 at 1500, one boot each) and stays a flag (`--mtu`) for whoever wants it. That closed L2.
-- **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
-  install`, as `tests/net/tailcat.sh` pins tailcat): Debian's lease, a TCP transfer to a server on this machine, a
+- **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (the commit
+  `tests/webpc-net.ts` pins, fetched with git and built: `go install` refuses the module while it has a `replace`): Debian's lease, a TCP transfer to a server on this machine, a
   wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these
-  already, from L0, building the helper from its directory; `go install` once the repository is its own). The framing's unit tests in Node. How it
+  already, from L0). The framing's unit tests in Node. How it
   works goes into tailnet.md's neighbor (a page of its own, or network-adapters.md), frontend.md "Network" and
   the backlog's loose ends.
-- **L4, release:** the first release and the deploy, with the user.
+- **L4, release:** the deploy and making the repository public, with the user (v0.1.0, the first release, came with
+  the move; the page's install lines download from a private repository until then).
 
 ## 5. IPv6 as far as the host has it
 
@@ -251,7 +258,6 @@ failing at once in between (`bench/net/local-ipv6.ts`).
 
 - The kind's name on the page ([Your computer](ui:network:connections.thisComputer), "Local helper", …) and the helper's.
 - The default port.
-- Where the install lines download from: GitHub's releases (one more party users already know) or vm.tny.im.
 - Whether gvisor-tap-vsock's DNS forwarder follows the host's resolvers on every platform (Windows especially: it
   asks Go's `net.Resolver`, the system's own there, and forwards other types to `/etc/resolv.conf`'s servers, which
   Windows hasn't).

@@ -5,13 +5,14 @@
 // copy on 127.0.0.1 that `--ip-address-space-overrides` calls public. The helper accepts each origin with --origin.
 // Usage: node bench/net/lna.ts [<out.json>]    (headless: no prompt to click; what a headless browser shows is what a
 // grant or a denial does to the socket and what `navigator.permissions` says.)
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
+import { buildHelper } from '../../tests/webpc-net.ts';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const out = process.argv[2];
@@ -21,7 +22,7 @@ const port = (server.address() as { port: number }).port;
 const copy = `http://127.0.0.1:${port}`;
 const listen = 18742;
 
-execFileSync('go', ['build', '-o', `${ROOT}target/net/webpc-net`, '.'], { cwd: `${ROOT}net/webpc-net`, stdio: 'inherit', timeout: 300_000 });
+buildHelper(); // at the commit tests/webpc-net.ts pins, or WEBPC_NET_SRC
 const token = randomBytes(32).toString('base64url');
 const ws = `ws://127.0.0.1:${listen}/${token}`;
 const helper = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${listen}`, '--origin', origin, '--origin', copy, '--no-ipv6'], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });

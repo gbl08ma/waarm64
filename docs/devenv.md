@@ -41,7 +41,7 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
 - dash (tests/keyboard.test.ts runs the keyboard script under it).
 - **Go** (`net/tailscale/go.mod` pins the toolchain) builds the Go Tailscale client, `net/tailscale/build.sh` (no
   longer the page's: a test fixture, tests/ts-tailnet.test.ts's hand-over), the tailcat rig, and the local network
-  helper, `net/webpc-net/` (its `go.mod` pins go1.27.3; **go1.27-race** too, or `go test -race` doesn't link: `relocation target
+  helper, `github.com/gbl08ma/webpc-net` (its own repository, checked out at `../webpc-net`; its `go.mod` pins go1.27.3; **go1.27-race** too, or `go test -race` doesn't link: `relocation target
   __tsan_free not defined`). The networking tests'
   headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.
 
@@ -105,7 +105,8 @@ npm start                      # what a user runs: checks, npm ci, wasm core, th
 npm run dist                   # the page built (Vite) as static files for any web server -> target/dist/ (no guest images; frontend.md "A static copy")
 npm run serve                  # Vite's dev server with COOP/COEP and hot reloading on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
-(cd net/webpc-net && go test -race ./...)   # the local network helper (its own CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
+(cd ../webpc-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
+WEBPC_NET_SRC=../webpc-net node --test tests/page-local.test.ts   # webpc's tests against that checkout instead of the commit tests/webpc-net.ts pins
 net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; tailnet.md)
 node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
 node bench/net/clients.ts 5    # the Tailscale client in Chromium (the Podman tailnet): load, Running, RTT, throughput, the worker's memory and CPU

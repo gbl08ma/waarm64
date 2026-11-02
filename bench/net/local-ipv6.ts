@@ -6,7 +6,7 @@
 //                                                    everything in a new network namespace whose "internet" is a dummy
 //                                                    interface holding the helper's probe target: the reach really goes
 //                                                    (the address is removed) and comes back under a running guest
-// One Debian boot each. Build target/net/webpc-net first for netns (`go build`), which has no network for the toolchain.
+// One Debian boot each. Build target/net/webpc-net first for netns (tests/webpc-net.ts `buildHelper`), which has no network for the toolchain.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -18,6 +18,13 @@ import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { withDebianLock } from '../../tests/debian-lock.ts';
 import { loginRoot, run as runIn } from '../../tests/serial-console.ts';
+import { helperSource } from '../../tests/webpc-net.ts';
+
+const helperDir = () => {
+  const s = helperSource();
+  if ('skip' in s) throw new Error(s.skip);
+  return s.dir;
+};
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const [mode, out] = process.argv.slice(2);
@@ -36,7 +43,7 @@ const http = createServer((_, res) => res.end('hello over IPv6\n'));
 
 async function rig() {
   if (mode === 'mac') {
-    execFileSync('go', ['build', '-trimpath', '-o', `${ROOT}target/net/webpc-net-darwin-arm64`, '.'], { cwd: `${ROOT}net/webpc-net`, env: { ...process.env, GOOS: 'darwin', GOARCH: 'arm64', CGO_ENABLED: '0' }, stdio: 'inherit', timeout: 300_000 });
+    execFileSync('go', ['build', '-trimpath', '-o', `${ROOT}target/net/webpc-net-darwin-arm64`, '.'], { cwd: helperDir(), env: { ...process.env, GOOS: 'darwin', GOARCH: 'arm64', CGO_ENABLED: '0' }, stdio: 'inherit', timeout: 300_000 });
     execFileSync('ssh', [MAC, 'mkdir -p webpc-net-test']);
     execFileSync('scp', ['-q', `${ROOT}target/net/webpc-net-darwin-arm64`, `${MAC}:webpc-net-test/webpc-net`]);
     // Another port there: Lima forwards the VM's loopback ports to the Mac's.

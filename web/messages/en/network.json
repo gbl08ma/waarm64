@@ -155,10 +155,6 @@
     "message": "In PowerShell, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
   },
-  "NetWizard.noRelease": {
-    "message": "There's no release yet. To build and run it from <a>its source</a>, run <code>go run .</code> in <code>net/webpc-net</code>.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, under its first step: shown instead of the install lines while the helper has no release. <a>…</a> links to its source; <code>…</code> are a command and a directory, as they are."
-  },
   "NetWizard.control": {
     "message": "Control server",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the label of the control server's field (Tailscale's by default, or a Headscale's URL)."

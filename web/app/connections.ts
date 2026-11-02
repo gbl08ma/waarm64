@@ -48,7 +48,7 @@ export type Connection = {
   ephemeral: boolean;
   tailnet?: TailnetConnection;
   tailcat?: TailcatConnection;
-  /** The local helper on this computer (net/webpc-net, docs/plans/networking-local.md). */
+  /** The local helper on this computer (github.com/gbl08ma/webpc-net, docs/plans/networking-local.md). */
   local?: LocalConnection;
   /** Connect when a machine attached to it starts (off after Disconnect). */
   connectAtStart: boolean;

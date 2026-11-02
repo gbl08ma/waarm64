@@ -2,31 +2,25 @@
 // Chromium, on a stored machine whose only disk is blank (the firmware runs and finds nothing to boot: all an adapter
 // needs to be live). The helper's pairing link opens the page: the fragment leaves the address, the Network wizard opens
 // on This computer with the link filled in, and Attach keeps a `local` connection on the machine's first adapter, which
-// connects at its start through the real helper (net/webpc-net, built here). Stopping the helper is said in the menu,
+// connects at its start through the real helper (built at the commit tests/webpc-net.ts pins). Stopping the helper is said in the menu,
 // and Retry, once it runs again, connects again; a link to no helper says it isn't running.
 // Needs the firmware (images/build.sh edk2) and Go.
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { buildHelper, helperSkip } from './webpc-net.ts';
 import { t } from '../web/i18n.ts';
+import { RELEASE } from '../web/local-release.ts';
 import { words } from './words.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const hasGo = () => {
-  try {
-    execFileSync('go', ['version'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-};
-const skip = !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh edk2' : !hasGo() ? 'SKIPPED: no Go to build net/webpc-net' : undefined;
+const skip = !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh edk2' : helperSkip();
 
 let browser: Browser;
 let base: string;
@@ -59,8 +53,7 @@ const stopHelper = () => new Promise<void>((resolve) => {
 
 before(async () => {
   if (skip) return;
-  mkdirSync(`${ROOT}target/net`, { recursive: true });
-  execFileSync('go', ['build', '-o', `${ROOT}target/net/webpc-net`, '.'], { cwd: `${ROOT}net/webpc-net`, stdio: 'inherit', timeout: 300_000 });
+  buildHelper();
   const server = await startServer();
   closeServer = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -110,7 +103,8 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     assert.equal(new URL(page.url()).hash, '', 'the token left the address');
     assert.equal(await page.locator('#net-step-local').isVisible(), true, 'on This computer');
     assert.equal(await page.inputValue('#net-local-url'), ws);
-    assert.match((await page.locator('#net-local-install').textContent()) ?? '', words('network:NetWizard.noRelease'));
+    assert.equal(await page.locator('#net-local-install summary').textContent(), t('network:NetWizard.install', { version: RELEASE.version }));
+    assert.ok(((await page.locator('#net-local-lines').textContent()) ?? '').includes(`/releases/download/${RELEASE.version}/`), 'the release\'s install lines');
     assert.equal(await page.isChecked('#net-keep'), true);
     assert.equal(await page.locator('#net-connect').textContent(), t('network:NetWizard.attach'), 'the machine is off: attached, connecting at its start');
     await page.click('#net-connect');

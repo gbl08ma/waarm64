@@ -209,17 +209,13 @@
         <ol class="net-steps">
           <li>
             <T k="network:NetWizard.local.run">{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}</T>
-            {#if RELEASE}
-              <details id="net-local-install" open={!localURL}><summary>{t('network:NetWizard.install', { version: RELEASE.version })}</summary>
-                <label>{t('network:NetWizard.install.for')}<select id="net-local-target" value={`${shown.os}-${shown.arch}`} onchange={(e) => { target = TARGETS.find((t) => `${t.os}-${t.arch}` === e.currentTarget.value); }}>
-                  {#each TARGETS as t (`${t.os}-${t.arch}`)}<option value={`${t.os}-${t.arch}`}>{targetName(t)}</option>{/each}
-                </select></label>
-                <p class="note">{shown.os === 'windows' ? t('network:NetWizard.install.note.windows') : t('network:NetWizard.install.note')}</p>
-                <pre id="net-local-lines">{installLines(RELEASE, shown)}</pre>
-              </details>
-            {:else}
-              <p id="net-local-install" class="note"><T k="network:NetWizard.noRelease">{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
-            {/if}
+            <details id="net-local-install" open={!localURL}><summary>{t('network:NetWizard.install', { version: RELEASE.version })}</summary>
+              <label>{t('network:NetWizard.install.for')}<select id="net-local-target" value={`${shown.os}-${shown.arch}`} onchange={(e) => { target = TARGETS.find((t) => `${t.os}-${t.arch}` === e.currentTarget.value); }}>
+                {#each TARGETS as t (`${t.os}-${t.arch}`)}<option value={`${t.os}-${t.arch}`}>{targetName(t)}</option>{/each}
+              </select></label>
+              <p class="note">{shown.os === 'windows' ? t('network:NetWizard.install.note.windows') : t('network:NetWizard.install.note')}</p>
+              <pre id="net-local-lines">{installLines(RELEASE, shown)}</pre>
+            </details>
           </li>
           <li>{@render localField(t('network:NetWizard.local.paste'))}</li>
         </ol>

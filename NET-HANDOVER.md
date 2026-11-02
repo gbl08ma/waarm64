@@ -1,15 +1,16 @@
 # NET: the local network helper — handover
 
 The plan and its decisions: [docs/plans/networking-local.md](docs/plans/networking-local.md) (§1 binds). The helper's
-own docs: [net/webpc-net/README.md](net/webpc-net/README.md), [CLAUDE.md](net/webpc-net/CLAUDE.md),
-[THIRD_PARTY.md](net/webpc-net/THIRD_PARTY.md). There's no kickoff file: the user's brief is the plan, with the changes
+own docs: README.md, CLAUDE.md and THIRD_PARTY.md in its repository, `github.com/gbl08ma/webpc-net` (private for now;
+checked out at `../webpc-net` in the dev VM). There's no kickoff file: the user's brief is the plan, with the changes
 of 2026-11-01 below.
 
 ## The user's changes to the plan (2026-11-01)
 
-- The helper lives in **`net/webpc-net/`** in this repository during early development, with its final module path
-  `github.com/gbl08ma/webpc-net`, its own README, THIRD_PARTY.md and CLAUDE.md, so it moves out whole later. That
-  move is also what unblocks releases, reproducible builds checked against them, and `go install`.
+- The helper lived in `net/webpc-net/` here during early development; **it moved to `gbl08ma/webpc-net` on
+  2026-11-02** (history kept). Its releases are its own GitHub Actions', separate from webpc's deploy (the user's,
+  2026-11-02); webpc's tests build it at a pinned commit (`tests/webpc-net.ts`, the user's choice), and a release is
+  published as soon as its two runners' builds match (no draft).
 - **IPv6** through gvisor-tap-vsock's unmerged [#745](https://github.com/containers/gvisor-tap-vsock/pull/745),
   taken by a `replace` to evidolob's fork at one commit (the user chose this over a fork of ours or vendoring).
   **On by default, but never promised when the helper's host can't route it**, as tailcat and the tailnet do it
@@ -17,11 +18,17 @@ of 2026-11-01 below.
 
 ## State
 
-**L0 is done** (2026-11-01): the helper in `net/webpc-net/`, `tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's
-questions answered in bench/net/REPORT.md "The local helper". **L1 is done** (2026-11-01, cloud) but for the second
-host's build check. **L2 is done** (2026-11-02): the user kept the helper's default `--mtu` at 1500, for every
+**L0 is done** (2026-11-01): the helper, `tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's
+questions answered in bench/net/REPORT.md "The local helper". **L1 is done** (2026-11-01, cloud; the second host's
+check in the dev VM 2026-11-02). **L2 is done** (2026-11-02): the user kept the helper's default `--mtu` at 1500, for every
 protocol's sake (65520 stays a flag: about 1.7× down and 1.6× up, bench/net/REPORT.md "The stalled uploads"); L2's CI
 passed in the dev VM on 2026-11-02, and the helper's build matches the x86_64 sums on aarch64.
+
+**The move is done** (2026-11-02): `github.com/gbl08ma/webpc-net` with `ci.yml` (vet and `-race` tests, ~2 min, on
+pushes touching code) and `release.yml` (~3 min on each of two runners). **v0.1.0 is released** (from the pinned commit
+`cf1c15b`; the helper now prints only the default origin's pairing link) and the page's wizard offers its install
+lines (`web/local-release.ts`). Not deployed. The lines download from a private repository until the user makes it
+public: nobody has run them against the real release yet (the Linux line ran against a `file://` copy at L1).
 
 ## The user's answers (2026-11-01, for L2)
 
@@ -33,7 +40,7 @@ passed in the dev VM on 2026-11-02, and the helper's build matches the x86_64 su
 
 ## Next
 
-1. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
+1. **L3**: a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
    `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
 ## Found (worth not re-discovering)

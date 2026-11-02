@@ -1199,14 +1199,14 @@ page's **[Connections](ui:machines:MachinesPage.connections.heading)**: rename, 
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
-- [Your computer](ui:network:connections.thisComputer) (the local helper, net/webpc-net: [plans/networking-local.md](plans/networking-local.md)): a
-  program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`. Opening it
+- [Your computer](ui:network:connections.thisComputer) (the local helper, [webpc-net](https://github.com/gbl08ma/webpc-net): [plans/networking-local.md](plans/networking-local.md)): a
+  program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>` (only that origin's,
+  even with `--origin`: a developer puts their own origin in its place). Opening it
   takes the fragment out of the address at once (it holds the token) and opens the wizard on [Your computer](ui:network:connections.thisComputer), the
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
   the link (or its `ws://` part) into that step does the same. A new connection's step is numbered steps that end at
   the link's field: run webpc-net, with the install lines for this browser's platform under it (`web/local-release.ts`:
-  client hints, a choice of the six; the release's version and SHA-256s), or, with no release yet, where the source
-  is; then paste the link; a short note after (the link is a secret, allow local network access). Editing shows the
+  client hints, a choice of the six; the release's version and SHA-256s, v0.1.0's now); then paste the link; a short note after (the link is a secret, allow local network access). Editing shows the
   field alone. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
   which puts the card on a frame port, the page's gateway bypassed (web/gateway.ts `FramePath`: the link flaps, so
   the guest asks the helper for a lease at once), and moves its frames to the helper's WebSocket, those before a

@@ -1,4 +1,4 @@
-// The local network helper (docs/plans/networking-local.md; net/webpc-net): the page's Debian with one card on an IP
+// The local network helper (docs/plans/networking-local.md; github.com/gbl08ma/webpc-net): the page's Debian with one card on an IP
 // port, as the page has it, first on the page's gateway with a lease of its own, then handed to the local helper's
 // client (web/local-net.ts `startLocal`, its worker) as the Network menu does: the card goes on a frame port, the
 // page's gateway bypassed, its frames over a WebSocket on loopback to the helper, whose DHCP, DNS and gateway serve the
@@ -7,35 +7,27 @@
 // machine's loopback (--host-loopback) and runs `apt-get update`; IPv6 is on-link always and routed out only when this
 // machine reaches the internet over IPv6 (the helper's probe), so dual-stack names connect without a wait either way;
 // the helper refuses a wrong token and a page from another origin, each with its own close code.
-// One Debian boot in realtime (~2 min); needs Go (the helper is built from net/webpc-net). Opt-in like the other
+// One Debian boot in realtime (~2 min); needs Go (the helper is built at the commit tests/webpc-net.ts pins). Opt-in like the other
 // network tests: scripts/ci-net.sh.
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import dgram from 'node:dgram';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { buildHelper, helperSkip } from './webpc-net.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const hasGo = () => {
-  try {
-    execFileSync('go', ['version'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-};
 const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
   : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
-  : !hasGo() ? 'SKIPPED: no Go to build net/webpc-net'
-  : undefined;
+  : helperSkip();
 
 const OVERLAY = 'webpc-net-local-test';
 const BIG = 8 << 20;
@@ -79,8 +71,7 @@ const hostReaches6 = () => new Promise<boolean>((resolve) => {
 
 before(async () => {
   if (skip) return;
-  mkdirSync(`${ROOT}target/net`, { recursive: true });
-  execFileSync('go', ['build', '-o', `${ROOT}target/net/webpc-net`, '.'], { cwd: `${ROOT}net/webpc-net`, stdio: 'inherit', timeout: 300_000 });
+  buildHelper();
   const server = await startServer();
   closeServer = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

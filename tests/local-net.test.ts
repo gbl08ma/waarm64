@@ -1,10 +1,11 @@
 // The local helper's framing on the page's side (web/local-net.ts): QEMU's stream framing, several whole frames per
-// message, as net/webpc-net speaks it; and the helper's link as the page takes it.
+// message, as webpc-net speaks it (at the commit tests/webpc-net.ts pins); and the helper's link as the page takes it.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { dhcpAck, frameMessage, framesOf, LOCAL_MAX_MESSAGE, LOCAL_SUBPROTOCOL, parseLocalURL, startLocalNet } from '../web/local-net.ts';
 import { MAX_PORT_FRAME } from '../web/offload.ts';
+import { helperSource } from './webpc-net.ts';
 
 const frame = (n: number, fill: number) => new Uint8Array(n).fill(fill);
 
@@ -42,8 +43,10 @@ test("a burst of the guest's frames stays under the helper's limit on a message,
   }
 });
 
-test('the limit on a message is the helper\'s, and holds the largest frame', () => {
-  const go = readFileSync(new URL('../net/webpc-net/link.go', import.meta.url), 'utf8');
+test('the limit on a message is the helper\'s, and holds the largest frame', (t) => {
+  const src = helperSource();
+  if ('skip' in src) return t.skip(src.skip);
+  const go = readFileSync(`${src.dir}/link.go`, 'utf8');
   const m = /MaxMessage\s*=\s*1 << (\d+)/.exec(go);
   assert.equal(1 << Number(m?.[1]), LOCAL_MAX_MESSAGE);
   assert.ok(4 + MAX_PORT_FRAME <= LOCAL_MAX_MESSAGE);

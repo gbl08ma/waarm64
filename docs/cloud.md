@@ -72,7 +72,8 @@ WebSocket upgrades (a 20-line Node script will do; there is no Caddy), a userspa
 `WEBPC_TAILNET_SCRIPT` at a script that prints `tailnet.sh`'s `up` output, and put a `podman` shim
 first on `PATH` that answers `exec webpc-peer tailscale ...` with the native `tailscale`.
 
-**The local helper** (`net/webpc-net`, docs/plans/networking-local.md) builds and tests here (Go fetches its
+**The local helper** (`github.com/gbl08ma/webpc-net`, docs/plans/networking-local.md) is a private repository for
+now: unless the session can fetch it, the tests that need it (tests/webpc-net.ts) say SKIPPED. It built and tested here (Go fetches its
 pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` passed in Chromium (2026-11-01: DNS,
 `apt-get update` and TCP straight out, which the container allows). The container has **no IPv6 at all** (no
 `AF_INET6` sockets): the helper's probe and the guest's IPv6 out are tested only for being off here. It also hangs `tests/net-tailcat.test.ts`, whose server listens on `::` (`EAFNOSUPPORT`, unhandled, so its `before` never ends; 2026-11-01); the rest of `scripts/ci-net.sh`'s list passes here.

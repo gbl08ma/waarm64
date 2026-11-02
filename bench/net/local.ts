@@ -18,6 +18,7 @@ import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { withDebianLock } from '../../tests/debian-lock.ts';
 import { loginRoot, run as runIn } from '../../tests/serial-console.ts';
+import { buildHelper } from '../../tests/webpc-net.ts';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const argv = process.argv.slice(2);
@@ -125,7 +126,7 @@ async function publicExit() {
 }
 
 async function helper(mtu: number) {
-  execFileSync('go', ['build', '-o', `${ROOT}target/net/webpc-net`, '.'], { cwd: `${ROOT}net/webpc-net`, stdio: 'inherit', timeout: 300_000 });
+  buildHelper(); // at the commit tests/webpc-net.ts pins, or WEBPC_NET_SRC
   const token = randomBytes(32).toString('base64url');
   const listen = 18740;
   const child = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${listen}`, '--origin', base, '--mtu', String(mtu)], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });

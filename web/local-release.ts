@@ -1,15 +1,26 @@
 // The local helper's release as the page shows it (docs/plans/networking-local.md §1 "Plain install lines"): its version,
 // the published SHA-256 of each binary, and the install lines for a platform, the same as the release's INSTALL.md
-// (net/webpc-net/build.sh `install`; tests/local-release.test.ts holds the two together). Each release replaces
-// `RELEASE` from its SHA256SUMS; until the first (L4), there is none and the page says to build from source.
+// (webpc-net's build.sh `install`; tests/local-release.test.ts holds the two together). Each release replaces
+// `RELEASE` from its SHA256SUMS (a change of webpc's, separate from the release itself).
 
 export type Os = 'linux' | 'darwin' | 'windows';
 export type Arch = 'amd64' | 'arm64';
 export type Target = { os: Os; arch: Arch };
 export type Release = { version: string; /** SHA256SUMS: file name to hash. */ sums: Record<string, string> };
 
-/** The release the page offers (none yet). */
-export const RELEASE: Release | undefined = undefined;
+/** The release the page offers: its SHA256SUMS, from github.com/gbl08ma/webpc-net/releases (built twice there, and matched). */
+export const RELEASE: Release = {
+  version: 'v0.1.0',
+  sums: {
+    'LICENSES.txt': '63b1e49ef5b5578bbc65bca9329a5bf89aae6509a9d0883ff0a9d72cbcbf54aa',
+    'webpc-net-v0.1.0-darwin-amd64': '7679d35c5ed06998f82cd425308e5b9fa1ba1afe86821230563dfaae76cadd11',
+    'webpc-net-v0.1.0-darwin-arm64': '5a5a95a9b327bcfbf94c7802d62f4d8e7f0cab62b50db030ffd2dce57b9f5508',
+    'webpc-net-v0.1.0-linux-amd64': 'aeb459b109d4d948ca1534f9a4bce7a876fb09d4c846550ab23ece706b6602ea',
+    'webpc-net-v0.1.0-linux-arm64': 'c5b39e8ba3c656d1cc9079d8123784034418d9ac7e8faa5bf1d68b73bbc3a96b',
+    'webpc-net-v0.1.0-windows-amd64.exe': 'd87d3193e1c5ee75e8e86a7d3daf846dcc4e2320ca9b2b54bd6c58a3ca36669d',
+    'webpc-net-v0.1.0-windows-arm64.exe': '20ca570f05469636c57c636f810423461c6582cacf3e299dd2d864edb8333d06',
+  },
+};
 
 export const TARGETS: Target[] = [
   { os: 'linux', arch: 'amd64' }, { os: 'linux', arch: 'arm64' }, { os: 'darwin', arch: 'amd64' }, { os: 'darwin', arch: 'arm64' },
