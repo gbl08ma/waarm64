@@ -19,7 +19,9 @@ of 2026-11-01 below.
 
 **L0 is done** (2026-11-01): the helper in `net/webpc-net/`, `tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's
 questions answered in bench/net/REPORT.md "The local helper". **L1 is done** (2026-11-01, cloud) but for the second
-host's build check, and **L2** but for what needs a person or the dev VM: the plan's "Done" and "Left" under each.
+host's build check. **L2 is done** (2026-11-02): the user kept the helper's default `--mtu` at 1500, for every
+protocol's sake (65520 stays a flag: about 1.7× down and 1.6× up, bench/net/REPORT.md "The stalled uploads"); L2's CI
+passed in the dev VM on 2026-11-02, and the helper's build matches the x86_64 sums on aarch64.
 
 ## The user's answers (2026-11-01, for L2)
 
@@ -31,11 +33,7 @@ host's build check, and **L2** but for what needs a person or the dev VM: the pl
 
 ## Next
 
-1. **L2's left, the user's:** the helper's default `--mtu`, which stays
-   1500: 65520 is measured, about 1.7× down and 1.6× up (bench/net/REPORT.md "The stalled uploads"), and the guest's UDP
-   does reach the internet at that size (the plan's "The MTU"). L2's CI passed in the dev VM on 2026-11-02, and the
-   helper's build matches the x86_64 sums on aarch64.
-2. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
+1. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
    `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
 ## Found (worth not re-discovering)

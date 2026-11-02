@@ -140,7 +140,7 @@ with tun2socks-style forwarders.
   that isn't running look the same to the socket (1006 within milliseconds): `navigator.permissions.query({ name:
   'loopback-network' })` tells them apart, and a refusal stays until the user changes the site's settings, so the message
   says where.
-- **The MTU:** 1500 for now. A larger one isn't possible as things stand: `web/offload.ts` drops a plain frame past
+- **The MTU:** 1500 by default (the user's, 2026-11-02: what every protocol expects), `--mtu` up to 65520. Larger once wasn't possible: `web/offload.ts` drops a plain frame past
   `MAX_FRAME`, so uploads stall (L0 saw 0.1 Mbit/s). With that raised, 65520 gave 1.4 Gbit/s up and 1 Gbit/s down on a sixth
   to a third of the CPU per Mbit (one boot each, unbatched). L2 raises it for frame ports and measures it with the worker and
   batching; the helper's TCP is terminated, so the guest's segments never reach the internet at that size, but its UDP does. Reconnecting after the
@@ -200,9 +200,9 @@ with tun2socks-style forwarders.
     helper on loopback, and the connection works, in an Incognito window too. A denial is kept for good: asking again
     never prompts again, until the user removes the block from the site's permissions (the icon in the address bar).
     Nothing the page can do about it; its message says where the setting is.
-  - **Left:** the helper's default MTU. MTU 65520 is measured with
-    the worker and the batching (bench/net/REPORT.md "The stalled uploads": 1.1 Gbit/s down, 1.5 up against 0.6 and 0.95
-    at 1500, one boot each) and the uploads that stalled at every MTU are fixed; the default stays the user's call.
+  - **The default MTU stays 1500** (the user's, 2026-11-02), for compatibility with every protocol: 65520 is measured
+    with the worker and the batching (bench/net/REPORT.md "The stalled uploads": 1.1 Gbit/s down, 1.5 up against 0.6
+    and 0.95 at 1500, one boot each) and stays a flag (`--mtu`) for whoever wants it. That closed L2.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
   install`, as `tests/net/tailcat.sh` pins tailcat): Debian's lease, a TCP transfer to a server on this machine, a
   wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these
