@@ -771,6 +771,74 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T13–T14: a synchronous call waited a poll turn — GSK's iconscroll 6.5 → 33 frames/s, past GL; the guest's execbuffers are Mesa's fences
+
+2026-11-02. The desktop guest (Arch Linux, GTK 4.24.1, Mesa 26.2.5, sway 1.12 on GLES through virgl), 4 vCPUs, through
+`bench/gpu/gtk4-load.ts` (each demo left 20 s, measured 10; `GSK_RENDERER=vulkan`, forced as in VK3 L7.3); the M4 (Chrome
+for Testing 153.0.8010.12, macOS 26.6.2) through `bench/gpu/sway-mac.sh`. JSON in `results/vk4/t13/`.
+
+**What a frame waited for.** vkr now counts the commands it runs (vk/README.md "Calls and rings": by where they came
+from, whether they ask for a reply, by type), and the render stats name the replied ones. iconscroll on Vulkan at HEAD
+ran at **6.5 frames/s** (GL 27.1; `gtk4-base.json`), and of its ~560 synchronous calls a second **~540 were
+`vkAllocateDescriptorSets`**, ~83 a frame (`gtk4-counts.json`). Mesa's Venus allocates sets asynchronously only until
+a pool made with `FREE_DESCRIPTOR_SET_BIT` has sets of another layout allocated and then one freed; from there on every
+allocation is a ring round trip (`vn_descriptor_set.c`, `VN_ASYNC_SET_ALLOC_NONE`), and GSK's pools get there. A round
+trip waits for the next poll: the pump's turns came every **1.33 ms** on the Mac, because Chromium stretches
+`Atomics.waitAsync`'s 0.25 ms timeout to ~1.5 ms there (`bench/vulkan/wake.ts`: 1.525 ms median on the M4, 0.165–0.47
+on Linux). 83 × ~1.3 ms is most of the 150 ms frame; gtk4-demo woke ~2,100 times a second in `vn_relax`.
+
+**The fix: the pump's turns timed by a ticker worker** (web/venus-ticker.ts): a worker sleeping in a blocking
+`Atomics.wait` and then notifying the word the pump `waitAsync`s on. On the M4 such a worker turns every 0.40 ms at
+0.25, 0.155 at 0.1 and **0.08 at 0.05**, and its notify arrives in ~25 µs (`wake-mac-*.json`); on Linux 0.5, 0.245 and
+0.165 (`wake-vm-*.json`), so there only the shorter period helps. The ticker runs only while the pump does.
+
+| iconscroll on the M4, one session each | frames/s | the pump's gap | gtk4-demo wakes a second |
+| --- | --- | --- | --- |
+| the pump (HEAD) | 6.5 | 1.33 ms | ~2,100 |
+| ticker at 0.25 ms | 16.8 | 0.37 | 631 |
+| ticker at 0.1 ms | 25.8 | 0.16 | 60 |
+| **ticker at 0.05 ms (the default)** | **31.4** | 0.09 | 83 |
+| GL, same sessions' arms | 27.1–31.8 | | |
+
+**A defect the runs found, fixed before the A/B:** of seven sessions with the ticker, one's iconscroll fell to 0.9
+frames/s (14 polls a second, the pump's gap 129 ms: `gtk4-gtk-1.json`, the screenshot `iconscroll-stalled-gtk-1.png`)
+and one's next gtk4-demo died at its start, Venus's watchdog presumably aborting a guest whose replies never came
+(`gtk4-repro-1.json`). The pump cleared the ticker's run word whenever a turn found nothing to run, even while a
+scheduled turn waited on the ticker; had the ticker just ticked for what it took as the last time, it then never ticked
+again, the waiting turn never came, and the pump never scheduled another. The turn now leaves the ticker running while
+a turn is pending, and the pump's wait also times out at its old period, so a ticker the OS starves is no slower than
+the pump alone. The test (tests/venus-driver.test.ts, the fences' test with the ticker) failed first.
+
+**The A/B after the fix** (three alternated rounds, fishbowl, frames and iconscroll in each session; `gtk4-ab-*.json`):
+
+| M4, GSK on Vulkan | the pump | the ticker |
+| --- | --- | --- |
+| iconscroll, frames/s | 6.5, 6.5, 6.6 | **33.5, 33.2, 33.7** |
+| frames, gtk4-demo's CPU a frame (ms; 60 frames/s) | 2.04, 2.08, 2.01 | **1.96, 1.91, 1.93** |
+| fishbowl, frames/s (it adapts its icons) | 59.5, 59.4, 58.5 | 59.3, 57.0, 58.5 |
+| the pump's own turns, ms a second (iconscroll) | ~7 | ~50 |
+
+- **GTK4's bar (G) is met on the M4**: iconscroll at 33 frames/s against GL's 27.8–31.8 in this session's GL arms
+  (`gtk4-gtk-1.json`, `gtk4-gtk-2.json`; G's own 37.6 was measured under VK0's older setup); frames at GL's CPU a frame
+  (GL 1.89–1.99 ms here, VK3 L7.3's Vulkan 2.02–2.07); fishbowl holds 60. No stall in the six sessions.
+- **The cost**: while Venus is busy the pump turns ~7,500 times a second at iconscroll, ~50 ms a second of the GPU worker
+  (5% of its thread; the old pump 5–10 ms a second; the ticker 12 in frames, 28 in fishbowl), plus the ticker's own wake-ups. It stops when the rings go idle (1 ms
+  without commands) and no submit is in flight. **VK0's scene** (`scene-*`, two alternated rounds, ms a frame, medians):
+  1 fish 0.946, 0.870 (pump) / 0.848, 0.847 (0.05) / 0.927, 0.876 (0.1); 1,000 fish 2.534, 2.599 / 2.586, 2.555 / 2.498,
+  2.508; the toolkit 0.948, 0.946 / 1.084, 0.916 / 0.997, 0.912; the guest's CPU a frame the same within the rounds:
+  no arm worse.
+
+**T14: the guest's execbuffers.** Per GTK4 frame (frames, 60 frames/s; the virtqueue's commands by name): 3 fenced
+queue submits, each **two** execbuffers (`vn_queue_submission_signal_syncs`: a fenced `vkWaitRingSeqnoMESA`, then a
+`vkSubmitVirtqueueSeqnoMESA` round trip), and one `vkNotifyRingMESA` (a ring gone idle); sway's virgl submits make the
+rest of the 9 SUBMIT_3D. In Mesa 26 every `VkFence` and sync-fd semaphore is a renderer sync (a DRM syncobj of the
+guest's) signalled through the virtqueue: there is no feedback path for fences any more, so the host can't serve them
+more cheaply; only the guest's Mesa could. The notify can go: `?gpu=vkidle=<ms>` keeps rings active longer (at 20 ms
+fishbowl's notifies 60 → 1 a second, frames' 60 → 6), but gtk4-demo's CPU a frame didn't move (`gtk4-gtk-idle4.json`,
+`gtk4-gtk-idle20.json`, one session each: frames 1.96, 1.91 ms) while the pump ran ~6× as often in frames (13,800 turns a second against 2,260: it never
+stops between vsync-paced frames): not the default. What VK1's gate saw (GTK4's frames +11% on Venus) is gone with the
+ticker: the guest's CPU a frame in frames is GL's.
+
 ## VK4 T12: the smaller rendering gaps — layered passes, feedback loops, indirect fans, multisampled arrays, packed 16-bit formats
 
 **2026-10-31.** JSON in `results/vk4/t12/`: `base` a sample of the task's causes before (2,378 cases not in the list), `wide` them after, `ms` the

@@ -22,6 +22,8 @@ export type VenusStats = {
   /** The poller's (VK3 L2): ms between its polls while it ran (sum, longest) and how many; fences' ms from sent to
    * retired (sum, longest). */
   gaps: number; gapMs: number; gapMaxMs: number; fenceMs: number; fenceMaxMs: number;
+  /** The pump's turns' own ms (polling and nudging: what its pace costs the GPU worker; VK4 T13). */
+  turnMs: number;
 };
 
 /**
@@ -33,9 +35,11 @@ export type VenusStats = {
  * memory), so no timer is nested and the worker's own timers keep their turns (a loop of messages alone starved them
  * in VK2). A submit, a notify and a completion poll at once besides. While a submit is in flight each turn also nudges WebGPU (web/venus-gpu.ts `nudge`).
  * Turning without any delay after work (VK3 L2's first try) polled ~100,000 times a second for nothing: the scene's
- * frame was the same.
+ * frame was the same. `ticker` (the default where there are workers, VK4 T13; `?gpu=vkpoll=pump` the pump alone) is
+ * the pump with its turns timed by a worker of its own (web/venus-ticker.ts): the Mac stretches `waitAsync`'s 0.25 ms
+ * timeout to ~1.5 ms, and each synchronous Venus call (GSK's ~80 `vkAllocateDescriptorSets` a frame) waited a turn.
  */
-export type VenusPoll = 'timeout' | 'pump';
+export type VenusPoll = 'timeout' | 'pump' | 'ticker';
 /**
  * A fence's way back, over a span (the render stats' `venus`, a second): sums and counts, so spans add up. Polls and the
  * ms between them while the pump ran (`gap*`); the GPU's submits, the ms until WebGPU said done (`done*`) and then until
@@ -45,7 +49,12 @@ export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs:
   /** A submit's parts (VK3 L2b, web/venus-gpu.ts `VenusGpuStats`): summed over the second's submits. */
   encodeMs: number; submitCallMs: number; uploads: number; uploadBytes: number; readbacks: number; passes: number; draws: number; gpuTimed: number; gpuMs: number; workDone: number; workDoneMs: number;
   /** Bind groups made (VK3 L6b: kept by their layouts' content since). */
-  bindGroups: number };
+  bindGroups: number;
+  /** vkr's (vk/README.md "Calls and rings"): the commands it ran from the rings, the virtqueue and nested streams; those
+   * that asked for a reply (the guest waits for each); rings gone idle and woken by a notify. */
+  ringCmds: number; queueCmds: number; nestedCmds: number; replies: number; idles: number; notifies: number;
+  /** The pump's turns' own ms (`VenusStats.turnMs`), and the ticker's ticks (web/venus-ticker.ts). */
+  turnMs: number; ticks: number };
 
 /**
  * How the renderer's pipelines are made (`?gpu=vkpipelines=sync`: at once, as before VK3 L3, for A/B) and where its
@@ -57,6 +66,11 @@ export type VenusOptions = { syncPipelines?: boolean;
   /** `?gpu=vknudge=<ms>`: the pump's nudges at most this often (0: none; default `NUDGE_MS`); `?gpu=vkgputime`: each
    * submit's passes timed on the GPU (VK3 L2b, A/B and diagnosis). */
   nudgeMs?: number; gpuTime?: boolean;
+  /** `?gpu=vkidle=<ms>`: a ring stays active (polled, so the guest's next command needs no notify) at least this long
+   * after its last command, whatever the guest's idle timeout (Mesa's 1 ms; vk/README.md "Calls and rings"). */
+  ringIdleMs?: number;
+  /** `?gpu=vktick=<ms>`: the ticker's sleep between turns (default `TICK_MS`; A/B). */
+  tickMs?: number;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
   hold?: readonly string[]; heldFormats?: boolean;
@@ -74,8 +88,17 @@ const YCBCR = 1 << 30;
 /** venus_init's flags for `VenusOptions.l9`'s driver suspects (vk/driver/wg_private.h `WG_FEATURE_L9_*`). */
 export const L9_FLAGS: Partial<Record<L9Suspect, number>> = { bindgroups: 1 << 29, pad: 1 << 28 };
 
+/** vkr's command types counted (vk/glue.c `venus_cmd_counts`: the patch's `VKR_WASI_CMD_TYPES`). */
+const CMD_TYPES = 384;
+
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
+/**
+ * The ticker's sleep between turns (ms): ~0.08 ms a turn on the Mac, ~0.17 on Linux (bench/vulkan/wake.ts). GSK's
+ * iconscroll on the M4 ran at 16.8 frames/s at 0.25, 25.8 at 0.1 and 31.4 at 0.05 (GL's 27); VK0's scene no worse
+ * (bench/vulkan/REPORT.md "VK4 T13–T14").
+ */
+const TICK_MS = 0.05;
 
 type Exports = {
   _initialize(): void;
@@ -92,6 +115,10 @@ type Exports = {
   venus_resource_map(ctx: number, res: number, where: number): number;
   venus_resource_unmap(ctx: number, res: number): number;
   venus_poll(): number;
+  venus_cmd_counts(): number;
+  venus_ring_events(): number;
+  venus_cmd_name(type: number): number;
+  venus_ring_idle(us: number): void;
   venus_resource_data(ctx: number, res: number): number;
   venus_resource_texture(ctx: number, res: number): number;
   venus_build_id(): number;
@@ -131,7 +158,7 @@ function wasi(memory: WebAssembly.Memory) {
 }
 
 export class VenusRenderer {
-  readonly stats: VenusStats = { submits: 0, completed: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0, gaps: 0, gapMs: 0, gapMaxMs: 0, fenceMs: 0, fenceMaxMs: 0 };
+  readonly stats: VenusStats = { submits: 0, completed: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0, gaps: 0, gapMs: 0, gapMaxMs: 0, fenceMs: 0, fenceMaxMs: 0, turnMs: 0 };
   /** The VENUS capset vkr writes (the device's `venusCaps`). */
   readonly capset: Uint8Array;
   private readonly ex: Exports;
@@ -193,7 +220,7 @@ export class VenusRenderer {
    * `VENUS_ARENA` bytes) is unused and the window after it; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
    * what `caps` has (the device's features and limits; a test's stand-in, or WebGPU's defaults).
    */
-  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = 'pump', options: VenusOptions = {}) {
+  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = typeof Worker !== 'undefined' && typeof SharedArrayBuffer !== 'undefined' ? 'ticker' : 'pump', options: VenusOptions = {}) {
     let self: VenusRenderer | undefined;
     const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines, pipelineDelayMs: options.pipelineDelayMs, gpuTime: options.gpuTime });
     const imports = {
@@ -214,6 +241,8 @@ export class VenusRenderer {
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
+    self.tickMs = options.tickMs ?? TICK_MS;
+    if (options.ringIdleMs !== undefined) self.ex.venus_ring_idle(Math.round(options.ringIdleMs * 1000));
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.
     if (options.cache) gpu.cache = await options.cache(self.buildId);
@@ -403,7 +432,8 @@ export class VenusRenderer {
   times(): VenusTimes {
     const r = this.stats, g = this.gpu.stats;
     const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs,
-      encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs, bindGroups: g.bindGroups };
+      encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs, bindGroups: g.bindGroups,
+      ...this.cmdTotals(), turnMs: r.turnMs, ticks: this.ticks ? Atomics.load(this.ticks, 0) : 0 };
     const last = this.lastTimes;
     this.lastTimes = now;
     r.gapMaxMs = g.doneMaxMs = r.fenceMaxMs = 0;
@@ -411,6 +441,54 @@ export class VenusRenderer {
     const d = { ...now };
     for (const k of Object.keys(d) as (keyof VenusTimes)[]) if (!k.endsWith('MaxMs')) d[k] -= last[k];
     return d;
+  }
+
+  /** vkr's counts now (`venus_cmd_counts`: [where][reply][type], u32s that only grow). */
+  private counts() {
+    const n = CMD_TYPES * 6;
+    return { cmds: new Uint32Array(this.memory.buffer, this.ex.venus_cmd_counts() >>> 0, n).slice(), events: new Uint32Array(this.memory.buffer, this.ex.venus_ring_events() >>> 0, 2).slice() };
+  }
+
+  private cmdTotals() {
+    const { cmds, events } = this.counts();
+    const sum = (from: number, to: number) => cmds.subarray(from * CMD_TYPES, to * CMD_TYPES).reduce((n, x) => n + x, 0);
+    // [where][reply][type]: where 0 the rings, 1 the virtqueue, 2 nested streams; reply 1 at odd rows.
+    return { ringCmds: sum(0, 2), queueCmds: sum(2, 4), nestedCmds: sum(4, 6), replies: sum(1, 2) + sum(3, 4) + sum(5, 6), idles: events[0], notifies: events[1] };
+  }
+
+  private lastCalls: Uint32Array | undefined;
+  private readonly names = new Map<number, string>();
+  /**
+   * The commands that asked for a reply since the last call, by name (the guest waits for each: a synchronous Venus
+   * call; vk/README.md "Calls and rings"), and every command that came through the virtqueue rather than a ring, as
+   * `<name>@queue` (each submit an execbuffer of the guest's: notifies, fenced submits' waits; `+reply` if it asked).
+   */
+  calls(): Record<string, number> {
+    const { cmds } = this.counts();
+    const last = this.lastCalls;
+    this.lastCalls = cmds;
+    const out: Record<string, number> = {};
+    for (let where = 0; where < 3; where++) {
+      for (let reply = where === 1 ? 0 : 1; reply < 2; reply++) {
+        for (let t = 0; t < CMD_TYPES; t++) {
+          const i = (where * 2 + reply) * CMD_TYPES + t, d = cmds[i] - (last?.[i] ?? 0);
+          if (!d) continue;
+          const k = `${this.cmdName(t)}${where === 1 ? `@queue${reply ? '+reply' : ''}` : ''}`;
+          out[k] = (out[k] ?? 0) + d;
+        }
+      }
+    }
+    return out;
+  }
+
+  private cmdName(t: number) {
+    let s = this.names.get(t);
+    if (s === undefined) {
+      const p = this.ex.venus_cmd_name(t) >>> 0, bytes = new Uint8Array(this.memory.buffer, p, 96);
+      s = new TextDecoder().decode(bytes.slice(0, Math.max(0, bytes.indexOf(0)))) || `#${t}`;
+      this.names.set(t, s);
+    }
+    return s;
   }
 
   /** Whether `res` is one of Venus's blobs. */
@@ -459,11 +537,21 @@ export class VenusRenderer {
     const active = this.ex.venus_poll();
     if (this.nudgeMs > 0 && this.gpu.inFlight && now - this.lastNudge >= this.nudgeMs && this.gpu.nudge()) this.lastNudge = now;
     this.running = !!active || this.gpu.inFlight > 0;
+    this.stats.turnMs += performance.now() - now;
+    // The ticker stops while nothing runs (a notify or a submit starts it again: `schedule`), but never under a turn
+    // that waits on it: it may have ticked for the last time just before that turn began waiting, and stopped it would
+    // never tick again, so the turn never came and the pump never scheduled another (VK4 T13: iconscroll at 0.9
+    // frames/s, a new gtk4-demo dead of Venus's watchdog).
+    if (!this.running && !this.queued && this.ticks) Atomics.store(this.ticks, 1, 0);
     if (this.running && !this.queued) {
       this.queued = true;
       this.schedule();
     }
   }
+
+  /** The ticker's words (web/venus-ticker.ts): [0] its ticks, [1] set while it runs. */
+  private ticks: Int32Array | undefined;
+  private tickMs = TICK_MS;
 
   private schedule() {
     if (!this.wait) {
@@ -471,6 +559,24 @@ export class VenusRenderer {
         this.queued = false;
         this.turn();
       };
+      if (this.poll === 'ticker') {
+        const sab = new SharedArrayBuffer(8), ticks = new Int32Array(sab);
+        this.ticks = ticks;
+        new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' }).postMessage({ sab, period: this.tickMs });
+        const waitAsync = (Atomics as unknown as { waitAsync(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
+        this.wait = () => {
+          if (!Atomics.load(ticks, 1)) {
+            Atomics.store(ticks, 1, 1);
+            Atomics.notify(ticks, 1);
+          }
+          // With the pump's own timeout besides: a ticker the OS starves is no slower than the pump alone.
+          const r = waitAsync(ticks, 0, Atomics.load(ticks, 0), PERIOD_MS);
+          // A tick between the load and the wait: the turn comes at once, but never inside the caller (the module).
+          void (r.async ? (r.value as Promise<string>) : Promise.resolve()).then(next);
+        };
+        this.wait();
+        return;
+      }
       const waitAsync = (Atomics as unknown as { waitAsync?(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
       if (waitAsync && typeof SharedArrayBuffer !== 'undefined') {
         // A word nobody notifies: the wait ends at its timeout.

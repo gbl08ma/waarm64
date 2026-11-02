@@ -56,8 +56,8 @@ for (const renderer of RENDERERS) {
     // Which renderer GTK took, and why not Vulkan (GSK_DEBUG=renderer).
     const took = await runLines(`grep -E "Using renderer|Not using" /tmp/gtk-${tag}.log | sort | uniq -c | head -6`);
     const stderr = await runLines(`grep -v -E "session bus|Vulkan|vkEnumerate|highlight|^\\[" /tmp/gtk-${tag}.log | sort | uniq -c | sort -rn | head -12`);
-    // A demo that died: its last Wayland requests (GTK_ENV=WAYLAND_DEBUG=1) and sway's log.
-    const died = alive ? {} : { last: await runLines(`grep -E "^\\[" /tmp/gtk-${tag}.log | tail -12 | cut -c1-300`), sway: await runLines('tail -8 /tmp/sway.log | cut -c1-300') };
+    // A demo that died: its last Wayland requests (GTK_ENV=WAYLAND_DEBUG=1), sway's log and its own last lines, unfiltered.
+    const died = alive ? {} : { last: await runLines(`grep -E "^\\[" /tmp/gtk-${tag}.log | tail -12 | cut -c1-300`), sway: await runLines('tail -8 /tmp/sway.log | cut -c1-300'), tail: await runLines(`grep -v -E "^\\[" /tmp/gtk-${tag}.log | tail -15 | cut -c1-300`) };
     results[tag] = { alive, flushes: r.display.flushes, ...r, took, stderr, ...died, ...(profile ? { profile } : {}) };
     log(tag, alive ? 'running' : 'EXITED', 'frames/s', r.display.flushes.toFixed(1), 'renderer', JSON.stringify(r.display.renderer ?? {}), took.join(' | '), stderr.join(' | '));
     save();

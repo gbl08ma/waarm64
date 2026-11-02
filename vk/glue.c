@@ -47,6 +47,10 @@ int venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory, in
 void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
 uint32_t venus_resource_texture(uint32_t ctx_id, uint32_t res_id);
 int venus_poll(void);
+const uint32_t *venus_cmd_counts(void);
+const uint32_t *venus_ring_events(void);
+const char *venus_cmd_name(uint32_t type);
+void venus_ring_idle(uint32_t us);
 void *venus_alloc(uint32_t size);
 void venus_free(void *p);
 
@@ -208,6 +212,39 @@ EXPORT int
 venus_poll(void)
 {
    return vkr_renderer_poll();
+}
+
+/* vkr's counts (vk/README.md "Calls and rings"; the patch's vkr_cs.h): the commands dispatched, [where: ring, virtqueue,
+ * nested][asks for a reply][type], and the rings' events [went idle, woken by a notify]; never reset (the host takes
+ * differences). */
+extern uint32_t vkr_wasi_cmds[3][2][384];
+extern uint32_t vkr_wasi_ring_events[2];
+extern uint64_t vkr_wasi_idle_ns;
+const char *vkr_wasi_cmd_name(uint32_t type);
+
+EXPORT const uint32_t *
+venus_cmd_counts(void)
+{
+   return &vkr_wasi_cmds[0][0][0];
+}
+
+EXPORT const uint32_t *
+venus_ring_events(void)
+{
+   return vkr_wasi_ring_events;
+}
+
+EXPORT const char *
+venus_cmd_name(uint32_t type)
+{
+   return vkr_wasi_cmd_name(type);
+}
+
+/* A ring stays active this long at least after its last command, whatever the guest's idle timeout (Mesa's 1 ms). */
+EXPORT void
+venus_ring_idle(uint32_t us)
+{
+   vkr_wasi_idle_ns = (uint64_t)us * 1000;
 }
 
 /* The module's heap, for the caller's copies of submits. */

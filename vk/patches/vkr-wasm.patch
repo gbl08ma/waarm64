@@ -1,8 +1,18 @@
 diff --git a/src/venus/vkr_context.c b/src/venus/vkr_context.c
-index cc82c42d..df152c66 100644
+index cc82c42d..cd866543 100644
 --- a/src/venus/vkr_context.c
 +++ b/src/venus/vkr_context.c
-@@ -189,6 +189,22 @@ static inline void
+@@ -172,6 +172,9 @@ vkr_context_submit_cmd(struct vkr_context *ctx, const void *buffer, size_t size)
+    vkr_cs_decoder_set_buffer_stream(&ctx->decoder, buffer, size);
+ 
+    while (vkr_cs_decoder_has_command(&ctx->decoder)) {
++#ifdef __wasi__
++      vkr_wasi_count_cmd(&ctx->decoder, 1);
++#endif
+       vn_dispatch_command(&ctx->dispatch);
+       if (vkr_context_get_fatal(ctx)) {
+          vkr_log("submit_cmd: vn_dispatch_command failed");
+@@ -189,6 +192,22 @@ static inline void
  vkr_context_free_resource(struct hash_entry *entry)
  {
     struct vkr_resource *res = entry->data;
@@ -25,7 +35,7 @@ index cc82c42d..df152c66 100644
     if (res->fd_type == VIRGL_RESOURCE_FD_SHM)
        munmap(res->u.data, res->size);
     else if (res->u.fd >= 0)
-@@ -237,6 +253,10 @@ vkr_context_import_resource_internal(struct vkr_context *ctx,
+@@ -237,6 +256,10 @@ vkr_context_import_resource_internal(struct vkr_context *ctx,
     res->res_id = res_id;
     res->fd_type = fd_type;
     res->size = blob_size;
@@ -36,7 +46,7 @@ index cc82c42d..df152c66 100644
  
     /* fd and mmap_ptr cannot be valid at the same time, but allowed to be -1 and NULL */
     assert(fd < 0 || !mmap_ptr);
-@@ -288,6 +308,26 @@ vkr_context_create_resource_from_shm(struct vkr_context *ctx,
+@@ -288,6 +311,26 @@ vkr_context_create_resource_from_shm(struct vkr_context *ctx,
      */
     const size_t page_size = getpagesize();
     const uint64_t alloc_size = (blob_size + page_size - 1) & ~(page_size - 1);
@@ -63,7 +73,7 @@ index cc82c42d..df152c66 100644
  
     int fd = os_create_anonymous_file(alloc_size, "vkr-shmem");
     if (fd < 0)
-@@ -332,6 +372,22 @@ vkr_context_create_resource_from_device_memory(struct vkr_context *ctx,
+@@ -332,6 +375,22 @@ vkr_context_create_resource_from_device_memory(struct vkr_context *ctx,
     struct virgl_context_blob blob;
     if (!vkr_device_memory_export_blob(mem, blob_size, blob_flags, &blob))
        return false;
@@ -86,7 +96,7 @@ index cc82c42d..df152c66 100644
  
     /* If memory might get exported, store a dup'ed fd in vkr_resource for:
      * - vkAllocateMemory for dma_buf import
-@@ -464,6 +520,18 @@ vkr_context_wait_ring_seqno(struct vkr_context *ctx,
+@@ -464,6 +523,18 @@ vkr_context_wait_ring_seqno(struct vkr_context *ctx,
  
     bool ok = true;
  
@@ -105,7 +115,7 @@ index cc82c42d..df152c66 100644
     mtx_lock(&ctx->wait_ring.mutex);
     ctx->wait_ring.id = ring->id;
     ctx->wait_ring.seqno = ring_seqno;
-@@ -584,6 +652,11 @@ vkr_context_ring_monitor_init(struct vkr_context *ctx, uint32_t report_period_us
+@@ -584,6 +655,11 @@ vkr_context_ring_monitor_init(struct vkr_context *ctx, uint32_t report_period_us
  
     ctx->ring_monitor.report_period_us = report_period_us;
     ctx->ring_monitor.started = true;
@@ -117,7 +127,7 @@ index cc82c42d..df152c66 100644
     ret = thrd_create(&ctx->ring_monitor.thread, vkr_context_ring_monitor_thread, ctx);
     if (ret != thrd_success)
        goto err_monitor_thrd_create;
-@@ -607,7 +680,9 @@ vkr_context_ring_monitor_fini(struct vkr_context *ctx)
+@@ -607,7 +683,9 @@ vkr_context_ring_monitor_fini(struct vkr_context *ctx)
     cnd_signal(&ctx->ring_monitor.cond);
     mtx_unlock(&ctx->ring_monitor.mutex);
  
@@ -127,7 +137,7 @@ index cc82c42d..df152c66 100644
  
     cnd_destroy(&ctx->ring_monitor.cond);
     mtx_destroy(&ctx->ring_monitor.mutex);
-@@ -701,7 +776,10 @@ vkr_context_create(uint32_t ctx_id,
+@@ -701,7 +779,10 @@ vkr_context_create(uint32_t ctx_id,
     if (VKR_DEBUG(VALIDATE))
        ctx->validate_level = VKR_CONTEXT_VALIDATE_FULL;
  
@@ -156,6 +166,39 @@ index 3867f138..cf2f8b50 100644
  };
  
  enum vkr_context_validate_level {
+diff --git a/src/venus/vkr_cs.h b/src/venus/vkr_cs.h
+index 5e7d4b1d..d05553c4 100644
+--- a/src/venus/vkr_cs.h
++++ b/src/venus/vkr_cs.h
+@@ -442,4 +442,28 @@ vkr_cs_handle_store_id(void **handle, vkr_object_id id, VkObjectType type)
+    *p = id;
+ }
+ 
++#ifdef __wasi__
++/* webpc (vk/README.md "Calls and rings"): the commands dispatched, by where they came from (0 a ring, 1 the virtqueue,
++ * 2 a nested stream), whether they ask for a reply (the guest waits for those) and their type; vk/glue.c
++ * `venus_counts` hands them to the render stats. */
++#define VKR_WASI_CMD_TYPES 384
++extern uint32_t vkr_wasi_cmds[3][2][VKR_WASI_CMD_TYPES];
++/* The command's name (vkr_ring.c, which has the protocol's names). */
++const char *
++vkr_wasi_cmd_name(uint32_t type);
++
++static inline void
++vkr_wasi_count_cmd(const struct vkr_cs_decoder *dec, int where)
++{
++   if (dec->end - dec->cur < 8)
++      return;
++   uint32_t type, flags;
++   __builtin_memcpy(&type, dec->cur, 4);
++   __builtin_memcpy(&flags, dec->cur + 4, 4);
++   /* bit 0: VK_COMMAND_GENERATE_REPLY_BIT_EXT (defined after this header) */
++   vkr_wasi_cmds[where][flags & 1]
++                [type < VKR_WASI_CMD_TYPES ? type : VKR_WASI_CMD_TYPES - 1]++;
++}
++#endif
++
+ #endif /* VKR_CS_H */
 diff --git a/src/venus/vkr_device.c b/src/venus/vkr_device.c
 index 603f45b8..fef03867 100644
 --- a/src/venus/vkr_device.c
@@ -646,10 +689,20 @@ index be3ae046..ff7b79d7 100644
 +
  #endif /* VKR_RENDERER_H */
 diff --git a/src/venus/vkr_ring.c b/src/venus/vkr_ring.c
-index 0d4899ef..5ad1e5da 100644
+index 0d4899ef..ef252d2b 100644
 --- a/src/venus/vkr_ring.c
 +++ b/src/venus/vkr_ring.c
-@@ -239,6 +239,15 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
+@@ -227,6 +227,9 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
+    vkr_cs_decoder_set_buffer_stream(dec, buffer, size);
+ 
+    while (vkr_cs_decoder_has_command(dec)) {
++#ifdef __wasi__
++      vkr_wasi_count_cmd(dec, 0);
++#endif
+       vn_dispatch_command(&ring->dispatch);
+       if (vkr_cs_decoder_get_fatal(dec)) {
+          vkr_log("ring_submit_cmd: vn_dispatch_command failed");
+@@ -239,6 +242,15 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
        const uint32_t cur_ring_head = ring_head + (dec->cur - buffer);
        vkr_ring_store_head(ring, cur_ring_head);
        vkr_context_on_ring_seqno_update(ring->dispatch.data, ring->id, cur_ring_head);
@@ -665,11 +718,21 @@ index 0d4899ef..5ad1e5da 100644
     }
  
     vkr_cs_decoder_reset(dec);
-@@ -348,6 +357,64 @@ out:
+@@ -348,6 +360,77 @@ out:
     return ret;
  }
  
 +#ifdef __wasi__
++uint32_t vkr_wasi_cmds[3][2][VKR_WASI_CMD_TYPES];
++uint32_t vkr_wasi_ring_events[2];
++uint64_t vkr_wasi_idle_ns;
++
++const char *
++vkr_wasi_cmd_name(uint32_t type)
++{
++   return vn_dispatch_command_name(type);
++}
++
 +/* One pass of vkr_ring_thread's loop (webpc: the GPU worker polls instead of a thread): the commands the guest added
 + * since, or once idle_timeout passed without any, the idle status (the guest then notifies). Returns whether the ring
 + * is still active, so its poller stays awake across frames (VK0 B: a wake-up saved a submit). */
@@ -717,10 +780,13 @@ index 0d4899ef..5ad1e5da 100644
 +      ring->last_submit = now;
 +      return true;
 +   }
-+   if (now >= ring->last_submit + ring->idle_timeout) {
++   const uint64_t idle_timeout = ring->idle_timeout > vkr_wasi_idle_ns ? ring->idle_timeout : vkr_wasi_idle_ns;
++   if (now >= ring->last_submit + idle_timeout) {
 +      vkr_ring_set_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
-+      if (ring->buffer.cur == vkr_ring_load_tail(ring))
++      if (ring->buffer.cur == vkr_ring_load_tail(ring)) {
++         vkr_wasi_ring_events[0]++;
 +         return false;
++      }
 +      vkr_ring_unset_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
 +   }
 +   return true;
@@ -730,7 +796,7 @@ index 0d4899ef..5ad1e5da 100644
  void
  vkr_ring_start(struct vkr_ring *ring)
  {
-@@ -355,6 +422,11 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -355,6 +438,11 @@ vkr_ring_start(struct vkr_ring *ring)
  
     assert(!ring->started);
     ring->started = true;
@@ -742,7 +808,7 @@ index 0d4899ef..5ad1e5da 100644
     ret = thrd_create(&ring->thread, vkr_ring_thread, ring);
     if (ret != thrd_success)
        ring->started = false;
-@@ -363,6 +435,10 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -363,6 +451,10 @@ vkr_ring_start(struct vkr_ring *ring)
  bool
  vkr_ring_stop(struct vkr_ring *ring)
  {
@@ -753,18 +819,19 @@ index 0d4899ef..5ad1e5da 100644
     mtx_lock(&ring->mutex);
     if (thrd_equal(ring->thread, thrd_current())) {
        mtx_unlock(&ring->mutex);
-@@ -381,6 +457,10 @@ vkr_ring_stop(struct vkr_ring *ring)
+@@ -381,6 +473,11 @@ vkr_ring_stop(struct vkr_ring *ring)
  void
  vkr_ring_notify(struct vkr_ring *ring)
  {
 +#ifdef __wasi__
 +   ring->pending_notify = true;
++   vkr_wasi_ring_events[1]++;
 +   return;
 +#endif
     mtx_lock(&ring->mutex);
     ring->pending_notify = true;
     cnd_signal(&ring->cond);
-@@ -441,6 +521,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
+@@ -441,6 +538,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
  
     bool ok = true;
  
@@ -812,3 +879,17 @@ index 89d8159e..e47fab60 100644
  bool
  vkr_ring_stop(struct vkr_ring *ring);
  
+diff --git a/src/venus/vkr_transport.c b/src/venus/vkr_transport.c
+index a8daba46..5662aba1 100644
+--- a/src/venus/vkr_transport.c
++++ b/src/venus/vkr_transport.c
+@@ -80,6 +80,9 @@ vkr_dispatch_vkExecuteCommandStreamsMESA(
+       }
+ 
+       while (vkr_cs_decoder_has_command(dec)) {
++#ifdef __wasi__
++         vkr_wasi_count_cmd(dec, 2);
++#endif
+          vn_dispatch_command(dispatch);
+          if (vkr_context_get_fatal(ctx))
+             break;

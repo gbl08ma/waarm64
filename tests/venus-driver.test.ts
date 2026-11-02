@@ -104,26 +104,34 @@ test('an image bound to imported dma-buf memory has its resource\'s bytes, and a
   assert.deepEqual(second.bytes, Array.from({ length: 16 }, (_, i) => 200 + i));
 });
 
-test('a submit\'s fence comes back without waiting for the browser\'s slow look at the GPU (the pump nudges it)', { skip, timeout: 120_000 }, async (t) => {
+test('a submit\'s fence comes back without waiting for the browser\'s slow look at the GPU (the pump nudges it), with the pump\'s turns its own or a ticker\'s', { skip, timeout: 120_000 }, async (t) => {
   // After the first test, which compiled the shaders.
   const page = await browser.newPage();
   page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
   await page.goto(`${base}/tests/browser/venus-driver.html`);
   await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-  type R = { median: number; nudges: number; empty: number; adapter: string; skipped?: string; error?: string };
+  type R = { median: number; nudges: number; empty: number; idlePolls: number; stuck: boolean; stoppedUnderTurn: boolean; adapter: string; skipped?: string; error?: string };
   const run = (poll: string) => page.evaluate((poll) => (window as unknown as { venus: { runFences(s: object, poll: string, n: number): Promise<R> } }).venus.runFences({
     vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv', costs: '/target/vk/test/costs.frag.spv' }, poll, 20), poll);
-  const old = await run('timeout'), pump = await run('pump');
+  const old = await run('timeout'), pump = await run('pump'), ticker = await run('ticker');
   await page.close();
   if (old.skipped) return t.skip(`SKIPPED: ${old.skipped}`);
-  for (const r of [old, pump]) assert.equal(r.error, undefined, String(r.error));
+  for (const r of [old, pump, ticker]) assert.equal(r.error, undefined, String(r.error));
   // The times are logged, not asserted (they follow the machine's load: under CI's both were 5-6 ms); on a quiet
   // SwiftShader the old way's fence is ~3 ms and the pump's ~1 ms (bench/vulkan/costs.ts, REPORT.md "VK3 L2").
-  console.log(JSON.stringify({ adapter: old.adapter, timeout: old.median, pump: pump.median, nudges: pump.nudges, empty: pump.empty }));
+  console.log(JSON.stringify({ adapter: old.adapter, timeout: old.median, pump: pump.median, ticker: ticker.median, nudges: pump.nudges, empty: pump.empty, tickerNudges: ticker.nudges }));
   assert.equal(old.empty, 0, 'the old poller sends no empty submits');
   // While a submit is in flight, at most one a ms (a fence back within a turn, as on Metal, may need none).
   assert.ok(pump.empty > 0, 'the pump sent no empty submit');
   assert.equal(pump.empty, pump.nudges, 'every nudge reached the queue');
+  // The ticker (web/venus-ticker.ts, VK4 T13) times the same pump's turns: it nudges too, and stops when idle.
+  assert.ok(ticker.empty > 0, 'the ticker\'s pump sent no empty submit');
+  assert.equal(ticker.empty, ticker.nudges, 'every nudge of the ticker\'s reached the queue');
+  for (const [name, r] of [['pump', pump], ['ticker', ticker]] as const) {
+    assert.equal(r.idlePolls, 0, `${name}: polled while idle`);
+    assert.equal(r.stuck, false, `${name}: a scheduled turn never came`);
+    assert.equal(r.stoppedUnderTurn, false, `${name}: the ticker stopped while a turn waited on it`);
+  }
 });
 
 // VK3 L4c-A (the static review's finding 1 and its odd-sized memories): two devices on one window, as two Venus contexts.

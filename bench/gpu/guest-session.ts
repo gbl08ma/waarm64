@@ -257,6 +257,15 @@ export async function openSession(o: SessionOptions) {
     const venus = vt.length ? { polls: vsum('polls') / vt.length, gapMs: vsum('gapMs') / Math.max(1, vsum('gaps')), gapMaxMs: vmax('gapMaxMs'), submits: vsum('submits') / vt.length,
       doneMs: vsum('doneMs') / Math.max(1, vsum('done')), doneMaxMs: vmax('doneMaxMs'), orderMs: vsum('orderMs') / Math.max(1, vsum('done')), nudges: vsum('nudges') / vt.length,
       fences: vsum('fences') / vt.length, fenceMs: vsum('fenceMs') / Math.max(1, vsum('fences')), fenceMaxMs: vmax('fenceMaxMs'),
+      // vkr's commands a second (VK4 T13, vk/README.md "Calls and rings"): from the rings, the virtqueue and nested
+      // streams, those asking for a reply, rings gone idle and notifies; and the replied ones by name, most first.
+      turnMs: vsum('turnMs') / vt.length, ticks: vsum('ticks') / vt.length, ticksBySecond: vt.map((x) => x.ticks ?? 0), pollsBySecond: vt.map((x) => x.polls ?? 0),
+      cmds: { ring: vsum('ringCmds') / vt.length, queue: vsum('queueCmds') / vt.length, nested: vsum('nestedCmds') / vt.length, replies: vsum('replies') / vt.length, idles: vsum('idles') / vt.length, notifies: vsum('notifies') / vt.length },
+      calls: ((): Record<string, number> => {
+        const c: Record<string, number> = {};
+        for (const x of r) for (const [k, n] of Object.entries((x as unknown as { venusCalls?: Record<string, number> }).venusCalls ?? {})) c[k] = (c[k] ?? 0) + n;
+        return Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 24).map(([k, n]) => [k, +(n / vt.length).toFixed(1)]));
+      })(),
       // Each second's mean ms to done (a pipeline's first compile lifts its second's alone).
       doneMsBySecond: vt.map((x) => +(x.doneMs / Math.max(1, x.done)).toFixed(3)),
       // A submit's parts (VK3 L2b), a submit on average: the replay into WebGPU (ms), queue.submit's call (ms), its

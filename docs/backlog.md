@@ -560,9 +560,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: VK4's tier 4 (VK4-KICKOFF.md).
-- **Venus's submit path costs the guest** (VK1's gate, REPORT.md "VK1: the gate"): GTK4's frames +11% on Venus (9
-  execbuffers a frame against virgl's 4, ~0.17 ms of the emulated kernel each). Ideas, unmeasured: a cheaper virtqueue
-  notify (the MMIO write's exit), profiling the guest kernel's execbuffer and syncobj paths under our emulator.
 - **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
   is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
   encoded by hand (or a recorded stream replayed through `venus_submit`).
@@ -607,18 +604,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   multi-planar image on external memory** (VK3 L7b, the review of L6b-L7.3's finding 4: refused by the image-format
   query, since its planes' textures were neither imported from an imported memory's resource nor registered as
   shared): an import would take each plane's region of the resource (`gpu_texture_import` at the plane's offset).
-- **GSK's Vulkan renderer on Venus misses GTK4's bar** (VK3 L7.3, bench/vulkan/REPORT.md "VK3 L7.3"; GTK takes GL by
-  default, so only `GSK_RENDERER=vulkan` meets it). Its frames are right since VK3 L4c-D (VK2 L7's black was a partial
-  render area's CLEAR clearing to zeros; reproduced by planting it back). On the M4: fishbowl holds more icons for less
-  of gtk4-demo's CPU than GL, frames costs about the same (2.0–2.1 against 1.8–1.9 ms a frame), but **iconscroll runs
-  at 9 frames/s against GL's 28–29** with the guest 11% busy: gtk4-demo waits, waking ~1,800 times a second (Venus's
-  guest yields in `vn_relax` while it waits on the ring), its submits 13 passes and 140 draws each, done in ~5 ms on
-  Metal, a fence back in 7 ms (max 140). And fishbowl fell once in four runs into a steady 1 icon at 20 frames/s (6.6
-  passes a submit at one icon, ~2,000 wake-ups a second; VK2 L7's "one icon at 6 frames/s"), the same waiting. Next:
-  which Venus calls gtk4-demo waits on each frame (a ring trace, or `VN_DEBUG` in the guest), and whether they are
-  synchronous calls (each a ring round trip at the pump's ~1 ms) or fence waits. Only once GSK on Vulkan meets the bar
-  is it worth offering GTK a modifier other than LINEAR (GTK takes Vulkan by default only then; sway on virgl would
-  have to import it).
+- **GTK4 on Vulkan: the bar met on the M4, the default not taken** (VK4 T13, bench/vulkan/REPORT.md "VK4 T13–T14"; GTK
+  takes GL by default, so only `GSK_RENDERER=vulkan` meets Venus). Since the pump's ticker, iconscroll runs at 33 frames/s
+  on the M4 against GL's 28–32, frames at GL's CPU a frame, fishbowl at 60. Left: (1) NVIDIA and SwiftShader not
+  measured (Linux's `waitAsync` was never stretched: there the gain is the shorter period's alone); (2) GTK takes Vulkan
+  by default only with a dma-buf modifier other than LINEAR (sway on virgl would have to import it): the decision that
+  makes GTK4 Vulkan's, VK4's tier 4; (3) each fenced queue submit costs the guest two execbuffers (Mesa 26's fences are
+  DRM syncobjs signalled through the virtqueue; no feedback path), 3 a GTK4 frame, and GSK's ~70 synchronous
+  `vkAllocateDescriptorSets` a frame (Venus's pools go synchronous once sets of mixed layouts are freed) each a ring
+  round trip: both the guest's Mesa's, which a guest patch could change; (4) the ticker's busy cost (~50 ms a second of
+  the GPU worker at iconscroll) could drop if the ticker read the rings' tails itself and woke the pump only for work.
 - **A WSI image exported as a buffer isn't shared** (VK3 L1): Mesa's prime blit (a device Venus takes for another
   GPU's, or NVIDIA's) exports a linear buffer each frame is copied into; web/venus-share.ts shares only images
   (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name
@@ -641,11 +636,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Next: a bisect on NVIDIA itself, a bundle carrying the page at several of the 34 commits between them (`git log
   4fdc69fb..c8087cb0 -- vk web`: the images shared, ~20 MB a page) run as alternated arms in one session; or Dawn's
   own trace categories (`dawn.validation`, per-command timings) at both commits, which would name the slower command.
-- **The guest fences each frame through the virtqueue** (VK3 L2): in VK2 L5 the scene's guest sent ~1 fenced
-  `SUBMIT_3D` a second, now one every two frames (269 a second at 1 fish on the M4; 109–208 in VK2's NVIDIA run), likely
-  since L6/L7 advertised sync-file semaphores and external fences to Venus's guest driver. Each costs the guest an
-  execbuffer and the host a held reply. Not looked into: which Vulkan call makes them, and whether its feedback path
-  could serve instead.
 - **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
   screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't

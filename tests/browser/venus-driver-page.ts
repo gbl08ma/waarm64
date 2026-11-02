@@ -108,7 +108,9 @@ export async function runImport() {
 /**
  * A submit's way back (VK3 L2): `n` submits of one draw (the test program's `wgt_draw`, its pipeline made before) with
  * the rings polled by `poll`, each awaited on a MessageChannel's turns (unclamped). The median ms from the submit to its
- * fence, the nudges counted (web/venus-gpu.ts `nudge`) and the empty submits that reached the queue.
+ * fence, the nudges counted (web/venus-gpu.ts `nudge`), the empty submits that reached the queue, and the polls over
+ * 100 ms after the last (none: the poller stops while idle), and whether a turn scheduled under a direct poll that
+ * found nothing to run is still pending 50 ms later (`stuck`), or found its ticker stopped (`stoppedUnderTurn`).
  */
 export async function runFences(spirv: { vert: string; frag: string; comp: string; costs: string }, poll: VenusPoll, n: number) {
   const adapter = await navigator.gpu?.requestAdapter();
@@ -137,8 +139,24 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
     if (i >= 3) ms.push(performance.now() - t0);
   }
   ms.sort((a, b) => a - b);
+  // Idle (the rings never started, no submit in flight), the poller stops: no polls over 100 ms.
+  await new Promise((r) => setTimeout(r, 20));
+  const polls = v.stats.polls;
+  await new Promise((r) => setTimeout(r, 100));
+  const idlePolls = v.stats.polls - polls;
+  // A turn scheduled (a submit's: `worked`), then a direct poll (a notify's: `wake`) finding nothing to run before that
+  // turn comes: the scheduled turn still comes, and the pump schedules again after it (VK4 T13: the ticker stopped
+  // under a pending turn, which never came, and the pump never scheduled again).
+  // With the ticker, that poll mustn't stop it while the turn waits on it (word 1 clear: it may have ticked for the last
+  // time just before the turn began waiting, and then never ticks again).
+  const pump = v as unknown as { worked(): void; queued: boolean; ticks?: Int32Array };
+  pump.worked();
+  v.wake();
+  const stoppedUnderTurn = !!pump.ticks && pump.queued && Atomics.load(pump.ticks, 1) === 0;
+  await new Promise((r) => setTimeout(r, 50));
+  const stuck = pump.queued;
   device.destroy();
-  return { median: ms[ms.length >> 1], nudges: v.gpu.stats.nudges, empty, adapter: adapter.info.architecture };
+  return { median: ms[ms.length >> 1], nudges: v.gpu.stats.nudges, empty, idlePolls, stuck, stoppedUnderTurn, adapter: adapter.info.architecture };
 }
 
 /**

@@ -76,6 +76,23 @@ test("a fence is retired by itself, not by others of its ring or context", { ski
   assert.equal(v.retired(7, 1, 1n), true, 'a context destroyed takes its fences');
 });
 
+// VK4 T13 (vk/README.md "Calls and rings"): vkr's commands are counted by where they came from and whether the guest
+// waits for a reply, the replied ones named (a Venus call the guest makes synchronously) and the virtqueue's all.
+test('the commands vkr runs are counted, those asking for a reply and the virtqueue\'s by name', { skip }, async () => {
+  const { v } = await renderer();
+  v.call({ t: 'vctx', id: 7, create: true, name: 'a' });
+  v.call({ t: 'vctx', id: 8, create: true, name: 'b' });
+  v.wake = () => {};
+  // vkEnumerateInstanceVersion (137) asking for a reply, vkGetDeviceQueue (17) not: their arguments are missing, so each
+  // context fails at its command, which is counted first.
+  v.call({ t: 'vsubmit', ctx: 7, bytes: new Uint8Array(new Uint32Array([137, 1]).buffer) });
+  v.call({ t: 'vsubmit', ctx: 8, bytes: new Uint8Array(new Uint32Array([17, 0]).buffer) });
+  const t = v.times();
+  assert.deepEqual([t.queueCmds, t.ringCmds, t.nestedCmds, t.replies], [2, 0, 0, 1]);
+  assert.deepEqual(v.calls(), { 'vkEnumerateInstanceVersion@queue+reply': 1, 'vkGetDeviceQueue@queue': 1 });
+  assert.deepEqual(v.calls(), {}, 'counted since the last look');
+});
+
 // A virtio reset (a guest reboot) ends every Venus context with its blobs: the new guest makes its contexts again under
 // the same ids (vkr refuses an id it has), and a blob of the old one is gone.
 test('a virtio reset ends the contexts and their blobs', { skip }, async () => {

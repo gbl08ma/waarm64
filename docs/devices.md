@@ -540,9 +540,10 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   arena (`venus_arena_end`): one built for memory 0 would write its data over the core's heap, and one with a larger
   arena would grow its heap into the window. So the guest's rings, command streams and mapped memory are the module's own pointers, read in place.
   vkr's threads are polls: a submit, a notify, a completion or a fenced command polls the rings, and the worker keeps
-  polling while one is active or a submit is in flight (`venus_poll`; web/venus-host.ts `VenusPoll`: turns ~0.25 ms
-  apart on `Atomics.waitAsync`'s timeout, never a nested `setTimeout`, whose ~4.5 ms clamp made every fence late, VK3
-  L2), and nudges WebGPU with an empty submit at most every 1 ms while one is in flight (Dawn on Vulkan says done only
+  polling while one is active or a submit is in flight (`venus_poll`; web/venus-host.ts `VenusPoll`: turns ~0.08 ms
+  apart on the Mac, ~0.17 on Linux, timed by a ticker worker of its own, web/venus-ticker.ts, since `Atomics.waitAsync`'s
+  own timeout takes ~1.5 ms on the Mac and every synchronous Venus call of the guest waits a turn, VK4 T13; never a
+  nested `setTimeout`, whose ~4.5 ms clamp made every fence late, VK3 L2), and nudges WebGPU with an empty submit at most every 1 ms while one is in flight (Dawn on Vulkan says done only
   at Chromium's slow look otherwise). A ring fence's reply is out of line (the only one that is: `rings` in `gpuBackend`): it stands for a queue's work, which
   may wait for the guest's own signal (a held submit, vk/README.md "Waits before their signal"), and held in order it
   held what follows, including the unfenced `SUBMIT_3D` every queue submit also sends, so 8 such submits filled the page's

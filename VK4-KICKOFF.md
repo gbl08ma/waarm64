@@ -3,6 +3,7 @@
 [docs/graphics.md](docs/graphics.md) "Vulkan through Venus".
 **Updated with the user's OK (2026-11-01)**: tiers 1 and 2 done and summarized; the out-of-context review's
 findings and the leftovers that drop work as tier 2b (R1–R7, before tier 3); T20 and the leftovers after tier 3.
+**Updated at the user's ask (2026-11-02)**: tier 2b done and summarized in the done table.
 
 ## How VK4 runs: tasks the user starts
 
@@ -40,11 +41,14 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1 and 2 (2026-10-29 to 2026-10-31)
+### Done: tiers 1, 2 and 2b (2026-10-29 to 2026-11-01)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
-below. dEQP-VK's pass list went 4,725 → 26,002 over them, every new case passing on SwiftShader and the M4.
+below. dEQP-VK's pass list went 4,725 → 26,002 over tiers 1 and 2, every new case passing on SwiftShader and the M4.
+Tier 2b (R1–R7) took the out-of-context review's findings ([VENUS-VK4-REVIEW.md](VENUS-VK4-REVIEW.md), ids by area:
+its triage at the top says which each fixed) before tier 3, which measures programs on this code; a second review, of
+R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the same way.
 
 | Task | What it did | Its leftovers (backlog) |
 |---|---|---|
@@ -62,99 +66,22 @@ below. dEQP-VK's pass list went 4,725 → 26,002 over them, every new case passi
 | T10. Copies and resolves WebGPU refuses | copies between formats, drawn resolves, depth16; list → 8,600 | "Copies WebGPU refuses", "The M4's own failures" |
 | T11. Storage images WebGPU gives one way | such images as words, any format's encoding; list → 23,083 | "Storage images as words' leftovers" |
 | T12. The smaller rendering gaps | layered passes, feedback loops, indirect fans, queries, packed 16-bit formats; list → 26,002 | "Multisampled image clears", "Packed 16-bit formats' leftovers", "Multisampled arrays' leftovers", "The M4's own failures", "Rendering" |
-
-### Tier 2b: the review's defects and what still drops work (before tier 3)
-
-The out-of-context review of T2–T19 (2026-11-01, [VENUS-VK4-REVIEW.md](VENUS-VK4-REVIEW.md): five static reviews,
-~55 findings, ids by area) found defects in code the tasks wrote, about half of which crash, hang or drop work. They
-go **before tier 3**: tier 3 measures programs on this code, and the bar's order (a crash or a lost device first, then
-dropped work, then wrong pixels) puts them ahead of performance. Each task below is one session, takes its findings in
-the order listed, starts each fix with its confirming test failing first (the review names one per finding: a
-`wg_test.c` scenario, a `tests/venus-*.test.ts` row, a dEQP-VK case), and ends by marking the findings it fixed in
-VENUS-VK4-REVIEW.md (or moving them to the backlog with a line). The review's own commits fixed H2, H3 and O4.
-**Cloud sessions** can do all of tier 2b: the renderer builds there and the driver's and translator's tests run on
-SwiftShader, and dEQP-VK runs on the prebuilt disk and guest (docs/cloud.md "Venus (vk/)"); `ci-deqp-vk.sh`'s
-programs' replays need the dev VM.
-
-- **R1. Fences per context** (done 2026-11-01: a ring is a lane of the gate, a fence waits for itself; a stalled queue gives ring fences' entries back; dEQP-VK's synchronization groups unchanged. Left: backlog "Synchronization") (M; H1, then T6's leftover): every fence the GPU worker answers goes through one
-  in-order `FenceGate` whose check covers all of Venus's pending ring fences, so since T6 a submit held for an unmet
-  timeline wait (legal: a CPU `vkSignalSemaphore` later; vkd3d's D3D12 fences) holds every later fence of every
-  client, sway's virgl frames included: a stall, a deadlock when the signal waits on the compositor. A fence's check
-  scoped to its own context and ring, fences of other contexts answered out of order (the device side's in-line queue
-  too). With it, T6's leftover: 16 held submits from the signalling thread fill the control queue (backlog
-  "Synchronization"). *Done:* a test of each (tests/venus-renderer.test.ts or a GPU-worker-level test), ci-graphics.sh
-  for the compositor's fences. *Start:* web/virgl-host.ts `FenceGate`, web/gpu-worker.ts `settled`, web/venus-host.ts,
-  docs/devices.md "Venus".
-- **R2. Usage scopes and shadows** (done 2026-11-01: read and written shadows apart, overlapping writable bindings one by a variant, passes cut at barriers. Left: backlog "Usage scopes' leftovers") (M; R1, R4 of the review, then backlog "Usage scopes' leftovers"): a written shadow
-  (pointers beside a writable descriptor, T7) and a read shadow share `dev->shadow`, which WebGPU refuses in one scope
-  (every program that gives all memory device addresses: vkd3d-proton, VMA with BDA); two read-only storage bindings
-  promoted to writable beside a writable one can overlap each other. Then the leftovers: two writable bindings of one
-  range; a draw reading what an earlier draw of its pass wrote through storage (split the WebGPU pass there).
-  *Done:* each shape a `wg_test.c` scenario (as T3's), dEQP-VK's `buffer_device_address` and `ssbo` groups unchanged.
-  *Start:* wg_cmd.c `scope_shadows`, `shadow_place`, `conflicts`, `program_for`; vk/README.md "Usage scopes".
-- **R3. Render passes' replay** (done 2026-11-01: crops for attachments of other sizes, 256 layers, the packed twin, whose 4 `self_dep` kinds join the list. R10 warns; list +212) (M; review R2, R6, R7 with O7, R3 with O10, R8, R5, R9, R10): attachments of
-  different sizes (Vulkan allows; WebGPU refuses: crop to the render area's common size); `LOAD_OP_NONE` taken as
-  discard by the alias tracking (stale bytes stored over a mutable image's); layers past 32 of a pass ignored while
-  `maxFramebufferLayers` is 256 (and a shift by 32 at view 31); a feedback copy of a packed-format attachment (no
-  `packed` key on the twin) and its swizzle; a feedback copy of the wrong layer; transform feedback cut by a feedback
-  copy's pass end; drawn resolves at every part of a colour-only suspended pass; non-indexed fans past 65,536 vertices
-  dropped silently (warn, or draw in pieces). *Done:* a test each; the 4
-  `renderpasses.*.r5g6b5_unorm_pack16.input.*self_dep*` (backlog "Packed 16-bit formats' leftovers") rechecked: R3 may
-  be their cause. *Start:* wg_cmd.c `begin_rendering`, `feedback_copies`, `image_use`; wg_device.c `wg_view_twin`.
-- **R4. Transfers** (done 2026-11-01: X1, X3 to X8, multisampled copies between formats by a shader; some multisampled clears join the list, the RGBA8 family's and 4 `diff_image_size` stay in the backlog, not X4's; the T4 sRGB-twin cases not newly passing, X2 didn't reproduce) (M; review X1–X8, then T10's and T12's leftovers): one-row buffer↔image copies with a taller
-  `bufferImageHeight` (an unaligned `bytesPerRow`: the submit lost); a drawn resolve into an sRGB-twin view (pipeline
-  and view formats differ: lost); indirect indexed fans sized by the whole bound index range (past
-  `maxStorageBufferBindingSize`: lost; six times the buffer per draw otherwise); multisampled copies of several layers
-  (only the first); multisampled copies between sRGB twins converting values, not bits (likely T4's "3 sRGB-twin
-  resolves not understood"); linear blits from padded compressed images; query readbacks overwriting queries the
-  submit didn't end; multisampled packed copies. Then backlog "Copies WebGPU refuses" (a multisampled copy between
-  formats: the storage round trip) and "Multisampled image clears" (X4 may be their cause). *Done:* a test each, the
-  T4 `image.mutable` sRGB-twin cases and the clears in the list if they pass. *Start:* wg_cmd.c `copy_bt_replay`,
-  web/venus-gpu.ts `layout`, `resolveByDraw`, `copyMultisampled`, `copyPacked`, the fans' compute pass.
-- **R5. The translator's defects** (done 2026-11-01: C1 to C7. Depth textures' plain samples go through fetches, a shared sampler splits, borders across levels are fetched, a variant that can't print refuses its draws; ufloats past their range are the largest finite, as Vulkan says. Left: backlog "Samplers' leftovers") (M; review C1–C7): **C1 first** (S, corruption: a variant copies its base's
-  depth-less fragment module, `fs_no_depth`, so it draws with the unkeyed module and its id is released twice, then two
-  objects share a worker id; the fix is zeroing `fs_no_depth` and `fs_no_depth_of` in `wg_program_variant`); one depth
-  texture sampled with and without comparison in a stage (invalid WGSL: PCSS shadows, DXVK's and vkd3d's
-  `mipLodBias`); a sampler shared by an integer gather and a float sample filters nearest; a border across levels
-  skewed by the WebGPU sampler's LOD clamps; a cube bound as its faces leaking into other pairs and stages; a keyed
-  print's failure falling back to the unkeyed module (an invalid pipeline in place of a refusal); C7's minors
-  (location 7 for depth, inter-stage variable counts, `wg_deserialize`'s bounds on a corrupt cache, small floats'
-  rounding, the bias's clamp). *Done:* a `tests/wgsl.test.ts` row or a `wg_test.c` scenario each. *Start:*
-  wg_shader.c `wg_program_variant`, `keyed_text`, `fragment_without_depth`; wgsl_print.c; wgsl_sampler.c.
-- **R6. Memory and objects** (done 2026-11-01: an allocation past what there is is refused, for Venus's guest an empty memory rather than a lost context; a surviving import moves with its blob. `memory.*` and `api.external.memory.*` unchanged. Left: backlog "Memory", "External memory's leftovers") (M; review O1–O3, O11, O12, O14–O17, H4, then backlog "Memory" and "External memory's
-  leftovers"): an import aliasing an earlier export ignores `DEVICE_ADDRESS_BIT` (address 0, or writes into another
-  memory: VMA with BDA); an alias no longer rebound by map and unmap once the original vkr memory is freed (vkr's
-  patch); a large binding number overflowing the set layout's 32-bit size (a renderer-wide crash: the guest's input);
-  device-local allocations past the heap succeeding then failing silently, and T2's "an allocation past the arena
-  loses the context" with them; an inline uniform block past its set's buffer; the minors; a snapshot's blob resources
-  that outlive their context and its capsets rebuilt without Venus (H4, with snapshots refused while a Venus context
-  exists). *Done:* a test each (wg_test.c, tests/venus-renderer.test.ts); `memory.*` and `api.external.memory.*`
-  unchanged. *Start:* wg_device.c `wg_AllocateMemory`, vk/patches/vkr-wasm.patch, wg_descriptor.c `layout_create`.
-- **R7. What's advertised** (done 2026-11-01: A8B8G8R8 and BC1_RGB formats, set-wide limits, all of WebGPU's dynamic uniform buffers, 16 vertex bindings; list +1,370, every `api.info` limit and format query passing on SwiftShader but `image_format_properties.2d.optimal.r32g32_sfloat` and `.r32g32b32a32_sfloat`, sample counts WebGPU can't give. On the M4 not run. Left: backlog "Sample counts Vulkan wants but WebGPU lacks") (S–M; review O5, O6, O8, O9, then backlog "Sample counts Vulkan wants but WebGPU lacks"
-  and "API 1.3's required features"): the bar's rule, what's advertised must work. `textureCompressionBC` without
-  `BC1_RGB_*` (refused at creation, which Venus's asynchronous creation turns into a lost context: an RGBA texture whose
-  alpha reads 1, or BC off); `shaderStorageImageExtendedFormats` on adapters without tier1, whose 16-bit normalized
-  formats don't exist there (off there, or those formats as words); the memory pad and `maxMemoryAllocationSize`
-  wrapping; Vulkan 1.3's 1 GiB minimums on adapters with WebGPU's default buffer size; the sample counts.
-  `api.info.vulkan1p2_limits_validation.general` fails on SwiftShader (the review's run in a cloud session): 9 limits
-  under Vulkan's minimums, from the adapter's (`maxPerStageResources` 49 of 53, `maxDescriptorSetSamplers` 16 of 48,
-  `…UniformBuffers` 26 of 36, `…UniformBuffersDynamic` 7 of 8, `…StorageBuffers` 8 of 12, `…SampledImages` 16 of 48,
-  `…StorageImages` 4 of 12, `maxVertexInputBindings` 8 of 16, `maxMemoryAllocationSize` 64 KiB short of 1 GiB); the
-  set-wide ones need no more than a stage's ×5 stages, the others an emulation or the adapter's real limits asked for. *Done:*
-  dEQP-VK's `api.info.format_properties.*`, `api.info.vulkan1p*_limits_validation.*` and
-  `api.info.image_format_properties.*` passing on SwiftShader and the M4, whatever is taken off said in vk/README.md.
-  *Start:* wg_caps.c, wg_format.c, web/venus-gpu.ts `gpuFeatures`; tests/venus-renderer.test.ts's caps test.
-
-An out-of-context review again after R1–R4 (the passes' and the worker's areas), over what they change: done 2026-11-01, its triage at the top of VENUS-VK4-REVIEW.md.
+| R1. Fences per context (review H1) | a ring is a lane of the `FenceGate`, a fence waits for itself only (a held submit no longer holds sway's frames); a stalled queue gives ring fences' entries back; synchronization groups unchanged | "Synchronization" |
+| R2. Usage scopes and shadows (R1, R4) | read and written shadows apart, overlapping writable bindings one by a variant, passes cut at barriers | "Usage scopes' leftovers" |
+| R3. Render passes' replay (R2, R3, R5–R10, O7, O10) | crops for attachments of other sizes, 256 layers, the packed twin (its 4 `self_dep` kinds join the list), R10's long fans warned; list +212 | — |
+| R4. Transfers (X1, X3–X8) | unaligned one-row copies, fans sized by their draw, every layer of multisampled copies, copies between formats by a shader; some multisampled clears join the list (X2 didn't reproduce) | "Multisampled image clears" (the RGBA8 family), "Copies WebGPU refuses" (4 `diff_image_size`) |
+| R5. The translator's defects (C1–C7) | a variant's own depth-less module; depth textures' plain samples through fetches, a shared sampler split, borders across levels fetched, a variant that can't print refuses its draws; ufloats past range the largest finite | "Samplers' leftovers" |
+| R6. Memory and objects (O1–O3, O11, O12, O14–O17, H4) | an allocation past what there is refused (for Venus's guest an empty memory, not a lost context); imports keep device addresses and move with their blob; set layouts' sizes checked; `memory.*` and `api.external.memory.*` unchanged | "Memory", "External memory's leftovers" |
+| R7. What's advertised (O5, O6, O8, O9) | A8B8G8R8 and BC1_RGB formats, set-wide limits, all of WebGPU's dynamic uniform buffers, 16 vertex bindings; list +1,370; every `api.info` limit and format query passing on SwiftShader but two `r32g32*_sfloat` sample-count queries (the M4 not run) | "Sample counts Vulkan wants but WebGPU lacks", "What R7's limits leave" |
 
 ### Tier 3: performance on real workloads
 
-- **T13. What a guest's synchronous call waits for** (M): GSK on Vulkan runs iconscroll at 9 frames a second against
+- **T13. What a guest's synchronous call waits for** (done 2026-11-02 with T14: GSK's ~80 synchronous `vkAllocateDescriptorSets` a frame each waited a poll turn, 1.33 ms on the Mac; the pump's turns timed by a ticker worker, 0.08 ms there; iconscroll 6.5 → 33 frames/s on the M4, past GL's 28–32; VK0's scene no worse. Left: backlog "GTK4 on Vulkan: the bar met on the M4, the default not taken") (M): GSK on Vulkan runs iconscroll at 9 frames a second against
   GL's 28 with the guest 11% busy, waking ~1,800 times a second: a frame waits on ring round trips or fences, which
   any program with synchronous Venus calls pays. Find which calls (a ring trace, `VN_DEBUG`) and shorten them. This
   decides GTK4 on Vulkan and so the default. *Done:* iconscroll at GTK4's bar (REPORT.md G) or the cause measured
   and filed. *Start:* backlog "GSK's Vulkan renderer on Venus misses GTK4's bar", REPORT.md "VK3 L7.3".
-- **T14. The guest's submit path** (M): 9 execbuffers a frame against virgl's 4 (GTK4's frames +11%), a fenced
+- **T14. The guest's submit path** (done 2026-11-02 with T13: of 9 execbuffers a frame, 6 are 3 fenced submits' two each, Mesa 26's fences being DRM syncobjs with no feedback path, 1 a ring notify, the rest sway's; the guest's CPU a frame in GTK4's frames 2.01–2.08 → 1.91–1.96 ms, GL's; rings kept active no gain) (M): 9 execbuffers a frame against virgl's 4 (GTK4's frames +11%), a fenced
   `SUBMIT_3D` every two frames through the virtqueue since VK2's external fences. Which Vulkan calls make them, and
   whether the feedback path can serve. *Done:* the guest's CPU a frame measured before and after (bench/run.ts
   rules). *Start:* backlog "Venus's submit path costs the guest", "The guest fences each frame".

@@ -1,0 +1,409 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "warmS": 20,
+ "phaseS": 10,
+ "info": "7.2.11-arch1-1gtk4 1:4.24.1-1 gtk4-demos 1:4.24.1-1 sway 1:1.12-4 mesa 1:26.2.5-1",
+ "sway": "",
+ "iconscroll-vulkan": {
+  "alive": true,
+  "flushes": 6.454545454545454,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 10,
+    "user": 2,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 5,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 11,
+    "user": 3,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 13,
+    "user": 4,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 11,
+    "user": 3,
+    "sys": 8,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 339,
+    "user": 111,
+    "sys": 228,
+    "threads": 5,
+    "runs": 2088,
+    "wait": 2
+   },
+   {
+    "process": "sway",
+    "cpu": 17,
+    "user": 3,
+    "sys": 14,
+    "threads": 4,
+    "runs": 15,
+    "wait": 0
+   },
+   {
+    "process": "swaybar",
+    "cpu": 4,
+    "user": 3,
+    "sys": 1,
+    "threads": 2,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 2,
+    "user": 1,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:3-flush-254:0",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 10,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:1-events",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 45,
+    "wait": 6
+   },
+   {
+    "process": "xdg-desktop-por",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 6,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd-udevd",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd-timesyn",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "systemd",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 17,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:4-flush-254:0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 7,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0-writeback",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 9,
+    "wait": 0
+   },
+   {
+    "process": "kworker/3:1-mm_percpu_wq",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "kworker/1:2-events",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 338,
+    "user": 111,
+    "sys": 228,
+    "runs": 2088,
+    "wait": 2
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 17,
+    "user": 3,
+    "sys": 14,
+    "runs": 15,
+    "wait": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "cpu": 3,
+    "user": 3,
+    "sys": 0,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 65.9090909090909,
+   "commands": {
+    "208": 0.09090909090909091,
+    "SET_SCANOUT": 6.454545454545454,
+    "RESOURCE_FLUSH": 6.454545454545454,
+    "SUBMIT_3D": 52.72727272727273,
+    "CTX_ATTACH_RESOURCE": 0.09090909090909091,
+    "10c": 0.09090909090909091
+   },
+   "fences": {
+    "n": 7.636363636363637,
+    "meanMs": 0.14559519858587355,
+    "maxMs": 0.7399997711181641,
+    "heldMs": 3.273636211048473,
+    "behindMs": 0.6459090492942117,
+    "fullMs": 0,
+    "heldMax": 3,
+    "toGpuMs": 6.597232534865703,
+    "toGpuMaxMs": 12.639892578125,
+    "backMs": 0.021851957514044944,
+    "backMaxMs": 0.06494140625
+   },
+   "flushes": 6.454545454545454,
+   "submits": 52.72727272727273,
+   "submitKB": 54.47088068181818,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.9845456210049716,
+   "draws": 6.454545454545454,
+   "renderer": {
+    "seconds": 10,
+    "busyMs": 1.2115001678466797,
+    "submitMs": 1.1205001831054688,
+    "drawMs": 0.12200031280517579,
+    "presents": 6.5,
+    "glDraws": 8.5,
+    "commands": 102,
+    "uploadKB": 61.9359375,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 5.5,
+    "shareMs": 0.4080002784729004,
+    "importBinds": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "programs": 3,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    },
+    "venus": {
+     "polls": 761.2,
+     "gapMs": 1.3404173252658798,
+     "gapMaxMs": 4.285000801086426,
+     "submits": 27.5,
+     "doneMs": 6.625654529224742,
+     "doneMaxMs": 8.829999923706055,
+     "orderMs": 0.005800018310546875,
+     "nudges": 26.1,
+     "fences": 16.5,
+     "fenceMs": 6.636545452927098,
+     "fenceMaxMs": 8.844999313354492,
+     "cmds": {
+      "ring": 6036.1,
+      "queue": 39.4,
+      "nested": 18941.5,
+      "replies": 556,
+      "idles": 101.6,
+      "notifies": 22.9
+     },
+     "calls": {
+      "vkAllocateDescriptorSets": 536.3,
+      "vkCreateImage": 9.8,
+      "vkGetImageMemoryRequirements2": 9.8,
+      "vkGetPhysicalDeviceImageFormatProperties2": 0.1
+     },
+     "doneMsBySecond": [
+      6.469,
+      6.778,
+      6.395,
+      6.439,
+      6.321,
+      6.588,
+      6.666,
+      6.784,
+      6.645,
+      7.418
+     ],
+     "perSubmit": {
+      "encodeMs": 0.4592499689622359,
+      "submitCallMs": 0.004363666881214489,
+      "uploads": 0.5590909090909091,
+      "uploadKB": 58.58181818181818,
+      "readbacks": 0,
+      "passes": 19.35,
+      "draws": 159.63181818181818,
+      "bindGroups": 45.93636363636364,
+      "withPass": 0.2,
+      "withPassDoneMs": 6.722727363759821,
+      "withPassDoneMsBySecond": [
+       6.467,
+       6.533,
+       6.441,
+       6.682,
+       6.753,
+       6.866,
+       6.718,
+       7.559
+      ]
+     }
+    }
+   },
+   "vm": {
+    "seconds": 10.000954999923707,
+    "Msteps": 337.96663,
+    "irqs": 3300,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 146049,
+     "0x20": 71,
+     "0x24": 461,
+     "0x25": 21
+    },
+    "tlbMisses": 44393,
+    "tlbFlushes": 765,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.844899
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskVulkanRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "1 (gtk4-demo:538): Gdk-WARNING **: 10:21:12.574: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1,
+  "venus-share: resource 21 (668x529) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: the bitmap way checked right (3 frames)": 1,
+  "venus: vkr: destroying context 7 (gtk4-demo) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1,
+  "venus-share: resource 29 (708x1196) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 30 (708x1196) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 31 (708x1196) isn't (or no longer) a Vulkan image's memory: not shown": 1,
+  "venus-share: resource 32 (708x1196) isn't (or no longer) a Vulkan image's memory: not shown": 1
+ }
+}

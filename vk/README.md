@@ -47,6 +47,22 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   26's driver sends) can't block the only thread, since that seqno comes in a later submit: the ring stalls after it,
   keeps the rest of its batch, and its poll resumes once the seqno arrives. The module imports `wasi.thread-spawn`,
   which the host answers with -1.
+- **Calls and rings** (VK4 T13). A Venus call the guest makes synchronously (a command asking for a reply: `vn_call_*`)
+  waits in the guest's `vn_relax` until a poll runs it, so its cost is the poller's pace. The GPU worker's pump turns
+  on a **ticker** of its own (web/venus-ticker.ts: a worker sleeping 0.05 ms in a blocking `Atomics.wait`, then
+  notifying the word the pump `waitAsync`s on; ~0.08 ms a turn on the Mac, ~0.17 on Linux), because Chromium stretches
+  `waitAsync`'s own 0.25 ms timeout to ~1.5 ms on the Mac (bench/vulkan/wake.ts). The ticker runs only while the pump
+  does (word 1); `?gpu=vkpoll=pump` gives the pump's own turns back, `?gpu=vktick=<ms>` another sleep. GSK's Vulkan
+  renderer makes ~65–80 synchronous `vkAllocateDescriptorSets` a frame (Mesa's Venus allocates sets synchronously
+  for good once a pool made with `FREE_DESCRIPTOR_SET_BIT` has had sets of mixed layouts freed), and each waited a
+  turn: iconscroll on the M4 ran at 6.5 frames/s with the pump, ~31 with the ticker (bench/vulkan/REPORT.md "VK4 T13–T14").
+  A ring goes idle after the guest's idle timeout (Mesa's 1 ms) without commands, and the guest's next command then
+  sends a notify (`vkNotifyRingMESA`, an execbuffer); `?gpu=vkidle=<ms>` keeps rings active longer (A/B). vkr counts
+  what it runs (the patch's `vkr_wasi_count_cmd`: by where it came from, ring, virtqueue or a nested stream, whether it
+  asks for a reply, and its type; rings gone idle; notifies, which also count each `vkWaitRingSeqnoMESA`), and the render
+  stats carry them (`venus`'s `ringCmds`, `queueCmds`, `nestedCmds`, `replies`, `idles`, `notifies`, the pump's own
+  `turnMs`, and `venusCalls`: the replied commands and the virtqueue's by name), which bench/gpu/guest-session.ts sums
+  (`venus.cmds`, `venus.calls`).
 
 ## The shader path
 
