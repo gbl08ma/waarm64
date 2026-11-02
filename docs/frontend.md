@@ -80,7 +80,7 @@ its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](us
   `/dev/console`, the serial port (GRUB passes no `console=`, so the kernel takes the device
   tree's PL011): it asks for a timezone, a locale and a root password on the serial terminal,
   with the screen waiting. The page passes no credentials (the user's answer); the boot card says
-  where the questions are ([Show it](ui:common:App.boot.serial.show) opens the serial view). Tests pass them over fw_cfg
+  where the questions are ([Show serial console](ui:common:App.boot.serial.show) opens the serial view). Tests pass them over fw_cfg
   (`tests/debian-unattended.ts`: `login.noauth`, `firstboot.*`, an empty root password).
 - **`buildroot`**, the test guest: `-- /bin/sh` on the serial console, 256 MiB, a 640×480
   framebuffer that stays black (its kernel has no fbcon), the overlay `webpc-buildroot` (mounted
@@ -374,7 +374,7 @@ the kernel's console (fbcon) replays the boot log from the first line and system
 follow, so the Screen view stays the default (loop 0's finding). **Through UEFI it isn't**: GRUB
 passes no `console=tty0`, so the screen stays black until tty1's getty, and the firmware's menus
 and the first boot's questions are on the serial console; the card stays until `running` and
-says so, with a [Show it](ui:common:App.boot.serial.show) button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
+says so, with a [Show serial console](ui:common:App.boot.serial.show) button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
 Debian's kernel, its initrd and the core; the 403 MB disk is read by ranges as the guest needs it)
 take ~0.15 s from localhost, fbcon takes the screen ~2.4 s after the VM starts, and the login
 prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3: 28.6–29.0).
