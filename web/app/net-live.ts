@@ -12,6 +12,7 @@ import type { Store } from './store.ts';
 
 /** What a connection's client is started with (`authKey`: a tailnet's first login, never kept). */
 export function connectOf(c: Connection, authKey?: string): Connect {
+  if (c.kind === 'local') return { controlURL: '', hostname: '', local: c.local!.url };
   if (c.kind === 'tailcat') {
     const t = c.tailcat!;
     return { controlURL: '', hostname: '', tailcat: t.exit || undefined, tailcatServe: t.serve ? { relay: t.exit ? '' : t.relay, identityKey: t.identityKey, identity: t.identity } : undefined };
@@ -52,6 +53,7 @@ export type PageNetworkOptions = {
   /** The clients (tests' fakes; the page's: web/tailscale.ts, web/tailcat.ts). */
   start?: Parameters<typeof createNetwork>[1];
   startCat?: Parameters<typeof createNetwork>[2];
+  startLocal?: Parameters<typeof createNetwork>[3];
   store: Store;
   state?: ConnectionState;
   /** The profiles that hold a kept node (web/tailscale-state.ts `keptProfiles`). */
@@ -92,7 +94,7 @@ export class PageNetwork {
   }
 
   private fresh(): Network {
-    return createNetwork(() => this.changed(), this.o.start, this.o.startCat);
+    return createNetwork(() => this.changed(), this.o.start, this.o.startCat, this.o.startLocal);
   }
 
   /** Stops adapter `i`'s client, if any, and lets its connection go; the adapter gets a new `Network` (its port goes with the old one). */
@@ -386,13 +388,16 @@ export class PageNetwork {
 
   /** The page's machine's adapters now. */
   views(): AdapterView[] {
+    const views = this.adapters.map((_, i) => this.nets[i]?.view() ?? { phase: 'off' as const, text: 'Not connected', exitNodes: [] });
+    // Two adapters on local helpers both give the guest a default route (their DHCP, not the page's): said, not fixed.
+    const locals = views.flatMap((v, i) => (v.phase === 'connected' && v.local ? [i] : []));
     return this.adapters.map((a, i) => ({
       index: i,
       mac: a.mac,
       connection: this.connections.find((c) => c.id === a.connection),
-      view: this.nets[i]?.view() ?? { phase: 'off', text: 'Not connected', exitNodes: [] },
+      view: views[i],
       active: !!this.nets[i]?.active(),
-      note: this.notes[i],
+      note: this.notes[i] ?? (locals.length > 1 && locals.includes(i) && i !== this.primary ? `Adapter ${this.primary + 1} goes through a helper on this computer too: the guest has a default route through each.` : undefined),
       primary: i === this.primary,
       on: this.on,
     }));

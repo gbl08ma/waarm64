@@ -1,11 +1,12 @@
 // The local helper against tailcat (docs/plans/networking-local.md L0, bench/net/REPORT.md "The local helper"): the
 // page's Debian on one connection, and from the guest the round trip and bulk TCP each way to a server on this machine's
 // LAN address, with the CPU of the renderer's threads over each transfer. One boot per arm.
-//   local        the helper here, frames over a WebSocket on loopback (tests/browser/netguest.html?ws=)
+//   local        the helper here, frames over a WebSocket on loopback (the page's client: tests/browser/netguest.html's connectLocal)
 //   tailcat      an exit node here through tests/net/tailcat.sh's derper on 127.0.0.1 (what the relay costs apart from its distance)
 //   public       an exit node here through tailcat's public relays
-// Usage: node bench/net/local.ts <out.json> <arm>[:<helper MTU>][:<client flags, comma-separated>] ... [--rounds n] [--mib n]
-// Client flags (`batch`, `worker`) and an MTU past 1500 need bench/net/results/local-helper/variants.patch applied.
+// Usage: node bench/net/local.ts <out.json> <arm>[:<helper MTU>] ... [--rounds n] [--mib n]
+// (L0's client flags, `batch` and `worker`, are what the page's client does since L2; their variants are in
+// bench/net/results/local-helper/variants.patch, against L0's tree.)
 // (public moves a quarter of --mib: its relay is rate-limited.) (bench --out rule: <out.json> relative to the repo's root.) The guest's curl writes to /dev/null and reads from tmpfs.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -171,7 +172,7 @@ async function measure(page: Page, label: string, mib: number, stats?: () => Pro
 const results: Record<string, unknown>[] = [];
 let failed = false;
 for (const spec of arms) {
-  const [arm, mtuS, flags = ''] = spec.split(':');
+  const [arm, mtuS] = spec.split(':');
   const mtu = Number(mtuS) || 1500;
   const overlay = 'webpc-net-bench';
   let child: ChildProcess | undefined;
@@ -185,7 +186,8 @@ for (const spec of arms) {
       if (arm === 'local') {
         const h = await helper(mtu);
         child = h.child;
-        await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay, ws: h.ws, ...(flags ? { client: flags } : {}) })}`);
+        await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay, port: '1' })}`);
+        await page.evaluate((u) => (window as unknown as { harness: { connectLocal(u: string): void } }).harness.connectLocal(u), h.ws);
       } else {
         let addr: string;
         if (arm === 'public') {
@@ -199,8 +201,7 @@ for (const spec of arms) {
         await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, overlay })}`);
         await page.waitForFunction('window.harness?.tailscale().state === "Running"', null, { timeout: 90_000, polling: 250 });
       }
-      const stats = arm === 'local' ? () => page.evaluate('window.harness.local()?.stats') as Promise<Record<string, number>> : undefined;
-      results.push({ arm: spec, mib: arm === 'public' ? mib >> 2 : mib, ...await measure(page, spec, arm === 'public' ? mib >> 2 : mib, stats) });
+      results.push({ arm: spec, mib: arm === 'public' ? mib >> 2 : mib, ...await measure(page, spec, arm === 'public' ? mib >> 2 : mib) });
     });
   } catch (e) {
     failed = true;

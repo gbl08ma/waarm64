@@ -3,7 +3,7 @@
 <link rel="icon" href="data:,">
 <script type="module">
   import { echoLease, routedLease, TAILNET_ROUTES } from '/web/gateway.ts';
-  import { startLocalNet } from '/web/local-net.ts';
+  import { startLocal } from '/web/local-net.ts';
   // tests/net-guest.test.ts's page: the page's Debian with a network card (web/app/machine.ts
   // `network`) on the Ethernet gateway with the synchronous echo backend, no Tailscale. The test
   // drives the guest's serial console through window.harness.
@@ -20,14 +20,17 @@
   // `?adapters=<n>`: that many cards on the echo backend, each on its own gateway (docs/network-adapters.md §4).
   // `?ports=<n>`: that many cards, each on an IP port whose lease `harness.primary(k)` sends: card k's with the default
   // route, the others' with the tailnet's routes only (docs/network-adapters.md §4).
-  // `?ws=<the helper's ws:// link>`: the card on a frame port, its frames to the local helper (tests/net-local.test.ts).
-  const frames = q.get('ws') ? new MessageChannel() : undefined;
-  const local = frames && startLocalNet(q.get('ws'), frames.port1);
+  // `?port=1&local=1`: the card on an IP port as the page has it, and `harness.connectLocal(ws)` hands its page end to the
+  // local helper's client (web/local-net.ts `startLocal`: its worker puts the card on frames to the helper, the link
+  // flapping), as the page's Network menu does (tests/net-local.test.ts).
+  // `?debugnet=1`: networkd in the guest logs at debug from the boot (tests/browser/tailnet-worker.ts).
+  let local, localState;
   const ports = Array.from({ length: Number(q.get('ports')) || 0 }, () => new MessageChannel());
-  worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay'), ip: ip?.port2, frames: frames?.port2, adapters: Number(q.get('adapters')) || undefined, ports: ports.length ? ports.map((c) => c.port2) : undefined }, [serial.port2, ...(ip ? [ip.port2] : []), ...(frames ? [frames.port2] : []), ...ports.map((c) => c.port2)]);
+  worker.postMessage({ page: true, debugNet: q.has('debugnet'), serial: serial.port2, overlay: q.get('overlay'), ip: ip?.port2, adapters: Number(q.get('adapters')) || undefined, ports: ports.length ? ports.map((c) => c.port2) : undefined }, [serial.port2, ...(ip ? [ip.port2] : []), ...ports.map((c) => c.port2)]);
   window.harness = {
     send: (s) => serial.port1.postMessage(s), output: () => output, error: () => error,
-    local: () => local && { state: local.state(), error: local.error(), stats: local.stats() },
+    connectLocal: (ws) => { local = startLocal({ url: ws, ip: ip.port1 }, (m) => { if (m.type === 'error') localState = { error: m.error }; else if (m.type === 'state') localState = undefined; }); },
+    local: () => local && { state: local.state(), error: localState?.error, addresses: local.netmap()?.addresses },
     primary: (k) => ports.forEach((c, n) => c.port1.postMessage({ type: 'lease', lease: routedLease(echoLease(n), n === k, TAILNET_ROUTES) })),
     lease: () => ip.port1.postMessage({ type: 'lease', lease: { address: [198, 18, 0, 15], address6: [0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f], mtu: 1280, dns: [[198, 18, 0, 53]], dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]], domains: ['test.webpc'] } }),
   };

@@ -20,8 +20,8 @@ export type NetMap = {
   domains: string[] | null;
   /** The stable ID of the peer in use as the exit node, or ''. */
   exitNode: string;
-  /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts). */
-  via?: 'tailcat';
+  /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts), or the local helper (web/local-net.ts). */
+  via?: 'tailcat' | 'local';
   /** tailcat: whether an exit node carries the guest's traffic, and the machine's own address when it lets clients in. */
   tailcatExit?: boolean;
   serving?: string;

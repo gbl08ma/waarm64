@@ -1,7 +1,7 @@
 <!--
   The toolbar's Network menu (docs/frontend.md "Network", docs/network-adapters.md §3.3): a section per network
   adapter of the page's machine (one adapter: no heading), each showing its connection and what can be done with it
-  (Log in…, the exit node, the peers' subnet routes, the machine's tailcat address, Connect, Disconnect, Log out, Change connection…, which is
+  (Log in…, the exit node, the peers' subnet routes, the machine's tailcat address, Connect, Retry, Disconnect, Log out, Change connection…, which is
   the Network wizard, web/app/NetWizard.svelte). Adapter 1's elements keep the ids they always had; adapter n's end in
   `-<n-1>`. Logic is web/app/net-live.ts's, through `page`.
 -->
@@ -66,7 +66,7 @@
   }
 </script>
 
-<Menu id="network" icon="network" title="The machine's network: a tailnet, or tailcat, on each adapter" bind:open panel data-phase={shown?.view.phase ?? 'off'}>
+<Menu id="network" icon="network" title="The machine's network: a tailnet, tailcat or this computer, on each adapter" bind:open panel data-phase={shown?.view.phase ?? 'off'}>
   {#snippet badge()}<span class="dot" aria-hidden="true"></span>{/snippet}
   {#each views as a (a.index)}
     {@const v = a.view}
@@ -95,6 +95,7 @@
       <p id={`net-menu-error${s}`} class="net-note net-menu-error" hidden={!errors[a.index]}>{errors[a.index]}</p>
       <div id={`net-actions${s}`} class="net-actions">
         {#if a.connection && !a.active && a.on}<button id={`net-connect-now${s}`} onclick={() => act(a.index, () => page.netConnect(a.index))}>Connect</button>{/if}
+        {#if a.connection && a.active && v.phase === 'error'}<button id={`net-retry${s}`} onclick={() => act(a.index, async () => { await page.netDisconnect(a.index); await page.netConnect(a.index); })}>Retry</button>{/if}
         <button id={`net-setup${s}`} onclick={() => wizard(a.index)}>{a.connection ? 'Change connection…' : 'Connect…'}</button>
         <button id={`net-disconnect${s}`} hidden={!a.active} onclick={() => act(a.index, () => page.netDisconnect(a.index))}>Disconnect</button>
         <button id={`net-logout${s}`} title="Remove this machine from the tailnet and forget its keys" hidden={!a.active || a.connection?.kind !== 'tailnet'} onclick={() => logout(a.index)}>Log out</button>

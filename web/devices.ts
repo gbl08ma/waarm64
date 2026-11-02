@@ -12,7 +12,7 @@ import { busy, gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
-import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_GSO_FRAME, NET_HDR, OFFLOADS, receive, transmit, type RxFrame } from './offload.ts';
+import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_FRAME, MAX_GSO_FRAME, MAX_PORT_FRAME, NET_HDR, OFFLOADS, receive, transmit, type RxFrame } from './offload.ts';
 
 /** The largest frame for the guest: a merged packet, IPv6's largest, behind Ethernet and a VLAN tag. */
 const MAX_RX = NET_HDR + 18 + 40 + 65_535;
@@ -98,6 +98,14 @@ export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSecond
  * itself lasts two minutes, so a gateway that stops answering for a while (its client reconnecting) costs no address.
  */
 export const SEVERAL_ADAPTERS = { leaseSeconds: 120, renewSeconds: 10 };
+
+/**
+ * How long a link flap keeps the link down: past what systemd-networkd waits out. It acts on a carrier loss at once,
+ * except when the DHCP lease's MTU isn't the link's original one (a tailnet's 1280 against virtio's 1500): then it
+ * ignores a loss shorter than 5 s (`link_carrier_lost`, systemd 257, against drivers that reset the link on an MTU
+ * change, systemd#18738). A 1 s flap and a 5 s one were both ignored at boot's first lease; 7 s is past it.
+ */
+export const FLAP_MS = 7000;
 /**
  * virtio-9p (web/9p.ts), mounted by the guest by `tag`: an in-memory tree starting with `files` (path → contents), or with
  * `folders` the page's shared folders (web/9p-folders.ts), `port` carrying what changes while the machine runs.
@@ -478,12 +486,40 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
       queueMicrotask(deliver);
     }
   };
+  // The link flap (docs/devices.md "net"): the link goes down and, `FLAP_MS` later, up, so the guest's DHCP client asks
+  // again at once (networkd does on a carrier). Only under a driver, and only when what the guest holds is stale.
+  let flapping: ReturnType<typeof setTimeout> | undefined;
+  const flap = () => {
+    if (!ctx.features() || flapping) return;
+    ctx.changeConfig((c) => { c[6] = 0; });
+    flapping = setTimeout(() => {
+      flapping = undefined;
+      ctx.changeConfig((c) => { c[6] = 1; });
+    }, FLAP_MS);
+  };
   const a = d.adapter;
+  /** Frames to a port of their own (the local helper's client), the page's gateway bypassed: larger frames pass. */
+  let framesTo: NetAdapter | undefined;
+  /** Frames mode with no port yet (the client went): the guest's frames are dropped, as a cable to nothing. */
+  let framesMode = a instanceof MessagePort;
+  const toFrames = (port: MessagePort | null) => {
+    framesTo?.close?.();
+    framesTo = port ? portAdapter(port, receiveFrame) : undefined;
+    if (!framesMode) flap(); // the guest's lease was the gateway's
+    framesMode = true;
+  };
+  const toGateway = () => {
+    framesTo?.close?.();
+    framesTo = undefined;
+    if (framesMode) flap(); // the guest's lease was the helper's
+    framesMode = false;
+  };
   const adapter: NetAdapter =
     a === 'loopback' ? loopback(receiveFrame)
     : a === 'echo' ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), { ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds })
     : a instanceof MessagePort ? portAdapter(a, receiveFrame)
-    : gateway(receiveFrame, portBackend(a.ip), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds });
+    : gateway(receiveFrame, portBackend(a.ip, { frames: toFrames, gateway: toGateway }), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds, stale: flap });
+  const out = (f: Uint8Array) => (framesMode ? framesTo?.send(f) : adapter.send(f));
   return {
     request(r) {
       if (r.queue === 0) {
@@ -494,7 +530,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
       const len = r.read.reduce((n, s) => n + s.len, 0);
       if (len > NET_HDR && len <= NET_HDR + MAX_GSO_FRAME) {
         io[1] += len - NET_HDR; // the guest's frame (a large one before its segmentation)
-        for (const f of transmit(gather(ctx.ram(), r.read, len))) adapter.send(f);
+        for (const f of transmit(gather(ctx.ram(), r.read, len), framesMode ? MAX_PORT_FRAME : MAX_FRAME)) out(f);
       }
       return 0;
     },
@@ -502,8 +538,17 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
       rx.length = 0;
       frames.length = 0;
       ready.length = 0;
+      if (flapping) {
+        clearTimeout(flapping);
+        flapping = undefined;
+        ctx.config()[6] = 1;
+      }
     },
-    close: () => adapter.close?.(),
+    close: () => {
+      clearTimeout(flapping);
+      framesTo?.close?.();
+      adapter.close?.();
+    },
   };
 }
 

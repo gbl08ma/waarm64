@@ -109,7 +109,7 @@ export type ToWorker =
      * end and gives it to a client (web/app/network.ts). The machine gets its `network` credentials when it has any.
      * Only for a machine with `network`.
      */
-    nets?: { mac: string; ip: MessagePort; /** L0's spike of the local helper: the card's frames go here instead, no gateway (web/local-net.ts). */ frames?: MessagePort }[];
+    nets?: { mac: string; ip: MessagePort }[];
     /**
      * The machine has a USB controller (an xHCI, docs/usb.md "The page"): this port carries the page's `usb-attach` and
      * `usb-detach` to the device worker and its `usb-state` back (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The

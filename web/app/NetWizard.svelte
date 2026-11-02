@@ -12,10 +12,12 @@
   import type { PageNetwork } from './net-live.ts';
   import { DEFAULT_CONTROL, hasTailcatIdentity, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, tailcatBuilt, tailscaleBuilt } from './network.ts';
   import { page, ui } from './ui.svelte.ts';
+  import { parseLocalURL } from '../local-net.ts';
+  import { installLines, RELEASE, SOURCE, targetName, TARGETS, thisTarget, type Target } from '../local-release.ts';
 
   let { net }: { net: PageNetwork } = $props();
 
-  type Step = 'pick' | 'kind' | 'tailscale' | 'tailcat';
+  type Step = 'pick' | 'kind' | 'tailscale' | 'tailcat' | 'local';
   let wizard: HTMLDialogElement;
   let w = $state<NonNullable<typeof ui.netWizard>>({ mode: 'new' });
   let step = $state<Step>('kind');
@@ -29,6 +31,8 @@
   let tcExit = $state(true), tcServe = $state(false), tailcat = $state(''), relay = $state('');
   let advanced = $state(false), identityKept = $state(false);
   let keep = $state(true);
+  let localURL = $state(''), target = $state<Target>();
+  void thisTarget().then((t) => { target = t; });
   const pickable = $derived(w.mode === 'attach' && conns.length > 0);
   /** Whether what the wizard attaches connects now (the machine is the page's): an auth key is asked for then. */
   const here = $derived(w.mode === 'attach' && !!w.here);
@@ -40,7 +44,7 @@
     untrack(() => void begin(o));
   });
 
-  const kindText = (c: Connection) => `${c.kind === 'tailnet' ? `a tailnet (${new URL(c.tailnet!.controlURL).host})` : c.tailcat?.exit ? 'tailcat through a server' : 'tailcat, letting clients in'}${c.ephemeral ? ', ephemeral' : ''}`;
+  const kindText = (c: Connection) => `${c.kind === 'tailnet' ? `a tailnet (${new URL(c.tailnet!.controlURL).host})` : c.kind === 'local' ? 'the helper on this computer' : c.tailcat?.exit ? 'tailcat through a server' : 'tailcat, letting clients in'}${c.ephemeral ? ', ephemeral' : ''}`;
 
   async function begin(o: NonNullable<typeof ui.netWizard>) {
     w = o;
@@ -57,8 +61,10 @@
     tailcat = cat?.exit ?? '';
     relay = cat?.relay ?? '';
     advanced = !!relay;
+    localURL = editing?.local?.url ?? o.localURL ?? '';
     if (!wizard.open) wizard.showModal();
-    if (editing) return showStep(editing.kind === 'tailnet' ? 'tailscale' : 'tailcat');
+    if (editing) return showStep(editing.kind === 'tailnet' ? 'tailscale' : editing.kind === 'local' ? 'local' : 'tailcat');
+    if (o.localURL) return showStep('local'); // the helper's pairing link opened the page
     if (!pickable) return showStep('kind');
     const attached = o.machine === ui.current ? net.views()[o.adapter ?? 0]?.connection?.id : undefined;
     picked = attached ?? preselect(conns, (id) => net.held.has(id));
@@ -76,7 +82,7 @@
       else if (cat.identity) identityKept = true;
       else void hasTailcatIdentity(cat.identityKey).then((kept) => { identityKept = kept; });
     }
-    queueMicrotask(() => document.getElementById(to === 'pick' ? (picked ? `net-pick-${picked}` : 'net-pick-new') : to === 'kind' ? 'net-pick-tailnet' : to === 'tailscale' ? (editing ? 'net-hostname' : 'net-control') : 'net-tc-exit')?.focus());
+    queueMicrotask(() => document.getElementById(to === 'pick' ? (picked ? `net-pick-${picked}` : 'net-pick-new') : to === 'kind' ? 'net-pick-tailnet' : to === 'tailscale' ? (editing ? 'net-hostname' : 'net-control') : to === 'local' ? 'net-local-url' : 'net-tc-exit')?.focus());
   }
   const back = () => showStep(step === 'kind' ? 'pick' : 'kind');
   const close = () => { wizard.close(); ui.netWizard = undefined; };
@@ -102,6 +108,17 @@
   }
 
   async function save() {
+    if (step === 'local') {
+      const u = parseLocalURL(localURL);
+      if ('error' in u) return void (formError = u.error);
+      formError = '';
+      if (editing) {
+        await page.netEdit({ ...editing, local: { url: u.url } });
+        return close();
+      }
+      const c = await page.netCreate({ kind: 'local', ephemeral: !keep, local: { url: u.url } });
+      return w.mode === 'attach' ? attach(c) : close();
+    }
     if (step === 'pick') {
       const c = conns.find((x) => x.id === picked);
       if (!c) return void (formError = 'Choose a connection, or New connection….');
@@ -144,7 +161,9 @@
     identityKept = false;
   }
 
-  const title = $derived(editing ? `Edit ${editing.name}` : step === 'pick' ? `Network adapter ${(w.adapter ?? 0) + 1}` : step === 'kind' ? 'A new connection' : step === 'tailscale' ? 'A new connection: a tailnet' : 'A new connection: tailcat');
+  const title = $derived(editing ? `Edit ${editing.name}` : step === 'pick' ? `Network adapter ${(w.adapter ?? 0) + 1}` : step === 'kind' ? 'A new connection' : step === 'tailscale' ? 'A new connection: a tailnet' : step === 'local' ? 'A new connection: this computer' : 'A new connection: tailcat');
+  /** The install lines shown first: this browser's platform's, else Linux x86-64's. */
+  const shown = $derived(target ?? TARGETS[0]);
   const submitLabel = $derived(editing ? 'Save' : w.mode === 'new' ? 'Create' : here ? 'Connect' : 'Attach');
 </script>
 
@@ -153,7 +172,7 @@
     <h2 id="net-title">{title}</h2>
     <section id="net-step-pick" class="net-step" hidden={step !== 'pick'}>
       <p class="net-note">Which connection should the adapter have? A connection is kept by this browser, for any of its machines: one running machine has it at a time.</p>
-      <button type="button" class="net-choice" id="net-pick-new" onclick={() => showStep('kind')}><b>New connection…</b><span>A tailnet, or tailcat.</span></button>
+      <button type="button" class="net-choice" id="net-pick-new" onclick={() => showStep('kind')}><b>New connection…</b><span>A tailnet, tailcat, or this computer.</span></button>
       {#each conns as c (c.id)}
         <button type="button" class="net-choice" id={`net-pick-${c.id}`} data-connection={c.id} aria-pressed={picked === c.id} onclick={() => (picked = c.id)} ondblclick={() => { picked = c.id; wizard.querySelector<HTMLButtonElement>('#net-connect')?.click(); }}>
           <b>{c.name}</b><span>{kindText(c)}{net.held.has(c.id) ? `; in use by ${holders[c.id] ?? 'a machine in another tab'}` : ''}</span>
@@ -164,6 +183,24 @@
       <p class="net-note">How should the machine reach a network? Its network adapter is always there: connecting doesn't restart it.</p>
       <button type="button" class="net-choice" id="net-pick-tailnet" onclick={() => showStep('tailscale')}><b>A tailnet</b><span>Tailscale, or your Headscale: the machine joins as a device of its own, reaches the other devices by name, and the internet through an exit node.</span></button>
       <button type="button" class="net-choice" id="net-pick-tailcat" onclick={() => showStep('tailcat')}><b>tailcat (no account)</b><span>A computer of yours shares its network with the machine, and other computers can reach the machine (ssh, any port) through an address of its own.</span></button>
+      <button type="button" class="net-choice" id="net-pick-local" onclick={() => showStep('local')}><b>This computer (webpc-net)</b><span>A small program you run here gives the machine this computer's network: the internet and your LAN at this computer's own speed, no relay and no account.</span></button>
+    </section>
+    <section id="net-step-local" class="net-step" hidden={step !== 'local'}>
+      <label>The helper's link<input id="net-local-url" bind:value={localURL} type="password" placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…" autocomplete="off" spellcheck="false"></label>
+      <p class="net-note">Run <a href={SOURCE} target="_blank" rel="noopener">webpc-net</a> on this computer and paste the link it prints (opening the link does it too). The link has a secret in it: whoever has it, on a page the helper accepts, uses your network. The browser asks once whether this site may reach devices on your local network: allow it.</p>
+      {#if !editing}
+        {#if RELEASE}
+          <details id="net-local-install" open={!localURL}><summary>Install webpc-net {RELEASE.version}</summary>
+            <label>For<select id="net-local-target" value={`${shown.os}-${shown.arch}`} onchange={(e) => { target = TARGETS.find((t) => `${t.os}-${t.arch}` === e.currentTarget.value); }}>
+              {#each TARGETS as t (`${t.os}-${t.arch}`)}<option value={`${t.os}-${t.arch}`}>{targetName(t)}</option>{/each}
+            </select></label>
+            <pre id="net-local-lines">{installLines(RELEASE, shown)}</pre>
+            <p class="net-note">In a terminal{shown.os === 'windows' ? ' (PowerShell)' : ''}: it downloads webpc-net, checks it against its published SHA-256 and runs it.</p>
+          </details>
+        {:else}
+          <p id="net-local-install" class="net-note">No release yet: build it from <a href={SOURCE} target="_blank" rel="noopener">its source</a> (webpc's <code>net/webpc-net</code>, <code>go run .</code>).</p>
+        {/if}
+      {/if}
     </section>
     <section id="net-step-tailnet" class="net-step" hidden={step !== 'tailscale'}>
       <label>Control server<input id="net-control" bind:value={control} disabled={!!editing} placeholder="Tailscale (default), or a Headscale's URL" autocomplete="off" spellcheck="false"></label>
@@ -197,7 +234,7 @@
         </details>
       </div>
     </section>
-    {#if !editing && (step === 'tailscale' || step === 'tailcat')}
+    {#if !editing && (step === 'tailscale' || step === 'tailcat' || step === 'local')}
       <Check id="net-keep" bind:checked={keep}>
         Keep this connection in this browser
         {#snippet note()}<span id="net-keep-note">{keep ? 'Any machine here can use it again, and it comes back after a reload without a login.' : "Ephemeral: kept nowhere, it goes when this page closes (a tailnet's node then leaves the tailnet, and a served address stops working)."}</span>{/snippet}

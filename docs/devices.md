@@ -245,9 +245,18 @@ a device kind of their own (docs/frontend.md "The guest's clock").
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in
   the emulator. Features `MAC`, `STATUS` and the offloads below, a receiveq and a transmitq of 256; MAC
-  `52:54:00:12:34:56` by default, link always up. Each transmitted chain is a frame with the
-  12-byte `virtio_net_hdr_v1` stripped (≤ 12 bytes, over 12 + 1518 without GSO, or past an IPv6
-  packet's largest, dropped). Frames for the guest wait for receive buffers (the oldest dropped past
+  `52:54:00:12:34:56` by default, the link up. Each transmitted chain is a frame with the
+  12-byte `virtio_net_hdr_v1` stripped (≤ 12 bytes, over 12 + 1518 without GSO, 12 + `MAX_PORT_FRAME` on a frame
+  port, or past an IPv6 packet's largest, dropped). **A card on an IP port has two paths** (web/gateway.ts
+  `FramePath`): the gateway's, and a frame port of its own that the port's other end hands over (`{type: 'frames',
+  port}`: the local helper's client; `port` null drops the frames until one comes; `{type: 'gateway'}` brings the
+  gateway back). **The link flaps** (STATUS's `LINK_UP` cleared, a config-change interrupt, set again `FLAP_MS`, 7 s,
+  later: networkd waits out a carrier loss under 5 s when its lease's MTU isn't the link's original, as a tailnet's
+  1280 isn't, and a 1 s flap was ignored at the boot's first lease; only under a driver, the user's OK of 2026-11-01) when the path changes, and when the gateway's lease moves
+  to another address than the one it last acknowledged (`stale`: another connection on the adapter; the same
+  address again, a reconnect, doesn't), so the guest asks for a lease at once: networkd drops the link's addresses on
+  a carrier loss and asks on its return, which cuts its open connections, hence only when its address is stale
+  anyway. A reset puts the link up. Frames for the guest wait for receive buffers (the oldest dropped past
   256) and fill as many as they need (`MRG_RXBUF`: the header's `num_buffers`; without it, one larger
   than the next buffer is dropped). Frames from a port (a page adapter or a port backend) are delivered
   in batches: those one task brought, at its end (a microtask, so no timer); the test adapters' at once,

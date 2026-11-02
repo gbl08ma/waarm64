@@ -302,3 +302,47 @@ test("a port that comes while the client detaches stays, connected or not: the o
   assert.deepEqual(closed, ['old']);
   old.port2.close();
 });
+
+test("a local connection: the helper's link goes to the local client; an IP client after it brings the gateway back first; it is the primary first", async () => {
+  const { localNetmap } = await import('../web/local-net.ts');
+  const ts = fake();
+  const locals: { url: string; ip: MessagePort; setState(s: string, nm?: NetMap): void; emit(m: FromTailscale): void }[] = [];
+  const startLocal = (config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void): Tailscale => {
+    let state = '';
+    let nm: NetMap | undefined;
+    let held: MessagePort | undefined = config.ip;
+    locals.push({ url: config.url, ip: config.ip, emit: onEvent, setState(s, n) { state = s; nm = n; onEvent({ type: 'state', state: s }); } });
+    return {
+      state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
+      setPrimary: () => {}, attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
+      setExitNode: async () => { throw new Error('no'); }, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
+    };
+  };
+  const net = createNetwork(() => {}, ts.start, undefined, startLocal);
+  const dev = net.port();
+  const seen: unknown[] = [];
+  dev.onmessage = (e) => seen.push(e.data);
+  net.connect({ controlURL: '', hostname: '', local: 'ws://127.0.0.1:8740/tok' });
+  assert.deepEqual(ts.log, []);
+  assert.equal(locals[0].url, 'ws://127.0.0.1:8740/tok');
+  assert.deepEqual(net.view(), { phase: 'connecting', text: 'Connecting to the helper on this computer…', exitNodes: [] });
+  locals[0].setState('Running', localNetmap({ address: '192.168.127.2' }));
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.168.127.2', exitNodes: [], internet: true, local: true, text: 'Connected through this computer (192.168.127.2)' });
+  locals[0].emit({ type: 'error', error: "couldn't reach the helper" });
+  assert.equal(net.view().phase, 'error');
+  await net.disconnect();
+  // A tailnet next: the card is told to leave the helper's frames for the gateway, before the client has the port.
+  net.connect({ controlURL: 'https://c.example', hostname: 'h' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(seen, [{ type: 'gateway' }]);
+  await net.disconnect();
+  net.connect({ controlURL: 'https://c.example', hostname: 'h' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(seen, [{ type: 'gateway' }], 'once: the card is on the gateway already');
+  await net.disconnect();
+  dev.close();
+  const c = (phase: 'connected' | 'off', internet?: boolean, local?: boolean) => ({ phase, internet, local });
+  assert.equal(primaryOf([c('connected', true), c('connected', true, true)]), 1, 'a tailnet with an exit node, then a local helper: the helper');
+  assert.equal(primaryOf([c('connected', true, true), c('connected', true, true)]), 0, 'two helpers: the first');
+  assert.equal(primaryOf([c('off', false, true), c('connected', true)]), 1);
+});

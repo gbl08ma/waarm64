@@ -92,7 +92,8 @@ try {
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await removeOverlay(page);
-      await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay, ws: `ws://127.0.0.1:${PORT}/${token}` })}`);
+      await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay, port: '1' })}`);
+      await page.evaluate((u) => (window as unknown as { harness: { connectLocal(u: string): void } }).harness.connectLocal(u), `ws://127.0.0.1:${PORT}/${token}`);
       await loginRoot(page, 240_000, async () => `\n${helperLog.slice(-1000)}`);
       const run = (c: string, ms = 60_000) => runIn(page, c, ms, async () => `\n${helperLog.slice(-1000)}`);
       for (let k = 0; k < 60 && !(await run('ip -4 -o route show default')).trim(); k++) await page.waitForTimeout(1000);

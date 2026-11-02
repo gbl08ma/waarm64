@@ -50,12 +50,10 @@ import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay,
 import { bytesText } from './bytes.ts';
 import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunning, knownDisk, machineLock, setAdapterConnection, updateMachine } from './machines.ts';
 import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
-import { parseLocalURL, startLocalNet, type LocalNet } from '../local-net.ts';
+import { parseLocalURL } from '../local-net.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
-/** L0's spike of the local helper (`?localnet=`), while the machine runs. */
-let spikeLocal: LocalNet | undefined;
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="webpc-build"]')?.getAttribute('content');
 if (build) console.info(`webpc: built from ${build}`);
@@ -292,6 +290,19 @@ ui.firmware = !!spec.firmware;
 ui.hasNetwork = !!spec.network;
 const folders = new PageFolders({ store, me: () => machineTitle(), onChange: () => { ui.folders.on = folders.running; ui.folders.tick++; } });
 void folders.refresh();
+
+// The local helper's pairing link (net/webpc-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
+// fragment never reached a server; it leaves the address at once (it holds the token) and opens the Network wizard on
+// it, attaching to the page's machine's first adapter when there's one.
+{
+  const pairing = new URLSearchParams(location.hash.slice(1)).get('net');
+  if (pairing) {
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+    const p = parseLocalURL(pairing);
+    if ('url' in p) ui.netWizard = ui.current ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url, tick: 1 } : { mode: 'new', localURL: p.url, tick: 1 };
+    else console.warn(`#net: ${p.error}`);
+  }
+}
 store.onChange((c) => {
   ui.records++;
   void net.refresh();
@@ -642,22 +653,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   // A machine's network adapters are there from the start (one can't be added later without a restart): their ends of
   // the IP ports, whose other ends the page's network has (web/app/net-live.ts: the clients of their connections).
-  const nets: { mac: string; ip: MessagePort; frames?: MessagePort }[] = net.ports(netKey(), pageAdapters());
+  const nets = net.ports(netKey(), pageAdapters());
   ui.hasNetwork = nets.length > 0;
-  // L0's spike of the local helper (docs/plans/networking-local.md): `?localnet=` or `#net=` (the helper's pairing
-  // link) puts the first adapter's frames straight onto the helper's WebSocket, no gateway in the page and no
-  // connection; the Network menu doesn't know. L2 replaces it with the connection kind.
-  spikeLocal?.close();
-  spikeLocal = undefined;
-  const localURL = params.get('localnet') ?? new URLSearchParams(location.hash.slice(1)).get('net');
-  const localParsed = localURL ? parseLocalURL(localURL) : undefined;
-  if (localParsed && 'error' in localParsed) console.warn(`?localnet: ${localParsed.error}`);
-  else if (localParsed && nets[0]) {
-    const ch = new MessageChannel();
-    const l = startLocalNet(localParsed.url, ch.port1, () => console.info(`local helper: ${l.state()}${l.error() ? `: ${l.error()}` : ''}`));
-    spikeLocal = l;
-    nets[0] = { ...nets[0], frames: ch.port2 };
-  }
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const sound = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
@@ -797,7 +794,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (folders.views().some((v) => v.problem)) ui.folders.wanted = true; // Allow access…, Use it here
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.flatMap((n) => (n.frames ? [n.ip, n.frames] : [n.ip])), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.

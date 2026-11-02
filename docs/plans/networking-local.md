@@ -1,4 +1,4 @@
-# A local network helper (L0 and L1 done; L2 next)
+# A local network helper (L0 to L2 done; L3 next)
 
 A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
@@ -124,7 +124,7 @@ with tun2socks-style forwarders.
   framing, several frames per message (as DERP's are joined, tailnet.md "Transports and DERP"). **In a small worker,
   and batched** (measured, L0; bench/net/REPORT.md "The local helper"): a worker takes half a core off the main thread at no
   cost, and a worker's socket makes the permission's request as the page's does; flushing on `setTimeout(0)` instead of a microtask
-  doubles the upload (357 to 766 Mbit/s) without moving the round trip. L0's spike does neither yet.
+  doubles the upload (357 to 766 Mbit/s) without moving the round trip. L2 does both (web/local-net-worker.ts).
 - **No gateway:** the machine port's frames go to the helper untouched, and the helper's DHCP gives the guest its
   lease, routes and resolvers.
 - **The primary** ([network-adapters.md](../network-adapters.md) §4): a connected `local` adapter reaches the
@@ -143,6 +143,11 @@ with tun2socks-style forwarders.
   batching; the helper's TCP is terminated, so the guest's segments never reach the internet at that size, but its UDP does. Reconnecting after the
   helper restarts keeps the guest's lease if the helper kept its network; otherwise the guest's next renewal
   fixes it.
+- **Reconnecting** (the user's, 2026-11-01): the card's link flaps (virtio-net's STATUS) whenever what the guest holds
+  would go stale: the path changing between the page's gateway and the helper, or the gateway's lease moving to another
+  address (any kind); never for a reconnect to the same address, since networkd drops the link's addresses on a
+  carrier loss, cutting open connections. Disconnect leaves the card on frames to nothing, so a reconnect to the same
+  helper keeps the guest's lease.
 - Snapshots: a connection isn't in the shape, so nothing changes; after a load the guest renews its lease.
 
 ## 4. Steps
@@ -177,6 +182,19 @@ with tun2socks-style forwarders.
   - **Left:** the second host's check (the dev VM, arm64: `build.sh --check` against that file, from the same source);
     GitHub's releases wait on the move (L3/L4, and the download location in §6).
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
+  - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/network-adapters.md): the kind `local` (its
+    link in the record); the wizard's **This computer (webpc-net)** step (the link, or the pairing link, pasted; the
+    install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s; none until a
+    release); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
+    a worker, batched on `setTimeout(0)`; the card's frame path beside the gateway's (`FramePath`) with a **link flap**
+    on a change of path and on a lease for another address (the user's, for every kind: §3 "Reconnecting" and
+    devices.md "net"); `primaryOf` taking it first, two of them said; the errors as sentences, a refused prompt told
+    apart (`loopback-network` denied), and **Retry** in the menu; a frame port's frames up to `MAX_PORT_FRAME`.
+    `?localnet=` is gone. Tests: tests/page-local.test.ts (the pairing link, the wizard, the real helper, Retry),
+    tests/net-local.test.ts (now through the card's IP port: the gateway's lease, then the helper's after the switch),
+    and the unit tests docs/testing.md lists.
+  - **Left:** the prompt seen by a person (headed: the user's); MTU 65520 measured with the worker and the batching
+    (the dev VM: the cloud's numbers aren't recorded, docs/cloud.md), and then the helper's default MTU.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
   install`, as `tests/net/tailcat.sh` pins tailcat): Debian's lease, a TCP transfer to a server on this machine, a
   wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these

@@ -69,7 +69,7 @@ export const ui = $state({
    */
   /** Bumped to open the Network menu (a connection was just attached here: it shows how it goes). */
   netMenu: 0,
-  netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number },
+  netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number; /** The local helper's pairing link (`#net=`): the wizard opens on it. */ localURL?: string },
   /**
    * The page's machine's shared folders (docs/shares.md §4): `on` while it runs with them (the toolbar's Folders menu);
    * `path` is where the guest finds them; `wanted` opens the menu (it clears it); `tick` when any of it changes.
