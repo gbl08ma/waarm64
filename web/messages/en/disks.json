@@ -349,7 +349,7 @@
   },
   "AddDisk.title.url": {
     "message": "Add a disk: from a url",
-    "note": "Add a disk wizard: the dialog's title once From a URL is chosen. (Lower-case "url" as the page wrote it before the catalog: the kind's name was lower-cased.)"
+    "note": "Add a disk wizard: the dialog's title once From a URL is chosen. (Lower-case \"url\" as the page wrote it before the catalog: the kind's name was lower-cased.)"
   },
   "AddDisk.source.blank": {
     "message": "Blank",
