@@ -8,8 +8,8 @@
     "note": "On-screen keyboard: tooltip and screen-reader name of the × button in its bar."
   },
   "Osk.resize": {
-    "message": "Drag to resize the keyboard.",
-    "note": "On-screen keyboard: tooltip of the handle in its bottom-right corner."
+    "message": "Drag sideways to resize the keyboard.",
+    "note": "On-screen keyboard: tooltip of the ↔ handle in its bar, left of the close button."
   },
   "Osk.key.Escape": {
     "message": "Esc",

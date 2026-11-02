@@ -50,9 +50,13 @@ export type Input = {
    * Key `code` down or up, as a key event of the element's would (the on-screen keyboard's): to the keyboard, or before
    * the guest has a driver on it, to the built-in USB keyboard or the serial console (`event`: its `key` and modifiers).
    */
-  key(code: string, down: boolean, event: KeyLike): void;
-  /** Calls `f` whenever everything held is released (a blur, a hidden page, a detach). */
+  key(code: string, down: boolean, event: KeyLike, from?: KeySource): void;
+  /** Calls `f` whenever everything held is released (a blur, a hidden page, a detach, `release`). */
   onRelease(f: () => void): void;
+  /** Calls `f` with each key the element's own key events let go (a key typed on the physical keyboard). */
+  onTyped(f: (code: string) => void): void;
+  /** Releases every key, button and touch held (the guest's keyboard driver came or went: the keys go elsewhere now). */
+  release(): void;
   /**
    * The mouse lock: on, a click on the element takes the mouse (Pointer Lock); off, it is let go (as it is when the
    * mode changes: the next click takes it in the new one).
@@ -83,6 +87,12 @@ const CSI: Record<string, string> = {
 
 /** What a key event says beside its code: its `key` (the character or the key's name) and the modifiers down with it. */
 export type KeyLike = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey'> & { repeat?: boolean };
+
+/** Who presses a key (web/input.ts `attachInput` keeps who holds each): the screen's key events, the on-screen keyboard, the Keys menu's combinations, Hold Esc. */
+export type KeySource = 'screen' | 'osk' | 'menu' | 'hold';
+
+/** A `KeyboardEvent.key` for code `code` on a US keyboard, as a terminal reads it (a letter or digit, else the code: `Escape`, `Tab`, `F4`). */
+const keyName = (code: string, shift: boolean) => (/^Key[A-Z]$/.test(code) ? (shift ? code[3] : code[3].toLowerCase()) : /^Digit\d$/.test(code) ? code[5] : code);
 
 /** Key `code`'s (a `KeyboardEvent.code` name) Linux keycode, if the guest's keyboard has it. */
 export const codeOf = (code: string) => KEYS.get(code);
@@ -128,8 +138,8 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     else keys.add(code);
     keyboard?.postMessage([[EV_KEY, code, value], [EV_SYN, 0, 0]]);
   };
-  /** Key `name` down or up to the guest: whether it took it. */
-  const press = (name: string, down: boolean, e: KeyLike): boolean => {
+  /** Key `name` down or up to the guest, whoever holds it: whether it took it. */
+  const deliver = (name: string, down: boolean, e: KeyLike): boolean => {
     // No guest driver for the keyboard yet (the firmware, GRUB, the initramfs have none): the keys go to the built-in USB
     // keyboard if the machine has one, else to the serial console as a terminal sends them.
     if (text && !text.live()) {
@@ -148,8 +158,31 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     sendKey(code, down ? 1 : 0);
     return true;
   };
+  /**
+   * Who holds each key down: the screen's own key events, the on-screen keyboard, the Keys menu, Hold Esc. A key goes
+   * down with its first holder and up with its last: one letting go doesn't release it for another (a Shift latched on
+   * the on-screen keyboard outlives the physical Shift's press).
+   */
+  const holders = new Map<string, Set<KeySource>>();
+  /** Key `name` down or up from `from`: whether the guest took it (or it's held already). */
+  const press = (name: string, down: boolean, e: KeyLike, from: KeySource): boolean => {
+    const h = holders.get(name);
+    if (down) {
+      // The same holder's repeat goes on as before (the serial console types it; the keyboard drops it).
+      if (h?.has(from)) return deliver(name, true, e);
+      if (h) return h.add(from), true;
+      holders.set(name, new Set([from]));
+      return deliver(name, true, e);
+    }
+    if (h && !h.delete(from)) return true; // another holds it: still down
+    if (h?.size) return true;
+    holders.delete(name);
+    return deliver(name, false, e);
+  };
+  const typed: ((code: string) => void)[] = [];
   const key = (down: number) => (e: KeyboardEvent) => {
-    if (press(e.code, !!down, e)) e.preventDefault();
+    if (press(e.code, !!down, e, 'screen')) e.preventDefault();
+    if (!down) for (const f of typed) f(e.code);
   };
   const released: (() => void)[] = [];
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
@@ -234,8 +267,26 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     fingers.clear();
   };
   const touched = (e: PointerEvent) => !!touch && e.pointerType === 'touch';
-  /** Without a touchscreen, only the first finger is the tablet's (another would move it there and lift its button). */
-  const stray = (e: PointerEvent) => !touch && e.pointerType === 'touch' && !e.isPrimary;
+  /**
+   * Without a touchscreen, only a finger that lands on the element with no other finger on it is the tablet's (another
+   * would move it there and lift its button): `tabletTouch`, its pointer, among `onEl`, the fingers on the element. The
+   * page's other fingers don't count (one on the on-screen keyboard).
+   */
+  let tabletTouch: number | undefined;
+  const onEl = new Set<number>();
+  const stray = (e: PointerEvent, phase: 'down' | 'move' | 'up') => {
+    if (touch || e.pointerType !== 'touch') return false;
+    if (phase === 'down') {
+      if (!onEl.size) tabletTouch = e.pointerId;
+      onEl.add(e.pointerId);
+    }
+    const mine = e.pointerId === tabletTouch;
+    if (phase === 'up') {
+      onEl.delete(e.pointerId);
+      if (mine) tabletTouch = undefined;
+    }
+    return !mine;
+  };
   /** The wheel's motion not yet a notch (CSS pixels; reset when it turns). */
   let wheelPx = 0;
   const takeMouse = () => {
@@ -252,6 +303,9 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     }
   };
   const releaseAll = () => {
+    holders.clear();
+    tabletTouch = undefined;
+    onEl.clear();
     text?.usb?.('', false);
     for (const code of [...keys].reverse()) sendKey(code, 0);
     releaseButtons();
@@ -267,7 +321,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     on(el, 'keyup', key(0)),
     on(el, 'pointerdown', (e: PointerEvent) => {
       if (touched(e)) return finger(e, 'down');
-      if (stray(e)) return;
+      if (stray(e, 'down')) return;
       if (lockOn && !locked() && e.pointerType === 'mouse') {
         // The click that takes the mouse isn't the guest's.
         ignored = e.buttons;
@@ -278,10 +332,10 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
       if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
       pointer(e);
     }),
-    on(el, 'pointerup', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e) || pointer(e))),
+    on(el, 'pointerup', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e))),
     // A cancelled pointer (the browser took a touch, a pen left) sends no up: what it held is released.
-    on(el, 'pointercancel', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e) || releaseButtons())),
-    on(el, 'pointermove', (e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e) || pointer(e))),
+    on(el, 'pointercancel', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || releaseButtons())),
+    on(el, 'pointermove', (e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e))),
     on(el, 'mousedown', sideButton),
     on(el, 'mouseup', sideButton),
     on(el, 'auxclick', sideButton),
@@ -317,24 +371,21 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
       if (locked() && (!on || mode !== lockMode)) document.exitPointerLock();
       [lockOn, lockMode] = [on, mode];
     },
-    key(code: string, down: boolean, event: KeyLike) {
-      press(code, down, event);
+    key(code: string, down: boolean, event: KeyLike, from: KeySource = 'osk') {
+      press(code, down, event, from);
     },
     onRelease(f: () => void) {
       released.push(f);
     },
+    onTyped(f: (code: string) => void) {
+      typed.push(f);
+    },
+    release: releaseAll,
     chord(...codes: string[]) {
-      if (text && !text.live() && text.usb && codes.every((c) => text.usb!(c, true))) {
-        for (const c of [...codes].reverse()) text.usb(c, false);
-        return;
-      }
-      const cs = codes.map((c) => {
-        const k = KEYS.get(c);
-        if (k === undefined) throw new Error(`no key ${c}`);
-        return k;
-      });
-      for (const k of cs) sendKey(k, 1);
-      for (const k of cs.reverse()) sendKey(k, 0);
+      const has = (side: string) => codes.some((c) => c.startsWith(side));
+      const e: KeyLike = { key: '', ctrlKey: has('Control'), altKey: has('Alt'), metaKey: has('Meta') };
+      for (const c of codes) press(c, true, { ...e, key: keyName(c, has('Shift')) }, 'menu');
+      for (const c of [...codes].reverse()) press(c, false, { ...e, key: keyName(c, has('Shift')) }, 'menu');
     },
   };
 }

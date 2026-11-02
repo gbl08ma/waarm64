@@ -484,6 +484,8 @@ function sleepFirst(r: Run) {
 }
 
 /** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
+/** Hold Esc's key held now: its timer, and its release. */
+let holding: { timer: ReturnType<typeof setTimeout>; up: () => void } | undefined;
 function wakeOnInput() {
   if (!run?.asleep) return;
   run.asleep = false;
@@ -715,6 +717,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
   input.mouseLock(ui.mouseLock, ui.mouseLockMode);
   input.onRelease(() => { ui.keysReleased++; });
+  input.onTyped((code) => { ui.keyTyped = { code, n: ui.keyTyped.n + 1 }; });
   ui.hasMouse = !!mouse;
   canvas.addEventListener('keydown', wakeOnInput);
   canvas.addEventListener('pointerdown', wakeOnInput);
@@ -766,6 +769,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       }
       addLog(m.data);
     } else if (m.type === 'keyboard') {
+      // The keys go elsewhere now (the virtio keyboard, or the built-in USB one or the serial console): what's held is released where it went down.
+      if (m.live !== keyboardLive) r.input.release();
       keyboardLive = m.live;
       void syncKeyboard(r);
     } else if (m.type === 'notice') {
@@ -2263,15 +2268,27 @@ Object.assign(page, {
   showLog: () => { setView(ui.view === 'screen' ? 'both' : ui.view, false); term.focus(); },
   fullscreen,
   setMouseLock,
-  chord: (keys: string[]) => { canvas.focus(); run?.input.chord(...keys); },
+  chord: (keys: string[]) => { canvas.focus(); wakeOnInput(); run?.input.chord(...keys); },
+  showOsk: (on: boolean) => {
+    ui.osk = on;
+    if (on) canvas.focus();
+  },
   holdKey: (code: string, ms: number) => {
     canvas.focus();
+    wakeOnInput();
     const r = run;
+    if (!r) return;
     const e = { key: keyOf(code, false), ctrlKey: false, altKey: false, metaKey: false };
-    r?.input.key(code, true, e);
-    setTimeout(() => r?.input.key(code, false, e), ms);
+    // A hold while one runs: the earlier ends now (one timer, one holder).
+    if (holding) { clearTimeout(holding.timer); holding.up(); }
+    r.input.key(code, true, e, 'hold');
+    const up = () => { holding = undefined; r.input.key(code, false, e, 'hold'); };
+    holding = { timer: setTimeout(up, ms), up };
   },
-  oskKey: (code: string, down: boolean, m: Mods) => run?.input.key(code, down, { key: keyOf(code, m.shift), ctrlKey: m.ctrl, altKey: m.alt, metaKey: m.meta }),
+  oskKey: (code: string, down: boolean, m: Mods) => {
+    if (down) wakeOnInput();
+    run?.input.key(code, down, { key: keyOf(code, m.shift), ctrlKey: m.ctrl, altKey: m.alt, metaKey: m.meta }, 'osk');
+  },
   screenSize: () => { fit(); scheduleSize(); },
   openMachines,
   closeMachines,

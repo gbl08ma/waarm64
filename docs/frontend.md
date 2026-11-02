@@ -844,8 +844,9 @@ page writes the context's output latency into the ring's header, and the guest g
 [Show the on-screen keyboard](ui:toolbar:Toolbar.keys.osk) (the Keys menu) puts a US ANSI keyboard of 104 keys over the
 machine (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
 guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its bar moves
-it, its corner resizes it (the keys scale with its width); where it is and how wide is remembered (`settings().osk`),
-kept in the window.
+it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in a corner sat on the keypad's Enter);
+where it is and how wide is remembered (`settings().osk`), kept in the window, no wider than the window's width or
+height allow. The toolbar's menus open over it.
 
 - **Keys** go through `Input.key` (web/input.ts), the path the screen's own key events take: to the keyboard, or before
   the guest has a driver on it, to the built-in USB keyboard or the serial console (with the `key` a US keyboard
@@ -858,15 +859,30 @@ kept in the window.
   Preferences' "[Keep on-screen keyboard modifiers held until clicked again](ui:machines:MachinesPage.oskToggle)"
   (`settings().oskModifiers` `toggle`), until it's tapped again. A latched modifier tapped again is released at once.
   Held keys are drawn pressed, latched ones tinted (`data-state` `held`, `latched`).
-- **Focus:** the keyboard never takes it (its `pointerdown` and `mousedown` are cancelled), so the screen keeps the
-  physical keyboard. When the page releases the guest's keys (the screen or the window loses the focus), `Input`'s
-  `onRelease` tells the keyboard (`ui.keysReleased`), which lets go of what it held and latched.
-- **Not yet:** the keys go to the guest's keyboard in every view (the serial terminal's view too); no layout but US;
+  A press elsewhere (a click or a touch on the screen) while a finger holds a modifier uses it as a key would
+  (Shift-click: released when the finger lifts). A key typed on the physical keyboard ends the latches as a key here
+  does (`Input.onTyped`, `ui.keyTyped`).
+- **Holders:** `attachInput` keeps who holds each key (`KeySource`: the screen's key events, the keyboard, the Keys
+  menu, Hold Esc). A key goes down with its first holder and up with its last, so the physical Shift pressed and let
+  go doesn't release a Shift latched here, a menu's Ctrl+W doesn't release a latched Ctrl, and a second Hold Esc ends
+  the first.
+- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it (its `pointerdown` and
+  `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
+  screen or the window loses the focus, or the guest's keyboard driver comes or goes, which moves the keys between
+  the virtio keyboard and the built-in USB one or the serial console), `Input`'s `onRelease` tells the keyboard
+  (`ui.keysReleased`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended
+  guest, as the screen's do.
+- **Without a touchscreen** a finger landing on the screen with no other finger on it is the tablet's (the screen's
+  own fingers are counted, not the page's: a finger on the keyboard doesn't make the screen's touch a second one).
+- **Not yet:** the keys go to the guest's keyboard in every view (the serial terminal's view too); a key held here
+  doesn't repeat on the serial console (the guest's kernel repeats it on the keyboard); no layout but US;
   Caps Lock and Num Lock show no state (the guest's LEDs aren't read); one size of key labels on a phone (backlog).
 
 `tests/osk.test.ts` tests the layout and `OskKeys`; `tests/page-osk.test.ts` the keyboard and the Keys menu on the page,
-with the keyboard's port kept on the page (clicks, a held key, latched modifiers, two fingers by CDP touches, the
-focus, a move and a resize remembered, the toggle mode, Ctrl+W, Esc, Hold Esc).
+with the keyboard's, tablet's and serial console's ports kept on the page (clicks, a held key, latched modifiers, two
+fingers by CDP touches, the focus, a move and a resize remembered, the toggle mode, the holders beside the physical
+keyboard, a finger on the keyboard and one on the screen, the driver's change, the serial console before the driver,
+Ctrl+W, Esc, Hold Esc). The wake isn't tested on the page (a suspended guest's status is the worker's).
 
 ### The keyboard layout
 

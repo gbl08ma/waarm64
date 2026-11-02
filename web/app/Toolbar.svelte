@@ -134,7 +134,7 @@
     </Menu>
   {/if}
   <Menu id="keys" icon="keyboard" title={t('toolbar:Toolbar.keys.title')} bind:open={keysOpen}>
-    <button id="osk-toggle" aria-pressed={ui.osk} title={t('toolbar:Toolbar.keys.osk.title')} onclick={() => { keysOpen = false; ui.osk = !ui.osk; }}>{ui.osk ? t('toolbar:Toolbar.keys.osk.hide') : t('toolbar:Toolbar.keys.osk')}</button>
+    <button id="osk-toggle" aria-pressed={ui.osk} title={t('toolbar:Toolbar.keys.osk.title')} onclick={() => { keysOpen = false; page.showOsk(!ui.osk); }}>{ui.osk ? t('toolbar:Toolbar.keys.osk.hide') : t('toolbar:Toolbar.keys.osk')}</button>
     <hr>
     <div class="combos">
       {#each COMBOS as c (c.keys)}

@@ -65,6 +65,8 @@ export const ui = $state({
   oskModifiers: (settings().oskModifiers ?? 'next') as ModifierMode,
   /** Bumped when the guest's keys are released by the page (a blur): the on-screen keyboard forgets what it holds. */
   keysReleased: 0,
+  /** The last key typed on the physical keyboard into the screen (`n` bumped each time): it ends the on-screen keyboard's latches. */
+  keyTyped: { code: '', n: 0 },
   /** The machine has a relative mouse (the lock's `raw` mode). */
   hasMouse: false,
   /** The page can't run here (no cross-origin isolation): no Start. */
@@ -161,6 +163,8 @@ export type Page = {
   /** The toolbar's mouse lock on or off (off lets go of a held mouse), and its mode. */
   setMouseLock(on: boolean, mode?: LockMode): void;
   chord(keys: string[]): void;
+  /** Shows or hides the on-screen keyboard; shown, the screen takes the focus (the keys typed on your keyboard go there too). */
+  showOsk(on: boolean): void;
   /** Holds key `code` down for `ms` (Hold Esc: a guest's browser leaves its full screen on a held Esc). */
   holdKey(code: string, ms: number): void;
   /** The on-screen keyboard's key `code` down or up, with the modifiers down on it. */

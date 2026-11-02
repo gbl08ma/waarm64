@@ -109,6 +109,32 @@ test('a modifier held with another key, or alone past HOLD_MS, is released when 
   assert.equal(k.state('ShiftLeft'), undefined);
 });
 
+test('a modifier pressed while a key is held is held with it, not latched; a key typed elsewhere ends a latch', () => {
+  const { k, take } = keyboard('toggle');
+  k.press(1, 'Space');
+  k.press(2, 'ShiftLeft');
+  k.release(2);
+  assert.deepEqual(take(), ['+Space', '+ShiftLeft', '-ShiftLeft']);
+  assert.equal(k.state('ShiftLeft'), undefined);
+  k.release(1);
+  take();
+  // A click elsewhere (the screen) while a finger holds Ctrl: Ctrl-click, released when the finger lifts.
+  k.press(1, 'ControlLeft');
+  k.used();
+  k.release(1);
+  assert.deepEqual(take(), ['+ControlLeft', '-ControlLeft']);
+  // The physical keyboard's key: the end of a latch in the `next` mode, nothing in the `toggle` one.
+  k.press(1, 'ControlLeft'); k.release(1);
+  k.typed('KeyC');
+  assert.equal(k.state('ControlLeft'), 'latched');
+  k.mode = 'next';
+  k.typed('ShiftLeft');
+  assert.equal(k.state('ControlLeft'), 'latched', 'a modifier typed is no next key');
+  k.typed('KeyC');
+  assert.deepEqual(take(), ['+ControlLeft', '-ControlLeft']);
+  assert.equal(k.state('ControlLeft'), undefined);
+});
+
 test('the toggle mode: a tapped modifier stays down through keys until tapped again', () => {
   const { k, take } = keyboard('toggle');
   k.press(1, 'ControlLeft'); k.release(1);

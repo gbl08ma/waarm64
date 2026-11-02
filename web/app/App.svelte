@@ -52,7 +52,7 @@
     </div>
   </div>
   <div id="terminal-view"><div id="terminal"></div></div>
-  {#if ui.osk}<Osk send={(code, down, mods) => page.oskKey(code, down, mods)} mode={ui.oskModifiers} released={ui.keysReleased} onclose={() => { ui.osk = false; }} />{/if}
+  {#if ui.osk}<Osk send={(code, down, mods) => page.oskKey(code, down, mods)} mode={ui.oskModifiers} released={ui.keysReleased} typed={ui.keyTyped} onclose={() => { ui.osk = false; }} />{/if}
 </main>
 {#if ui.machinesOpen}<MachinesPage {store} {net} {folders} />{/if}
 <StatusBar {net} />

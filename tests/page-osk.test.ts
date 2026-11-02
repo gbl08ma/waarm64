@@ -30,43 +30,44 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-/** The page with its keyboard's port kept here, its worker stopped and the guest's keyboard driver said to be up. */
-async function open() {
+/** The page with its keyboard's, tablet's and serial console's ports kept here, its worker stopped and (`live`) the guest's keyboard driver said to be up. */
+async function open(live = true) {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, hasTouch: true });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.addInitScript(() => {
-    const w = window as unknown as { __keys: number[][][]; __workers: Worker[] };
-    w.__keys = [];
-    w.__workers = [];
+    const w = window as unknown as { __keys: number[][][]; __tablet: number[][][]; __serial: string[]; __workers: Worker[] };
+    [w.__keys, w.__tablet, w.__serial, w.__workers] = [[], [], [], []];
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (this: Worker, m: Record<string, unknown>, transfer: Transferable[]) {
       if (m?.type === 'start') {
         w.__workers.push(this);
-        const port = m.keyboard as MessagePort;
-        port.onmessage = (e: MessageEvent<number[][]>) => w.__keys.push(e.data);
-        const stand = new MessageChannel().port2;
-        m.keyboard = stand;
-        transfer = transfer.map((x) => (x === port ? stand : x));
+        for (const [k, into] of [['keyboard', w.__keys], ['tablet', w.__tablet], ['serial', w.__serial]] as const) {
+          const port = m[k] as MessagePort;
+          port.onmessage = (e: MessageEvent) => (into as unknown[]).push(e.data);
+          const stand = new MessageChannel().port2;
+          m[k] = stand;
+          transfer = transfer.map((x) => (x === port ? stand : x));
+        }
       }
       return post.call(this, m, transfer as unknown as StructuredSerializeOptions);
     } as typeof Worker.prototype.postMessage;
   });
-  await load(page);
+  await load(page, live);
   return { context, page, errors };
 }
 
 /** Loads (or reloads) the page, stops its worker and says the guest's keyboard driver is up. */
-async function load(page: Page) {
+async function load(page: Page, live = true) {
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=screen`);
   await page.waitForFunction(() => (window as unknown as { __workers: Worker[] }).__workers.length > 0, null, { timeout: 30_000 });
-  await page.evaluate(() => {
+  await page.evaluate((live) => {
     const [worker] = (window as unknown as { __workers: Worker[] }).__workers;
     worker.terminate();
-    worker.onmessage?.(new MessageEvent('message', { data: { type: 'keyboard', live: true } }));
+    if (live) worker.onmessage?.(new MessageEvent('message', { data: { type: 'keyboard', live: true } }));
     document.getElementById('boot')!.style.display = 'none';
-  });
+  }, live);
   await page.locator('#screen').focus();
 }
 
@@ -80,11 +81,12 @@ const ev = (...codes: [number, boolean][]) => codes.map(([c, d]) => `${d ? '+' :
 const settle = (page: Page, n: number) => page.waitForFunction((n) => (window as unknown as { __keys: number[][][] }).__keys.flat().filter((e) => e[0] === 1).length >= n, n, { timeout: 5000 });
 const key = (page: Page, code: string) => page.locator(`#osk [data-code=${code}]`);
 const focused = (page: Page) => page.evaluate(() => document.activeElement?.id);
+/** Shows the on-screen keyboard from the Keys menu: the screen has the focus again. */
 async function showOsk(page: Page) {
   await page.locator('#keys summary').click();
   await page.locator('#osk-toggle').click();
   await page.locator('#osk').waitFor();
-  await page.locator('#screen').focus();
+  assert.equal(await focused(page), 'screen');
 }
 
 test('the on-screen keyboard: clicks, a held key, latched modifiers, two fingers; the screen keeps the focus', { skip, timeout: 120_000 }, async () => {
@@ -162,10 +164,10 @@ test('the on-screen keyboard moved and resized, remembered; Preferences keeps mo
   await page.mouse.down();
   await page.mouse.move(bar.x + 40 - 100, bar.y + bar.height / 2 - 120, { steps: 5 });
   await page.mouse.up();
-  const corner = (await page.locator('#osk .corner').boundingBox())!;
-  await page.mouse.move(corner.x + 8, corner.y + 8);
+  const grip = (await page.locator('#osk .grip').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
-  await page.mouse.move(corner.x + 8 - 200, corner.y + 8, { steps: 5 });
+  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2, { steps: 5 });
   await page.mouse.up();
   const after = (await page.locator('#osk').boundingBox())!;
   assert.ok(Math.abs(after.x - (before.x - 100)) < 3 && Math.abs(after.y - (before.y - 120)) < 3, `moved: ${JSON.stringify([before, after])}`);
@@ -216,6 +218,76 @@ test('the Keys menu: Ctrl+W and Esc sent, Hold Esc held for seconds', { skip, ti
   const held = Date.now() - t0;
   assert.deepEqual(await keys(page), ev([K.Esc, false]));
   assert.ok(held >= 2500, `held ${held} ms`);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the on-screen keyboard beside the screen\'s own keys and fingers: each holds its own; a typed key ends a latch; a driver coming up releases', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open();
+  await showOsk(page);
+  // Shift latched on the keyboard, the physical Shift pressed and let go: the guest's Shift stays down for the next key.
+  await key(page, 'ShiftLeft').click();
+  await page.keyboard.down('Shift');
+  await page.keyboard.up('Shift');
+  await key(page, 'KeyA').click();
+  await settle(page, 4);
+  assert.deepEqual(await keys(page), ev([K.Shift, true], [K.A, true], [K.A, false], [K.Shift, false]));
+  // Ctrl latched, C typed on the physical keyboard: Ctrl+C, then Ctrl let go.
+  await key(page, 'ControlLeft').click();
+  await page.keyboard.press('KeyC');
+  await settle(page, 4);
+  assert.deepEqual(await keys(page), ev([K.Ctrl, true], [K.C, true], [K.C, false], [K.Ctrl, false]));
+  assert.equal(await key(page, 'ControlLeft').getAttribute('data-state'), null);
+
+  // A finger holding Shift on the keyboard, another tapping the screen (no touchscreen): the tablet's click.
+  const cdp = await context.newCDPSession(page);
+  const sb = (await key(page, 'ShiftLeft').boundingBox())!;
+  const shift = { x: sb.x + sb.width / 2, y: sb.y + sb.height / 2 };
+  const sc = (await page.locator('#screen').boundingBox())!;
+  const screen = { x: sc.x + sc.width / 4, y: sc.y + sc.height / 4 };
+  await page.evaluate(() => { (window as unknown as { __tablet: unknown[] }).__tablet.length = 0; });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...shift, id: 1 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...shift, id: 1 }, { ...screen, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ ...screen, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ ...shift, id: 1 }] });
+  await settle(page, 2);
+  const tablet = await page.evaluate(() => (window as unknown as { __tablet: number[][][] }).__tablet.flat().filter((e) => e[0] === 1).map((e) => `${e[2] ? '+' : '-'}${e[1]}`));
+  assert.deepEqual(tablet, ['+272', '-272'], 'the screen\'s finger clicks');
+  assert.deepEqual(await keys(page), ev([K.Shift, true], [K.Shift, false]));
+
+  // The guest's keyboard driver going away (a reboot to the firmware) releases what the keyboard latched.
+  await key(page, 'ShiftLeft').click();
+  await settle(page, 1);
+  await keys(page);
+  await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers[0].onmessage?.(new MessageEvent('message', { data: { type: 'keyboard', live: false } })));
+  await settle(page, 1);
+  assert.deepEqual(await keys(page), ev([K.Shift, false]));
+  assert.equal(await key(page, 'ShiftLeft').getAttribute('data-state'), null);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('before the guest has a keyboard driver: the keyboard and the Keys menu type into the serial console', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open(false);
+  const serial = async (n: number) => {
+    await page.waitForFunction((n) => (window as unknown as { __serial: string[] }).__serial.join('').length >= n, n, { timeout: 5000 });
+    return page.evaluate(() => (window as unknown as { __serial: string[] }).__serial.splice(0).join(''));
+  };
+  await showOsk(page);
+  await key(page, 'ShiftLeft').click();
+  await key(page, 'KeyA').click();
+  await key(page, 'KeyB').click();
+  assert.equal(await serial(2), 'Ab');
+  await key(page, 'ControlLeft').click();
+  await key(page, 'KeyC').click();
+  assert.equal(await serial(1), '\x03');
+  await page.locator('#keys summary').click();
+  await page.locator('[data-chord=Escape]').click();
+  assert.equal(await serial(1), '\x1b');
+  await page.locator('#keys summary').click();
+  await page.locator('[data-chord="ControlLeft KeyW"]').click();
+  assert.equal(await serial(1), '\x17');
+  assert.deepEqual(await keys(page), [], 'nothing to the keyboard without its driver');
   assert.deepEqual(errors, []);
   await context.close();
 });

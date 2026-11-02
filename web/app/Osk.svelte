@@ -1,6 +1,6 @@
 <!--
   The on-screen keyboard (docs/frontend.md "The on-screen keyboard"): a US keyboard of 104 keys over the machine, moved
-  by its bar and resized by its corner (remembered). Each pointer on a key holds it until it lifts, so fingers chord as
+  by its bar and resized by the grip in it (remembered; kept in the window). Each pointer on a key holds it until it lifts, so fingers chord as
   on a real keyboard (web/app/osk.ts `OskKeys`); the keys go to the guest through `send`. It never takes the focus: the
   screen keeps it.
 -->
@@ -17,15 +17,18 @@
     mode: ModifierMode;
     /** Bumped when the guest's keys were released elsewhere (a blur): what the keyboard holds is forgotten. */
     released: number;
+    /** The last key typed on the physical keyboard (`n` bumped each time): it ends the latches as a key here does. */
+    typed: { code: string; n: number };
     onclose(): void;
   };
-  let { send, mode, released, onclose }: Props = $props();
+  let { send, mode, released, typed, onclose }: Props = $props();
 
   let tick = $state(0);
   const keys = new OskKeys((code, down) => send(code, down, keys.mods()));
   keys.onChange = () => { tick++; };
   $effect(() => { keys.mode = mode; });
   $effect(() => { if (released) untrack(() => keys.forget()); });
+  $effect(() => { if (typed.n) { const code = typed.code; untrack(() => keys.typed(code)); } });
 
   /** The named keys' words (the others show their legends). */
   const NAMES: Record<string, string> = {
@@ -40,30 +43,37 @@
   };
   const LABELS = KEYS.map((k) => ({ ...k, legend: legends(k.code), name: NAMES[k.code] ? t(NAMES[k.code]) : undefined }));
 
-  // Where it is and how wide (CSS pixels), kept in the viewport.
-  const BAR = 22, PAD = 6, MIN = 360;
-  const heightOf = (w: number) => ((w - 2 * PAD) / WIDTH) * HEIGHT + 2 * PAD + BAR;
+  // Where it is and how wide (CSS pixels), kept in the window: its bar, its padding (no top one) and its border.
+  const BAR = 22, PAD = 6, BORDER = 1, MIN = 320;
+  const unitOf = (w: number) => (w - 2 * PAD - 2 * BORDER) / WIDTH;
+  const heightOf = (w: number) => unitOf(w) * HEIGHT + BAR + PAD + 2 * BORDER;
+  /** The widest it can be: the window's width, and the width whose height is the window's. */
+  const widest = () => Math.min(innerWidth, ((innerHeight - BAR - PAD - 2 * BORDER) / HEIGHT) * WIDTH + 2 * PAD + 2 * BORDER);
   // Where it was left, or centered at the bottom.
   const saved = settings().osk;
   const w0 = saved?.w ?? Math.min(960, innerWidth - 16);
   let w = $state(w0);
   let x = $state(saved?.x ?? (innerWidth - w0) / 2);
   let y = $state(saved?.y ?? innerHeight - heightOf(w0) - 40);
-  const u = $derived((w - 2 * PAD) / WIDTH);
+  const u = $derived(unitOf(w));
   const px = (n: number) => `${n}px`;
   function clamp() {
-    w = Math.max(MIN, Math.min(w, innerWidth));
+    w = Math.max(Math.min(MIN, widest()), Math.min(w, widest()));
     x = Math.max(0, Math.min(x, innerWidth - w));
     y = Math.max(0, Math.min(y, innerHeight - heightOf(w)));
   }
+  let root: HTMLElement;
   onMount(() => {
     clamp();
     const fit = () => clamp();
+    // A press elsewhere (a click on the screen) while a finger holds a modifier uses it: Shift-click, not a tap.
+    const elsewhere = (e: PointerEvent) => { if (!root.contains(e.target as Node)) keys.used(); };
     addEventListener('resize', fit);
-    return () => { removeEventListener('resize', fit); keys.releaseAll(); };
+    document.addEventListener('pointerdown', elsewhere, true);
+    return () => { removeEventListener('resize', fit); document.removeEventListener('pointerdown', elsewhere, true); keys.releaseAll(); };
   });
 
-  // Moving (the bar) and resizing (the corner): a pointer's drag, kept when it ends.
+  // Moving (the bar) and resizing (the grip, by its left edge): a pointer's drag, kept when it ends.
   let drag: { id: number; kind: 'move' | 'size'; x0: number; y0: number; x: number; y: number; w: number } | undefined;
   function grab(kind: 'move' | 'size', e: PointerEvent) {
     if (e.button !== 0 || (e.target as Element).closest('button')) return;
@@ -98,10 +108,11 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div id="osk" style:left={px(x)} style:top={px(y)} style:width={px(w)} style:--u={px(u)}
+<div id="osk" bind:this={root} style:left={px(x)} style:top={px(y)} style:width={px(w)} style:--u={px(u)}
   onmousedown={(e) => e.preventDefault()} oncontextmenu={(e) => e.preventDefault()}>
   <div class="bar" onpointerdown={(e) => grab('move', e)} onpointermove={dragMove} onpointerup={dragEnd} onpointercancel={dragEnd}>
     <span>{t('osk:Osk.title')}</span>
+    <div class="grip" title={t('osk:Osk.resize')} onpointerdown={(e) => { e.stopPropagation(); grab('size', e); }} onpointermove={dragMove} onpointerup={dragEnd} onpointercancel={dragEnd}><Icon name="arrows-horizontal" size={14} /></div>
     <button class="close" aria-label={t('osk:Osk.close')} title={t('osk:Osk.close')} onclick={onclose}><Icon name="x" size={14} /></button>
   </div>
   <div class="keys" style:height={px(u * HEIGHT)} onpointerdown={keyDown} onpointerup={keyUp} onpointercancel={keyUp}>
@@ -112,14 +123,15 @@
       </div>
     {/each}
   </div>
-  <div class="corner" title={t('osk:Osk.resize')} onpointerdown={(e) => grab('size', e)} onpointermove={dragMove} onpointerup={dragEnd} onpointercancel={dragEnd}></div>
 </div>
 
 <style>
-  #osk { position: fixed; z-index: 20; box-sizing: border-box; padding: 0 6px 6px; background: color-mix(in srgb, var(--panel) 92%, transparent);
+  #osk { position: fixed; z-index: 1; box-sizing: border-box; padding: 0 6px 6px; background: color-mix(in srgb, var(--panel) 92%, transparent);
     border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px #0009; user-select: none; -webkit-user-select: none; touch-action: none; }
   .bar { display: flex; align-items: center; height: 22px; cursor: move; color: var(--dim); font-size: 12px; padding-left: 4px; }
   .bar span { flex: 1; }
+  .grip { display: grid; place-items: center; width: 28px; height: 20px; margin-right: 2px; border-radius: 4px; cursor: ew-resize; touch-action: none; }
+  .grip:hover { background: var(--hover); color: var(--text); }
   .close { display: grid; place-items: center; width: 22px; height: 20px; padding: 0; color: var(--dim); background: none; border: 0; border-radius: 4px; cursor: pointer; }
   .close:hover { background: var(--hover); color: var(--text); }
   .keys { position: relative; }
@@ -131,6 +143,4 @@
   .key .top { color: var(--dim); font-size: 0.85em; }
   .key[data-state=held] { background: var(--pressed); border-color: var(--accent); }
   .key[data-state=latched] { background: color-mix(in srgb, var(--accent) 35%, var(--bar)); border-color: var(--accent); }
-  .corner { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none;
-    background: linear-gradient(135deg, transparent 55%, var(--dim) 55% 62%, transparent 62% 72%, var(--dim) 72% 79%, transparent 79%); }
 </style>

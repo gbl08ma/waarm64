@@ -84,7 +84,7 @@ export const HOLD_MS = 500;
  * Pointers on the keys to the keys' downs and ups (`send`). A key goes down when the first pointer presses it and up
  * when the last lets it go. A modifier let go is released if it was held with another key, or held alone for
  * `HOLD_MS`; tapped alone, it's latched: down until the next key's release (`next`) or its own next tap (`toggle`).
- * A latched modifier tapped again is released at once.
+ * A latched modifier tapped again is released at once. A modifier pressed while another key is held is held with it.
  */
 export class OskKeys {
   mode: ModifierMode;
@@ -126,8 +126,10 @@ export class OskKeys {
       return this.onChange();
     }
     const n = this.held.get(code) ?? 0;
+    // A modifier pressed while another key is held is held with it: released when let go, never latched.
+    const withKey = MODIFIERS.has(code) && [...this.held.keys()].some((c) => !MODIFIERS.has(c));
     this.held.set(code, n + 1);
-    this.pointers.set(id, { code, at: this.now(), chorded: false });
+    this.pointers.set(id, { code, at: this.now(), chorded: withKey });
     if (!MODIFIERS.has(code)) for (const p of this.pointers.values()) if (MODIFIERS.has(p.code)) p.chorded = true;
     if (n === 0) this.send(code, true);
     this.onChange();
@@ -149,6 +151,19 @@ export class OskKeys {
       this.send(p.code, false);
       if (this.mode === 'next' && ![...this.held.keys()].some((c) => !MODIFIERS.has(c))) this.unlatch();
     }
+    this.onChange();
+  }
+
+  /** Something else was pressed (a click on the screen) while modifiers are held: they were used, as with a key. */
+  used() {
+    for (const p of this.pointers.values()) if (MODIFIERS.has(p.code)) p.chorded = true;
+  }
+
+  /** Key `code` was typed elsewhere (the physical keyboard): a key other than a modifier ends the latches (`next`). */
+  typed(code: string) {
+    if (MODIFIERS.has(code) || this.mode !== 'next' || !this.latched.size) return;
+    if ([...this.held.keys()].some((c) => !MODIFIERS.has(c))) return;
+    this.unlatch();
     this.onChange();
   }
 
