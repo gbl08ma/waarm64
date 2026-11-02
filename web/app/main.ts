@@ -55,6 +55,7 @@ import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunn
 import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
+import { keyOf, type Mods } from './osk.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -713,6 +714,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
   input.mouseLock(ui.mouseLock, ui.mouseLockMode);
+  input.onRelease(() => { ui.keysReleased++; });
   ui.hasMouse = !!mouse;
   canvas.addEventListener('keydown', wakeOnInput);
   canvas.addEventListener('pointerdown', wakeOnInput);
@@ -2262,6 +2264,14 @@ Object.assign(page, {
   fullscreen,
   setMouseLock,
   chord: (keys: string[]) => { canvas.focus(); run?.input.chord(...keys); },
+  holdKey: (code: string, ms: number) => {
+    canvas.focus();
+    const r = run;
+    const e = { key: keyOf(code, false), ctrlKey: false, altKey: false, metaKey: false };
+    r?.input.key(code, true, e);
+    setTimeout(() => r?.input.key(code, false, e), ms);
+  },
+  oskKey: (code: string, down: boolean, m: Mods) => run?.input.key(code, down, { key: keyOf(code, m.shift), ctrlKey: m.ctrl, altKey: m.alt, metaKey: m.meta }),
   screenSize: () => { fit(); scheduleSize(); },
   openMachines,
   closeMachines,

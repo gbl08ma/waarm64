@@ -1022,6 +1022,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard"): a compact layout for a phone's width
+  (the full 104 keys at 400 px are small; rotating to landscape is the way for now); the serial terminal's view
+  sending the keys to the serial console, as its own typing does; Caps Lock and Num Lock lit from the guest's LEDs
+  (virtio-input's `EV_LED` status events); layouts besides US (legends from the guest's keymap, web/app/keyboard.ts).
+
 - **Errors written as one message** ([copy.md](copy.md) "The elements": a headline, then the cause as details): where
   the code throws a single message, its words are "Couldn't …" and a second line after `\n` instead of a `MsgError`
   headline with a cause of its own (`machines.needsOff.*`, `definitions.*`, `store.diskAttached` in machines.ts,

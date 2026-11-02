@@ -12,6 +12,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/index.html` | the page's stylesheet and its module; the markup is the components' |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte`, `Menu.svelte`, `Icon.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
+| `web/app/osk.ts`, `Osk.svelte` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
 | `web/app/Check.svelte` | a checkbox and its words, with its fine print under them when it has some: the page's checkboxes (settings, rows, menus, the Network wizard; not the USB menu's device rows) |
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
@@ -771,9 +772,11 @@ page writes the context's output latency into the ring's header, and the guest g
   then mouse buttons) when the screen loses the focus, the window loses it, or the page is
   hidden; a keyup for a key the guest doesn't hold is dropped. A pointer press captures the
   pointer, so a drag that leaves the screen still ends there.
-- **Keys the browser keeps:** the Keys menu sends Ctrl+Alt+Del and Ctrl+Alt+F1 to F12 (a grid of
-  F-keys under "Ctrl+Alt+", built by main.ts) to the screen's keyboard (`Input.chord`: pressed in
-  order, released in reverse). On Debian, Ctrl+Alt+Del reboots (systemd's `ctrl-alt-del.target`;
+- **Keys the browser keeps:** the Keys menu shows or hides the on-screen keyboard (below), and sends Esc, Ctrl+W,
+  Ctrl+T, Ctrl+N, Ctrl+Q, Alt+F4, Alt+Tab, Super, Ctrl+Alt+Del and Ctrl+Alt+F1 to F12 (a grid of F-keys under
+  "Ctrl+Alt+") to the screen's keyboard (`Input.chord`: pressed in order, released in reverse). **[Hold Esc](ui:toolbar:Toolbar.keys.holdEsc)**
+  holds Escape for 3 s (`page.holdKey`; the guest's kernel repeats it): a browser in the guest whose page locked the
+  keyboard in full screen leaves it on a held Esc (Chromium's ~2 s). On Debian, Ctrl+Alt+Del reboots (systemd's `ctrl-alt-del.target`;
   the page then starts a new machine), and Ctrl+Alt+F2 to F6 switch to tty2–tty6, where logind
   starts a getty on demand (autovt, `NAutoVTs=6`); F7 to F12 switch to consoles with nothing on
   them. The smoke test checks the chord of F12 (the highest keycode of the set, 88).
@@ -835,6 +838,35 @@ page writes the context's output latency into the ring's header, and the guest g
   too (the keyboard advertises every code to `KEY_MICMUTE`). The browser's repeats of a held key aren't sent: the
   keyboard has `EV_REP`, so the guest's kernel repeats it (as QEMU's does; forwarded as value 2, a console repeated
   the key twice as fast). The built-in USB keyboard is a boot keyboard (usages up to 101): the keys past it reach only virtio-input.
+
+### The on-screen keyboard
+
+[Show the on-screen keyboard](ui:toolbar:Toolbar.keys.osk) (the Keys menu) puts a US ANSI keyboard of 104 keys over the
+machine (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
+guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its bar moves
+it, its corner resizes it (the keys scale with its width); where it is and how wide is remembered (`settings().osk`),
+kept in the window.
+
+- **Keys** go through `Input.key` (web/input.ts), the path the screen's own key events take: to the keyboard, or before
+  the guest has a driver on it, to the built-in USB keyboard or the serial console (with the `key` a US keyboard
+  types, `osk.ts` `keyOf`, and the keyboard's modifiers).
+- **Pointers** (`OskKeys`, web/app/osk.ts): each pointer (a finger, the mouse, a pen) holds the key it went down on
+  until it lifts or the browser cancels it (captured: sliding off the key doesn't let it go), so keys go down and up
+  in the order the touches do, and fingers chord. Two pointers on one key: down with the first, up with the last.
+- **Modifiers** (Shift, Ctrl, Alt, Super): one held with another key, or alone for 500 ms, is released when let go. One
+  tapped alone is **latched**: down until the next other key is released (Ctrl, Alt, F1 types Ctrl+Alt+F1), or with
+  Preferences' "[Keep on-screen keyboard modifiers held until clicked again](ui:machines:MachinesPage.oskToggle)"
+  (`settings().oskModifiers` `toggle`), until it's tapped again. A latched modifier tapped again is released at once.
+  Held keys are drawn pressed, latched ones tinted (`data-state` `held`, `latched`).
+- **Focus:** the keyboard never takes it (its `pointerdown` and `mousedown` are cancelled), so the screen keeps the
+  physical keyboard. When the page releases the guest's keys (the screen or the window loses the focus), `Input`'s
+  `onRelease` tells the keyboard (`ui.keysReleased`), which lets go of what it held and latched.
+- **Not yet:** the keys go to the guest's keyboard in every view (the serial terminal's view too); no layout but US;
+  Caps Lock and Num Lock show no state (the guest's LEDs aren't read); one size of key labels on a phone (backlog).
+
+`tests/osk.test.ts` tests the layout and `OskKeys`; `tests/page-osk.test.ts` the keyboard and the Keys menu on the page,
+with the keyboard's port kept on the page (clicks, a held key, latched modifiers, two fingers by CDP touches, the
+focus, a move and a resize remembered, the toggle mode, Ctrl+W, Esc, Hold Esc).
 
 ### The keyboard layout
 

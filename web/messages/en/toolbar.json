@@ -135,6 +135,90 @@
     "message": "Send key combinations that the browser keeps for itself to the guest.",
     "note": "Tooltip of the toolbar's Keys menu button (keyboard icon): it sends key combinations the browser would take."
   },
+  "Toolbar.keys.osk": {
+    "message": "Show the on-screen keyboard",
+    "note": "Item at the top of the toolbar's Keys menu: shows a full keyboard over the machine's screen, for keys the browser keeps and for devices without a keyboard."
+  },
+  "Toolbar.keys.osk.hide": {
+    "message": "Hide the on-screen keyboard",
+    "note": "The same item of the toolbar's Keys menu while the on-screen keyboard is shown."
+  },
+  "Toolbar.keys.osk.title": {
+    "message": "A full keyboard over the screen. Every key goes to the guest, including those the browser and your computer keep for themselves. Several keys can be held at once on a touchscreen.",
+    "note": "Tooltip of the Keys menu's Show the on-screen keyboard item."
+  },
+  "Toolbar.keys.esc": {
+    "message": "Esc",
+    "note": "Item of the toolbar's Keys menu: sends the Escape key to the machine (the browser takes Esc in full screen). The key's name as the keyboard labels it."
+  },
+  "Toolbar.keys.esc.title": {
+    "message": "Send Esc to the guest. In full screen, the browser keeps Esc for itself.",
+    "note": "Tooltip of the Keys menu's Esc item."
+  },
+  "Toolbar.keys.holdEsc": {
+    "message": "Hold Esc",
+    "note": "Item of the toolbar's Keys menu: holds the Escape key down in the machine for 3 seconds."
+  },
+  "Toolbar.keys.holdEsc.title": {
+    "message": "Hold Esc down in the guest for 3 seconds. A browser in the guest leaves full screen on a held Esc when a page has locked the keyboard.",
+    "note": "Tooltip of the Keys menu's Hold Esc item."
+  },
+  "Toolbar.keys.ctrlW": {
+    "message": "Ctrl+W",
+    "note": "Item of the toolbar's Keys menu: sends Ctrl+W (close a tab) to the machine. The keys' names as the keyboard labels them."
+  },
+  "Toolbar.keys.ctrlW.title": {
+    "message": "Send Ctrl+W to the guest. The browser keeps it to close this tab.",
+    "note": "Tooltip of the Keys menu's Ctrl+W item."
+  },
+  "Toolbar.keys.ctrlT": {
+    "message": "Ctrl+T",
+    "note": "Item of the toolbar's Keys menu: sends Ctrl+T (new tab) to the machine."
+  },
+  "Toolbar.keys.ctrlT.title": {
+    "message": "Send Ctrl+T to the guest. The browser keeps it to open a new tab.",
+    "note": "Tooltip of the Keys menu's Ctrl+T item."
+  },
+  "Toolbar.keys.ctrlN": {
+    "message": "Ctrl+N",
+    "note": "Item of the toolbar's Keys menu: sends Ctrl+N (new window) to the machine."
+  },
+  "Toolbar.keys.ctrlN.title": {
+    "message": "Send Ctrl+N to the guest. The browser keeps it to open a new window.",
+    "note": "Tooltip of the Keys menu's Ctrl+N item."
+  },
+  "Toolbar.keys.ctrlQ": {
+    "message": "Ctrl+Q",
+    "note": "Item of the toolbar's Keys menu: sends Ctrl+Q (quit) to the machine."
+  },
+  "Toolbar.keys.ctrlQ.title": {
+    "message": "Send Ctrl+Q to the guest. Some browsers keep it to quit.",
+    "note": "Tooltip of the Keys menu's Ctrl+Q item."
+  },
+  "Toolbar.keys.altF4": {
+    "message": "Alt+F4",
+    "note": "Item of the toolbar's Keys menu: sends Alt+F4 (close a window) to the machine."
+  },
+  "Toolbar.keys.altF4.title": {
+    "message": "Send Alt+F4 to the guest. Your computer may keep it to close the browser's window.",
+    "note": "Tooltip of the Keys menu's Alt+F4 item."
+  },
+  "Toolbar.keys.altTab": {
+    "message": "Alt+Tab",
+    "note": "Item of the toolbar's Keys menu: sends Alt+Tab (switch windows) to the machine."
+  },
+  "Toolbar.keys.altTab.title": {
+    "message": "Send Alt+Tab to the guest. Your computer keeps it to switch windows.",
+    "note": "Tooltip of the Keys menu's Alt+Tab item."
+  },
+  "Toolbar.keys.super": {
+    "message": "Super",
+    "note": "Item of the toolbar's Keys menu: presses and releases the Super (Windows) key in the machine."
+  },
+  "Toolbar.keys.super.title": {
+    "message": "Send the Super key, also called the Windows key, to the guest. Your computer may keep it for itself.",
+    "note": "Tooltip of the Keys menu's Super item."
+  },
   "Toolbar.keys.ctrlAltDel": {
     "message": "Ctrl+Alt+Del",
     "note": "Item of the toolbar's Keys menu: sends Ctrl+Alt+Delete to the machine. The keys' names as the keyboard labels them."

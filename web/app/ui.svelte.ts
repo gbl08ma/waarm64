@@ -8,6 +8,7 @@ import type { DiskRecord, FolderAttachment, MachineRecord, Shape, UsbEntry } fro
 import type { EntryView } from './usb-live.ts';
 import type { ProblemWords } from './usb-ports.ts';
 import type { LockMode } from '../input.ts';
+import type { ModifierMode, Mods } from './osk.ts';
 import { normalize, type Graphics, type Metrics } from './statusbar.ts';
 import { settings } from './settings.ts';
 import { t } from '../i18n.ts';
@@ -58,6 +59,12 @@ export const ui = $state({
   mouseLockMode: 'pointer' as LockMode,
   /** The screen holds the mouse now. */
   mouseLocked: false,
+  /** The on-screen keyboard is shown (docs/frontend.md "The on-screen keyboard"). */
+  osk: false,
+  /** How its tapped modifiers are let go (Preferences; remembered): after the next key, by default. */
+  oskModifiers: (settings().oskModifiers ?? 'next') as ModifierMode,
+  /** Bumped when the guest's keys are released by the page (a blur): the on-screen keyboard forgets what it holds. */
+  keysReleased: 0,
   /** The machine has a relative mouse (the lock's `raw` mode). */
   hasMouse: false,
   /** The page can't run here (no cross-origin isolation): no Start. */
@@ -154,6 +161,10 @@ export type Page = {
   /** The toolbar's mouse lock on or off (off lets go of a held mouse), and its mode. */
   setMouseLock(on: boolean, mode?: LockMode): void;
   chord(keys: string[]): void;
+  /** Holds key `code` down for `ms` (Hold Esc: a guest's browser leaves its full screen on a held Esc). */
+  holdKey(code: string, ms: number): void;
+  /** The on-screen keyboard's key `code` down or up, with the modifiers down on it. */
+  oskKey(code: string, down: boolean, mods: Mods): void;
   screenSize(): void;
   openMachines(tab?: MachinesTab, id?: string): void;
   closeMachines(): void;

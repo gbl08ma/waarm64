@@ -302,6 +302,8 @@
             note={t('machines:MachinesPage.leaveWarning.note')}>{t('machines:MachinesPage.leaveWarning')}</Check>
           <Check bind:checked={catchUpClock} onchange={() => remember({ clockSync: catchUpClock })} field="clock-sync"
             note={t('machines:MachinesPage.clockSync.note')}>{t('machines:MachinesPage.clockSync')}</Check>
+          <Check checked={ui.oskModifiers === 'toggle'} onchange={(on) => { ui.oskModifiers = on ? 'toggle' : 'next'; remember({ oskModifiers: ui.oskModifiers }); }} field="osk-toggle"
+            note={t('machines:MachinesPage.oskToggle.note')}>{t('machines:MachinesPage.oskToggle')}</Check>
         </div>
         <div class="tab">
           <h4>{t('machines:MachinesPage.statusBar')}</h4>

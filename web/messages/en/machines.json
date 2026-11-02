@@ -739,6 +739,14 @@
     "message": "Suspend the guest before taking a snapshot",
     "note": "Machines page, Preferences: the label of a box."
   },
+  "MachinesPage.oskToggle": {
+    "message": "Keep on-screen keyboard modifiers held until clicked again",
+    "note": "Machines page, Preferences: the label of a box about the on-screen keyboard's Shift, Ctrl, Alt and Super keys."
+  },
+  "MachinesPage.oskToggle.note": {
+    "message": "On the on-screen keyboard, a click on Shift, Ctrl, Alt or Super holds it down. When this is off, it is released after the next key, so Ctrl, Alt, F1 types Ctrl+Alt+F1. When this is on, it stays down until you click it again. A modifier held down with a finger is released when the finger lifts either way.",
+    "note": "Machines page, Preferences: the note under Keep on-screen keyboard modifiers held until clicked again."
+  },
   "MachinesPage.statusBar": {
     "message": "Status bar",
     "note": "Machines page, Preferences: the heading over the status bar's editor."

@@ -394,7 +394,7 @@ const WORDING_FILES = new Set(['tests/i18n.test.ts']);
  * The tests' words: a test reads the page's words through `t(key)` (or checks a key or an element), so a change of
  * words changes no test. A string, template or regex literal is flagged when it says a message's words: two words or
  * more of one (or a message ending in "…"), or a capitalized one-word message whole (`'Retry'`, `/^Sound$/`; a
- * lower-case word is most often a state's value in the code, not copy). A test named `wording: …` pins words on
+ * lower-case word is most often a state's value in the code, not copy; a keyboard key's label is a key's name). A test named `wording: …` pins words on
  * purpose and is skipped, as is a line with `i18n-ignore` (data that reads like a message: a peer's state).
  */
 export function checkTests(catalogs: Catalogs, sources: Source[]): Problem[] {
@@ -423,7 +423,8 @@ export function checkTests(catalogs: Catalogs, sources: Source[]): Problem[] {
       const within = new RegExp(`(^|[^\\p{L}])${esc(s)}($|[^\\p{L}])`, 'u');
       return messages.find((m) => start.test(m.words) || (n >= 4 && within.test(m.words)))?.key;
     }
-    if (/^\p{Lu}\p{Ll}+$/u.test(s)) return messages.find((m) => m.words === s)?.key;
+    // A keyboard key's label (the on-screen keyboard's `Enter`, `Alt`) is also its name in code (Playwright's `press('Enter')`).
+    if (/^\p{Lu}\p{Ll}+$/u.test(s)) return messages.find((m) => m.words === s && !m.key.startsWith('osk:Osk.key.'))?.key;
     return undefined;
   };
   /** A template's words, each expression as NUL: a message whole (`Saved the snapshot ${name} (…)`). */

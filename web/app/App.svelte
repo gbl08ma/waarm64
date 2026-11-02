@@ -9,6 +9,7 @@
   import Icon from './Icon.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import NetWizard from './NetWizard.svelte';
+  import Osk from './Osk.svelte';
   import StatusBar from './StatusBar.svelte';
   import Toolbar from './Toolbar.svelte';
   import type { PageAudio } from '../audio.ts';
@@ -51,6 +52,7 @@
     </div>
   </div>
   <div id="terminal-view"><div id="terminal"></div></div>
+  {#if ui.osk}<Osk send={(code, down, mods) => page.oskKey(code, down, mods)} mode={ui.oskModifiers} released={ui.keysReleased} onclose={() => { ui.osk = false; }} />{/if}
 </main>
 {#if ui.machinesOpen}<MachinesPage {store} {net} {folders} />{/if}
 <StatusBar {net} />

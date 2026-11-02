@@ -1,0 +1,114 @@
+{
+  "Osk.title": {
+    "message": "On-screen keyboard",
+    "note": "On-screen keyboard (over the machine's screen): the words in its bar, which moves it."
+  },
+  "Osk.close": {
+    "message": "Close the on-screen keyboard",
+    "note": "On-screen keyboard: tooltip and screen-reader name of the × button in its bar."
+  },
+  "Osk.resize": {
+    "message": "Drag to resize the keyboard.",
+    "note": "On-screen keyboard: tooltip of the handle in its bottom-right corner."
+  },
+  "Osk.key.Escape": {
+    "message": "Esc",
+    "note": "On-screen keyboard: the Escape key's label, as a US keyboard labels it."
+  },
+  "Osk.key.Tab": {
+    "message": "Tab",
+    "note": "On-screen keyboard: the Tab key's label."
+  },
+  "Osk.key.CapsLock": {
+    "message": "Caps Lock",
+    "note": "On-screen keyboard: the Caps Lock key's label."
+  },
+  "Osk.key.Shift": {
+    "message": "Shift",
+    "note": "On-screen keyboard: the label of both Shift keys."
+  },
+  "Osk.key.Control": {
+    "message": "Ctrl",
+    "note": "On-screen keyboard: the label of both Control keys."
+  },
+  "Osk.key.Meta": {
+    "message": "Super",
+    "note": "On-screen keyboard: the label of both Windows (Super, Meta) keys, beside Ctrl and Alt."
+  },
+  "Osk.key.Alt": {
+    "message": "Alt",
+    "note": "On-screen keyboard: the left Alt key's label."
+  },
+  "Osk.key.AltGr": {
+    "message": "Alt Gr",
+    "note": "On-screen keyboard: the right Alt key's label (AltGr on layouts that use it for a third character)."
+  },
+  "Osk.key.ContextMenu": {
+    "message": "Menu",
+    "note": "On-screen keyboard: the label of the context menu key, between the right Super and Ctrl keys."
+  },
+  "Osk.key.Backspace": {
+    "message": "Backspace",
+    "note": "On-screen keyboard: the Backspace key's label."
+  },
+  "Osk.key.Enter": {
+    "message": "Enter",
+    "note": "On-screen keyboard: the label of the Enter key and the keypad's Enter key."
+  },
+  "Osk.key.PrintScreen": {
+    "message": "Print Screen",
+    "note": "On-screen keyboard: the Print Screen key's label, right of F12."
+  },
+  "Osk.key.ScrollLock": {
+    "message": "Scroll Lock",
+    "note": "On-screen keyboard: the Scroll Lock key's label."
+  },
+  "Osk.key.Pause": {
+    "message": "Pause",
+    "note": "On-screen keyboard: the Pause (Break) key's label."
+  },
+  "Osk.key.Insert": {
+    "message": "Insert",
+    "note": "On-screen keyboard: the Insert key's label."
+  },
+  "Osk.key.Home": {
+    "message": "Home",
+    "note": "On-screen keyboard: the Home key's label."
+  },
+  "Osk.key.PageUp": {
+    "message": "Page Up",
+    "note": "On-screen keyboard: the Page Up key's label."
+  },
+  "Osk.key.Delete": {
+    "message": "Delete",
+    "note": "On-screen keyboard: the Delete key's label."
+  },
+  "Osk.key.End": {
+    "message": "End",
+    "note": "On-screen keyboard: the End key's label."
+  },
+  "Osk.key.PageDown": {
+    "message": "Page Down",
+    "note": "On-screen keyboard: the Page Down key's label."
+  },
+  "Osk.key.NumLock": {
+    "message": "Num Lock",
+    "note": "On-screen keyboard: the Num Lock key's label, at the top left of the numeric keypad."
+  },
+  "Osk.key.ArrowUp": {
+    "message": "↑",
+    "note": "On-screen keyboard: the Up arrow key's label (a symbol)."
+  },
+  "Osk.key.ArrowDown": {
+    "message": "↓",
+    "note": "On-screen keyboard: the Down arrow key's label (a symbol)."
+  },
+  "Osk.key.ArrowLeft": {
+    "message": "←",
+    "note": "On-screen keyboard: the Left arrow key's label (a symbol)."
+  },
+  "Osk.key.ArrowRight": {
+    "message": "→",
+    "note": "On-screen keyboard: the Right arrow key's label (a symbol)."
+  }
+}

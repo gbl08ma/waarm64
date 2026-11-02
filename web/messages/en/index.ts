@@ -8,6 +8,7 @@ import guest from './guest.json' with { type: 'json' };
 import machine from './machine.json' with { type: 'json' };
 import machines from './machines.json' with { type: 'json' };
 import network from './network.json' with { type: 'json' };
+import osk from './osk.json' with { type: 'json' };
 import snapshots from './snapshots.json' with { type: 'json' };
 import sound from './sound.json' with { type: 'json' };
 import statusbar from './statusbar.json' with { type: 'json' };
@@ -18,4 +19,4 @@ import usb from './usb.json' with { type: 'json' };
 export type Entry = { message: string; note: string };
 export type Catalog = Record<string, Entry>;
 
-export const CATALOGS: Record<string, Catalog> = { common, disks, display, folders, guest, machine, machines, network, snapshots, sound, statusbar, toolbar, usb };
+export const CATALOGS: Record<string, Catalog> = { common, disks, display, folders, guest, machine, machines, network, osk, snapshots, sound, statusbar, toolbar, usb };

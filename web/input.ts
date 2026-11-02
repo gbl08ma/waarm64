@@ -47,6 +47,13 @@ export type Input = {
   /** Presses keys (`KeyboardEvent.code` names) in order and releases them in reverse: a chord the browser won't pass, e.g. `ControlLeft AltLeft Delete`. */
   chord(...codes: string[]): void;
   /**
+   * Key `code` down or up, as a key event of the element's would (the on-screen keyboard's): to the keyboard, or before
+   * the guest has a driver on it, to the built-in USB keyboard or the serial console (`event`: its `key` and modifiers).
+   */
+  key(code: string, down: boolean, event: KeyLike): void;
+  /** Calls `f` whenever everything held is released (a blur, a hidden page, a detach). */
+  onRelease(f: () => void): void;
+  /**
    * The mouse lock: on, a click on the element takes the mouse (Pointer Lock); off, it is let go (as it is when the
    * mode changes: the next click takes it in the new one).
    */
@@ -74,8 +81,14 @@ const CSI: Record<string, string> = {
   F1: '\x1bOP', F2: '\x1bOQ', F3: '\x1bOR', F4: '\x1bOS', F5: '\x1b[15~', F6: '\x1b[17~', F7: '\x1b[18~', F8: '\x1b[19~', F9: '\x1b[20~', F10: '\x1b[21~', F11: '\x1b[23~', F12: '\x1b[24~',
 };
 
+/** What a key event says beside its code: its `key` (the character or the key's name) and the modifiers down with it. */
+export type KeyLike = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey'> & { repeat?: boolean };
+
+/** Key `code`'s (a `KeyboardEvent.code` name) Linux keycode, if the guest's keyboard has it. */
+export const codeOf = (code: string) => KEYS.get(code);
+
 /** What a terminal sends for a key event (what EDK2's and GRUB's serial console read), or null for one that sends nothing (a modifier, an unknown key). */
-export function terminalBytes(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey'>): string | null {
+export function terminalBytes(e: KeyLike): string | null {
   if (e.metaKey) return null;
   const special = CSI[e.key] ?? ({ Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b' } as Record<string, string>)[e.key];
   if (special !== undefined) return e.altKey ? `\x1b${special}` : special;
@@ -115,30 +128,30 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     else keys.add(code);
     keyboard?.postMessage([[EV_KEY, code, value], [EV_SYN, 0, 0]]);
   };
-  const key = (down: number) => (e: KeyboardEvent) => {
+  /** Key `name` down or up to the guest: whether it took it. */
+  const press = (name: string, down: boolean, e: KeyLike): boolean => {
     // No guest driver for the keyboard yet (the firmware, GRUB, the initramfs have none): the keys go to the built-in USB
     // keyboard if the machine has one, else to the serial console as a terminal sends them.
     if (text && !text.live()) {
-      if (text.usb?.(e.code, !!down)) {
-        e.preventDefault();
-        return;
-      }
+      if (text.usb?.(name, down)) return true;
       const bytes = terminalBytes(e);
-      if (bytes !== null) {
-        e.preventDefault();
-        if (down) text.send(bytes);
-      }
-      return;
+      if (bytes === null) return false;
+      if (down) text.send(bytes);
+      return true;
     }
-    const code = KEYS.get(e.code);
-    if (!keyboard || code === undefined) return;
-    e.preventDefault();
-    if (!down && !keys.has(code)) return; // pressed elsewhere, or released already on a blur
+    const code = KEYS.get(name);
+    if (!keyboard || code === undefined) return false;
+    if (!down && !keys.has(code)) return true; // pressed elsewhere, or released already on a blur
     // The browser's repeats aren't the guest's: the keyboard has EV_REP, so the guest's kernel repeats a held key itself
     // (as QEMU's does; forwarded, a held key on a console repeated twice as fast).
-    if (down && e.repeat && keys.has(code)) return;
-    sendKey(code, down);
+    if (down && e.repeat && keys.has(code)) return true;
+    sendKey(code, down ? 1 : 0);
+    return true;
   };
+  const key = (down: number) => (e: KeyboardEvent) => {
+    if (press(e.code, !!down, e)) e.preventDefault();
+  };
+  const released: (() => void)[] = [];
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
   /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
   const spot = { x: 16384, y: 16384 };
@@ -243,6 +256,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     for (const code of [...keys].reverse()) sendKey(code, 0);
     releaseButtons();
     if (touch) liftFingers();
+    for (const f of released) f();
   };
   // A mouse's back and forward buttons: the guest's, not the browser's history (Chromium navigates on an uncancelled mouseup).
   const sideButton = (e: MouseEvent) => {
@@ -302,6 +316,12 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     mouseLock(on: boolean, mode = lockMode) {
       if (locked() && (!on || mode !== lockMode)) document.exitPointerLock();
       [lockOn, lockMode] = [on, mode];
+    },
+    key(code: string, down: boolean, event: KeyLike) {
+      press(code, down, event);
+    },
+    onRelease(f: () => void) {
+      released.push(f);
     },
     chord(...codes: string[]) {
       if (text && !text.live() && text.usb && codes.every((c) => text.usb!(c, true))) {

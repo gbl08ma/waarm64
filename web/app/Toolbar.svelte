@@ -53,6 +53,19 @@
 
   let keysOpen = $state(false);
   const chord = (keys: string) => { keysOpen = false; page.chord(keys.split(' ')); };
+  /** How long Hold Esc holds it (ms): past what a browser asks to leave its full screen (Chromium's keyboard lock, ~2 s). */
+  const HOLD_ESC_MS = 3000;
+  /** The combinations the Keys menu sends besides Ctrl+Alt+Del and Ctrl+Alt+F1–F12: those a browser or a desktop takes. */
+  const COMBOS = [
+    { keys: 'Escape', label: 'toolbar:Toolbar.keys.esc', title: 'toolbar:Toolbar.keys.esc.title' },
+    { keys: 'ControlLeft KeyW', label: 'toolbar:Toolbar.keys.ctrlW', title: 'toolbar:Toolbar.keys.ctrlW.title' },
+    { keys: 'ControlLeft KeyT', label: 'toolbar:Toolbar.keys.ctrlT', title: 'toolbar:Toolbar.keys.ctrlT.title' },
+    { keys: 'ControlLeft KeyN', label: 'toolbar:Toolbar.keys.ctrlN', title: 'toolbar:Toolbar.keys.ctrlN.title' },
+    { keys: 'ControlLeft KeyQ', label: 'toolbar:Toolbar.keys.ctrlQ', title: 'toolbar:Toolbar.keys.ctrlQ.title' },
+    { keys: 'AltLeft F4', label: 'toolbar:Toolbar.keys.altF4', title: 'toolbar:Toolbar.keys.altF4.title' },
+    { keys: 'AltLeft Tab', label: 'toolbar:Toolbar.keys.altTab', title: 'toolbar:Toolbar.keys.altTab.title' },
+    { keys: 'MetaLeft', label: 'toolbar:Toolbar.keys.super', title: 'toolbar:Toolbar.keys.super.title' },
+  ] as const;
 
   // A transient machine's size (a stored machine's is in its Settings, on the Machines page).
   let sizeOpen = $state(false);
@@ -121,6 +134,14 @@
     </Menu>
   {/if}
   <Menu id="keys" icon="keyboard" title={t('toolbar:Toolbar.keys.title')} bind:open={keysOpen}>
+    <button id="osk-toggle" aria-pressed={ui.osk} title={t('toolbar:Toolbar.keys.osk.title')} onclick={() => { keysOpen = false; ui.osk = !ui.osk; }}>{ui.osk ? t('toolbar:Toolbar.keys.osk.hide') : t('toolbar:Toolbar.keys.osk')}</button>
+    <hr>
+    <div class="combos">
+      {#each COMBOS as c (c.keys)}
+        <button data-chord={c.keys} title={t(c.title)} onclick={() => chord(c.keys)}>{t(c.label)}</button>
+      {/each}
+      <button id="hold-esc" title={t('toolbar:Toolbar.keys.holdEsc.title')} onclick={() => { keysOpen = false; page.holdKey('Escape', HOLD_ESC_MS); }}>{t('toolbar:Toolbar.keys.holdEsc')}</button>
+    </div>
     <button data-chord="ControlLeft AltLeft Delete" onclick={() => chord('ControlLeft AltLeft Delete')}>{t('toolbar:Toolbar.keys.ctrlAltDel')}</button>
     <div class="label">{t('toolbar:Toolbar.keys.ctrlAlt')}</div>
     <div class="fkeys" id="fkeys">
