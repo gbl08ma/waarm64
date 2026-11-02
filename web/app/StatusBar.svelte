@@ -39,6 +39,7 @@
       nets: net.views().map((a) => ({
         name: adapterName(a.index + 1), phase: a.view.phase,
         text: a.connection ? t('statusbar:StatusBar.link', { connection: a.connection.name, state: a.view.text }) : t('statusbar:StatusBar.link.none', { state: a.view.text }),
+        details: a.view.details,
       })),
     };
   }

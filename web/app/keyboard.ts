@@ -93,11 +93,11 @@ export async function browserLayout(): Promise<KeyboardLayout | undefined> {
 }
 
 /** The script the unit runs (a credential of its own: no quoting in the unit). POSIX sh: Debian's is dash. */
-export function keyboardScript(l: KeyboardLayout): string {
+export function keyboardScript(l: KeyboardLayout, label: string = l.id): string {
   const model = l.model ?? 'pc105';
   const variant = l.variant ?? '';
   const env = [`XKB_DEFAULT_LAYOUT=${l.layout}`, `XKB_DEFAULT_MODEL=${model}`, ...(variant ? [`XKB_DEFAULT_VARIANT=${variant}`] : [])].join('\n');
-  return `# From webpc: the machine's keyboard layout setting (${l.id}), run at every boot while it is on.
+  return `# From webpc: the machine's keyboard layout setting (${label}), run at every boot while it is on.
 # Sets KEY="VALUE" in a file, unless it says so already.
 set_kv() {
   grep -qx "$2=\\"$3\\"" "$1" 2>/dev/null && return
@@ -125,11 +125,11 @@ fi
 }
 
 /** The systemd credentials (web/app/guest-unit.ts: SMBIOS, systemd 256+) that set `l` in the guest at every boot. */
-export const keyboardCredentials = (l: KeyboardLayout, description: string): Credential[] =>
+export const keyboardCredentials = (l: KeyboardLayout, description: string, label?: string): Credential[] =>
   guestUnit({
     name: 'webpc-keyboard.service',
     description,
-    script: keyboardScript(l),
+    script: keyboardScript(l, label),
     // Before the logins' gate and the display manager, so every login sees what it set.
     unit: 'After=dbus.service local-fs.target\nBefore=systemd-user-sessions.service display-manager.service\n',
     wantedBy: 'systemd-user-sessions.service',

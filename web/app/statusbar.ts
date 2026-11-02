@@ -226,7 +226,8 @@ export type Live = {
   mic: string;
   /** The machine's disks' and adapters' names, in its order; an adapter's connection phase (web/app/network.ts) and words. */
   disks: string[];
-  nets: { name: string; phase: string; text: string }[];
+  /** `details`: why a connection failed, a line each (the tooltip's, under its words). */
+  nets: { name: string; phase: string; text: string; details?: string[] }[];
   /** The screen's last second (none yet, or no screen). */
   gpu?: Graphics;
 };
@@ -301,7 +302,7 @@ export function render(i: Item, m: Metrics | undefined, live: Live): Piece[] {
       return (devices(i, live.nets) ?? []).map(({ v }) => {
         const [key, tone] = PHASE_WORD[v.phase] ?? ['', 'busy'];
         const text = key ? t(key, { name: v.name }) : t('statusbar:statusbar.link.other', { name: v.name, phase: v.phase });
-        return { text, short: '', icon: d.icon, tone, title: t('statusbar:statusbar.link.title', { name: v.name, text: v.text }) };
+        return { text, short: '', icon: d.icon, tone, title: t('statusbar:statusbar.link.title', { name: v.name, text: [v.text, ...(v.details ?? [])].join('\n') }) };
       });
     }
     case 'spacer': case 'divider':

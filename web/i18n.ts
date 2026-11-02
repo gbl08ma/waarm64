@@ -59,6 +59,25 @@ const MARKER = /<(\/?)([a-z][a-z0-9-]*)>/g;
 /** Words without their markers (for a title, an aria-label, a confirm's text). */
 export const plain = (s: string) => s.replace(MARKER, '');
 
+/**
+ * Message `key`'s words with `params`, cut at its markers (T.svelte): the markers are the message's own, never a
+ * parameter's (a path or a command with `<…>` in it stays text).
+ */
+export function marked(key: string, params?: Params): { tag?: string; text: string }[] {
+  const p: Record<string, unknown> = {};
+  const held: string[] = [];
+  for (const [k, v] of Object.entries(params ?? {})) {
+    const r = param(v);
+    const s = typeof r === 'number' || typeof r === 'boolean' || typeof r === 'bigint' ? undefined : String(r);
+    if (s !== undefined && s.includes('<')) {
+      p[k] = `\u0001${held.length}\u0002`;
+      held.push(s);
+    } else p[k] = r;
+  }
+  const back = (s: string) => s.replace(/\u0001(\d+)\u0002/g, (_, i: string) => held[Number(i)]);
+  return parts(i18n.t(key, p) as string).map((x) => ({ ...x, text: back(x.text) }));
+}
+
 /** A message's words cut at its markers: plain text (`tag` undefined) and the text each `<tag>…</tag>` wraps. */
 export function parts(s: string): { tag?: string; text: string }[] {
   const out: { tag?: string; text: string }[] = [];

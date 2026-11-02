@@ -193,6 +193,7 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
       const s = stringOf(n);
       if (s !== undefined) {
         const m = KEY_RE.exec(s);
+        if (m && !catalogs[m[1]] && stems.has(m[2].split('.')[0])) say(src.path, at(n), `${s}: no catalog named ${m[1]} (${Object.keys(catalogs).join(', ')})`);
         if (m && catalogs[m[1]]) {
           const line = at(n);
           if (!lookup(catalogs, s)) say(src.path, line, `${s}: no such message in web/messages/en/${m[1]}.json`);
@@ -317,7 +318,9 @@ export function checkWorkers(root: string, sources: Source[]): Problem[] {
         }
       }
     });
-    importsOf.set(abs, out.map((spec) => (spec.startsWith('.') ? resolve(dirname(abs), spec) : spec)));
+    // A module imported as a worker's URL (Vite's `?worker&url`, the audio worklet) is an entry too.
+    for (const spec of out) if (/^\..*\?worker\b/.test(spec)) entries.push({ file: resolve(dirname(abs), spec.replace(/\?.*$/, '')), from: s.path, line: 1 });
+    importsOf.set(abs, out.map((spec) => (spec.startsWith('.') ? resolve(dirname(abs), spec.replace(/\?.*$/, '')) : spec)));
   }
   const renderer = resolve(root, 'web/i18n.ts');
   for (const e of entries) {

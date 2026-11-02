@@ -3,6 +3,7 @@
 // device and a guest without the module or the device boots on. Nothing is installed in the guest's disk.
 import { msg, type Msg } from '../msg.ts';
 import type { Credential } from './machine.ts';
+import { oneLine } from './guest-unit.ts';
 
 export const DEFAULT_SHARES_PATH = '/mnt/shared';
 /** The device's tag. */
@@ -47,8 +48,8 @@ export const SHARES_BY_HAND = `mount -t 9p -o trans=virtio,version=9p2000.L,cach
 export function sharesCredentials(path: string, description: string): Credential[] {
   const unit = mountUnit(path);
   return [
-    { name: `systemd.extra-unit.${unit}.mount`, data: `[Unit]\nDescription=${description}\n\n[Mount]\nWhat=${SHARES_TAG}\nWhere=${path}\nType=9p\nOptions=${SHARES_OPTIONS}\n` },
-    { name: `systemd.extra-unit.${unit}.automount`, data: `[Unit]\nDescription=${description}\n\n[Automount]\nWhere=${path}\n` },
+    { name: `systemd.extra-unit.${unit}.mount`, data: `[Unit]\nDescription=${oneLine(description)}\n\n[Mount]\nWhat=${SHARES_TAG}\nWhere=${path}\nType=9p\nOptions=${SHARES_OPTIONS}\n` },
+    { name: `systemd.extra-unit.${unit}.automount`, data: `[Unit]\nDescription=${oneLine(description)}\n\n[Automount]\nWhere=${path}\n` },
     { name: 'systemd.unit-dropin.remote-fs.target~webpc-shares', data: `[Unit]\nWants=${unit}.automount\n` },
   ];
 }

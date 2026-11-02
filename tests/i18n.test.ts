@@ -2,7 +2,7 @@
 // catalog's checks (tools/i18n-check.ts) on small sources.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describe, errorText, parts, plain, said, t, text } from '../web/i18n.ts';
+import { describe, errorText, marked, parts, plain, said, t, text } from '../web/i18n.ts';
 import { devText, fromWire, msg, msgOf, MsgError, toWire } from '../web/msg.ts';
 import { checkDoc, checkSources, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
 import { CATALOGS } from '../web/messages/en/index.ts';
@@ -13,6 +13,10 @@ test('rendering: a key, its parameters, markers', () => {
   assert.deepEqual(parts('Open <b>a disk</b> now'), [{ text: 'Open ' }, { tag: 'b', text: 'a disk' }, { text: ' now' }]);
   assert.deepEqual(parts('no markers'), [{ text: 'no markers' }]);
   assert.equal(plain('Open <b>a disk</b> now'), 'Open a disk now');
+  // A parameter's own <…> stays text: only the message's markers cut it.
+  const where = marked('folders:FoldersMenu.where', { path: '/mnt/<x>' });
+  assert.ok(where.some((p) => p.text.includes('/mnt/<x>')), JSON.stringify(where));
+  assert.ok(!where.some((p) => p.tag === 'x' || p.tag === 'dev'), JSON.stringify(where));
 });
 
 test('errors: a headline and its causes as details, across postMessage', () => {
@@ -62,6 +66,7 @@ const a = { label: 'Disks…' };
 const b = 'The machine is off: start it first.';
 const c = 'The disk is gone'; // i18n-ignore
 const w = 'x:Other.elsewhere';
+const typo = 'y:thing.save';
 throw new Error('The developer said so, at length');`),
   ]);
   const said = problems.map((p) => `${p.path}:${p.line}: ${p.text}`).join('\n');
@@ -77,6 +82,7 @@ throw new Error('The developer said so, at length');`),
   has(/thing\.ts:4: "The machine is off/);
   has(/x:Thing\.unused: named by no source/);
   has(/x:Other\.elsewhere: named in thing, not in Other/);
+  has(/thing\.ts:7: y:thing\.save: no catalog named y/);
   assert.doesNotMatch(said, /files|ls -l|The disk is gone|The developer said so|Thing\.open/);
   assert.equal(stemOf('web/app/ask.svelte.ts'), 'ask');
   assert.deepEqual([...varsOf('{{a}} and {{ b, bytes }}')], ['a', 'b']);
@@ -90,8 +96,11 @@ test('checks: workers reach no renderer', async () => {
     { path: 'web/app/w.ts', text: `import { helper } from './h.ts'; import type { X } from '../i18n.ts';` },
     { path: 'web/app/h.ts', text: `export { t } from '../i18n.ts';` },
     { path: 'web/i18n.ts', text: `import i18next from 'i18next';` },
+    { path: 'web/audio.ts', text: `import W from './worklet.ts?worker&url';` },
+    { path: 'web/worklet.ts', text: `import { t } from './i18n.ts';` },
   ]);
-  assert.equal(problems.length, 1);
+  assert.equal(problems.length, 2);
+  assert.match(problems[1].text, /web\/worklet\.ts → web\/i18n\.ts/);
   assert.match(problems[0].text, /web\/app\/w\.ts → web\/app\/h\.ts → web\/i18n\.ts/);
 });
 

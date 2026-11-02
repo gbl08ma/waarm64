@@ -48,17 +48,18 @@ export const msgOf = (e: unknown): Msg | undefined => (e instanceof MsgError ? e
  * An error as it crosses `postMessage` (a structured clone keeps an Error's name and message, not its fields): its
  * message (if it has one), its text, its cause, and its own plain fields (a `problem`, a code) as they are.
  */
-export type WireError = { name: string; text: string; msg?: Msg; cause?: WireError; fields?: Record<string, unknown> };
+export type WireError = { name: string; text: string; msg?: Msg; stack?: string; cause?: WireError; fields?: Record<string, unknown> };
 
 const PLAIN = new Set(['string', 'number', 'boolean', 'bigint']);
 
-/** `e` for `postMessage`. */
+/** `e` for `postMessage` (its name, words or message, stack, causes and plain fields). */
 export function toWire(e: unknown, depth = 0): WireError {
   if (!(e instanceof Error)) {
     const m = isMsg(e) ? e : undefined;
     return { name: 'Error', text: m ? devText(m) : String(e), ...(m ? { msg: m } : {}) };
   }
   const w: WireError = { name: e.name, text: e.message };
+  if (e.stack) w.stack = e.stack;
   const m = msgOf(e);
   if (m) w.msg = m;
   if (e.cause !== undefined && depth < 8) w.cause = toWire(e.cause, depth + 1);
@@ -72,7 +73,9 @@ export function toWire(e: unknown, depth = 0): WireError {
 export function fromWire(w: WireError): Error {
   const cause = w.cause ? fromWire(w.cause) : undefined;
   const e: Error = w.msg ? new MsgError(w.msg.key, w.msg.params, { cause }) : new Error(w.text, cause ? { cause } : undefined);
-  if (!w.msg) e.name = w.name;
+  e.name = w.name;
+  // The stack is where it was thrown, in the worker (a developer's, for the console).
+  if (w.stack) e.stack = w.stack;
   if (w.fields) Object.assign(e, w.fields);
   return e;
 }

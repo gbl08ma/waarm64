@@ -44,7 +44,7 @@
   <ul class="folder-list">
     {#each views as v (v.id)}
       <li data-folder={v.id} data-problem={v.problem}>
-        <span><b>{v.name}</b> <small>{stateText(v)}</small></span>
+        <span><b>{v.name}</b> <small class="folder-state">{stateText(v)}</small></span>
         <span class="net-row">
           {#if v.problem === 'permission'}<button data-action="allow-folder" onclick={() => act(() => page.folderAllow(v.id))}>{t('folders:FoldersMenu.allow', { name: v.name })}</button>{/if}
           {#if v.problem === 'held'}<button data-action="use-folder" onclick={() => act(() => page.folderUseHere(v.id))}>{t('folders:FoldersMenu.useHere')}</button>{/if}
@@ -69,4 +69,5 @@
   .folder-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 300px; }
   .folder-list li { display: flex; flex-direction: column; gap: 4px; }
   small { color: var(--dim); }
+  .folder-state { white-space: pre-line; }
 </style>

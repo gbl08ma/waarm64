@@ -3,7 +3,7 @@
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
-import { msg, type Msg } from './msg.ts';
+import { msg, msgOf, type Msg } from './msg.ts';
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
 import { p9, type P9Files } from './9p.ts';
 import { folders9p, type FolderSpec } from './9p-folders.ts';
@@ -850,7 +850,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       if (await w()) return true;
       full = true;
     } catch (e) {
-      full = (e as DOMException)?.name === 'QuotaExceededError' || /storage is full/.test(String((e as Error)?.message));
+      full = (e as DOMException)?.name === 'QuotaExceededError' || msgOf(e)?.key === 'disks:overlay.storageFull';
     }
     return full ? 'full' : false;
   };

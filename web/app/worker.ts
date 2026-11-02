@@ -370,6 +370,12 @@ function explain(err: unknown, machine: Machine): [Problem, Error] {
   }
   const e = err as Error & { problem?: Problem };
   if (e.problem && msgOf(e)) return [e.problem, e];
+  // An error that says what went wrong in the catalog's words (a refused file, a full storage): those words are its
+  // details, not its stack (which goes to the console).
+  if (msgOf(e)) {
+    console.error(e);
+    return ['emulator', new MsgError('machine:worker.emulator', {}, { cause: e })];
+  }
   const text = String(e?.message ?? e);
   if (e instanceof RangeError && /memory/i.test(text)) {
     return ['memory', new MsgError('machine:worker.memory', { ram: ramMiB }, { cause: err })];
@@ -415,7 +421,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   savedFlash = await flash;
   // The units' credentials (the keyboard layout, the network's settings, swap ramdisks' fstab lines) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
   const keys = keyboardLayout(m.keyLayout);
-  const units = [...(keys ? keyboardCredentials(keys, m.guest.keyboard) : []), ...(net ? netCredentials(m.guest.network) : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : [])))];
+  const units = [...(keys ? keyboardCredentials(keys, m.guest.keyboard, m.guest.layout) : []), ...(net ? netCredentials(m.guest.network) : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : [])))];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem] } : undefined;
   if (stopping) return;

@@ -1033,6 +1033,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **The i18n checks' holes** (tools/i18n-check.ts; review/i18n, 2026-11-02): parameters aren't checked when a key comes
+  through a map (`STATE_WORDS`, `PHASE_WORD`) or the parameters are a conditional or built elsewhere; sentences in lower
+  case, or with `;` or `=`, aren't flagged as copy; a quote in the docs split across two lines isn't seen; nothing
+  catches code that shows a `MsgError`'s `.message` (its developer text) to the user. Each would be a rule over the AST.
 - **A style guide for the page's words** (`docs/copy.md`; the user, 2026-11-02): once the user has reviewed and adjusted the copy in the catalog ([i18n.md](i18n.md)), write down its voice (terms, capitalization, punctuation, how a button, a title, an error's headline and its details are phrased), so new messages follow it. Not before: the current words aren't the model.
 - **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
   once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over

@@ -444,7 +444,7 @@
                   <li data-adapter={i}>
                     <Icon name="network" size={18} />
                     <div class="what"><strong>{t('machines:MachinesPage.adapter', { n: i + 1 })}</strong><span class="meta">{t('machines:MachinesPage.adapter.mac', { mac: a.mac })}</span>
-                      <span class="meta" data-connection-name>{c ? t('machines:MachinesPage.adapter.connection', { name: c.name, kind: kindText(c) }) : t('machines:MachinesPage.adapter.noConnection')}{#if here?.active}{' · '}{said(here.view.text).headline}{/if}{#if here?.primary}{' · '}{t('machines:MachinesPage.adapter.primary')}{/if}</span>
+                      <span class="meta" data-connection-name>{c ? t('machines:MachinesPage.adapter.connection', { name: c.name, kind: kindText(c) }) : t('machines:MachinesPage.adapter.noConnection')}{#if here?.active}{' · '}{said(here.view.text).headline}{#each here.view.details ?? [] as d, k (k)}{' · '}{d}{/each}{/if}{#if here?.primary}{' · '}{t('machines:MachinesPage.adapter.primary')}{/if}</span>
                       {#if here?.note}<span class="meta warn">{said(here.note).headline}</span>{/if}</div>
                     {#if at >= 0}
                       {#if c}<Check compact checked={c.connectAtStart} onchange={(on) => void act(t('machines:MachinesPage.busy.saving'), () => setAtStart(c, on))} field="connect-at-start" title={t('machines:MachinesPage.adapter.atStart.title')}>{t('machines:MachinesPage.adapter.atStart')}</Check>{/if}
