@@ -8,13 +8,14 @@ import type { Credential, MachineName } from './machine.ts';
 import type { Shape } from './shape.ts';
 import type { GuestWords } from './guest-unit.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
+import type { Msg, WireError } from '../msg.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
  * yet; running: seen; off: powered off; rebooting: the guest asked for a reset (the page starts a
  * new machine); suspended: stopped with its memory kept beside its disk (docs/frontend.md
  * "Suspend"): the next start resumes it; crashed: the guest panicked or the emulator failed; failed: the machine couldn't
- * start (a missing file, the disk in use, no memory). crashed and failed come with a `message`
+ * start (a missing file, the disk in use, no memory). crashed and failed come with an `error`
  * and a `problem`.
  */
 export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'suspended' | 'rebooting' | 'crashed' | 'failed';
@@ -24,7 +25,7 @@ export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'suspended'
  * `missing-image` (an image file isn't there), `disk-in-use` (another tab has the disk overlay
  * open), `disk-mismatch` (the overlay was written over another image), `memory` (the guest's RAM
  * couldn't be reserved), `panic` (the guest kernel's panic line), `snapshot` (a snapshot was refused:
- * its message says why and what to do), `emulator` (anything else).
+ * its error says why and what to do), `emulator` (anything else).
  */
 export type Problem = 'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-mismatch' | 'memory' | 'panic' | 'snapshot' | 'emulator';
 
@@ -208,7 +209,13 @@ export type DiskRef = { source: DiskSource; overlay?: string; identity?: string 
 
 /** Worker → page. */
 export type FromWorker =
-  | { type: 'state'; state: PowerState; message?: string; problem?: Problem }
+  /**
+   * The machine's state. The worker renders no words (docs/i18n.md): `error` is what stopped it or went wrong on the way
+   * (web/msg.ts `toWire`: its message is the headline, its causes the details; with a `problem`, the page offers the
+   * action for it; without, a note such as a suspended copy that couldn't be resumed), `note` what the page says beside
+   * the state (resumed, suspended).
+   */
+  | { type: 'state'; state: PowerState; error?: WireError; note?: Msg; problem?: Problem }
   /** Download progress while `loading` (the core, the kernel, the initrd), in bytes. */
   | { type: 'progress'; loaded: number; total: number }
   /** The screen first showed something (the guest's console took it): once per machine. */
@@ -223,18 +230,18 @@ export type FromWorker =
   | { type: 'keyboard'; live: boolean }
   | { type: 'status'; status: Status }
   /** Something the devices say while the machine runs on (a ramdisk out of memory): the message bar shows it. */
-  | { type: 'notice'; message: string }
+  | { type: 'notice'; message: Msg }
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
-  | { type: 'phase'; text: string }
+  | { type: 'phase'; text: Msg }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */
-  | { type: 'snapshot-progress'; phase: string; fraction: number }
+  | { type: 'snapshot-progress'; phase: Msg; fraction: number }
   /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
   | { type: 'snapshot-chunk'; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
   | { type: 'snapshot-done'; bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }
-  /** The save failed (the machine runs on, unless it had ended): a message for the user. */
-  | { type: 'snapshot-error'; message: string }
+  /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
+  | { type: 'snapshot-error'; error: WireError }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
   | { type: 'profile'; samples: [string, number][] }
   /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */

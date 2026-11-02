@@ -85,16 +85,29 @@ export function splitRam(total: number, reserve = 0): { ramSize: number; spill: 
 }
 
 /**
- * Why memory 0's `ramSize` and the spill memories' sizes (bytes) aren't a split a machine can have, in words for the
- * user; undefined when they are. Memory 1 holds `reserve` bytes before node 1 ({@link splitRam}).
+ * Why a split isn't one a machine can have (`splitError`), as a code and its numbers in MiB: memory 0 under 64 MiB
+ * (`memory0-min`) or over `max` (`memory0-max`), more than `max` NUMA nodes past it (`nodes`), a node of `mib` outside 1
+ * to `max` (`node`), or a first node over `max` with Vulkan's reserve before it (`vulkan`). The page says it
+ * (web/app/machine.ts `splitMsg`).
  */
-export function splitError(ramSize: number, spill: number[], reserve = 0): string | undefined {
-  const mib = (n: number) => `${n / 2 ** 20} MiB`;
-  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || ramSize % 65536) return 'memory 0 needs at least 64 MiB';
-  if (ramSize > MAX_MEMORY0_RAM) return `memory 0 holds at most ${mib(MAX_MEMORY0_RAM)}`;
-  if (spill.length > MAX_SPILL) return `at most ${MAX_SPILL} NUMA nodes past memory 0`;
+export type SplitProblem =
+  | { code: 'memory0-min' }
+  | { code: 'memory0-max'; max: number }
+  | { code: 'nodes'; max: number }
+  | { code: 'node'; max: number; mib: number }
+  | { code: 'vulkan'; max: number };
+
+/**
+ * Why memory 0's `ramSize` and the spill memories' sizes (bytes) aren't a split a machine can have; undefined when they
+ * are. Memory 1 holds `reserve` bytes before node 1 ({@link splitRam}).
+ */
+export function splitError(ramSize: number, spill: number[], reserve = 0): SplitProblem | undefined {
+  const mib = (n: number) => n / 2 ** 20;
+  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || ramSize % 65536) return { code: 'memory0-min' };
+  if (ramSize > MAX_MEMORY0_RAM) return { code: 'memory0-max', max: mib(MAX_MEMORY0_RAM) };
+  if (spill.length > MAX_SPILL) return { code: 'nodes', max: MAX_SPILL };
   const bad = spill.find((s) => !Number.isSafeInteger(s) || s < 65536 || s % 65536 || s > MAX_SPILL_BYTES);
-  if (bad !== undefined) return `a NUMA node holds 1 to ${mib(MAX_SPILL_BYTES)} (not ${bad / 2 ** 20})`;
-  if (spill.length && spill[0] > MAX_SPILL_BYTES - reserve) return `with Vulkan, the first NUMA node holds at most ${mib(MAX_SPILL_BYTES - reserve)}`;
+  if (bad !== undefined) return { code: 'node', max: mib(MAX_SPILL_BYTES), mib: mib(bad) };
+  if (spill.length && spill[0] > MAX_SPILL_BYTES - reserve) return { code: 'vulkan', max: mib(MAX_SPILL_BYTES - reserve) };
   return undefined;
 }

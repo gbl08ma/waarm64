@@ -634,5 +634,77 @@
   "ts-client.noExitNode": {
     "message": "no peer {{id}} offers to be an exit node",
     "note": "The cause under “Couldn't use that exit node” (Network menu): the chosen peer isn't an exit node (any more). {{id}} is the peer's stable ID. Lower case: a detail."
+  },
+  "main.ephemeral": {
+    "message": "{{name}} is ephemeral, so it is this page's: the machine that runs in another tab can't use it.",
+    "note": "Error when an ephemeral connection is attached to a machine that runs in another tab (the Network wizard, the Machines page's Network tab); {{name}} is the connection's name."
+  },
+  "main.held.useHere": {
+    "message": "{{held}} Use it here instead? That machine disconnects from it.",
+    "note": "Text of the question asked when a connection attached or connected here is in use by another tab's machine; {{held}} says who has it."
+  },
+  "main.held.title": {
+    "message": "The connection is in use",
+    "note": "Title of the question asked when a connection is in use by another tab's machine."
+  },
+  "main.useHere": {
+    "message": "Use it here",
+    "note": "The confirm button of the question asked when a connection is in use by another tab's machine: it is taken from that machine."
+  },
+  "main.held.logOut": {
+    "message": "{{held}} Log it out all the same? That machine disconnects from it.",
+    "note": "Text of the question asked by a connection's Log out (the Machines page's Connections) while another tab's machine uses it; {{held}} says who has it."
+  },
+  "main.logOut": {
+    "message": "Log out",
+    "note": "The confirm button (drawn as a warning) of the question asked by Log out while another tab's machine uses the connection."
+  },
+  "main.delete.leaves": {
+    "message": "Its node leaves the tailnet when it is next seen offline.",
+    "note": "What deleting an ephemeral tailnet connection does, in the question asked by its Delete."
+  },
+  "main.delete.loggedOut": {
+    "message": "Its node is logged out of the tailnet and its keys are forgotten here.",
+    "note": "What deleting a tailnet connection does, in the question asked by its Delete."
+  },
+  "main.delete.tailcat": {
+    "message": "Its tailcat address stops working.",
+    "note": "What deleting a tailcat connection that lets clients in does, in the question asked by its Delete."
+  },
+  "main.delete.confirm": {
+    "message": "Delete the connection {{name}}?",
+    "note": "Text of the question asked by a connection's Delete (the Machines page's Connections) when no machine has it and deleting it does nothing more; {{name}} is its name."
+  },
+  "main.delete.confirm.on": {
+    "message": "Delete the connection {{name}}? It is detached from {{machines}}.",
+    "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs."
+  },
+  "main.delete.confirm.what": {
+    "message": "Delete the connection {{name}}? {{what}}",
+    "note": "Text of the question asked by a connection's Delete when no machine has it; {{name}} is its name, {{what}} what deleting it does."
+  },
+  "main.delete.confirm.on.what": {
+    "message": "Delete the connection {{name}}? It is detached from {{machines}}. {{what}}",
+    "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs, {{what}} what deleting it does."
+  },
+  "main.delete.title": {
+    "message": "Delete the connection",
+    "note": "Title of the question asked by a connection's Delete."
+  },
+  "main.delete.ok": {
+    "message": "Delete",
+    "note": "The confirm button (drawn as a warning) of the question asked by a connection's Delete."
+  },
+  "main.stranded": {
+    "message": "{{name}} is deleted, but its control server didn't answer: its node stays on the tailnet until it expires or an admin removes it.",
+    "note": "Error shown after a tailnet connection was deleted and its control server couldn't be told; {{name}} is the connection's name."
+  },
+  "main.newAddress.confirm": {
+    "message": "Forget {{name}}'s tailcat address? Whoever has it can't come in any more, and the machine gets a new one when it next lets clients in.",
+    "note": "Text of the question asked by a tailcat connection's New address; {{name}} is the connection's name."
+  },
+  "main.newAddress.ok": {
+    "message": "Forget it",
+    "note": "The confirm button (drawn as a warning) of the question asked by a tailcat connection's New address."
   }
 }

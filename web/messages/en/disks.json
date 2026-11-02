@@ -702,5 +702,229 @@
   "overlay.storageFull": {
     "message": "the browser's storage is full",
     "note": "Error when a file written into the browser's storage (a kept snapshot, a suspended machine) falls short: the storage is full. Shown as a detail of the error that the snapshot couldn't be saved."
+  },
+  "main.needsUser_one": {
+    "message": "{{names}} needs your permission (or picking again) in this session: the browser lets a page read a file only after you say so.",
+    "note": "What the message bar (under the toolbar) says before a start when a disk of the machine is a file the browser lets the page read only after a click (Allow and start, or Pick and start, follows); {{names}} is the disk's name."
+  },
+  "main.needsUser_other": {
+    "message": "{{names}} need your permission (or picking again) in this session: the browser lets a page read a file only after you say so.",
+    "note": "What the message bar (under the toolbar) says before a start when several disks of the machine are files the browser lets the page read only after a click; {{names}} is their names, {{count}} how many."
+  },
+  "main.pickAgain": {
+    "message": "Pick {{name}} again",
+    "note": "Title of the browser's file picker opened by Pick and start, for a disk whose file the page must be given again; {{name}} is the disk's name."
+  },
+  "main.otherFile": {
+    "message": "{{file}} isn't the file this disk was made from ({{name}}, {{bytes}} bytes, modified {{when}}). Use it anyway? Its overlays were written over the other file's bytes and may not make sense over this one.",
+    "note": "Text of the question asked when the file picked again for a disk isn't the one it was made from: {{file}} is the file picked, {{name}}, {{bytes}} and {{when}} the disk's file's name, size and date."
+  },
+  "main.otherFile.title": {
+    "message": "Another file",
+    "note": "Title of the question asked when the file picked again for a disk isn't the one it was made from."
+  },
+  "main.otherFile.ok": {
+    "message": "Use it anyway",
+    "note": "The confirm button (drawn as a warning) of the question asked when the file picked again for a disk isn't the one it was made from."
+  },
+  "main.overlayName": {
+    "message": "Changes",
+    "note": "The name a disk's first overlay gets (its changes, made at the machine's first start; the Machines page's Disks tab shows it and can rename it)."
+  },
+  "main.allowAndStart": {
+    "message": "Allow and start",
+    "note": "Button in the message bar (under the toolbar) when the machine's disk files need the user's permission: it asks the browser for it, then starts."
+  },
+  "main.pickAndStart": {
+    "message": "Pick and start",
+    "note": "Button in the message bar (under the toolbar) when a disk's file must be picked again: it opens the browser's file picker, then starts."
+  },
+  "main.notOpened": {
+    "message": "The machine's disks couldn't be opened",
+    "note": "Error headline in the message bar (under the toolbar) when a start couldn't prepare the machine's disks (Retry follows); why is the detail under it."
+  },
+  "main.disks": {
+    "message": "Disks…",
+    "note": "Button in the message bar (under the toolbar) that opens the machine's Disks tab on the Machines page: when the machine has no disks yet, or when its disk's changes were made over another image."
+  },
+  "main.resetDisk": {
+    "message": "Reset disk…",
+    "note": "Button in the message bar (under the toolbar) for a test machine whose disk's changes were made over another image (or whose reset failed): it asks, then deletes the changes."
+  },
+  "main.noDisks": {
+    "message": "{{name}} has no disks yet: add one on its Disks tab.",
+    "note": "What the message bar (under the toolbar) says when the machine kept in this browser has no disks (Disks… follows); {{name}} is the machine's name."
+  },
+  "main.theDisk": {
+    "message": "the disk {{name}}",
+    "note": "Names a disk the user opened, inside a question or a notice (Reset the disk, a snapshot's load); {{name}} is its file's name."
+  },
+  "main.machineDisk": {
+    "message": "{{machine}}'s disk",
+    "note": "Names a test machine's own disk (its image), inside a question (Reset the disk, Import changes, a snapshot's load); {{machine}} is the machine's name."
+  },
+  "main.reset.confirm": {
+    "message": "Reset {{disk}}? Everything the machine wrote to it is deleted: your files, installed packages and settings. It then boots from the image as published.",
+    "note": "Text of the question asked by Reset disk… when the machine has written nothing to it yet; {{disk}} names the disk."
+  },
+  "main.reset.confirm.size": {
+    "message": "Reset {{disk}}? Everything the machine wrote to it ({{size, bytes}}) is deleted: your files, installed packages and settings. It then boots from the image as published.",
+    "note": "Text of the question asked by Reset disk…; {{disk}} names the disk, {{size}} what the machine has written to it."
+  },
+  "main.reset.title": {
+    "message": "Reset the disk",
+    "note": "Title of the question asked by Reset disk…."
+  },
+  "main.reset.ok": {
+    "message": "Reset",
+    "note": "The confirm button (drawn as a warning) of the question asked by Reset disk…."
+  },
+  "main.resetting": {
+    "message": "Resetting the disk",
+    "note": "The machine's state in the status bar while Reset disk… deletes the disk's changes."
+  },
+  "main.reset.failed": {
+    "message": "The disk couldn't be reset\nClose other tabs of this page (one of them may have the disk open), then try again.",
+    "note": "Error headline in the message bar (under the toolbar) when Reset disk… failed (Reset disk… and Retry follow); why is the detail under it."
+  },
+  "main.openFailed": {
+    "message": "The file couldn't be opened",
+    "note": "Error headline in the message bar (under the toolbar) when the file picked with Open disk… couldn't be opened; why is the detail under it."
+  },
+  "main.changes.noDisk": {
+    "message": "{{name}} holds changes to a disk: open that disk first (Open disk…), then load them.",
+    "note": "Notice when a changes file (a disk's export of its changes) is opened or dropped on a page with no disk open; {{name}} is the file's name."
+  },
+  "main.boot.confirm": {
+    "message": "Boot {{name}}? The machine restarts, like pulling the plug: unsaved work in the guest is lost. Its changes to the current disk are kept.",
+    "note": "Text of the question asked when another disk is opened on a test machine while it runs; {{name}} is the disk's file name or URL."
+  },
+  "main.boot.ok": {
+    "message": "Boot it",
+    "note": "The confirm button (drawn as a warning) of the question asked when another disk is opened while the machine runs."
+  },
+  "main.changes.runsElsewhere": {
+    "message": "{{name}} runs in another tab: power it off there first.",
+    "note": "Notice when changes are imported into a disk of a machine that runs in another tab; {{name}} is the machine's name."
+  },
+  "main.changes.notChanges": {
+    "message": "{{name}} isn't a changes file (a qcow2 made by Export's \"Changes only\"). To boot a disk, use Open disk….",
+    "note": "Notice when a file imported as changes isn't a changes file; {{name}} is the file's name."
+  },
+  "main.changes.noHash": {
+    "message": "{{name}} has a backing file ({{backing}}) but wasn't made by this page's Export, so its base can't be checked: it can't be loaded.",
+    "note": "Notice when a qcow2 imported as changes wasn't made by this page; {{name}} is the file's name, {{backing}} the backing file it names."
+  },
+  "main.changes.intoOverlay": {
+    "message": "They go into a new overlay of {{disk}}, which the machine switches to (the one it has now is kept).",
+    "note": "What happens, in the question asked before changes are imported into a disk of a machine kept in this browser; {{disk}} is the disk's name."
+  },
+  "main.changes.replace": {
+    "message": "They replace everything the machine has written to {{disk}}, and the firmware's settings.",
+    "note": "What happens, in the question asked before changes are loaded onto a test machine's disk that has nothing written yet; {{disk}} names the disk."
+  },
+  "main.changes.replace.size": {
+    "message": "They replace everything the machine has written to {{disk}} ({{size, bytes}}), and the firmware's settings.",
+    "note": "What happens, in the question asked before changes are loaded onto a test machine's disk; {{disk}} names the disk, {{size}} what the machine has written to it."
+  },
+  "main.changes.confirm": {
+    "message": "Load the changes in {{name}}? {{into}}",
+    "note": "Text of the question asked before changes are imported (Import changes…, or a changes file dropped on the page) while the machine is off: {{name}} is the file's name, {{into}} where they go."
+  },
+  "main.changes.confirm.running": {
+    "message": "Load the changes in {{name}}? {{into}} The machine stops, like pulling the plug, and starts again afterwards.",
+    "note": "Text of the question asked before changes are imported while the machine runs: {{name}} is the file's name, {{into}} where they go."
+  },
+  "main.changes.title": {
+    "message": "Import changes",
+    "note": "Title of the question asked before changes are imported into a disk."
+  },
+  "main.changes.ok": {
+    "message": "Load them",
+    "note": "The confirm button of the question asked before changes are imported into a disk."
+  },
+  "main.changes.loaded": {
+    "message": "Loaded the changes in {{name}} into a new overlay of {{disk}}.",
+    "note": "Notice in the message bar (under the toolbar) once changes were imported into a disk; {{name}} is the file's name, {{disk}} the disk's."
+  },
+  "main.changes.failed": {
+    "message": "The changes couldn't be loaded\nThe disk is as it was.",
+    "note": "Error headline in the message bar (under the toolbar) when an import of changes failed; why is the detail under it."
+  },
+  "main.changes.failed.inUse": {
+    "message": "The changes couldn't be loaded\nClose other tabs of this page (one of them may have the disk open), then try again.",
+    "note": "Error headline in the message bar (under the toolbar) when an import of changes failed because another tab has the disk open (Retry follows); the lower-level error is the detail under it."
+  },
+  "main.changes.loading": {
+    "message": "Loading the changes",
+    "note": "The machine's state in the status bar while changes are imported into its disk (a percentage follows)."
+  },
+  "main.save.type.changes": {
+    "message": "Changes over the base image (qcow2)",
+    "note": "The kind of file in the browser's save dialog of a disk's Export, Changes only."
+  },
+  "main.save.type.qcow2": {
+    "message": "Whole disk (qcow2)",
+    "note": "The kind of file in the browser's save dialog of a disk's Export, the whole disk as qcow2."
+  },
+  "main.save.type.raw": {
+    "message": "Whole disk (raw)",
+    "note": "The kind of file in the browser's save dialog of a disk's Export, the whole disk as a raw image."
+  },
+  "main.save.runsElsewhere": {
+    "message": "{{name}} runs from this disk in another tab: power it off there first.",
+    "note": "Notice when a disk is exported while a machine in another tab runs from it; {{name}} is the machine's name."
+  },
+  "main.save.emptied": {
+    "message": "{{name}} was the disk this machine runs from: the save dialog emptied it, so nothing was saved. The machine can't read its disk any more. Save to a different file next time.",
+    "note": "Error in the message bar (under the toolbar) when the file picked in a disk's Export save dialog was the disk's own file (the dialog emptied it); {{name}} is the file's name."
+  },
+  "main.save.nothing": {
+    "message": "the machine has written nothing to it yet",
+    "note": "Detail under “The disk couldn't be saved” in the message bar (under the toolbar) when the disk's changes are exported before the machine wrote any."
+  },
+  "main.saved": {
+    "message": "Saved {{name}} ({{size, bytes}}).",
+    "note": "Notice in the message bar (under the toolbar) once a disk was exported whole; {{name}} is the file's name, {{size}} its size."
+  },
+  "main.saved.changes": {
+    "message": "Saved {{name}} ({{size, bytes}}, {{blocks}} changed blocks; keep {{base}} beside it).",
+    "note": "Notice in the message bar (under the toolbar) once a disk's changes were exported; {{name}} is the file's name, {{size}} its size, {{blocks}} how many blocks changed, {{base}} the image they go over."
+  },
+  "main.save.failed": {
+    "message": "The disk couldn't be saved",
+    "note": "Error headline in the message bar (under the toolbar) when a disk's export failed; why is the detail under it."
+  },
+  "main.save.failed.inUse": {
+    "message": "The disk couldn't be saved\nClose other tabs of this page (one of them may have the disk open), then try again.",
+    "note": "Error headline in the message bar (under the toolbar) when a disk's export failed because another tab has the disk open (Retry follows); the lower-level error is the detail under it."
+  },
+  "main.save.confirm": {
+    "message": "Stop the machine to save its disk? It is stopped like pulling the plug: unsaved work in the guest is lost (shut it down first with poweroff for a clean disk). It starts again afterwards.",
+    "note": "Text of the question asked when the disk of the running machine is exported."
+  },
+  "main.save.title": {
+    "message": "Save the disk",
+    "note": "Title of the question asked when the disk of the running machine is exported."
+  },
+  "main.save.ok": {
+    "message": "Stop and save",
+    "note": "The confirm button (drawn as a warning) of the question asked when the disk of the running machine is exported."
+  },
+  "main.saving": {
+    "message": "Saving the disk",
+    "note": "The machine's state in the status bar when a disk's export starts (its phases and percentages follow)."
+  },
+  "devices.ramdiskFull": {
+    "message": "The ramdisk is out of memory: this tab can't have more, so the guest's writes to it fail (I/O errors). Deleting files there and trimming it (fstrim) makes room again.",
+    "note": "Error in the message bar (under the toolbar) while the machine runs, when a ramdisk can't grow (the tab has no more memory)."
+  },
+  "devices.storageFull": {
+    "message": "The browser's storage is full: the guest's writes to its disk fail (I/O errors), and its filesystem may stop taking any (read-only) until the machine is restarted. Make room on the Machines page (the browser's storage, at its bottom: what takes it, the remote disks' blocks), then restart the machine if it needs it.",
+    "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute)."
+  },
+  "devices.storageFull.numbers": {
+    "message": "The browser's storage is full ({{used, bytes}} used of {{quota, bytes}}): the guest's writes to its disk fail (I/O errors), and its filesystem may stop taking any (read-only) until the machine is restarted. Make room on the Machines page (the browser's storage, at its bottom: what takes it, the remote disks' blocks), then restart the machine if it needs it.",
+    "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute); {{used}} is what this page's storage holds, {{quota}} what the browser gives it."
   }
 }

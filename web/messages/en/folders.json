@@ -454,5 +454,45 @@
   "FoldersPane.none": {
     "message": "No folders yet: make one here, or from a machine's Shared folders tab. A folder dropped on this page becomes one.",
     "note": "Shared folders on the Machines page when the browser keeps no folder."
+  },
+  "main.drop.confirm": {
+    "message": "Attach {{folder}} to {{machine}}? The folder is kept in this browser, for this or any machine.",
+    "note": "Text of the question asked when a folder is dropped on the page while a machine with shared folders runs; {{folder}} is the folder's name, {{machine}} the machine's."
+  },
+  "main.drop.title": {
+    "message": "A shared folder",
+    "note": "Title of the question asked when a folder is dropped on the page."
+  },
+  "main.drop.ok": {
+    "message": "Attach",
+    "note": "The confirm button of the question asked when a folder is dropped on the page: it is attached to the running machine."
+  },
+  "main.inUse.confirm": {
+    "message": "{{name}} is in use by {{holder}}. Use it here instead? That machine loses it while it runs.",
+    "note": "Text of the question asked by Use it here for a shared folder another tab's machine has: {{name}} is the folder's name, {{holder}} that machine's."
+  },
+  "main.inUse.folder": {
+    "message": "The folder",
+    "note": "Names the shared folder, at the start of the question asked by Use it here, when its name isn't known."
+  },
+  "main.inUse.otherTab": {
+    "message": "a machine in another tab",
+    "note": "Names the machine that has a shared folder, in the question asked by Use it here, when its name isn't known."
+  },
+  "main.inUse.title": {
+    "message": "The folder is in use",
+    "note": "Title of the question asked by Use it here for a shared folder another tab's machine has."
+  },
+  "main.useHere": {
+    "message": "Use it here",
+    "note": "The confirm button of the question asked by Use it here for a shared folder: the folder is taken from the other machine."
+  },
+  "main.kept": {
+    "message": "{{holder}} didn't let it go.",
+    "note": "Error shown when Use it here couldn't take a shared folder from the machine that has it; {{holder}} is that machine."
+  },
+  "main.kept.thatMachine": {
+    "message": "That machine",
+    "note": "Names the machine that has a shared folder, in “… didn't let it go.”, when its name isn't known."
   }
 }

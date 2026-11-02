@@ -322,14 +322,18 @@ Page → worker:
   an answer, anyway).
 
 Worker → page:
-- `state {state, message?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
+- `state {state, error?, note?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
   (the VM runs), `running` (the machine's `ready` marker appeared on the serial console:
   `readyWatcher` in machine.ts, over the output so far, across drains), `off`
   (PSCI SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine), `crashed`
   (the guest's `Kernel panic - not syncing` line, an emulator error, an unimplemented exit),
-  `failed` (the machine couldn't start). `crashed` and `failed` carry a message for the user and a
+  `failed` (the machine couldn't start). `crashed` and `failed` carry an `error` for the user and a
   `problem` (below, "Errors"), from which the page picks the actions it offers. After a panic the
-  state stays `crashed` even if the guest resets (`panic=N`), so the message stays on show.
+  state stays `crashed` even if the guest resets (`panic=N`), so the message stays on show. The worker renders no
+  words ([i18n.md](i18n.md)): `error` is a `MsgError` as `toWire` posts it (its message the headline, its causes the
+  details: the kernel's panic line, the emulator's stack, the overlay's lock), and `note` a message the page says
+  beside the state (resumed, suspended). An `error` without a `problem` is a note too (a suspended machine that
+  couldn't be resumed, so the machine boots).
 - `progress {loaded, total}`: bytes downloaded of the core, the kernel and the initrd (from
   `Content-Length`), at most every 100 ms while `loading`.
 - `screen`: the screen first showed a pixel that isn't black (the guest's console took it), once
@@ -349,10 +353,12 @@ Worker → page:
   the guest, one per `nets`; none without `network`) and `cpus` (each vCPU's steps and JIT steps,
   `Vm.cpuStats`; none in round-robin mode). The disk and adapter counters are the device worker's
   (`Vm.deviceIo`, devices.md "Threads and determinism").
-- `phase {text}`: what a machine `loading` from a snapshot is doing (it has no download to report).
-- `snapshot-progress {phase, fraction}`, `snapshot-chunk {data}` (transferred; without a handle),
+- `phase {text}`: what a machine `loading` from a snapshot is doing (it has no download to report), a message.
+- `notice {message}`: what the devices say while the machine runs on (a ramdisk out of memory, the storage full), a
+  message.
+- `snapshot-progress {phase, fraction}` (the phase a message), `snapshot-chunk {data}` (transferred; without a handle),
   `snapshot-done {bytes, pausedMs}` (the file is complete; the ms from the pause request to the
-  resume) and `snapshot-error {message}` (the machine runs on).
+  resume) and `snapshot-error {error}` (the machine runs on; `toWire`'s error).
 - `serial` also has `replay` for a restored terminal's saved tail.
 - `stopped`.
 
@@ -411,8 +417,8 @@ From the machine worker, as `problem`:
 |---|---|---|
 | `missing-core` | the wasm answers 404 (or the server doesn't answer) | Retry (the message says `npm start` builds it) |
 | `missing-image` | the kernel, initrd or disk (a `HEAD`) answers 404 | Retry (the message names the file and the machine's `prepare` command) |
-| `disk-in-use` | the overlay's files are locked (`NoModificationAllowedError`): another tab runs the machine | Retry, once that tab is closed |
-| `disk-mismatch` | the overlay's `base` names another image | Reset disk… (a transient machine); Disks… (a stored one: its Disks tab, where New empty starts over) |
+| `disk-in-use` | the overlay's files are locked (`NoModificationAllowedError`, or web/overlay.ts's `overlay-in-use` problem, which crosses from the device worker with its fields): another tab runs the machine | Retry, once that tab is closed |
+| `disk-mismatch` | the overlay's `base` names another image (web/overlay.ts's `overlay-mismatch`) | Reset disk… (a transient machine); Disks… (a stored one: its Disks tab, where New empty starts over) |
 | `memory` | reserving the guest's RAM throws a `RangeError` | Retry |
 | `panic` | the guest's `Kernel panic - not syncing` line | Show serial log, Copy serial log, Save serial log |
 | `snapshot` | a snapshot was refused (`SnapshotError`: another machine, another disk, damaged or truncated, devices this page can't make; below, "Snapshots") | Start, Load snapshot… |
@@ -1105,7 +1111,7 @@ docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own
 computer** (the local helper, below), with its state (a tailnet's node, tailcat's served address, the helper's link), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
 comes back detached, saying so. Any machine can use a kept connection; one running machine has it at a time (its Web
-Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after **Use it here**, takes it
+Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:main.useHere), takes it
 (the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
 
 The toolbar's **Network** menu has a section per adapter of the page's machine (headed "Adapter n" when there are

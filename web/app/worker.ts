@@ -6,8 +6,10 @@
 // canvas (transferred) on its own animation frames; serial input comes in on a
 // port straight to the VM, and the keyboard and tablet ports go to the device
 // worker. What stops a machine from starting or running is sorted into a
-// `Problem` with a message a user can act on (docs/frontend.md "Errors").
+// `Problem` with an error a user can act on (docs/frontend.md "Errors"): the worker renders no words, it posts
+// messages (web/msg.ts) and errors (`toWire`) for the page to say.
 import { bootVm, compileCore, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, splitError, splitRam, type Restore, type Vm } from '../vm.ts';
+import { msg, msgOf, MsgError, toWire, type Msg } from '../msg.ts';
 import { VENUS_RESERVE } from '../ram.ts';
 import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
@@ -21,16 +23,16 @@ import { netCredentials } from './guest-net.ts';
 import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
 import { SHARES_TAG, sharesCredentials } from './shares-mount.ts';
 import { swapCredentials } from './guest-swap.ts';
-import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
+import { credentialFiles, MACHINES, readyWatcher, splitMsg, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
 import type { MachineName } from './machine.ts';
-import { bytesText } from './bytes.ts';
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
-const state = (s: PowerState, message?: string, problem?: Problem) => post({ type: 'state', state: s, message, problem });
-const PANIC = 'Kernel panic - not syncing';
+/** Posts the machine's state: with an error (what stopped it, or what went wrong on the way) or a note (resumed, suspended). */
+const state = (s: PowerState, o: { error?: unknown; note?: Msg; problem?: Problem } = {}) => post({ type: 'state', state: s, error: o.error === undefined ? undefined : toWire(o.error), note: o.note, problem: o.problem });
+const PANIC = 'Kernel panic - not syncing'; // i18n-ignore: the guest kernel's line
 
 let vm: Vm | undefined;
 /** The VM being booted: it may hold the overlay before `bootVm` returns it. */
@@ -50,8 +52,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     query = new URLSearchParams(m.query);
     start(m).catch((err) => {
       if (stopping) return;
-      const [problem, message] = explain(err, MACHINES[m.machine]);
-      state(vm ? 'crashed' : 'failed', message, problem);
+      const [problem, error] = explain(err, MACHINES[m.machine]);
+      state(vm ? 'crashed' : 'failed', { error, problem });
     });
   } else if (m.type === 'snapshot') {
     void saveSnapshot(m.handle, m.keep, m.whole, m.sleep);
@@ -126,8 +128,8 @@ const shutdown = (v: Vm, machine: Machine) => (closed ??= (async () => {
   await keepFlash(v, machine);
 })());
 
-/** An error with the problem it means for the user. */
-const failure = (problem: Problem, message: string) => Object.assign(new Error(message), { problem });
+/** An error with the problem it means for the user: `m` says it, `cause` (if any) is its details. */
+const failure = (problem: Problem, m: Msg, cause?: unknown) => Object.assign(new MsgError(m.key, m.params, { cause }), { problem });
 
 /** What this machine is, for a snapshot's header (docs/frontend.md "Snapshots"). */
 /** The RAM of the machine being started, MiB (the page's choice, or a snapshot's). */
@@ -153,7 +155,7 @@ const SLEEP_MS = 10_000;
  * (PSCI SYSTEM_SUSPEND) after the page pressed its sleep key; whether it did.
  */
 async function guestSleeps(v: Vm) {
-  post({ type: 'snapshot-progress', phase: 'Putting the guest to sleep', fraction: 0 });
+  post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.sleep'), fraction: 0 });
   for (const until = performance.now() + SLEEP_MS; !v.suspended() && performance.now() < until && !stopping;) await new Promise((r) => setTimeout(r, 50));
   return v.suspended();
 }
@@ -249,39 +251,38 @@ const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu'
  * `snapshot` problem, with a message for the user) a snapshot of another machine, and one whose
  * devices can't be made here.
  */
-function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: string) {
-  const what = `${name} can't be loaded`;
+function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: string | Msg) {
   // A stored machine's snapshot is checked by its shape (docs/machines.md §5.1): the page checked it first and
   // offers to make a machine like it; here it is refused before anything is touched.
   if (m.about && typeof h.shapeHash === 'string' && h.shapeHash !== m.about.shapeHash) {
-    throw failure('snapshot', `${what}: it is a snapshot of a machine with other settings or disks than ${m.about.name} has now.\nIts machine can be made again from it on the Machines page (Make a machine like it).`);
+    throw failure('snapshot', msg('snapshots:worker.otherShape', { name, machine: m.about.name }));
   }
   if (h.machine !== m.machine) {
     const other = typeof h.label === 'string' ? h.label : String(h.machine);
-    throw failure('snapshot', `${what}: it is a snapshot of ${other} (?machine=${String(h.machine)}), and this page runs ${machine.label} (?machine=${m.machine}).\nOpen the page for that machine to load it. Start boots ${machine.label} normally.`);
+    throw failure('snapshot', msg('snapshots:worker.otherMachine', { name, other, otherId: String(h.machine), machine: machine.title, id: m.machine }));
   }
   const kinds = h.devices;
   const all = layout(m, machine);
   if (!Array.isArray(kinds) || !kinds.length || !kinds.every((k) => typeof k === 'string')) {
-    throw failure('snapshot', `${what}: its list of devices isn't one this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
+    throw failure('snapshot', msg('snapshots:worker.devicesUnknown', { name, machine: machine.title }));
   }
   // A snapshot from before the clock device (virtio-rtc) is made without it: it holds no state, and the rest is the same.
   const here = [all, all.filter((s) => s.kind !== 'clock')].find((l) => kinds.join() === l.map((s) => s.kind).join());
   if (!here) {
-    throw failure('snapshot', `${what}: its machine had other devices (${kinds.join(', ')}; here: ${all.map((s) => s.kind).join(', ')}).\nOpen this page as that machine was started (the same disks, with its network), or Start ${machine.label} normally.`);
+    throw failure('snapshot', msg('snapshots:worker.otherDevices', { name, kinds: kinds as string[], here: all.map((s) => s.kind), machine: machine.title }));
   }
   const ncpus = h.ncpus;
-  if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', `${what}: its processor count isn't readable.\nStart boots ${machine.label} normally.`);
+  if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', msg('snapshots:worker.cpus', { name, machine: machine.title }));
   const specs = here.map((s) => device(s, m, machine));
   // Memory 0's RAM, and the spill memories' (docs/spill-memories.md), as they were.
   const ramSize = Number(h.ramSize);
   const spill = h.spill === undefined ? [] : h.spill;
-  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || !Array.isArray(spill) || splitError(ramSize, spill as number[])) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
+  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || !Array.isArray(spill) || splitError(ramSize, spill as number[])) throw failure('snapshot', msg('snapshots:worker.memory', { name, machine: machine.title }));
   const ram = (ramSize + (spill as number[]).reduce((a, b) => a + b, 0)) / 2 ** 20;
   // A snapshot from before the header said (ABI 34 and older) had none of them.
   const cpu = h.cpu ?? [];
   if (!Array.isArray(cpu) || !cpu.every((f): f is CpuFeature => CPU_FEATURES.includes(f as CpuFeature))) {
-    throw failure('snapshot', `${what}: its processor's features aren't ones this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
+    throw failure('snapshot', msg('snapshots:worker.features', { name, machine: machine.title }));
   }
   return { slots: here, specs, ncpus, ramMiB: ram, split: { ramSize, spill: spill as number[] }, cpu };
 }
@@ -290,19 +291,18 @@ const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.was
 /** A URL as the user knows it: a path in the repository. */
 const repoPath = (url: string) => new URL(url).pathname.replace(/^\//, '');
 
-/** Why the file at `url` couldn't be fetched, as a failure a user can act on. */
-function missing(url: string, machine: Machine, why: string) {
-  if (url === CORE) {
-    return failure('missing-core', `The emulator core isn't built: ${repoPath(url)} ${why}.\nRun \`npm start\` in the repository: it builds the core, then serves this page.`);
-  }
-  return failure('missing-image', `${machine.label}'s image isn't there: ${repoPath(url)} ${why}.\nRun ${machine.prepare}, then Retry.`);
+/** Why the file at `url` couldn't be fetched (the server's answer, `status`), as a failure a user can act on. */
+function missing(url: string, machine: Machine, status: number) {
+  const why = status === 404 ? msg('machine:worker.http.notFound', { status }) : msg('machine:worker.http', { status });
+  if (url === CORE) return failure('missing-core', msg('machine:worker.noCore', { path: repoPath(url), why }));
+  return failure('missing-image', msg('machine:worker.noImage', { machine: machine.title, path: repoPath(url), why, prepare: machine.prepare }));
 }
 
 /** Fetches `urls` whole, posting the progress over all of them (Content-Length; the server sends it). */
 async function download(urls: string[], machine: Machine) {
   const responses = await Promise.all(urls.map(async (url) => {
-    const r = await fetch(url).catch(() => { throw failure(url === CORE ? 'missing-core' : 'missing-image', `The server didn't answer for ${repoPath(url)}: is it still running (\`npm start\`)?`); });
-    if (!r.ok) throw missing(url, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`);
+    const r = await fetch(url).catch((err) => { throw failure(url === CORE ? 'missing-core' : 'missing-image', msg('machine:worker.noServer', { path: repoPath(url) }), err); });
+    if (!r.ok) throw missing(url, machine, r.status);
     return r;
   }));
   const sizes = responses.map((r) => Number(r.headers.get('content-length')) || 0);
@@ -348,32 +348,38 @@ async function download(urls: string[], machine: Machine) {
  */
 const spiderMonkey = 'InternalError' in globalThis;
 
-/** An error from starting or running a machine as `[problem, message]` for the page. */
-function explain(err: unknown, machine: Machine): [Problem, string] {
+/** Whether `err` or one of its causes is `test`'s (an overlay's error crosses from the device worker as its cause or itself). */
+function among(err: unknown, test: (e: Error & { problem?: string }) => boolean) {
+  for (let e = err, i = 0; e instanceof Error && i < 8; e = e.cause, i++) if (test(e)) return true;
+  return false;
+}
+
+/** An error from starting or running a machine as `[problem, error]` for the page: the error says it, its cause is the details. */
+function explain(err: unknown, machine: Machine): [Problem, Error] {
   // A SnapshotError has a `problem` of its own (why the file was refused): checked before the worker's.
   if (err instanceof SnapshotError) {
     // From `readSnapshot` nothing was touched; once `bootVm` has the file, the disk may hold its blocks.
-    return ['snapshot', restoring
-      ? `The snapshot couldn't be restored: ${err.message}\nThe machine didn't start and its disk may hold part of the snapshot's changes. Start boots ${machine.label} normally from what is there; Reset disk starts over from the image.`
-      : `The snapshot couldn't be loaded: ${err.message}\nNothing was changed: the machine isn't running and its disk is as it was. Start boots ${machine.label} normally; Load snapshot… tries another file.`];
+    return ['snapshot', restoring ? new MsgError('snapshots:worker.notRestored', { machine: machine.title }, { cause: err }) : new MsgError('snapshots:worker.notLoaded', { machine: machine.title }, { cause: err })];
+  }
+  // An overlay another tab holds (web/overlay.ts `problem`, or the browser's lock on its files), or one written over another image.
+  if (among(err, (e) => e.problem === 'overlay-in-use' || e.name === 'NoModificationAllowedError')) {
+    return ['disk-in-use', new MsgError('machine:worker.diskInUse', { machine: machine.title }, { cause: err })];
+  }
+  if (among(err, (e) => e.problem === 'overlay-mismatch')) {
+    return ['disk-mismatch', new MsgError('machine:worker.diskMismatch', { machine: machine.title }, { cause: err })];
   }
   const e = err as Error & { problem?: Problem };
-  if (e.problem) return [e.problem, e.message];
-  const text = String(e.message ?? e);
-  if (/NoModificationAllowedError|overlay \S+ is in use/.test(text)) {
-    return ['disk-in-use', `${machine.label}'s disk is in use: another tab or window of this page runs the machine on it (the browser lets one open it at a time).\nClose that tab, then Retry.\n\n${text}`];
-  }
-  if (/overlay .* belongs to/.test(text)) {
-    return ['disk-mismatch', `${machine.label}'s saved disk was written over a different image than the one served now.\nReset the disk to start over from this image (what the machine wrote is deleted).\n\n${text}`];
-  }
+  if (e.problem && msgOf(e)) return [e.problem, e];
+  const text = String(e?.message ?? e);
   if (e instanceof RangeError && /memory/i.test(text)) {
-    return ['memory', `The browser couldn't reserve ${ramMiB} MiB for the machine's RAM.\nClose other tabs, then Retry.\n\n${text}`];
+    return ['memory', new MsgError('machine:worker.memory', { ram: ramMiB }, { cause: err })];
   }
-  // V8's stack starts with the message; Firefox's is only the frames.
-  return ['emulator', `The emulator stopped with an error:\n${e.stack?.includes(text) ? e.stack : `${text}\n${e.stack ?? ''}`.trim()}`];
+  // The details are the stack: V8's starts with the message; Firefox's is only the frames.
+  const stack = e instanceof Error && e.stack ? (e.stack.includes(text) ? e.stack : `${text}\n${e.stack}`.trim()) : text;
+  return ['emulator', new MsgError('machine:worker.emulator', {}, { cause: new Error(stack, e instanceof Error && e.cause !== undefined ? { cause: e.cause } : undefined) })];
 }
 
-async function start(m: StartMessage, note?: string): Promise<void> {
+async function start(m: StartMessage, note?: unknown): Promise<void> {
   const machine: Machine = current = MACHINES[m.machine];
   home = m.home;
   restoredHeader = undefined;
@@ -387,18 +393,18 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     else resume = await suspended(home).catch(() => undefined);
   }
   const snapshot: Blob | undefined = m.snapshot ?? resume;
-  const snapshotName = m.snapshot?.name ?? 'The suspended machine';
-  /** A suspended machine that can't be resumed is dropped, and the machine boots. */
+  const snapshotName = m.snapshot?.name ?? msg('machine:worker.suspendedMachine');
+  /** A suspended machine that can't be resumed is dropped, and the machine boots (saying why, as a note: no problem). */
   const bootInstead = async (err: unknown) => {
     if (home) await dropSuspend(home).catch(() => {});
     restoring = false;
-    return start({ ...m, resume: false }, `The suspended machine couldn't be resumed (${String((err as Error).message ?? err).split('\n')[0]}), so it was dropped and the machine boots from its disk.`);
+    return start({ ...m, resume: false }, new MsgError('machine:worker.notResumed', {}, { cause: err }));
   };
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
   // A snapshot has the variable store in its RAM (the restore writes it beside the overlay) and needs no kernel.
   const flash = !snapshot && machine.firmware && home ? loadFlash(home).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
   const urls = m.disks.flatMap((d) => ('url' in d.source ? [new URL(d.source.url, self.location.href).href] : []));
-  const disk = Promise.all(urls.map((url) => fetch(url, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(url, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); })));
+  const disk = Promise.all(urls.map((url) => fetch(url, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(url, machine, r.status); })));
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;
@@ -428,7 +434,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
     // a resume keeps it: it is as the suspended machine left it).
-    post({ type: 'phase', text: resume ? 'Resuming the suspended machine' : 'Checking the snapshot' });
+    post({ type: 'phase', text: resume ? msg('machine:worker.phase.resuming') : msg('snapshots:worker.phase.checking') });
     try {
       const lz = await codec();
       const { header } = await openSnapshot(snapshot, { codecs: [lz] });
@@ -442,7 +448,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
         for (const d of (header.disks ?? []) as SnapshotDisk[]) {
           if (d.ram || !d.overlay) continue;
           const spec = h.specs[d.slot];
-          if (spec?.type !== 'blk' || spec.overlay !== d.overlay || (await overlayMeta(d.overlay)).generation !== d.generation) throw new Error('its disk has changed since it was suspended');
+          if (spec?.type !== 'blk' || spec.overlay !== d.overlay || (await overlayMeta(d.overlay)).generation !== d.generation) throw new MsgError('machine:worker.diskChanged');
         }
       }
       restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume, plan: m.plan })).restore;
@@ -452,7 +458,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       if (resume && !stopping) return bootInstead(err);
       throw err;
     }
-    if (!resume) post({ type: 'phase', text: 'Restoring the machine' });
+    if (!resume) post({ type: 'phase', text: msg('snapshots:worker.phase.restoring') });
     if (stopping) return;
     restoring = !resume;
   }
@@ -461,8 +467,8 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const withVenus = here.some((s) => s.kind === 'gpu') && (gpuTuning().vulkan || !!m.vulkan) && !!m.renderer;
   const tooBig = withVenus && splitError(split.ramSize, split.spill, VENUS_RESERVE);
   if (tooBig) {
-    const from = snapshot ? 'the snapshot\'s memory split' : 'its memory split';
-    throw failure('memory', `${machine.label} can't start with Vulkan and ${from}: ${tooBig}.\n${snapshot ? 'Turn Vulkan off for it, or Start it normally.' : 'Change its memory on the Machines page (or the split in the address), or turn Vulkan off for it.'}`);
+    const why = splitMsg(tooBig);
+    throw failure('memory', snapshot ? msg('machine:worker.vulkanSplit.snapshot', { machine: machine.title, why }) : msg('machine:worker.vulkanSplit', { machine: machine.title, why }));
   }
   const devices = liveSpecs = specs ?? here.map((s) => device(s, m, machine));
   const kinds = here.map((s) => s.kind);
@@ -490,7 +496,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const t0 = performance.now();
   const ready = readyWatcher(machine.ready);
   let running = !!restore; // a restored machine is where it was: there's no marker to wait for
-  let panicked = ''; // the message
+  let panicked = false;
   let tail = ''; // the last output, for markers split across drains
   let loopAt = performance.now(); // the run loop's last iteration
   let loopMax = 0;
@@ -509,15 +515,15 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     const at = seen.indexOf(PANIC);
     // The guest hangs (or resets, with panic=N: the page keeps the crash on show rather than restarting).
     if (!panicked && at >= 0 && seen.indexOf('\n', at) >= 0) {
-      panicked = `The guest's kernel panicked: ${seen.slice(at).split('\n')[0].trim()}\nThe serial log shows what led to it; Restart boots the machine again.`;
-      state('crashed', panicked, 'panic');
+      panicked = true;
+      state('crashed', { error: new MsgError('machine:worker.panic', {}, { cause: seen.slice(at).split('\n')[0].trim() }), problem: 'panic' });
     }
   };
   if (restore) {
     if (serialTail) post({ type: 'serial', data: serialTail, replay: true }); // what the terminal showed when it was saved
-    state('running', resume ? 'Resumed the suspended machine.' : undefined);
+    state('running', { note: resume ? msg('machine:worker.resumed') : undefined });
   } else {
-    state('booting', note);
+    state('booting', { error: note });
   }
   // Once a second on a timer, not from the loop: a stuck loop then shows in `loopAgeMs` rather than as silence.
   let ticks = 0;
@@ -555,7 +561,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       await shutdown(vm, machine);
       if (panicked) return; // said
       else if (r.kind === Exit.PSCI) state(r.x[0] === PSCI_SYSTEM_OFF ? 'off' : 'rebooting');
-      else state('crashed', `The emulator stopped: ${r.kind === Exit.UNIMPLEMENTED ? `an unimplemented instruction or register at pc 0x${vm.pc().toString(16)}` : `exit ${r.kind}`}.`, 'emulator');
+      else state('crashed', { error: r.kind === Exit.UNIMPLEMENTED ? new MsgError('machine:worker.stopped.unimplemented', { pc: vm.pc().toString(16) }) : new MsgError('machine:worker.stopped.exit', { exit: r.kind }), problem: 'emulator' });
       return;
     }
   } finally {
@@ -581,11 +587,11 @@ let liveSpecs: DeviceSpec[] = [];
  * after.
  */
 async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole = false, sleep = false) {
-  const fail = (message: string) => post({ type: 'snapshot-error', message });
+  const fail = (error: unknown) => post({ type: 'snapshot-error', error: toWire(error) });
   const v = vm;
   const s = session;
-  if (!v || !s || stopping || closed) return fail("The machine isn't running, so there is nothing to save.");
-  if (snapshotting) return fail('A snapshot is already being saved.');
+  if (!v || !s || stopping || closed) return fail(new MsgError('snapshots:worker.notRunning'));
+  if (snapshotting) return fail(new MsgError('snapshots:worker.saving'));
   snapshotting = true;
   let out: FileSystemWritableFileStream | undefined;
   let kept: Awaited<ReturnType<typeof fileWriter>> | undefined;
@@ -602,9 +608,9 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
       post({ type: 'snapshot-chunk', data: copy }, [copy.buffer]);
     };
     if (sleep) await guestSleeps(v);
-    post({ type: 'snapshot-progress', phase: 'Pausing the machine', fraction: 0 });
+    post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.pausing'), fraction: 0 });
     const t0 = performance.now();
-    if (!(await v.pause())) throw new Error('the machine ended before it could be paused');
+    if (!(await v.pause())) throw new MsgError('snapshots:worker.ended');
     paused = true;
     slept = sleep && v.suspended();
     // The terminal's tail from a line start: a cut escape sequence would draw garbage in the restored terminal.
@@ -618,7 +624,7 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
         const now = performance.now();
         if (now - posted < 100 && done < total) return;
         posted = now;
-        post({ type: 'snapshot-progress', phase: 'Writing the snapshot', fraction: total ? done / total : 0 });
+        post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.writing'), fraction: total ? done / total : 0 });
       },
     });
     // A guest asleep for the file wakes with the time its clock was held as sleep, so it doesn't fall behind here either.
@@ -627,14 +633,14 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
     paused = false;
     if (sleep) v.wake(); // asleep for the file only (or late to it: it slept after the wait)
     const pausedMs = performance.now() - t0;
-    post({ type: 'snapshot-progress', phase: 'Finishing the file', fraction: 1 });
+    post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.finishing'), fraction: 1 });
     await out?.close();
     out = undefined;
     kept?.close();
     kept = undefined;
     post({ type: 'snapshot-done', bytes: w.bytes, pausedMs, stateMs: w.stateMs, blobBytes: w.blobBytes, pins: w.pins, slept });
   } catch (err) {
-    fail(`The snapshot couldn't be saved: ${String((err as Error).message ?? err)}`);
+    fail(new MsgError('snapshots:worker.notSaved', {}, { cause: err }));
   } finally {
     if (paused) v.resume();
     if (sleep) v.wake();
@@ -650,20 +656,20 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
  * overlay is exactly what the file's RAM expects. A failure before that leaves it running.
  */
 async function suspend(sleep = false) {
-  const fail = (message: string) => post({ type: 'snapshot-error', message });
+  const fail = (error: unknown) => post({ type: 'snapshot-error', error: toWire(error) });
   const v = vm;
   const s = session;
   const machine = current;
-  if (!v || !s || !machine || stopping || closed) return fail("The machine isn't running, so there is nothing to suspend.");
-  if (!home) return fail('This machine has no disk of its own to keep a suspended copy beside.');
-  if (snapshotting) return fail('A snapshot is being saved: suspend once it is done.');
+  if (!v || !s || !machine || stopping || closed) return fail(new MsgError('machine:worker.suspend.notRunning'));
+  if (!home) return fail(new MsgError('machine:worker.suspend.noHome'));
+  if (snapshotting) return fail(new MsgError('machine:worker.suspend.busy'));
   snapshotting = true;
   let paused = false;
   try {
     const lz = await codec();
     if (sleep) await guestSleeps(v);
-    post({ type: 'snapshot-progress', phase: 'Pausing the machine', fraction: 0 });
-    if (!(await v.pause())) throw new Error('the machine ended before it could be paused');
+    post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.pausing'), fraction: 0 });
+    if (!(await v.pause())) throw new MsgError('snapshots:worker.ended');
     paused = true;
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
     const meta = { ...header(s, cut), ...(sleep && v.suspended() ? { slept: true } : {}) };
@@ -677,7 +683,7 @@ async function suspend(sleep = false) {
           const now = performance.now();
           if (now - posted < 100 && done < total) return;
           posted = now;
-          post({ type: 'snapshot-progress', phase: 'Suspending the machine', fraction: total ? done / total : 0 });
+          post({ type: 'snapshot-progress', phase: msg('machine:worker.phase.suspending'), fraction: total ? done / total : 0 });
         },
       });
       out.close();
@@ -689,11 +695,11 @@ async function suspend(sleep = false) {
     // From here the machine must not run: the file is only good for the disk as it is now.
     isSuspended = true;
     await shutdown(v, machine);
-    state('suspended', `Suspended: the machine's memory is kept in this browser (${bytesText(bytes)}). Start resumes it where it was; Boot instead starts it from its disk, as after a power cut.`);
+    state('suspended', { note: msg('machine:worker.suspended', { size: bytes }) });
   } catch (err) {
     if (paused && !isSuspended) v.resume();
     if (sleep && !isSuspended) v.wake();
-    fail(`The machine couldn't be suspended: ${String((err as Error).message ?? err)}`);
+    fail(new MsgError('machine:worker.suspend.failed', {}, { cause: err }));
   } finally {
     snapshotting = false;
   }

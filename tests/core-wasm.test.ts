@@ -251,11 +251,11 @@ test('guest RAM splits into memory 0 and spill memories', () => {
   assert.deepEqual(splitRam(4 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [G + M] });
   assert.deepEqual(splitRam(12 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [2.5 * G, 4 * G, 2.5 * G + M] });
   assert.equal(splitError(2 * G, [2.5 * G], VENUS_RESERVE), undefined);
-  assert.match(splitError(2 * G, [2.5 * G + 64 * 1024], VENUS_RESERVE)!, /with Vulkan, the first NUMA node holds at most 2560 MiB/);
+  assert.deepEqual(splitError(2 * G, [2.5 * G + 64 * 1024], VENUS_RESERVE), { code: 'vulkan', max: 2560 });
   assert.throws(() => splitRam(40 * G), RangeError);
   assert.equal(splitError(2 * G, [G, 4 * G]), undefined);
-  assert.match(splitError(3 * G, [])!, /at most 3071 MiB/);
-  assert.match(splitError(32 * M, [])!, /at least 64 MiB/);
-  assert.match(splitError(G, [5 * G])!, /1 to 4096 MiB/);
-  assert.match(splitError(G, Array(9).fill(G))!, /at most 8/);
+  assert.deepEqual(splitError(3 * G, []), { code: 'memory0-max', max: 3071 });
+  assert.deepEqual(splitError(32 * M, []), { code: 'memory0-min' });
+  assert.deepEqual(splitError(G, [5 * G]), { code: 'node', max: 4096, mib: 5120 });
+  assert.deepEqual(splitError(G, Array(9).fill(G)), { code: 'nodes', max: 8 });
 });

@@ -398,5 +398,301 @@
   "vm.cantSave.notQuiet": {
     "message": "its devices never went quiet",
     "note": "Detail under “the machine can't be saved”: the devices kept working through every try to save them."
+  },
+  "main.startNormally": {
+    "message": "Start",
+    "note": "Button in the message bar (under the toolbar) after a snapshot was refused: it boots the machine normally."
+  },
+  "main.loadAgain": {
+    "message": "Load snapshot…",
+    "note": "Button in the message bar (under the toolbar) after a snapshot was refused: it picks another snapshot file."
+  },
+  "main.busy": {
+    "message": "A snapshot is being saved. Try again once it is done.",
+    "note": "Notice (a dialog) when something that stops the machine (a disk's export, Open disk, a snapshot's load) is asked while a snapshot is written."
+  },
+  "main.large.confirm": {
+    "message": "The machine is using 3D: its graphics memory (textures and buffers) adds up to {{size, bytes}} to the snapshot before compression, and the machine pauses while it is read. Take the snapshot anyway?",
+    "note": "Text of the question asked by Snapshot (the toolbar) when the machine's 3D state is large; {{size}} is what it adds."
+  },
+  "main.large.title": {
+    "message": "A large snapshot",
+    "note": "Title of the question asked by Snapshot when the machine's 3D state is large."
+  },
+  "main.large.ok": {
+    "message": "Take it",
+    "note": "The confirm button of the question asked by Snapshot when the machine's 3D state is large."
+  },
+  "main.fileType": {
+    "message": "webpc snapshot",
+    "note": "The kind of file in the browser's save dialog of Save snapshot (a snapshot file, .webpcsnap)."
+  },
+  "main.saved": {
+    "message": "Saved the snapshot {{name}} ({{size, bytes}}); the machine was paused for {{seconds}} s and runs on.",
+    "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "main.saved.slept": {
+    "message": "Saved the snapshot {{name}} ({{size, bytes}}); the machine was paused for {{seconds}} s and runs on. The guest slept for it: loading it wakes the guest with its clock caught up.",
+    "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file with the clock catch-up on (Preferences) and the guest asleep for it: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "main.saved.awake": {
+    "message": "Saved the snapshot {{name}} ({{size, bytes}}); the machine was paused for {{seconds}} s and runs on.\nThe guest didn't go to sleep when asked (its sleep key does nothing there?): its clock will lag after loading it.",
+    "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file with the clock catch-up on (Preferences) when the guest didn't go to sleep for it: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "main.kept": {
+    "message": "Kept the snapshot {{name}} in this browser ({{size, bytes}}); the machine was paused for {{seconds}} s and runs on. Rename it on the Machines page.",
+    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "main.kept.slept": {
+    "message": "Kept the snapshot {{name}} in this browser ({{size, bytes}}); the machine was paused for {{seconds}} s and runs on. Rename it on the Machines page. The guest slept for it: loading it wakes the guest with its clock caught up.",
+    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser with the clock catch-up on (Preferences) and the guest asleep for it: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "main.kept.awake": {
+    "message": "Kept the snapshot {{name}} in this browser ({{size, bytes}}); the machine was paused for {{seconds}} s and runs on. Rename it on the Machines page.\nThe guest didn't go to sleep when asked (its sleep key does nothing there?): its clock will lag after loading it.",
+    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser with the clock catch-up on (Preferences) when the guest didn't go to sleep for it: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "main.runsOn.noFile": {
+    "message": "The machine runs on; no file was saved.",
+    "note": "Line after the headline of an error in the message bar (under the toolbar) when Save snapshot failed; why is the detail under it."
+  },
+  "main.runsOn.nothingKept": {
+    "message": "The machine runs on; nothing was kept.",
+    "note": "Line after the headline of an error in the message bar (under the toolbar) when Snapshot (kept in this browser) failed; why is the detail under it."
+  },
+  "main.restore.otherVersion": {
+    "message": "it was made by another version of this page",
+    "note": "What differs, in “… is a snapshot of a machine other than … as it is now: …”, when the snapshot doesn't describe its machine (another version of the page made it)."
+  },
+  "main.restore.otherShape": {
+    "message": "{{name}} is a snapshot of a machine other than {{machine}} as it is now: {{why}}.\nMachines… can make a machine like it.",
+    "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Machines page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons)."
+  },
+  "main.restore.cant": {
+    "message": "The snapshot can't be restored",
+    "note": "Title of the notice when a snapshot is of a machine with other settings or disks."
+  },
+  "main.restore.failed": {
+    "message": "{{name}} can't be restored",
+    "note": "Error headline (a notice, or the message bar (under the toolbar)) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
+  },
+  "main.restore.refused": {
+    "message": "{{name}} can't be restored: {{why}}",
+    "note": "Notice when a snapshot can't be restored onto the machine's disks as they are; {{name}} is the snapshot's name, {{why}} the reason (e.g. a disk written in place moved on)."
+  },
+  "main.restore.confirm": {
+    "message": "Restore {{name}}? The machine runs on from where the snapshot was taken.",
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running and the snapshot has no date: {{name}} is the snapshot's name."
+  },
+  "main.restore.confirm.taken": {
+    "message": "Restore {{name}}, taken {{when}}? The machine runs on from where the snapshot was taken.",
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running: {{name}} is the snapshot's name, {{when}} when it was taken."
+  },
+  "main.restore.confirm.running": {
+    "message": "Restore {{name}}? The machine stops, like pulling the plug, and runs on from where the snapshot was taken.",
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs and the snapshot has no date: {{name}} is the snapshot's name."
+  },
+  "main.restore.confirm.takenRunning": {
+    "message": "Restore {{name}}, taken {{when}}? The machine stops, like pulling the plug, and runs on from where the snapshot was taken.",
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs: {{name}} is the snapshot's name, {{when}} when it was taken."
+  },
+  "main.restore.kept": {
+    "message": "As the snapshot left them: {{disks}}.",
+    "note": "Line of the question asked before a snapshot is restored: the disks whose changes are as the snapshot left them (kept as they are); {{disks}} is their names."
+  },
+  "main.restore.fork.reused": {
+    "message": "{{disk}}: its earlier fork of this snapshot, attached again",
+    "note": "Line of the question asked before a snapshot is restored, for a disk that gets back the overlay an earlier restore of it made; {{disk}} is the disk's name."
+  },
+  "main.restore.fork.new": {
+    "message": "{{disk}}: changed since, so the snapshot's state goes into a new overlay, attached now (the one it has stays as it is)",
+    "note": "Line of the question asked before a snapshot is restored, for a disk that changed since the snapshot; {{disk}} is the disk's name."
+  },
+  "main.restore.title": {
+    "message": "Restore a snapshot",
+    "note": "Title of the question asked before a snapshot is restored."
+  },
+  "main.restore.ok": {
+    "message": "Restore",
+    "note": "The confirm button of the question asked before a snapshot is restored (drawn as a warning while the machine runs)."
+  },
+  "main.restore.keep.item": {
+    "message": "{{name}} ({{size, bytes}})",
+    "note": "An overlay in the question whether to keep the changes since a snapshot: {{name}} is its name, {{size}} what it holds."
+  },
+  "main.restore.keep_one": {
+    "message": "Keep {{list}} as it is and restore into a new overlay? Replacing it instead loses what the machine wrote since the snapshot.",
+    "note": "Text of the question asked after Restore when one disk's overlay changed since the snapshot and could be replaced; {{list}} is that overlay (its name and size)."
+  },
+  "main.restore.keep_other": {
+    "message": "Keep {{list}} as they are and restore into a new overlay? Replacing them instead loses what the machine wrote since the snapshot.",
+    "note": "Text of the question asked after Restore when several disks' overlays changed since the snapshot and could be replaced; {{list}} is them (names and sizes), {{count}} how many."
+  },
+  "main.restore.keep.title": {
+    "message": "Keep the changes since?",
+    "note": "Title of the question whether to keep the changes made since a snapshot."
+  },
+  "main.restore.keep.ok": {
+    "message": "Keep, restore into a new overlay",
+    "note": "The confirm button of the question whether to keep the changes made since a snapshot: they stay, the snapshot goes into new overlays."
+  },
+  "main.restore.replace_one": {
+    "message": "Replace it",
+    "note": "The cancel button of the question whether to keep the changes made since a snapshot, for one overlay: it is replaced."
+  },
+  "main.restore.replace_other": {
+    "message": "Replace them",
+    "note": "The cancel button of the question whether to keep the changes made since a snapshot, for several overlays ({{count}}): they are replaced."
+  },
+  "main.ownDisk": {
+    "message": "{{machine}}'s own disk",
+    "note": "Names a test machine's own disk (its image) in the notice that a snapshot was taken on another disk; {{machine}} is the machine's name."
+  },
+  "main.notSnapshot": {
+    "message": "{{name}}: {{why}}",
+    "note": "Text of the notice when a file opened as a snapshot isn't one this page can load: {{name}} is the file's name, {{why}} the reason."
+  },
+  "main.notSnapshot.title": {
+    "message": "Not a snapshot this page can load",
+    "note": "Title of the notice when a file opened as a snapshot isn't one this page can load."
+  },
+  "main.load.otherMachine": {
+    "message": "{{name}} is a snapshot of {{other}} (?machine={{otherId}}), and this page runs {{machine}} (?machine={{id}}). Open the page for that machine to load it.",
+    "note": "Notice when a snapshot file of another test machine is opened: {{name}} is the file's name, {{other}} and {{otherId}} its machine's name and id, {{machine}} and {{id}} the page's."
+  },
+  "main.load.otherDisk": {
+    "message": "{{name}} was taken on {{taken}}, and the disk open now is {{open}}. A snapshot continues only on the disk it was taken on: open that disk first (Open disk…), then load the snapshot.",
+    "note": "Notice when a snapshot file taken on another disk is opened: {{name}} is the file's name, {{taken}} the disk it was taken on, {{open}} the one open now."
+  },
+  "main.load.otherDisk.reload": {
+    "message": "{{name}} was taken on {{taken}}, and the disk open now is {{open}}. A snapshot continues only on the disk it was taken on: reload the page (it starts with the machine's own disk), then load the snapshot.",
+    "note": "Notice when a snapshot file taken on the machine's own disk is opened while another disk is: {{name}} is the file's name, {{taken}} the disk it was taken on, {{open}} the one open now."
+  },
+  "main.load.confirm": {
+    "message": "Load the snapshot {{name}}? {{holds}} {{replaces}} {{lost}}",
+    "note": "Text of the question asked before a snapshot file is loaded on a test machine: {{name}} is the file's name, then what it holds, what happens to the machine, and what happens to the disk's changes (each a sentence)."
+  },
+  "main.load.holds.cpus_one": {
+    "message": "It holds {{label}} ({{size, bytes}}, {{count}} vCPU).",
+    "note": "What a snapshot file holds, in the question asked before it's loaded, when it has no date: {{label}} is its machine's name, {{size}} the file's size, {{count}} its vCPUs."
+  },
+  "main.load.holds.when.cpus_one": {
+    "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}, {{count}} vCPU).",
+    "note": "What a snapshot file holds, in the question asked before it's loaded: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size, {{count}} its vCPUs."
+  },
+  "main.load.holds.cpus_other": {
+    "message": "It holds {{label}} ({{size, bytes}}, {{count}} vCPUs).",
+    "note": "What a snapshot file holds, in the question asked before it's loaded, when it has no date: {{label}} is its machine's name, {{size}} the file's size, {{count}} its vCPUs."
+  },
+  "main.load.holds.when.cpus_other": {
+    "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}, {{count}} vCPUs).",
+    "note": "What a snapshot file holds, in the question asked before it's loaded: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size, {{count}} its vCPUs."
+  },
+  "main.load.holds": {
+    "message": "It holds {{label}} ({{size, bytes}}).",
+    "note": "What a snapshot file holds, in the question asked before it's loaded, when it says neither its date nor its vCPUs: {{label}} is its machine's name, {{size}} the file's size."
+  },
+  "main.load.holds.when": {
+    "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}).",
+    "note": "What a snapshot file holds, in the question asked before it's loaded, when it doesn't say its vCPUs: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size."
+  },
+  "main.load.replaces.running": {
+    "message": "This machine stops, like pulling the plug, and the snapshot's machine takes its place, running where it was saved.",
+    "note": "What happens to the machine, in the question asked before a snapshot file is loaded while it runs."
+  },
+  "main.load.replaces": {
+    "message": "The snapshot's machine takes its place, running where it was saved.",
+    "note": "What happens to the machine, in the question asked before a snapshot file is loaded while it isn't running."
+  },
+  "main.load.written": {
+    "message": "Everything {{disk}} has written is replaced by the snapshot's changes to the disk.",
+    "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} names the disk."
+  },
+  "main.load.written.size": {
+    "message": "Everything {{disk}} has written ({{size, bytes}}) is replaced by the snapshot's changes to the disk.",
+    "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} names the disk, {{size}} what it has written."
+  },
+  "main.load.title": {
+    "message": "Load a snapshot",
+    "note": "Title of the question asked before a snapshot file is loaded on a test machine."
+  },
+  "main.load.ok": {
+    "message": "Load it",
+    "note": "The confirm button (drawn as a warning) of the question asked before a snapshot file is loaded."
+  },
+  "worker.otherShape": {
+    "message": "{{name}} can't be loaded: it is a snapshot of a machine with other settings or disks than {{machine}} has now.\nIts machine can be made again from it on the Machines page (Make a machine like it).",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because the machine's settings or disks changed since; {{machine}} is the machine's name; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.otherMachine": {
+    "message": "{{name}} can't be loaded: it is a snapshot of {{other}} (?machine={{otherId}}), and this page runs {{machine}} (?machine={{id}}).\nOpen the page for that machine to load it. Start boots {{machine}} normally.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because it is of another test machine; {{other}} and {{otherId}} are its machine's name and id, {{machine}} and {{id}} the page's; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.devicesUnknown": {
+    "message": "{{name}} can't be loaded: its list of devices isn't one this page knows (another version made it?).\nStart boots {{machine}} normally.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its devices can't be read; {{machine}} is the machine's name; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.otherDevices": {
+    "message": "{{name}} can't be loaded: its machine had other devices ({{kinds}}; here: {{here}}).\nOpen this page as that machine was started (the same disks, with its network), or Start {{machine}} normally.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its machine had other devices; {{kinds}} are its devices, {{here}} the machine's, {{machine}} the machine's name; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.cpus": {
+    "message": "{{name}} can't be loaded: its processor count isn't readable.\nStart boots {{machine}} normally.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its vCPU count can't be read; {{machine}} is the machine's name; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.memory": {
+    "message": "{{name}} can't be loaded: its memory size isn't readable.\nStart boots {{machine}} normally.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its memory can't be read; {{machine}} is the machine's name; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.features": {
+    "message": "{{name}} can't be loaded: its processor's features aren't ones this page knows (another version made it?).\nStart boots {{machine}} normally.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its processor's features can't be read; {{machine}} is the machine's name; {{name}} is the file's name, or the suspended machine."
+  },
+  "worker.notRestored": {
+    "message": "The snapshot couldn't be restored\nThe machine didn't start and its disk may hold part of the snapshot's changes. Start boots {{machine}} normally from what is there; Reset disk starts over from the image.",
+    "note": "Error headline in the message bar (under the toolbar) when a snapshot failed once its disk's changes were being written (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it."
+  },
+  "worker.notLoaded": {
+    "message": "The snapshot couldn't be loaded\nNothing was changed: the machine isn't running and its disk is as it was. Start boots {{machine}} normally; Load snapshot… tries another file.",
+    "note": "Error headline in the message bar (under the toolbar) when a snapshot file was refused before anything was touched (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it."
+  },
+  "worker.phase.checking": {
+    "message": "Checking the snapshot",
+    "note": "Line on the boot card and the machine's state in the status bar while a snapshot file is checked before it's loaded."
+  },
+  "worker.phase.restoring": {
+    "message": "Restoring the machine",
+    "note": "Line on the boot card and the machine's state in the status bar while a snapshot's machine is made."
+  },
+  "worker.phase.sleep": {
+    "message": "Putting the guest to sleep",
+    "note": "The machine's state in the status bar while a snapshot or Suspend waits for the guest to go to sleep (the clock catch-up, Preferences)."
+  },
+  "worker.phase.pausing": {
+    "message": "Pausing the machine",
+    "note": "The machine's state in the status bar when a snapshot or Suspend pauses the machine."
+  },
+  "worker.phase.writing": {
+    "message": "Writing the snapshot",
+    "note": "The machine's state in the status bar while a snapshot is written (a percentage may follow)."
+  },
+  "worker.phase.finishing": {
+    "message": "Finishing the file",
+    "note": "The machine's state in the status bar while a snapshot's file is closed, the machine already running on."
+  },
+  "worker.notRunning": {
+    "message": "The machine isn't running, so there is nothing to save.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot reached a machine that had already stopped."
+  },
+  "worker.saving": {
+    "message": "A snapshot is already being saved.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot is asked while another is written."
+  },
+  "worker.ended": {
+    "message": "the machine ended before it could be paused",
+    "note": "Detail under “The snapshot couldn't be saved” or “The machine couldn't be suspended” in the message bar (under the toolbar): the machine stopped first."
+  },
+  "worker.notSaved": {
+    "message": "The snapshot couldn't be saved",
+    "note": "Error headline in the message bar (under the toolbar) when a snapshot failed (the machine runs on); why is the detail under it."
   }
 }

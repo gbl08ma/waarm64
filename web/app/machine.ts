@@ -5,7 +5,7 @@
 // smoke test (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
 // nothing here depends on the dev server's layout beyond where target/ is.
 import { msg, type Msg } from '../msg.ts';
-import { MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam, VENUS_RESERVE } from '../ram.ts';
+import { MAX_MEMORY0_RAM, splitError, splitRam, VENUS_RESERVE, type SplitProblem } from '../ram.ts';
 
 export type Machine = {
   /** Its name as the snapshots it makes record it (their header's `label`), and in developers' messages. */
@@ -173,20 +173,23 @@ export function ramSplitMiB(ramMiB: number, split?: number[], vulkan = false): n
 }
 /**
  * Why `split` (MiB, memory 0 first) isn't one a machine (with Vulkan or not) can have, for the user; undefined when it is.
- * web/ram.ts `splitError` decides; the reasons follow its checks, in its order.
+ * Past whole MiB, web/ram.ts `splitError` decides, and `splitMsg` says its code.
  */
 export function ramSplitError(split: number[], vulkan = false): Msg | undefined {
   if (!split.length || split.some((n) => !Number.isInteger(n))) return msg('machines:machine.split.whole');
-  const reserve = vulkan ? VENUS_RESERVE : 0;
   const [ram, ...spill] = split.map((n) => n * 2 ** 20);
-  if (!splitError(ram, spill, reserve)) return undefined;
-  const mib = (n: number) => n / 2 ** 20;
-  if (!Number.isSafeInteger(ram) || ram < 64 << 20 || ram % 65536) return msg('machines:machine.split.memory0Min');
-  if (ram > MAX_MEMORY0_RAM) return msg('machines:machine.split.memory0Max', { max: mib(MAX_MEMORY0_RAM) });
-  if (spill.length > MAX_SPILL) return msg('machines:machine.split.nodes', { max: MAX_SPILL });
-  const bad = spill.find((s) => !Number.isSafeInteger(s) || s < 65536 || s % 65536 || s > MAX_SPILL_BYTES);
-  if (bad !== undefined) return msg('machines:machine.split.node', { max: mib(MAX_SPILL_BYTES), mib: mib(bad) });
-  return msg('machines:machine.split.vulkan', { max: mib(MAX_SPILL_BYTES - reserve) });
+  const p = splitError(ram, spill, vulkan ? VENUS_RESERVE : 0);
+  return p && splitMsg(p);
+}
+/** What web/ram.ts `splitError`'s code says (the Machines page's Memory split, a machine that can't start with its split). */
+export function splitMsg(p: SplitProblem): Msg {
+  switch (p.code) {
+    case 'memory0-min': return msg('machines:machine.split.memory0Min');
+    case 'memory0-max': return msg('machines:machine.split.memory0Max', { max: p.max });
+    case 'nodes': return msg('machines:machine.split.nodes', { max: p.max });
+    case 'node': return msg('machines:machine.split.node', { max: p.max, mib: p.mib });
+    case 'vulkan': return msg('machines:machine.split.vulkan', { max: p.max });
+  }
 }
 /** The note for a machine whose RAM goes past memory 0: undefined when it all fits there. */
 export function numaNote(ramMiB: number, split?: number[], vulkan = false): Msg | undefined {

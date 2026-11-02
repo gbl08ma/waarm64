@@ -558,7 +558,7 @@ type Page = import('playwright-core').Page;
 const viewOf = async (page: Page) => (await page.waitForFunction(() => document.body.dataset.view, null, { timeout: 30_000 })).jsonValue();
 const settled = (page: Page, ms = 30_000, from?: string) =>
   page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: ms, polling: 50 })
-    .then(() => page.evaluate(() => ({ state: document.body.dataset.state, text: (document.getElementById('message-text')?.textContent ?? ''), actions: [...document.querySelectorAll('#message-actions button')].map((b) => b.textContent) })));
+    .then(() => page.evaluate(() => ({ state: document.body.dataset.state, text: (document.getElementById('message-text')?.textContent ?? ''), details: (document.getElementById('message-details')?.textContent ?? ''), actions: [...document.querySelectorAll('#message-actions button')].map((b) => b.textContent) })));
 
 // The page's messages (M8 loop 4): what stops a machine from starting says what to do.
 test("the page says what's wrong: no cross-origin isolation, a missing script, core or image (then Retry), too little memory", { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
@@ -659,7 +659,8 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=screen&params=init=/nonexistent`);
   let r = await settled(page);
   assert.equal(r.state, 'crashed');
-  assert.match(r.text!, /^The guest's kernel panicked: Kernel panic - not syncing: Requested init \/nonexistent failed/);
+  assert.match(r.text!, /^The guest's kernel panicked\nThe serial log shows what led to it/);
+  assert.match(r.details!, /^Kernel panic - not syncing: Requested init \/nonexistent failed/); // the panic line: the headline's detail
   assert.deepEqual(r.actions, ['Show serial log', 'Copy serial log', 'Save serial log']);
   await page.waitForTimeout(500);
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed'); // not restarted by the reset

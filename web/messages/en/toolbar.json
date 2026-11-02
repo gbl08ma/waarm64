@@ -250,5 +250,13 @@
   "Toolbar.size.hint": {
     "message": "Kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.",
     "note": "Fine print at the foot of the toolbar's Machine menu."
+  },
+  "main.gpuLock.noWebgl2": {
+    "message": "This browser has no WebGL2: 2D only",
+    "note": "Tooltip of the Machine menu's Graphics choice (the toolbar), turned off because the browser has no WebGL2."
+  },
+  "main.gpuLock.address": {
+    "message": "Set by the page's address (?gpu={{gpu}})",
+    "note": "Tooltip of the Machine menu's Graphics choice (the toolbar), turned off because the page's address sets it; {{gpu}} is the address's value."
   }
 }

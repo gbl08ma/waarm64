@@ -17,7 +17,7 @@ import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, d
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { corrupt, SnapshotError } from './snapshot-file.ts';
-import { fromWire, msg, MsgError, type WireError } from './msg.ts';
+import { fromWire, msg, MsgError, type Msg, type WireError } from './msg.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
@@ -542,7 +542,7 @@ export type BootOptions = {
   cmdline: string;
   devices?: DeviceSpec[];
   /** What the devices tell the user while the machine runs on (a ramdisk out of memory): the page's message bar. */
-  onNotice?: (text: string) => void;
+  onNotice?: (m: Msg) => void;
   realtime?: boolean;
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
@@ -1619,7 +1619,7 @@ async function ringAsync(bell: Int32Array) {
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
  * returns once they've taken all of it (deterministic mode).
  */
-async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean, notice?: (text: string) => void) {
+async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean, notice?: (m: Msg) => void) {
   let text = '';
   const out = (_device: number, t: string) => { text += t; };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
@@ -1661,7 +1661,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   let flushed = () => {};
   const drained: (() => void)[] = []; // one a `drain` message, answered in order
   let closed = (_stats?: unknown) => {};
-  let saved = (_m: { state?: unknown[]; error?: string }) => {};
+  let saved = (_m: { state?: unknown[]; error?: string; wire?: WireError }) => {};
   // Requests for a disk's changes (`written`, `blocks`), answered by id.
   type DiskAnswer = { written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; error?: string };
   const asked = new Map<number, (m: DiskAnswer) => void>();
@@ -1680,9 +1680,10 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent) => {
       if (e.data.type === 'ready') resolve();
-      else if (e.data.type === 'error') reject(new Error(`device worker: ${e.data.message}`));
+      // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker.ts `explain`).
+      else if (e.data.type === 'error') reject(e.data.error ? fromWire(e.data.error) : new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
-      else if (e.data.type === 'notice') notice?.(e.data.text);
+      else if (e.data.type === 'notice') notice?.(e.data.message);
       else if (e.data.type === 'flushed') flushed();
       else if (e.data.type === 'drained') drained.shift()?.();
       else if (e.data.type === 'saved') saved(e.data);
@@ -1706,7 +1707,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     },
     /** The backends' state for a snapshot (web/devices.ts `Devices.save`). */
     save: () => new Promise<unknown[]>((resolve, reject) => {
-      saved = (m) => (m.state ? resolve(m.state) : reject(new Error(m.error ?? 'the device worker has no state')));
+      saved = (m) => (m.state ? resolve(m.state) : reject(m.wire ? fromWire(m.wire) : new Error(m.error ?? 'the device worker has no state')));
       worker.postMessage({ type: 'save' });
     }),
     written: async (i: number) => (await ask({ type: 'written', device: i })).written,
