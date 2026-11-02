@@ -377,10 +377,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - virtio-console has no host input path (its receive buffers are held forever), so a guest's
   `hvc0` getty is output only. Console input goes to the PL011 (M8); a `MessagePort` in the
   console's spec, as virtio-input has, is the shape if `hvc0` is ever wanted (it would skip the
-  PL011's trap per byte).
-- virtio: the host can change config space under a running driver since ABI 31
-  (`Devices.changeConfig`, docs/abi.md), but only virtio-gpu's display events use it: console resize,
-  capacity change and net link state don't yet.
+  PL011's trap per byte); a terminal sized to it would then offer `VIRTIO_CONSOLE_F_SIZE` and resize through
+  `changeConfig` (devices.md "Config changes").
 - **Remote disks' loose ends** ([remote-disks.md](remote-disks.md), bench/remote-disk/REPORT.md; a remote first boot
   takes a local file's time with a boot trace), by promise:
   - **A boot trace without the bench:** `tools/disk-trace.ts` takes a `bench/remote-disk/boot.ts` run's trace. A page

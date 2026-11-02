@@ -87,6 +87,16 @@ same doorbell as the virtio backends, through a shared block of its own (`vm_xhc
 completion rings as `DevShared`'s. Gadget Zero is its virtual test device, with a native twin; WebUSB and
 WebHID devices are the page's. All of it is in [usb.md](usb.md).
 
+### Config changes
+The host changes a device's config space under a running driver with `Ctx.changeConfig(write)` (`Devices.changeConfig`;
+the generation and the config-change interrupt are the transport's, for every device: abi.md "config changes").
+Two backends use it: virtio-gpu's display events (`events_read`, below) and net's link flap (`STATUS`'s `LINK_UP`,
+below). The other changes the spec allows have nothing on the host to raise them: a console resize needs a terminal
+on `hvc0`, which has no input path (below; the page has no virtio-console), and a block capacity change needs a disk
+whose size changes while the machine runs, which none does (a machine's disks are fixed while it runs:
+machines.md). Either is `changeConfig` writing the field when its source exists (Linux's drivers take both: `hvc_resize`,
+`virtblk_config_changed` revalidating the capacity), plus `VIRTIO_CONSOLE_F_SIZE` offered for the console.
+
 ### console and rng
 virtio-console: TX to the host, receive buffers held (no host input path: console input goes to
 the PL011, [platform.md](platform.md) "PL011"). virtio-rng:
