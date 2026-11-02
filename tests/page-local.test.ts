@@ -104,7 +104,9 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     const id = await seed(page);
     const ws = `ws://127.0.0.1:${port}/${token}`;
     await page.goto(`${base}/web/app/?m=${id}#net=${ws}`);
-    await page.waitForFunction(() => (document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 15_000 });
+    // The dialog is made when the page mounts, after its start's awaits (the store, the network's migration): `goto`
+    // can return before that, and a predicate that throws ends the wait.
+    await page.waitForFunction(() => (document.getElementById('net-wizard') as HTMLDialogElement | null)?.open === true, null, { timeout: 15_000 });
     assert.equal(new URL(page.url()).hash, '', 'the token left the address');
     assert.equal(await page.locator('#net-step-local').isVisible(), true, 'on This computer');
     assert.equal(await page.inputValue('#net-local-url'), ws);

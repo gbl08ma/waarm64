@@ -1333,10 +1333,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **`tests/page-local.test.ts`'s pairing-link test fails now and then under `scripts/ci.sh`'s load** (2026-11-02, once
-  in two runs; alone it passed twice): its `waitForFunction` reads `#net-wizard`'s `open` before the page has made the
-  dialog (`TypeError: Cannot read properties of null (reading 'open')`, tests/page-local.test.ts:105). Waiting for the
-  element (`?.open`) would fix the test; whether the page's start should open it sooner wasn't looked at.
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
   hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long
