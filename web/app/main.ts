@@ -34,6 +34,7 @@ import { connectionLock, migrateLegacy, type Connection, type NewConnection } fr
 import { createFolder, type Folder, type NewFolder } from './folders.ts';
 import { PageFolders } from './folders-live.ts';
 import { DEFAULT_SHARES_PATH } from './shares-mount.ts';
+import { swapLabel } from './guest-swap.ts';
 import { CLOSE_MS } from '../devices.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../tailcat.ts';
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
@@ -203,9 +204,12 @@ async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
   const s = stored;
   if (s) {
     await ensureOverlays(s);
+    // Swap ramdisks are labelled in slot order (web/app/guest-swap.ts).
+    const swaps = s.record.attachments.filter((a) => a.swap && s.disks.get(a.disk)!.kind === 'ramdisk').map((a) => a.id);
     const disks = await Promise.all(s.record.attachments.map(async (a): Promise<StartDisk> => {
       const d = s.disks.get(a.disk)!;
       const base = { name: d.name, serial: serialOf(a.id), identity: identityOf(d) };
+      if (d.kind === 'ramdisk' && swaps.includes(a.id)) return { ...base, source: { ramdisk: d.size, swap: swapLabel(swaps.indexOf(a.id)) } };
       // A stored disk written in place is its own overlay, over zeros (web/stored.ts).
       if (d.kind === 'stored' && a.inPlace && !a.readOnly) return { ...base, source: { blank: d.size }, overlay: diskDir(d.id) };
       const picked = pickedFiles.get(d.id);

@@ -1058,14 +1058,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   what a decoder asked for (WebCodecs doesn't say what it got; Chromium's `prefer-hardware` fails rather than fall back,
   so a decoding stream asked for it is in practice hardware); per-vCPU bars scale to the run's peak, not a fixed scale.
   The editor is mouse- and keyboard-driven (drag, Alt+←/→, Delete); touch drag isn't handled (HTML5 drag and drop).
-- **A ramdisk as swap, set up for the user** (the user's idea, 2026-10-18): an option on a ramdisk in the Machines
-  screen's disks menu that formats it as swap and turns it on in the guest, with nothing to do inside. The host can
-  write the swap header itself (`mkswap`'s format: a fixed page with `SWAPSPACE2`, a label and the size) and hand the
-  guest an `fstab.extra` systemd credential through SMBIOS type 11 (`LABEL=<label> none swap sw,nofail 0 0`, read
-  by `systemd-fstab-generator`, systemd 254+: Debian 13, not 12), the same pipe as NUMA balancing's sysctl (spill-memories.md).
-  The ramdisk is lazily backed, so swap costs host memory only as the guest fills it, and `swapon --discard` (in the
-  fstab line's options) gives it back. Not a replacement for spill memories (swap runs guest code for every page;
-  [spill-memories.md](spill-memories.md)), but useful where a user wants the kernel's LRU to decide.
 - **Machines as the unit, loose ends** ([machines.md](machines.md)):
   - **The exit's numbers weren't taken** (the user's call, 2026-10-18: low relevance for now, and they'd go stale
     beside unrelated optimizations). In Chromium 153, `bench/boot/REPORT.md` with JSON: a restore whose pins match

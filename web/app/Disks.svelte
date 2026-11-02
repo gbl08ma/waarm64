@@ -1,5 +1,5 @@
 <!--
-  A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, moved, detached;
+  A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached;
   per writable disk its overlays (switch, new empty, rename, delete, merge into a stored disk), export (the changes or
   the whole disk) and import (a changes file becomes a new overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
@@ -41,6 +41,7 @@
     ramdisk: { text: 'ramdisk', icon: 'bolt' },
   };
 
+  const SWAP_TITLE = "The guest's swap, turned on at every boot with nothing to do inside: the page formats the ramdisk as swap and tells systemd (254+: Debian 13, Arch; not Debian 12). It takes memory as the guest swaps and gives it back as the guest frees it.";
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string, disk: DiskRecord) {
     const name = await ask.prompt('Name of the new, empty overlay (the disk as the image has it):', 'Fresh start', { title: 'New empty overlay', ok: 'Make it' });
@@ -73,10 +74,10 @@
     await act('Merging', () => mergeIntoDisk(store, o.id));
   }
   /**
-   * An attachment's read-only or in-place box. Its value is taken from the event at once: Svelte's delegated events lose
+   * An attachment's read-only, in-place or swap box. Its value is taken from the event at once: Svelte's delegated events lose
    * `currentTarget` once dispatched, so read after an await (the power-off question) it was null and nothing was saved.
    */
-  function setFlag(id: string, flag: { readOnly?: boolean; inPlace?: boolean }) {
+  function setFlag(id: string, flag: { readOnly?: boolean; inPlace?: boolean; swap?: boolean }) {
     void act('Changing', async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, flag); });
   }
   async function detach(id: string, d: DiskRecord | undefined) {
@@ -125,6 +126,9 @@
         <span class="meta">{d ? `${KIND[d.kind].text}, ${bytesText(d.size)}` : ''} · vd{String.fromCharCode(97 + i)}</span>
         <span class="grow"></span>
         <Check compact checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(on) => setFlag(a.id, { readOnly: on })}>read-only</Check>
+        {#if d?.kind === 'ramdisk'}
+          <Check compact checked={!!a.swap} onchange={(on) => setFlag(a.id, { swap: on })} title={SWAP_TITLE}>swap</Check>
+        {/if}
         {#if d?.kind === 'stored' && !a.readOnly}
           <Check compact checked={!!a.inPlace} onchange={(on) => setFlag(a.id, { inPlace: on })} title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it.">write in place</Check>
         {/if}

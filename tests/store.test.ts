@@ -65,6 +65,17 @@ test("the shape: the other devices first, then the disks; its hash is stable and
     assert.notEqual(await shapeHash(t), h, what);
     assert.ok(shapeDiff(s, t).length > 0, `${what} is said`);
   }
+  // A ramdisk as swap (web/app/guest-swap.ts) is in the shape, and said; the box on another kind of disk isn't.
+  const RAM = new Map([...DISKS, ['d00000000002', disk('d00000000002', { kind: 'ramdisk', name: 'Ramdisk', size: 1 << 30, identity: { kind: 'ramdisk', id: 'd00000000002', bytes: 1 << 30 } })]]);
+  const noSwap = shapeOf(m, (id) => RAM.get(id));
+  const swapM = machine({ attachments: [m.attachments[0], { ...m.attachments[1], swap: true }] });
+  const withSwap = shapeOf(swapM, (id) => RAM.get(id));
+  assert.equal(withSwap.disks[1].swap, true);
+  assert.equal('swap' in noSwap.disks[1], false, 'left out when off');
+  assert.notEqual(await shapeHash(withSwap), await shapeHash(noSwap), 'swap');
+  assert.deepEqual(shapeDiff(noSwap, withSwap), ['disk 2: not swap then, swap now']);
+  assert.deepEqual(shapeDiff(withSwap, noSwap), ['disk 2: swap then, not swap now']);
+  assert.equal(await shapeHash(shapeOf(swapM, (id) => DISKS.get(id))), h, 'swap on a blank disk is nothing');
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: ['e0pd'] })), h, 'cpu features');
   // SHA3 came after shapes: with it or without, a machine's snapshots keep their hash.
   const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] });
@@ -372,6 +383,20 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
   assert.equal(JIT_DEFAULT_MIB, 320);
   assert.equal(hostMemoryGiB(1024, 4), hostMemoryGiB(1024, 4, 160) + 0.625);
   assert.equal(jitHostGiB(16), -0.25);
+});
+
+test("Make a machine like it: a swap ramdisk in the snapshot's shape comes back as one, made again under its id", async () => {
+  const { machineLike } = await import('../web/app/snapshots.ts');
+  const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
+  const ram = disk('d00000000002', { kind: 'ramdisk', name: 'Ramdisk', size: 64 << 20, identity: { kind: 'ramdisk', id: 'd00000000002', bytes: 64 << 20 } });
+  const was = machine({ attachments: [machine().attachments[0], { id: 'a00000000002', disk: ram.id, readOnly: false, swap: true }] });
+  const shape = shapeOf(was, (id) => (id === ram.id ? ram : DISKS.get(id)));
+  await store.put('disks', DISKS.get('d00000000001')!); // the URL disk is still in the browser; the ramdisk isn't
+  const like = await machineLike(store, { id: 'b00000000001', machine: was.id, name: 'Snap', shape });
+  assert.deepEqual(like.attachments.map((a) => [a.disk, !!a.swap]), [['d00000000001', false], [ram.id, true]]);
+  assert.equal((await store.get('disks', ram.id))?.kind, 'ramdisk');
+  const disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
+  assert.equal(await shapeHash(shapeOf(like, (id) => disks.get(id))), await shapeHash(shape), "the snapshot's shape");
 });
 
 test("a machine's Vulkan setting: in its shape (with 3D only) and its definition; off leaves the shape as it was", async () => {

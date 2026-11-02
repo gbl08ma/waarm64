@@ -25,7 +25,7 @@ What the Machines page shows and does is [frontend.md](frontend.md) "Machines in
    disk of a chosen size; a **ramdisk** of a chosen size in the host's memory.
 5. **The ramdisk** is empty at every boot, the guest's own reboot included; a snapshot and a suspended copy hold it
    (a restored machine finds the disk it had mounted). Its memory is taken lazily and given back when the guest
-   trims (§4.3).
+   trims (§4.3). A box makes one the guest's swap, turned on at boot with nothing done inside (§4.3 "As swap").
 6. **Exports** of disks and overlays: the changes only (a qcow2 over the base) or the whole disk (qcow2 or raw),
    compressed or not (frontend.md "Your own disk").
 7. **Snapshots belong to a machine and are checked against its shape** (§5.1), not against one disk. Several per
@@ -213,6 +213,21 @@ changes; the drop-before-run discipline of the page before machines is kept besi
 - A snapshot holds its chunks (`DISK` frames, as an overlay's blocks), a suspended copy too (the ramdisk isn't in
   OPFS); a restore hands the new chunks to the device (`BlkSpec.ramInit`).
 
+**As swap.** A ramdisk's **swap** box in the machine's disks (`Attachment.swap`, ramdisks of 40 KiB and up; in the
+shape, §5.1, and carried by definitions) makes it the guest's swap with nothing to do inside:
+- At every start the device worker writes a swap area's first page over the empty ramdisk (`BlkSpec.swap`, the label;
+  `web/ramdisk.ts` `swapHeader`: `mkswap`'s version 1 page, byte for byte, with a fresh UUID, the label
+  `webpc-swap<n>` by the swap ramdisks' slot order, and `SWAPSPACE2` at 4 KiB). A restored ramdisk is the snapshot's
+  chunks (`ramInit`), untouched: the restored guest has its swap in them.
+- The guest gets an `fstab.extra` systemd credential in SMBIOS type 11 (`web/app/guest-swap.ts`, through
+  `opt/webpc/oem-strings` as the units of [frontend.md](frontend.md) "What the page sets in the guest"):
+  `LABEL=webpc-swap<n> none swap sw,nofail,discard 0 0`, which `systemd-fstab-generator` reads with /etc/fstab
+  (systemd 254+: Debian 13 and Arch; Debian 12 ignores it and boots without the swap). `discard`: the kernel trims
+  what it frees (and the whole area at `swapon`, past the first page), so the chunks go back to the host as the guest
+  stops needing them. `nofail`: a guest with pages larger than 4 KiB doesn't find the signature and boots on.
+- It isn't spill memory: every swapped page runs guest code (the kernel's swap path, virtio-blk) where a spill memory
+  is a load ([spill-memories.md](spill-memories.md)). It suits a user who wants the kernel's LRU to decide what stays.
+
 ### 4.4 Stored disks: their format, merging, writing in place
 
 - **The format is the overlay's** (`data` and `map`, 4 KiB blocks, zeros without a slot: devices.md "blk") over
@@ -254,7 +269,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
 
 - **The shape** (`shape.ts` `shapeOf`) is a canonical JSON of what the guest sees: vCPUs, RAM (and the memory
   split), the display (2D or 3D: different devices) and Vulkan, the transports in slot order, each disk's size,
-  read-only flag, serial and base identity, the CPU features (`cpu`), the network adapters' MACs (left out for one adapter at the default MAC). **A feature that
+  read-only flag, serial and base identity (and `swap: true` for a ramdisk the guest uses as swap, §4.3), the CPU features (`cpu`), the network adapters' MACs (left out for one adapter at the default MAC). **A feature that
   came later joins only when it's on** (the USB controller as `usb: true`; the mouse, the touchscreen, the clock and
   9p as transports on machines that have them), so machines made before it keep their hash; `sha3` among the CPU
   features is left out of the hash for the same reason (the features after it, ABI 59's, are in it). Its SHA-256 is the **shape hash** (`shapeHash`). Names, the

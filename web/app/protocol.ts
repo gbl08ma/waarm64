@@ -173,11 +173,12 @@ export type ToWorker =
 
 /**
  * Where a disk's bytes come from: an image by URL (read by ranges) or as a `File` (read in slices), a blank disk of
- * `blank` bytes (zeros), a ramdisk of `ramdisk` bytes, or a disk stored in the browser (its OPFS directory,
+ * `blank` bytes (zeros), a ramdisk of `ramdisk` bytes (with `swap`, a swap area of that label turned on in the guest:
+ * web/app/guest-swap.ts), or a disk stored in the browser (its OPFS directory,
  * `disks/<id>`, and size: web/stored.ts). A stored disk written in place is a blank source with the store as its
  * overlay.
  */
-export type DiskSource = { url: string } | { file: File } | { blank: number } | { ramdisk: number } | { stored: string; size: number };
+export type DiskSource = { url: string } | { file: File } | { blank: number } | { ramdisk: number; swap?: string } | { stored: string; size: number };
 
 /**
  * A disk of the machine being started (docs/machines.md §4.2): where its bytes come from (a URL read by

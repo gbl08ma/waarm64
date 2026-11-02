@@ -52,9 +52,10 @@ export type DiskRecord = {
 /**
  * A disk in a machine's slot list. `readOnly`: the guest can't write it; otherwise it writes into
  * the overlay `overlay` (an id in IndexedDB `overlays`, machines.md §2), or, with `inPlace`, into
- * the disk itself (a stored disk only: §4.4), or, for a ramdisk, into memory.
+ * the disk itself (a stored disk only: §4.4), or, for a ramdisk, into memory. `swap`: a ramdisk the guest uses as swap
+ * (§4.3, web/app/guest-swap.ts).
  */
-export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?: boolean; overlay?: string };
+export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?: boolean; overlay?: string; swap?: true };
 
 /** The machine's display: a virtio-gpu, 2D or with virgl (3D, rendered with WebGL2): the guest sees different devices. */
 export type Display = '2d' | '3d';
@@ -223,8 +224,8 @@ export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boo
 /** The serial a disk's guest sees (virtio-blk GET_ID, at most 20 bytes; Linux's /dev/disk/by-id/virtio-<serial>): the attachment's, so it survives a reorder. */
 export const serialOf = (attachment: string) => `webpc-${attachment}`.slice(0, 20);
 
-/** One disk of a shape: what the guest sees of it. */
-export type ShapeDisk = { slot: number; size: number; readOnly: boolean; serial: string; identity: DiskIdentity };
+/** One disk of a shape: what the guest sees of it. `swap`: a ramdisk the guest uses as swap (only when on). */
+export type ShapeDisk = { slot: number; size: number; readOnly: boolean; serial: string; identity: DiskIdentity; swap?: true };
 
 /** What the guest sees of a machine (machines.md §5.1): a snapshot made on one shape restores only on the same shape. */
 export type Shape = {
@@ -278,7 +279,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
       const a = m.attachments[s.attachment];
       const d = disks(a.disk);
       if (!d) throw new Error(`machine ${m.name} has a disk that isn't in this browser (${a.disk})`);
-      return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity }];
+      return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity, ...(a.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}) }];
     }),
     ...(m.usb ? { usb: true as const } : {}),
     ...(vulkan ? { vulkan: true as const } : {}),
@@ -334,6 +335,7 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
     else if (a.size !== b.size) out.push(`${what}: ${a.size} bytes then, ${b.size} now`);
     if (a.readOnly !== b.readOnly) out.push(`${what}: ${a.readOnly ? 'read-only' : 'writable'} then, ${b.readOnly ? 'read-only' : 'writable'} now`);
     if (a.serial !== b.serial) out.push(`${what}: attached anew (its serial changed)`);
+    if (!!a.swap !== !!b.swap) out.push(`${what}: ${a.swap ? 'swap' : 'not swap'} then, ${b.swap ? 'swap' : 'not swap'} now`);
   }
   if (!out.length && canonical(hashed(was)) !== canonical(hashed(now))) out.push('its devices are in another order');
   return out;

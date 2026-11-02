@@ -126,7 +126,7 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
       await store.put('disks', d);
       disks.push(d);
     }
-    attachments.push({ id: sd.serial.replace(/^webpc-/, ''), disk: d.id, readOnly: sd.readOnly });
+    attachments.push({ id: sd.serial.replace(/^webpc-/, ''), disk: d.id, readOnly: sd.readOnly, ...(sd.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}) });
   }
   const taken = (await store.all('machines')).map((m) => m.name);
   const m: MachineRecord = {

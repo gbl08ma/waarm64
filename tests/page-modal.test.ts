@@ -179,6 +179,16 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
     store.close();
     return m.attachments[1].readOnly === true;
   }, id);
+  // Only the ramdisk has a swap box (web/app/guest-swap.ts); checked, the record says so.
+  assert.equal(await m.locator('[data-attachment]').getByRole('checkbox', { name: 'swap' }).count(), 1);
+  await m.locator('[data-attachment]').nth(2).getByRole('checkbox', { name: 'swap' }).check();
+  await page.waitForFunction(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const m = await store.get('machines', id);
+    store.close();
+    return m.attachments[2].swap === true;
+  }, id);
   await m.locator('[data-attachment]').nth(2).getByRole('button', { name: 'Detach' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 2);
 

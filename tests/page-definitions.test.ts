@@ -37,7 +37,7 @@ test('a definition exported from one profile and imported into another: the same
   await pa.goto(`${base}/tests/browser/core.html`);
   const out = await pa.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
-    const { createDisk, createMachine, attach } = await import('/web/app/machines.ts' as string);
+    const { createDisk, createMachine, attach, editAttachment } = await import('/web/app/machines.ts' as string);
     const { exportDefinition, hashFile } = await import('/web/app/definitions.ts' as string);
     const { currentShape } = await import('/web/app/snapshots.ts' as string);
     const store = await Store.open();
@@ -53,7 +53,8 @@ test('a definition exported from one profile and imported into another: the same
     await store.put('disks', { ...fd, sha256: await hashFile(file) });
     await attach(store, m, fd);
     await attach(store, m, await createDisk(store, { kind: 'blank', size: 16 << 20 }));
-    await attach(store, m, await createDisk(store, { kind: 'ramdisk', size: 8 << 20 }));
+    const swap = await attach(store, m, await createDisk(store, { kind: 'ramdisk', size: 8 << 20 }));
+    await editAttachment(store, await store.get('machines', m.id), swap.id, { swap: true });
     const disks = new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d]));
     const shape = await currentShape(await store.get('machines', m.id), (id: string) => disks.get(id), { display: '2d' });
     const def = await exportDefinition(store, m.id);
@@ -65,6 +66,7 @@ test('a definition exported from one profile and imported into another: the same
   writeFileSync(defFile, out.def);
   const def = JSON.parse(out.def);
   assert.deepEqual(def.disks.map((d: { kind: string }) => d.kind), ['url', 'file', 'blank', 'ramdisk']);
+  assert.deepEqual(def.disks.map((d: { swap?: boolean }) => !!d.swap), [false, false, false, true], 'the ramdisk as swap');
   assert.equal(readFileSync(defFile, 'utf8').includes('handle'), false, 'no handle in the file');
 
   // Profile B: imported through the Machines page; the same shape.
@@ -86,10 +88,11 @@ test('a definition exported from one profile and imported into another: the same
     const disks = new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d]));
     const shape = await currentShape(m, (id: string) => disks.get(id), { display: '2d' });
     store.close();
-    return { id: m.id, hash: shape.hash, kinds: m.attachments.map((x: { disk: string }) => (disks.get(x.disk) as { kind: string }).kind) };
+    return { id: m.id, hash: shape.hash, kinds: m.attachments.map((x: { disk: string }) => (disks.get(x.disk) as { kind: string }).kind), swap: m.attachments.map((x: { swap?: boolean }) => !!x.swap) };
   });
   assert.equal(imported.hash, out.hash, 'the same shape');
   assert.deepEqual(imported.kinds, ['url', 'file', 'blank', 'ramdisk']);
+  assert.deepEqual(imported.swap, [false, false, false, true]);
 
   // Opened: its file disk is to be picked. The fixture's bytes under another date: the hash says it's the same file.
   await pb.locator('.machines .pick', { hasText: 'Portable' }).click();

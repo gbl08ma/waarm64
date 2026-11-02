@@ -1,13 +1,14 @@
 // Snapshots of machines as the unit (docs/machines.md §5), in Node on a bare-metal guest (no image needed):
 // a snapshot pins each overlay's generation and moves it on for the next change; a ramdisk's blocks are in the file
 // (a suspended machine's too); a restore keeps an overlay at its pinned generation, or writes the file's blocks into
-// another one (a fork), never into the one it pins unless asked (the default, a replace).
+// another one (a fork), never into the one it pins unless asked (the default, a replace); a swap ramdisk's first page.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { DeviceSpec } from '../web/devices.ts';
 import { lzCodec } from '../web/lz.ts';
 import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
+import { swapHeader } from '../web/ramdisk.ts';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import { bootVm, compileCore, type BootOptions } from '../web/vm.ts';
 
@@ -85,6 +86,35 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   await (await bootVm(module, { ...o, devices: devices(), restore: r3.restore })).close();
   assert.equal(await byteAt(name, 1), 0x11, 'replaced');
   assert.equal((await overlayMeta(name)).generation, 3, 'a replaced overlay goes on from its generation (2), never back to one a snapshot pinned');
+});
+
+// A swap ramdisk (web/app/guest-swap.ts): the device writes the swap area's first page over the empty ramdisk at its
+// start, and not over a restored one's chunks (the guest's own swap is in them).
+test("a swap ramdisk starts with its swap page; a restored one keeps the snapshot's chunks", async () => {
+  const module = await compileCore(WASM);
+  const codec = await lzCodec(module);
+  const o: BootOptions = { ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };
+  /** The ramdisk's blocks as a snapshot of a machine started with `spec` carries them. */
+  const carried = async (spec: DeviceSpec) => {
+    const vm = await bootVm(module, { ...o, devices: [spec] });
+    await vm.runAsync(10_000);
+    await vm.settle();
+    const parts: Uint8Array[] = [];
+    await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+    await vm.close();
+    const into: DeviceSpec[] = [{ type: 'blk', source: 'ram', size: SIZE }];
+    const r = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, { devices: into });
+    await (await bootVm(module, { ...o, devices: into, restore: r.restore })).close();
+    return (into[0] as { ramInit: [number, Uint8Array][] }).ramInit;
+  };
+  const fresh = await carried({ type: 'blk', source: 'ram', size: SIZE, swap: 'webpc-swap0' });
+  assert.equal(fresh.length, 1);
+  const [c, bytes] = fresh[0];
+  assert.equal(c, 0);
+  assert.equal(Buffer.compare(bytes.subarray(0, 4096), swapHeader(SIZE, 'webpc-swap0', bytes.slice(1036, 1052))), 0, 'the swap page, with its UUID');
+  assert.ok(bytes.subarray(4096).every((x) => x === 0), 'nothing past it');
+  const restored = await carried({ type: 'blk', source: 'ram', size: SIZE, swap: 'webpc-swap0', ramInit: [] });
+  assert.deepEqual(restored, [], "a restored swap ramdisk is the snapshot's");
 });
 
 // Spill memories (docs/spill-memories.md): their RAM is in the file after memory 0's, each from a whole chunk

@@ -20,6 +20,7 @@ import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
 import { netCredentials } from './guest-net.ts';
 import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
 import { SHARES_TAG, sharesCredentials } from './shares-mount.ts';
+import { swapCredentials } from './guest-swap.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
@@ -182,7 +183,7 @@ const layout = (m: StartMessage, machine: Machine): Slot[] =>
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
 function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
   const s = d.source;
-  const source = 'url' in s ? { url: new URL(s.url, self.location.href).href } : 'file' in s ? { file: s.file } : 'blank' in s ? { source: 'zero' as const, size: s.blank } : 'stored' in s ? { stored: s.stored, size: s.size } : { source: 'ram' as const, size: s.ramdisk };
+  const source = 'url' in s ? { url: new URL(s.url, self.location.href).href } : 'file' in s ? { file: s.file } : 'blank' in s ? { source: 'zero' as const, size: s.blank } : 'stored' in s ? { stored: s.stored, size: s.size } : { source: 'ram' as const, size: s.ramdisk, swap: s.swap };
   return { type: 'blk', ...source, overlay: 'ramdisk' in s ? undefined : d.overlay, identity: d.identity, serial: d.serial, discard: true, stats, keep };
 }
 
@@ -406,9 +407,9 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const net = !!m.nets?.length && !!machine.network && m.netConfig;
   const credentials = [...(net ? machine.network!.credentials : []), ...(m.credentials ?? [])];
   savedFlash = await flash;
-  // The units' credentials (the keyboard layout, the network's settings) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
+  // The units' credentials (the keyboard layout, the network's settings, swap ramdisks' fstab lines) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
   const keys = keyboardLayout(m.keyLayout);
-  const units = [...(keys ? keyboardCredentials(keys) : []), ...(net ? netCredentials() : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath) : [])];
+  const units = [...(keys ? keyboardCredentials(keys) : []), ...(net ? netCredentials() : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : [])))];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem] } : undefined;
   if (stopping) return;

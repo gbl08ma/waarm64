@@ -1,8 +1,14 @@
 // The ramdisk (web/ramdisk.ts, docs/machines.md §4.3) against a plain byte array: reads,
-// writes, zeroes and discards across chunk edges, and the chunks given back.
+// writes, zeroes and discards across chunk edges, and the chunks given back; as swap, its first page against mkswap's
+// and the guest's fstab line (web/app/guest-swap.ts).
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { RAM_CHUNK, ramDisk } from '../web/ramdisk.ts';
+import { RAM_CHUNK, ramDisk, swapHeader } from '../web/ramdisk.ts';
+import { SWAP_OPTIONS, swapCredentials, swapLabel } from '../web/app/guest-swap.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
 test('the ramdisk reads what was written and zeros elsewhere, and gives whole chunks back when they are discarded or zeroed', async () => {
@@ -104,4 +110,48 @@ test('past its budget of SharedArrayBuffers the ramdisk takes slots in wasm memo
   } finally {
     WebAssembly.Memory = Memory;
   }
+});
+
+test("a swap area's first page is mkswap's, byte for byte, and blkid reads it as swap with its label", () => {
+  const size = 8 * RAM_CHUNK + 4096 * 3; // not a whole number of chunks
+  const uuid = Uint8Array.from({ length: 16 }, (_, i) => i * 17);
+  const page = swapHeader(size, 'webpc-swap0', uuid);
+  assert.equal(page.length, 4096);
+  const v = new DataView(page.buffer);
+  assert.equal(v.getUint32(1024, true), 1, 'version 1');
+  assert.equal(v.getUint32(1028, true), size / 4096 - 1, 'the last page');
+  assert.equal(Buffer.from(page.subarray(4086)).toString(), 'SWAPSPACE2');
+  assert.throws(() => swapHeader(9 * 4096, 'x'), /10 pages/);
+  assert.throws(() => swapHeader(size, 'a-label-too-long'), /15 bytes/);
+  // Against util-linux where it's installed (both machines the project runs on have it).
+  const mkswap = ['/usr/sbin/mkswap', '/sbin/mkswap'].find((p) => existsSync(p));
+  if (mkswap) {
+    const dir = mkdtempSync(join(tmpdir(), 'webpc-swap-'));
+    try {
+      const file = join(dir, 'swap.img');
+      writeFileSync(file, new Uint8Array(0), { mode: 0o600 });
+      truncateSync(file, size);
+      const hex = Buffer.from(uuid).toString('hex');
+      execFileSync(mkswap, ['-q', '-p', '4096', '-L', 'webpc-swap0', '-U', `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`, file], { stdio: 'pipe' });
+      const theirs = readFileSync(file).subarray(0, 4096);
+      assert.equal(Buffer.compare(theirs, page), 0, "mkswap's first page differs");
+      const blkid = ['/usr/sbin/blkid', '/sbin/blkid'].find((p) => existsSync(p));
+      if (blkid) {
+        writeFileSync(file, page);
+        truncateSync(file, size);
+        const out = execFileSync(blkid, ['-p', '-o', 'export', file], { encoding: 'utf8' });
+        assert.match(out, /^TYPE=swap$/m);
+        assert.match(out, /^LABEL=webpc-swap0$/m);
+        assert.match(out, /^UUID=00112233-4455-6677-8899-aabbccddeeff$/m);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("swap ramdisks' fstab.extra credential: one line per label, none without", () => {
+  assert.deepEqual(swapCredentials([]), []);
+  assert.deepEqual(swapCredentials([swapLabel(0), swapLabel(1)]), [{ name: 'fstab.extra', data: `LABEL=webpc-swap0 none swap ${SWAP_OPTIONS} 0 0\nLABEL=webpc-swap1 none swap ${SWAP_OPTIONS} 0 0\n` }]);
+  assert.ok(new TextEncoder().encode(swapLabel(15)).length <= 15, "mkswap's label size");
 });
