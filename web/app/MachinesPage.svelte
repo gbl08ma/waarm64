@@ -523,7 +523,7 @@
   {#if storage}
     <footer class="storage">
       <span>{storage.persisted ? t('machines:MachinesPage.storage.persisted', { used: storage.usage, quota: storage.quota }) : t('machines:MachinesPage.storage', { used: storage.usage, quota: storage.quota })}</span>
-      {#if !storage.persisted}<button onclick={() => act(t('machines:MachinesPage.busy.asking'), askPersist)}>{t('machines:MachinesPage.storage.persist')}</button>{/if}
+      {#if !storage.persisted}<button title={t('machines:MachinesPage.storage.persist.title')} onclick={() => act(t('machines:MachinesPage.busy.asking'), askPersist)}>{t('machines:MachinesPage.storage.persist')}</button>{/if}
       {#if storage.remote > 0}<button data-action="clear-remote-cache" title={t('machines:MachinesPage.storage.clear.title')} onclick={() => act(t('machines:MachinesPage.busy.clearing'), clearCaches)}>{t('machines:MachinesPage.storage.clear', { size: storage.remote })}</button>{/if}
       <details><summary>{t('machines:MachinesPage.storage.items')}</summary><ul>{#each storage.items.filter((x) => x.bytes > 0) as it}<li>{t('machines:MachinesPage.storage.item', { what: it.what, size: it.bytes })}</li>{/each}</ul></details>
     </footer>

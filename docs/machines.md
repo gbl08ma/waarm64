@@ -97,7 +97,9 @@ Since decided (the user, 2026-10-17):
   waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts).
 - **Storage:** the Machines page shows `navigator.storage.estimate()` and what each overlay, machine (variable store
   and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
-  first time something is stored (without it the browser may evict the origin's data under pressure). A guest's
+  first time something is stored (without it the browser may evict the origin's data under pressure); while the
+  browser hasn't granted it, the storage bar offers [Protect from automatic deletion](ui:machines:MachinesPage.storage.persist),
+  which asks again, with a tooltip saying what it means. A guest's
   write the storage refuses (over the quota: OPFS's sync handles come back short or throw `QuotaExceededError`)
   fails with `IOERR` after the remote disks' kept blocks give way (`releaseStores`), and the page says the storage
   is full with `estimate()`'s numbers (devices.ts `storageFull`, a notice), once until a write lands again and at
